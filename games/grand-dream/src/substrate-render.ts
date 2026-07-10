@@ -34,6 +34,7 @@ export function paintSubstrateImage(grid: CellGrid, img: ImageData, ts: number, 
   const { cols, rows } = grid;
   const f = grid.fields;
   const height = f.height, ore = f.ore, solid = f.solid, people = f.people;
+  const dwarves = f.dwarves ?? null;   // step 6f: a second wild people (species content)
   const water = f.water ?? null;       // oasis substrate
   const river = eased?.river ?? f.river ?? null; // computed-river substrate (possibly eased)
   const plant = eased?.plant ?? f.plant;
@@ -75,6 +76,9 @@ export function paintSubstrateImage(grid: CellGrid, img: ImageData, ts: number, 
       if (ore[i] > 0.5 && wetDepth < 1 && plant[i] <= 0.5) c = lerp3([150, 130, 160], [90, 60, 120], ore[i] / 15);
       if (solid[i] > 0.5) c = [110, 110, 115];
       if (people[i] > 0) c = lerp3(c, [225, 150, 70], 0.5 * Math.min(1, people[i] / 31));
+      // Wild dwarves tint amber-GOLD where humans tint warm-orange —
+      // two peoples, two visible ranges on the same map.
+      if (dwarves && dwarves[i] > 0) c = lerp3(c, [240, 210, 90], 0.5 * Math.min(1, dwarves[i] / 31));
 
       // --- the ORIGINAL depth: prominence shading + height tint.
       let sum = 0;

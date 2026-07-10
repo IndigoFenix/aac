@@ -47,6 +47,11 @@ const L: Record<string, Lexeme> = {
   color_black: { w: "negro" },
   color_white: { w: "blanco" },
   place: { w: "dónde" },
+  // Cardinal directions — the "cerca/lejos, al norte" answers.
+  north: { w: "norte" },
+  south: { w: "sur" },
+  east: { w: "este" },
+  west: { w: "oeste" },
   home: { w: "casa", g: "f" },
   thing: { w: "qué" },
   cookie: { w: "galleta", g: "f" },
@@ -69,6 +74,44 @@ const L: Record<string, Lexeme> = {
   boat: { w: "barco", g: "m" },
   broccoli: { w: "brócoli", g: "m", mass: true },
   sock: { w: "calcetín", g: "m", plw: "calcetines" },
+  // Devices (§5) + their toggle states (agree with the device's gender).
+  lamp: { w: "lámpara", g: "f" },
+  window: { w: "ventana", g: "f" },
+  heater: { w: "calefactor", g: "m" },
+  generator: { w: "generador", g: "m" },
+  switch: { w: "interruptor", g: "m" },
+  on: { w: "encendido", f: "encendida" },
+  off: { w: "apagado", f: "apagada" },
+  open: { w: "abierto", f: "abierta" },
+  closed: { w: "cerrado", f: "cerrada" },
+  // Motive batch: verbs (infinitives for the want-to frame), conditions,
+  // categories, new pool items.
+  play: { w: "juego", inf: "jugar" },
+  read: { w: "leo", inf: "leer" },
+  wear: { w: "me visto", inf: "vestirme" },
+  throw: { w: "tiro", v2: "tiras", v3: "tira", v3p: "tiran" },
+  lonely: { w: "solo" },
+  hungry: { w: "hambriento" }, // rarely surfaces — the feel() clause covers "i_me + hungry"
+  smelly: { w: "apestoso" },
+  food: { w: "comida", g: "f", mass: true },
+  toy: { w: "juguete", g: "m" },
+  instrument: { w: "instrumento", g: "m" },
+  book: { w: "libro", g: "m" },
+  clothing: { w: "ropa", g: "f", mass: true },
+  garbage: { w: "basura", g: "f", mass: true },
+  hat: { w: "sombrero", g: "m" },
+  shirt: { w: "camiseta", g: "f" },
+  scarf: { w: "bufanda", g: "f" },
+  drum: { w: "tambor", g: "m" },
+  guitar: { w: "guitarra", g: "f" },
+};
+
+const ES_CONN: Record<string, string> = {
+  because: "porque",
+  therefore: "por eso",
+  in_order_to: "para",
+  when: "cuando",
+  until: "hasta que",
 };
 
 export const es = makeRomance({
@@ -98,6 +141,36 @@ export const es = makeRomance({
   whatWant: "¿Qué quieres?",
   tradeWhat: "¿Cambiar por qué?",
   tradeFor: (forPhrase) => `¿Cambiar ${forPhrase}?`,
+  something: "algo",
+  // "Tengo frío / calor / hambre" — sensation is tener + noun, not estar + adj.
+  feel: (head, subj) => {
+    const noun = head === "hot" ? "calor" : head === "hungry" ? "hambre" : "frío";
+    const v = subj.head === "i_me" ? "Tengo" : subj.head === "you" ? "Tienes" : "Tiene";
+    return `${v} ${noun}.`;
+  },
+  // "Me gusta la galleta." / "Me gustan los bloques." / "Me gusta el rojo."
+  like: (obj) =>
+    obj.kind === "quality"
+      ? `Me gusta el ${obj.word}.`
+      : `Me gusta${obj.plural ? "n" : ""} ${obj.text}.`,
+  wantTo: (inf) => `Quiero ${inf}.`,
+  takeMeTo: (np) => `Llévame con ${np}.`,
+  stayWithMe: "Quédate conmigo.",
+  directions: (np, be, proximity, dir) => {
+    const tail =
+      proximity === "here"
+        ? "aquí"
+        : proximity === "there"
+          ? "ahí"
+          : proximity === "street"
+            ? "en esta calle"
+            : `${proximity === "close" ? "cerca" : "lejos"}, al ${dir}`;
+    return `${np} ${be} ${tail}.`;
+  },
+  smell: { v3: "huele", v3p: "huelen" },
+  connective: (head) => ES_CONN[head] ?? head,
+  why: "¿Por qué?",
+  whyWant: (obj) => `¿Por qué quieres ${obj}?`,
   q: (s) => `¿${s}?`,
   fixed: {
     "i_me + help + you": "Te voy a ayudar.",
@@ -109,5 +182,10 @@ export const es = makeRomance({
     there: "¡Ahí!",
     thank_you: "¡Gracias!",
     goodbye: "¡Adiós!",
+    // Motive batch: the stay-with level-a line, the hungry motive alone, the
+    // dwell-done thanks.
+    stay: "Quédate conmigo.",
+    hungry: "Tengo hambre.",
+    "i_me + ok + thank_you": "Estoy bien, ¡gracias!",
   },
 });

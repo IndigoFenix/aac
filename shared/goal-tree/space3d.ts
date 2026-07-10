@@ -249,7 +249,15 @@ export interface ConverseObjects {
   dests: { nodeId: string; entityId: string; objectId: string }[];
   /** Transformation stations (fulfill `stationKinds`) — the player watches
    *  drops ON these and applies the state swap. */
-  stations: { nodeId: string; kind: StationKind; objectId: string; applies: string; removes: string }[];
+  stations: {
+    nodeId: string;
+    kind: StationKind;
+    objectId: string;
+    applies: string;
+    removes: string;
+    /** POWER-gated station (§5): this generator device must be ON to transform. */
+    powerDeviceId?: string;
+  }[];
 }
 
 /** Minimal instance shape (mirrors the runtime's ItemInstance expansion). */
@@ -366,9 +374,16 @@ export function buildConverseObjects(
     });
     // Placement-need container: an open box IN FRONT of the creature, offset
     // to the side so it never overlaps the counter or the dwell-to-talk spot.
-    // Same shape as a transport destination — drops land `in` it.
+    // Same shape as a transport destination — drops land `in` it. An OUTDOORS
+    // container (the smelly-food garbage can) stages in the start-zone plaza
+    // instead — open ground by construction — off-center so it never sits on
+    // the spawn point.
     if (node.type === "fulfill" && node.needPlacedInEntityId) {
-      const at = inZone({ x: fig.pos.x - dx * 2.0 + px * 2.4, y: fig.pos.y - dy * 2.0 + py * 2.4 });
+      const startRect = layout.zones.find((z) => z.zoneId === world.startZoneId)?.rect;
+      const at =
+        node.needPlacedOutdoors && startRect
+          ? { x: startRect.x + startRect.w * 0.75, y: startRect.y + startRect.h * 0.75 }
+          : inZone({ x: fig.pos.x - dx * 2.0 + px * 2.4, y: fig.pos.y - dy * 2.0 + py * 2.4 });
       const objectId = `dest_${node.id}`;
       objects.push({
         id: objectId,
@@ -403,7 +418,14 @@ export function buildConverseObjects(
           contains: [{ relation: "on" }],
           iconRef: def.iconRef,
         });
-        stations.push({ nodeId: node.id, kind, objectId, applies: def.applies, removes: def.removes });
+        stations.push({
+          nodeId: node.id,
+          kind,
+          objectId,
+          applies: def.applies,
+          removes: def.removes,
+          ...(node.stationPowerDeviceId ? { powerDeviceId: node.stationPowerDeviceId } : {}),
+        });
       });
     }
     if (!stockIds.length) continue;

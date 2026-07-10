@@ -59,7 +59,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "useLocalTts", "iconTextRatio", "languageLevel", "singleGlyphButtons", "glyphInputTranslation",
   "fullAttentionMode", "boardManagerLiveModel", "budgetTier",
   "usePcsSymbols", "signLanguage", "multiCameraMode",
-  "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
+  "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "eyegazeSmoothing", "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites",

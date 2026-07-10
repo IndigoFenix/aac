@@ -2509,6 +2509,12 @@ export const he = {
     inputSourceGazepoint: "עוקב עין Gazepoint",
     inputSourceWebhid: "התקן WebHID",
     inputSourceHint: "השתמש בסמן העכבר לבדיקות, או בחר עוקב עין חיצוני השולט בסמן.",
+    gazeSmoothing: "החלקת מבט",
+    gazeSmoothingOff: "כבוי",
+    gazeSmoothingLight: "קלה",
+    gazeSmoothingMedium: "בינונית",
+    gazeSmoothingStrong: "חזקה",
+    gazeSmoothingHint: "מפחית רעידות סמן מעוקבי עיניים חומרתיים. חזק יותר יציב יותר אך עוקב אחר המבט מעט לאט יותר.",
     // Sign language
     signLanguage: "זיהוי שפת סימנים",
     signLanguageDesc: "זהה תנועות שפת סימנים דרך המצלמה ושלח כל ביטוי מושלם ל-AI כהצהרה",

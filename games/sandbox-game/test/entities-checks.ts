@@ -9,10 +9,10 @@
 import assert from 'node:assert/strict';
 import {
   createWorld, stepWorld, worldFastForward, totalScalar, injectEntity, injectEdge,
-  addEntity, serializeWorld, deserializeWorld, validateWorldSpec,
+  addEntity, setEntityDisabled, serializeWorld, deserializeWorld, validateWorldSpec,
   type EntityWorld, type WorldSpec,
   civilization, riseAndFall, unstableCiv, tradeNetwork,
-} from '../src/cell-systems/index.ts';
+} from '../../../shared/engine/cells/index.ts';
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -355,10 +355,11 @@ check('two-biome economy: chains, proportional fill, counterflow, rest', () => {
 
 // 17. Buildings ARE capacity, and construction SPENDS surplus: the granary
 //     accumulates the food net's overproduction (drift), each farm costs 60
-//     of it (the spend flaps the guard so the edge-triggered timer re-arms),
-//     and the loop farms → grain_out(derived) → granary → farms counts as a
-//     legal 2-STATE loop because process outputs are combinational. When the
-//     build limit hits and the granary clamps, the world rests.
+//     of it (the spend flaps the guard so the edge-triggered timer re-arms).
+//     farms is a MONOTONE COUNTER (+1-only adds), so the farms →
+//     grain_out(derived) → granary → farms loop carries ONE state
+//     dimension (granary) and doesn't even warn. When the build limit hits
+//     and the granary clamps, the world rests.
 check('construction spends surplus, capacity caps output, then rests', () => {
   const spec = twoBiome();
   spec.entity.vars.push({ name: 'granary', min: 0, max: 500, initial: 0 });
@@ -371,7 +372,7 @@ check('construction spends surplus, capacity caps output, then rests', () => {
   });
   const r = validateWorldSpec(spec);
   assert.ok(r.ok, `construction spec rejected: ${r.errors.join('; ')}`);
-  assert.ok(r.warnings.some(x => /2-attribute feedback loop/.test(x)), 'expected the granary↔farms 2-state-loop warning');
+  assert.ok(!r.warnings.some(x => /feedback loop/.test(x)), `monotone farms should not join a loop (got: ${r.warnings.join('; ')})`);
 
   const w = createWorld(spec, 2, [[0, 1]]);
   injectEntity(w, 0, 'farmland', 900); injectEntity(w, 0, 'farms', 1);
@@ -422,6 +423,226 @@ check('validator checks processes and satisfied', () => {
   (badSat.flownets![0] as { satisfied?: string }).satisfied = 'missing';
   const r2 = validateWorldSpec(badSat);
   assert.ok(!r2.ok && r2.errors.some(e => /satisfied "missing"/.test(e)), 'unknown satisfied var not rejected');
+});
+
+// 20. Flow-net `by` coupling is refined by severability: drift/satisfied are
+//     per-component aggregates (mean imbalance / proportional fill) that read
+//     conductance only through component MEMBERSHIP. A road bounded above 0
+//     can never sever ⇒ no dependency edge ⇒ construction-from-drift over a
+//     road-conducted net closes no loop at all (farms is a monotone counter,
+//     granary alone is 1-state). The same spec with a SEVERABLE road (min 0)
+//     keeps the conservative X(road)→drift edge and warns as the bounded
+//     2-state {road, granary} pair — the edge stays for topologies that can
+//     actually change.
+check('flow-net by-coupling: unseverable road exempt, severable road warns', () => {
+  const construction = (roadMin: number): WorldSpec => {
+    const spec = twoBiome();
+    spec.edge = { vars: [{ name: 'road', min: roadMin, max: 1, initial: Math.max(roadMin, 0.05) }] };
+    spec.flownets![0] = { ...spec.flownets![0], by: 'road', drift: 'granary' };
+    spec.roads = [{ attr: 'road', use: 'food', rate: 0.002, decay: 0.001 }];
+    spec.entity.vars.push({ name: 'granary', min: 0, max: 500, initial: 0 });
+    spec.entity.rules.push({
+      id: 'build-farm',
+      when: { all: [{ cmp: '>=', left: { scalar: 'granary' }, right: { const: 60 } }, { cmp: '<', left: { scalar: 'farms' }, right: { const: 4 } }] },
+      trigger: { every: true },
+      effects: [{ add: { scalar: 'farms', amount: 1 } }, { add: { scalar: 'granary', amount: -60 } }],
+    });
+    return spec;
+  };
+
+  const safe = validateWorldSpec(construction(0.05));
+  assert.ok(safe.ok, `unseverable-road construction rejected: ${safe.errors.join('; ')}`);
+  assert.ok(!safe.warnings.some(x => /feedback loop/.test(x)), `unseverable road should close no loop (got: ${safe.warnings.join('; ')})`);
+
+  const risky = validateWorldSpec(construction(0));
+  assert.ok(risky.ok, `severable-road construction should warn, not reject: ${risky.errors.join('; ')}`);
+  assert.ok(risky.warnings.some(x => /2-attribute feedback loop/.test(x) && /road/.test(x) && /granary/.test(x)),
+    `expected the 2-state {road, granary} warning (got: ${risky.warnings.join('; ')})`);
+});
+
+// 21. Monotone counters: three build rules spending ONE granary would fuse
+//     three legal pairs into a fictitious 4-state SCC — each guard reads its
+//     own counter while the effect spends the shared stock. +1-only counters
+//     carry no recurrence, so the whole construction economy is 1-state
+//     (granary) and legal. Adding DEMOLITION (a negative add on the same
+//     counters) makes them genuinely bi-directional state again, and the
+//     fused loop is rejected — decline mechanics will need their own shape.
+check('monotone counters: shared-stock construction legal, demolition re-fuses', () => {
+  const construction = (): WorldSpec => {
+    const spec = twoBiome();
+    spec.flownets![0] = { ...spec.flownets![0], drift: 'granary' };
+    spec.entity.vars.push({ name: 'granary', min: 0, max: 500, initial: 0 });
+    const build = (id: string, building: string, threshold: number, cost: number) => ({
+      id,
+      when: {
+        all: [
+          { cmp: '>=' as const, left: { scalar: 'granary' }, right: { const: threshold } },
+          { cmp: '<' as const, left: { scalar: building }, right: { const: 8 } },
+        ],
+      },
+      trigger: { every: true as const },
+      effects: [{ add: { scalar: building, amount: 1 } }, { add: { scalar: 'granary', amount: -cost } }],
+    });
+    spec.entity.rules.push(build('build-farm', 'farms', 60, 60), build('build-mine', 'mines', 140, 80), build('build-smelter', 'smelters', 240, 100));
+    return spec;
+  };
+
+  const ok = validateWorldSpec(construction());
+  assert.ok(ok.ok, `three-building construction rejected: ${ok.errors.join('; ')}`);
+  assert.ok(!ok.warnings.some(x => /feedback loop/.test(x)), `counters should not fuse a loop (got: ${ok.warnings.join('; ')})`);
+
+  const withDemolition = construction();
+  withDemolition.entity.rules.push(
+    { id: 'demolish-farm', when: { cmp: '<', left: { scalar: 'granary' }, right: { const: 5 } }, trigger: { every: true }, effects: [{ add: { scalar: 'farms', amount: -1 } }] },
+    { id: 'demolish-mine', when: { cmp: '<', left: { scalar: 'granary' }, right: { const: 5 } }, trigger: { every: true }, effects: [{ add: { scalar: 'mines', amount: -1 } }] },
+  );
+  const bad = validateWorldSpec(withDemolition);
+  assert.ok(!bad.ok, 'bi-directional counters sharing a stock should be rejected');
+  assert.ok(bad.errors.some(x => /feedback loop couples \d+ state attributes/.test(x) && /granary/.test(x)),
+    `expected the fused-loop rejection (got: ${bad.errors.join('; ')})`);
+});
+
+// 22. TOMBSTONE (civilization-emergence.md §2b): setEntityDisabled makes an
+//     entity absent from every dynamic while its index survives. The caller
+//     zeroes the scalars (the absorb discipline); the engine severs it: the
+//     flow nets re-solve around the ruin (no shipments, no drift share, no
+//     satisfied), the survivor keeps its own economy, the world re-rests,
+//     the mask round-trips serialization, and catch-up stays exact.
+check('tombstone: ruin leaves the economy, world re-rests, catch-up exact', () => {
+  const build = (): EntityWorld => {
+    const w = createWorld(twoBiome(), 2, [[0, 1]]);
+    injectEntity(w, 0, 'population', 20_000); injectEntity(w, 0, 'farmland', 900); injectEntity(w, 0, 'farms', 10);
+    injectEntity(w, 1, 'population', 8_000); injectEntity(w, 1, 'ore_access', 600);
+    injectEntity(w, 1, 'mines', 8); injectEntity(w, 1, 'smelters', 6);
+    assert.ok(stepUntilRest(w, 300) > 0, 'pre-tombstone world never settled');
+    return w;
+  };
+  // The absorb discipline: EVERY var to its floor — processes skip a ruin,
+  // so a derived output left standing would freeze at its last value.
+  const bury = (w: EntityWorld): void => {
+    for (const v of w.spec.entity.vars ?? []) w.scalars[v.name][1] = v.min;
+    setEntityDisabled(w, 1);
+  };
+
+  const w = build();
+  assert.ok(w.flowNet.food.flows[0] > 0, 'food should flow before the tombstone');
+  bury(w);
+  assert.ok(stepUntilRest(w, 300) > 0, 'post-tombstone world never re-rested');
+
+  // The ruin ships nothing, wants nothing, produces nothing.
+  assert.equal(w.flowNet.food.flows[0], 0, 'no food to a ruin');
+  assert.equal(w.scalars.ore_out[1], 0, 'a ruin mines nothing');
+  assert.equal(w.scalars.food_got[1], 0, 'a ruin is fed nothing');
+  // The survivor keeps its own economy in its now-singleton component…
+  assert.ok(Math.abs(w.scalars.food_got[0] - 20) < 1e-9, `lowland unfed (${w.scalars.food_got[0]})`);
+  // …but the mine's export is gone with the mine.
+  assert.equal(w.scalars.metal_got[0], 0, 'no metal without the mine');
+
+  // The mask survives save/load.
+  const re = deserializeWorld(serializeWorld(w));
+  assert.ok(re && re.disabled[1] === 1, 'disabled mask should survive save/load');
+
+  // Catch-up with a tombstone equals stepping.
+  const s1 = build(); bury(s1);
+  const s2 = build(); bury(s2);
+  for (let i = 0; i < 50; i++) stepWorld(s1);
+  worldFastForward(s2, 50);
+  assert.equal(snap(s2), snap(s1), 'catch-up diverged with a tombstone');
+});
+
+// 23. GOODS WIDEN (world-content.md §3d): fan-in SUM aggregates several
+//     demand sources into one net demand; fan-out ALLOCATE divides the
+//     delivery across consumers in priority order, conserving; a
+//     MULTI-REAGENT process is Leontief across all its inputs — the
+//     scarcest binds. Forest mills planks; the town's households (first
+//     priority) and smithies share the delivery; tools need planks AND
+//     metal. Chains settle, the world rests, catch-up stays exact.
+check('fan-in, fan-out, multi-reagent: the widened economy settles and conserves', () => {
+  const spec = (): WorldSpec => ({
+    id: 'reagents',
+    entity: {
+      id: 'town',
+      vars: [
+        'population', 'timberland', 'ore_access', 'sawmills', 'smithies',
+        'planks_out', 'planks_need', 'planks_got', 'fuel_draw', 'smith_plank_draw',
+        'fuel_share', 'smith_planks', 'metal_out', 'smith_metal_draw', 'metal_got', 'tools_out',
+      ].map(name => ({ name, min: 0, max: 100_000, initial: 0 })),
+      rules: [],
+    },
+    processes: [
+      { id: 'mill', input: 'timberland', output: 'planks_out', efficiency: 0.02, capacityBy: 'sawmills', capacityRate: 4 },
+      { id: 'fuel', input: 'population', output: 'fuel_draw', efficiency: 0.0005 },
+      { id: 'smith-planks', input: 'smithies', output: 'smith_plank_draw', efficiency: 3 },
+      { id: 'smith-metal', input: 'smithies', output: 'smith_metal_draw', efficiency: 1 },
+      { id: 'smelt', input: 'ore_access', output: 'metal_out', efficiency: 0.01 },
+      {
+        id: 'tools',
+        inputs: [{ scalar: 'smith_planks', efficiency: 0.5 }, { scalar: 'metal_got', efficiency: 1 }],
+        output: 'tools_out', capacityBy: 'smithies', capacityRate: 2,
+      },
+    ],
+    sums: [{ id: 'plank-want', output: 'planks_need', terms: [{ scalar: 'fuel_draw' }, { scalar: 'smith_plank_draw' }] }],
+    allocates: [{
+      id: 'plank-split', source: 'planks_got',
+      shares: [
+        { output: 'fuel_share', demand: 'fuel_draw' },       // households first
+        { output: 'smith_planks', demand: 'smith_plank_draw' },
+      ],
+    }],
+    flownets: [
+      { id: 'planks', source: 'planks_out', demand: 'planks_need', satisfied: 'planks_got' },
+      { id: 'metal', source: 'metal_out', demand: 'smith_metal_draw', satisfied: 'metal_got' },
+    ],
+  });
+
+  const r = validateWorldSpec(spec());
+  assert.ok(r.ok, `reagent spec rejected: ${r.errors.join('; ')}`);
+  assert.ok(!r.warnings.some(x => /feedback loop/.test(x)), `relays should add no loop (got: ${r.warnings.join('; ')})`);
+
+  const boot = (sawmills: number): EntityWorld => {
+    const w = createWorld(spec(), 2, [[0, 1]]); // 0 = forest, 1 = town
+    injectEntity(w, 0, 'timberland', 800); injectEntity(w, 0, 'sawmills', sawmills);
+    injectEntity(w, 1, 'population', 10_000); injectEntity(w, 1, 'ore_access', 400); injectEntity(w, 1, 'smithies', 3);
+    assert.ok(stepUntilRest(w, 100) > 0, 'reagent economy never settled');
+    return w;
+  };
+
+  // PLENTY: supply 16 ≥ demand 14 (fuel 5 + smiths 9); both shares fed;
+  // tools bind on the SCARCEST reagent (metal 3, not planks 9×0.5 or cap 6).
+  const w = boot(5);
+  assert.ok(Math.abs(w.scalars.planks_need[1] - 14) < 1e-9, `fan-in sum ${w.scalars.planks_need[1]} ≠ 5 + 9`);
+  assert.ok(Math.abs(w.scalars.planks_got[1] - 14) < 1e-9, `town undelivered (${w.scalars.planks_got[1]})`);
+  assert.ok(Math.abs(w.scalars.fuel_share[1] - 5) < 1e-9, 'households short despite plenty');
+  assert.ok(Math.abs(w.scalars.smith_planks[1] - 9) < 1e-9, 'smiths short despite plenty');
+  assert.ok(Math.abs(w.scalars.tools_out[1] - 3) < 1e-9, `tools ${w.scalars.tools_out[1]} should bind on metal (3)`);
+
+  // SCARCITY: one mill (supply 4 « demand 14) — the delivery conserves
+  // exactly, priority feeds the FIRST share fully before the second sees
+  // anything, and the tool chain starves downstream.
+  const s = boot(1);
+  assert.ok(Math.abs(s.scalars.planks_got[1] - 4) < 1e-9, `scarce delivery ${s.scalars.planks_got[1]}`);
+  assert.ok(Math.abs(s.scalars.fuel_share[1] - 4) < 1e-9, 'priority: households take the whole short delivery');
+  assert.equal(s.scalars.smith_planks[1], 0, 'priority: smiths get nothing until households are fed');
+  assert.ok(Math.abs(s.scalars.fuel_share[1] + s.scalars.smith_planks[1] - s.scalars.planks_got[1]) < 1e-9, 'allocation must conserve');
+  assert.equal(s.scalars.tools_out[1], 0, 'no planks ⇒ no tools');
+
+  // Catch-up with the widened economy equals stepping.
+  const a = boot(5), b = boot(5);
+  injectEntity(a, 0, 'sawmills', -4); injectEntity(b, 0, 'sawmills', -4); // mid-life disturbance
+  for (let i = 0; i < 40; i++) stepWorld(a);
+  worldFastForward(b, 40);
+  assert.equal(snap(b), snap(a), 'catch-up diverged in the reagent economy');
+
+  // Validator teeth: both process forms are exclusive; refs checked.
+  const bad = spec();
+  bad.processes!.push({ id: 'confused', input: 'population', inputs: [{ scalar: 'metal_got', efficiency: 1 }], output: 'tools_out', efficiency: 1 });
+  assert.ok(!validateWorldSpec(bad).ok, 'input+inputs together should be rejected');
+  const badSum = spec();
+  badSum.sums![0].terms.push({ scalar: 'nope' });
+  assert.ok(!validateWorldSpec(badSum).ok, 'unknown sum term should be rejected');
+  const badAl = spec();
+  badAl.allocates![0].shares.push({ output: 'metal_out', demand: 'missing' });
+  assert.ok(!validateWorldSpec(badAl).ok, 'unknown allocate demand should be rejected');
 });
 
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);

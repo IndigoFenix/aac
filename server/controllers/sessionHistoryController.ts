@@ -93,9 +93,43 @@ class SessionHistoryController {
   }
 
   /**
-   * Bulk-delete all session debug logs recorded before a given date.
-   * Body: { before: string } — an ISO date/datetime (e.g. "2026-05-01").
-   * Admin maintenance to prune the debug trace table.
+   * The per-charge cost time-series for one session — ordered oldest→newest so
+   * the client can chart how a session's spend accrued over time. Query:
+   * ?limit&offset. Unlike the debug log, this is recorded for every session
+   * (not just debug-mode ones).
+   */
+  async getSessionCostEvents(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : undefined;
+
+      const result = await chatRepository.getSessionCostEvents(id, { limit, offset });
+      if (!result) {
+        res.status(404).json({ success: false, message: "Session not found" });
+        return;
+      }
+      res.json({
+        success: true,
+        data: result.entries,
+        pagination: {
+          total: result.total,
+          limit: limit ?? 1000,
+          offset: offset ?? 0,
+          hasMore: (offset ?? 0) + result.entries.length < result.total,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error fetching session cost events:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch session cost events" });
+    }
+  }
+
+  /**
+   * Bulk-delete verbose per-session logging recorded before a given date —
+   * both the debug trace (`session_debug_logs`) and the per-charge cost
+   * time-series (`session_cost_events`). Body: { before: string } — an ISO
+   * date/datetime (e.g. "2026-05-01"). Admin maintenance.
    */
   async deleteSessionDebugLogsBefore(req: Request, res: Response): Promise<void> {
     try {
@@ -105,8 +139,12 @@ class SessionHistoryController {
         res.status(400).json({ success: false, message: "A valid 'before' date is required" });
         return;
       }
-      const deleted = await chatRepository.deleteSessionDebugLogsBefore(cutoff);
-      res.json({ success: true, deleted, before: cutoff.toISOString() });
+      const [deleted, costEventsDeleted] = await Promise.all([
+        chatRepository.deleteSessionDebugLogsBefore(cutoff),
+        chatRepository.deleteSessionCostEventsBefore(cutoff),
+      ]);
+      // `deleted` stays the debug-log count for backward compatibility.
+      res.json({ success: true, deleted, costEventsDeleted, before: cutoff.toISOString() });
     } catch (error: any) {
       console.error("Error deleting session debug logs:", error);
       res.status(500).json({ success: false, message: "Failed to delete session debug logs" });

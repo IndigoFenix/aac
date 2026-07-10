@@ -44,6 +44,9 @@ export interface ObjectModel {
   applyDescriptors(glyph: string | undefined): void;
   /** Advance any temperature particle effect. No-op when the object has none. */
   update(timeSeconds: number): void;
+  /** Drive an opening part (a chest lid, cupboard doors) to frac 0..1.
+   *  Absent when the recipe has nothing that opens. */
+  setOpen?: (frac: number) => void;
   /** Release every geometry/material/texture this model owns. */
   dispose(): void;
 }
@@ -62,6 +65,9 @@ interface Ctx {
   /** Each tintable material's original color, to restore when the tint clears. */
   tintBase: THREE.Color[];
   disposables: Array<{ dispose(): void }>;
+  /** A recipe with an OPENING part (a chest lid, cupboard doors) registers
+   *  its swing here; `setOpen(frac)` on the model drives it, 0..1. */
+  setOpen?: (frac: number) => void;
 }
 
 function mat(
@@ -106,6 +112,12 @@ function part(
 // ---------------------------------------------------------------------------
 
 type Recipe = (ctx: Ctx) => void;
+
+/** A table's tabletop height, world meters — a realistic ~waist-low
+ *  table, decoupled from its (wide) collision footprint. The table
+ *  RECIPE builds its top here and render3d's "on"-containment lift rests
+ *  items on the same height, so what's on a table sits ON it. */
+export const TABLE_TOP_Y = 0.8;
 
 const RECIPES: Record<string, Recipe> = {
   ball: (ctx) => {
@@ -243,6 +255,81 @@ const RECIPES: Record<string, Recipe> = {
     const dark = mat(ctx, "#1f2937", { roughness: 0.5 });
     part(ctx, new THREE.SphereGeometry(r * 0.07, 8, 6), dark, [-r * 0.16, r * 0.62, r * 0.4]);
     part(ctx, new THREE.SphereGeometry(r * 0.07, 8, 6), dark, [r * 0.16, r * 0.62, r * 0.4]);
+  },
+
+  // ---- FIXTURES: archetypal furniture (chest / cupboard / table). ----
+  // Solid in the engine (square footprint of `radius`); lidded ones ease
+  // open while someone stands close. Forward (+X) faces INTO the room.
+
+  "fixture:chest": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#8a6238", { roughness: 0.85, tint: true });
+    const band = mat(ctx, "#5b3d22", { roughness: 0.7 });
+    // Body: an open-topped box (slightly under the collision half-extent).
+    part(ctx, new THREE.BoxGeometry(r * 1.8, r * 1.1, r * 1.8), wood, [0, -r * 0.45, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.86, r * 0.16, r * 1.86), band, [0, -r * 0.05, 0]);
+    // Lid: hinged along the BACK edge (-X side), swings up and back.
+    const hinge = new THREE.Group();
+    hinge.position.set(-r * 0.9, r * 0.1, 0);
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(r * 1.84, r * 0.18, r * 1.84), wood);
+    ctx.disposables.push(lid.geometry);
+    lid.position.set(r * 0.92, 0, 0); // extends forward from the hinge
+    hinge.add(lid);
+    ctx.content.add(hinge);
+    ctx.setOpen = (frac) => {
+      hinge.rotation.z = frac * (Math.PI * 0.55); // up and over the back
+    };
+  },
+
+  "fixture:cupboard": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#6f4e2f", { roughness: 0.8, tint: true });
+    const panel = mat(ctx, "#8a6238", { roughness: 0.75 });
+    // Tall body — a wardrobe against the wall (front is +X).
+    part(ctx, new THREE.BoxGeometry(r * 1.2, r * 3.2, r * 1.9), wood, [0, r * 0.6, 0]);
+    // Two front doors hinged at the outer edges, swinging outward.
+    const doorGeom = new THREE.BoxGeometry(r * 0.1, r * 2.8, r * 0.88);
+    ctx.disposables.push(doorGeom);
+    const mkDoor = (side: 1 | -1): THREE.Group => {
+      const hinge = new THREE.Group();
+      hinge.position.set(r * 0.62, r * 0.55, side * r * 0.92);
+      const leaf = new THREE.Mesh(doorGeom, panel);
+      leaf.position.set(0, 0, -side * r * 0.45);
+      hinge.add(leaf);
+      ctx.content.add(hinge);
+      return hinge;
+    };
+    const left = mkDoor(1);
+    const right = mkDoor(-1);
+    ctx.setOpen = (frac) => {
+      left.rotation.y = frac * (Math.PI * 0.6);
+      right.rotation.y = -frac * (Math.PI * 0.6);
+    };
+  },
+
+  "fixture:table": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#9a7248", { roughness: 0.8, tint: true });
+    const leg = mat(ctx, "#7a5a38", { roughness: 0.8 });
+    // A LOW, wide table: the top spans 2.1r but sits at a realistic
+    // TABLE_TOP_Y (world) — DECOUPLED from the footprint radius, so a
+    // wide table isn't a tall one. The mesh sits at world y = r, so the
+    // top's LOCAL height is TABLE_TOP_Y − r. Items placed "on" it rest on
+    // this surface (render3d's containment lift keys the same constant).
+    const topThick = 0.08;
+    const surfaceLocal = TABLE_TOP_Y - r; // local y of the top FACE
+    part(ctx, new THREE.BoxGeometry(r * 2.1, topThick, r * 2.1), wood, [0, surfaceLocal - topThick / 2, 0]);
+    const legBase = -r; // the ground
+    const legTop = surfaceLocal - topThick; // underside of the top
+    const legH = Math.max(0.1, legTop - legBase);
+    const legGeom = new THREE.BoxGeometry(r * 0.18, legH, r * 0.18);
+    ctx.disposables.push(legGeom);
+    const legCy = (legBase + legTop) / 2;
+    for (const sx of [1, -1]) {
+      for (const sz of [1, -1]) {
+        part(ctx, legGeom, leg, [sx * r * 0.85, legCy, sz * r * 0.85]);
+      }
+    }
   },
 
   crate: (ctx) => {
@@ -487,9 +574,11 @@ function keyFor(iconRef?: string, glyph?: string): string | undefined {
 export function buildObjectModel(opts: {
   iconRef?: string;
   glyph?: string;
+  /** A FIXTURE (furniture) renders its archetype regardless of icon. */
+  fixture?: string;
   radius: number;
 }): ObjectModel | null {
-  const key = keyFor(opts.iconRef, opts.glyph);
+  const key = opts.fixture ? `fixture:${opts.fixture}` : keyFor(opts.iconRef, opts.glyph);
   if (!key) return null;
   const recipe = RECIPES[key];
   if (!recipe) return null;
@@ -536,6 +625,7 @@ export function buildObjectModel(opts: {
     object,
     materials: ctx.materials,
     applyDescriptors,
+    setOpen: ctx.setOpen,
     update: (time) => particles?.update(time),
     dispose: () => {
       if (particles) {

@@ -4,7 +4,7 @@
 // DualAgentContext.tsx can import them without depending on each other.
 
 import type React from "react";
-import type { ParsedBoardData } from "@shared/schema";
+import type { ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import type { CachedRequest } from "./useDebugRequestCache";
@@ -35,6 +35,12 @@ export interface ClientConfigActivityMonitor {
   speechPreRollMs?: number;
   speechPostRollMs?: number;
   heartbeatAudioMs?: number;
+  sttMaxEpisodeMs?: number;
+  sileroVadEnabled?: boolean;
+  vadStartProb?: number;
+  vadEndProb?: number;
+  vadEndSilenceMs?: number;
+  vadMaxSegmentMs?: number;
 }
 
 export interface ClientConfigSleep {
@@ -374,6 +380,8 @@ export interface UseDualAgentReturn {
   // Messages
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
+  /** Rolling live STT interim — grey caption while the recognizer is hearing. */
+  interimTranscription: string | null;
   utteranceText: string | null;
   utteranceConfidence: 'high' | 'medium' | 'low' | null;
   transcriptConfidence: 'high' | 'medium' | 'low' | null;
@@ -439,6 +447,9 @@ export interface UseDualAgentReturn {
   enabledApps: Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>;
   /** Custom apps (clinician-authored games) assigned to this student. */
   availableCustomApps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
+  /** Permitted websites for this student — delivered via session_snapshot and
+   *  rendered as browser tiles on the Apps board. */
+  permittedWebsites: PermittedWebsite[];
 
   // Avatar
   emote: "happy" | "sad" | "neutral";
@@ -469,6 +480,8 @@ export interface UseDualAgentReturn {
   debugSetBudget: (percent: number) => void;
   /** Diagnostics: report mic activate/deactivate to the server (logged to chat history, not sent to any live agent). */
   sendMicState: (active: boolean, reason?: string) => void;
+  /** Diagnostics: report which speech-boundary detector is active (silero / webSpeechApi / energy) — same channel as sendMicState. */
+  sendSpeechMethod: (method: "silero" | "webSpeechApi" | "energy" | "none") => void;
   /** Tell the server a live video call started/ended — drives facilitator mode.
    *  On end, `outcome` (declined/no_answer/unavailable/cancelled/ended) lets the
    *  AI react to a call that never connected. */

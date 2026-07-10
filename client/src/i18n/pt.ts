@@ -2509,6 +2509,12 @@ export const pt = {
     inputSourceGazepoint: "Rastreador ocular Gazepoint",
     inputSourceWebhid: "Dispositivo WebHID",
     inputSourceHint: "Use o cursor do mouse para testes, ou selecione um rastreador ocular externo que controle o cursor.",
+    gazeSmoothing: "Suavização do olhar",
+    gazeSmoothingOff: "Desligado",
+    gazeSmoothingLight: "Leve",
+    gazeSmoothingMedium: "Médio",
+    gazeSmoothingStrong: "Forte",
+    gazeSmoothingHint: "Reduz a trepidação do cursor de rastreadores oculares. Mais forte é mais estável, mas segue o olhar um pouco mais devagar.",
     // Sign language
     signLanguage: "Reconhecimento de língua de sinais",
     signLanguageDesc: "Reconheça gestos de língua de sinais pela câmera e envie cada frase completa à IA como uma afirmação",

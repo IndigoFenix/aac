@@ -579,6 +579,14 @@ function buildBundledIconsBlock(): string {
   const RELATION_BADGE_KEYS = new Set(["with", "for", "instead", "before", "after", "because"]);
   for (const v of listAllVocabulary()) {
     if (!v.exposeToAi) continue;
+    // Question words (what/who/where/when/why/how) — canonical `?` modifiers,
+    // grouped on their own regardless of which WH-category they file under.
+    if (v.pos === "modifier" && v.tone === "question") {
+      let arr = modifierGroups.get("question");
+      if (!arr) { arr = []; modifierGroups.set("question", arr); }
+      arr.push(v.key);
+      continue;
+    }
     if (v.pos === "modifier" && v.categories.length === 0) {
       // Pure MODIFIER SYMBOL — bucket by transform family.
       const transform = v.modifier?.transform ?? "other";
@@ -639,11 +647,17 @@ function buildBundledIconsBlock(): string {
     lines.push("**This list is EXHAUSTIVE.** The renderer has no image for any modifier not listed here.");
     lines.push("  - Anything else (e.g. `.new`, `.old`, `.sad`, `.funny`, `.adventure`, `.scary`, `.american`) renders as a meaningless dot.");
     lines.push("  - If you need a quality not in this list, use a different emoji that already encodes it, or compose two GLYPHs (see <grammar>).");
-    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "relation", "relational", "other_modifier"];
+    const MODIFIER_ORDER = ["count", "possession", "negation", "intensity", "size_shape", "temperature", "color", "social", "relation", "relational", "question", "other_modifier"];
     for (const group of MODIFIER_ORDER) {
       const items = modifierGroups.get(group);
       if (!items?.length) continue;
       lines.push(`  - ${group.replace("_", " ")}: ${items.sort().join(", ")}`);
+    }
+    if (modifierGroups.get("question")?.length) {
+      // Question words drop a `?` on a HEAD; standalone they carry a default head.
+      lines.push("    Question words put a `?` badge on a HEAD SYMBOL (`🍎.what` = which apple? · `🧑.who` = who? · `📖.where` = where's the book?).");
+      lines.push("      - Used ALONE they render a default head + `?`: what→thing, who→someone, where→place, when→time, why→cause, how→do.");
+      lines.push("      - For a whole-sentence question, prefer the `#question` OPERATOR instead (it tags the sentence, adds no GLYPH).");
     }
     if (modifierGroups.get("relational")?.length) {
       // Relational modifiers step a HEAD SYMBOL along a sequence and are the

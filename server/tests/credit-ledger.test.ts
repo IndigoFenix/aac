@@ -13,11 +13,12 @@
  */
 
 import { describe, it, expect, afterEach } from '@jest/globals';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { truncateAll, db } from './helpers/db.js';
-import { chatSessions, students, users } from '@shared/schema';
+import { chatSessions, students, users, sessionCostEvents } from '@shared/schema';
 import { makeUser, makeStudent } from './helpers/factories.js';
 import { chargeCreditsToLedger, onLedgerCharge } from '../services/credit-ledger.js';
+import { chatRepository } from '../repositories/chatRepository.js';
 
 async function insertUser(): Promise<string> {
   const user = await makeUser();
@@ -160,5 +161,93 @@ describe('onLedgerCharge — budget-meter feed', () => {
     unsub();
     await chargeCreditsToLedger({ sessionId, credits: 0.05, label: 'after-unsub' });
     expect(count).toBe(1); // unchanged
+  });
+});
+
+describe('session_cost_events — per-charge time-series', () => {
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  async function readEvents(sessionId: string) {
+    return db
+      .select()
+      .from(sessionCostEvents)
+      .where(eq(sessionCostEvents.sessionId, sessionId))
+      .orderBy(asc(sessionCostEvents.timestamp));
+  }
+
+  it('records one row per positive charge, in order, with category and credits', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.01, category: 'observer', label: 't1' });
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits: 0.005, category: 'tts', label: 't2' });
+    await chargeCreditsToLedger({ sessionId, credits: 0.002, label: 'uncategorized' });
+
+    const events = await readEvents(sessionId);
+    expect(events.map(e => e.category)).toEqual(['observer', 'tts', 'other']);
+    expect(events.map(e => e.credits)).toEqual([
+      expect.closeTo(0.01, 6), expect.closeTo(0.005, 6), expect.closeTo(0.002, 6),
+    ]);
+    // Sum of the time-series matches the aggregate running total.
+    const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, sessionId));
+    const seriesTotal = events.reduce((a, e) => a + e.credits, 0);
+    expect(seriesTotal).toBeCloseTo(session.creditsUsed, 6);
+  });
+
+  it('persists token detail as typed columns when provided, null otherwise', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+
+    await chargeCreditsToLedger({
+      sessionId, credits: 0.02, category: 'monitor', label: 'http',
+      tokenUsage: { model: 'gpt-x', promptTokens: 1200, completionTokens: 300, cachedTokens: 800 },
+    });
+    await chargeCreditsToLedger({ sessionId, credits: 0.003, category: 'tts', label: 'chars' });
+
+    const [withTokens, withoutTokens] = await readEvents(sessionId);
+    expect(withTokens.model).toBe('gpt-x');
+    expect(withTokens.promptTokens).toBe(1200);
+    expect(withTokens.completionTokens).toBe(300);
+    expect(withTokens.cachedTokens).toBe(800);
+    expect(withTokens.cacheCreationTokens).toBeNull();
+    expect(withoutTokens.model).toBeNull();
+    expect(withoutTokens.promptTokens).toBeNull();
+  });
+
+  it('does not record rows for non-positive charges', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+
+    await chargeCreditsToLedger({ sessionId, credits: 0, category: 'tts', label: 'zero' });
+    await chargeCreditsToLedger({ sessionId, credits: -1, category: 'tts', label: 'negative' });
+
+    expect(await readEvents(sessionId)).toHaveLength(0);
+  });
+
+  it('cascades on session delete and prunes by timestamp', async () => {
+    const userId = await insertUser();
+    const studentId = await insertStudent(userId);
+    const sessionId = await insertSession(userId, studentId);
+    const otherSession = await insertSession(userId, studentId);
+
+    await chargeCreditsToLedger({ sessionId, credits: 0.01, category: 'observer', label: 'a' });
+    await chargeCreditsToLedger({ sessionId: otherSession, credits: 0.02, category: 'observer', label: 'b' });
+
+    // Prune everything older than "now + 1 minute" — removes both rows.
+    const future = new Date(Date.now() + 60_000);
+    const pruned = await chatRepository.deleteSessionCostEventsBefore(future);
+    expect(pruned).toBe(2);
+    expect(await readEvents(sessionId)).toHaveLength(0);
+
+    // FK cascade: a fresh event then deleting the parent session removes it.
+    await chargeCreditsToLedger({ sessionId, credits: 0.01, category: 'observer', label: 'c' });
+    expect(await readEvents(sessionId)).toHaveLength(1);
+    await db.delete(chatSessions).where(eq(chatSessions.id, sessionId));
+    expect(await readEvents(sessionId)).toHaveLength(0);
   });
 });

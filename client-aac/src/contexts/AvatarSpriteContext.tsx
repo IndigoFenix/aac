@@ -183,7 +183,13 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     : isRestingState
     ? "rest"
     : "open";
-  const earState: EarState = isSleepingState
+  // Audio capture deliberately toggled off → ears closed ("not listening on
+  // purpose"), same visual language as standby. An UNINTENDED mic loss
+  // (acquisition failure / track revoked) is NOT shown here — that's an error,
+  // surfaced by the red mic-off indicator next to the face mirror instead.
+  const earState: EarState = !voiceEnabled
+    ? "closed"
+    : isSleepingState
     ? "open"
     : isStandbyMode
     ? "closed"
@@ -192,7 +198,7 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     : "open";
 
   // Ears flap at double speed (1000ms vs 2000ms) while actively listening.
-  const earFlapSpeed: number = isSleepingState ? 5000 : isStandbyMode ? 0 : isAssistMode ? 0 : listening ? 1000 : 2000;
+  const earFlapSpeed: number = isSleepingState ? 5000 : !voiceEnabled || isStandbyMode || isAssistMode ? 0 : listening ? 1000 : 2000;
 
   const { renderedEye, renderedEar } = useAvatarFrames(eyeState, earState, earFlapSpeed, snapshotTick);
 

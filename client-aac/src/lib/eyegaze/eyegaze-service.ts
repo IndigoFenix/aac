@@ -2,6 +2,7 @@
 // Orchestrator: registers providers, auto-detects the best available source, emits unified GazeData.
 
 import type { EyeGazeProvider, EyeGazeProviderType, EyeGazeProviderStatus, GazeCallback, GazeData } from "./types";
+import type { GazeSmootherConfig } from "@shared/gaze-smoothing.js";
 
 const DEFAULT_PROBE_PRIORITY: EyeGazeProviderType[] = [
   "tobii", "eyetech", "lctech", "gazepoint", "webhid", "mouse",
@@ -90,6 +91,11 @@ export class EyeGazeService {
 
   onGaze(cb: GazeCallback) { this.callbacks.add(cb); }
   offGaze(cb: GazeCallback) { this.callbacks.delete(cb); }
+
+  /** Push a smoothing config to every provider that supports it (hardware bridges). */
+  setSmoothing(config: GazeSmootherConfig | false) {
+    for (const p of this.providers.values()) p.setSmoothing?.(config);
+  }
 
   getActiveProvider(): EyeGazeProvider | null {
     return this.active;

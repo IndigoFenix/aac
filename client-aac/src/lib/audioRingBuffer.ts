@@ -18,6 +18,14 @@ const BUFFER_SIZE = TARGET_SAMPLE_RATE * BUFFER_DURATION_S; // 480,000 samples
 /** Callback for streaming raw PCM chunks (base64-encoded Int16 at 16kHz) */
 export type PcmChunkCallback = (int16Base64: string) => void;
 
+/** Callback for fixed-size 16kHz Float32 frames (neural VAD input).
+ *  `frameEndMs` is the wall-clock time of the END of the frame, on the same
+ *  clock extractWav uses — so VAD boundaries can be fed straight back in. */
+export type VadFrameCallback = (frame: Float32Array, frameEndMs: number) => void;
+
+/** Samples per VAD frame (Silero's 512 @ 16kHz = 32ms). */
+export const VAD_FRAME_SAMPLES = 512;
+
 export class AudioRingBuffer {
   private buffer: Float32Array;
   private writeIndex = 0;
@@ -29,6 +37,11 @@ export class AudioRingBuffer {
 
   /** Optional callback for real-time PCM streaming (e.g., to Gemini Live API) */
   private onPcmChunk: PcmChunkCallback | null = null;
+
+  /** Optional consumer of fixed 512-sample frames (neural VAD). */
+  private onVadFrame: VadFrameCallback | null = null;
+  private vadFrame = new Float32Array(VAD_FRAME_SAMPLES);
+  private vadFrameFill = 0;
 
   constructor(nativeSampleRate: number) {
     this.buffer = new Float32Array(BUFFER_SIZE);
@@ -43,6 +56,15 @@ export class AudioRingBuffer {
    */
   setStreamCallback(callback: PcmChunkCallback | null): void {
     this.onPcmChunk = callback;
+  }
+
+  /**
+   * Set a callback to receive consecutive 512-sample 16kHz Float32 frames for
+   * neural VAD. Frames are copies (safe to hand to async inference).
+   */
+  setVadFrameCallback(callback: VadFrameCallback | null): void {
+    this.onVadFrame = callback;
+    this.vadFrameFill = 0;
   }
 
   /**
@@ -113,6 +135,18 @@ export class AudioRingBuffer {
       this.buffer[this.writeIndex] = sample;
       this.writeIndex = (this.writeIndex + 1) % BUFFER_SIZE;
       this.totalSamplesWritten++;
+
+      // Accumulate fixed VAD frames on the same 16kHz stream. frameEndMs is
+      // derived from the sample count on the startWallTime clock — the same
+      // mapping extractWav uses, so boundary times round-trip exactly.
+      if (this.onVadFrame) {
+        this.vadFrame[this.vadFrameFill++] = sample;
+        if (this.vadFrameFill === VAD_FRAME_SAMPLES) {
+          this.vadFrameFill = 0;
+          const frameEndMs = this.startWallTime + (this.totalSamplesWritten / TARGET_SAMPLE_RATE) * 1000;
+          this.onVadFrame(new Float32Array(this.vadFrame), frameEndMs);
+        }
+      }
 
       // Convert Float32 [-1,1] to Int16 [-32768, 32767] for streaming
       if (int16Buffer) {

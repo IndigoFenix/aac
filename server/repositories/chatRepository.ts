@@ -11,6 +11,7 @@ import {
   students,
   institutes,
   sessionDebugLogs,
+  sessionCostEvents,
   type ChatSession,
   type InsertChatSession,
   type ChatState,
@@ -745,6 +746,70 @@ export class ChatRepository {
     const result = await db
       .delete(sessionDebugLogs)
       .where(lt(sessionDebugLogs.timestamp, before));
+    return result.rowCount ?? 0;
+  }
+
+  /**
+   * The per-charge cost time-series for one session, ordered oldest→newest so
+   * callers can chart how spend accrued OVER the session. Returns null if the
+   * session doesn't exist (or is soft-deleted), mirroring getSessionDebugLog.
+   */
+  async getSessionCostEvents(
+    sessionId: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<{
+    entries: Array<{
+      id: string; timestamp: Date; category: string; credits: number;
+      model: string | null; promptTokens: number | null; completionTokens: number | null;
+      cachedTokens: number | null; cacheCreationTokens: number | null; label: string | null;
+    }>;
+    total: number;
+  } | null> {
+    const [session] = await db
+      .select({ id: chatSessions.id })
+      .from(chatSessions)
+      .where(and(eq(chatSessions.id, sessionId), isNull(chatSessions.deletedAt)));
+    if (!session) return null;
+
+    const limit = Math.min(Math.max(opts.limit ?? 1000, 1), 10000);
+    const offset = Math.max(opts.offset ?? 0, 0);
+
+    const [totalRow] = await db
+      .select({ total: count() })
+      .from(sessionCostEvents)
+      .where(eq(sessionCostEvents.sessionId, sessionId));
+
+    const entries = await db
+      .select({
+        id: sessionCostEvents.id,
+        timestamp: sessionCostEvents.timestamp,
+        category: sessionCostEvents.category,
+        credits: sessionCostEvents.credits,
+        model: sessionCostEvents.model,
+        promptTokens: sessionCostEvents.promptTokens,
+        completionTokens: sessionCostEvents.completionTokens,
+        cachedTokens: sessionCostEvents.cachedTokens,
+        cacheCreationTokens: sessionCostEvents.cacheCreationTokens,
+        label: sessionCostEvents.label,
+      })
+      .from(sessionCostEvents)
+      .where(eq(sessionCostEvents.sessionId, sessionId))
+      .orderBy(asc(sessionCostEvents.timestamp))
+      .limit(limit)
+      .offset(offset);
+
+    return { entries, total: totalRow?.total ?? 0 };
+  }
+
+  /**
+   * Bulk-delete per-charge cost events older than `before` — the verbose
+   * cost time-series counterpart to `deleteSessionDebugLogsBefore`, pruned by
+   * the same admin maintenance action. Returns the number of rows removed.
+   */
+  async deleteSessionCostEventsBefore(before: Date): Promise<number> {
+    const result = await db
+      .delete(sessionCostEvents)
+      .where(lt(sessionCostEvents.timestamp, before));
     return result.rowCount ?? 0;
   }
 }

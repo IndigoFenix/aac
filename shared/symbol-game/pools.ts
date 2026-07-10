@@ -77,6 +77,78 @@ export const POOLS: Record<string, PoolDef> = {
       { id: "sock", label: "Sock", iconRef: "🧦", symbol: "sock", glyphStatus: "queued" },
     ],
   },
+  device: {
+    id: "device",
+    affordance: "toggleable",
+    members: [
+      { id: "lamp", label: "Lamp", iconRef: "💡", symbol: "lamp", glyphStatus: "queued" },
+      { id: "window", label: "Window", iconRef: "🪟", symbol: "window", glyphStatus: "queued" },
+      { id: "heater", label: "Heater", iconRef: "🔥", symbol: "heater", glyphStatus: "queued" },
+    ],
+  },
+  powerSource: {
+    id: "powerSource",
+    affordance: "toggleable",
+    members: [
+      { id: "generator", label: "Generator", iconRef: "🔋", symbol: "generator", glyphStatus: "queued" },
+      { id: "switch", label: "Switch", iconRef: "🎚️", symbol: "switch", glyphStatus: "queued" },
+    ],
+  },
+  // -- motive-batch pools (motive-driven-needs.md follow-ups) ------------------
+  instrument: {
+    id: "instrument",
+    affordance: "repeatable-effect",
+    members: [
+      { id: "drum", label: "Drum", iconRef: "🥁", symbol: "drum", glyphStatus: "queued" },
+      { id: "guitar", label: "Guitar", iconRef: "🎸", symbol: "guitar", glyphStatus: "queued" },
+    ],
+  },
+  reading: {
+    id: "reading",
+    affordance: "graspable",
+    members: [{ id: "book", label: "Book", iconRef: "📖", symbol: "book", glyphStatus: "queued" }],
+  },
+  clothing: {
+    id: "clothing",
+    affordance: "graspable",
+    members: [
+      { id: "hat", label: "Hat", iconRef: "🧢", symbol: "hat", glyphStatus: "queued" },
+      { id: "shirt", label: "Shirt", iconRef: "👕", symbol: "shirt", glyphStatus: "queued" },
+      { id: "scarf", label: "Scarf", iconRef: "🧣", symbol: "scarf", glyphStatus: "queued" },
+    ],
+  },
+  disposal: {
+    id: "disposal",
+    affordance: "container",
+    members: [{ id: "garbage", label: "Garbage can", iconRef: "🗑️", symbol: "garbage", glyphStatus: "queued" }],
+  },
+};
+
+/**
+ * KIND → CATEGORY (motive-driven-needs.md parameter matching): the shared tag a
+ * category-target need matches against ("I want food" ← any treat). One flat
+ * map, read by the derivation when it builds item facets — pool membership and
+ * category deliberately stay separate (a sock is reject-pool but clothing).
+ */
+export const KIND_CATEGORY: Record<string, string> = {
+  cookie: "food",
+  apple: "food",
+  banana: "food",
+  grape: "food",
+  broccoli: "food",
+  ball: "toy",
+  car: "toy",
+  train: "toy",
+  blocks: "toy",
+  teddy: "toy",
+  boat: "toy",
+  drum: "instrument",
+  guitar: "instrument",
+  book: "book",
+  hat: "clothing",
+  shirt: "clothing",
+  scarf: "clothing",
+  sock: "clothing",
 };
 
 /** Look up a pool by id (slot name). */

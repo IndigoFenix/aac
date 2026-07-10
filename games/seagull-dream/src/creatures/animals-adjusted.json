@@ -1,0 +1,345 @@
+[{
+  "name": "elephant",
+  "version": 1,
+  "spine": {
+    "torsoSegments": 6,
+    "torsoLengthM": 5,
+    "girth": 0.45,
+    "girthPeak": 0.62,
+    "frontTaper": 0.255,
+    "rearTaper": 0.33,
+    "crossSection": 1,
+    "profile": []
+  },
+  "neck": {
+    "segments": 2,
+    "lengthFrac": 0,
+    "radiusFrac": 0.756,
+    "lift": -0.005
+  },
+  "tail": {
+    "segments": 5,
+    "lengthFrac": 0.7,
+    "radiusFrac": 0.18775,
+    "droop": -1.2
+  },
+  "head": {
+    "sizeFrac": 0.851,
+    "lengthFrac": 0.96,
+    "crossSection": 1,
+    "facePitch": -0.0629999999999999,
+    "faceHeight": 0.1,
+    "beak": 0,
+    "beakLengthFrac": 2.5,
+    "snoutRadiusFrac": 0.4244,
+    "snoutFlatten": 1.09175,
+    "snoutCurve": 0.83,
+    "jawFrac": 0.21,
+    "eyePairs": 1,
+    "eyeSizeFrac": 0.12,
+    "eyeAngle": 1,
+    "eyeHeight": 0.35,
+    "eyeBulge": 0.35
+  },
+  "limbGroups": [
+    {
+      "placement": "bilateral",
+      "count": 2,
+      "stationStart": 0.065,
+      "stationEnd": 0.85,
+      "sizePeak": 0.915,
+      "sizeContrast": 0,
+      "lengthFrac": 0.424,
+      "radiusFrac": 0.30075,
+      "taper": 0.7075,
+      "membrane": 0,
+      "attachHeight": 0.165,
+      "restProtraction": -1,
+      "restLevation": -1,
+      "restFlexion": -0.01,
+      "flexRange": 0.365,
+      "legTwist": 0.06,
+      "legBalance": 0,
+      "footLengthFrac": 0.324,
+      "stance": 0.85,
+      "ankleRange": 0.54,
+      "toeCount": 4,
+      "toeLengthFrac": 0.64,
+      "toeSpread": 1.4,
+      "toeContrast": 0,
+      "opposition": 0,
+      "toeCurl": 0.055
+    }
+  ],
+  "chains": [],
+  "membranes": [],
+  "growths": [],
+  "skin": {
+    "baseColor": "#82807d",
+    "bellyColor": "#cbcac8",
+    "accentColor": "#545454"
+  },
+  "posture": {
+    "bodyPitch": 0.0655,
+    "bodyHeight": 0.84
+  }
+},
+
+{
+  "name": "horse",
+  "version": 1,
+  "spine": {
+    "torsoSegments": 6,
+    "torsoLengthM": 1.2,
+    "girth": 0.36,
+    "girthPeak": 0.33,
+    "frontTaper": 0.275,
+    "rearTaper": 0.44,
+    "crossSection": 1,
+    "profile": []
+  },
+  "neck": {
+    "segments": 4,
+    "lengthFrac": 0.3625,
+    "radiusFrac": 0.45,
+    "lift": 0.985
+  },
+  "tail": {
+    "segments": 7,
+    "lengthFrac": 0.855,
+    "radiusFrac": 0.3,
+    "droop": -1.2
+  },
+  "head": {
+    "sizeFrac": 0.683,
+    "lengthFrac": 1.14,
+    "crossSection": 1,
+    "facePitch": -0.558,
+    "faceHeight": 0,
+    "beak": 0,
+    "beakLengthFrac": 1.1625,
+    "snoutRadiusFrac": 0.777,
+    "snoutFlatten": 0.94125,
+    "snoutCurve": 0.04,
+    "jawFrac": 1,
+    "eyePairs": 1,
+    "eyeSizeFrac": 0.18,
+    "eyeAngle": 1.311,
+    "eyeHeight": 0.651,
+    "eyeBulge": 0.54
+  },
+  "limbGroups": [
+    {
+      "placement": "bilateral",
+      "count": 2,
+      "stationStart": 0.145,
+      "stationEnd": 0.85,
+      "sizePeak": 1,
+      "sizeContrast": 0,
+      "lengthFrac": 0.556,
+      "radiusFrac": 0.43185,
+      "taper": 0.19,
+      "membrane": 0,
+      "attachHeight": 0.135,
+      "restProtraction": -0.47,
+      "restLevation": -0.73,
+      "restFlexion": 0.08,
+      "flexRange": 0.55,
+      "legTwist": -0.78,
+      "legBalance": 0,
+      "footLengthFrac": 0.6,
+      "stance": 1,
+      "ankleRange": 1,
+      "toeCount": 1,
+      "toeLengthFrac": 0.2,
+      "toeSpread": 0.399,
+      "toeContrast": 0,
+      "opposition": 0,
+      "toeCurl": 0.1
+    }
+  ],
+  "chains": [],
+  "membranes": [],
+  "growths": [],
+  "skin": {
+    "baseColor": "#8a7456",
+    "bellyColor": "#cdbfa3",
+    "accentColor": "#3d3528"
+  },
+  "posture": {
+    "bodyPitch": 0.0845,
+    "bodyHeight": 0.805
+  }
+},
+{
+  "name": "cat",
+  "version": 1,
+  "spine": {
+    "torsoSegments": 6,
+    "torsoLengthM": 0.4,
+    "girth": 0.2,
+    "girthPeak": 0.44,
+    "frontTaper": 0.465,
+    "rearTaper": 0.44,
+    "crossSection": 1.28,
+    "profile": []
+  },
+  "neck": {
+    "segments": 4,
+    "lengthFrac": 0.05,
+    "radiusFrac": 0.45,
+    "lift": 0.1
+  },
+  "tail": {
+    "segments": 10,
+    "lengthFrac": 1.56,
+    "radiusFrac": 0.3,
+    "droop": -0.168
+  },
+  "head": {
+    "sizeFrac": 0.683,
+    "lengthFrac": 1.14,
+    "crossSection": 1,
+    "facePitch": -0.0269999999999999,
+    "faceHeight": -0.09,
+    "beak": 0,
+    "beakLengthFrac": 0.3875,
+    "snoutRadiusFrac": 0.7319,
+    "snoutFlatten": 1.21,
+    "snoutCurve": -0.69,
+    "jawFrac": 0.63,
+    "eyePairs": 1,
+    "eyeSizeFrac": 0.18,
+    "eyeAngle": 0.42,
+    "eyeHeight": 0.651,
+    "eyeBulge": 0.54
+  },
+  "limbGroups": [
+    {
+      "placement": "bilateral",
+      "count": 2,
+      "stationStart": 0.145,
+      "stationEnd": 0.85,
+      "sizePeak": 1,
+      "sizeContrast": 0,
+      "lengthFrac": 0.424,
+      "radiusFrac": 0.43185,
+      "taper": 0.19,
+      "membrane": 0,
+      "attachHeight": 0.175,
+      "restProtraction": -0.47,
+      "restLevation": -0.73,
+      "restFlexion": 0.08,
+      "flexRange": 0.55,
+      "legTwist": -0.78,
+      "legBalance": 0,
+      "footLengthFrac": 0.378,
+      "stance": 0.665,
+      "ankleRange": 1,
+      "toeCount": 4,
+      "toeLengthFrac": 0.508,
+      "toeSpread": 0.77,
+      "toeContrast": 0.035,
+      "opposition": 0,
+      "toeCurl": 0.02
+    }
+  ],
+  "chains": [],
+  "membranes": [],
+  "growths": [],
+  "skin": {
+    "baseColor": "#8a7456",
+    "bellyColor": "#cdbfa3",
+    "accentColor": "#3d3528"
+  },
+  "posture": {
+    "bodyPitch": 0.0655,
+    "bodyHeight": 0.82
+  }
+},
+{
+  "name": "dog",
+  "version": 1,
+  "spine": {
+    "torsoSegments": 6,
+    "torsoLengthM": 1.7,
+    "girth": 0.258,
+    "girthPeak": 0.44,
+    "frontTaper": 0.465,
+    "rearTaper": 0.75,
+    "crossSection": 1.28,
+    "profile": []
+  },
+  "neck": {
+    "segments": 4,
+    "lengthFrac": 0.1125,
+    "radiusFrac": 0.45,
+    "lift": 0.1
+  },
+  "tail": {
+    "segments": 10,
+    "lengthFrac": 0.495,
+    "radiusFrac": 0.3,
+    "droop": 0.528
+  },
+  "head": {
+    "sizeFrac": 0.739,
+    "lengthFrac": 0.915,
+    "crossSection": 1,
+    "facePitch": -0.342,
+    "faceHeight": 0.08,
+    "beak": 0,
+    "beakLengthFrac": 0.6875,
+    "snoutRadiusFrac": 0.7606,
+    "snoutFlatten": 1.21,
+    "snoutCurve": -0.82,
+    "jawFrac": 0.84,
+    "eyePairs": 1,
+    "eyeSizeFrac": 0.18,
+    "eyeAngle": 0.582,
+    "eyeHeight": 0.651,
+    "eyeBulge": 0.54
+  },
+  "limbGroups": [
+    {
+      "placement": "bilateral",
+      "count": 2,
+      "stationStart": 0.145,
+      "stationEnd": 0.61,
+      "sizePeak": 1,
+      "sizeContrast": 0,
+      "lengthFrac": 0.388,
+      "radiusFrac": 0.43185,
+      "taper": 0.298,
+      "membrane": 0,
+      "attachHeight": 0.175,
+      "restProtraction": -0.47,
+      "restLevation": -0.73,
+      "restFlexion": 0.08,
+      "flexRange": 0.55,
+      "legTwist": -0.78,
+      "legBalance": 0,
+      "footLengthFrac": 0.378,
+      "stance": 0.665,
+      "ankleRange": 1,
+      "toeCount": 4,
+      "toeLengthFrac": 0.508,
+      "toeSpread": 0.77,
+      "toeContrast": 0.035,
+      "opposition": 0,
+      "toeCurl": 0.02
+    }
+  ],
+  "chains": [],
+  "membranes": [],
+  "growths": [],
+  "skin": {
+    "baseColor": "#8a7456",
+    "bellyColor": "#cdbfa3",
+    "accentColor": "#3d3528"
+  },
+  "posture": {
+    "bodyPitch": 0.0655,
+    "bodyHeight": 0.805
+  }
+}]

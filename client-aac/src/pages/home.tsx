@@ -104,6 +104,7 @@ import { createPortal } from "react-dom";
 import { useEyeGaze } from "@/hooks/useEyeGaze";
 import { useGazeSidecar } from "@/hooks/useGazeSidecar";
 import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
+import { DEFAULT_SMOOTHING_STRENGTH, type GazeSmoothingStrength } from "@shared/gaze-smoothing.js";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
@@ -125,7 +126,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -144,6 +145,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
   onEnabledAppsChange?: (apps: Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>) => void;
   onAvailableCustomAppsChange?: (apps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>) => void;
+  onPermittedWebsitesChange?: (sites: PermittedWebsite[]) => void;
   onLaunchAppReady?: (fn: ((appId: string, appData?: any) => void) | null) => void;
   onRequestAppOpenReady?: (fn: ((appId: string, appData?: any) => void) | null) => void;
   onAppOpenPendingChange?: (pendingAppId: string | null) => void;
@@ -171,7 +173,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
    *  close exactly when the interpreted sentence starts. */
   onVoicingStudentChange?: (voicing: boolean) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, processing, voicingStudent } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, processing, voicingStudent } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -313,6 +315,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   useEffect(() => {
     onAvailableCustomAppsChange?.(availableCustomApps);
   }, [availableCustomApps, onAvailableCustomAppsChange]);
+
+  useEffect(() => {
+    onPermittedWebsitesChange?.(permittedWebsitesFromCtx);
+  }, [permittedWebsitesFromCtx, onPermittedWebsitesChange]);
 
   useEffect(() => {
     onLaunchAppReady?.(launchApp);
@@ -502,8 +508,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
 
   // Eyegaze dwell settings — stored in DB via student profile
-  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number }>({
-    enabled: false, provider: "mouse", timeout: 2000
+  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number; smoothing: GazeSmoothingStrength }>({
+    enabled: false, provider: "mouse", timeout: 2000, smoothing: DEFAULT_SMOOTHING_STRENGTH
   });
   // Sync eyegaze settings from userProfile when it loads
   useEffect(() => {
@@ -513,6 +519,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
         enabled: aac?.eyegazeEnabled ?? false,
         provider: aac?.eyegazeProvider ?? "mouse",
         timeout: aac?.eyegazeTimeout ?? 2000,
+        smoothing: (aac?.eyegazeSmoothing as GazeSmoothingStrength) ?? DEFAULT_SMOOTHING_STRENGTH,
       });
     }
   }, [userProfile]);
@@ -741,6 +748,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // DualAgentContext (the overlay renders outside the provider subtree).
   const [enabledApps, setEnabledApps] = useState<Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>>([]);
   const [availableCustomApps, setAvailableCustomApps] = useState<Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>>([]);
+  // Permitted websites bridged from the live session snapshot. Preferred over
+  // the REST userProfile copy, which can silently fail to load on some devices
+  // (the snapshot rides the same channel as the app lists). See the merge below.
+  const [snapshotPermittedWebsites, setSnapshotPermittedWebsites] = useState<PermittedWebsite[]>([]);
+  // Prefer the snapshot copy; fall back to the REST profile so nothing regresses
+  // before the first snapshot arrives (or if the session isn't up yet).
+  const effectivePermittedWebsites: PermittedWebsite[] = snapshotPermittedWebsites.length
+    ? snapshotPermittedWebsites
+    : ((userProfile?.aacSettings?.permittedWebsites as PermittedWebsite[] | undefined) || []);
   const launchAppFnRef = useRef<((appId: string, appData?: any) => void) | null>(null);
   // request_app_open round-trip (apps with server-resolved startup params),
   // bridged from DualAgentContext (the Apps overlay renders outside the provider).
@@ -899,6 +915,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     enabled: eyegazeSettings.enabled && !isCursorControlMode,
     rawFaces,
     preferredProvider: eyegazeSettings.provider,
+    smoothingStrength: eyegazeSettings.smoothing,
   });
 
   // DLL-based hardware trackers (currently Tobii) need a sidecar process spawned
@@ -2154,7 +2171,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               <AppsBoard
                 enabledApps={enabledApps}
                 availableCustomApps={availableCustomApps}
-                permittedWebsites={(userProfile?.aacSettings?.permittedWebsites as PermittedWebsite[] | undefined) || []}
+                permittedWebsites={effectivePermittedWebsites}
                 captionsActive={glyphStripActive}
                 onPick={(appId, displayName, appData) => {
                   // Ignore further taps while a startup-resolution round-trip
@@ -2374,7 +2391,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 registerAppCanvasCaptureRef.current,
                 studentId,
                 (msg) => sendMessageFnRef.current?.(msg),
-                (userProfile?.aacSettings?.permittedWebsites as PermittedWebsite[] | undefined) || [],
+                effectivePermittedWebsites,
                 (text) => sendContextOnlyFnRef.current?.(text),
                 gameEmbedRef,
                 handleBoardOptions,
@@ -2716,6 +2733,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
             onEnabledAppsChange={setEnabledApps}
             onAvailableCustomAppsChange={setAvailableCustomApps}
+            onPermittedWebsitesChange={setSnapshotPermittedWebsites}
             onLaunchAppReady={(fn) => { launchAppFnRef.current = fn; }}
             onRequestAppOpenReady={(fn) => { requestAppOpenFnRef.current = fn; }}
             onAppOpenPendingChange={setAppOpenPending}

@@ -48,6 +48,11 @@ const L: Record<string, Lexeme> = {
   color_black: { w: "preto" },
   color_white: { w: "branco" },
   place: { w: "onde" },
+  // Cardinal directions — the "perto/longe, ao norte" answers.
+  north: { w: "norte" },
+  south: { w: "sul" },
+  east: { w: "leste" },
+  west: { w: "oeste" },
   home: { w: "casa", g: "f" },
   thing: { w: "quê" },
   cookie: { w: "biscoito", g: "m" },
@@ -70,6 +75,44 @@ const L: Record<string, Lexeme> = {
   boat: { w: "barco", g: "m" },
   broccoli: { w: "brócolis", g: "m", mass: true },
   sock: { w: "meia", g: "f" },
+  // Devices (§5) + their toggle states (agree with the device's gender).
+  lamp: { w: "lâmpada", g: "f" },
+  window: { w: "janela", g: "f" },
+  heater: { w: "aquecedor", g: "m" },
+  generator: { w: "gerador", g: "m" },
+  switch: { w: "interruptor", g: "m" },
+  on: { w: "aceso", f: "acesa" },
+  off: { w: "apagado", f: "apagada" },
+  open: { w: "aberto", f: "aberta" },
+  closed: { w: "fechado", f: "fechada" },
+  // Motive batch: verbs (infinitives for the want-to frame), conditions,
+  // categories, new pool items.
+  play: { w: "brinco", inf: "brincar" },
+  read: { w: "leio", inf: "ler" },
+  wear: { w: "me visto", inf: "me vestir" },
+  throw: { w: "jogo", v3: "joga", v3p: "jogam" },
+  lonely: { w: "sozinho" },
+  hungry: { w: "faminto" }, // rarely surfaces — the feel() clause covers "i_me + hungry"
+  smelly: { w: "fedido" },
+  food: { w: "comida", g: "f", mass: true },
+  toy: { w: "brinquedo", g: "m" },
+  instrument: { w: "instrumento", g: "m" },
+  book: { w: "livro", g: "m" },
+  clothing: { w: "roupa", g: "f", mass: true },
+  garbage: { w: "lixo", g: "m", mass: true },
+  hat: { w: "chapéu", g: "m" },
+  shirt: { w: "camiseta", g: "f" },
+  scarf: { w: "cachecol", g: "m" },
+  drum: { w: "tambor", g: "m" },
+  guitar: { w: "violão", g: "m" },
+};
+
+const PT_CONN: Record<string, string> = {
+  because: "porque",
+  therefore: "então",
+  in_order_to: "para",
+  when: "quando",
+  until: "até",
 };
 
 export const pt = makeRomance({
@@ -102,6 +145,47 @@ export const pt = makeRomance({
   whatWant: "O que você quer?",
   tradeWhat: "Trocar pelo quê?",
   tradeFor: (forPhrase) => `Trocar ${forPhrase}?`,
+  something: "algo",
+  // "Estou com frio / calor / fome" — sensation is estar com + noun.
+  feel: (head, subj) => {
+    const noun = head === "hot" ? "calor" : head === "hungry" ? "fome" : "frio";
+    const v = subj.head === "i_me" ? "Estou com" : "Está com";
+    return `${v} ${noun}.`;
+  },
+  // "Eu gosto do biscoito." / "Eu gosto de vermelho." — gostar DE, contracting
+  // with the article (de+o → do, de+a → da).
+  like: (obj) => {
+    if (obj.kind === "quality") return `Eu gosto de ${obj.word}.`;
+    const t = obj.text;
+    const de = t.startsWith("o ")
+      ? `do ${t.slice(2)}`
+      : t.startsWith("a ")
+        ? `da ${t.slice(2)}`
+        : t.startsWith("os ")
+          ? `dos ${t.slice(3)}`
+          : t.startsWith("as ")
+            ? `das ${t.slice(3)}`
+            : `de ${t}`;
+    return `Eu gosto ${de}.`;
+  },
+  wantTo: (inf) => `Quero ${inf}.`,
+  takeMeTo: (np) => `Me leva até ${np}.`,
+  stayWithMe: "Fica comigo.",
+  directions: (np, be, proximity, dir) => {
+    const tail =
+      proximity === "here"
+        ? "aqui"
+        : proximity === "there"
+          ? "ali"
+          : proximity === "street"
+            ? "nesta rua"
+            : `${proximity === "close" ? "perto" : "longe"}, ao ${dir}`;
+    return `${np} ${be} ${tail}.`;
+  },
+  smell: { v3: "cheira", v3p: "cheiram" },
+  connective: (head) => PT_CONN[head] ?? head,
+  why: "Por quê?",
+  whyWant: (obj) => `Por que você quer ${obj}?`,
   q: (s) => `${s}?`,
   fixed: {
     "i_me + help + you": "Vou te ajudar.",
@@ -113,5 +197,10 @@ export const pt = makeRomance({
     there: "Ali!",
     "thank_you": (o) => (o.speaker === "f" ? "Obrigada!" : "Obrigado!"),
     goodbye: "Tchau!",
+    // Motive batch: the stay-with level-a line, the hungry motive alone, the
+    // dwell-done thanks (speaker-gendered obrigado/a).
+    stay: "Fica comigo.",
+    hungry: "Estou com fome.",
+    "i_me + ok + thank_you": (o) => (o.speaker === "f" ? "Estou bem, obrigada!" : "Estou bem, obrigado!"),
   },
 });

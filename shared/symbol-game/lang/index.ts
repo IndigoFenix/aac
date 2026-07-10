@@ -13,9 +13,17 @@ import { en } from "./en.js";
 import { he } from "./he.js";
 import { es } from "./es.js";
 import { pt } from "./pt.js";
-import { genderOf, translateWith, type GlyphLanguage, type SpeakOpts } from "./core.js";
+import {
+  directionsFrame,
+  genderOf,
+  translateWith,
+  type DirCardinal,
+  type DirProximity,
+  type GlyphLanguage,
+  type SpeakOpts,
+} from "./core.js";
 
-export type { GlyphLanguage, SpeakOpts, Lexeme, Frame, Token, Gender } from "./core.js";
+export type { GlyphLanguage, SpeakOpts, Lexeme, Frame, Token, Gender, DirProximity, DirCardinal } from "./core.js";
 export { parseSentence, classify, normalize } from "./core.js";
 export { en } from "./en.js";
 export { he } from "./he.js";
@@ -33,6 +41,27 @@ export function languageFor(locale: string | undefined): GlyphLanguage {
 /** Translate one glyph SENTENCE into the locale's proper spoken text. */
 export function translateGlyph(glyph: string, locale: string | undefined, opts?: SpeakOpts): string {
   return translateWith(languageFor(locale), glyph, opts);
+}
+
+/**
+ * Speak the "asking for directions" answer in the locale: a thing GLYPH
+ * ("home.color_blue", "toy") + the proximity + cardinal resolved by the host
+ * from town geometry (symbol-game/directions.ts) → "The blue house is far, to
+ * the north." The cardinal is only voiced by the close/far phrases.
+ */
+export function speakDirections(
+  thingGlyph: string,
+  proximity: DirProximity,
+  cardinal: DirCardinal,
+  locale: string | undefined,
+  opts?: SpeakOpts,
+): string {
+  const lang = languageFor(locale);
+  return lang.render(directionsFrame(thingGlyph, proximity, cardinal), {
+    speaker: opts?.speaker ?? "m",
+    addressee: opts?.addressee ?? "m",
+    firstPerson: opts?.firstPerson ?? false,
+  });
 }
 
 /** Grammatical gender the locale assigns to a speaker's creature symbol —

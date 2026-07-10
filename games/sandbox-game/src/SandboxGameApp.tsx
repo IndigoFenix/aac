@@ -17,7 +17,7 @@ import SystemToolbar from './SystemToolbar';
 import DebugPanel from './DebugPanel';
 import CellSystemEditor from './CellSystemEditor';
 import { applyOverrides, resetOverrides } from './debug-config';
-import { intTerrain, type SystemSpec, type ToolSpec } from './cell-systems';
+import { intTerrain, type SystemSpec, type ToolSpec } from '@shared/engine/cells';
 import type { ToolId } from './types';
 
 const GAME_ID = 'sandbox-game';

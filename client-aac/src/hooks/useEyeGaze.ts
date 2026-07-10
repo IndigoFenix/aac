@@ -11,11 +11,14 @@ import { MouseGazeProvider } from "@/lib/eyegaze/mouse-provider";
 import { createTobiiProvider, createEyeTechProvider, createLCTechProvider, createGazepointProvider } from "@/lib/eyegaze/websocket-bridge-provider";
 import { WebHIDGazeProvider } from "@/lib/eyegaze/webhid-provider";
 import type { GazeData, GazePoint, EyeGazeProviderType, EyeGazeProviderStatus } from "@/lib/eyegaze/types";
+import { smoothingConfigForStrength, DEFAULT_SMOOTHING_STRENGTH, type GazeSmoothingStrength } from "@shared/gaze-smoothing.js";
 
 interface UseEyeGazeOptions {
   enabled: boolean;
   rawFaces: RawTrackedFace[];
   preferredProvider?: EyeGazeProviderType | "auto";
+  /** Per-student pixel-space smoothing strength for hardware trackers. */
+  smoothingStrength?: GazeSmoothingStrength;
 }
 
 // Samples below this confidence don't move the gaze point. Providers signal
@@ -41,7 +44,7 @@ interface UseEyeGazeReturn {
   clearCalibration: () => void;
 }
 
-export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: UseEyeGazeOptions): UseEyeGazeReturn {
+export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto", smoothingStrength = DEFAULT_SMOOTHING_STRENGTH }: UseEyeGazeOptions): UseEyeGazeReturn {
   // Track whether auto-detection has finished (prevents premature calibration)
   const [detectionDone, setDetectionDone] = useState(false);
   const serviceRef = useRef<EyeGazeService | null>(null);
@@ -81,6 +84,13 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
     // preferredProvider intentionally excluded — handled by switchProvider / re-detect
      
   }, []);
+
+  // Push smoothing strength to hardware providers whenever it changes. Runs
+  // after the create-effect registers providers; also re-applies when a
+  // provider is (re)activated since the config lives on the provider instance.
+  useEffect(() => {
+    serviceRef.current?.setSmoothing(smoothingConfigForStrength(smoothingStrength));
+  }, [smoothingStrength, activeProvider]);
 
   // Feed rawFaces to camera provider (ref-based, no re-render)
   const facesRef = useRef(rawFaces);

@@ -65,6 +65,23 @@ export interface AvatarState {
   /** Seconds since the last network packet — caps dead-reckoning so a peer whose
    *  packets stop (e.g. a backgrounded tab) freezes instead of gliding away. */
   tAge?: number;
+  /** A one-shot GESTURE for a creature-bodied avatar (e.g. an NPC pointing the
+   *  way). Display-only — `tickWorld` never reads it. The renderer's creature
+   *  factory fires it once per new `id` (converting the world target into the
+   *  body's local frame) and animates it; set by the game layer. */
+  gesture?: AvatarGesture;
+}
+
+/** A deictic gesture request on an avatar (currently just pointing). */
+export interface AvatarGesture {
+  kind: "point";
+  /** WORLD point to point at (the factory converts to the body-local frame). */
+  targetX: number;
+  targetY: number;
+  /** How long to hold the point, seconds. */
+  holdS: number;
+  /** Monotonic id — the renderer performs the gesture once per NEW id. */
+  id: number;
 }
 
 /**
@@ -125,6 +142,10 @@ export interface ObjectState {
   // --- containment ------------------------------------------------------------
   /** When placed on/in/under a container, where it rests; null when free. */
   containedIn: { objectId: string; relation: ContainRelation } | null;
+  // --- fixtures ----------------------------------------------------------------
+  /** Eased lid swing of an `openable` fixture, 0 (shut) → 1 (open) — opens
+   *  while someone stands beside it (the door rule). Render-only meaning. */
+  open: number;
 }
 
 /**
@@ -305,23 +326,7 @@ export function createWorldState(
   };
 
   const objects: Record<string, ObjectState> = {};
-  for (const o of spec.objects) {
-    objects[o.id] = {
-      id: o.id,
-      shape: o.shape,
-      x: o.x,
-      y: o.y,
-      vx: 0,
-      vy: 0,
-      floor: 0,
-      possessedBy: null,
-      freeRollOwner: null,
-      lastPossessor: null,
-      grabCooldownUntil: 0,
-      carriedBy: null,
-      containedIn: null,
-    };
-  }
+  for (const o of spec.objects) objects[o.id] = initialObjectState(o);
 
   const doors: Record<string, DoorState> = {};
   for (const s of spec.structures ?? []) {
@@ -415,6 +420,7 @@ export function tickWorld(
   // runs under the engine's structural constraint (walls + closed doors) composed
   // with any external one — so a door that just swung open is passable this step.
   tickDoors(state, step, config);
+  tickFixtures(state, step, config);
   if (local && step > 0) {
     // Collide against the avatar's CURRENT storey, move, then re-derive its floor
     // (a stairway it stepped onto ramps it up/down).
@@ -537,6 +543,16 @@ function advanceAvatar(
   } else {
     const r = config.avatarRadius;
     if (constraint.walkable({ x: nx, y: ny }, r)) {
+      a.x = nx;
+      a.y = ny;
+    } else if (!constraint.walkable({ x: a.x, y: a.y }, r)) {
+      // FAILSAFE: the avatar is ALREADY inside geometry (a spawn landed
+      // in a wall, a streamed structure materialized over a body, a spec
+      // put furniture on the start point). An invalid position must
+      // never be a prison — the constraint gates entry into solids FROM
+      // VALID SPACE only, so a stuck body moves freely and walks out
+      // (a thin wall resolves within a step or two, after which the
+      // normal gate takes over again).
       a.x = nx;
       a.y = ny;
     } else if (constraint.walkable({ x: nx, y: a.y }, r)) {
@@ -909,7 +925,11 @@ function effectiveConstraint(
   config: WorldEngineConfig,
   floor = 0,
 ): MoveConstraint | undefined {
-  return combineConstraints(external, makeStructureConstraint(state, floor, config));
+  return combineConstraints(
+    external,
+    makeStructureConstraint(state, floor, config),
+    makeFixtureConstraint(state, floor),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1047,6 +1067,94 @@ export function setWorldStructures(state: WorldState, structures: StructureSpec[
   state.doors = doors;
 }
 
+/**
+ * Replace the world's STREAMED buildings: registers the building volumes
+ * (so `buildingAt` works — roofs, floor slabs, the see-inside fade and
+ * the indoor-avatar cull all key on them) AND lowers them into their
+ * wall/door/stairs structures in one move. Streaming hosts (towns) call
+ * this instead of `setWorldStructures` — flattened walls alone lose the
+ * building identity, which is exactly a roofless, cull-less house.
+ */
+function initialObjectState(o: ObjectSpec): ObjectState {
+  return {
+    id: o.id,
+    shape: o.shape,
+    x: o.x,
+    y: o.y,
+    vx: 0,
+    vy: 0,
+    floor: 0,
+    possessedBy: null,
+    freeRollOwner: null,
+    lastPossessor: null,
+    grabCooldownUntil: 0,
+    carriedBy: null,
+    containedIn: null,
+    open: 0,
+  };
+}
+
+/** Add a STREAMED object at runtime (furniture arriving with its house).
+ *  No-op if the id already exists. The spec's object list is REPLACED
+ *  (renderers key removal sweeps on the array identity). */
+export function addWorldObject(state: WorldState, spec: ObjectSpec): boolean {
+  if (state.objects[spec.id]) return false;
+  state.spec = { ...state.spec, objects: [...state.spec.objects, spec] };
+  state.objects[spec.id] = initialObjectState(spec);
+  return true;
+}
+
+/** Remove a streamed object. Whatever it contained is set free where it
+ *  stands (nothing vanishes inside a despawning cupboard). */
+export function removeWorldObject(state: WorldState, id: string): boolean {
+  if (!state.objects[id]) return false;
+  for (const o of Object.values(state.objects)) {
+    if (o.containedIn?.objectId === id) o.containedIn = null;
+  }
+  state.spec = { ...state.spec, objects: state.spec.objects.filter((o) => o.id !== id) };
+  delete state.objects[id];
+  return true;
+}
+
+/** Fixtures are SOLID: a square footprint of the object's radius, on its
+ *  floor. Composed into the effective constraint beside the structures. */
+function makeFixtureConstraint(state: WorldState, floor: number): MoveConstraint | undefined {
+  const fixtures = state.spec.objects.filter((o) => o.fixture);
+  if (!fixtures.length) return undefined;
+  return {
+    walkable: (p, r) => {
+      for (const f of fixtures) {
+        const o = state.objects[f.id];
+        if (!o || o.floor !== floor) continue;
+        if (Math.abs(p.x - o.x) < f.radius + r && Math.abs(p.y - o.y) < f.radius + r) return false;
+      }
+      return true;
+    },
+  };
+}
+
+/** Ease every `openable` fixture's lid: open while someone stands beside
+ *  it, shut once everyone steps away — the door rule, on furniture. */
+function tickFixtures(state: WorldState, step: number, config: WorldEngineConfig): void {
+  const avatars = Object.values(state.avatars);
+  for (const spec of state.spec.objects) {
+    if (!spec.fixture || !spec.openable) continue;
+    const o = state.objects[spec.id];
+    if (!o) continue;
+    const range = spec.radius + 1.4;
+    const near = avatars.some(
+      (a) => a.floor === o.floor && Math.abs(a.x - o.x) < range && Math.abs(a.y - o.y) < range,
+    );
+    const target = near ? 1 : 0;
+    o.open += (target - o.open) * (1 - Math.exp(-config.doorSwingRate * step));
+  }
+}
+
+export function setWorldBuildings(state: WorldState, buildings: BuildingSpec[]): void {
+  state.spec = { ...state.spec, buildings };
+  setWorldStructures(state, buildings.flatMap(buildingStructures));
+}
+
 /** Lower every building in the spec into perimeter structures, appended to any
  *  hand-authored ones. Idempotent only if called once — certifyWorldSpec runs it
  *  after validation, so the engine always sees a ready spec. */
@@ -1068,6 +1176,141 @@ export function insideBuilding(b: BuildingSpec, x: number, y: number): boolean {
 export function buildingAt(state: WorldState, x: number, y: number): BuildingSpec | null {
   for (const b of state.spec.buildings ?? []) if (insideBuilding(b, x, y)) return b;
   return null;
+}
+
+/** How near a viewer a doorway must be for it to reveal the space beyond — the
+ *  "player is nearby" clause. Beyond this, an open door across the map doesn't
+ *  pull its room into view. */
+export const VISIBILITY_REVEAL_RADIUS = 9;
+
+/** The "open ground" node in the door-connectivity graph — a doorway's exterior
+ *  side, distinct from any building id. */
+const OUTDOORS = " outdoors";
+
+/**
+ * Undirected graph of building interiors joined by the doors `accept` admits.
+ * Each admitted door links the two building ids just inside its faces (OUTDOORS
+ * for an exterior side), sampled a hair past the wall along its normal.
+ */
+function doorConnectivity(
+  state: WorldState,
+  accept: (door: DoorState, mid: { x: number; y: number }) => boolean,
+): Map<string, Set<string>> {
+  const adj = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => {
+    if (a === b) return;
+    (adj.get(a) ?? adj.set(a, new Set()).get(a)!).add(b);
+    (adj.get(b) ?? adj.set(b, new Set()).get(b)!).add(a);
+  };
+  for (const s of state.spec.structures ?? []) {
+    if (s.kind !== "door") continue;
+    const door = state.doors[s.id];
+    if (!door) continue;
+    const mid = { x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 };
+    if (!accept(door, mid)) continue;
+    let nx = -(s.b.y - s.a.y);
+    let ny = s.b.x - s.a.x;
+    const len = Math.hypot(nx, ny) || 1;
+    nx /= len;
+    ny /= len;
+    const eps = s.thickness / 2 + 0.3;
+    const sideA = buildingAt(state, mid.x + nx * eps, mid.y + ny * eps)?.id ?? OUTDOORS;
+    const sideB = buildingAt(state, mid.x - nx * eps, mid.y - ny * eps)?.id ?? OUTDOORS;
+    link(sideA, sideB);
+  }
+  return adj;
+}
+
+/**
+ * The set of building ids whose INTERIOR is currently revealed to `viewer` — the
+ * single source of truth for "can I see inside this building", shared by the
+ * renderer (roof/slab fade + the indoor body cull) and the resident streamer
+ * (embodiment/abstraction). Player-position feeds it, but VISIBILITY — not the
+ * player's building — is what those behaviors key on.
+ *
+ * The rule (avatar mode): a building is visible if the viewer is INSIDE it, or a
+ * doorway PHYSICALLY OPEN (swung clear, unlocked) and NEAR the viewer connects it
+ * to the space the viewer is in. It floods across such doorways — the rooms of a
+ * house you're walking through reveal as their doors stand open — but never leaks
+ * back out to the street and into a neighbour (a building→outdoors edge is a
+ * dead end unless outdoors is where the viewer started).
+ *
+ * Rooms-as-buildings (a multi-room house is one BuildingSpec per room) then Just
+ * Works: the room you stand in seeds the set and every room reachable through an
+ * open door joins it, while a locked gate room stays hidden until it's unlocked.
+ */
+export function visibleBuildings(
+  state: WorldState,
+  viewer: { x: number; y: number },
+  passThreshold: number = WORLD_ENGINE_DEFAULTS.doorPassThreshold,
+  revealRadius: number = VISIBILITY_REVEAL_RADIUS,
+): Set<string> {
+  const buildings = state.spec.buildings ?? [];
+  if (!buildings.length) return new Set();
+  const startNode = buildingAt(state, viewer.x, viewer.y)?.id ?? OUTDOORS;
+  const adj = doorConnectivity(
+    state,
+    (door, mid) =>
+      !door.locked &&
+      door.open >= passThreshold &&
+      Math.hypot(mid.x - viewer.x, mid.y - viewer.y) <= revealRadius,
+  );
+
+  // Flood from the viewer's space. A building→OUT→building chain is forbidden
+  // (leaving to the street ends the reveal), so only the outdoors START may
+  // enter buildings through their open exterior doors.
+  const visible = new Set<string>();
+  const seen = new Set<string>([startNode]);
+  const queue = [startNode];
+  while (queue.length) {
+    const node = queue.shift()!;
+    if (node !== OUTDOORS) visible.add(node);
+    for (const next of adj.get(node) ?? []) {
+      if (seen.has(next)) continue;
+      if (node !== OUTDOORS && next === OUTDOORS) continue; // don't spill back outdoors
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return visible;
+}
+
+/**
+ * The set of building interiors REACHABLE (through UNLOCKED doors) from where the
+ * spirit IS — spirit ("dollhouse") visibility. A formless overhead viewer doesn't
+ * walk or swing doors, so this ignores door swing AND proximity: every room you
+ * could reach without passing a locked door is on show, and a puzzle that LOCKS
+ * an area walls it off (it keeps its roof) until the lock is cleared.
+ *
+ * The seed is the spirit's own location (`viewer`), NOT open ground — an embedded
+ * house is a SEALED box of interior-only doors (the entrance room is merely where
+ * the spirit spawns; there's no door to the outside), so a flood from outdoors
+ * would reach nothing. When the spirit sits inside a room, its whole reachable
+ * suite lights up; with no viewer (or one outdoors) it falls back to whatever an
+ * exterior door admits.
+ */
+export function accessibleBuildings(
+  state: WorldState,
+  viewer?: { x: number; y: number },
+): Set<string> {
+  const buildings = state.spec.buildings ?? [];
+  if (!buildings.length) return new Set();
+  const adj = doorConnectivity(state, (door) => !door.locked);
+  const startNode = (viewer && buildingAt(state, viewer.x, viewer.y)?.id) || OUTDOORS;
+
+  const visible = new Set<string>();
+  const seen = new Set<string>([startNode]);
+  const queue = [startNode];
+  while (queue.length) {
+    const node = queue.shift()!;
+    if (node !== OUTDOORS) visible.add(node);
+    for (const next of adj.get(node) ?? []) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return visible;
 }
 
 /** Ease every door toward open (an avatar is within range and it isn't locked)

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { buildWebsiteTiles } from "./apps-board-tiles";
 
 interface EnabledAppEntry {
   id: string;
@@ -50,24 +51,6 @@ interface AppTile {
   appId?: string;
   /** Payload passed to onPick (e.g. the browser's { url, label }). */
   appData?: any;
-}
-
-/** Site hostname without a leading www., for a friendly default tile label. */
-function hostFromUrl(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
-/** The site's own favicon URL, or null if the url can't be parsed. */
-function faviconUrl(url: string): string | null {
-  try {
-    return `${new URL(url).origin}/favicon.ico`;
-  } catch {
-    return null;
-  }
 }
 
 /** Tile icon: renders the image (custom-app art or site favicon) and falls back
@@ -128,18 +111,8 @@ export default function AppsBoard({
       imageUrl: a.imageUrl ?? null,
     }));
     // Each permitted website opens the in-app browser; icon = the site favicon.
-    const websites: AppTile[] = permittedWebsites.map(w => {
-      const name = w.label || hostFromUrl(w.url);
-      return {
-        id: `web:${w.url}`,
-        name,
-        icon: null,
-        imageUrl: faviconUrl(w.url),
-        fallbackIcon: "🌐",
-        appId: "browser",
-        appData: { url: w.url, label: name },
-      };
-    });
+    // Built (with defensive coercion) by the pure helper so the logic is testable.
+    const websites: AppTile[] = buildWebsiteTiles(permittedWebsites);
     return [...builtIn, ...custom, ...websites];
   }, [enabledApps, availableCustomApps, permittedWebsites, t]);
 

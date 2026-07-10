@@ -4,7 +4,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import type { ParsedBoardData } from "@shared/schema";
+import type { ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import { useStreamingAudioPlayer } from "./useStreamingAudioPlayer";
 import { useAudioRecorder } from "./useAudioRecorder";
 import type { ComposedGrid } from "@/lib/composeFrameGrid";
@@ -223,6 +223,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Message state
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
+  // Rolling live STT interim (grey caption) — see the transcript_interim handler.
+  const [interimTranscription, setInterimTranscription] = useState<string | null>(null);
+  const interimFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [utteranceText, setUtteranceText] = useState<string | null>(null);
   const [utteranceConfidence, setUtteranceConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
   const [transcriptConfidence, setTranscriptConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
@@ -287,6 +290,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Populated from session_snapshot and consumed by the Apps board overlay.
   const [enabledApps, setEnabledApps] = useState<Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>>([]);
   const [availableCustomApps, setAvailableCustomApps] = useState<Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>>([]);
+  // Permitted websites for this student — populated from session_snapshot and
+  // consumed by the Apps board overlay as browser tiles.
+  const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
 
   // Set to the appId while a request_app_open round-trip is in flight (the
   // server is resolving startup params). The Apps board shows a loading state
@@ -667,7 +673,29 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "transcript":
           setTranscription(msg.data);
           if (msg.confidence) setTranscriptConfidence(msg.confidence);
+          // A routed (authoritative) transcript supersedes the live interim.
+          setInterimTranscription(null);
+          if (interimFadeTimerRef.current) { clearTimeout(interimFadeTimerRef.current); interimFadeTimerRef.current = null; }
           break;
+
+        case "transcript_interim": {
+          // Rolling live STT text — grey caption while the recognizer is still
+          // hearing; "" (sent at each final) clears it back to the yellow
+          // transcript. A staleness timer clears it anyway in case the clear
+          // message is lost, so tentative text can never linger.
+          if (interimFadeTimerRef.current) { clearTimeout(interimFadeTimerRef.current); interimFadeTimerRef.current = null; }
+          const interim = (msg as any).data as string;
+          if (interim && interim.trim()) {
+            setInterimTranscription(interim);
+            interimFadeTimerRef.current = setTimeout(() => {
+              interimFadeTimerRef.current = null;
+              setInterimTranscription(null);
+            }, 4000);
+          } else {
+            setInterimTranscription(null);
+          }
+          break;
+        }
 
         case "context":
           setDebugText(msg.data);
@@ -1108,6 +1136,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // custom apps mid-session, and snapshots arrive after relevant changes.
           setEnabledApps(msg.snapshot?.enabledApps ?? []);
           setAvailableCustomApps(msg.snapshot?.availableCustomApps ?? []);
+          setPermittedWebsites(msg.snapshot?.permittedWebsites ?? []);
           break;
 
         case "guessing_mode":
@@ -1491,6 +1520,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // so it's safe to call on every transition. No-ops if the socket isn't open.
   const sendMicState = useCallback((active: boolean, reason?: string) => {
     wsSend({ type: "mic_state", active, reason });
+  }, [wsSend]);
+
+  // Diagnostics (like mic_state): report which speech-boundary detector is
+  // driving the client. A session where the Silero VAD failed to load — and
+  // boundaries silently fell back to energy thresholds that merge statements
+  // in a noisy room — is otherwise invisible outside the browser console.
+  const sendSpeechMethod = useCallback((method: "silero" | "webSpeechApi" | "energy" | "none") => {
+    wsSend({ type: "speech_method", method });
   }, [wsSend]);
 
   /** Tell the server a live video call started/ended (drives facilitator mode). */
@@ -1999,6 +2036,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     isInitializedRef.current = false;
     setCurrentMessage(null);
     setTranscription(null);
+    setInterimTranscription(null);
     setUtteranceText(null);
     setDebugText(null);
     setError(null);
@@ -2051,6 +2089,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Messages
     currentMessage,
     transcription,
+    interimTranscription,
     utteranceText,
     utteranceConfidence,
     transcriptConfidence,
@@ -2105,6 +2144,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Apps available to launch from the static Apps board overlay
     enabledApps,
     availableCustomApps,
+    permittedWebsites,
 
     // Avatar — only animate mouth during AI voice ("avatar" tag), not the student utterance
     emote,
@@ -2141,6 +2181,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     sendContextOnly,
     debugSetBudget,
     sendMicState,
+    sendSpeechMethod,
     sendCallActive,
     sendConversationRoom,
     sendConversationFocus,

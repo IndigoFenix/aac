@@ -12,7 +12,7 @@ import {
   type CellInstance, type SystemSpec,
   validateSpec, SAFE_EXAMPLES, UNSAFE_EXAMPLES,
   lifecycle, reaction, predatorPrey, dayNight, chaos3, budgetRegen, forcedOscillator,
-} from '../src/cell-systems/index.ts';
+} from '../../../shared/engine/cells/index.ts';
 
 let passed = 0;
 function check(name: string, fn: () => void) {

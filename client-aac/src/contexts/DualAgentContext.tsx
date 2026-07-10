@@ -14,7 +14,7 @@ import { dataFlowForState, type DataFlowConfig } from "@/lib/sleepSystemLogic";
 import { sustainedVocalization, DEFAULT_VOCAL_CUE, type AudioEnergySample } from "@shared/aac/audio-cue";
 import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
-import type { ParsedBoardData } from "@shared/schema";
+import type { ParsedBoardData, PermittedWebsite } from "@shared/schema";
 
 /** Delay before firing the one-shot startup detection trigger. This is now a
  *  BACKUP first frame — the server already forwards the client's initialFrame
@@ -34,6 +34,13 @@ const STARTUP_DETECTION_DELAY_MS = 600;
 const PCM_PREROLL_MS = 600;
 const VAD_GATE_THRESHOLD = 0.05;
 const VAD_HANGOVER_MS = 1000;
+/** Gate threshold for a fresh Silero speech probability (0..1 — real speech
+ *  scores >0.5, non-speech noise ~0.02, so the margin is wide either way). */
+const SILERO_GATE_THRESHOLD = 0.35;
+/** A Silero probability older than this no longer gates — the neural VAD
+ *  stopped producing (model absent, mic down, AI talking) → fall back to the
+ *  engagement-contribution thresholds. */
+const SILERO_PROB_STALE_MS = 500;
 
 /** Current VAD gate state, surfaced to the debug panel. */
 export type PcmGateState = "open" | "vad-blocked" | "off" | "continuous";
@@ -61,6 +68,8 @@ interface DualAgentContextType {
   // Messages
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
+  /** Rolling live STT interim — grey caption while the recognizer is hearing. */
+  interimTranscription: string | null;
   utteranceText: string | null;
   utteranceConfidence: 'high' | 'medium' | 'low' | null;
   transcriptConfidence: 'high' | 'medium' | 'low' | null;
@@ -166,6 +175,8 @@ interface DualAgentContextType {
   enabledApps: Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>;
   /** Custom apps (clinician-authored games) assigned to this student. */
   availableCustomApps: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
+  /** Permitted websites for this student — browser tiles on the Apps board. */
+  permittedWebsites: PermittedWebsite[];
 
   // Avatar
   emote: "happy" | "sad" | "neutral";
@@ -229,7 +240,7 @@ interface DualAgentContextType {
   audioActivity: {
     isSpeaking: boolean;
     energyLevel: number;
-    speechMethod: 'webSpeechApi' | 'energy' | 'none';
+    speechMethod: 'silero' | 'webSpeechApi' | 'energy' | 'none';
     lastSpeechBoundary: { start: number; end: number } | null;
     lastTriggerReason: string | null;
     ringBufferSamples: number;
@@ -803,6 +814,17 @@ function DualAgentProviderInner({
         micStreamRef.current = stream;
         setMicStream(stream);
         liveAgent.sendMicState(true);
+        // An OS/hardware revocation ends the track without any effect re-run
+        // (the deps don't change) — clear the stream state so the mic-error
+        // indicator shows instead of the session silently going deaf.
+        for (const track of stream.getTracks()) {
+          track.onended = () => {
+            if (cancelled || micStreamRef.current !== stream) return;
+            micStreamRef.current = null;
+            setMicStream(null);
+            liveAgent.sendMicState(false, "track ended");
+          };
+        }
       } catch {
         console.warn("[DualAgentContext] Mic not available");
         liveAgent.sendMicState(false, "acquisition failed");
@@ -854,6 +876,17 @@ function DualAgentProviderInner({
   const pcmPacedTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const pcmLagMsRef = useRef(0);
 
+  // Latest Silero speech probability from the activity monitor's neural VAD.
+  // Preferred over the decayed engagement contributions for the PCM gate (an
+  // instantaneous "is someone speaking now" reading) and fed to the sleep
+  // system's voice signal. Not updated while the AI is talking, so TTS echo
+  // can't register as voice — the ref goes stale and consumers fall back.
+  const sileroProbRef = useRef({ prob: 0, at: 0 });
+  const handleSpeechProb = useCallback((prob: number) => {
+    if (liveAgent.isBusyRef?.current) return;
+    sileroProbRef.current = { prob, at: Date.now() };
+  }, [liveAgent.isBusyRef]);
+
   // Sleep system data-flow gating for PCM (and downstream consumers).
   // Refs are updated on every state/score change; handlePcmChunk reads them
   // synchronously without re-creating the callback (avoids churn on the
@@ -874,6 +907,24 @@ function DualAgentProviderInner({
     if (liveAgent.paused) return;
     const now = Date.now();
 
+    // VAD gate decision. A fresh Silero probability wins — an instantaneous
+    // "is someone speaking now" reading, where the engagement contributions
+    // are decayed accumulations that linger after speech stops and can be
+    // inflated by band-energy noise. Noise spikes (which Silero deliberately
+    // scores near 0) and the stale-VAD fallback still use the contributions.
+    const gateActive = (): boolean => {
+      const voice = contributionsRef.current.voice ?? 0;
+      const noise = contributionsRef.current.noise ?? 0;
+      vadNoiseLevelRef.current = noise;
+      const silero = sileroProbRef.current;
+      if (now - silero.at < SILERO_PROB_STALE_MS) {
+        vadVoiceLevelRef.current = silero.prob;
+        return silero.prob >= SILERO_GATE_THRESHOLD || noise >= VAD_GATE_THRESHOLD;
+      }
+      vadVoiceLevelRef.current = voice;
+      return voice >= VAD_GATE_THRESHOLD || noise >= VAD_GATE_THRESHOLD;
+    };
+
     // Cost saving (Phase 1): when STT is active the Observer is fed text (from
     // server Google STT of VAD clips, or on-device Whisper), never raw PCM — so
     // suppress the continuous stream. We still drive the VAD "listening" light
@@ -881,11 +932,7 @@ function DualAgentProviderInner({
     // than being stuck on. (No readiness gate: Google STT is server-side with no
     // model to load; the Whisper path tolerates a brief gap while it loads.)
     if (sttActiveRef.current) {
-      const voice = contributionsRef.current.voice ?? 0;
-      const noise = contributionsRef.current.noise ?? 0;
-      vadVoiceLevelRef.current = voice;
-      vadNoiseLevelRef.current = noise;
-      const active = voice >= VAD_GATE_THRESHOLD || noise >= VAD_GATE_THRESHOLD;
+      const active = gateActive();
       if (active) lastVadActiveAtRef.current = now;
       const open = active || now - lastVadActiveAtRef.current < VAD_HANGOVER_MS;
       gateStateRef.current = open ? "open" : "vad-blocked";
@@ -951,11 +998,7 @@ function DualAgentProviderInner({
     // dropped so a quiet session streams almost nothing, but the gate is held
     // open for a short hangover after the last activity so brief inter-word
     // pauses don't re-clip mid-sentence.
-    const voice = contributionsRef.current.voice ?? 0;
-    const noise = contributionsRef.current.noise ?? 0;
-    vadVoiceLevelRef.current = voice;
-    vadNoiseLevelRef.current = noise;
-    const active = voice >= VAD_GATE_THRESHOLD || noise >= VAD_GATE_THRESHOLD;
+    const active = gateActive();
     if (active) lastVadActiveAtRef.current = now;
     const open = active || now - lastVadActiveAtRef.current < VAD_HANGOVER_MS;
 
@@ -1039,6 +1082,8 @@ function DualAgentProviderInner({
     onSttStreamStart: handleSttStreamStart,
     onSttStreamChunk: handleSttStreamChunk,
     onSpeechEndClip: handleSpeechEndClip,
+    // Silero probability stream → PCM VAD gate + sleep-system voice signal.
+    onSpeechProb: handleSpeechProb,
     // Tuning constants come from the server's `clientConfig.activityMonitor`
     // (shipped in the `initialized` message) so capture rate, settle/silence
     // windows, pre/post-roll, etc. can be tweaked without a client rebuild.
@@ -1080,7 +1125,25 @@ function DualAgentProviderInner({
     isAiPlayingRef: aiPlayingRef,
     push: pushVoiceSignal,
     pushNoise: pushNoiseSignal,
+    // While the Silero VAD runs, its probability replaces the FFT voice
+    // heuristic (noise spikes stay FFT-based — Silero can't see door slams).
+    externalVoiceProbRef: sileroProbRef,
   });
+
+  // Diagnostics: report the active speech-boundary detector to the session
+  // log. A Silero load failure silently falls back to energy thresholds —
+  // which merge statements in a noisy room — and is otherwise invisible
+  // outside the browser console.
+  const sendSpeechMethodRef = useRef(liveAgent.sendSpeechMethod);
+  sendSpeechMethodRef.current = liveAgent.sendSpeechMethod;
+  const prevSpeechMethodRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!liveAgent.isInitialized) { prevSpeechMethodRef.current = null; return; }
+    const method = activityMonitor.speechMethod;
+    if (method === prevSpeechMethodRef.current) return;
+    prevSpeechMethodRef.current = method;
+    sendSpeechMethodRef.current(method);
+  }, [liveAgent.isInitialized, activityMonitor.speechMethod]);
 
   // Wake-context bundle: on Asleep → Awake transition, immediately fire a
   // detection trigger so the AI sees what triggered the wake. The recent
@@ -1284,7 +1347,7 @@ interface ProviderShellProps {
   activityMonitor: {
     isSpeaking: boolean;
     energyLevel: number;
-    speechMethod: 'webSpeechApi' | 'energy' | 'none';
+    speechMethod: 'silero' | 'webSpeechApi' | 'energy' | 'none';
     lastSpeechBoundary: { start: number; end: number } | null;
     lastTriggerReason: string | null;
     ringBufferSamples: number;
@@ -1340,6 +1403,7 @@ function ProviderShell({
 
     currentMessage: agent.currentMessage,
     transcription: agent.transcription,
+    interimTranscription: agent.interimTranscription,
     utteranceText: agent.utteranceText,
     utteranceConfidence: agent.utteranceConfidence,
     transcriptConfidence: agent.transcriptConfidence,
@@ -1410,6 +1474,7 @@ function ProviderShell({
     registerAppCanvasCapture,
     enabledApps: agent.enabledApps,
     availableCustomApps: agent.availableCustomApps,
+    permittedWebsites: agent.permittedWebsites,
 
     emote: agent.emote,
     speakingVolume: agent.speakingVolume,

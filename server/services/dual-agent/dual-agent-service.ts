@@ -180,9 +180,10 @@ export class DualAgentService {
     logSuffix: string,
     category: string,
     modalityBreakdown?: Record<string, number>,
+    tokenUsage?: import("../credit-ledger").LedgerCharge["tokenUsage"],
   ): Promise<void> {
     flowCost(category, credits, logSuffix);
-    await chargeCreditsToLedger({ sessionId, studentId, userId, credits, category, label: logSuffix, modalityBreakdown });
+    await chargeCreditsToLedger({ sessionId, studentId, userId, credits, category, label: logSuffix, modalityBreakdown, tokenUsage });
   }
 
   /**
@@ -207,6 +208,9 @@ export class DualAgentService {
     // provider reported modality detail. Accumulated into
     // chat_sessions.cost_modality_breakdown alongside the per-agent breakdown.
     let modalityBreakdown: Record<string, number> | undefined;
+    // Token detail for the per-charge session_cost_events time-series. For the
+    // modality path, input/output modalities are folded into prompt/completion.
+    let tokenUsage: import("../credit-ledger").LedgerCharge["tokenUsage"];
     const attr = label ? `agent=${label} ` : "";
     if (usage.details) {
       const split = creditsForLiveUsageByModality(provider, model, usage.details);
@@ -219,6 +223,12 @@ export class DualAgentService {
         audioOut: split.audioOut,
       };
       const d = usage.details;
+      tokenUsage = {
+        model,
+        promptTokens: (d.textInputTokens ?? 0) + (d.nonTextInputTokens ?? 0),
+        completionTokens: (d.textOutputTokens ?? 0) + (d.audioOutputTokens ?? 0),
+        cachedTokens: d.cachedInputTokens ?? 0,
+      };
       logSuffix =
         `${attr}model=${model} ` +
         `text_in=${d.textInputTokens} non_text_in=${d.nonTextInputTokens} ` +
@@ -229,12 +239,19 @@ export class DualAgentService {
         provider, model, usage.promptTokens, usage.completionTokens,
         usage.cachedTokens ?? 0, usage.cacheCreationTokens ?? 0,
       );
+      tokenUsage = {
+        model,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        cachedTokens: usage.cachedTokens ?? 0,
+        cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+      };
       logSuffix = `${attr}model=${model} prompt=${usage.promptTokens} completion=${usage.completionTokens}`
         + (usage.cachedTokens ? ` cacheRead=${usage.cachedTokens}` : "")
         + (usage.cacheCreationTokens ? ` cacheWrite=${usage.cacheCreationTokens}` : "")
         + ` (no-modality-details)`;
     }
-    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label ?? "live", modalityBreakdown);
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label ?? "live", modalityBreakdown, tokenUsage);
     return credits;
   }
 
@@ -261,7 +278,9 @@ export class DualAgentService {
       + (cachedTokens ? ` cacheRead=${cachedTokens}` : "")
       + (cacheCreationTokens ? ` cacheWrite=${cacheCreationTokens}` : "")
       + ` [${label}]`;
-    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label);
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix, label, undefined, {
+      model, promptTokens, completionTokens, cachedTokens, cacheCreationTokens,
+    });
   }
 
   /**

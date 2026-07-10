@@ -938,8 +938,15 @@ export class World extends BWObj implements WorldLike {
 	 * birth day). Both counts clamp to what exists. The layer above owns
 	 * the POLICY (rates × food fill — the Malthusian loop); this is only
 	 * the mechanism. Marks the composition dirty.
+	 *
+	 * `trait` optionally SCOPES the whole operation to carriers of one
+	 * trait (a SPECIES, in grand-dream's usage): the snapshot, the
+	 * apportionment and the clamps all see only those pops, so a famine
+	 * in one species' diet never starves another — and since species
+	 * traits are hereditary, births inside the scope stay inside it.
+	 * Omitted = the whole site (the original behavior, bit-identical).
 	 */
-	applyVitals(siteKey: string, births: number, deaths: number): { born: number; died: number } {
+	applyVitals(siteKey: string, births: number, deaths: number, trait?: string): { born: number; died: number } {
 		interface VitalPop {
 			pop: number;
 			syndrome: { key: string; trait_keys: string[] };
@@ -949,7 +956,7 @@ export class World extends BWObj implements WorldLike {
 		const site = this.sites.find(s => s.key === siteKey);
 		if (!site) return { born: 0, died: 0 };
 		const snapshot = (site.pops as unknown as VitalPop[])
-			.filter(p => p.pop > 0)
+			.filter(p => p.pop > 0 && (trait === undefined || p.syndrome.trait_keys.includes(trait)))
 			.sort((a, b) => (a.syndrome.key < b.syndrome.key ? -1 : a.syndrome.key > b.syndrome.key ? 1 : 0))
 			.map(p => ({ p, size: p.pop }));
 		const total = snapshot.reduce((a, s) => a + s.size, 0);
@@ -1145,8 +1152,12 @@ export class World extends BWObj implements WorldLike {
 	 * Whole-population moves are trivially uniform-by-syndrome (the C2b
 	 * condition). Not for traits carrying progression state (state is not
 	 * carried). Marks the composition dirty. Returns people moved.
+	 *
+	 * `siteKey` scopes the flip to ONE site — conquest's political mode
+	 * (a fallen city changes flags; the rest of its civ does not). Omitted
+	 * = world-wide, the breakaway shape.
 	 */
-	applyTraitFlip(where: string[], apply: string[], remove: string[]): number {
+	applyTraitFlip(where: string[], apply: string[], remove: string[], siteKey?: string): number {
 		interface FlipPop {
 			pop: number;
 			syndrome: { key: string; trait_keys: string[] };
@@ -1154,6 +1165,7 @@ export class World extends BWObj implements WorldLike {
 		}
 		let total = 0;
 		for (const site of this.sites) {
+			if (siteKey !== undefined && site.key !== siteKey) continue;
 			const targets = (site.pops as unknown as FlipPop[])
 				.filter(p => p.pop > 0 && where.every(k => p.syndrome.trait_keys.indexOf(k) !== -1))
 				.sort((a, b) => (a.syndrome.key < b.syndrome.key ? -1 : a.syndrome.key > b.syndrome.key ? 1 : 0));

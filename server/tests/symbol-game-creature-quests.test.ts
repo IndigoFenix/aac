@@ -9,17 +9,20 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { walkGoalTree } from "@shared/goal-tree/walk.js";
+import type { GoalTreeGame, FulfillNode } from "@shared/goal-tree/types.js";
 import { applyRuntimeInput, createRuntimeContext, createRuntimeState } from "@shared/goal-tree/runtime.js";
 import { certifyGoalTreeGame } from "@shared/goal-tree/index.js";
 import {
   applyTransform,
   buildCreatureQuestWorld,
+  causalFrameCompatible,
   certifyCreatureQuestWorld,
   claimItem,
   concludeTransfer,
   createCreatureWorld,
   creatureWorldFromGame,
   giveItem,
+  noteArrival,
   notePlacement,
   openNeeds,
   projectDialogue,
@@ -27,6 +30,9 @@ import {
   seeItem,
   selectAct,
   settleObligations,
+  toggleDevice,
+  powerUp,
+  useStation,
   PLAYER_CREATURE_ID,
   type DialogueAct,
   type ProjectionOpts,
@@ -681,5 +687,872 @@ describe("fulfill node runtime behavior", () => {
     const cert = certifyGoalTreeGame(game);
     expect(cert.ok).toBe(false);
     if (!cert.ok) expect(cert.errors.join(" ")).toContain("more than one fulfill node");
+  });
+});
+
+describe("v1 causal WHY channel (causation-and-elements.md §4)", () => {
+  // Strip every fulfill node's causalFact — the invariance control.
+  const stripCausal = (game: GoalTreeGame): GoalTreeGame => {
+    const clone: GoalTreeGame = JSON.parse(JSON.stringify(game));
+    for (const { node } of walkGoalTree(clone.root)) {
+      if (node.type === "fulfill") delete (node as FulfillNode).causalFact;
+    }
+    return clone;
+  };
+  const givers = (game: GoalTreeGame): FulfillNode[] =>
+    [...walkGoalTree(game.root)]
+      .map((w) => w.node)
+      .filter((n): n is FulfillNode => n.type === "fulfill" && !!n.needItemEntityId);
+
+  for (const syntax of SYNTAXES) {
+    it(`certifies + is invariant to the fact, and the WHY answer reads correctly: syntax=${syntax}`, () => {
+      const game = buildCreatureQuestWorld({
+        questCount: 2,
+        syntax,
+        complexity: "simple",
+        giverCausalWhy: true,
+        rng: mulberry32(909 + syntax.charCodeAt(0)),
+      });
+      // A `because` fact was actually attached to the possession-need giver(s).
+      expect(givers(game).some((g) => g.causalFact?.connective === "because")).toBe(true);
+
+      // Certification is INVARIANT to causal facts (they gate nothing).
+      expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+      expect(certifyCreatureQuestWorld(stripCausal(game)).ok).toBe(true);
+
+      const giver = givers(game).find((g) => g.causalFact)!;
+      const { world } = creatureWorldFromGame(game);
+      const { world: worldNo } = creatureWorldFromGame(stripCausal(game));
+      const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+      const opts: ProjectionOpts = { symbolOf };
+
+      // Projection: stripping removes ONLY the why act; line + other acts identical.
+      const p = projectDialogue(world, giver.id, PLAYER_CREATURE_ID, syntax, opts);
+      const pNo = projectDialogue(worldNo, giver.id, PLAYER_CREATURE_ID, syntax, opts);
+      expect(p.lineGlyph).toBe(pNo.lineGlyph);
+      expect(p.acts.some((a) => a.kind === "why")).toBe(true);
+      expect(pNo.acts.some((a) => a.kind === "why")).toBe(false);
+      expect(p.acts.filter((a) => a.kind !== "why").map((a) => a.kind)).toEqual(
+        pNo.acts.map((a) => a.kind),
+      );
+
+      // The WHY answer is the two-clause causal line; no world effect, no close.
+      const why = p.acts.find((a) => a.kind === "why")!;
+      const res = selectAct(world, giver.id, PLAYER_CREATURE_ID, why, syntax, opts);
+      const item = symbolOf(giver.needItemEntityId!);
+      const expected = {
+        a: item,
+        b: `because + have.not + ${item}`,
+        c: `i_me + sad + because + i_me + have.not + ${item}`,
+      }[syntax];
+      expect(res.responseGlyph).toBe(expected);
+      expect(res.events).toEqual([]);
+      expect(res.close).toBeFalsy();
+    });
+  }
+
+  it("placement / on-behalf / transformed needs get NO fact in v1", () => {
+    for (const params of [
+      { task: "place" as const },
+      { task: "deliver" as const },
+      { transformations: true },
+    ]) {
+      const game = buildCreatureQuestWorld({
+        questCount: 1,
+        complexity: "simple",
+        giverCausalWhy: true,
+        rng: mulberry32(55),
+        ...params,
+      });
+      expect(givers(game).every((g) => !g.causalFact)).toBe(true);
+    }
+  });
+});
+
+describe("composeNeed causal-frame compatibility table (§2)", () => {
+  it("because-lack-item fits only a plain possession need", () => {
+    expect(causalFrameCompatible("because-lack-item", {})).toBe(true);
+    expect(causalFrameCompatible("because-lack-item", { needPlacedInEntityId: "box" })).toBe(false);
+    expect(causalFrameCompatible("because-lack-item", { needItemState: "hot" })).toBe(false);
+    expect(causalFrameCompatible("because-lack-item", { needForNodeId: "recip" })).toBe(false);
+    expect(causalFrameCompatible("because-lack-item", { announce: "never" })).toBe(false);
+  });
+
+  it("in-order-to-recipient-happy fits only an on-behalf (deliver) need", () => {
+    expect(causalFrameCompatible("in-order-to-recipient-happy", { needForNodeId: "recip" })).toBe(true);
+    expect(causalFrameCompatible("in-order-to-recipient-happy", {})).toBe(false);
+  });
+
+  it("the generator never emits an incompatible frame (whole grid still certifies)", () => {
+    // composeNeed throws on an incompatible frame; that no build in the grid
+    // throws is the standing guarantee — spot-check the frame-bearing configs.
+    for (const cfg of [
+      { giverCausalWhy: true, complexity: "simple" as const },
+      { deliverCausalPurpose: true, task: "deliver" as const, complexity: "simple" as const },
+      { giverCausalWhy: true, task: "deliver" as const, complexity: "simple" as const }, // because SKIPPED on deliver
+      { giverCausalWhy: true, descriptors: true, transformations: true, complexity: "request" as const },
+    ]) {
+      expect(() =>
+        buildCreatureQuestWorld({ questCount: 2, rng: mulberry32(31), ...cfg }),
+      ).not.toThrow();
+    }
+  });
+});
+
+describe("v2 causal in_order_to purpose (deliver needs, §4.3)", () => {
+  const stripCausal = (game: GoalTreeGame): GoalTreeGame => {
+    const clone: GoalTreeGame = JSON.parse(JSON.stringify(game));
+    for (const { node } of walkGoalTree(clone.root)) {
+      if (node.type === "fulfill") delete (node as FulfillNode).causalFact;
+    }
+    return clone;
+  };
+
+  it("the giver's LINE states remedy AND goal, stacks, and cert is invariant", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      task: "deliver",
+      deliverCausalPurpose: true,
+      rng: mulberry32(4242),
+    });
+    // Certification passes and is invariant to the (narration-only) fact.
+    expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+    expect(certifyCreatureQuestWorld(stripCausal(game)).ok).toBe(true);
+
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId, giverNode] = [...nodeByCreature].find(([, n]) => n.needForNodeId)!;
+    const recipId = giverNode.needForNodeId!;
+    expect(giverNode.causalFact?.connective).toBe("in_order_to");
+
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const opts: ProjectionOpts = { symbolOf, symbolOfCreature: (cid) => cid };
+    const itemSym = symbolOf(giverNode.needItemEntityId!);
+
+    // The full sentence carries the action clause AND the goal clause.
+    const lineC = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts).lineGlyph;
+    expect(lineC).toBe(`give + ${itemSym} + to + ${recipId} + in_order_to + ${recipId} + happy`);
+
+    // Stripping the fact leaves the plain deliver line.
+    const { world: worldNo } = creatureWorldFromGame(stripCausal(game));
+    expect(projectDialogue(worldNo, giverId, PLAYER_CREATURE_ID, "c", opts).lineGlyph).toBe(
+      `give + ${itemSym} + to + ${recipId}`,
+    );
+  });
+});
+
+describe("step 4a creature-state needs (§5)", () => {
+  it("a cold MOTIVE generates a 'something hot' want: 'want hot because cold', certifies", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverCondition: "cold",
+      rng: mulberry32(808),
+    });
+    expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId, node] = [...nodeByCreature].find(([, n]) => n.condition)!;
+    expect(node.condition).toBe("cold");
+    // The motive GENERATED a kind-less target + forced a fire station; the item
+    // spawns cold (heatable), so any HOT thing satisfies it.
+    expect(node.needTarget).toEqual({ state: "hot" });
+    expect(node.stationKinds).toEqual(["fire"]);
+    expect(world.items[node.needItemEntityId!]!.states).toEqual(["cold"]);
+
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", { symbolOf });
+    // Default reveal = "want": the OPENING states the want ("something hot"); the
+    // causal link is the WHY answer, NOT an unprompted greeting.
+    expect(proj.lineGlyph).toBe("i_me + want + hot");
+    expect(proj.acts.some((a) => a.kind === "why")).toBe(true);
+  });
+
+  it("revelation: the OPENING is the want or the motive; WHY carries the link", () => {
+    const build = (reveal: "want" | "motive") => {
+      const game = buildCreatureQuestWorld({
+        questCount: 1,
+        complexity: "simple",
+        giverCondition: "cold",
+        giverReveal: reveal,
+        rng: mulberry32(811),
+      });
+      const { world, nodeByCreature } = creatureWorldFromGame(game);
+      const [giverId] = [...nodeByCreature].find(([, n]) => n.condition)!;
+      const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+      return { world, giverId, opts: { symbolOf } as ProjectionOpts };
+    };
+    // "want" — opening states the want; WHY answers "I want hot because I'm cold".
+    {
+      const { world, giverId, opts } = build("want");
+      const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts);
+      expect(proj.lineGlyph).toBe("i_me + want + hot");
+      const why = proj.acts.find((a) => a.kind === "why")!;
+      expect(why).toBeDefined();
+      expect(selectAct(world, giverId, PLAYER_CREATURE_ID, why, "c", opts).responseGlyph).toBe(
+        "i_me + want + hot + because + i_me + cold",
+      );
+    }
+    // "motive" — just the plight; the player infers the want (no unprompted WHY).
+    {
+      const { world, giverId, opts } = build("motive");
+      const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts);
+      expect(proj.lineGlyph).toBe("i_me + cold");
+      expect(proj.acts.some((a) => a.kind === "why")).toBe(false);
+      // Its acts are still the WANT acts — "where is / I don't have SOMETHING HOT".
+      expect(proj.acts.some((a) => a.kind === "where-is" && a.glyph.includes("hot"))).toBe(true);
+    }
+  });
+
+  it("heating the item makes it match 'something hot'; giving it clears the cold", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverCondition: "cold",
+      rng: mulberry32(808),
+    });
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId, node] = [...nodeByCreature].find(([, n]) => n.condition)!;
+    const itemId = node.needItemEntityId!;
+    // The player takes the cold item, heats it at the fire station, gives it.
+    world.items[itemId]!.ownerId = PLAYER_CREATURE_ID;
+    // A cold item does NOT yet satisfy "something hot".
+    expect(giveItem(world, PLAYER_CREATURE_ID, giverId, itemId).accepted).toBe(false);
+    applyTransform(world, itemId, "hot", "cold");
+    const res = giveItem(world, PLAYER_CREATURE_ID, giverId, itemId);
+    expect(res.accepted).toBe(true);
+    expect(openNeeds(world.creatures[giverId]!)).toHaveLength(0);
+    expect(world.creatures[giverId]!.condition).toBeUndefined(); // getting better
+  });
+
+  it("decoupled: the want is 'something hot'; a KNOWN COLD item doesn't answer where-is", () => {
+    // A cold creature wants something hot. It knows where a cold apple is (its
+    // own remedy item) — but a cold apple does NOT answer "where is something
+    // hot". The dialogue is driven by the TARGET + knowledge, not the item id.
+    const world = createCreatureWorld(
+      [
+        { id: "a", condition: "cold", needs: [{ itemId: "apple", value: 3, target: { state: "hot" } }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [{ id: "apple", kind: "apple", states: ["cold"] }],
+    );
+    world.creatures.a!.knowledge.apple = { kind: "loose" };
+    const opts: ProjectionOpts = { symbolOf: (id) => id, placeOf: () => "home.color_blue" };
+
+    const proj = projectDialogue(world, "a", PLAYER_CREATURE_ID, "c", opts);
+    const whereIs = proj.acts.find((act) => act.kind === "where-is")!;
+    const cant = proj.acts.find((act) => act.kind === "cant")!;
+    // The acts NAME the want ("something hot"), never the designated apple.
+    expect(whereIs.glyph).toContain("hot");
+    expect(whereIs.glyph).not.toContain("apple");
+    expect(cant.glyph).toContain("hot");
+    // Where-is: it does NOT know where something hot is (the apple is cold).
+    expect(selectAct(world, "a", PLAYER_CREATURE_ID, whereIs, "c", opts).responseGlyph).toBe(
+      "i_me + think.not",
+    );
+    // Heat the apple → now the SAME known item matches → it answers.
+    world.items.apple!.states = ["hot"];
+    const whereIs2 = projectDialogue(world, "a", PLAYER_CREATURE_ID, "c", opts).acts.find(
+      (act) => act.kind === "where-is",
+    )!;
+    expect(selectAct(world, "a", PLAYER_CREATURE_ID, whereIs2, "c", opts).responseGlyph).toContain(
+      "apple.hot",
+    );
+  });
+
+  it("fulfilling the remedy CLEARS the condition (getting-better demonstration)", () => {
+    const world = createCreatureWorld(
+      [
+        { id: "a", condition: "cold", needs: [{ itemId: "soup", value: 3 }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [{ id: "soup", ownerId: PLAYER_CREATURE_ID }],
+    );
+    expect(world.creatures.a!.condition).toBe("cold");
+    const res = giveItem(world, PLAYER_CREATURE_ID, "a", "soup");
+    expect(res.accepted).toBe(true);
+    expect(world.creatures.a!.condition).toBeUndefined();
+    expect(res.events).toContainEqual({ type: "condition-changed", creatureId: "a", from: "cold", to: "warm" });
+  });
+});
+
+describe("step 4b device-state needs (§5)", () => {
+  it("a device quest: certifies, line 'want {device} closed', WHY reveals the open cause", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverDeviceNeed: "closed",
+      rng: mulberry32(414),
+    });
+    expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId, node] = [...nodeByCreature].find(([, n]) => n.needDeviceState)!;
+    expect(node.needDeviceState).toBe("closed");
+
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const device = symbolOf(node.needItemEntityId!).split(".")[0]; // base symbol
+    // The device spawned in the OPPOSITE (bad) state.
+    expect(world.items[node.needItemEntityId!]!.states).toEqual(["open"]);
+    expect(world.items[node.needItemEntityId!]!.device).toBe(true);
+
+    const opts: ProjectionOpts = { symbolOf };
+    const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts);
+    expect(proj.lineGlyph).toBe(`i_me + want + ${device} + closed`);
+
+    // WHY reveals the device's bad state as the cause.
+    const why = proj.acts.find((a) => a.kind === "why")!;
+    expect(why).toBeDefined();
+    const res = selectAct(world, giverId, PLAYER_CREATURE_ID, why, "c", opts);
+    expect(res.responseGlyph).toBe(`i_me + sad + because + ${device} + open`);
+  });
+
+  it("toggling the device fulfills the need and clears a linked condition (P2)", () => {
+    const world = createCreatureWorld(
+      [
+        { id: "a", condition: "cold", needs: [{ itemId: "window", value: 3, deviceState: "closed" }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [{ id: "window", device: true, states: ["open"] }],
+    );
+    expect(openNeeds(world.creatures.a!)).toHaveLength(1);
+
+    const events = toggleDevice(world, PLAYER_CREATURE_ID, "window", "closed");
+    expect(world.items.window!.states).toEqual(["closed"]);
+    expect(openNeeds(world.creatures.a!)).toHaveLength(0);
+    expect(world.creatures.a!.condition).toBeUndefined();
+    expect(events).toContainEqual({ type: "condition-changed", creatureId: "a", from: "cold", to: "warm" });
+    // The actor earned the debt (a state need, like placement).
+    expect(world.creatures.a!.debts[PLAYER_CREATURE_ID]).toBe(3);
+  });
+
+  it("a device is never picked up as a loose prop by the certifier", () => {
+    // The P2 combo (cold creature + open window) also certifies.
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverDeviceNeed: "closed",
+      giverCondition: "cold",
+      rng: mulberry32(415),
+    });
+    expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+    const { nodeByCreature } = creatureWorldFromGame(game);
+    const node = [...nodeByCreature.values()].find((n) => n.needDeviceState)!;
+    expect(node.condition).toBe("cold");
+  });
+});
+
+describe("step 4b power chains — generators activated by switches (§5)", () => {
+  it("a device won't activate without power; powerUp switches the generator on first", () => {
+    const world = createCreatureWorld(
+      [
+        { id: "a", needs: [{ itemId: "fridge", value: 3, deviceState: "on" }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [
+        { id: "fridge", device: true, states: ["off"], poweredBy: { deviceId: "gen", state: "on" } },
+        { id: "gen", device: true, states: ["off"] },
+      ],
+    );
+    // No power → the toggle is a no-op.
+    toggleDevice(world, PLAYER_CREATURE_ID, "fridge", "on");
+    expect(world.items.fridge!.states).toEqual(["off"]);
+    expect(openNeeds(world.creatures.a!)).toHaveLength(1);
+
+    // Power the chain (switch on the generator), then the device toggles.
+    powerUp(world, PLAYER_CREATURE_ID, "fridge");
+    expect(world.items.gen!.states).toEqual(["on"]);
+    toggleDevice(world, PLAYER_CREATURE_ID, "fridge", "on");
+    expect(world.items.fridge!.states).toEqual(["on"]);
+    expect(openNeeds(world.creatures.a!)).toHaveLength(0);
+  });
+
+  it("powerUp resolves a DEEP chain (switch → generator → device), deepest first", () => {
+    const world = createCreatureWorld(
+      [{ id: "a", needs: [{ itemId: "fridge", value: 3, deviceState: "on" }] }, { id: PLAYER_CREATURE_ID }],
+      [
+        { id: "fridge", device: true, states: ["off"], poweredBy: { deviceId: "gen", state: "on" } },
+        { id: "gen", device: true, states: ["off"], poweredBy: { deviceId: "sw", state: "on" } },
+        { id: "sw", device: true, states: ["off"] },
+      ],
+    );
+    powerUp(world, PLAYER_CREATURE_ID, "fridge");
+    expect(world.items.sw!.states).toEqual(["on"]);
+    expect(world.items.gen!.states).toEqual(["on"]);
+    expect(toggleDevice(world, PLAYER_CREATURE_ID, "fridge", "on").length).toBeGreaterThan(0);
+    expect(world.items.fridge!.states).toEqual(["on"]);
+  });
+
+  it("a powered device quest certifies and WHY reveals the generator to switch on", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverDeviceNeed: "on",
+      giverDevicePowered: true,
+      rng: mulberry32(416),
+    });
+    expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId, node] = [...nodeByCreature].find(([, n]) => n.needDeviceState)!;
+    const gen = node.powerDeviceEntityId!;
+    expect(gen).toBeDefined();
+    // The device is poweredBy the generator; the generator starts OFF.
+    expect(world.items[node.needItemEntityId!]!.poweredBy).toEqual({ deviceId: gen, state: "on" });
+    expect(world.items[gen]!.device).toBe(true);
+    expect(world.items[gen]!.states).toEqual(["off"]);
+
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const genSym = symbolOf(gen).split(".")[0];
+    const opts: ProjectionOpts = { symbolOf };
+    const why = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts).acts.find((a) => a.kind === "why")!;
+    const res = selectAct(world, giverId, PLAYER_CREATURE_ID, why, "c", opts);
+    expect(res.responseGlyph).toBe(`i_me + sad + because + ${genSym} + off`);
+  });
+});
+
+describe("P1 powered stations — a fridge that only cools when switched on (§5)", () => {
+  it("useStation is a REAL gate: no power → no transform; powered → it cools", () => {
+    const world = createCreatureWorld(
+      [{ id: PLAYER_CREATURE_ID }],
+      [
+        { id: "apple", states: ["hot"] },
+        { id: "fridge", device: true, states: ["off"] },
+      ],
+    );
+    // Unpowered station is dead — the drop does nothing.
+    expect(useStation(world, "apple", "cold", "hot", "fridge")).toEqual([]);
+    expect(world.items.apple!.states).toEqual(["hot"]);
+
+    // Switch the fridge on, and now it cools.
+    toggleDevice(world, PLAYER_CREATURE_ID, "fridge", "on");
+    expect(useStation(world, "apple", "cold", "hot", "fridge").length).toBeGreaterThan(0);
+    expect(world.items.apple!.states).toEqual(["cold"]);
+  });
+
+  it("a powered-station quest certifies; WHY reveals the generator to switch on", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      transformations: true,
+      giverStationPowered: true,
+      rng: mulberry32(517),
+    });
+    expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId, node] = [...nodeByCreature].find(([, n]) => n.stationPowerDeviceId)!;
+    const gen = node.stationPowerDeviceId!;
+    expect(world.items[gen]!.device).toBe(true);
+    expect(world.items[gen]!.states).toEqual(["off"]);
+
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const genSym = symbolOf(gen).split(".")[0];
+    const opts: ProjectionOpts = { symbolOf };
+    const why = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts).acts.find((a) => a.kind === "why")!;
+    const res = selectAct(world, giverId, PLAYER_CREATURE_ID, why, "c", opts);
+    expect(res.responseGlyph).toBe(`i_me + sad + because + ${genSym} + off`);
+  });
+
+  it("the power step is NECESSARY: a hand-built world can't cool without switching on", () => {
+    // If the certifier skipped powering the station, the transform would no-op
+    // and the need would never fulfill — this asserts that dependency directly.
+    const world = createCreatureWorld(
+      [
+        { id: "a", needs: [{ itemId: "milk", value: 3, requiresState: "cold" }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [
+        { id: "milk", ownerId: PLAYER_CREATURE_ID, states: ["hot"] },
+        { id: "fridge", device: true, states: ["off"] },
+      ],
+    );
+    useStation(world, "milk", "cold", "hot", "fridge"); // unpowered — no-op
+    expect(giveItem(world, PLAYER_CREATURE_ID, "a", "milk").accepted).toBe(false); // still hot → declined
+    powerUp(world, PLAYER_CREATURE_ID, "fridge");
+    toggleDevice(world, PLAYER_CREATURE_ID, "fridge", "on");
+    useStation(world, "milk", "cold", "hot", "fridge");
+    expect(giveItem(world, PLAYER_CREATURE_ID, "a", "milk").accepted).toBe(true); // cold now → accepted
+  });
+});
+
+describe("parameter-based needs — loose matching + reversible gifts (motive-driven-needs.md)", () => {
+  it("a TARGET need matches ANY item that fits (loose), not one instance", () => {
+    const world = createCreatureWorld(
+      [
+        { id: "a", needs: [{ itemId: "apple1", value: 3, target: { state: "hot" } }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [
+        { id: "apple1", kind: "apple", states: [] }, // the intended instance, still cold
+        { id: "cookie1", ownerId: PLAYER_CREATURE_ID, kind: "cookie", states: ["hot"] }, // a DIFFERENT hot thing
+      ],
+    );
+    // "Something hot" — the hot cookie satisfies it even though it isn't apple1.
+    expect(giveItem(world, PLAYER_CREATURE_ID, "a", "cookie1").accepted).toBe(true);
+    expect(openNeeds(world.creatures.a!)).toHaveLength(0);
+  });
+
+  it("reversible gift: a fulfilled creature swaps its bound item for an equivalent (the red-apple puzzle)", () => {
+    const world = createCreatureWorld(
+      [
+        { id: "red", needs: [{ itemId: "apple", value: 3, target: { descriptors: ["color_red"] } }] },
+        { id: "food", needs: [{ itemId: "banana", value: 3, target: { category: "food" } }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [
+        { id: "apple", ownerId: PLAYER_CREATURE_ID, kind: "apple", category: "food", descriptors: ["color_red"] },
+        { id: "banana", ownerId: PLAYER_CREATURE_ID, kind: "banana", category: "food", descriptors: ["color_yellow"] },
+      ],
+    );
+    // Mis-assign: give the red apple to the FOOD creature (valid — it IS food).
+    expect(giveItem(world, PLAYER_CREATURE_ID, "food", "apple").accepted).toBe(true);
+    // RED is now stranded (the only red thing is bound). Offering food the banana
+    // (equal — also food) SWAPS: banana binds, the apple comes back to the player.
+    expect(giveItem(world, PLAYER_CREATURE_ID, "food", "banana").accepted).toBe(true);
+    expect(world.items.banana!.ownerId).toBe("food");
+    expect(world.items.banana!.bound).toBe(true);
+    expect(world.items.apple!.ownerId).toBe(PLAYER_CREATURE_ID);
+    expect(world.items.apple!.bound).toBe(false);
+    expect(openNeeds(world.creatures.food!)).toHaveLength(0); // still satisfied (by banana)
+    // The freed apple solves RED.
+    expect(giveItem(world, PLAYER_CREATURE_ID, "red", "apple").accepted).toBe(true);
+    expect(openNeeds(world.creatures.red!)).toHaveLength(0);
+  });
+
+  it("an exact-instance need (no target) never swaps — it wants its one item", () => {
+    const world = createCreatureWorld(
+      [{ id: "a", needs: [{ itemId: "apple1", value: 3 }] }, { id: PLAYER_CREATURE_ID }],
+      [
+        { id: "apple1", ownerId: PLAYER_CREATURE_ID, kind: "apple" },
+        { id: "apple2", ownerId: PLAYER_CREATURE_ID, kind: "apple" },
+      ],
+    );
+    expect(giveItem(world, PLAYER_CREATURE_ID, "a", "apple1").accepted).toBe(true);
+    // Same kind, but the exact need wanted THAT instance — apple2 is declined.
+    expect(giveItem(world, PLAYER_CREATURE_ID, "a", "apple2").accepted).toBe(false);
+  });
+
+  it("offer decline is PREDICATE-driven: names the OFFERED item's missing facet", () => {
+    const symbolOf = (id: string) =>
+      ({ coldapple: "apple", smallball: "ball.small", car: "car" })[id] ?? id;
+    const opts: ProjectionOpts = { symbolOf };
+    const offer = (id: string): DialogueAct => ({ kind: "offer", itemId: id, glyph: "" });
+
+    // Wants "something hot" (kind-less STATE target): a cold apple → "not hot",
+    // named from the OFFERED item, not any designated instance.
+    const hotW = createCreatureWorld(
+      [
+        { id: "a", needs: [{ itemId: "x", value: 3, target: { state: "hot" } }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [{ id: "coldapple", ownerId: PLAYER_CREATURE_ID, kind: "apple", states: ["cold"] }],
+    );
+    expect(
+      selectAct(hotW, "a", PLAYER_CREATURE_ID, offer("coldapple"), "c", opts).responseGlyph,
+    ).toBe("apple + hot.not");
+
+    // Wants a BIG BALL: a small ball → "not big" (same kind, missing descriptor);
+    // a car (wrong kind) → a plain "don't want", NOT a facet correction.
+    const ballW = createCreatureWorld(
+      [
+        { id: "a", needs: [{ itemId: "x", value: 3, target: { kind: "ball", descriptors: ["big"] } }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [
+        { id: "smallball", ownerId: PLAYER_CREATURE_ID, kind: "ball", descriptors: ["small"] },
+        { id: "car", ownerId: PLAYER_CREATURE_ID, kind: "car" },
+      ],
+    );
+    expect(
+      selectAct(ballW, "a", PLAYER_CREATURE_ID, offer("smallball"), "c", opts).responseGlyph,
+    ).toBe("ball + big.not");
+    expect(selectAct(ballW, "a", PLAYER_CREATURE_ID, offer("car"), "c", opts).responseGlyph).toBe(
+      "i_me + want.not + car",
+    );
+  });
+});
+
+describe("step D — dimensions compose (motive-driven-needs.md obs. 1)", () => {
+  const combos: CreatureWorldParams[] = [
+    { giverCondition: "cold", complexity: "request" }, // motive obtained via a vendor
+    { giverCondition: "cold", complexity: "exchange" }, // motive obtained via a trade
+    { giverCondition: "cold", complexity: "lend" }, // motive obtained via a lender
+    { giverCondition: "cold", needCount: 2 }, // motive + counting
+    { giverCondition: "cold", descriptors: true }, // motive + a variant item
+    { giverCausalWhy: true, descriptors: true }, // causal WHY + a variant
+    { giverCausalWhy: true, complexity: "request" }, // causal WHY + a vendor
+    { deliverCausalPurpose: true, task: "deliver", transformations: true }, // deliver + transform
+    { deliverCausalPurpose: true, task: "deliver", complexity: "request" }, // deliver + vendor
+  ];
+  combos.forEach((cfg, i) => {
+    it(`composes + certifies: ${JSON.stringify(cfg)}`, () => {
+      const game = buildCreatureQuestWorld({ questCount: 1, rng: mulberry32(900 + i), ...cfg });
+      const cert = certifyCreatureQuestWorld(game);
+      expect(cert.ok ? [] : cert.errors).toEqual([]);
+    });
+  });
+});
+
+describe("step 4c places — go-to (presence) needs (§5)", () => {
+  it("noteArrival fulfills the presence need and credits the player", () => {
+    const world = createCreatureWorld(
+      [
+        { id: "a", needs: [{ itemId: "bear", value: 3, atPlace: "bear" }] },
+        { id: PLAYER_CREATURE_ID },
+      ],
+      [],
+    );
+    expect(openNeeds(world.creatures.a!)).toHaveLength(1);
+    const events = noteArrival(world, PLAYER_CREATURE_ID, "bear");
+    expect(openNeeds(world.creatures.a!)).toHaveLength(0);
+    expect(events).toContainEqual({ type: "need-fulfilled", creatureId: "a", itemId: "bear", value: 3 });
+    expect(world.creatures.a!.debts[PLAYER_CREATURE_ID]).toBe(3);
+  });
+
+  it("a go-to quest: certifies, line 'you + go + to + {dest}', item-acts suppressed", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverGoToPlace: true,
+      rng: mulberry32(618),
+    });
+    expect(certifyCreatureQuestWorld(game).ok).toBe(true);
+
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId, node] = [...nodeByCreature].find(([, n]) => n.needAtPlaceNodeId)!;
+    const dest = node.needAtPlaceNodeId!;
+    // The destination is a needless CONTENT creature (a place to visit).
+    expect(nodeByCreature.get(dest)!.needItemEntityId).toBeUndefined();
+
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const symbolOfCreature = (cid: string) => symbolOf(nodeByCreature.get(cid)?.npcEntityId ?? cid);
+    const opts: ProjectionOpts = { symbolOf, symbolOfCreature };
+    const destSym = symbolOfCreature(dest);
+
+    const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts);
+    expect(proj.lineGlyph).toBe(`you + go + to + ${destSym}`);
+    // No item-based acts on a presence need.
+    expect(proj.acts.some((a) => a.kind === "where-is")).toBe(false);
+    expect(proj.acts.some((a) => a.kind === "cant")).toBe(false);
+    expect(proj.acts.some((a) => a.kind === "agree")).toBe(true);
+  });
+
+  it("the go-to giver is NOT content at start; the destination IS", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverGoToPlace: true,
+      rng: mulberry32(619),
+    });
+    const cert = certifyGoalTreeGame(game);
+    if (!cert.ok) throw new Error(cert.errors.join("; "));
+    const ctx = createRuntimeContext(game, cert.world);
+    let state = createRuntimeState();
+
+    const { nodeByCreature } = creatureWorldFromGame(game);
+    const giver = [...nodeByCreature.values()].find((n) => n.needAtPlaceNodeId)!;
+    const dest = giver.needAtPlaceNodeId!;
+
+    state = applyRuntimeInput(ctx, state, { type: "start" }).state;
+    // The needless destination is instantly content; the go-to giver still gates.
+    expect(state.completed[dest]).toBe(true);
+    expect(state.completed[giver.id]).toBeUndefined();
+
+    // Arriving at the destination reports the giver's need fulfilled.
+    const res = applyRuntimeInput(ctx, state, { type: "fulfill-need", nodeId: giver.id });
+    expect(res.state.completed[giver.id]).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Motive batch (motive-driven-needs.md follow-ups): ten flavored quest shapes
+// through ONE param — each must certify AND project sensible dialogue.
+// ---------------------------------------------------------------------------
+
+describe("motive batch — giverMotive presets", () => {
+  const build = (giverMotive: Parameters<typeof buildCreatureQuestWorld>[0]["giverMotive"], seed = 909) => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverMotive,
+      rng: mulberry32(seed),
+    });
+    const cert = certifyCreatureQuestWorld(game);
+    expect(cert).toEqual({ ok: true });
+    const derived = creatureWorldFromGame(game);
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const opts: ProjectionOpts = {
+      symbolOf,
+      symbolOfCreature: (cid) => {
+        const npc = derived.nodeByCreature.get(cid)?.npcEntityId;
+        return (npc && game.entities.find((e) => e.id === npc)?.glyph) || "there";
+      },
+    };
+    return { game, ...derived, opts };
+  };
+  const giverOf = (d: ReturnType<typeof build>) =>
+    [...d.nodeByCreature].find(([id]) => id.endsWith("_giver"))!;
+
+  it("hungry: condition → 'I want food'; WHY answers 'because I am hungry'", () => {
+    const d = build("hungry");
+    const [giverId, node] = giverOf(d);
+    expect(node.condition).toBe("hungry");
+    expect(node.needTarget).toEqual({ category: "food" });
+    // The staged item IS food (drawn from the treat pool + categorized).
+    expect(d.world.items[node.needItemEntityId!]!.category).toBe("food");
+    const proj = projectDialogue(d.world, giverId, PLAYER_CREATURE_ID, "c", d.opts);
+    expect(proj.lineGlyph).toBe("i_me + want + food");
+    const why = proj.acts.find((a) => a.kind === "why")!;
+    expect(selectAct(d.world, giverId, PLAYER_CREATURE_ID, why, "c", d.opts).responseGlyph).toBe(
+      "i_me + want + food + because + i_me + hungry",
+    );
+    // Feeding it clears the hunger (getting-better demo).
+    const itemId = node.needItemEntityId!;
+    d.world.items[itemId]!.ownerId = PLAYER_CREATURE_ID;
+    expect(giveItem(d.world, PLAYER_CREATURE_ID, giverId, itemId).accepted).toBe(true);
+    expect(d.world.creatures[giverId]!.condition).toBeUndefined();
+  });
+
+  it("likes-item: exact want; WHY answers 'because I like {item}'", () => {
+    const d = build("likes-item");
+    const [giverId, node] = giverOf(d);
+    const sym = d.opts.symbolOf(node.needItemEntityId!);
+    const proj = projectDialogue(d.world, giverId, PLAYER_CREATURE_ID, "c", d.opts);
+    expect(proj.lineGlyph).toBe(`i_me + want + ${sym}`);
+    const why = proj.acts.find((a) => a.kind === "why")!;
+    expect(selectAct(d.world, giverId, PLAYER_CREATURE_ID, why, "c", d.opts).responseGlyph).toBe(
+      `i_me + want + ${sym} + because + i_me + like + ${sym}`,
+    );
+  });
+
+  it("likes-color: 'something {color}' want; WHY answers 'because I like {color}'", () => {
+    const d = build("likes-color");
+    const [giverId, node] = giverOf(d);
+    const color = node.needTarget!.descriptors![0]!;
+    expect(color.startsWith("color_")).toBe(true);
+    const proj = projectDialogue(d.world, giverId, PLAYER_CREATURE_ID, "c", d.opts);
+    // The want is the QUALITY, never the designated item.
+    expect(proj.lineGlyph).toBe(`i_me + want + ${color}`);
+    const why = proj.acts.find((a) => a.kind === "why")!;
+    expect(selectAct(d.world, giverId, PLAYER_CREATURE_ID, why, "c", d.opts).responseGlyph).toBe(
+      `i_me + want + ${color} + because + i_me + like + ${color}`,
+    );
+    // The wrong-color variant is declined with the missing color.
+    expect(d.world.items.q0_wrong).toBeDefined();
+    d.world.items.q0_wrong!.ownerId = PLAYER_CREATURE_ID;
+    const offer: DialogueAct = { kind: "offer", itemId: "q0_wrong", glyph: "x" };
+    const res = selectAct(d.world, giverId, PLAYER_CREATURE_ID, offer, "c", d.opts);
+    expect(res.responseGlyph).toContain(`${color}.not`);
+  });
+
+  it("play/music/read/wear: category want; WHY answers 'because I want to {verb}'", () => {
+    const cases = [
+      { motive: "play" as const, want: "toy", verb: "play" },
+      { motive: "music" as const, want: "instrument", verb: "play" },
+      { motive: "read" as const, want: "book", verb: "read" },
+      { motive: "wear" as const, want: "clothing", verb: "wear" },
+    ];
+    for (const c of cases) {
+      const d = build(c.motive);
+      const [giverId] = giverOf(d);
+      const proj = projectDialogue(d.world, giverId, PLAYER_CREATURE_ID, "c", d.opts);
+      expect(proj.lineGlyph).toBe(`i_me + want + ${c.want}`);
+      const why = proj.acts.find((a) => a.kind === "why")!;
+      expect(selectAct(d.world, giverId, PLAYER_CREATURE_ID, why, "c", d.opts).responseGlyph).toBe(
+        `i_me + want + ${c.want} + because + i_me + want + ${c.verb}`,
+      );
+    }
+  });
+
+  it("smelly: outdoor garbage placement; WHY answers 'sad because {item} smelly'", () => {
+    const d = build("smelly");
+    const [giverId, node] = giverOf(d);
+    expect(node.needPlacedInEntityId).toBe("q0_dest");
+    expect(node.needPlacedOutdoors).toBe(true);
+    const itemId = node.needItemEntityId!;
+    // The item spawns SMELLY (baked into its glyph + live states).
+    expect(d.world.items[itemId]!.states).toContain("smelly");
+    const sym = d.opts.symbolOf(itemId).split(".")[0]!;
+    const proj = projectDialogue(d.world, giverId, PLAYER_CREATURE_ID, "c", d.opts);
+    // DISPOSAL is a DISTINCT statement: it leads with `throw` (not `want`) and
+    // names the item in its LIVE spoiled state (`cookie.smelly`) — so it never
+    // looks like "put a toy in a box".
+    expect(proj.lineGlyph).toBe(`you + throw + ${sym}.smelly + in + garbage`);
+    const why = proj.acts.find((a) => a.kind === "why")!;
+    expect(selectAct(d.world, giverId, PLAYER_CREATURE_ID, why, "c", d.opts).responseGlyph).toBe(
+      `i_me + sad + because + ${sym} + smelly`,
+    );
+    // Dropping it in the garbage fulfills.
+    d.world.items[itemId]!.ownerId = PLAYER_CREATURE_ID;
+    const events = notePlacement(d.world, PLAYER_CREATURE_ID, itemId, "q0_dest");
+    expect(events.some((e) => e.type === "need-fulfilled")).toBe(true);
+  });
+
+  it("lonely: 'stay with me' want; WHY answers 'stay because lonely'; dwell fulfills", () => {
+    const d = build("lonely");
+    const [giverId, node] = giverOf(d);
+    expect(node.needStayWith).toBe(true);
+    expect(node.condition).toBe("lonely");
+    const proj = projectDialogue(d.world, giverId, PLAYER_CREATURE_ID, "c", d.opts);
+    expect(proj.lineGlyph).toBe("you + stay + with + i_me");
+    expect(proj.acts.some((a) => a.kind === "agree")).toBe(true);
+    const why = proj.acts.find((a) => a.kind === "why")!;
+    expect(selectAct(d.world, giverId, PLAYER_CREATURE_ID, why, "c", d.opts).responseGlyph).toBe(
+      "you + stay + with + i_me + because + i_me + lonely",
+    );
+    // The world layer times the dwell, then reports arrival at the creature
+    // itself — the need fulfills and the loneliness clears.
+    const events = noteArrival(d.world, PLAYER_CREATURE_ID, giverId);
+    expect(events.some((e) => e.type === "need-fulfilled")).toBe(true);
+    expect(d.world.creatures[giverId]!.condition).toBeUndefined();
+  });
+
+  it("lonely at reveal 'motive': the OPENING is just 'I am lonely'", () => {
+    const game = buildCreatureQuestWorld({
+      questCount: 1,
+      complexity: "simple",
+      giverMotive: "lonely",
+      giverReveal: "motive",
+      rng: mulberry32(910),
+    });
+    const { world, nodeByCreature } = creatureWorldFromGame(game);
+    const [giverId] = [...nodeByCreature].find(([id]) => id.endsWith("_giver"))!;
+    const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
+    const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", { symbolOf });
+    expect(proj.lineGlyph).toBe("i_me + lonely");
+    expect(proj.acts.some((a) => a.kind === "why")).toBe(false);
+  });
+
+  it("escort: 'take me to {dest}'; the GIVER arriving fulfills", () => {
+    const d = build("escort");
+    const [giverId, node] = giverOf(d);
+    expect(node.needEscort).toBe(true);
+    const destId = node.needAtPlaceNodeId!;
+    const destSym = d.opts.symbolOfCreature!(destId);
+    const proj = projectDialogue(d.world, giverId, PLAYER_CREATURE_ID, "c", d.opts);
+    expect(proj.lineGlyph).toBe(`you + take + i_me + to + ${destSym}`);
+    expect(proj.acts.some((a) => a.kind === "agree")).toBe(true);
+    // The world layer walks the giver there, then reports arrival.
+    const events = noteArrival(d.world, PLAYER_CREATURE_ID, destId);
+    expect(events.some((e) => e.type === "need-fulfilled" && e.creatureId === giverId)).toBe(true);
+  });
+
+  it("every motive preset certifies across seeds", () => {
+    const motives = [
+      "hungry", "likes-item", "likes-color", "play", "music", "read", "wear", "smelly", "lonely", "escort",
+    ] as const;
+    for (const motive of motives) {
+      for (const seed of [11, 222, 3333]) {
+        const game = buildCreatureQuestWorld({
+          questCount: 2,
+          complexity: "simple",
+          giverMotive: motive,
+          rng: mulberry32(seed),
+        });
+        const cert = certifyCreatureQuestWorld(game);
+        expect(cert).toEqual({ ok: true });
+      }
+    }
   });
 });

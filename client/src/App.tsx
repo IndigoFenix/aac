@@ -423,7 +423,7 @@ function App() {
                   <CallProvider>
                   <FeaturePanelProvider>
                     <ChatProvider>
-                      <ThemeProvider defaultTheme="dark">
+                      <ThemeProvider defaultTheme="light">
                         <AccessibilityProvider>
                           <TooltipProvider>
                             <Toaster />

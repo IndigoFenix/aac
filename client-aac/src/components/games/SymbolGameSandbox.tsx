@@ -29,9 +29,11 @@ import {
   compileExchange,
   POOLS,
   randomMemberPicker,
+  type GiverMotive,
   type QuestComplexity,
   type SyntaxLevel,
 } from "@shared/symbol-game";
+import { buildTownPlay, type TownPlayPayload } from "@shared/symbol-game/town-play";
 import { useLanguage } from "@/contexts/LanguageContext";
 import GoalTreeQuestPlayer from "@/components/games/GoalTreeQuestPlayer";
 import type { GameEmbedHandle } from "@/components/games/GameEmbed";
@@ -70,7 +72,7 @@ export default function SymbolGameSandbox() {
   const gameRef = useRef<GameEmbedHandle>(null);
   const [lockedBoard, setLockedBoard] = useState<ParsedBoardData | null>(null);
 
-  const [mode, setMode] = useState<"world" | "beats">("world");
+  const [mode, setMode] = useState<"world" | "town" | "beats">("world");
 
   // -- WORLD mode: the quest-world generator's dimension knobs.
   const [questCount, setQuestCount] = useState(2);
@@ -83,6 +85,30 @@ export default function SymbolGameSandbox() {
   const [transformations, setTransformations] = useState(false);
   const [request, setRequest] = useState<"before" | "after" | "never">("before");
   const [thought, setThought] = useState(true);
+  // §5 causation / element features (causation-and-elements.md). Each forces a
+  // clean simple base so it's one-click testable; "none" leaves the dims above.
+  const [feature, setFeature] = useState<
+    | "none"
+    | "why"
+    | "deliver-purpose"
+    | "cold-want"
+    | "cold-motive"
+    | "device"
+    | "device-powered"
+    | "station-powered"
+    | "go-to"
+    // Motive batch (motive-driven-needs.md follow-ups) — giverMotive presets.
+    | "m-hungry"
+    | "m-likes"
+    | "m-color"
+    | "m-play"
+    | "m-music"
+    | "m-read"
+    | "m-wear"
+    | "m-smelly"
+    | "m-lonely"
+    | "m-escort"
+  >("none");
 
   // The world SEED: one number reproduces the whole village (quest draws,
   // layout, buildings, house colors). Regenerate rolls a fresh one; typing a
@@ -96,12 +122,92 @@ export default function SymbolGameSandbox() {
 
   const built = useMemo(() => {
     try {
+      if (mode === "town") {
+        // LIVING TOWN (town-play): the quests sample from a real town's
+        // books and the player streams the town around you — open-ended,
+        // no victory door. The payload is the CONFIG; the player rebuilds
+        // the identical session from it. Build here too so a broken
+        // config fails loudly now, with the same simulation proof.
+        const payload: TownPlayPayload = {
+          engine: "town-play",
+          engineVersion: 1,
+          seed,
+          questCount: Math.min(3, questCount),
+          syntax,
+          locale: language,
+        };
+        const play = buildTownPlay(payload);
+        const cert = certifyCreatureQuestWorld(play.bundle.game);
+        if (!cert.ok) throw new Error(`${cert.stage}: ${cert.errors.join("; ")}`);
+        return { game: payload as TownPlayPayload | typeof play.bundle.game, error: null as string | null };
+      }
       if (mode === "world") {
         // Need-based creature quests (creature-needs.md). The simulation
         // certifier is the playability proof; surface its failure loudly.
         // The clinician's UI language IS the game locale — spoken lines come
         // out of the matching translation ruleset (en fallback).
-        const game = buildCreatureQuestWorld({ questCount, locale: language, syntax, complexity, clueRouting: clues, needCount, task, descriptors, transformations, giverAnnounce: request, thoughtScaffold: thought, seed });
+        const isFeat = feature !== "none";
+        // Motive-batch presets ride ONE generator param.
+        const MOTIVES: Record<string, GiverMotive> = {
+          "m-hungry": "hungry",
+          "m-likes": "likes-item",
+          "m-color": "likes-color",
+          "m-play": "play",
+          "m-music": "music",
+          "m-read": "read",
+          "m-wear": "wear",
+          "m-smelly": "smelly",
+          "m-lonely": "lonely",
+          "m-escort": "escort",
+        };
+        const giverMotive = MOTIVES[feature];
+        // ROOM-ONLY features (a device / a place / a person in the giver's own
+        // room) need a simple, single, fetch base. Object-WANT features (why /
+        // cold / deliver / the motive wants) COMPOSE with the dimension
+        // dropdowns — descriptors, transformations, complexity, count — obs. 1.
+        const roomOnly =
+          feature === "device" ||
+          feature === "device-powered" ||
+          feature === "station-powered" ||
+          feature === "go-to" ||
+          feature === "m-smelly" || // the garbage placement is its own task
+          feature === "m-lonely" ||
+          feature === "m-escort";
+        // The motive presets pick their own item pool/axis — keep the base clean.
+        const cleanWant = isFeat && (roomOnly || !!giverMotive);
+        const game = buildCreatureQuestWorld({
+          questCount,
+          locale: language,
+          syntax,
+          complexity: roomOnly || giverMotive ? "simple" : complexity,
+          clueRouting: isFeat ? "direct" : clues,
+          needCount: cleanWant ? 1 : needCount,
+          // Object-want features are FETCH (they don't place/deliver); deliver-
+          // purpose IS deliver; the "none" case uses the task dropdown.
+          task: feature === "deliver-purpose" ? "deliver" : isFeat ? "fetch" : task,
+          descriptors: cleanWant ? false : descriptors,
+          // station-powered needs a station; why (compat), cold (the motive
+          // forces its own station) and the motive presets don't take the
+          // transform dropdown; else it composes (deliver + transform, or plain).
+          transformations:
+            feature === "station-powered"
+              ? true
+              : feature === "why" || roomOnly || feature.startsWith("cold-") || giverMotive
+                ? false
+                : transformations,
+          giverAnnounce: isFeat ? "before" : request,
+          thoughtScaffold: thought,
+          giverCausalWhy: feature === "why",
+          deliverCausalPurpose: feature === "deliver-purpose",
+          giverCondition: feature.startsWith("cold-") ? "cold" : undefined,
+          giverReveal: feature === "cold-want" ? "want" : feature === "cold-motive" ? "motive" : undefined,
+          giverDeviceNeed: feature === "device" || feature === "device-powered" ? "on" : undefined,
+          giverDevicePowered: feature === "device-powered",
+          giverStationPowered: feature === "station-powered",
+          giverGoToPlace: feature === "go-to",
+          giverMotive,
+          seed,
+        });
         const cert = certifyCreatureQuestWorld(game);
         if (!cert.ok) throw new Error(`${cert.stage}: ${cert.errors.join("; ")}`);
         return { game, error: null as string | null };
@@ -111,7 +217,7 @@ export default function SymbolGameSandbox() {
     } catch (e) {
       return { game: null, error: e instanceof Error ? e.message : String(e) };
     }
-  }, [mode, questCount, language, syntax, complexity, clues, needCount, task, descriptors, transformations, request, thought, seed, exchange, reroll]);
+  }, [mode, questCount, language, syntax, complexity, clues, needCount, task, descriptors, transformations, request, thought, feature, seed, exchange, reroll]);
 
   const step = (d: number) => {
     setLockedBoard(null);
@@ -140,12 +246,17 @@ export default function SymbolGameSandbox() {
       <div className="flex items-center justify-between gap-3 px-3 py-1 text-xs text-white/70 bg-zinc-900 flex-shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => { setLockedBoard(null); setMode(mode === "world" ? "beats" : "world"); }}
+            onClick={() => {
+              setLockedBoard(null);
+              setMode(mode === "world" ? "town" : mode === "town" ? "beats" : "world");
+            }}
             className="px-2 py-0.5 rounded bg-indigo-700 hover:bg-indigo-600 text-white"
           >
-            {mode === "world" ? "🌍 world" : "🎯 beats"}
+            {mode === "world" ? "🌍 world" : mode === "town" ? "🏘️ town" : "🎯 beats"}
           </button>
-          {mode === "world" ? (
+          {/* Town mode reuses the world knob row — quests/syntax/seed drive
+              the town config; the other dimensions are ignored by it. */}
+          {mode !== "beats" ? (
             <>
               <label className="flex items-center gap-1">
                 quests
@@ -226,6 +337,30 @@ export default function SymbolGameSandbox() {
                 </label>
               )}
               <label className="flex items-center gap-1">
+                ✨ feature
+                <select className={selectCls} value={feature} onChange={(e) => { setLockedBoard(null); setFeature(e.target.value as typeof feature); }}>
+                  <option value="none">none (dims above)</option>
+                  <option value="why">why · because (ask WHY)</option>
+                  <option value="deliver-purpose">deliver · in order to</option>
+                  <option value="cold-want">cold · "want something hot" (+ WHY)</option>
+                  <option value="cold-motive">cold · "I am cold" (infer)</option>
+                  <option value="device">device · tap to turn on</option>
+                  <option value="device-powered">device + generator (tap both)</option>
+                  <option value="station-powered">powered fridge (tap generator)</option>
+                  <option value="go-to">go to friend (walk there)</option>
+                  <option value="m-hungry">hungry · "I want food" (+ WHY)</option>
+                  <option value="m-likes">likes it · "because I like it"</option>
+                  <option value="m-color">likes color · "something red"</option>
+                  <option value="m-play">toy · "I want to play"</option>
+                  <option value="m-music">instrument · "I want to play"</option>
+                  <option value="m-read">book · "I want to read"</option>
+                  <option value="m-wear">clothes · "to get dressed"</option>
+                  <option value="m-smelly">smelly food → garbage (outdoors)</option>
+                  <option value="m-lonely">lonely · "stay with me"</option>
+                  <option value="m-escort">escort · "take me to…"</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
                 seed
                 <input
                   type="number"
@@ -270,7 +405,7 @@ export default function SymbolGameSandbox() {
           ) : (
             <GoalTreeQuestPlayer
               // Remount on any knob change so the iframe reloads the new game.
-              key={`${mode}-${questCount}-${language}-${syntax}-${complexity}-${clues}-${needCount}-${task}-${descriptors}-${transformations}-${request}-${thought}-${seed}-${idx}-${reroll}`}
+              key={`${mode}-${questCount}-${language}-${syntax}-${complexity}-${clues}-${needCount}-${task}-${descriptors}-${transformations}-${request}-${thought}-${feature}-${seed}-${idx}-${reroll}`}
               game={built.game!}
               renderMode="3d"
               // No sendMessageToAi — the AI companion is intentionally absent.

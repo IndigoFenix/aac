@@ -344,6 +344,11 @@ const VOCAB: VocabularyItem[] = [
   { key: "person", tKey: "aac.glyph.person", pos: "person", categories: ["who"],
     modeChips: { who: ["all", "people"] }, tone: "comment",
     imagePath: "people/person", emoji: "🧑", exposeToAi: true },
+  // someone — the indefinite person; also the standalone default head for `who`
+  // ("who" = someone.who, a `?` on the someone glyph).
+  { key: "someone", tKey: "aac.glyph.someone", pos: "person", categories: ["who"],
+    modeChips: { who: ["all", "people"] }, tone: "comment",
+    imagePath: "people/someone", emoji: "🧑", exposeToAi: true },
   // Pronouns via the gender modifier: he = person.male, she = person.female,
   // it = thing. `they` (above) is the plural. Accepted aliases that normalize
   // to the composed form (like today → day.this).
@@ -571,10 +576,32 @@ const VOCAB: VocabularyItem[] = [
   // semantics, not physical doors / containers).
   { key: "open", tKey: "aac.glyph.open", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "comment", emoji: "📂",
+    imagePath: "actions/hands/open",
     composable: { accepts: ["noun"], suggestCategories: ["what"] } },
   { key: "close", tKey: "aac.glyph.close", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "comment", emoji: "📁",
     composable: { accepts: ["noun"], suggestCategories: ["what"] } },
+  // shut — a physical-close synonym (its own key; `close`'s folder-emoji reads
+  // file-manager, this one reads a door/lid shutting).
+  { key: "shut", tKey: "aac.glyph.shut", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "hands"] }, tone: "comment", emoji: "🚪",
+    imagePath: "actions/hands/shut", exposeToAi: true,
+    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
+  // turn_on / turn_off — the device toggle ACTIONS (distinct from the on/off
+  // state adjectives below).
+  { key: "turn_on", tKey: "aac.glyph.turn_on", pos: "verb", categories: ["do"],
+    modeChips: { do: ["hands"] }, tone: "comment", emoji: "🔛",
+    imagePath: "actions/hands/turn_on", exposeToAi: true,
+    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
+  { key: "turn_off", tKey: "aac.glyph.turn_off", pos: "verb", categories: ["do"],
+    modeChips: { do: ["hands"] }, tone: "comment", emoji: "📴",
+    imagePath: "actions/hands/turn_off", exposeToAi: true,
+    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
+  // do — the generic action verb; also the standalone default head for `how`
+  // ("how" = do.how, a `?` on the do glyph).
+  { key: "do", tKey: "aac.glyph.do", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common"] }, tone: "comment", emoji: "🙌",
+    imagePath: "actions/hands/do", exposeToAi: true },
   // emoji weak — push / pull currently overload pointing-finger emoji.
   { key: "push", tKey: "aac.glyph.push", pos: "verb", categories: ["do"],
     modeChips: { do: ["hands"] }, tone: "comment", emoji: "👉", directional: true },
@@ -597,7 +624,9 @@ const VOCAB: VocabularyItem[] = [
 
   // ── WHAT ─────────────────────────────────────────────────────────────────
   // Generic / question-word bases: `thing#question` = "what" (and any noun +
-  // #question = "which X"); `cause#question` = "why". `how` reuses `use`.
+  // #question = "which X"); `cause#question` = "why". The word-level WH-words
+  // (what/who/where/when/why/how) are canonical MODIFIERS registered at the end
+  // of this array — standalone they expand to these bases + a `?` badge.
   { key: "thing", tKey: "aac.glyph.thing", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment",
     imagePath: "things/thing", emoji: "📦", exposeToAi: true },
@@ -826,6 +855,9 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "feelings"] }, tone: "feeling", emoji: "😑" },
   { key: "hungry", tKey: "aac.glyph.hungry", pos: "feeling", categories: ["what"],
     modeChips: { what: ["all", "feelings"] }, tone: "feeling", emoji: "🤤" },
+  { key: "lonely", tKey: "aac.glyph.lonely", pos: "feeling", categories: ["what"],
+    modeChips: { what: ["all", "feelings"] }, tone: "feeling", emoji: "😔",
+    imagePath: "adjectives/feelings/lonely", exposeToAi: true },
   // emoji weak — droplet emoji overlaps with `water`.
   { key: "thirsty", tKey: "aac.glyph.thirsty", pos: "feeling", categories: ["what"],
     modeChips: { what: ["all", "feelings"] }, tone: "feeling", emoji: "💧" },
@@ -881,9 +913,17 @@ const VOCAB: VocabularyItem[] = [
   { key: "park", tKey: "aac.glyph.park", pos: "place", categories: ["where", "what"],
     modeChips: { where: ["places"], what: ["places"] }, tone: "comment", emoji: "🛝" },
   { key: "here", tKey: "aac.glyph.here", pos: "place", categories: ["where"],
-    modeChips: { where: ["spatial"] }, tone: "comment", emoji: "📍", exposeToAi: true },
+    modeChips: { where: ["spatial"] }, tone: "comment", emoji: "📍",
+    imagePath: "places/here", exposeToAi: true },
   { key: "there", tKey: "aac.glyph.there", pos: "place", categories: ["where"],
     modeChips: { where: ["spatial"] }, tone: "comment", emoji: "🎯", exposeToAi: true },
+  // near / far — the proximity pair (spatial deixis).
+  { key: "near", tKey: "aac.glyph.near", pos: "place", categories: ["where"],
+    modeChips: { where: ["spatial"] }, tone: "comment", emoji: "📍",
+    imagePath: "places/near", exposeToAi: true },
+  { key: "far", tKey: "aac.glyph.far", pos: "place", categories: ["where"],
+    modeChips: { where: ["spatial"] }, tone: "comment", emoji: "🔭",
+    imagePath: "places/far", exposeToAi: true },
   // Generic "place" base — also the question-word base: `place#question` = "where".
   { key: "place", tKey: "aac.glyph.place", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment",
@@ -1128,6 +1168,34 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all"] }, tone: "comment", emoji: "❄️", exposeToAi: true,
     modifier: { appliesTo: ["noun"], transform: "halo_cool", order: 21 } },
 
+  // Sensory qualities (smell / taste opposite pairs) — badge modifiers on nouns,
+  // e.g. `food.smelly`. Also standalone WHAT chips.
+  { key: "smelly", tKey: "aac.glyph.smelly", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment", emoji: "🤢", exposeToAi: true,
+    imagePath: "adjectives/sensory/smelly",
+    modifier: { appliesTo: ["noun", "animal"], transform: "badge", order: 22, pairKey: "fragrant" } },
+  { key: "fragrant", tKey: "aac.glyph.fragrant", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment", emoji: "🌸", exposeToAi: true,
+    imagePath: "adjectives/sensory/fragrant",
+    modifier: { appliesTo: ["noun", "animal"], transform: "badge", order: 23, pairKey: "smelly" } },
+  { key: "tasty", tKey: "aac.glyph.tasty", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment", emoji: "😋", exposeToAi: true,
+    imagePath: "adjectives/sensory/tasty",
+    modifier: { appliesTo: ["noun"], transform: "badge", order: 24, pairKey: "yucky" } },
+  { key: "yucky", tKey: "aac.glyph.yucky", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment", emoji: "🤮", exposeToAi: true,
+    imagePath: "adjectives/sensory/yucky",
+    modifier: { appliesTo: ["noun"], transform: "badge", order: 25, pairKey: "tasty" } },
+
+  // Device state — `off` is the state adjective (a lamp that is off); the `on`
+  // state shares the spatial-preposition `on` key (a connector, below) so it
+  // can't also be a modifier — `off` stands alone. `turn_on`/`turn_off` are the
+  // ACTIONS. See the on/off asymmetry note in the vocab doc.
+  { key: "off", tKey: "aac.glyph.off", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment", emoji: "🚫", exposeToAi: true,
+    imagePath: "adjectives/state/off",
+    modifier: { appliesTo: ["noun"], transform: "badge", order: 26 } },
+
   // ── Color modifiers ────────────────────────────────────────────────────
   // The compositor renders a colored frame around the slot rim when one of
   // these is applied. They're hidden from the modifier carousel — the
@@ -1307,7 +1375,7 @@ const VOCAB: VocabularyItem[] = [
   { key: "if", tKey: "aac.glyph.if", pos: "connector", categories: [],
     modeChips: {}, tone: "comment", emoji: "❓", exposeToAi: true },
   { key: "because", tKey: "aac.glyph.because", pos: "connector", categories: [],
-    modeChips: {}, tone: "comment", emoji: "🔗", exposeToAi: true },
+    modeChips: {}, tone: "comment", emoji: "🔗", imagePath: "indicators/because", exposeToAi: true },
 
   // Spatial relations — also forward-binding joins, but rendered as a
   // trajectory arrow from glyph A → glyph B (SpatialArrow) instead of a logical
@@ -1322,13 +1390,42 @@ const VOCAB: VocabularyItem[] = [
   { key: "out", tKey: "aac.glyph.out", pos: "connector", categories: [],
     modeChips: {}, tone: "comment", emoji: "📤", exposeToAi: true },
   { key: "on", tKey: "aac.glyph.on", pos: "connector", categories: [],
-    modeChips: {}, tone: "comment", emoji: "🔛", exposeToAi: true },
+    modeChips: {}, tone: "comment", emoji: "🔛", imagePath: "adjectives/state/on", exposeToAi: true },
   { key: "under", tKey: "aac.glyph.under", pos: "connector", categories: [],
     modeChips: {}, tone: "comment", emoji: "⬇️", exposeToAi: true },
   { key: "over", tKey: "aac.glyph.over", pos: "connector", categories: [],
     modeChips: {}, tone: "comment", emoji: "⤴️", exposeToAi: true },
   { key: "through", tKey: "aac.glyph.through", pos: "connector", categories: [],
     modeChips: {}, tone: "comment", emoji: "↪️", exposeToAi: true },
+
+  // ── Question words ────────────────────────────────────────────────────────
+  // The six WH-words have NO icon of their own. They are canonical MODIFIERS:
+  // used on a head (`apple.what`, `place.where`) they drop a `?` badge on it,
+  // regardless of the head. Used STANDALONE they expand (expandsTo) to a default
+  // head carrying themselves as the modifier — so `what` renders as the generic
+  // `thing` glyph with the `?` badge, `who` as `someone`, `where` as `place`,
+  // `when` as `time`, `why` as `cause`, `how` as `do`. Hidden from the modifier
+  // carousel (the `#question` OPERATOR is the builder's `?` affordance); the AI
+  // emits them directly. All render the same ❓ badge — the default HEAD is what
+  // distinguishes them when standalone.
+  { key: "what", tKey: "aac.glyph.what", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "question", emoji: "❓", exposeToAi: true, expandsTo: "thing.what",
+    modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 95, corner: "top-right", hiddenFromCarousel: true } },
+  { key: "who", tKey: "aac.glyph.who", pos: "modifier", categories: ["who"],
+    modeChips: { who: ["all"] }, tone: "question", emoji: "❓", exposeToAi: true, expandsTo: "someone.who",
+    modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 96, corner: "top-right", hiddenFromCarousel: true } },
+  { key: "where", tKey: "aac.glyph.where", pos: "modifier", categories: ["where"],
+    modeChips: { where: ["spatial"] }, tone: "question", emoji: "❓", exposeToAi: true, expandsTo: "place.where",
+    modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 97, corner: "top-right", hiddenFromCarousel: true } },
+  { key: "when", tKey: "aac.glyph.when", pos: "modifier", categories: ["when"],
+    modeChips: { when: ["quick"] }, tone: "question", emoji: "❓", exposeToAi: true, expandsTo: "time.when",
+    modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 98, corner: "top-right", hiddenFromCarousel: true } },
+  { key: "why", tKey: "aac.glyph.why", pos: "modifier", categories: [],
+    modeChips: {}, tone: "question", emoji: "❓", exposeToAi: true, expandsTo: "cause.why",
+    modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 99, corner: "top-right", hiddenFromCarousel: true } },
+  { key: "how", tKey: "aac.glyph.how", pos: "modifier", categories: ["do"],
+    modeChips: { do: ["common"] }, tone: "question", emoji: "❓", exposeToAi: true, expandsTo: "do.how",
+    modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 100, corner: "top-right", hiddenFromCarousel: true } },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -780,6 +780,104 @@ catch-up==stepping checks).
    of the day and read as static (the stock was always a live clock
    function; only its rendering was flat). Tests: door-transit bracket
    assertion + market-stand cycle in food/zoom suites.*
+
+   **Witnessed pantries + street-life ranking (2026-07-07, playtest:
+   "people only ever appear in buildings, and boxes fill before the
+   shopper is home"):** two fixes to the same illusion. RANKING — the
+   engine budget (8 bodies) filled nearest-first, which in a town means
+   the nearest houses' residents sitting INVISIBLY indoors while the
+   walkers up the street never embody (the "empty roads" report); now
+   idle homebodies rank `IDLE_RANK_PENALTY` (200 m) behind street life,
+   embody only within `IDLE_EMBODY_R` (110 m), and hold no beside-you
+   despawn lock while hidden inside their own house — the player being
+   IN the house waives all of it — so the budget buys people the player
+   can SEE. WITNESS — the pantry was a pure clock function, so boxes
+   refilled the instant the projection said so, slightly before (or
+   without) any body; trips now END AT THE CRATE (`pantryBoxAt`, a
+   final dwell waypoint after the door transit), main.ts reports the
+   engine's last-waypoint `onArrive` to `TownManager.tripArrived`, and
+   the view reads `TownManager.pantry` — a stateful overlay on the
+   closed form: a walked trip keeps the box empty until the body
+   actually reaches it (however late steering and door jams make it),
+   and a WATCHED box (inside the camera's visible radius) never refills
+   on its own — it waits for a real shopper, or for the player to look
+   away; off-screen and first-sight boxes read the closed form as
+   before. And the budget itself GREW: the engine's 8-NPC cap exists
+   for voiced/broadcast NPCs (each spec NPC is a live social session);
+   villager bodies are pure steering controllers, so `runWorldHost`
+   gained a per-host `maxNpcs` override (spec-authored casts stay
+   schema-capped) and the seamless world runs `STREET_NPCS` (40) —
+   busy streets read busy, the on-screen crowd stays in the dozens.
+   Tests: a witnessed-pantry suite in food.test.ts (hold +
+   commit-on-arrival, watched deferral, first-sight priming) +
+   street-life ranking, per-host cap, and reworked pop-in tests in
+   zoom.test.ts.*
+
+   **Households (same day, playtest: "5 people per house? then they
+   should be IN them"):** HOUSEHOLD=5 sized the town and the pantry but
+   each house only ever sampled ONE person. Now member m of house k is
+   `sampleVillager(site, k*HOUSEHOLD + m)` (`memberIndex`/`houseIndexOf`
+   in zoom.ts) — the addressable-person space finally ≈ the population,
+   and the npc-id scheme, recruit/pin ledger, and freed-folk melt-back
+   all carry over unchanged since ids were always sample-indexed.
+   Member 0's successor-by-exclusion is the household SHOPPER (walks
+   the food cycle; recruit the shopper and a sibling takes over next
+   cycle); the others are HOMEBODIES at deterministic spots spread
+   about the room (`memberSpot`), embodied only near the player and
+   ranked behind street life like any idle — step into a home and the
+   family is there. Pantry witness state re-keyed per HOUSEHOLD
+   (member-0 id, `householdKey`), with the in-flight trip tracked as
+   {walking member, cycle} so shopper handover can't strand a box.
+   Tests: full-family-at-home assertion in the pop-in test; house
+   lookups in food/zoom suites moved to houseIndexOf.*
+
+   **The city frame-rate crawl (same day, playtest: "cities crawl when
+   first loaded, sometimes recovers after a while"):** measured on the
+   677-house riverton — `townPlan` 0.2–2 s, `createTownFood` 0.1–0.5 s,
+   and the GROWTH check replanned the town on ANY `want` change, which
+   with the day clock playing is nearly every sim day (population
+   drifts a few souls daily). Riverton made it absurd: the town
+   OVERFLOWS its footprint (want > built lots), so each ~0.3–1 s replan
+   rebuilt a byte-identical town — the crawl "recovering after a bit"
+   was the aggregate reaching rest. Three fixes: ① the growth GOVERNOR
+   — replan only when it can change the town (a full town skips demand
+   above its built lots), only for moves ≥ 2% of built lots, one town
+   per update, ≥ 5 s per-town cooldown (`TownPlan.built` records lots
+   placed); ② town LOADS stack no more: the nearest missing town loads,
+   ONE per update; ③ streaming reconciliation (chunks + bands update)
+   throttled to ~8 Hz in main.ts — candidate ranking walks every loaded
+   house and cost ~10–40 ms/frame in town; nothing it decides changes
+   in 16 ms. Remaining known hitch: the FIRST load of a big town is
+   still one synchronous 0.2–2 s plan (street growth is the cost — an
+   incremental/async plan builder is the future fix). Tests: governor
+   identity assertions (no-change updates and an overflowing town ride
+   the same plan object through days of sim) in zoom.test.ts.*
+
+   *2026-07-08 — **The good descriptor (food genericized, first move
+   toward multi-commodity streets):** food.ts's closed forms were never
+   food-shaped — only its constants were. `createTownGoods(tri, town,
+   seed, good)` now parameterizes the whole projection over a `GoodSpec`:
+   {key, needScalar/gotScalar, sellers (work types with a counter),
+   shelved (kinds with dawn-stocked shelves), producers (where supply
+   hauls originate — wired through `deriveDistricts`), perCapitaDaily,
+   capDays, shopSec, cartRations}. `FOOD_GOOD` is the founding instance
+   and `createTownFood`/`TownFood`/`FoodSource` remain as the food
+   wrapper + type aliases, so zoom.ts, main.ts, and every test call site
+   are untouched; food's hash draws are byte-stable (the cycle-offset
+   key already carried "food"; stand/dawn draws keep their formats —
+   correlated across goods, harmless since geometry differs per good).
+   The instance exposes `good` and `boxCap` (HOUSEHOLD × capDays ×
+   perCapitaDaily) for the multi-good renderer to come. District fill
+   allocation needed NO genericizing — it's ratio-based, so per-capita
+   scale cancels; only stall stock and haul weights carry units. NOT yet
+   commodity-keyed: the TownManager witness overlay (tripWalking/
+   committed/lastShown per household) and the shopper assignment
+   (member 0) — those grow a good dimension when a second real commodity
+   lands (bread: clone the ore→smelt→metal aggregate chain; clothing:
+   same shape, member-1 shopper on a weeks-long cycle). Tests: "the good
+   descriptor" suite in food.test.ts — a cloth-shaped second instance
+   (hall counter, no shelves, 40-day hoard), decorrelated cycle offsets,
+   and wrapper ≡ descriptor equivalence.*
 8. **Caravan mode** (§8).
 
 Steps 1–5 produce a playable idle civilization sim on their own (the Spore
@@ -812,6 +910,17 @@ erosion — is **plate-tectonics.md** (2026-07-06, SHIPPED: the first real
 provider behind timescales.md's Geology→Substrate seam; the lab's
 "TRI — tectonic" scenario runs the whole civ arc on a map that happened
 rather than being authored).
+
+How SETTLEMENTS THEMSELVES come to exist and grow — the full lifecycle
+(villages condensing from the wild `people` field, merging, colonization
+toward scarce resources, conquest into multi-city empires) and how deep
+civilizational HISTORY can be planned ahead and presented as growth (the
+rivers method applied to the settlement graph: keyframed boot-runs à la
+tectonics, or a streets.ts-style prefix-stable event stream over the
+solved settlement hierarchy) — is brainstormed in
+**civilization-emergence.md** (2026-07-07; extends world-content.md §5's
+founding transaction; supersedes `autoFound`'s scheduled-scan founding as
+the direction of travel).
 
 ## 10. Open questions
 

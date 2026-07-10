@@ -11,7 +11,7 @@ import { Play, Pause, FastForward, RotateCcw } from 'lucide-react';
 import {
   createGrid, worldStep, gridFastForward, injectTile, totalField, pendingCount,
   type CellGrid, type SystemSpec, type DisplaySpec,
-} from './cell-systems';
+} from '@shared/engine/cells';
 
 const GRID_N = 24;          // tiles per side
 const CANVAS_PX = 336;      // square render size

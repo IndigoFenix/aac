@@ -2,9 +2,17 @@
  * audioActivityMonitor.ts
  *
  * Monitors audio energy levels to detect speech boundaries.
- * Uses Web Speech API when available for speech boundary events,
- * always runs an AudioContext energy monitor for energy levels.
+ * Speech-state transitions come from (best first):
+ *  1. Neural VAD (Silero, attached externally via setNeuralVadActive +
+ *     pushNeuralEvent) — the only method that survives a noisy room, where
+ *     energy can't tell speech from loudness and never detects speech-end.
+ *  2. Web Speech API boundary events, when the platform provides them.
+ *  3. RMS energy thresholds (failsafe).
+ * The energy monitor always runs regardless, for energyLevel consumers
+ * (engagement signals, seizure vocal cue, UI meters).
  */
+
+import type { SpeechSegmentEvent } from "./speechSegmenter";
 
 export interface AudioActivityState {
   isSpeaking: boolean;
@@ -57,6 +65,10 @@ export class AudioActivityMonitor {
   // Web Speech API (type not always available in TS, use any)
   private speechRecognition: any = null;
   private usingSpeechAPI = false;
+
+  // Neural VAD (Silero) — while active, speech transitions come exclusively
+  // from pushNeuralEvent; WebSpeech is shut down and energy is metering-only.
+  private neuralVadActive = false;
 
   constructor(config?: Partial<AudioActivityConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -148,6 +160,7 @@ export class AudioActivityMonitor {
       hasActiveAudio: false,
     };
     this.lastSpeechBoundary = null;
+    this.neuralVadActive = false;
   }
 
   getState(): AudioActivityState {
@@ -179,9 +192,48 @@ export class AudioActivityMonitor {
     return this.lastSpeechBoundary;
   }
 
-  /** Whether Web Speech API or energy-based fallback is being used. */
-  getSpeechMethod(): 'webSpeechApi' | 'energy' {
+  /** Which speech-boundary detection method is currently driving state. */
+  getSpeechMethod(): 'silero' | 'webSpeechApi' | 'energy' {
+    if (this.neuralVadActive) return 'silero';
     return this.usingSpeechAPI ? 'webSpeechApi' : 'energy';
+  }
+
+  /**
+   * Hand speech-state ownership to (or back from) the neural VAD. While
+   * active, WebSpeech is stopped and the energy sampler only meters levels —
+   * boundary transitions arrive via pushNeuralEvent. Deactivating (model
+   * failed later, detach on teardown) restores the WebSpeech/energy paths.
+   */
+  setNeuralVadActive(active: boolean): void {
+    if (this.neuralVadActive === active) return;
+    this.neuralVadActive = active;
+    if (active) {
+      if (this.speechRecognition) {
+        try {
+          this.speechRecognition.onend = null;
+          this.speechRecognition.abort();
+        } catch { /* ignore */ }
+        this.speechRecognition = null;
+        this.usingSpeechAPI = false;
+      }
+    } else if (this.audioCtx) {
+      // Still running — bring the fallback boundary source back.
+      this.silenceStartTime = 0;
+      this.consecutiveHighEnergy = 0;
+      this.tryStartSpeechRecognition();
+    }
+  }
+
+  /** Apply a boundary event from the neural segmenter (timestamps are on the
+   *  ring buffer's wall clock, so clip extraction round-trips exactly). */
+  pushNeuralEvent(evt: SpeechSegmentEvent): void {
+    if (!this.neuralVadActive) return;
+    if (evt.type === "start") {
+      this.updateState({ isSpeaking: true, speechStartedAt: evt.atMs, hasActiveAudio: true });
+    } else {
+      this.lastSpeechBoundary = { start: evt.startMs, end: evt.endMs };
+      this.updateState({ isSpeaking: false, lastSpeechEndedAt: evt.endMs });
+    }
   }
 
   private tryStartSpeechRecognition(): void {
@@ -245,6 +297,12 @@ export class AudioActivityMonitor {
     this.state.hasActiveAudio = hasActiveAudio;
 
     const now = Date.now();
+
+    // Neural VAD owns speech transitions — energy is metering-only.
+    if (this.neuralVadActive) {
+      this.config.onStateChange?.(this.getState());
+      return;
+    }
 
     if (this.usingSpeechAPI) {
       // WebSpeech is active but unreliable — use energy as a safety net.

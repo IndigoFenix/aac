@@ -1,0 +1,156 @@
+* { box-sizing: border-box; margin: 0; }
+
+html, body {
+  height: 100%;
+  background: #05070f;
+  color: #cfd6e4;
+  font: 14px/1.4 system-ui, sans-serif;
+  overflow: hidden;
+}
+
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #0b0f1c;
+  border-bottom: 1px solid #1c2438;
+  height: 48px;
+}
+
+#bar h1 { font-size: 16px; font-weight: 600; margin-right: 8px; }
+#bar label { color: #8b94a8; }
+
+#bar select, #bar button {
+  background: #141b2e;
+  color: #cfd6e4;
+  border: 1px solid #263453;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+#bar button:hover, #bar select:hover { border-color: #3a4f7d; }
+
+#status {
+  margin-left: auto;
+  color: #8b94a8;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#status.error { color: #ff8686; }
+
+#layout {
+  display: flex;
+  height: calc(100% - 48px);
+}
+
+#world-file {
+  width: 380px;
+  min-width: 240px;
+  height: 100%;
+  resize: horizontal;
+  background: #0b0f1c;
+  color: #b9d0a8;
+  border: none;
+  border-right: 1px solid #1c2438;
+  padding: 12px;
+  font: 12px/1.5 ui-monospace, Consolas, monospace;
+  outline: none;
+}
+
+#view { flex: 1; position: relative; }
+#view canvas { display: block; }
+
+/* ── Playable scopes: the symbol game (living town / quest village) ──────── */
+
+.quest-root { position: absolute; inset: 0; overflow: hidden; display: flex; }
+/* `display: flex` etc. would beat the hidden attribute — never let an unseen
+   overlay blanket the stage and swallow the pointer. */
+.quest-root [hidden] { display: none !important; }
+
+.quest-stage { flex: 1; position: relative; min-width: 0; }
+.quest-canvas { width: 100%; height: 100%; display: block; }
+
+.quest-objectives {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px; pointer-events: none;
+}
+.quest-chip {
+  background: rgba(11, 15, 28, 0.75); border: 1px solid #263453;
+  border-radius: 8px; padding: 4px 8px; font-size: 18px;
+}
+.quest-chip.locked { opacity: 0.55; }
+
+.quest-satchel {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(11, 15, 28, 0.75); border-radius: 8px; padding: 4px 10px;
+  font-size: 18px; pointer-events: none;
+}
+.quest-satchel:empty { display: none; }
+
+.quest-toast {
+  position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
+  background: rgba(11, 15, 28, 0.85); border: 1px solid #3a4f7d;
+  border-radius: 8px; padding: 6px 14px; pointer-events: none;
+}
+
+.quest-win {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  background: rgba(5, 7, 15, 0.72); text-align: center;
+}
+.quest-win-burst { font-size: 64px; }
+.quest-win-title { font-size: 22px; }
+.quest-replay {
+  background: #141b2e; color: #cfd6e4; border: 1px solid #3a4f7d;
+  border-radius: 10px; padding: 8px 16px; font: inherit; cursor: pointer;
+}
+
+/* The response-board panel — the REAL <BoardButtonVisual> in a React island.
+   Fixed width, always mounted (empty between conversations) like the in-app
+   side board, so the stage never resizes as the board opens/closes. */
+.quest-boardpanel {
+  width: 28rem; flex: 0 0 auto; height: 100%;
+  background: #0b0f1c; border-left: 1px solid #1c2438;
+}
+.quest-boardpanel-inner { display: flex; flex-direction: column; height: 100%; padding: 8px; }
+.quest-boardpanel-prompt {
+  color: #cfd6e4; font-size: 15px; text-align: center;
+  min-height: 1.4em; margin-bottom: 8px;
+}
+.quest-boardpanel-grid { flex: 1; display: grid; gap: 8px; min-height: 0; }
+
+/* Minimal Tailwind-utility shim for the shared BoardButtonVisual, plus the
+   AAC icon-fill primitives (client-aac/src/index.css) — so the lab renders the
+   REAL board buttons without pulling Tailwind in. The class list mirrors
+   BoardButtonVisual's markup exactly. */
+.quest-boardpanel .flex { display: flex; }
+.quest-boardpanel .flex-col { flex-direction: column; }
+.quest-boardpanel .items-center { align-items: center; }
+.quest-boardpanel .justify-center { justify-content: center; }
+.quest-boardpanel .rounded-xl { border-radius: 0.75rem; }
+.quest-boardpanel .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+.quest-boardpanel .border { border-width: 1px; border-style: solid; }
+.quest-boardpanel .board-btn-border { border-color: #d1d5db; }
+.quest-boardpanel .min-h-0 { min-height: 0; }
+.quest-boardpanel .min-w-0 { min-width: 0; }
+.quest-boardpanel .overflow-hidden { overflow: hidden; }
+.quest-boardpanel .relative { position: relative; }
+.quest-boardpanel .w-full { width: 100%; }
+.quest-boardpanel .shrink-0 { flex-shrink: 0; }
+.quest-boardpanel .font-medium { font-weight: 500; }
+.quest-boardpanel .text-center { text-align: center; }
+.quest-boardpanel .text-gray-800 { color: #1f2937; }
+.quest-boardpanel .leading-tight { line-height: 1.25; }
+.quest-boardpanel .line-clamp-2 {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.quest-boardpanel .icon-fill-area {
+  flex: 1 1 0; min-height: 0; min-width: 0; width: 100%;
+  container-type: size; display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.quest-boardpanel .icon-fill-emoji { line-height: 1; font-size: 92cqmin; }
+.quest-boardpanel .icon-fill-img { width: 100%; height: 100%; object-fit: contain; }

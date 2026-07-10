@@ -167,6 +167,7 @@ import {
   type BudgetWindow,
 } from "@shared/aac/budget-meter";
 import { windowsForTier, tierByKey, type BudgetTier } from "@shared/aac/budget-tiers";
+import { resolveObserverPolicy, type ObserverEconomyPolicy } from "@shared/aac/observer-policy";
 import { studentRepository } from "../../repositories/studentRepository";
 import { onLedgerCharge } from "../credit-ledger";
 import type { ClientConfig } from "./client-config";
@@ -976,6 +977,12 @@ export class AgentCoordinator {
    *  ledger hook, and persisted (debounced + on close). Active whenever
    *  economizing. See planning-docs/aac-budget-tiers-spec.md. */
   private budgetTier: BudgetTier = tierByKey(undefined);
+  /** Standing Observer economy constraints (default backend / live permission /
+   *  always-conservative). Resolved at init from the budget tier's DEFAULTS +
+   *  any explicit per-student aac_settings override — a policy layer, not the
+   *  budget number. Read by the tool/prompt build, the initial + wake backend
+   *  choice, and the throttle so no deep code branches on `tier === "demo"`. */
+  private observerPolicy: ObserverEconomyPolicy = resolveObserverPolicy(tierByKey(undefined));
   private budgetWindows: BudgetWindow[] = [];
   private budgetState: BudgetState = {};
   private budgetDirty = false;
@@ -1084,6 +1091,13 @@ export class AgentCoordinator {
   private get economyObserverEnabled(): boolean {
     const v = process.env.AAC_OBSERVER_COST_SAVING?.toLowerCase();
     return !(v === "false" || v === "0" || v === "off");
+  }
+
+  /** True when the Observer may switch backends via set_observation_mode: the
+   *  cost-saving system is on AND the policy permits Live. When false the tool +
+   *  its <energy> lines are omitted and the backend is pinned to economy. */
+  private get observerModeSwitchable(): boolean {
+    return this.economyObserverEnabled && this.observerPolicy.allowLive;
   }
 
   /** True when cost-saving substitutions are allowed (full-attention OFF). */
@@ -1727,8 +1741,15 @@ export class AgentCoordinator {
    *  Returns 1 when the throttle is disabled (preserves legacy timing). */
   private idleThresholdScale(): number {
     if (!this.budgetThrottleEnabled) return 1;
-    const band = bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).band;
-    return idleThresholdScaleForBand(band === "low" ? "moderate" : band);
+    let band = bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).band;
+    // The LOW band uses the budget-scaled sleep timer (maybeIdleTransition), so
+    // clamp it to the moderate multiplier here.
+    if (band === "low") band = "moderate";
+    // Always-conservative policy: never relax to the high-band (1x) idle timing —
+    // treat a healthy budget as "moderate" so the session goes cold sooner during
+    // quiet gaps regardless of how much budget is left.
+    else if (band === "high" && this.observerPolicy.alwaysConservative) band = "moderate";
+    return idleThresholdScaleForBand(band);
   }
 
   private maybeIdleTransition(): void {
@@ -1910,6 +1931,16 @@ export class AgentCoordinator {
         // "I can hear you now". Purely to help identify mic problems after the fact.
         const micContent = `[MIC ${msg.active ? "ACTIVATED" : "DEACTIVATED"}]${msg.reason ? ` — ${msg.reason}` : ""}`;
         this.writeSupervisorOnly(micContent);
+        return;
+      }
+      case "speech_method": {
+        // Diagnostics only (same channel as mic_state). Records which speech-
+        // boundary detector the client is running — a session where the Silero
+        // VAD failed to load (and boundaries fell back to energy thresholds,
+        // which merge statements in a noisy room) is otherwise invisible
+        // outside the browser console.
+        flowNote("COORDINATOR", `Client speech method → ${msg.method}`);
+        this.writeSupervisorOnly(`[SPEECH METHOD] ${msg.method}`);
         return;
       }
       case "gps_update":
@@ -2320,6 +2351,20 @@ export class AgentCoordinator {
       console.log(`[AgentCoordinator] Per-agent model override: observer=${this.observerModel} speaker=${this.speakerModel}`);
     }
 
+    // Resolve the budget tier + Observer economy policy BEFORE building prompts,
+    // so the Observer's tool surface + <energy> block reflect the policy (e.g. a
+    // Demo session omits the set_observation_mode tool + its lines and starts on
+    // the cheap backend). The tier supplies DEFAULTS; explicit per-student
+    // aac_settings fields override — the constraints are a policy layer, not the
+    // budget number itself. (budgetWindows/state load later with startupBudgetPct.)
+    const aacSettingsForPolicy = studentRowForMode?.aacSettings as any;
+    this.budgetTier = tierByKey(aacSettingsForPolicy?.budgetTier);
+    this.observerPolicy = resolveObserverPolicy(this.budgetTier, {
+      observerBackend: aacSettingsForPolicy?.observerBackend,
+      observerAllowLive: aacSettingsForPolicy?.observerAllowLive,
+      observerAlwaysConservative: aacSettingsForPolicy?.observerAlwaysConservative,
+    });
+
     // Ensure the home board is in availableBoards BEFORE building prompts, so
     // Board Manager always sees it in <prebuilt_boards> and set_board("home")
     // works. Initialize the array if absent (the DB-load path can leave it
@@ -2365,7 +2410,7 @@ export class AgentCoordinator {
     // economy Observer + short-memory + tired Speaker, and <10% board-only (no
     // Speaker, no greeting). ≤0% all-stop is enforced on the first sleep→wake.
     this.fullAttentionMode = !!((studentRowAac as any)?.fullAttentionMode);
-    this.budgetTier = tierByKey((studentRowAac as any)?.budgetTier);
+    // budgetTier + observerPolicy were resolved earlier (before prompt build).
     this.budgetWindows = windowsForTier(this.budgetTier);
     {
       const persistedBudget = (studentRow as any)?.budgetMeters as BudgetState | undefined;
@@ -2387,8 +2432,10 @@ export class AgentCoordinator {
     //    re-derive them with restingMode flipped.
     const observerToolConfig: ObserverToolConfig = {
       definedGestures: this.definedGestures.length > 0 ? this.definedGestures : undefined,
-      // Only expose set_observation_mode when the cost-saving system is enabled.
-      economyModeEnabled: this.economyObserverEnabled,
+      // Expose set_observation_mode only when the cost-saving system is enabled
+      // AND the policy permits Live — a Live-forbidden (e.g. Demo) session drops
+      // the tool entirely so the Observer can't switch off the economy backend.
+      economyModeEnabled: this.observerModeSwitchable,
     };
     this.observerToolConfigBase = observerToolConfig;
     // Speaker's tool config wants full AACAppDefinition objects (with
@@ -2428,12 +2475,16 @@ export class AgentCoordinator {
     this.launchableAppIds = new Set((bmToolConfig.enabledApps ?? []).map(a => a.id));
 
     // 6. Construct agent handles.
-    // Startup band floor (mirrors doWakeFromSleep): <25% → economy Observer +
-    // short-memory (+ tired Speaker, applied post-ready); <10% → board-only, no
+    // Startup backend = the economy policy (default backend + allowLive pin) with
+    // the low-band floor on top (mirrors doWakeFromSleep): <25% → economy Observer
+    // + short-memory (+ tired Speaker, applied post-ready); <10% → board-only, no
     // native-audio Speaker + no greeting. observerAwakeCompression/speakerCompression
     // pick up short-memory automatically via lowBandActive().
-    this.observerMode = startupBudgetPct < 25 ? "economy" : "live";
-    this.observerForcedEconomy = startupBudgetPct < 25;
+    {
+      const backend = this.initialObserverBackend(startupBudgetPct);
+      this.observerMode = backend.mode;
+      this.observerForcedEconomy = backend.forced;
+    }
     this.observer = this.createObserverAgent();
     this.speaker = startupBoardOnly ? null : this.createSpeakerAgent();
     if (startupBoardOnly) {
@@ -2813,7 +2864,8 @@ export class AgentCoordinator {
           .map(b => ({ key: b.key, name: b.name, hint: b.hint })),
         definedGestures: this.definedGestures.length > 0 ? this.definedGestures : undefined,
         energyBudget: this.buildEnergyBudgetText(this.aacChatProvider),
-        economyModeEnabled: this.economyObserverEnabled,
+        economyModeEnabled: this.observerModeSwitchable,
+        alwaysConservative: this.observerPolicy.alwaysConservative,
       },
       speaker: {
         ...base,
@@ -4522,7 +4574,13 @@ export class AgentCoordinator {
   // per utterance, fed VAD-gated PCM as the person speaks. Transcript is ready
   // at speech-end and flows into the same pendingSpeech fast/slow fusion.
   // -------------------------------------------------------------------------
-  private sttStreams = new Map<string, { session: SttStreamSession; bytes: number; chunks: number; firedAny: boolean; language?: string }>();
+  private sttStreams = new Map<string, { session: SttStreamSession; bytes: number; chunks: number; firedAny: boolean; language?: string; interimSentAt: number; interimLoggedAt: number }>();
+  /** Min gap between transcript_interim pushes to the client (rolling text —
+   *  dropping intermediate revisions loses nothing; a final always follows). */
+  private static readonly STT_INTERIM_SEND_MS = 250;
+  /** Min gap between interim debug breadcrumbs — enough to prove WHEN words
+   *  were available vs when they finalized (endpointer lag) without flooding. */
+  private static readonly STT_INTERIM_LOG_MS = 5000;
 
   private startSttStream(streamId: string, language?: string): void {
     if (this.sttStreams.has(streamId)) return;
@@ -4534,12 +4592,35 @@ export class AgentCoordinator {
         // Commit each phrase the MOMENT the recognizer finalizes it (mid-stream),
         // rather than waiting for the client's end-of-speech. Web-Speech-like.
         onFinal: (seg) => this.onSttStreamFinal(streamId, seg),
+        // Live caption: rolling interims → grey client text, so words are on
+        // screen ~1s after they're spoken even when the endpointer sits on the
+        // final (continuous room noise starves it). No extra STT cost.
+        onInterim: (text) => this.onSttStreamInterim(streamId, text),
         onError: (m) => flowNote("COORDINATOR", `STT stream error [${streamId.slice(0, 8)}]: ${m}`),
+        onRotate: (why) => flowNote("COORDINATOR", `STT stream rotated [${streamId.slice(0, 8)}]: ${why}`),
       });
-      this.sttStreams.set(streamId, { session, bytes: 0, chunks: 0, firedAny: false, language });
+      this.sttStreams.set(streamId, { session, bytes: 0, chunks: 0, firedAny: false, language, interimSentAt: 0, interimLoggedAt: 0 });
       flowInput("CLIENT", "stt_stream_start", `streamId=${streamId.slice(0, 8)} lang=${language ?? "?"}`);
     } catch (err) {
       runInSessionContext(this.sessionId || "?", this.debugMode, () => logLiveSession("STT_STREAM_ERROR", `start: ${(err as Error).message}`));
+    }
+  }
+
+  /** Rolling (non-final) recognizer text — throttle and surface as the live
+   *  grey caption, plus a sparse debug breadcrumb for latency forensics. */
+  private onSttStreamInterim(streamId: string, text: string): void {
+    const s = this.sttStreams.get(streamId);
+    const t = (text || "").trim();
+    if (!s || !t) return;
+    const now = Date.now();
+    if (now - s.interimSentAt >= AgentCoordinator.STT_INTERIM_SEND_MS) {
+      s.interimSentAt = now;
+      // Tail-clip long rolling text — the caption shows what's being said NOW.
+      this.send({ type: "transcript_interim", data: t.length > 160 ? `…${t.slice(-160)}` : t });
+    }
+    if (now - s.interimLoggedAt >= AgentCoordinator.STT_INTERIM_LOG_MS) {
+      s.interimLoggedAt = now;
+      flowNote("COORDINATOR", `STT interim [${streamId.slice(0, 8)}] → "${t.slice(-80)}"`);
     }
   }
 
@@ -4547,9 +4628,11 @@ export class AgentCoordinator {
     const s = this.sttStreams.get(streamId);
     if (!s) return;
     if (!dataBase64) return; // empty chunk — nothing to feed
+    // write() is false when the chunk was dropped (failed stream throttling
+    // its recovery) — don't count it toward the billed audio duration.
+    if (!s.session.write(dataBase64)) return;
     s.bytes += Math.floor((dataBase64.length * 3) / 4); // approx decoded bytes
     s.chunks += 1;
-    s.session.write(dataBase64);
   }
 
   /** A phrase finalized mid-stream — inject it as a [HEARD SPEECH] turn NOW.
@@ -4560,6 +4643,10 @@ export class AgentCoordinator {
     const text = (segment || "").trim();
     if (!text) return;
     if (s) s.firedAny = true;
+    // Phrase committed — clear the grey interim caption (the client falls back
+    // to the last routed yellow transcript; if this phrase is user-targeted a
+    // fresh one follows once the Observer routes it).
+    this.send({ type: "transcript_interim", data: "" });
     flowNote("COORDINATOR", `STT stream final [${streamId.slice(0, 8)}] → "${text.slice(0, 120)}"`);
     this.injectHeardSpeech(text, 0.9, undefined, streamId, "stt_stream");
   }
@@ -5515,12 +5602,15 @@ export class AgentCoordinator {
 
     flowNote("COORDINATOR", "Waking from sleep — rebuilding Observer + Speaker.");
 
-    // A wake is fresh engagement. In the LOW band (<25%) come back on the cheap
-    // HTTP Observer + short-memory compression directly (avoids a live→economy
-    // churn right after wake); otherwise Live-by-default for responsiveness.
-    const lowBand = pct < 25;
-    this.observerMode = lowBand ? "economy" : "live";
-    this.observerForcedEconomy = lowBand;
+    // A wake is fresh engagement. Come back on the economy-policy backend with
+    // the low-band floor: <25% forces the cheap HTTP Observer + short-memory
+    // (avoids a live→economy churn right after wake), a Live-forbidden policy
+    // pins economy, otherwise the policy default backend.
+    {
+      const backend = this.initialObserverBackend(pct);
+      this.observerMode = backend.mode;
+      this.observerForcedEconomy = backend.forced;
+    }
     this.observer = this.createObserverAgent();
     this.speaker = this.createSpeakerAgent();
     try {
@@ -5572,6 +5662,20 @@ export class AgentCoordinator {
     // Re-open the Live Board Manager session (closed on sleep) so the first
     // post-wake board build doesn't pay connect latency. No-op on HTTP.
     this.boardManager?.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
+  }
+
+  /** Resolve the Observer backend for a FRESH build at `pct` budget, honoring the
+   *  economy policy (default backend + allowLive pin) and the low-band floor.
+   *  Returns the mode plus whether Live is LOCKED OUT (`forced` → observerForcedEconomy).
+   *  Used by initial start and wakeFromSleep. */
+  private initialObserverBackend(pct: number): { mode: "live" | "economy"; forced: boolean } {
+    const lowBand = this.budgetThrottleEnabled && pct < 25;
+    // Locked out of Live when the budget forces it (low band) OR the policy
+    // forbids Live entirely (e.g. Demo). NOT locked merely because the default
+    // backend is economy — a standard-tier session may still go live on its own.
+    const forced = lowBand || !this.observerPolicy.allowLive;
+    const startEconomy = forced || this.observerPolicy.defaultBackend === "economy";
+    return { mode: startEconomy ? "economy" : "live", forced };
   }
 
   /** Build a fresh Observer backend with the standard callback bundle. Picks
@@ -5674,6 +5778,12 @@ export class AgentCoordinator {
    *  choose (per the existing floors, only <25% forces the cheap backend). */
   private handleObservationModeChange(event: ObservationModeChangeEvent): void {
     if (!this.economyObserverEnabled) return;
+    // Live-forbidden policy (e.g. Demo): the tool isn't even declared, but refuse
+    // defensively so a stray call can never lift the economy pin.
+    if (event.mode === "live" && !this.observerPolicy.allowLive) {
+      flowNote("COORDINATOR", "Observer requested live but policy forbids it — staying economy.");
+      return;
+    }
     if (event.mode === "live" && this.budgetThrottleEnabled) {
       const b = bindingEnergy(this.budgetState, this.budgetWindows, Date.now());
       if (b.band === "low") {
@@ -6582,6 +6692,9 @@ export class AgentCoordinator {
       currentPageId: state.currentPageId,
       enabledApps: enabledAppsForClient.length ? enabledAppsForClient : undefined,
       availableCustomApps: state.availableCustomApps,
+      // Website tiles ride the snapshot alongside the app lists so they don't
+      // depend on the client's separate REST profile fetch succeeding.
+      permittedWebsites: this.permittedWebsites,
       timestamp: Date.now(),
     };
 
@@ -9061,10 +9174,11 @@ export class AgentCoordinator {
           void this.switchObserverBackend("economy", "low budget (<25%) — forced HTTP");
         }
       }
-    } else if (this.observerForcedEconomy) {
+    } else if (this.observerForcedEconomy && this.observerPolicy.allowLive) {
       // Recovered out of the low band (≥25%) — lift the lock; the Observer may
       // go live again on its own (it gets prompted). Above 25% is unthrottled
-      // on the backend, per the existing floors.
+      // on the backend, per the existing floors. A Live-forbidden policy (e.g.
+      // Demo) keeps the lock: the backend stays pinned to economy forever.
       this.observerForcedEconomy = false;
       this.economySwitchPendingIdle = false;
       flowNote("COORDINATOR", "Budget recovered above 25% — economy lock lifted; Observer may go live.");

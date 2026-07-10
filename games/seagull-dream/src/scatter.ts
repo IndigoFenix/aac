@@ -158,7 +158,7 @@ export function disposeScatterResources(r: ScatterResources): void {
 // stays consistent as the player walks around — perpendicular per-plane
 // normals would flip the shading from "front-lit" to "edge-on" every 30°
 // and look terrible.
-function makeCrossedPlanesGeometry(width: number, height: number, bury: number): THREE.BufferGeometry {
+export function makeCrossedPlanesGeometry(width: number, height: number, bury: number): THREE.BufferGeometry {
   const halfW = width / 2;
   const yBase = -bury;
   const yTop = height - bury;

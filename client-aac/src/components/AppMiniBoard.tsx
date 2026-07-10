@@ -58,7 +58,9 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
     <div
       className="grid gap-2 p-2 h-full flex-shrink-0"
       style={{
-        width: `${cols * 7}rem`,
+        // The narrow context strip stays 7rem/col; a multi-column GAME board is
+        // ~twice as wide (14rem/col) so its buttons read big.
+        width: `${cols * (cols > 1 ? 14 : 7)}rem`,
         gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
         gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
       }}

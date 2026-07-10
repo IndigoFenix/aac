@@ -4,7 +4,7 @@
  * conscience while poking at scenarios by hand.
  */
 
-import type { LabWorld } from "./boot";
+import type { CompositionWorld } from "@shared/engine/civ/composition";
 import type { DualWorld } from "./dual";
 
 export interface Check {
@@ -13,12 +13,12 @@ export interface Check {
   detail: string;
 }
 
-type MaybeDual = LabWorld & Partial<Pick<DualWorld, "settlementPop" | "settlementTotalPop" | "isResting" | "histfigCount" | "vitalLedger">>;
+type MaybeDual = CompositionWorld & Partial<Pick<DualWorld, "settlementPop" | "settlementTotalPop" | "civicPop" | "isResting" | "histfigCount" | "vitalLedger">>;
 
 /** `injectedSinceLoad`: population added from OUTSIDE the composition
  *  layer after load (tri harvest foundings) — part of the ledger, not a
  *  leak. */
-export function runChecks(lw: LabWorld, initialTotalPop: number, injectedSinceLoad: number = 0): Check[] {
+export function runChecks(lw: CompositionWorld, initialTotalPop: number, injectedSinceLoad: number = 0): Check[] {
   const checks: Check[] = [];
   const total = lw.totalPop();
 
@@ -68,7 +68,11 @@ export function runChecks(lw: LabWorld, initialTotalPop: number, injectedSinceLo
   if (dual.settlementPop && dual.settlementTotalPop) {
     let disagree: string | null = null;
     for (const s of lw.sites()) {
-      const composition = s.pops.reduce((a, p) => a + p.pop, 0);
+      // The contract is CIVIC-scoped where the world defines species
+      // (livestock never counts toward the settlement scalar).
+      const composition = dual.civicPop
+        ? dual.civicPop(s.key)
+        : s.pops.reduce((a, p) => a + p.pop, 0);
       const settlement = dual.settlementPop(s.key);
       if (settlement !== composition) {
         disagree = `${s.key}: settlement ${settlement} ≠ composition ${composition}`;

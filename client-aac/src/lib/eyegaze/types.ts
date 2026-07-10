@@ -38,4 +38,6 @@ export interface EyeGazeProvider {
   onGaze(cb: GazeCallback): void;
   offGaze(cb: GazeCallback): void;
   getStatus(): EyeGazeProviderStatus;
+  /** Update pixel-space smoothing live. Only hardware bridge providers implement this. */
+  setSmoothing?(config: import("@shared/gaze-smoothing.js").GazeSmootherConfig | false): void;
 }

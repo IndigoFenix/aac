@@ -1,4 +1,4 @@
-import { createGrid, worldStep, pendingCount, terrain, injectTile } from '../src/cell-systems/index.ts';
+import { createGrid, worldStep, pendingCount, terrain, injectTile } from '../../../shared/engine/cells/index.ts';
 function scen(label:string, wrap:boolean, steep:boolean){
   const g=createGrid(terrain,32,32,wrap);
   if(steep){for(let y=0;y<32;y++)for(let x=0;x<32;x++){const d=Math.hypot(x-16,y-16);if(d<8)g.fields.height[y*32+x]=14+(26-14)*(1-d/8);} for(let i=0;i<1024;i++)injectTile(g,i,'height',0);}

@@ -1,0 +1,19 @@
+{
+  "species": [
+    {
+      "key": "dwarf",
+      "role": "sapient",
+      "name": "Dwarves",
+      "color": "185,150,95,1",
+      "glyph": "⚒",
+      "needs": [
+        { "resource": "food", "value": 0.001 },
+        { "resource": "metal", "value": 0.0004 }
+      ],
+      "vitals": { "birth": 0.02, "death": 0.01, "starvation": 0.05, "diet": "food" },
+      "countScalar": "dwarf_count",
+      "countMax": 1000000,
+      "wild": { "field": "dwarves", "habitat": "ore", "scale": 2 }
+    }
+  ]
+}

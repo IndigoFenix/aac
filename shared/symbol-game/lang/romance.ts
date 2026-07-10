@@ -10,7 +10,11 @@
 // pre-nominal adjectives — no longer "minimal modification" of these rules.
 
 import {
+  DEVICE_STATE,
   gloss,
+  isQuality,
+  stripEnd,
+  type DirProximity,
   type Frame,
   type Gender,
   type GlyphLanguage,
@@ -20,8 +24,17 @@ import {
   type Token,
 } from "./core.js";
 
-/** Inherent qualities take ser; transient states/feelings take estar. */
-const STATEY = new Set(["hot", "cold", "clean", "dirty", "wet", "dry", "sad", "happy", "ok"]);
+/** Inherent qualities take ser; transient states/feelings/device-toggles take
+ *  estar ("la lámpara está encendida", "la ventana está abierta"). */
+const STATEY = new Set([
+  "hot", "cold", "clean", "dirty", "wet", "dry", "sad", "happy", "ok", "lonely", "smelly",
+  "on", "off", "open", "closed",
+]);
+
+/** Bodily sensations rendered EXPERIENTIALLY per language (es tener-noun,
+ *  pt estar-com-noun) — hungry joins hot/cold here (but NOT in the Hebrew
+ *  dative set: "אני רעב" is a plain adjective there). */
+const FEEL = new Set(["hot", "cold", "hungry"]);
 
 export interface RomanceConfig {
   id: string;
@@ -54,6 +67,32 @@ export interface RomanceConfig {
   whatWant: string;
   tradeWhat: string;
   tradeFor(forPhrase: string): string;
+  /** "algo" — the head of a bare-quality want ("algo caliente"). */
+  something: string;
+  /** Experiential sensation clause: "Tengo frío / hambre" / "Estou com calor /
+   *  fome" — hot/cold/hungry are NOT plain estar-adjectives. */
+  feel(head: "hot" | "cold" | "hungry", subject: Token): string;
+  /** Preference clause ("Me gusta la galleta." / "Eu gosto do biscoito."):
+   *  a definite NP (text pre-built, plurality given), or a bare QUALITY word
+   *  ("el rojo" / "vermelho"). */
+  like(obj: { kind: "np"; text: string; plural: boolean } | { kind: "quality"; word: string }): string;
+  /** Want + infinitive ("Quiero jugar." / "Quero brincar."). */
+  wantTo(inf: string): string;
+  /** The escort ask ("Llévame con el oso." / "Me leva até o urso."). */
+  takeMeTo(np: string): string;
+  /** The company ask ("Quédate conmigo." / "Fica comigo."). */
+  stayWithMe: string;
+  /** The directions answer ("La casa está cerca, al norte." / "A casa está
+   *  perto, ao norte."). `np` arrives capitalized + definite; `be` is the estar
+   *  form agreeing with the thing's number; `dir` is the cardinal word. */
+  directions(np: string, be: string, proximity: DirProximity, dir: string): string;
+  /** Spoilage smell-verb forms ("huele/huelen" / "cheira/cheiram"). */
+  smell: { v3: string; v3p: string };
+  /** Connective word for the causal frame ("porque", "para", "por eso"). */
+  connective(head: string): string;
+  /** "¿Por qué?" / "Por quê?" and the full "…do you want X?" form. */
+  why: string;
+  whyWant(obj: string): string;
   /** Question wrapper ("¿…?" vs "…?"). */
   q(s: string): string;
   fixed: GlyphLanguage["fixed"];
@@ -78,6 +117,11 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
   }
 
   function npText(np: NP, def: boolean): string {
+    // A bare QUALITY want ("algo caliente") — masculine, the property alone.
+    if (isQuality(np.noun.head)) {
+      const extra = np.noun.mods.filter((m) => m !== "not").map((m) => adjForm(m, "m", false));
+      return `${cfg.something} ${[adjForm(np.noun.head, "m", false), ...extra].join(" ")}`;
+    }
     const gen = g(np.noun);
     const plural = pl(np.noun) || !!np.more;
     const my = np.noun.mods.includes("my");
@@ -94,6 +138,7 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
   }
 
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const lc = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
   /** Verb form by subject: i_me → 1sg, you → 2sg (or 3sg), noun → 3sg/3pl. */
   function conj(verb: Token, subject: Token | undefined, neg: boolean): string {
@@ -127,6 +172,16 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
     ) {
       return cfg.offer(npText(f.object, true), f.neg);
     }
+    // Preferences route through the language's own construction (gustar /
+    // gostar de) — a QUALITY object reads as the bare color/state word.
+    if (f.verb.head === "like" && f.object && !f.neg) {
+      const o = f.object.noun;
+      return cfg.like(
+        isQuality(o.head)
+          ? { kind: "quality", word: adjForm(o.head, "m", false) }
+          : { kind: "np", text: npText(f.object, true), plural: pl(o) },
+      );
+    }
     const def = f.verb.head !== "want" || f.neg || !!f.tail;
     const obj = f.object ? ` ${npText(f.object, def)}` : "";
     const tail = f.tail
@@ -151,6 +206,8 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
       switch (frame.kind) {
         case "word": {
           const t = frame.token;
+          // A device state names the DEVICE's state, not the speaker's — masc base.
+          if (DEVICE_STATE.has(t.head)) return adjForm(t.head, "m", false);
           if (STATEY.has(t.head) || t.head === "big" || t.head === "small") {
             return adjForm(t.head, opts.speaker, false);
           }
@@ -187,6 +244,16 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
           return cfg.whatWant;
         case "copula": {
           const s = frame.subject;
+          // Bodily sensation is experiential ("Tengo frío / hambre").
+          if (FEEL.has(frame.adj.head)) {
+            const c = cfg.feel(frame.adj.head as "hot" | "cold" | "hungry", s);
+            return frame.question ? cfg.q(cap(stripEnd(c))) : c;
+          }
+          // Spoilage reads as a smell VERB ("El pescado huele mal.").
+          if (frame.adj.head === "smelly" && s.head !== "i_me" && s.head !== "you") {
+            const np = cap(npText({ noun: s }, true));
+            return `${np} ${pl(s) ? cfg.smell.v3p : cfg.smell.v3} mal${frame.question ? "?" : "."}`;
+          }
           const adj = adjForm(
             frame.adj.head,
             s.head === "i_me" ? opts.speaker : s.head === "you" ? opts.addressee : g(s),
@@ -232,6 +299,37 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
             return cfg.tradeFor(cfg.forTrade(npText(frame.get, true), g(frame.get.noun), pl(frame.get.noun)));
           }
           return cfg.tradeWhat;
+        case "causal": {
+          const conn = cfg.connective(frame.connective);
+          const cause = lc(stripEnd(lang.render(frame.cause, opts)));
+          if (!frame.effect) return `${cap(conn)} ${cause}.`;
+          return `${stripEnd(lang.render(frame.effect, opts))} ${conn} ${cause}.`;
+        }
+        case "why":
+          if (!frame.thing) return cfg.why;
+          return cfg.whyWant(npText(frame.thing, false));
+        case "device": {
+          // Resultative want: "Quiero la lámpara encendida." / "Quero a janela
+          // aberta." — the state adjective agrees with the device.
+          const dev = npText({ noun: frame.device }, true);
+          const st = adjForm(frame.state.head, g(frame.device), pl(frame.device));
+          const verb = cap(conj({ head: "want", mods: [], q: false }, frame.subject, false));
+          return `${verb} ${dev} ${st}.`;
+        }
+        case "wantTo": {
+          const v = lex(frame.verb.head);
+          return cfg.wantTo(v.inf ?? v.w);
+        }
+        case "takeMeTo":
+          return cfg.takeMeTo(npText({ noun: frame.dest }, true));
+        case "stayWith":
+          return cfg.stayWithMe;
+        case "directions": {
+          const np = cap(npText(frame.np, true));
+          const be = pl(frame.np.noun) ? cfg.estar.v3p : cfg.estar.v3;
+          const dir = lex(frame.cardinal).w;
+          return cfg.directions(np, be, frame.proximity, dir);
+        }
         case "gloss":
           return gloss(lang, frame.tokens, cfg.notWord);
       }

@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import * as THREE from "three";
-import { screenRayToGround, colorForId } from "@shared/world-engine/render3d.js";
+import { screenRayToGround, colorForId, buildRoadRibbon } from "@shared/world-engine/render3d.js";
 
 /** Build a camera posed like the renderer's follow rig over a ground centre,
  *  heading north (-Z) — the default before any movement swings it. */
@@ -58,6 +58,50 @@ describe("Render3D screen→ground raycast", () => {
     // Move the rig +10 in x → the centre-screen ground hit shifts +10 in x too.
     expect(b.x - a.x).toBeCloseTo(10, 1);
     expect(b.y).toBeCloseTo(a.y, 1);
+  });
+});
+
+describe("Render3D road ribbons", () => {
+  /** The two half-width offset points at centerline index `i` (world x,z). */
+  const edgesAt = (geom: THREE.BufferGeometry, i: number) => {
+    const p = geom.getAttribute("position");
+    return {
+      left: { x: p.getX(2 * i), y: p.getY(2 * i), z: p.getZ(2 * i) },
+      right: { x: p.getX(2 * i + 1), y: p.getY(2 * i + 1), z: p.getZ(2 * i + 1) },
+    };
+  };
+
+  it("sweeps a straight segment to a flat ribbon of the given width", () => {
+    const geom = buildRoadRibbon([{ x: 0, y: 0 }, { x: 10, y: 0 }], 2);
+    const pos = geom.getAttribute("position");
+    expect(pos.count).toBe(4); // two edge points per centerline point
+    expect(geom.getIndex()!.count).toBe(6); // one quad = two triangles
+    // A segment along +x offsets in ±z by half the width; the ribbon is flat.
+    const { left, right } = edgesAt(geom, 0);
+    expect(Math.hypot(left.x - right.x, left.z - right.z)).toBeCloseTo(2, 5);
+    expect(left.y).toBeCloseTo(right.y, 6);
+    expect(left.y).toBeGreaterThan(0);
+    expect(left.y).toBeLessThan(0.1);
+  });
+
+  it("keeps the width across a bend via mitred joins", () => {
+    const geom = buildRoadRibbon([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], 2);
+    expect(geom.getAttribute("position").count).toBe(6); // 3 points × 2 edges
+    expect(geom.getIndex()!.count).toBe(12); // 2 quads
+    // The corner vertex mitres outward but stays bounded (no infinite spike).
+    for (let i = 0; i < 3; i++) {
+      const { left, right } = edgesAt(geom, i);
+      const w = Math.hypot(left.x - right.x, left.z - right.z);
+      expect(w).toBeGreaterThanOrEqual(2 - 1e-6);
+      expect(w).toBeLessThanOrEqual(2 * 3 + 1e-6); // clamped miter
+    }
+  });
+
+  it("drops duplicate points and yields nothing for a degenerate path", () => {
+    expect(buildRoadRibbon([{ x: 3, y: 3 }], 2).getIndex()).toBeNull();
+    // Two coincident points collapse to one → still degenerate.
+    expect(buildRoadRibbon([{ x: 3, y: 3 }, { x: 3, y: 3 }], 2).getIndex()).toBeNull();
+    expect(buildRoadRibbon([], 2).getAttribute("position")).toBeUndefined();
   });
 });
 

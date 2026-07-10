@@ -70,13 +70,18 @@ export interface ObserverPromptConfig extends BaseStudentContext {
    *  as its biggest lever. Default off → those lines are omitted (and the tool
    *  isn't declared), so the Observer never references a tool it doesn't have. */
   economyModeEnabled?: boolean;
+  /** When true, the Observer is told to observe conservatively at ALL energy
+   *  levels (the moderate-band regime — lean on cheap text, raise attention only
+   *  when it genuinely matters) rather than only when energy runs low. Set by the
+   *  economy policy (e.g. Demo). Safety always overrides. */
+  alwaysConservative?: boolean;
 }
 
 export function buildObserverPrompt(config: ObserverPromptConfig): string {
   const {
     studentName, language, aiName, knownContacts, classroom,
     observerInstructions, alarmConditions, perceptionMemory, safetyNotes, gestureOverrides,
-    availableBoards, definedGestures, energyBudget, economyModeEnabled,
+    availableBoards, definedGestures, energyBudget, economyModeEnabled, alwaysConservative,
   } = config;
 
   const languageName = getLanguageName(language);
@@ -219,7 +224,7 @@ Watching has a running cost. You'll see an [ENERGY] note — a percentage + a ba
   - **high** — observe normally, in full detail.
   - **moderate** — lean on the cheap [SCENE]/[HEARD SPEECH] text; raise visual/audio attention or pull a one-off request_focus/request_audio only when it genuinely matters.${economyModeEnabled ? ` If nothing needs moment-by-moment watching, drop to economy observation (set_observation_mode("economy")).` : ""}
   - **low** — minimal observation: trust the text, keep attention on "text", ${economyModeEnabled ? `switch to economy observation (set_observation_mode("economy")), ` : ""}rest() sooner during quiet stretches, and wake only on clear engagement.${economyModeEnabled ? `\n\nYour single biggest lever on energy is set_observation_mode: staying "live" runs you continuously and is what drains you over a long session. Default to dropping to "economy" whenever there's nothing to react to turn-by-turn, and go back to "live" only when [${studentName}] is actively engaging or a situation needs close watching.` : ""}
-${energyBudget ? `${energyBudget}\n` : ""}Absolute rule: low energy NEVER suppresses a safety response. Alarm conditions, alerts, and emergencies are evaluated and raised regardless of energy. If you're unsure whether something is a safety concern, treat energy as if it were high and look.
+${alwaysConservative ? `This device is set to observe conservatively at ALL energy levels: default to the cheap [SCENE]/[HEARD SPEECH] text and only raise visual/audio attention or take a focused look when it genuinely matters — even when energy is high.\n` : ""}${energyBudget ? `${energyBudget}\n` : ""}Absolute rule: low energy NEVER suppresses a safety response. Alarm conditions, alerts, and emergencies are evaluated and raised regardless of energy. If you're unsure whether something is a safety concern, treat energy as if it were high and look.
 </energy>`;
 
   if (observerInstructions) {

@@ -15,6 +15,8 @@ import { FrameRingBuffer, type BufferedFrame } from "@/lib/frameRingBuffer";
 import { composeFrameGrid, composeDualCameraGrid, type ComposedGrid } from "@/lib/composeFrameGrid";
 import { AudioActivityMonitor, type AudioActivityState } from "@/lib/audioActivityMonitor";
 import { AudioRingBuffer, type PcmChunkCallback } from "@/lib/audioRingBuffer";
+import { loadSileroVad, SILERO_FRAME_MS } from "@/lib/sileroVad";
+import { SpeechSegmenter } from "@/lib/speechSegmenter";
 import type { DataFlowConfig } from "@/lib/sleepSystemLogic";
 
 export interface ActivityMonitorConfig {
@@ -42,6 +44,25 @@ export interface ActivityMonitorConfig {
    *  Set to false in Live API mode where audio goes via PCM and frame grids
    *  should be decoupled from speech activity. */
   speechTriggerEnabled: boolean;
+  /** Max duration of one streaming-STT episode, in ms (default: 60000).
+   *  Continuous room noise can hold the VAD's "speaking" state open for
+   *  minutes, running a single stream into Google's 305s hard kill — past
+   *  this age the episode is rotated (ended + reopened under a fresh id)
+   *  so per-utterance semantics survive a noisy room. */
+  sttMaxEpisodeMs: number;
+  /** Use the Silero neural VAD for speech boundaries when it loads
+   *  (default: true). Falls back to WebSpeech/energy when unavailable. */
+  sileroVadEnabled: boolean;
+  /** Neural VAD: probability at/above which frames count toward speech START. */
+  vadStartProb: number;
+  /** Neural VAD: probability below which frames count toward speech END. */
+  vadEndProb: number;
+  /** Neural VAD: sustained low-probability duration confirming an end, in ms. */
+  vadEndSilenceMs: number;
+  /** Neural VAD: segment age forcing a valley split (cut at the least-speech-
+   *  like recent instant), in ms. Statements to a student rarely exceed a few
+   *  seconds; only continuous background speech (TV) reaches this. */
+  vadMaxSegmentMs: number;
 }
 
 const DEFAULT_CONFIG: ActivityMonitorConfig = {
@@ -56,6 +77,12 @@ const DEFAULT_CONFIG: ActivityMonitorConfig = {
   speechPostRollMs: 200,
   heartbeatAudioMs: 3000,
   speechTriggerEnabled: true,
+  sttMaxEpisodeMs: 60000,
+  sileroVadEnabled: true,
+  vadStartProb: 0.55,
+  vadEndProb: 0.35,
+  vadEndSilenceMs: 500,
+  vadMaxSegmentMs: 10000,
 };
 
 export interface ActivityMonitorResult {
@@ -65,7 +92,7 @@ export interface ActivityMonitorResult {
   frameCount: number;
   lastSendAt: number | null;
   /** Which speech detection method is active */
-  speechMethod: 'webSpeechApi' | 'energy' | 'none';
+  speechMethod: 'silero' | 'webSpeechApi' | 'energy' | 'none';
   /** Last speech boundary (start/end wall-clock ms), null if no speech detected yet */
   lastSpeechBoundary: { start: number; end: number } | null;
   /** Last trigger reason that fired */
@@ -97,6 +124,10 @@ interface UseActivityMonitorParams {
   onSttStreamStart?: (streamId: string) => void;
   onSttStreamChunk?: (streamId: string, int16Base64: string) => void;
   onSpeechEndClip?: (streamId: string, clip: Blob | null, speechStartMs: number, speechEndMs: number) => void;
+  /** Optional: raw Silero speech probability per 32ms frame (0..1), for
+   *  consumers beyond boundary detection (engagement voice signal, PCM VAD
+   *  gate). Only fires while the neural VAD is attached. */
+  onSpeechProb?: (prob: number) => void;
   options?: Partial<ActivityMonitorConfig>;
   /**
    * Optional ref to the current sleep-system data-flow config. When provided,
@@ -120,6 +151,7 @@ export function useActivityMonitor({
   onSttStreamStart,
   onSttStreamChunk,
   onSpeechEndClip,
+  onSpeechProb,
   options,
   flowConfigRef,
 }: UseActivityMonitorParams): ActivityMonitorResult {
@@ -153,12 +185,16 @@ export function useActivityMonitor({
   sttStreamingEnabledRef.current = sttStreamingEnabled;
   const onSttStreamStartRef = useRef(onSttStreamStart);
   onSttStreamStartRef.current = onSttStreamStart;
+  const onSpeechProbRef = useRef(onSpeechProb);
+  onSpeechProbRef.current = onSpeechProb;
   const onSttStreamChunkRef = useRef(onSttStreamChunk);
   onSttStreamChunkRef.current = onSttStreamChunk;
   const onSpeechEndClipRef = useRef(onSpeechEndClip);
   onSpeechEndClipRef.current = onSpeechEndClip;
   /** Active streaming-STT id while the user is speaking (null otherwise). */
   const currentSttStreamIdRef = useRef<string | null>(null);
+  /** When the current streaming-STT episode opened (rotation clock). */
+  const sttEpisodeStartedAtRef = useRef(0);
 
   // Frame buffer (persists across renders but resets on enable/disable)
   const frameBufferRef = useRef<FrameRingBuffer | null>(null);
@@ -381,6 +417,7 @@ export function useActivityMonitor({
           // just before the VAD fired) so the word onset isn't lost.
           const streamId = crypto.randomUUID();
           currentSttStreamIdRef.current = streamId;
+          sttEpisodeStartedAtRef.current = Date.now();
           onSttStreamStartRef.current?.(streamId);
           const preroll = audioRingBufferRef.current?.extractRecentPcmBase64(cfg.speechPreRollMs);
           if (preroll) onSttStreamChunkRef.current?.(streamId, preroll);
@@ -406,6 +443,9 @@ export function useActivityMonitor({
     audioMonitorRef.current = audioMonitor;
 
     let audioRingBuf: AudioRingBuffer | null = null;
+    // Neural-VAD attach guard: the model loads async; if this effect tears
+    // down first (or a stale load resolves), the attach must be a no-op.
+    const neuralDetachedRef = { detached: false };
 
     if (audioEnabled && micStream) {
       audioMonitor.start(micStream);
@@ -419,11 +459,55 @@ export function useActivityMonitor({
         // light) AND — while a streaming-STT episode is open — the STT stream.
         audioRingBuf.setStreamCallback((int16Base64) => {
           onPcmChunkRef.current?.(int16Base64);
-          const sid = currentSttStreamIdRef.current;
-          if (sid) onSttStreamChunkRef.current?.(sid, int16Base64);
+          let sid = currentSttStreamIdRef.current;
+          if (!sid) return;
+          // Episode cap: continuous room noise can hold the VAD "speaking"
+          // state open for minutes, running one stream into Google's 305s
+          // hard kill. Rotate — end the old episode (server finalizes and
+          // injects whatever it heard) and continue under a fresh id.
+          if (Date.now() - sttEpisodeStartedAtRef.current >= configRef.current.sttMaxEpisodeMs) {
+            const next = crypto.randomUUID();
+            currentSttStreamIdRef.current = next;
+            sttEpisodeStartedAtRef.current = Date.now();
+            onSpeechEndClipRef.current?.(sid, null, 0, 0); // plain end — no clip evidence mid-speech
+            onSttStreamStartRef.current?.(next);
+            sid = next;
+          }
+          onSttStreamChunkRef.current?.(sid, int16Base64);
         });
         audioRingBuf.connect(audioCtx, sourceNode);
         audioRingBufferRef.current = audioRingBuf;
+
+        // Neural VAD (Silero) — upgrade speech-boundary detection once the
+        // model is available. The energy detector can't tell speech from
+        // loudness, so in a noisy room it never fires speech-end and one STT
+        // "utterance" runs for minutes; the neural probability stream keeps
+        // statement boundaries detectable. Loads lazily (shared singleton);
+        // on failure the monitor simply keeps its WebSpeech/energy fallback.
+        if (cfg.sileroVadEnabled) {
+          const ringBufForVad = audioRingBuf;
+          void loadSileroVad().then((vad) => {
+            if (!vad || neuralDetachedRef.detached) return;
+            vad.reset();
+            const segmenter = new SpeechSegmenter({
+              startProb: cfg.vadStartProb,
+              endProb: cfg.vadEndProb,
+              endSilenceMs: cfg.vadEndSilenceMs,
+              maxSegmentMs: cfg.vadMaxSegmentMs,
+              frameMs: SILERO_FRAME_MS,
+            });
+            audioMonitor.setNeuralVadActive(true);
+            ringBufForVad.setVadFrameCallback((frame, frameEndMs) => {
+              vad.process(frame).then((prob) => {
+                if (neuralDetachedRef.detached || prob === null) return;
+                onSpeechProbRef.current?.(prob);
+                for (const evt of segmenter.push(prob, frameEndMs)) {
+                  audioMonitor.pushNeuralEvent(evt);
+                }
+              }).catch(() => { /* one bad frame — skip */ });
+            });
+          });
+        }
       }
     }
 
@@ -540,12 +624,14 @@ export function useActivityMonitor({
     }, 500);
 
     return () => {
+      neuralDetachedRef.detached = true;
       if (captureTimerId) clearInterval(captureTimerId);
       if (envCaptureTimerId) clearInterval(envCaptureTimerId);
       clearInterval(triggerTimerId);
       audioMonitor.stop();
       audioMonitorRef.current = null;
       if (audioRingBuf) {
+        audioRingBuf.setVadFrameCallback(null);
         audioRingBuf.destroy();
         audioRingBufferRef.current = null;
       }

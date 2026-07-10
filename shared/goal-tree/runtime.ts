@@ -239,9 +239,17 @@ function handleStart(ctx: RuntimeContext, out: RuntimeResult): void {
   out.state.started = true;
   narrate(out, "intro", ctx.game.root.intro, ctx.game.root.id);
   // A fulfill creature with NO need is already content — complete immediately
-  // (pure vendors gate nothing; their presence is service, not a task).
+  // (pure vendors gate nothing; their presence is service, not a task). A
+  // presence (go-to) or stay-with need has no item but IS a task, so it is NOT
+  // content.
   for (const node of ctx.nodeById.values()) {
-    if (node.type === "fulfill" && !node.needItemEntityId && !out.state.completed[node.id]) {
+    if (
+      node.type === "fulfill" &&
+      !node.needItemEntityId &&
+      !node.needAtPlaceNodeId &&
+      !node.needStayWith &&
+      !out.state.completed[node.id]
+    ) {
       complete(ctx, out, node);
     }
   }

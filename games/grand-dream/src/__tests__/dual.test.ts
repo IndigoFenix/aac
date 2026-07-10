@@ -716,6 +716,219 @@ describe("dual layer: founding (gate 5)", () => {
   });
 });
 
+describe("dual layer: absorption (civilization-emergence.md §2b, step 2)", () => {
+  it("the loser's people walk, the ruin leaves every dynamic, the world re-rests", async () => {
+    const dw = await bootDual(flowEconomySpec(), 2026);
+    await dw.advanceDays(60);
+    const start = dw.totalPop();
+    const farPop = dw.settlementPop("far");
+    const midPop = dw.settlementPop("mid");
+    expect(farPop).toBeGreaterThan(0);
+
+    expect(dw.absorbSettlement("far", "mid")).toBe(true);
+
+    // Conserving: everyone walked, nobody minted — and the layers agree
+    // at the moment of absorption.
+    expect(dw.totalPop()).toBe(start);
+    expect(dw.settlementPop("far")).toBe(0);
+    expect(dw.settlementPop("mid")).toBe(midPop + farPop);
+    for (const s of dw.sites()) {
+      expect(dw.settlementPop(s.key)).toBe(s.pops.reduce((a, p) => a + p.pop, 0));
+    }
+    expect(dw.tombstones()).toEqual([{ key: "far", day: dw.day(), pop: farPop }]);
+
+    // A tombstone can't absorb, be absorbed again, or eat itself.
+    expect(dw.absorbSettlement("far", "mid")).toBe(false);
+    expect(dw.absorbSettlement("mid", "far")).toBe(false);
+    expect(dw.absorbSettlement("mid", "mid")).toBe(false);
+    expect(dw.absorbSettlement("nowhere", "mid")).toBe(false);
+
+    // The trade net re-solved around the ruin: nothing ships on the road
+    // to a dead town, and the layers keep agreeing day after day.
+    await dw.advanceDays(40);
+    expect(dw.settlementFlow(1, "trade")).toBe(0);
+    for (const s of dw.sites()) {
+      expect(dw.settlementPop(s.key)).toBe(s.pops.reduce((a, p) => a + p.pop, 0));
+    }
+
+    // The shrunk world finds rest again: the ruin's road decays to its
+    // floor, the surviving pair's surplus clamps its stockpiles, and the
+    // remainder jumps in O(1) — a settlement death is not a rest leak.
+    const { skipped } = await dw.advanceDays(800);
+    expect(skipped).toBeGreaterThan(0);
+    expect(dw.isResting()).toBe(true);
+    expect(dw.settlementPop("far")).toBe(0); // still dead after the jump
+  });
+
+  it("absorption is deterministic", async () => {
+    const capture = async (): Promise<string> => {
+      const dw = await bootDual(flowEconomySpec(), 909);
+      await dw.advanceDays(60);
+      dw.absorbSettlement("far", "mid");
+      const { stepped, skipped } = await dw.advanceDays(600);
+      return JSON.stringify([
+        stepped, skipped, dw.totalPop(), dw.isResting(),
+        dw.sites().map(s => [s.key, dw.settlementPop(s.key)]),
+        dw.settlementFlow(0, "trade").toFixed(9),
+        dw.settlementFlow(1, "trade").toFixed(9),
+        dw.tombstones(),
+      ]);
+    };
+    const a = await capture();
+    expect(await capture()).toBe(a);
+  });
+});
+
+/** Two civs sharing a border: Aurelia (two towns, 30k) and Borvia (one
+ *  fort). Strength = population alone. The fort carries a dormant pride
+ *  trait, inert while its people are Borvian — but once a conquest FLIPS
+ *  them into the empire, it is a coherent one-site dissent, and the
+ *  breakaway machinery secedes the fort back out. The full §2d arc:
+ *  fusion → fission → fusion, then rest. */
+function empireSpec(fortPop = 12_000): DualSpec {
+  return {
+    nodes: [
+      { key: "acap", name: "A-Capital", pop: 20_000, site: { startpop: [{ size: 1, apply: ["member_a"] }] } },
+      { key: "aburg", name: "A-Burg", pop: 10_000, site: { startpop: [{ size: 1, apply: ["member_a"] }] } },
+      { key: "bfort", name: "B-Fort", pop: fortPop, site: { startpop: [{ size: 1, apply: ["member_b", "b_pride"] }] } },
+    ],
+    edges: [
+      { a: "acap", b: "aburg" },
+      { a: "aburg", b: "bfort" }, // the border
+    ],
+    settlement: {
+      id: "empire",
+      entity: {
+        id: "town",
+        vars: [{ name: "population", min: 0, max: 1_000_000, initial: 0 }],
+        rules: [],
+      },
+      edge: { vars: [{ name: "hostility", min: 0, max: 1, initial: 0 }] },
+    } as DualSpec["settlement"],
+    composition: {
+      name: "Empire",
+      start_age: 0, use_date: false,
+      phase: [{ key: "spread", name: "Spread" }],
+      trait: [
+        { key: "member_a", name: "Aurelia", color: "90,120,220,1", hereditary: true },
+        { key: "member_b", name: "Borvia", color: "220,120,90,1", hereditary: true },
+        { key: "member_c", name: "Free Fort", color: "190,90,220,1", hereditary: true },
+        { key: "b_pride", name: "Fort Pride", color: "240,150,40,1", hereditary: true },
+      ],
+      vector: [{ key: "v1", name: "Contact" }],
+      breakaway: [{
+        key: "fort_rises", dissent: "b_pride", from: "member_a", to: "member_c",
+        threshold: 0.15, coherence: 0.5,
+      }],
+    },
+    coupling: {
+      populationScalar: "population",
+      civs: [
+        { trait: "member_a", name: "Aurelia", color: "#5a78dc" },
+        { trait: "member_b", name: "Borvia", color: "#dc785a" },
+        { trait: "member_c", name: "Free Fort", color: "#be5adc" },
+      ],
+      breakawayHostility: { attr: "hostility", amount: 0.25 },
+      conquest: {
+        strengthScalars: [{ scalar: "population", weight: 1 }],
+        hostilityAttr: "hostility",
+        ratio: 1.5,
+        siegeDays: 8,
+        casualties: 0.05,
+        villagePop: 1_000,
+        failedSiegeCooling: 0.3,
+        skirmish: 0.002,
+      },
+    },
+  };
+}
+
+describe("dual layer: conquest (civilization-emergence.md §2d, step 4)", () => {
+  it("fusion, fission, fusion: the imperial cycle runs and rests between wars", async () => {
+    const dw = await bootDual(empireSpec(), 1453);
+    const start = dw.totalPop();
+
+    await dw.advanceDays(60);
+
+    // Two conquests of the fort, both political (it outnumbers villagePop),
+    // with the seeded pride's secession BETWEEN them: expansion bred the
+    // dissent, the dissent bred the next war.
+    const wars = dw.conquests();
+    expect(wars.length).toBe(2);
+    expect(wars.every(w => w.loser === "bfort" && w.mode === "political" && w.civ === "member_a")).toBe(true);
+    expect(dw.breakaways().length).toBe(1);
+    expect(dw.breakaways()[0].key).toBe("fort_rises");
+    expect(wars[0].day).toBeLessThanOrEqual(dw.breakaways()[0].day);
+    expect(wars[1].day).toBeGreaterThan(dw.breakaways()[0].day);
+
+    // The empire holds: one civ spans everyone, nobody was tombstoned.
+    expect(dw.civOf("bfort")?.trait).toBe("member_a");
+    expect(dw.civs().find(c => c.trait === "member_a")?.pop).toBe(dw.totalPop());
+    expect(dw.tombstones().length).toBe(0);
+
+    // War has a price, and the ledger paid it exactly: siege casualties
+    // and border skirmishes all pass through the vital ledger.
+    const { births, deaths } = dw.vitalLedger();
+    expect(births).toBe(0);
+    expect(deaths).toBeGreaterThan(0);
+    expect(dw.totalPop()).toBe(start - deaths);
+    for (const s of dw.sites()) {
+      expect(dw.settlementPop(s.key)).toBe(s.pops.reduce((a, p) => a + p.pop, 0));
+    }
+
+    // Resting BETWEEN wars: with no border left, the world proves a fixed
+    // point and jumps the remainder in O(1).
+    const { skipped } = await dw.advanceDays(300);
+    expect(skipped).toBeGreaterThan(0);
+    expect(dw.isResting()).toBe(true);
+  });
+
+  it("a conquered VILLAGE is emptied, not annexed (§2b physical mode)", async () => {
+    // A hamlet-sized fort: post-casualty survivors fall under villagePop,
+    // so the conquest takes the physical arm — emptied into the attacker,
+    // tombstoned. Its people keep their flags (they walked, not flipped),
+    // a harmless minority inside the empire: no majority, no border, no
+    // secession — ONE war, then rest.
+    const dw = await bootDual(empireSpec(800), 1454);
+    const start = dw.totalPop();
+    await dw.advanceDays(40);
+
+    const wars = dw.conquests();
+    expect(wars.length).toBe(1);
+    expect(wars[0].mode).toBe("physical");
+    expect(dw.tombstones().length).toBe(1);
+    expect(dw.tombstones()[0].key).toBe("bfort");
+    expect(dw.settlementPop("bfort")).toBe(0);
+    expect(dw.breakaways().length).toBe(0);
+
+    // The Borvians live on inside A-Burg, flags intact but no majority.
+    const borvians = dw.civs().find(c => c.trait === "member_b")?.pop ?? 0;
+    expect(borvians).toBeGreaterThan(0);
+    expect(dw.civOf("aburg")?.trait).toBe("member_a");
+    const { deaths } = dw.vitalLedger();
+    expect(dw.totalPop()).toBe(start - deaths);
+
+    const { skipped } = await dw.advanceDays(200);
+    expect(skipped).toBeGreaterThan(0);
+    expect(dw.isResting()).toBe(true);
+  });
+
+  it("the imperial cycle is deterministic", async () => {
+    const capture = async (): Promise<string> => {
+      const dw = await bootDual(empireSpec(), 1455);
+      const { stepped, skipped } = await dw.advanceDays(200);
+      return JSON.stringify([
+        stepped, skipped, dw.isResting(), dw.totalPop(), dw.vitalLedger(),
+        dw.conquests(), dw.breakaways(), dw.tombstones(),
+        dw.sites().map(s => [s.key, dw.settlementPop(s.key)]),
+        dw.civs().map(c => [c.trait, c.pop, c.capital]),
+      ]);
+    };
+    const a = await capture();
+    expect(await capture()).toBe(a);
+  });
+});
+
 describe("dual layer: determinism", () => {
   it("same seed ⇒ identical run across BOTH layers", async () => {
     const capture = async (): Promise<string> => {

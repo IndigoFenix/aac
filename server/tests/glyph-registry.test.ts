@@ -20,6 +20,7 @@ import {
   MODE_CHIPS,
   defaultModeChip,
 } from "../../shared/glyph-registry.js";
+import { expandAlias } from "../../shared/glyph-compositor.js";
 
 describe("glyph registry", () => {
   it("returns the same item for getVocabularyItem and the listing", () => {
@@ -48,7 +49,8 @@ describe("glyph registry", () => {
 
   it("exposes question-word bases that resolve and are AI-visible", () => {
     // person#question = who, thing#question = what, place#question = where,
-    // time#question = when, cause#question = why (how reuses `use`).
+    // time#question = when, cause#question = why, do#question = how (the
+    // word-level WH-words are asserted separately below).
     for (const key of ["person", "thing", "place", "time", "cause"]) {
       const item = getVocabularyItem(key);
       expect(item).toBeDefined();
@@ -60,6 +62,48 @@ describe("glyph registry", () => {
     expect(getVocabularyItem("thing")!.categories).toContain("what");
     expect(getVocabularyItem("place")!.categories).toContain("where");
     expect(getVocabularyItem("time")!.categories).toContain("when");
+  });
+
+  it("registers the six WH-words as AI-visible badge modifiers with default heads", () => {
+    const defaults: Record<string, string> = {
+      what: "thing", who: "someone", where: "place", when: "time", why: "cause", how: "do",
+    };
+    for (const [wh, head] of Object.entries(defaults)) {
+      const item = getVocabularyItem(wh);
+      expect(item).toBeDefined();
+      expect(item!.exposeToAi).toBe(true);
+      expect(item!.tKey).toBe(`aac.glyph.${wh}`);
+      // As a MODIFIER: a `?` badge on any head.
+      expect(item!.modifier?.transform).toBe("badge");
+      expect(item!.emoji).toBe("❓");
+      // STANDALONE: expands to its default head carrying itself as the modifier,
+      // so `what` renders as `thing` + the `?` badge (never a fake noun).
+      expect(item!.expandsTo).toBe(`${head}.${wh}`);
+      expect(expandAlias(wh)).toEqual({ key: head, modifiers: [wh] });
+      // The default head exists (so the render never dead-ends).
+      expect(getVocabularyItem(head)).toBeDefined();
+    }
+    // As a modifier on an arbitrary head, the alias is NOT re-expanded — the
+    // head stays put and the WH-word rides as a badge.
+    expect(expandAlias("apple")).toBeNull();
+  });
+
+  it("registers the new state / sensory / social icons as AI-visible", () => {
+    for (const key of ["off", "smelly", "fragrant", "tasty", "yucky", "lonely",
+                        "someone", "near", "far", "do", "shut", "turn_on", "turn_off"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(item!.exposeToAi).toBe(true);
+      expect(item!.tKey).toBe(`aac.glyph.${key}`);
+    }
+    // Sensory opposite pairs link both ways.
+    expect(getVocabularyItem("smelly")!.modifier?.pairKey).toBe("fragrant");
+    expect(getVocabularyItem("fragrant")!.modifier?.pairKey).toBe("smelly");
+    expect(getVocabularyItem("tasty")!.modifier?.pairKey).toBe("yucky");
+    expect(getVocabularyItem("yucky")!.modifier?.pairKey).toBe("tasty");
+    // The existing on-preposition gained a state icon but stays a connector.
+    expect(getVocabularyItem("on")!.pos).toBe("connector");
+    expect(getVocabularyItem("on")!.imagePath).toBe("adjectives/state/on");
   });
 
   it("gender modifiers apply to person via the gender_body transform", () => {

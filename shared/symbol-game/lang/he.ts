@@ -14,6 +14,9 @@
 
 import {
   gloss,
+  isQuality,
+  SENSATION,
+  stripEnd,
   type Frame,
   type Gender,
   type GlyphLanguage,
@@ -39,9 +42,15 @@ const L: Record<string, Lexeme> = {
   trade: { w: "מחליף", f: "מחליפה" },
   to: { w: "ל" },
   in: { w: "ב" },
-  on: { w: "על" },
   for: { w: "תמורת" },
   more: { w: "עוד" },
+  why: { w: "למה" },
+  because: { w: "כי" },
+  therefore: { w: "לכן" },
+  in_order_to: { w: "כדי ש" },
+  when: { w: "כש" },
+  until: { w: "עד ש" },
+  something: { w: "משהו" },
   yes: { w: "כן" },
   no: { w: "לא" },
   ok: { w: "בסדר", f: "בסדר" },
@@ -55,6 +64,10 @@ const L: Record<string, Lexeme> = {
   small: { w: "קטן" },
   hot: { w: "חם" },
   cold: { w: "קר" },
+  // Proximity adjectives for directions ("הכדור קרוב/רחוק"), agreeing with the
+  // thing's gender/number.
+  close: { w: "קרוב" },
+  far: { w: "רחוק" },
   clean: { w: "נקי", f: "נקייה", mpl: "נקיים", fpl: "נקיות" },
   dirty: { w: "מלוכלך", f: "מלוכלכת" },
   wet: { w: "רטוב" },
@@ -70,6 +83,11 @@ const L: Record<string, Lexeme> = {
   color_black: { w: "שחור" },
   color_white: { w: "לבן" },
   place: { w: "מקום" },
+  // Cardinal directions — the "קרוב/רחוק, לכיוון צפון" answers.
+  north: { w: "צפון" },
+  south: { w: "דרום" },
+  east: { w: "מזרח" },
+  west: { w: "מערב" },
   home: { w: "בית", g: "m" },
   thing: { w: "דבר" },
   cookie: { w: "עוגייה", g: "f" },
@@ -94,6 +112,38 @@ const L: Record<string, Lexeme> = {
   sock: { w: "גרב", g: "m" },
   water: { w: "מים", g: "m", pl: true, mass: true },
   fire: { w: "אש", g: "f", mass: true },
+  // Devices (§5) + their toggle states (agree with the device's gender).
+  lamp: { w: "מנורה", g: "f" },
+  window: { w: "חלון", g: "m" },
+  heater: { w: "מחמם", g: "m" },
+  generator: { w: "גנרטור", g: "m" },
+  switch: { w: "מתג", g: "m" },
+  on: { w: "דלוק", f: "דלוקה" },
+  off: { w: "כבוי", f: "כבויה" },
+  open: { w: "פתוח", f: "פתוחה" },
+  closed: { w: "סגור", f: "סגורה" },
+  // Motive batch: verbs (present + infinitive), conditions, categories, items.
+  stay: { w: "נשאר", f: "נשארת", inf: "להישאר" },
+  like: { w: "אוהב", f: "אוהבת" },
+  play: { w: "משחק", f: "משחקת", inf: "לשחק" },
+  read: { w: "קורא", f: "קוראת", inf: "לקרוא" },
+  wear: { w: "מתלבש", f: "מתלבשת", inf: "להתלבש" },
+  throw: { w: "זורק", f: "זורקת" },
+  with: { w: "עם" },
+  lonely: { w: "בודד", f: "בודדה" },
+  hungry: { w: "רעב", f: "רעבה" },
+  smelly: { w: "מסריח", f: "מסריחה" },
+  food: { w: "אוכל", g: "m", mass: true },
+  toy: { w: "צעצוע", g: "m" },
+  instrument: { w: "כלי נגינה", g: "m", defw: "כלי הנגינה" },
+  book: { w: "ספר", g: "m" },
+  clothing: { w: "בגדים", g: "m", pl: true },
+  garbage: { w: "פח", g: "m" },
+  hat: { w: "כובע", g: "m" },
+  shirt: { w: "חולצה", g: "f" },
+  scarf: { w: "צעיף", g: "m" },
+  drum: { w: "תוף", g: "m" },
+  guitar: { w: "גיטרה", g: "f" },
 };
 
 function lex(head: string): Lexeme {
@@ -128,6 +178,12 @@ const nounPlural = (t: Token) => !!lex(t.head).pl;
  * "שלי" after for possessives (always definite: "העוגייה שלי"), "עוד" for MORE.
  */
 function npText(np: NP, def: boolean): string {
+  // A bare QUALITY want ("something hot" = "משהו חם") — impersonal masculine,
+  // the property alone, never the designated instance.
+  if (isQuality(np.noun.head)) {
+    const extra = np.noun.mods.filter((m) => m !== "not").map((m) => adjForm(m, "m", false));
+    return `משהו ${[adjForm(np.noun.head, "m", false), ...extra].join(" ")}`;
+  }
   const g = nounGender(np.noun);
   const pl = nounPlural(np.noun);
   const my = np.noun.mods.includes("my");
@@ -135,7 +191,8 @@ function npText(np: NP, def: boolean): string {
     .filter((m) => m !== "my" && m !== "not")
     .map((m) => adjForm(m, g, pl));
   const definite = def || my;
-  const noun = definite ? `ה${lex(np.noun.head).w}` : lex(np.noun.head).w;
+  // Construct nouns override their definite form ("כלי נגינה" → "כלי הנגינה").
+  const noun = definite ? (lex(np.noun.head).defw ?? `ה${lex(np.noun.head).w}`) : lex(np.noun.head).w;
   const words = [noun, ...adjs.map((a) => (definite ? `ה${a}` : a))];
   if (my) words.push("שלי");
   return np.more ? `עוד ${words.join(" ")}` : words.join(" ");
@@ -205,6 +262,15 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
     return `אני ${v} ${recip} ${et(f.object)}.`;
   }
 
+  // Preferences with a QUALITY object read the bare color/state ("אני אוהב
+  // אדום"), never the "משהו אדום" want form; noun objects ride the generic
+  // frame below ("אני אוהב את העוגייה").
+  if (f.verb.head === "like" && f.object && isQuality(f.object.noun.head)) {
+    const g = subjGender(f.subject, opts);
+    const subj = f.subject ? `${subjText(f.subject, opts)} ` : "";
+    return `${subj}${verbForm("like", g)} ${adjForm(f.object.noun.head, "m", false)}${f.question ? "?" : "."}`;
+  }
+
   // The player's own subject-less statements are first person ("אני רוצה…").
   if (!f.subject && opts.firstPerson && f.verb.head !== "have") {
     f = { ...f, subject: { head: "i_me", mods: [], q: false } };
@@ -243,13 +309,19 @@ export const he: GlyphLanguage = {
     there: "שם!",
     thank_you: "תודה!",
     goodbye: "להתראות!",
+    // Motive batch: the stay-with level-a line + the dwell-done thanks.
+    stay: (o) => (o.addressee === "f" ? "תישארי איתי." : "תישאר איתי."),
+    "i_me + ok + thank_you": "אני בסדר, תודה!",
   },
   render(frame: Frame, opts: Required<SpeakOpts>): string {
     switch (frame.kind) {
       case "word": {
         const t = frame.token;
-        // A bare adjective (the sad greet, states) agrees with the speaker.
-        if (["sad", "happy", "big", "small", "hot", "cold", "clean", "dirty", "wet", "dry"].includes(t.head)) {
+        // A bare sensation ("cold" as a motive, or a "something hot" target at
+        // level a) reads impersonal masculine — "קר"/"חם", not speaker-agreeing.
+        if (SENSATION.has(t.head)) return lex(t.head).w;
+        // Other bare adjectives (the sad greet, states) agree with the speaker.
+        if (["sad", "happy", "big", "small", "clean", "dirty", "wet", "dry", "lonely", "hungry", "smelly"].includes(t.head)) {
           return adjForm(t.head, opts.speaker, false);
         }
         return lex(t.head).w;
@@ -275,6 +347,11 @@ export const he: GlyphLanguage = {
         return opts.addressee === "f" ? "מה את רוצה?" : "מה אתה רוצה?";
       case "copula": {
         const s = frame.subject;
+        // Bodily sensation is EXPERIENTIAL: "קר לי" (cold to-me), "חם לדוב" —
+        // the impersonal adjective + a dative, not "אני קר".
+        if (SENSATION.has(frame.adj.head)) {
+          return `${lex(frame.adj.head).w} ${dative(s, opts.addressee)}${frame.question ? "?" : "."}`;
+        }
         const g = subjGender(s, opts);
         const adj = adjForm(frame.adj.head, g, s.head === "i_me" || s.head === "you" ? false : nounPlural(s));
         return `${subjText(s, opts)} ${adj}${frame.question ? "?" : "."}`;
@@ -299,6 +376,53 @@ export const he: GlyphLanguage = {
         }
         if (frame.get) return `להחליף תמורת ${npText(frame.get, true)}?`;
         return "להחליף?";
+      case "causal": {
+        // The connective word ("כי", "כדי ש", "עד ש"); those ending in ש attach
+        // to the following word ("כדי שהדוב שמח").
+        const conn = lex(frame.connective).w;
+        const attach = conn.endsWith("ש");
+        const cause = stripEnd(he.render(frame.cause, opts));
+        const joined = attach ? `${conn}${cause}` : `${conn} ${cause}`;
+        if (!frame.effect) return `${joined}.`;
+        return `${stripEnd(he.render(frame.effect, opts))} ${joined}.`;
+      }
+      case "why":
+        if (!frame.thing) return "למה?";
+        return `למה ${opts.addressee === "f" ? "את" : "אתה"} רוצה ${npText(frame.thing, false)}?`;
+      case "device": {
+        // "אני רוצה שהמנורה דלוקה" — I want [that] the {device} [be] {state},
+        // the state adjective agreeing with the device's gender.
+        const dev = npText({ noun: frame.device }, true);
+        const st = adjForm(frame.state.head, nounGender(frame.device), nounPlural(frame.device));
+        return `אני רוצה ש${dev} ${st}.`;
+      }
+      case "wantTo": {
+        // "אני רוצה לשחק" — want + infinitive, the finite verb agreeing.
+        const inf = lex(frame.verb.head).inf ?? lex(frame.verb.head).w;
+        return `אני ${verbForm("want", opts.speaker)} ${inf}.`;
+      }
+      case "takeMeTo":
+        // Gendered imperative + pronoun object: "קח אותי לדוב."
+        return `${opts.addressee === "f" ? "קחי" : "קח"} אותי ${fuse("ל", { noun: frame.dest })}.`;
+      case "stayWith":
+        return `${opts.addressee === "f" ? "תישארי" : "תישאר"} איתי.`;
+      case "directions": {
+        // Present-tense location — no copula ("הכדור כאן"). קרוב/רחוק agree with
+        // the thing; the cardinal reads "לכיוון צפון" (toward the north).
+        const np = npText(frame.np, true);
+        const g = nounGender(frame.np.noun);
+        const pl = nounPlural(frame.np.noun);
+        const dir = lex(frame.cardinal).w;
+        const tail =
+          frame.proximity === "here"
+            ? "כאן"
+            : frame.proximity === "there"
+              ? "שם"
+              : frame.proximity === "street"
+                ? "ברחוב הזה"
+                : `${adjForm(frame.proximity, g, pl)}, לכיוון ${dir}`;
+        return `${np} ${tail}.`;
+      }
       case "gloss":
         return gloss(he, frame.tokens, "לא");
     }

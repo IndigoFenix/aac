@@ -2137,6 +2137,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/sessions/:id/debug-log", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.getSessionDebugLog(req, res)
   );
+  // Per-charge cost time-series for a session (spend over time). Recorded for
+  // every session, not just debug-mode ones. Query: ?limit&offset.
+  app.get("/api/admin/sessions/:id/cost-events", requireAuth, requireAdminSection("sessions"), (req, res) =>
+    sessionHistoryController.getSessionCostEvents(req, res)
+  );
   // Bulk-prune debug logs older than a given date. Body: { before: ISO date }.
   app.delete("/api/admin/sessions/debug-logs", requireAuth, requireAdminSection("sessions"), (req, res) =>
     sessionHistoryController.deleteSessionDebugLogsBefore(req, res)

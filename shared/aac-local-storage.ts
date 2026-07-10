@@ -1,7 +1,7 @@
 // shared/aac-local-storage.ts
 // Types shared between client and server for AAC local storage system.
 
-import type { ChatMessage, ParsedBoardData } from "./schema";
+import type { ChatMessage, ParsedBoardData, PermittedWebsite } from "./schema";
 
 /**
  * Configuration for the client-side local storage system.
@@ -58,6 +58,10 @@ export interface AacSessionSnapshot {
   enabledApps?: Array<{ id: string; name: string; icon: string; needsStartupResolution?: boolean }>;
   /** Custom apps (clinician-authored games) assigned to this student. */
   availableCustomApps?: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
+  /** Websites the student is permitted to open — each renders as a browser tile
+   *  on the Apps board. Delivered here (rather than only via the REST profile)
+   *  so the tiles ride the same reliable channel as the app lists. */
+  permittedWebsites?: PermittedWebsite[];
   /** When this snapshot was created (epoch ms) */
   timestamp: number;
 }

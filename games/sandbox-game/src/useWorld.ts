@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   createWorld, worldFastForward, serializeWorld, deserializeWorld, worldDefault,
   type EntityWorld,
-} from './cell-systems';
+} from '@shared/engine/cells';
 
 const STEP_MS = 200;
 const MAX_CATCHUP_STEPS = 20_000;

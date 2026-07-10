@@ -39,6 +39,7 @@ import type {
   EntityDef,
 } from "../goal-tree/types.js";
 import type { PoolMember } from "./types.js";
+import type { Connective } from "./creatures.js";
 
 // ---------------------------------------------------------------------------
 // Syntax levels
@@ -173,6 +174,31 @@ export function phrase(p: PhraseSpec, order: "svo" = "svo"): LeveledGlyphs {
           ? join([p.verb, p.object])
           : join([p.subject, p.verb ?? p.object]));
   return { a, b: b || a, c: c || b || a };
+}
+
+/**
+ * A two-clause CAUSAL line (language-structure-tiers.md, Causation tier): an
+ * EFFECT clause and a CAUSE clause joined by a connective. Built entirely on
+ * phrase() — the connective is an INLINE token, so the wire stays a flat glyph
+ * string (`lineGlyph: string`); only the RENDERER and the per-locale rulesets
+ * learn to split/stack at connective tokens (the arrow layout the language doc
+ * sketches). Level reduction mirrors the CONFUSED syntax-drop:
+ *   a — the cause's key slot alone (the new concept, errorless).
+ *   b — the cause clause (the BECAUSE half is the teaching point).
+ *   c — the full two-clause form (renderer stacks effect / cause).
+ */
+export function causalPhrase(
+  effect: PhraseSpec,
+  connective: Connective,
+  cause: PhraseSpec,
+): LeveledGlyphs {
+  const e = phrase(effect);
+  const c = phrase(cause);
+  return {
+    a: c.a,
+    b: `${connective} + ${c.b}`,
+    c: `${e.c} + ${connective} + ${c.c}`,
+  };
 }
 
 // ---------------------------------------------------------------------------

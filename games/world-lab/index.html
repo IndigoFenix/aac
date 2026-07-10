@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+    <title>World Lab</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <header id="bar">
+      <h1>🌍 World Lab</h1>
+      <label for="world-select">Test game</label>
+      <select id="world-select"></select>
+      <button id="reload">Load world file</button>
+      <button id="descend" hidden></button>
+      <button id="ascend" hidden>⬆ Back up</button>
+      <span id="status">—</span>
+    </header>
+    <div id="layout">
+      <textarea id="world-file" spellcheck="false" aria-label="World file"></textarea>
+      <div id="view"></div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

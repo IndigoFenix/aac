@@ -2509,6 +2509,12 @@ export const ru = {
     inputSourceGazepoint: "Айтрекер Gazepoint",
     inputSourceWebhid: "Устройство WebHID",
     inputSourceHint: "Используйте курсор мыши для тестирования или выберите внешний айтрекер, управляющий курсором.",
+    gazeSmoothing: "Сглаживание взгляда",
+    gazeSmoothingOff: "Выкл.",
+    gazeSmoothingLight: "Слабое",
+    gazeSmoothingMedium: "Среднее",
+    gazeSmoothingStrong: "Сильное",
+    gazeSmoothingHint: "Уменьшает дрожание курсора от аппаратных айтрекеров. Сильнее — стабильнее, но чуть медленнее следует за взглядом.",
     // Sign language
     signLanguage: "Распознавание жестового языка",
     signLanguageDesc: "Распознавать жесты языка через камеру и отправлять каждую завершённую фразу ИИ как высказывание",

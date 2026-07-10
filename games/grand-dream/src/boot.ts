@@ -12,36 +12,18 @@
 import "@popusim/wireup";
 import { System } from "@popusim/controller/System";
 import { World } from "@popusim/controller/World";
+import type {
+  CompositionOps, CompositionSite, CompositionSitePop, CompositionRouteInfo, CompositionWorld,
+} from "@shared/engine/civ/composition";
 
-export interface SitePop {
-  pop: number;
-  syndrome: { key: string; trait_keys: string[] };
-}
-export interface LabSite {
-  key: string;
-  name: string;
-  pop: number;
-  pops: SitePop[];
-}
-export interface LabRoute {
-  key: string;
-  site_a: { key: string } | null;
-  site_b: { key: string } | null;
-  strength: number;
-  migration: number;
-}
+export type SitePop = CompositionSitePop;
+export type LabSite = CompositionSite;
+export type LabRoute = CompositionRouteInfo;
 
-export interface LabWorld {
+/** This game's CompositionWorld: PopuSim behind the shared civ seam,
+ *  plus the raw World handle for lab-only wiring. */
+export interface LabWorld extends CompositionWorld {
   world: World;
-  sites(): LabSite[];
-  routes(): LabRoute[];
-  day(): number;
-  totalPop(): number;
-  /** Population on a site whose syndrome carries `traitKey`. */
-  popOnSiteWithTrait(siteKey: string, traitKey: string): number;
-  /** All trait keys declared in the scenario. */
-  traitKeys(): string[];
-  step(): Promise<void>;
 }
 
 const GUI_NOOPS = [
@@ -84,6 +66,9 @@ export async function bootLab(
 
   return {
     world,
+    // The whole PopuSim binding: World satisfies the shared civ layer's
+    // raw-ops seam structurally (the seam mirrors its member names).
+    ops: world as unknown as CompositionOps,
     sites: () => w.sites.map(s => ({ key: s.key, name: s.name, pop: s.pop, pops: s.pops })),
     routes: () => w.routes.map(r => ({
       key: r.key, site_a: r.site_a, site_b: r.site_b,

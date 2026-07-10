@@ -2509,6 +2509,12 @@ export const yue = {
     inputSourceGazepoint: "Gazepoint 眼動追蹤器",
     inputSourceWebhid: "WebHID 裝置",
     inputSourceHint: "用滑鼠游標做測試，或揀控制游標嘅外部眼動追蹤器。",
+    gazeSmoothing: "視線平滑",
+    gazeSmoothingOff: "關閉",
+    gazeSmoothingLight: "輕度",
+    gazeSmoothingMedium: "中度",
+    gazeSmoothingStrong: "強",
+    gazeSmoothingHint: "減少硬件眼動追蹤器嘅游標抖動。越強越穩定，但跟隨視線稍慢。",
     // Sign language
     signLanguage: "手語識別",
     signLanguageDesc: "透過鏡頭識別手語動作，每完成一個短語就以陳述形式發送給 AI",

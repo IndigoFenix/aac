@@ -10,6 +10,13 @@
  * spikes (door slams, alarms) when pushNoise is provided — the doc treats noise
  * spikes as a separate, lower-weight engagement signal.
  *
+ * When the Silero neural VAD is running (externalVoiceProbRef fresh), its
+ * speech probability REPLACES the FFT ratio as the voice intensity — a real
+ * "is someone speaking" score instead of a band-energy heuristic, so ambient
+ * hum can't accumulate voice engagement and quiet speech isn't missed. The
+ * noise-spike signal stays FFT-based (Silero scores non-speech near 0 by
+ * design, so it can't see door slams).
+ *
  * Both gated on AI playback so TTS echo through the mic doesn't false-fire.
  *
  * No Web Speech API, no third-party services — runs entirely in the browser.
@@ -26,6 +33,10 @@ interface UseVoiceEngagementSignalOptions {
   push: (intensity: number) => void;
   /** Called with intensity in [0, 1] on sharp non-speech energy spikes (optional). */
   pushNoise?: (intensity: number) => void;
+  /** Latest Silero speech probability (0..1) with its wall-clock timestamp.
+   *  Used as the voice intensity while fresh; stale (VAD not loaded / mic
+   *  down / frames stopped) falls back to the FFT heuristic. */
+  externalVoiceProbRef?: { readonly current: { prob: number; at: number } };
 }
 
 const SAMPLE_INTERVAL_MS = 100;
@@ -35,6 +46,8 @@ const MIN_TOTAL_ENERGY = 0.01;
 const MIN_PUSH_INTENSITY = 0.05;
 const NOISE_SPIKE_SCALE = 8;
 const NOISE_MIN_INTENSITY = 0.15;
+/** Silero probability older than this is ignored (frames stopped flowing). */
+const EXTERNAL_PROB_STALE_MS = 500;
 
 export function useVoiceEngagementSignal({
   micStream,
@@ -42,6 +55,7 @@ export function useVoiceEngagementSignal({
   isAiPlayingRef,
   push,
   pushNoise,
+  externalVoiceProbRef,
 }: UseVoiceEngagementSignalOptions): void {
   useEffect(() => {
     if (!enabled || !micStream) return;
@@ -101,6 +115,15 @@ export function useVoiceEngagementSignal({
           }
         }
         lastTotalEnergy = avgTotal;
+
+        // Neural voice intensity: while the Silero probability is fresh it IS
+        // the voice signal — no energy floor needed (the model scores quiet
+        // speech high and loud non-speech near zero).
+        const ext = externalVoiceProbRef?.current;
+        if (ext && Date.now() - ext.at < EXTERNAL_PROB_STALE_MS) {
+          if (ext.prob > MIN_PUSH_INTENSITY) push(Math.min(1, ext.prob));
+          return;
+        }
 
         if (avgTotal < MIN_TOTAL_ENERGY) return;
 

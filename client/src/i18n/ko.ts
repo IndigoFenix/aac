@@ -2509,6 +2509,12 @@ export const ko = {
     inputSourceGazepoint: "Gazepoint 시선 추적기",
     inputSourceWebhid: "WebHID 장치",
     inputSourceHint: "테스트용으로 마우스 커서를 사용하거나, 커서를 제어하는 외부 시선 추적기를 선택하세요.",
+    gazeSmoothing: "시선 보정",
+    gazeSmoothingOff: "끄기",
+    gazeSmoothingLight: "약하게",
+    gazeSmoothingMedium: "보통",
+    gazeSmoothingStrong: "강하게",
+    gazeSmoothingHint: "하드웨어 시선 추적기의 커서 떨림을 줄입니다. 강할수록 안정적이지만 시선을 조금 느리게 따라갑니다.",
     // Sign language
     signLanguage: "수어 인식",
     signLanguageDesc: "카메라로 수어 동작을 인식하고 완성된 문구를 진술로 AI에 전송합니다",

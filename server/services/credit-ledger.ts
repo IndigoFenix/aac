@@ -11,7 +11,7 @@
 // calling flow.
 
 import { db } from "../db";
-import { chatSessions, students, users, userStudents } from "@shared/schema";
+import { chatSessions, students, users, userStudents, sessionCostEvents } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { creditsForModelUsage } from "./chat/cost-helpers";
 import type { LLMProviderKey } from "@shared/llm-options";
@@ -36,6 +36,20 @@ export interface LedgerCharge {
    * agent). Phase 0 cost measurement — see planning-docs/aac-cost-saving*.
    */
   modalityBreakdown?: Record<string, number>;
+  /**
+   * Optional token detail for this charge, persisted as typed columns on the
+   * per-charge `session_cost_events` time-series (see below). Present for
+   * LLM/model-usage charges; omitted for character-billed charges (TTS/STT) and
+   * flat charges. For Live-API turns, fold the per-modality tokens into
+   * prompt (all input) / completion (all output).
+   */
+  tokenUsage?: {
+    model?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+    cachedTokens?: number;
+    cacheCreationTokens?: number;
+  };
   /** Human-readable attribution for the cost log line (e.g. "session-summary"). */
   label: string;
 }
@@ -120,6 +134,26 @@ export async function chargeCreditsToLedger(charge: LedgerCharge): Promise<void>
             .where(eq(chatSessions.id, sessionId));
         }
       }
+
+      // Per-charge time-series row (session_cost_events). Supplementary to the
+      // aggregate columns above — isolate its failure in its own try so it can
+      // never abort the student/user ledger writes that follow.
+      try {
+        const tu = charge.tokenUsage;
+        await db.insert(sessionCostEvents).values({
+          sessionId,
+          category: charge.category ?? "other",
+          credits,
+          model: tu?.model,
+          promptTokens: tu?.promptTokens,
+          completionTokens: tu?.completionTokens,
+          cachedTokens: tu?.cachedTokens,
+          cacheCreationTokens: tu?.cacheCreationTokens,
+          label,
+        });
+      } catch (e) {
+        console.error(`[CreditLedger] cost-event insert failed (${label}):`, e);
+      }
     }
 
     if (studentId) {
@@ -187,6 +221,13 @@ export async function chargeModelUsage(opts: {
     userId: opts.userId,
     credits,
     category: opts.category,
+    tokenUsage: {
+      model: opts.model,
+      promptTokens: opts.promptTokens,
+      completionTokens: opts.completionTokens,
+      cachedTokens: opts.cachedTokens,
+      cacheCreationTokens: opts.cacheCreationTokens,
+    },
     label: `${opts.label} model=${opts.model} prompt=${opts.promptTokens} completion=${opts.completionTokens}`
       + (opts.cachedTokens ? ` cacheRead=${opts.cachedTokens}` : "")
       + (opts.cacheCreationTokens ? ` cacheWrite=${opts.cacheCreationTokens}` : ""),

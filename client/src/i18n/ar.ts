@@ -2509,6 +2509,12 @@ export const ar = {
     inputSourceGazepoint: "متتبع عين Gazepoint",
     inputSourceWebhid: "جهاز WebHID",
     inputSourceHint: "استخدم مؤشر الفأرة للاختبار، أو اختر متتبع عين خارجي يتحكم في المؤشر.",
+    gazeSmoothing: "تنعيم النظر",
+    gazeSmoothingOff: "إيقاف",
+    gazeSmoothingLight: "خفيف",
+    gazeSmoothingMedium: "متوسط",
+    gazeSmoothingStrong: "قوي",
+    gazeSmoothingHint: "يقلل اهتزاز المؤشر من متتبعات العين. الأقوى أكثر ثباتًا لكنه يتابع النظر ببطء أكبر قليلاً.",
     // Sign language
     signLanguage: "التعرف على لغة الإشارة",
     signLanguageDesc: "التعرف على إيماءات لغة الإشارة من خلال الكاميرا وإرسال كل عبارة مكتملة إلى الذكاء الاصطناعي كبيان",

@@ -2509,6 +2509,12 @@ export const zh = {
     inputSourceGazepoint: "Gazepoint 眼动追踪器",
     inputSourceWebhid: "WebHID 设备",
     inputSourceHint: "使用鼠标光标进行测试，或选择控制光标的外部眼动追踪器。",
+    gazeSmoothing: "视线平滑",
+    gazeSmoothingOff: "关闭",
+    gazeSmoothingLight: "轻度",
+    gazeSmoothingMedium: "中度",
+    gazeSmoothingStrong: "强",
+    gazeSmoothingHint: "减少硬件眼动追踪器的光标抖动。越强越稳定，但跟随视线略慢。",
     // Sign language
     signLanguage: "手语识别",
     signLanguageDesc: "通过摄像头识别手语动作，每完成一个短语就以陈述形式发送给 AI",

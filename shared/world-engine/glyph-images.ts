@@ -22,6 +22,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { GlyphCompositor } from "../glyph-compositor.tsx";
 import type { ImageResolver } from "../glyph-compositor.js";
 import type { GlyphImage } from "./speech-bubble.js";
+import { buildCausalSvg, splitCausalGlyph, svgDims } from "./causal-glyph.js";
 
 /** Supersample height (px) the SVG rasterizes at — the bubble downsamples it. */
 const RASTER_HEIGHT = 200;
@@ -81,7 +82,35 @@ function makeStandalone(svg: string, heightPx: number): string {
   return rebuilt + svg.slice(openEnd);
 }
 
+/**
+ * Rasterize a glyph string to a standalone SVG. A two-clause CAUSAL line
+ * (causation-and-elements.md §4) is split and each clause is composed via
+ * buildCausalSvg (side-by-side or stacked by size); any other glyph goes
+ * through the single-glyph compositor path.
+ */
 async function glyphToStandaloneSvg(glyph: string, resolveImage: ImageResolver, rtl: boolean): Promise<string | null> {
+  const causal = splitCausalGlyph(glyph);
+  if (causal) {
+    const [eff, cau] = await Promise.all([
+      singleGlyphToStandaloneSvg(causal.effect, resolveImage, rtl),
+      singleGlyphToStandaloneSvg(causal.cause, resolveImage, rtl),
+    ]);
+    // Degrade gracefully if a clause failed — render whichever we have.
+    if (!eff || !cau) return eff ?? cau;
+    const a = svgDims(eff);
+    const b = svgDims(cau);
+    return buildCausalSvg(
+      { svg: eff, w: a.w, h: a.h },
+      { svg: cau, w: b.w, h: b.h },
+      causal.connective,
+      causal.layout,
+      rtl,
+    );
+  }
+  return singleGlyphToStandaloneSvg(glyph, resolveImage, rtl);
+}
+
+async function singleGlyphToStandaloneSvg(glyph: string, resolveImage: ImageResolver, rtl: boolean): Promise<string | null> {
   // Pass 1 — collect the external (non-data) URLs this glyph needs.
   const needed = new Set<string>();
   const collect: ImageResolver = (input) => {

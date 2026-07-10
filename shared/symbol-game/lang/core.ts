@@ -99,11 +99,49 @@ const POS: Record<string, SymPos> = {
   here: "interj",
   there: "interj",
   trade: "verb",
+  why: "interj", // the WHY question word (intercepted before frame dispatch)
+  // Motive-batch verbs + preps: stay-with, preferences, want-to-do desires,
+  // disposal (throw away).
+  stay: "verb",
+  like: "verb",
+  play: "verb",
+  read: "verb",
+  wear: "verb",
+  throw: "verb",
+  with: "prep",
+  // Motive-batch conditions + spoilage — predicate adjectives.
+  lonely: "adj",
+  hungry: "adj",
+  smelly: "adj",
 };
 
+/** Device toggle states (§5): predicate adjectives ("the window is open", "the
+ *  lamp is off") that AGREE with the device's gender. "on" shadows the (never-
+ *  emitted) `on` preposition — device state wins. */
+export const DEVICE_STATE = new Set(["on", "off", "open", "closed"]);
+
 export function posOf(head: string): SymPos {
+  if (DEVICE_STATE.has(head)) return "adj"; // toggle states are predicate adjectives
   if (head.startsWith("color_")) return "adj";
   return POS[head] ?? "noun"; // unknown symbols read as nouns (pool items)
+}
+
+/** Clause connectives (motive-driven-needs.md): a glyph string may join two
+ *  clauses with one of these — the causal frame splits on it. */
+export const CONNECTIVES = new Set(["because", "therefore", "in_order_to", "when", "until"]);
+
+/** Bodily-sensation adjectives: "I'm cold" is an EXPERIENTIAL construction in
+ *  many languages (Hebrew dative "קר לי", Spanish "tengo frío"), not the plain
+ *  predicate copula. Rendered specially in the copula frame. */
+export const SENSATION = new Set(["hot", "cold"]);
+
+/** Strip a trailing sentence terminator (for embedding a clause in a larger
+ *  sentence — "I'm cold." → "I'm cold"). */
+export const stripEnd = (s: string): string => s.replace(/[.?!¡¿]+\s*$/u, "").trim();
+
+/** Is this symbol a bare QUALITY used as a want target ("something hot")? */
+export function isQuality(head: string): boolean {
+  return posOf(head) === "adj";
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +154,13 @@ export interface NP {
   noun: Token;
   more?: boolean;
 }
+
+/** Proximity buckets for the "asking for directions" answer (computed in
+ *  symbol-game/directions.ts). A bare string union so the language layer needs
+ *  no geometry import — the host bridges the two. */
+export type DirProximity = "here" | "there" | "street" | "close" | "far";
+/** Cardinal words for the close/far direction phrases. */
+export type DirCardinal = "north" | "south" | "east" | "west";
 
 export type Frame =
   /** Single glyph — interjections, bare adjectives (speaker-agreeing). */
@@ -150,6 +195,24 @@ export type Frame =
   /** Verbless prepositional fragment — the b-level of placement/on-behalf
    *  lines ("apple + in + box", "apple + to + bear"). */
   | { kind: "pp"; np: NP; join: string; comp: Token }
+  /** Two clauses joined by a connective ("… because …", "… so that …"): the
+   *  effect is null for a connective-led fragment ("because I'm cold"). */
+  | { kind: "causal"; connective: string; effect: Frame | null; cause: Frame }
+  /** The player's WHY question ("Why?" / "Why do you want something hot?"). */
+  | { kind: "why"; thing?: NP }
+  /** Device-state resultative want ("I want the lamp on / the window open"). */
+  | { kind: "device"; subject?: Token; device: Token; state: Token; question: boolean }
+  /** Want + INFINITIVE ("i_me + want + play" — "I want to play"). */
+  | { kind: "wantTo"; verb: Token; subject?: Token }
+  /** The escort ask ("take + i_me + to + {dest}" — "Take me to the bear"). */
+  | { kind: "takeMeTo"; dest: Token }
+  /** The company ask ("[you +] stay + with + i_me" — "Stay with me"). */
+  | { kind: "stayWith" }
+  /** The directions answer to "where is X?" ("{thing} is far, to the north"):
+   *  proximity phrasing + a cardinal word (the cardinal is spoken only by the
+   *  close/far cases). Built by the host from geometry via `directionsFrame`,
+   *  never by the glyph parser. */
+  | { kind: "directions"; np: NP; proximity: DirProximity; cardinal: DirCardinal }
   /** Fallback: gloss token-by-token in glyph order. */
   | { kind: "gloss"; tokens: Token[] };
 
@@ -172,8 +235,50 @@ export function classify(tokens: Token[]): Frame {
   const question = tokens.some((t) => t.q);
   if (tokens.length === 0) return { kind: "gloss", tokens };
 
-  // -- question-word frames ---------------------------------------------------
   const t0 = tokens[0]!;
+
+  // -- WHY question ("why", "why + hot", "why + you + want + hot") -------------
+  if (t0.head === "why") {
+    if (tokens.length === 1) return { kind: "why" };
+    const wi = tokens.findIndex((t) => t.head === "want");
+    const thing = wi >= 0 ? npAt(tokens, wi + 1) : npAt(tokens, 1);
+    return thing ? { kind: "why", thing } : { kind: "why" };
+  }
+
+  // -- causal two-clause (…because…, …in_order_to…, …therefore…) --------------
+  // Split on the FIRST connective; each side is classified independently, so
+  // the causal renderer never touches the puzzle generator — it only re-reads
+  // the two clauses' own glyphs.
+  const ci = tokens.findIndex((t) => CONNECTIVES.has(t.head));
+  if (ci >= 0) {
+    const before = tokens.slice(0, ci);
+    const after = tokens.slice(ci + 1);
+    return {
+      kind: "causal",
+      connective: tokens[ci]!.head,
+      effect: before.length ? classify(before) : null,
+      cause: classify(after),
+    };
+  }
+
+  // -- device-state want ("… want {device} {on|off|open|closed}") -------------
+  // A trailing toggle state is a resultative complement, not the object; the
+  // bare "{device} + {state}" case falls through to the copula frame below.
+  if (DEVICE_STATE.has(tokens[tokens.length - 1]!.head)) {
+    const wi = tokens.findIndex((t) => t.head === "want");
+    if (wi >= 0 && wi === tokens.length - 3) {
+      const subject = wi > 0 ? tokens[0] : undefined;
+      return {
+        kind: "device",
+        ...(subject ? { subject } : {}),
+        device: tokens[tokens.length - 2]!,
+        state: tokens[tokens.length - 1]!,
+        question,
+      };
+    }
+  }
+
+  // -- question-word frames ---------------------------------------------------
   if (t0.head === "place" && t0.q) {
     if (tokens.length === 1) return { kind: "where" };
     if (tokens[1]!.head === "get" && tokens[2]) return { kind: "where", np: npAt(tokens, 2), get: true };
@@ -196,6 +301,35 @@ export function classify(tokens: Token[]): Frame {
     return { kind: "pp", np: { noun: t0 }, join: tokens[1]!.head, comp: tokens[2]! };
   }
 
+  // -- want + INFINITIVE ("[i_me +] want + play") -----------------------------
+  // Must run before the general verb frame — npAt would read the verb as a
+  // noun object ("I want a play").
+  {
+    const wi = tokens.findIndex((t) => t.head === "want" && !t.mods.includes("not"));
+    if (
+      wi >= 0 &&
+      wi <= 1 &&
+      wi + 2 === tokens.length &&
+      posOf(tokens[wi + 1]!.head) === "verb"
+    ) {
+      return { kind: "wantTo", verb: tokens[wi + 1]!, ...(wi === 1 ? { subject: tokens[0] } : {}) };
+    }
+  }
+
+  // -- stay-with ("[you +] stay + with + i_me") --------------------------------
+  {
+    const si = tokens.findIndex((t) => t.head === "stay");
+    if (
+      si >= 0 &&
+      si <= 1 &&
+      tokens.length === si + 3 &&
+      tokens[si + 1]!.head === "with" &&
+      tokens[si + 2]!.head === "i_me"
+    ) {
+      return { kind: "stayWith" };
+    }
+  }
+
   // -- verb frames ----------------------------------------------------------
   const vi = tokens.findIndex((t) => posOf(t.head) === "verb" && t.head !== "trade");
   if (vi >= 0) {
@@ -216,6 +350,11 @@ export function classify(tokens: Token[]): Frame {
       i += 2;
     }
     if (i !== tokens.length) return { kind: "gloss", tokens };
+    // The escort ask ("take + i_me + to + {dest}") is its own construction —
+    // pronoun object + directional tail ("Take me to the bear").
+    if (verb.head === "take" && object?.noun.head === "i_me" && tail?.join === "to") {
+      return { kind: "takeMeTo", dest: tail.comp };
+    }
     return {
       kind: "svo",
       verb,
@@ -243,7 +382,9 @@ export function classify(tokens: Token[]): Frame {
     if (posOf(t1.head) === "adj" && t1.mods.includes("not") && posOf(t0.head) === "noun") {
       return { kind: "corrective", np: { noun: t0 }, adj: t1 };
     }
-    if (posOf(t0.head) === "pron" && posOf(t1.head) === "adj") {
+    // A pronoun OR a noun subject + a predicate adjective: "I'm sad", "the bear
+    // is happy" (a creature-state cause), "the window is open".
+    if ((posOf(t0.head) === "pron" || posOf(t0.head) === "noun") && posOf(t1.head) === "adj") {
       return { kind: "copula", subject: t0, adj: t1, question };
     }
     if (t0.head === "more") {
@@ -301,6 +442,11 @@ export interface Lexeme {
   fpl?: string;
   /** Noun plural override where the regular rule fails. */
   plw?: string;
+  /** Infinitive (want-to frame: "I want to play" — he "לשחק", es "jugar"). */
+  inf?: string;
+  /** DEFINITE-form override (Hebrew construct nouns: "כלי נגינה" → "כלי הנגינה"
+   *  — the ה lands inside the compound, not on the first word). */
+  defw?: string;
 }
 
 export interface GlyphLanguage {
@@ -357,4 +503,18 @@ export function translateWith(lang: GlyphLanguage, glyph: string, opts?: SpeakOp
 export function genderOf(lang: GlyphLanguage, symbol: string | undefined): Gender {
   if (!symbol) return "m";
   return lang.lexicon[parseToken(symbol).head]?.g ?? "m";
+}
+
+/** Build a `directions` frame from a thing GLYPH ("home.color_blue", "toy") plus
+ *  the resolved proximity + cardinal. The host's bridge from directions.ts
+ *  geometry into the language layer — the answer is not a glyph sentence, so it
+ *  never round-trips through `classify`. */
+export function directionsFrame(
+  thingGlyph: string,
+  proximity: DirProximity,
+  cardinal: DirCardinal,
+): Frame {
+  const tokens = parseSentence(thingGlyph);
+  const noun: Token = tokens[0] ?? { head: thingGlyph, mods: [], q: false };
+  return { kind: "directions", np: { noun }, proximity, cardinal };
 }

@@ -199,6 +199,210 @@ functions of `food_need`/`food_got` and the clock (one ration ≡ one
 person-day of the trait-declared rate). Nothing feeds back; it's the same
 numbers made walkable. See unified-world-model.md step 7's landmark.
 
+### 3d. When goods widen: fan-in and fan-out (analysis 2026-07-08;
+### ✅ SHIPPED same day — see civilization-emergence.md step 5b landmark)
+
+The §3 vocabulary exercised LINEAR chains — every `satisfied` fed one
+process, every demand scalar had one writer. A real reagent economy
+(many materials, shared inputs, higher-level goods) needs two more
+primitives, both derived-pure (no loop-dimension cost, same family as
+`satisfied`) — now shipped as `SumSpec` and `AllocateSpec`, alongside
+`ProcessSpec.inputs` (the multi-reagent Leontief: min across ALL
+reagents — the scarcest binds). Evaluation order: processes → sums →
+flow nets → allocates. First user: `triBase({goods2})` — planks from
+timberland, tools from metal + planks, smiths-first metal allocation,
+a plank stockpile part-paying smithies:
+
+- **Fan-in — an additive combinator.** Aggregate demand with several
+  sinks (households burn timber AND the shipyard consumes it) needs a
+  SUM; today multiple processes writing one output is a "later wins"
+  warning. Precedent: drift already accumulates additively.
+- **Fan-out — a conserving per-settlement allocator.** Processes are
+  pure reads, not draws: two processes reading the same `ore_got`
+  double-count the reagent. The allocator splits an input across
+  competing consumers by a DETERMINISTIC data rule (fixed priority
+  order) — never a heuristic, because the planned-history provider
+  (civilization-emergence.md §3d) must reproduce it bit-for-bit.
+  Precedent: `allocateDistrictFill` (city-districts.ts), the same shape
+  one level down.
+
+Design rules that keep a widened economy solvable at plan time (the
+full analysis, including the industry-location contingency and the
+piecewise-stationary depletion story, is civilization-emergence.md §3d):
+
+- **Anchor every intermediate**: each process's `capacityBy` building
+  caps from a charter field — unanchored industry makes the economic
+  endpoint path-dependent.
+- **Inelastic demand stays law** at this layer (prices ⇒ general
+  equilibrium ⇒ no plan-time solve; city-development.md already
+  committed to "emptier boxes, never prices").
+- **No labor/productivity feedback** — the §3 hazard, still standing.
+- **One commodity vocabulary**, defined here and PROJECTED down to the
+  street level (food.ts-style), never grown independently below.
+
+### 3e. Economy as CONTENT (✅ SHIPPED 2026-07-08 — the authoring format;
+### see civilization-emergence.md step 6d landmark)
+
+Everything §3–§4 describes is now DATA: an `EconomyDoc`
+(`shared/engine/modules/economy` since the 2026-07-08 engine carve —
+grand-dream's src/economy.ts is a re-export shim) declares commodities,
+buildings and
+stockpiles, and `compileEconomy` expands it into the settlement spec
+fragments (vars/processes/sums/allocates/flow nets/build rules), the
+coupling rows (trait demands + demandInputs), the street `GoodSpec`s
+(errand roles and house-box corners assign by REGISTRATION ORDER), and
+the presentation registry (footprints, glyphs, titles, info-line
+templates, placement bearings, district classes). Developers add goods
+and chains by writing documents in this shape — **as actual external
+JSON files**: `parseEconomyDoc` (economy-json.ts) is the boot gate
+(wrong types name the exact path; unknown fields are REJECTED, so a
+typo'd "prodcuers" fails loudly instead of silently defaulting), the
+compiler's author-error pass catches semantics (dangling stockpiles /
+commodities / producers, shelved-without-sells, and a referential
+check — every scalar a process/sum/allocate/flow net names must
+resolve, so a typo'd "timberlnd" fails at compile naming the def,
+never at runtime as a silent 0), and the idle-safety validator still
+gates the compiled spec at world boot. The clothing chain lives in
+`src/content/clothing.economy.json` (economy-clothing.ts is only the
+loader shim); the LAB takes a "Custom content" file on the emergent
+tri scenarios (`TriBaseOpts.extraContent` → dry-run compile → reboot
+with the mod live — a broken file reports and changes nothing). The
+standard chains (economy-core.ts) stay TS literals by choice: they
+carry the named cost constants the calibration notes reference.
+
+**Parameters** (what an author writes):
+
+- **Commodity**: `key`, `scalarMax` (var clamps), `perPersonDaily`
+  (household demand — omit for intermediates), `transport` (flow id /
+  demand override / stockpile drift / road wear), `needSum` (fan-in
+  terms), `allocate` (fan-out shares, PRIORITY ORDER), `street`
+  (capDays/shopSec/cartRations, producers, market channel, stock color,
+  box label, errand name).
+- **Building**: `key`, `countScalar`, `cap` {by, rate} (REQUIRED
+  anchor), `processes` (near-raw ProcessSpecs; `capacityRate` sugar ⇒
+  capacityBy = own count — the escape hatch for exotic chains, gated by
+  the validator like everything else), `vars` (draws + local
+  intermediates), `construction` {tier, costs[]}, `sells`/`shelved`,
+  `leansToward` (substrate field | null), `mapCap`, `district`,
+  `style`/`vignette`/`glyph`/`title`/`info` templates.
+- **Stockpile**: `key`, `max`, `construction` flag (the funding stock).
+
+**Compiler laws** (enforced, not authored — each one is a calibration
+trap we hit by hand): INDUSTRY AFTER SUBSISTENCE (tier "industry" gates
+on every base building at cap — authors declare a tier, the compiler
+writes the gates); STAGGERED FUNDING (granary thresholds accumulate over
+declared costs within a tier; extra stockpile costs guard at their
+amount); ANCHORED CAPACITY (compile error without one — §3d Gap B);
+ONE VOCABULARY (a good's street projection exists exactly where the
+settlement keeps its ledger — `streetGoodsFor` filters by var presence).
+The idle-safety validator remains the certification gate for whatever
+the compiler emits.
+
+**Proof**: the equivalence test (economy-equivalence.test.ts) pins the
+compiled CORE docs to the frozen hand-calibrated fragments
+byte-for-byte, and CLOTHING (economy-clothing.ts — wool grazed on the
+pasture charter, cloth woven and sold over the weaver's counter, member
+2 running the cloth errands to the linen chest) shipped as pure content
+with zero engine/street/renderer edits, calibrating FIRST TRY because
+the laws did the calibration structurally.
+
+Remaining hard-coded seams, named: charter attributes (farmland /
+ore_access / timberland) are sampled in tri.ts, not declared as
+content `resources`; the hall and market are STRUCTURAL town-layer
+builtins; cultivated fields anchor to the literal work type "farm".
+
+### 3f. Species as content (✅ SHIPPED 2026-07-08 — see
+### civilization-emergence.md step 6e landmark)
+
+"Human" was always just a PopuSim trait — now the trait, its diet, its
+Malthusian policy, its civic standing and its founding share all
+compile from a `species` section of the content documents, and other
+species ride the same seam. Three ROLES, each living at the layer its
+nature demands:
+
+- **sapient** — full citizens: a hereditary trait with a demand vector,
+  scoped vitals, CIVIC standing (counts toward the population scalar —
+  tiers, strength, houses), a share of founding crowds, and the civ
+  membership trait at founding. Humans are the implicit primary
+  (`HUMAN_SPECIES`, overridable by key).
+- **domestic** — owned populations: PopuSim pops with a species trait
+  but NEVER civic (a herd is wealth, not a town). They walk in with
+  founding crowds (`foundingShare` → startpop weights — INTEGER
+  weights; PopInit floors fractions), migrate conservingly with
+  colonists like everyone else, and grow logistic under a CAPACITY
+  anchor (vitals `capacity`: births × max(0, 1 − pop/(scalar×perUnit))
+  — the herd equilibrates at cap × (1 − death/birth)). ANCHOR THE
+  SURVIVAL CAP TO SOMETHING FOUNDING-DAY (sheep graze the FARMS,
+  perUnit 60) — anchoring it to a late industry building starves the
+  founding flock before its pens exist (lab-observed; the sheepfold is
+  SHEARING capacity via the graze process, not survival). Headcounts
+  land in a settlement scalar (traitInputs count mode) so production
+  anchors to REAL animals — wool is shorn from `sheep_count`, not
+  conjured from the grass.
+- **commensal** — urban wildlife: never a PopuSim identity, just a
+  settlement scalar chasing a derived carrying capacity (`toward` a
+  `{key}_cap` process off the civic population — converges, 1-var
+  loop, idle-safe). Rats scale with the city; the street renders them
+  as night scurries; nobody owns them.
+
+**DIFFERENT NEEDS are the point**: every species' vitals name ITS diet
+(`{diet}_need`/`{diet}_got`), each policy is trait-scoped through
+PopuSim's `applyVitals(site, births, deaths, trait?)`, and species'
+`needs` join the demand rows (siteResourceDemand already sums demand
+across all traits) — so a fodder famine starves the sheep and only the
+sheep while the bread holds (species.test.ts proves exactly this).
+
+**Civic accounting** (the audit that made it safe): the population
+scalar carries CIVIC souls only (`coupling.civicTraits`; the write-back
+filters via popOnSiteWithTrait), so herds never tier a village, never
+add conquest strength, never demand houses. The "Layers agree" check
+compares against `dual.civicPop()`. Total-souls conservation is
+unchanged — every sheep birth and famine death is in the vital ledger.
+
+**Wild fields (✅ step 6f, same day)**: every sapient species may
+declare `wild: { field, habitat, scale }` — `wildSubstrate` grows the
+substrate spec one int var + one logistic `toward` rule per species
+(the `people` pattern: capacity = habitat × scale), so dwarven crowds
+pool on the ORE where human crowds pool on the lure. Foundings scout
+EVERY species' field (`findFoundingSites` per field, best score
+founds; ties break in species order) and the harvest takes EVERYONE in
+the box — `harvestStartpop` founds with the actual demography (a ridge
+camp is born dwarf-majority with human prospectors mixed in; herds
+ride on top), and `autoFound.cityFactory` receives the mix. Humans
+ride the implicit `people`/`lure` field the base substrate carries.
+
+CALIBRATION TENSION, named (found by probe at dwarven scale 3): a
+farmland-0 wild metropolis pins its whole road component's food fill
+below 1 FOREVER, which kills construction component-wide — the
+granary drift is the component surplus mean, and a structural deficit
+means no settlement in the component ever banks a build. The colonize
+path dodges this by SEQUENCE (valleys build out alone, camps join
+funded and small); wild ridge foundings break that sequence when
+their crowds outrank the valleys. Dwarves ship at scale 2 (visible,
+harvestable, foundable — below the valley founding floor).
+
+**The HARVEST CAP (✅ shipped)** is the first move on that frontier:
+`founding.maxHarvest` (FoundingOpts) bounds a founding's take — the
+scanner still gates and ranks by full crowd density, but the harvest
+gives up at most the cap, apportioned across species LARGEST-REMAINDER
+(the mix keeps its proportions; deterministic ties by species order),
+and the residue stays WILD in the box — it regrows and can gate a
+later founding nearby. The planner mirrors it (`min(density, cap)`),
+keeping the §3c agreement exact. The tri worlds cap at 600 grid
+persons (15k souls — squarely the village band): single-species boxes
+on this substrate top out under it (~470), so every calibrated human
+arc is byte-identical, and only the stacked mixed boxes get trimmed —
+"found small" now binds the crowd, not just the stock. The cap bounds
+the SIZE of a farmless sink, not its existence — import-aware founding
+gates or mountain subsistence chains remain the rest of the frontier.
+
+Known limits, named: the planner's float Malthus models the CIVIC
+(first) policy only — non-civic species plan through their settlement-
+scalar effects, and the planner founds on the primary wild field only;
+a planned per-species composition is future §3c work. Worlds with
+active vitals still never take the O(1) resting jump; more species
+deepen that existing cost class, not a new one.
+
 ## 4. Buildings
 
 A building type is an **integer entity var** (`farms`, `mines`, `smelters`,

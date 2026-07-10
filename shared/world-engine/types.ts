@@ -30,6 +30,20 @@ export interface Rect {
   h: number;
 }
 
+/**
+ * A road/path RIBBON painted flat on the ground — render-only cosmetic geometry
+ * a 3D view flattens onto the field to designate streets. NOT part of the
+ * certified WorldSpec and never touches the sim: a view receives it out-of-band
+ * (World3DRendererOptions.roads), the way `backdrop` is a view option, not spec.
+ * Points are world coords (a world point (x, y) → the 3D ground point (x, 0, y)).
+ */
+export interface RoadPath {
+  /** Centerline polyline in world coords; ≥2 points draw a ribbon. */
+  points: Vec2[];
+  /** Full ribbon width, world units. */
+  width: number;
+}
+
 // ---------------------------------------------------------------------------
 // Spec enums (reserved members are documented but not yet schema-valid)
 // ---------------------------------------------------------------------------
@@ -120,6 +134,12 @@ export interface ContainmentSlot {
  * can do with it (push it around, or carry it and put it down). A container also
  * declares `contains` slots — what can be placed on/in/under it.
  */
+/** Archetypal FURNITURE: static containers stood along a room's walls.
+ *  A chest and a cupboard hold things "in" (lidded — they ease open when
+ *  someone stands close, the door rule); a table holds things "on",
+ *  visibly (containment lifts them to the tabletop). */
+export type FixtureKind = "chest" | "cupboard" | "table";
+
 export interface ObjectSpec {
   id: string;
   x: number;
@@ -127,6 +147,15 @@ export interface ObjectSpec {
   shape: ObjectShape;
   /** Collision/visual radius, world units (a box's half-extent). */
   radius: number;
+  /** A FIXTURE: static furniture — solid to walk into (a square footprint
+   *  of `radius` half-extent), never pushed or carried; `interactions`
+   *  may be empty since a fixture is a container. Streamed worlds may
+   *  abstract fixtures away with their building (add/removeWorldObject). */
+  fixture?: FixtureKind;
+  /** A lidded fixture eases open while someone stands beside it. */
+  openable?: boolean;
+  /** Which way the fixture faces (radians, 0 = +x) — into the room. */
+  facing?: number;
   /**
    * Optional emoji drawn as a billboarded sprite floating over the object, so
    * carryable props read as what they ARE (a cookie, an apple) rather than
@@ -350,6 +379,16 @@ export interface NpcSpec {
   name?: string;
   persona?: NpcPersonaSpec;
   behavior?: NpcBehaviorSpec;
+  /**
+   * The NPC's needs are FROZEN — they don't drift on the town clock, so its
+   * asks and behaviour stay determinate. THE flag that marks a puzzle-bound
+   * resident (a quest-giver) apart from a regular townsperson whose needs
+   * evolve — both are the SAME kind of NPC (see docs/TOWN_AND_NPCS.md), not
+   * separate object types. The sim ignores it; a game layer (the symbol-game
+   * quest host) reads it to decide a dwell-to-talk opens the puzzle flow vs. a
+   * needs-based default line.
+   */
+  needsFrozen?: boolean;
 }
 
 export interface MultiplayerSpec {

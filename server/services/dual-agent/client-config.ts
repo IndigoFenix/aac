@@ -46,6 +46,22 @@ export interface ActivityMonitorConfig {
   speechPostRollMs?: number;
   /** Duration of ambient audio attached to heartbeat triggers, in ms. */
   heartbeatAudioMs?: number;
+  /** Max duration of one streaming-STT episode before the client rotates it
+   *  (end + fresh stream id), in ms. Keeps a noisy room's continuous VAD
+   *  "speaking" state from running a single stream into Google's 305s kill. */
+  sttMaxEpisodeMs?: number;
+  /** Use the on-device Silero neural VAD for speech boundaries (the client
+   *  falls back to WebSpeech/energy when the model can't load). */
+  sileroVadEnabled?: boolean;
+  /** Silero: probability at/above which frames count toward speech START. */
+  vadStartProb?: number;
+  /** Silero: probability below which frames count toward speech END. */
+  vadEndProb?: number;
+  /** Silero: sustained low-probability duration confirming an end, in ms. */
+  vadEndSilenceMs?: number;
+  /** Silero: segment age forcing a valley split (cut at the least-speech-like
+   *  recent instant) when continuous background speech never pauses, in ms. */
+  vadMaxSegmentMs?: number;
 }
 
 /**
@@ -151,6 +167,12 @@ export function buildDefaultClientConfig(
       speechPreRollMs: 500,
       speechPostRollMs: 200,
       heartbeatAudioMs: 3000,
+      sttMaxEpisodeMs: 60000,
+      sileroVadEnabled: true,
+      vadStartProb: 0.55,
+      vadEndProb: 0.35,
+      vadEndSilenceMs: 500,
+      vadMaxSegmentMs: 10000,
     },
     sleep: {
       // Mirrors the existing CameraAttentivenessContext defaults — leave

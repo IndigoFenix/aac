@@ -866,13 +866,15 @@ export default function UnifiedDebugPanel({
                       {ctx.audioActivity.isSpeaking ? 'Speaking' : 'Silent'}
                     </span>
                     <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
-                      ctx.audioActivity.speechMethod === 'webSpeechApi'
+                      ctx.audioActivity.speechMethod === 'silero'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                        : ctx.audioActivity.speechMethod === 'webSpeechApi'
                         ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
                         : ctx.audioActivity.speechMethod === 'energy'
                         ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
                         : 'bg-gray-200 text-gray-600'
                     }`}>
-                      {ctx.audioActivity.speechMethod === 'webSpeechApi' ? 'WebSpeech' : ctx.audioActivity.speechMethod === 'energy' ? 'Energy' : 'None'}
+                      {ctx.audioActivity.speechMethod === 'silero' ? 'Silero' : ctx.audioActivity.speechMethod === 'webSpeechApi' ? 'WebSpeech' : ctx.audioActivity.speechMethod === 'energy' ? 'Energy' : 'None'}
                     </span>
                     <span className="text-[10px] text-gray-500">
                       Buf: {ctx.audioActivity.ringBufferSamples > 0

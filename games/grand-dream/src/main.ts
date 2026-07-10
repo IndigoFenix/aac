@@ -12,24 +12,38 @@
 
 import { injectTile, pendingCount, worldStep } from "@cells/index";
 import { runWorldHost, type WorldHost } from "@shared/world-engine/world-host";
-import { WORLD_MAX_NPCS } from "@shared/world-engine/index";
-import { bootLab, type LabWorld } from "./boot";
+import { bootLab } from "./boot";
 import { bootDual, type DualWorld } from "./dual";
-import type { TriWorld } from "./tri";
+import type { CompositionWorld } from "@shared/engine/civ/composition";
+import type { TriWorld, CivHistory } from "./tri";
 import { SCENARIOS, cloneScenarioJson, type LabScenario } from "./scenarios";
 import { runChecks } from "./checks";
 import { paintSubstrateImage, createSubstratePresenter, type SubstratePresenter } from "./substrate-render";
 import { createRevealTracker, createEasedValues, smooth, type RevealTracker, type EasedValues } from "./transients";
 import { createGeoScrubber, type GeoScrubber } from "./geo-scrub";
+import { createCivScrubber, type CivScrubber } from "./civ-scrub";
 import type { TectonicFrame } from "./tectonics";
 import { createTravelerBands, type BandWorld } from "./traveler-bands";
-import { ERRAND_WALK, FOOD_DAY_SEC, PANTRY_CAP, type TownFood } from "./food";
-import { pointAt } from "./streets";
 import {
-  PEOPLE_R, WORLD_TILE, createParty, createTownManager, disbandParty, generateWorld,
-  nearestCity, parkParty, recruitVillager, terrainConstraint, villagerNpcId, villagerOf,
-  worldPos, type TownManager,
+  ERRAND_WALK, FOOD_DAY_SEC, goodBoxAt, streetGoodsFor, type TownFood,
+} from "./food";
+import { CORE_BASE, CORE_GOODS2, DEFAULT_ECONOMY } from "./economy-core";
+import { CLOTHING } from "./economy-clothing";
+import { compileEconomy, type EconomyDoc } from "./economy";
+import { parseEconomyDoc } from "./economy-json";
+import { docsFor, isWorldManifest, loadWorldManifest } from "@shared/engine/manifest";
+import { ECONOMY_MODULE } from "@shared/engine/modules/economy";
+import { pointAt } from "./streets";
+import { houseFurniture } from "@shared/engine/town/furniture";
+import {
+  PEOPLE_R, STREET_NPCS, WORLD_TILE, createParty, createTownManager, disbandParty,
+  generateWorld, nearestCity, parkParty, recruitVillager, terrainConstraint,
+  townPlan, villagerNpcId, villagerOf, worldPos, type TownManager,
 } from "./zoom";
+import {
+  buildingInfo, cityChronicle, cityOverview, hitTestBuilding, nowSeconds,
+  paintCityMap, paintSparkline, type BuildingRef,
+} from "./city-view";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -44,12 +58,17 @@ const resetBtn = $<HTMLButtonElement>("reset");
 const speedInput = $<HTMLInputElement>("speed");
 const speedVal = $("speed-val");
 const seedInput = $<HTMLInputElement>("seed");
+const contentFile = $<HTMLInputElement>("content-file");
+const contentStatus = $("content-status");
 const dayEl = $("day");
 const totalPopEl = $("totalpop");
 const sculptTools = $("sculpt-tools");
 const geoField = $("geo-field");
 const geoScrub = $<HTMLInputElement>("geo-scrub");
 const geoEpoch = $("geo-epoch");
+const civField = $("civ-field");
+const civScrub = $<HTMLInputElement>("civ-scrub");
+const civDay = $("civ-day");
 const toolRaise = $<HTMLButtonElement>("tool-raise");
 const toolDig = $<HTMLButtonElement>("tool-dig");
 const statsBody = $("stats").querySelector("tbody")!;
@@ -59,7 +78,7 @@ const checkList = $("check-list");
 
 interface Runtime {
   scenario: LabScenario;
-  lw: LabWorld;
+  lw: CompositionWorld;
   initialTotal: number;
   colorTrait: string;
   /** Site key → normalized [x, y]: the scenario's layout, or (tri) the
@@ -84,6 +103,16 @@ interface Runtime {
    *  pos < 1 the map shows DEEP TIME (eased between keyframes) and the
    *  graph hides — the cities belong to the present. */
   geo?: GeoScrubber;
+  /** Civilization-history scrubber (civ-scrub.ts): built lazily on first
+   *  slider input once the tri world has recorded ≥ 2 keyframes, rebuilt
+   *  when frames accrued since. At pos < 1 the map draws the RECORDED
+   *  settlement past over the present substrate (the civ layer is what's
+   *  keyframed — terrain drifts slowly enough to stand behind it). */
+  civ?: CivScrubber;
+  /** The history snapshot the scrubber was built from (rosters for
+   *  drawing) and its frame count (rebuild trigger). */
+  civHist?: CivHistory;
+  civBuiltFrames?: number;
   /** Day shown = lw.day() − day0 (elapsed since load, so every scenario
    *  starts at Day 0 regardless of the engine's boot day). */
   day0: number;
@@ -96,21 +125,27 @@ let playing = false;
 let acc = 0;
 let lastTs = 0;
 
+/** Loaded CUSTOM economy documents (the developer-mod seam): parsed and
+ *  dry-run compiled at load — a bad file reports and changes nothing —
+ *  then handed to the emergent tri scenarios on every (re)boot. */
+let customContent: EconomyDoc[] = [];
+
 /* --------------------------- scenario boot --------------------------- */
 
 async function loadScenario(scenario: LabScenario, colorTrait?: string): Promise<void> {
   playing = false;
   playBtn.textContent = "▶ Play";
   closeZoom(); // the party's histfigs belong to the old world instance
+  closeCityView(); // its plan/goods read the old world instance
   party.members = [];
   party.parkedAt = null;
   const seed = parseInt(seedInput.value, 10) || 12345;
 
-  let lw: LabWorld;
+  let lw: CompositionWorld;
   let tri: TriWorld | undefined;
   let geoFrames: TectonicFrame[] | undefined;
   if (scenario.tri) {
-    const world = await scenario.tri(seed);
+    const world = await scenario.tri(seed, customContent.length ? customContent : undefined);
     tri = world.tri;
     lw = tri.dual;
     geoFrames = (world as { frames?: TectonicFrame[] }).frames;
@@ -138,6 +173,9 @@ async function loadScenario(scenario: LabScenario, colorTrait?: string): Promise
   geoField.style.display = rt.geo ? "" : "none";
   geoScrub.value = "1000";
   geoEpoch.textContent = "";
+  civField.style.display = "none"; // shown once ≥ 2 frames exist (renderPanel)
+  civScrub.value = "1000";
+  civDay.textContent = "";
 
   descEl.textContent = scenario.desc;
   populateTraitSelect(traits, chosen);
@@ -179,6 +217,85 @@ function paintGeoView(geo: GeoScrubber, ts: number): void {
   ctx.font = "600 14px system-ui, sans-serif";
   ctx.textAlign = "left";
   ctx.fillText(`deep time — epoch ${Math.round(geo.epoch())} (scrub right to return to the present)`, 14, 24);
+}
+
+/** Paint the RECORDED settlement past (civ-scrub.ts) over the present
+ *  substrate: rings sized by recorded population, colored by recorded
+ *  majority civ, ruins dashed, road widths from recorded wear, borders
+ *  tinted by recorded hostility. The civ layer is what's keyframed —
+ *  terrain drifts slowly enough to stand behind it. */
+function paintCivHistory(ts: number): void {
+  const tri = rt?.tri;
+  const hist = rt?.civHist;
+  const scrub = rt?.civ;
+  if (!tri || !hist || !scrub) return;
+  const view = scrub.view(ts);
+  const { cols, rows } = tri.grid;
+  const px = (x: number, y: number): [number, number] =>
+    [((x + 0.5) / cols) * canvas.width, ((y + 0.5) / rows) * canvas.height];
+  const civColor = new Map<string, string>();
+  const civsFn = (rt!.lw as CompositionWorld & Partial<Pick<DualWorld, "civs">>).civs;
+  if (civsFn) for (const c of civsFn()) civColor.set(c.trait, c.color);
+
+  // Roads under the nodes: width from recorded wear, heat from recorded
+  // border hostility.
+  for (let ei = 0; ei < hist.edges.length; ei++) {
+    const e = view.edges[ei];
+    if (!e.present) continue;
+    const a = hist.cities[hist.edges[ei].a];
+    const b = hist.cities[hist.edges[ei].b];
+    if (!a || !b) continue;
+    const [ax, ay] = px(a.x, a.y);
+    const [bx, by] = px(b.x, b.y);
+    const heat = Math.max(0, Math.min(1, e.hostility));
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.lineWidth = 1 + e.road * 5;
+    ctx.strokeStyle = `rgba(${Math.round(150 + heat * 100)},${Math.round(155 - heat * 90)},${Math.round(165 - heat * 115)},0.8)`;
+    ctx.stroke();
+  }
+
+  const maxPop = Math.max(1, ...view.cities.map(c => (c.present && !c.dead ? c.pop : 0)));
+  for (let ci = 0; ci < hist.cities.length; ci++) {
+    const c = view.cities[ci];
+    if (!c.present) continue;
+    const info = hist.cities[ci];
+    const [x, y] = px(info.x, info.y);
+    if (c.dead) {
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = "rgba(165,165,175,0.85)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(175,175,185,0.9)";
+      ctx.font = "italic 11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`${info.name} · ruin`, x, y + 24);
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    const radius = 10 + 28 * Math.sqrt(c.pop / maxPop);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(95,115,165,0.45)";
+    ctx.fill();
+    ctx.lineWidth = c.civ ? 3 : 2;
+    ctx.strokeStyle = civColor.get(c.civ) ?? "rgba(255,255,255,0.85)";
+    ctx.stroke();
+    ctx.fillStyle = "#f5f5fa";
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(info.name, x, y + radius + 14);
+  }
+
+  ctx.fillStyle = "rgba(240,240,250,0.9)";
+  ctx.font = "600 14px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`civilization history — day ${Math.round(view.day)} (scrub right to return to the present)`, 14, 24);
 }
 
 /** Paint the live substrate under the graph — the ORIGINAL sandbox's
@@ -231,7 +348,7 @@ function sitePixel(key: string): [number, number] {
 function render(panelToo: boolean = true): void {
   if (!rt) return;
   const { lw, colorTrait } = rt;
-  const flowOf = (lw as LabWorld & Partial<Pick<DualWorld, "settlementFlow">>).settlementFlow;
+  const flowOf = (lw as CompositionWorld & Partial<Pick<DualWorld, "settlementFlow">>).settlementFlow;
   const now = performance.now();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -245,13 +362,25 @@ function render(panelToo: boolean = true): void {
     return;
   }
   geoEpoch.textContent = "";
+
+  // CIVILIZATION HISTORY: while its scrubber sits below "now", the map
+  // replays the RECORDED settlement past (civ-scrub.ts) over the present
+  // terrain; the live graph resumes at pos 1. Read-only toward the past.
+  if (rt.civ && rt.civ.pos() < 1 && rt.civHist) {
+    paintSubstrate();
+    paintCivHistory(now / 1000);
+    civDay.textContent = `· day ${Math.round(rt.civ.day())}`;
+    if (panelToo) renderPanel();
+    return;
+  }
+  civDay.textContent = "";
   paintSubstrate();
 
   // Discrete-event transients (transients.ts): reconcile what exists NOW,
   // so a city founded this day grows in and its road reaches out — the
   // §5b doctrine applied to births instead of fields.
   const routes = lw.routes();
-  const civOf = (lw as LabWorld & Partial<Pick<DualWorld, "civOf">>).civOf;
+  const civOf = (lw as CompositionWorld & Partial<Pick<DualWorld, "civOf">>).civOf;
   const sites = lw.sites();
   const { born, roads, eased } = rt.fx;
   const tSec = now / 1000;
@@ -328,6 +457,25 @@ function render(panelToo: boolean = true): void {
   const maxPop = Math.max(1, ...sites.map(s => s.pop));
   for (const s of sites) {
     const [x, y] = sitePixel(s.key);
+    // A fallen settlement draws as a RUIN: a small faded dashed ring, no
+    // pulse, no growth, the label greyed — the map remembers the place.
+    const dead = rt?.tri?.cities.find(c => c.key === s.key)?.dead;
+    if (dead) {
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = "rgba(165,165,175,0.85)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(175,175,185,0.9)";
+      ctx.font = "italic 11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`${s.name} · ruin`, x, y + 24);
+      ctx.globalAlpha = 1;
+      continue;
+    }
     const ph = smooth(born.phase(s.key));
     const radius = eased.value(`r:${s.key}`, 18 + 34 * Math.sqrt(s.pop / maxPop)) * (0.25 + 0.75 * ph);
     const withTrait = colorTrait ? lw.popOnSiteWithTrait(s.key, colorTrait) : 0;
@@ -355,7 +503,11 @@ function render(panelToo: boolean = true): void {
     ctx.fillStyle = "#f5f5fa";
     ctx.font = "600 13px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(s.name, x, y + radius + 15);
+    // Tier label (village/town/city) when the tri world declares tiers —
+    // regimes over live population, so promotions show up as the label
+    // changing under a growing ring.
+    const tier = rt?.tri?.tierOf(s.key);
+    ctx.fillText(tier ? `${s.name} · ${tier}` : s.name, x, y + radius + 15);
     ctx.font = "11px system-ui, sans-serif";
     ctx.fillStyle = "rgba(230,230,240,0.8)";
     ctx.fillText(`${(frac * 100).toFixed(1)}%`, x, y + 4);
@@ -369,7 +521,7 @@ function render(panelToo: boolean = true): void {
  *  drives the continuous caravan animation. */
 function hasFlow(): boolean {
   if (!rt) return false;
-  const flowOf = (rt.lw as LabWorld & Partial<Pick<DualWorld, "settlementFlow">>).settlementFlow;
+  const flowOf = (rt.lw as CompositionWorld & Partial<Pick<DualWorld, "settlementFlow">>).settlementFlow;
   if (!flowOf) return false;
   for (let e = 0; e < rt.lw.routes().length; e++) {
     if (Math.abs(flowOf(e)) > 1e-9) return true;
@@ -381,6 +533,9 @@ function renderPanel(): void {
   if (!rt) return;
   const { lw, colorTrait } = rt;
   dayEl.textContent = String(lw.day() - rt.day0); // elapsed since load
+  // The civilization-history slider appears once there is a history to
+  // scrub (≥ 2 recorded keyframes).
+  if (rt.tri) civField.style.display = rt.tri.historyFrames() >= 2 ? "" : "none";
   totalPopEl.textContent = lw.totalPop().toLocaleString();
   traitHead.textContent = colorTrait || "trait";
 
@@ -398,7 +553,7 @@ function renderPanel(): void {
   }
 
   statsBody.innerHTML = "";
-  const dual = lw as LabWorld & Partial<Pick<DualWorld, "settlementScalar">>;
+  const dual = lw as CompositionWorld & Partial<Pick<DualWorld, "settlementScalar">>;
   for (const s of lw.sites()) {
     const withTrait = colorTrait ? lw.popOnSiteWithTrait(s.key, colorTrait) : 0;
     const tr = document.createElement("tr");
@@ -525,11 +680,13 @@ function initSculpting(): void {
   });
   canvas.addEventListener("pointerup", () => { sculpting = false; });
   canvas.addEventListener("pointercancel", () => { sculpting = false; });
-  // No sculpt tool active → a click on a city zooms in (step 7).
+  // No sculpt tool active → a click on a city opens the CITY VIEW (map +
+  // books + clickable buildings); its "Walk here" enters the seamless
+  // world (step 7).
   canvas.addEventListener("click", e => {
-    if (!rt?.tri || sculptTool || zoom) return;
+    if (!rt?.tri || sculptTool || zoom || cityView) return;
     const key = cityAt(e.clientX, e.clientY);
-    if (key) openWorld(key);
+    if (key) openCityView(key);
   });
 }
 
@@ -581,6 +738,172 @@ function makeOverlay(titleText: string, hintText: string): {
   overlay.append(bar, zc, foot);
   document.body.appendChild(overlay);
   return { overlay, foot, zc, ZW, ZH };
+}
+
+/* --------------------------- city view mode -------------------------- */
+// The settlement inspected (city-view.ts): the town plan as a top-down
+// map beside its books — overview, resources, chronicle — with any
+// building clickable for its data. Read-only; the sim ticks on behind
+// it. "Walk here" drops into the seamless world at the same city.
+let cityView: { overlay: HTMLDivElement; stop: () => void } | null = null;
+
+function closeCityView(): void {
+  if (!cityView) return;
+  cityView.stop();
+  cityView.overlay.remove();
+  cityView = null;
+}
+
+function openCityView(key: string): void {
+  if (!rt?.tri || cityView || zoom) return;
+  const tri = rt.tri;
+  const city = tri.cities.find(c => c.key === key);
+  if (!city) return;
+  const seed = parseInt(seedInput.value, 10) || 12345;
+  const plan = townPlan(tri, key, seed);
+  const center = worldPos(city.x, city.y);
+  const townGoods = streetGoodsFor(tri, { key, center, plan }, seed);
+  const goods = townGoods[0];
+  const extras = townGoods.slice(1);
+
+  const overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;inset:0;background:rgba(10,12,20,0.82);display:flex;" +
+    "flex-direction:column;align-items:center;justify-content:center;z-index:50;gap:8px";
+
+  const ov0 = cityOverview(tri, key);
+  const bar = document.createElement("div");
+  bar.style.cssText = "display:flex;gap:12px;align-items:center;color:#f0f0f5;font:600 15px system-ui";
+  const title = document.createElement("span");
+  title.textContent = `${ov0.name}${ov0.tier ? ` · ${ov0.tier}` : ""}${ov0.civ ? ` · ${ov0.civ.name}` : ""}`;
+  if (ov0.civ) title.style.textShadow = `0 0 8px ${ov0.civ.color}`;
+  const walkBtn = document.createElement("button");
+  walkBtn.textContent = "🚶 Walk here";
+  walkBtn.disabled = !!city.dead;
+  walkBtn.addEventListener("click", () => { closeCityView(); openWorld(key); });
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "✕ Close";
+  closeBtn.addEventListener("click", closeCityView);
+  bar.append(title, walkBtn, closeBtn);
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:10px;align-items:stretch";
+  const mapC = document.createElement("canvas");
+  const MW = Math.max(360, Math.min(560, window.innerWidth - 440));
+  const MH = Math.min(540, window.innerHeight - 130);
+  mapC.width = MW;
+  mapC.height = MH;
+  mapC.style.cssText = `width:${MW}px;height:${MH}px;border-radius:10px;background:#000;cursor:crosshair`;
+  const panel = document.createElement("div");
+  panel.style.cssText =
+    `width:330px;max-height:${MH}px;overflow-y:auto;background:rgba(24,27,40,0.95);` +
+    "border-radius:10px;padding:12px 14px;color:#d8dae6;font:12px system-ui;line-height:1.55";
+  row.append(mapC, panel);
+  overlay.append(bar, row);
+  document.body.appendChild(overlay);
+
+  // --- Panel scaffold: overview / resources / chronicle / building.
+  const head = (t: string): string => `<div style="font:600 12px system-ui;color:#aab4d8;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.06em">${t}</div>`;
+  const overviewDiv = document.createElement("div");
+  const resourcesDiv = document.createElement("div");
+  const chronHead = document.createElement("div");
+  chronHead.innerHTML = head("Chronicle");
+  const chronCanvas = document.createElement("canvas");
+  chronCanvas.width = 300;
+  chronCanvas.height = 56;
+  chronCanvas.style.cssText = "width:300px;height:56px;background:rgba(12,14,24,0.7);border-radius:6px";
+  const eventsDiv = document.createElement("div");
+  const buildingDiv = document.createElement("div");
+  panel.append(overviewDiv, resourcesDiv, chronHead, chronCanvas, eventsDiv, buildingDiv);
+
+  const barRow = (label: string, fill: number, detail: string): string => {
+    const pct = Math.round(fill * 100);
+    return `<div style="display:flex;gap:6px;align-items:center;margin:1px 0">` +
+      `<span style="width:52px;color:#aab4d8">${label}</span>` +
+      `<span style="flex:1;height:7px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden">` +
+      `<span style="display:block;width:${pct}%;height:100%;background:${fill >= 0.95 ? "#5fae6b" : fill >= 0.6 ? "#c9a94e" : "#c96a4e"}"></span></span>` +
+      `<span style="width:86px;text-align:right;color:#9aa2bd">${detail}</span></div>`;
+  };
+
+  const renderPanel = (): void => {
+    const ov = cityOverview(tri, key);
+    const status = ov.dead
+      ? `<b style="color:#c9a0a0">RUIN</b> — fell day ${ov.dead.day}`
+      : `${ov.pop.toLocaleString()} people`;
+    const origin = ov.colonyOf
+      ? `Colony of <b>${ov.colonyOf}</b>`
+      : `Founded on a crowd of ${ov.harvested}`;
+    overviewDiv.innerHTML =
+      head("Overview") +
+      `${status}<br>${origin}` +
+      (ov.colonies.length ? `<br>Colonies: ${ov.colonies.join(", ")}` : "") +
+      (ov.fauna.length
+        ? `<br>${ov.fauna.map(f => `${f.glyph} ${f.name} ${f.count.toLocaleString()}`).join(" · ")}`
+        : "");
+    resourcesDiv.innerHTML =
+      head("Charter") +
+      `farmland ${ov.charter.farmland.toFixed(0)} · ore ${ov.charter.ore_access.toFixed(0)} · timber ${ov.charter.timberland.toFixed(0)}` +
+      (ov.buildings.length
+        ? head("Buildings") + ov.buildings.map(b => `${b.label} ${b.count}`).join(" · ")
+        : "") +
+      (ov.stockpiles.length
+        ? head("Stockpiles") + ov.stockpiles.map(s => `${s.label} ${s.value.toFixed(0)}`).join(" · ")
+        : "") +
+      (ov.fills.length
+        ? head("Supply") + ov.fills.map(f => barRow(f.good, f.fill, `${f.got.toFixed(1)}/${f.need.toFixed(1)}`)).join("")
+        : "");
+    const chron = cityChronicle(tri, key);
+    paintSparkline(chronCanvas.getContext("2d")!, chron, chronCanvas.width, chronCanvas.height);
+    eventsDiv.innerHTML = chron.events
+      .map(e => `<div style="color:#9aa2bd">day ${e.day} — ${e.label}</div>`)
+      .join("");
+  };
+
+  let selected: BuildingRef | null = null;
+  const renderBuilding = (): void => {
+    if (!selected) {
+      buildingDiv.innerHTML = head("Building") + `<i style="color:#8a90a8">Click a building on the map for its data.</i>`;
+      return;
+    }
+    const info = buildingInfo(tri, key, plan, goods, selected, nowSeconds(), extras);
+    buildingDiv.innerHTML =
+      head("Building") +
+      `<b>${info.title}</b><br>` +
+      info.lines.map(l => (l.startsWith("  ") ? `&nbsp;&nbsp;${l.trim()}` : l)).join("<br>");
+  };
+
+  // --- The live map: traffic wear, stock and pantries are clock
+  // projections — a gentle repaint keeps them honest without rAF cost.
+  const mctx = mapC.getContext("2d")!;
+  let xform = { scale: 1, ox: 0, oy: 0 };
+  const paint = (): void => {
+    xform = paintCityMap(mctx, plan, goods, {
+      w: mapC.width, h: mapC.height, selected, extras,
+      works: (tri.economy ?? DEFAULT_ECONOMY).works,
+    });
+  };
+  mapC.addEventListener("click", e => {
+    const r = mapC.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (mapC.width / r.width);
+    const my = (e.clientY - r.top) * (mapC.height / r.height);
+    selected = hitTestBuilding(plan, (mx - xform.ox) / xform.scale, (my - xform.oy) / xform.scale);
+    renderBuilding();
+    paint();
+  });
+
+  renderPanel();
+  renderBuilding();
+  paint();
+  const mapTimer = window.setInterval(paint, 400);
+  const panelTimer = window.setInterval(renderPanel, 2000);
+
+  cityView = {
+    overlay,
+    stop: () => {
+      window.clearInterval(mapTimer);
+      window.clearInterval(panelTimer);
+    },
+  };
 }
 
 const rafFrame = (cb: (nowMs: number) => void): (() => void) => {
@@ -649,7 +972,8 @@ function createWorldView(
       m = new Map();
       for (const d of food.districts()) {
         const tint = d.kind === "mining" ? "rgba(96,116,150,0.30)"
-          : d.kind === "farm" ? "rgba(140,170,60,0.22)" : null;
+          : d.kind === "farm" ? "rgba(140,170,60,0.22)"
+            : d.kind === "craft" ? "rgba(170,120,70,0.24)" : null;
         for (const hi of d.houseIdx) m.set(hi, tint);
       }
       tintCache.set(food, m);
@@ -749,7 +1073,10 @@ function createWorldView(
           // arterials (city-development.md §3b). New streets pave
           // outward through the reveal phase; extensions ease.
           const net = town.roads;
-          const traffic = town.food.streetTraffic();
+          // Wear counts EVERY good's trips — the smithy lane widens too.
+          const townTraffics = town.goods.map(g => g.streetTraffic());
+          const tripsOn = (id: number): number =>
+            townTraffics.reduce((sum, tr) => sum + (tr.get(id) ?? 0), 0);
           vctx.fillStyle = "rgba(203,183,142,0.35)";
           vctx.beginPath();
           vctx.arc(sx, sy, net.plazaR * cam.scale, 0, Math.PI * 2);
@@ -761,8 +1088,7 @@ function createWorldView(
             const total = s.cum[s.cum.length - 1];
             const shown = paved.value(key, total) * smooth(bornB.phase(key));
             if (shown <= 0.5) continue;
-            const trips = traffic.get(s.id) ?? 0;
-            const wear = Math.min(1, Math.sqrt(trips) / 12);
+            const wear = Math.min(1, Math.sqrt(tripsOn(s.id)) / 12);
             vctx.strokeStyle = `rgba(203,183,142,${(0.3 + 0.3 * wear).toFixed(3)})`;
             vctx.lineWidth = Math.max(1, ((s.ring ? 2.8 : s.gen === 0 ? 3.4 : 2.4) + 2.8 * wear) * cam.scale);
             vctx.beginPath();
@@ -782,6 +1108,15 @@ function createWorldView(
             }
             vctx.stroke();
           }
+          // SEE-INSIDE, canvas edition — the same rule as the 3D roof
+          // fade: the one footprint the player stands in fades, so its
+          // interior (occupants, crates) reads through the roof. Other
+          // buildings stay solid roofs.
+          const meA = state.avatars["player"];
+          const meLx = meA ? meA.x - town.center.x : Infinity;
+          const meLy = meA ? meA.y - town.center.y : Infinity;
+          const revealed = (r: { dx: number; dy: number; w: number; h: number }): boolean =>
+            meLx > r.dx && meLx < r.dx + r.w && meLy > r.dy && meLy < r.dy + r.h;
           for (const h of town.plan.houses) {
             const hx = sx + h.dx * cam.scale;
             const hy = sy + h.dy * cam.scale;
@@ -798,7 +1133,7 @@ function createWorldView(
             const g = 0.5 + 0.5 * ph;
             const gx = hx + (hw * (1 - g)) / 2;
             const gy = hy + (hh * (1 - g)) / 2;
-            vctx.globalAlpha = 0.35 + 0.65 * ph;
+            vctx.globalAlpha = (0.35 + 0.65 * ph) * (revealed(h) ? 0.3 : 1);
             vctx.fillStyle = h.color;
             vctx.fillRect(gx, gy, Math.max(1.5, hw * g), Math.max(1.5, hh * g));
             const tint = tintFor(town.food).get(h.index);
@@ -812,23 +1147,52 @@ function createWorldView(
               vctx.strokeRect(gx, gy, hw * g, hh * g);
             }
             vctx.globalAlpha = 1;
-            // The household FOOD BOX (street zoom only): a crate by the
-            // door whose green level is the pantry — full at plenty,
-            // scraping empty under scarcity or just before a trip.
-            if (cam.scale > 1.4) {
-              const frac = Math.min(1, town.food.pantry(h, tNow) / PANTRY_CAP);
-              const s = 1.1 * cam.scale;
-              const bx = hx + 1.2 * cam.scale;
-              const by = hy + hh - s - 1.2 * cam.scale;
-              vctx.fillStyle = "#5d4630";
-              vctx.fillRect(bx, by, s, s);
-              if (frac > 0) {
-                vctx.fillStyle = "#7fae4e";
-                vctx.fillRect(bx, by + s * (1 - frac), s, s * frac);
+            // FURNITURE, seen through the revealed roof (the shared
+            // furniture model — the same pieces the 3D fixtures raise;
+            // the goods crates draw below with their live fill).
+            if (revealed(h) && cam.scale > 1.4) {
+              for (const piece of houseFurniture(town.center, h, [])) {
+                if (piece.kind === "chest") continue; // the crates' job
+                const fs = piece.radius * 2 * cam.scale;
+                const fx = cam.offsetX + (piece.x - piece.radius) * cam.scale;
+                const fy = cam.offsetY + (piece.y - piece.radius) * cam.scale;
+                vctx.fillStyle = piece.kind === "table" ? "#9a7248" : "#6f4e2f";
+                vctx.fillRect(fx, fy, fs, fs);
+                vctx.strokeStyle = "rgba(20,16,10,0.6)";
+                vctx.lineWidth = 1;
+                vctx.strokeRect(fx, fy, fs, fs);
               }
-              vctx.strokeStyle = "rgba(20,16,10,0.6)";
-              vctx.lineWidth = 1;
-              vctx.strokeRect(bx, by, s, s);
+            }
+            // The household FOOD BOX (street zoom only): a crate whose
+            // green level is the pantry — full at plenty, scraping empty
+            // under scarcity or just before a trip. Drawn where the
+            // returning shopper's trip ends (pantryBoxAt), and read
+            // through the WITNESS overlay: a box the player is looking
+            // at fills when the shopper reaches it, never by itself.
+            if (cam.scale > 1.4) {
+              const crate = (box: { x: number; y: number }, frac: number, fillColor: string): void => {
+                const s = 1.1 * cam.scale;
+                const bx = cam.offsetX + (box.x - 0.55) * cam.scale;
+                const by = cam.offsetY + (box.y - 0.55) * cam.scale;
+                vctx.fillStyle = "#5d4630";
+                vctx.fillRect(bx, by, s, s);
+                if (frac > 0) {
+                  vctx.fillStyle = fillColor;
+                  vctx.fillRect(bx, by + s * (1 - frac), s, s * frac);
+                }
+                vctx.strokeStyle = "rgba(20,16,10,0.6)";
+                vctx.lineWidth = 1;
+                vctx.strokeRect(bx, by, s, s);
+              };
+              // ONE crate per good the town trades, each in its own
+              // corner (slot) on its own clock: pantry green, the rest
+              // in their registry stock colors.
+              for (let gi = 0; gi < town.goods.length; gi++) {
+                const g = town.goods[gi];
+                const slot = g.good.slot ?? gi;
+                const frac = Math.min(1, chunks.goodBox(town, gi, h, tNow) / g.boxCap);
+                crate(goodBoxAt(town.center, h, slot), frac, gi === 0 ? "#7fae4e" : g.good.stockColor ?? "#8b98a8");
+              }
             }
           }
           for (let wi = 0; wi < town.plan.works.length; wi++) {
@@ -841,7 +1205,7 @@ function createWorldView(
             });
             if (wx + wk.w * cam.scale < 0 || wx > viewW || wy + wk.h * cam.scale < 0 || wy > viewH) continue;
             const wph = smooth(bornB.phase(wKey));
-            vctx.globalAlpha = 0.35 + 0.65 * wph;
+            vctx.globalAlpha = (0.35 + 0.65 * wph) * (revealed(wk) ? 0.3 : 1);
             vctx.fillStyle = wk.color;
             vctx.fillRect(wx, wy, wk.w * cam.scale, wk.h * cam.scale);
             vctx.strokeStyle = wph < 1 ? "rgba(224,196,110,0.9)" : "rgba(30,24,16,0.4)";
@@ -857,21 +1221,23 @@ function createWorldView(
             // plaza's. Shoppers dwell at these stands (food.ts), so the
             // crowd fans out along the tables instead of piling in a
             // corner.
-            if (wk.type === "market" && cam.scale > 0.9) {
-              const src = town.food.sources.find(s => s.work === wi);
-              const stands = src ? town.food.stands(src) : [];
-              const daily = src ? town.food.stallDaily(src) : 0;
-              const stock = src ? town.food.stockOf(src, tNow) : 0;
+            const shelfGoods = town.goods.find(g => g.good.shelved.includes(wk.type)) ?? null;
+            if (shelfGoods && cam.scale > 0.9) {
+              const src = shelfGoods.sources.find(s => s.work === wi);
+              const stands = src ? shelfGoods.stands(src) : [];
+              const daily = src ? shelfGoods.stallDaily(src) : 0;
+              const stock = src ? shelfGoods.stockOf(src, tNow) : 0;
               const frac = daily > 0 ? Math.min(1, stock / (daily * 1.15)) : 0;
               const perStand = Math.round(frac * 4); // 0..4 sacks per table
               for (const st of stands) {
                 const tx = sx + (st.x - town.center.x) * cam.scale;
                 const ty = sy + (st.y - town.center.y) * cam.scale;
-                // The table.
+                // The table (the smithy's is its sales counter).
                 vctx.fillStyle = "#7a5a3a";
                 vctx.fillRect(tx - 1.4 * cam.scale, ty - 0.7 * cam.scale, 2.8 * cam.scale, 1.4 * cam.scale);
-                // Its sacks.
-                vctx.fillStyle = "#e0b25c";
+                // Its stock, in the good's own color (grain gold, tool
+                // steel, whatever new content declares).
+                vctx.fillStyle = shelfGoods.good.stockColor ?? "#e0b25c";
                 for (let sk = 0; sk < perStand; sk++) {
                   const ox = (sk % 2 - 0.5) * 1.1 * cam.scale;
                   const oy = -(Math.floor(sk / 2)) * 0.9 * cam.scale - 1.1 * cam.scale;
@@ -893,7 +1259,7 @@ function createWorldView(
             const curve = 0.35 + 0.75 * Math.sin(Math.PI * dayFrac);
             vctx.fillStyle = "rgba(216,168,110,0.85)";
             for (const s of net.streets) {
-              const trips = traffic.get(s.id) ?? 0;
+              const trips = tripsOn(s.id);
               if (trips < 6) continue;
               const total = s.cum[s.cum.length - 1];
               if (total < 20) continue;
@@ -912,6 +1278,38 @@ function createWorldView(
                 vctx.beginPath();
                 vctx.arc(px2, py2, Math.max(1.2, 0.3 * cam.scale), 0, Math.PI * 2);
                 vctx.fill();
+              }
+            }
+          }
+          // URBAN WILDLIFE (commensal species, from the registry): the
+          // vermin come out when the people go in — the same traffic
+          // field, the INVERSE day curve, small dark scurries hugging
+          // the lanes. Count scales with the live settlement scalar.
+          {
+            const dayFrac = (((tNow % FOOD_DAY_SEC) + FOOD_DAY_SEC) % FOOD_DAY_SEC) / FOOD_DAY_SEC;
+            const nightCurve = 0.15 + 0.85 * (1 - Math.sin(Math.PI * dayFrac));
+            vctx.fillStyle = "rgba(70,62,58,0.9)";
+            for (const sp of (rt?.tri?.economy ?? DEFAULT_ECONOMY).species) {
+              if (sp.role !== "commensal" || !sp.countScalar) continue;
+              const count = tri.dual.settlementScalar(town.key, sp.countScalar);
+              if (count < 20) continue;
+              for (const s of net.streets) {
+                const total = s.cum[s.cum.length - 1];
+                if (total < 15) continue;
+                const n = Math.min(4, Math.floor((count / 80) * nightCurve));
+                for (let i = 0; i < n; i++) {
+                  const h32 = ((s.id * 40503) ^ (i * 63689) ^ 0x9e37) >>> 0;
+                  const dir = h32 & 2 ? 1 : -1;
+                  // Scurry: faster than a stroll, hugging the lane edge.
+                  const prog = h32 / 4294967296 + (dir * tNow * 3.2) / total;
+                  const at = pointAt(s, (((prog % 1) + 1) % 1) * total);
+                  const px2 = cam.offsetX + (town.center.x + at.x + (h32 & 1 ? 1.3 : -1.3)) * cam.scale;
+                  const py2 = cam.offsetY + (town.center.y + at.y) * cam.scale;
+                  if (px2 < -4 || px2 > viewW + 4 || py2 < -4 || py2 > viewH + 4) continue;
+                  vctx.beginPath();
+                  vctx.arc(px2, py2, Math.max(0.8, 0.15 * cam.scale), 0, Math.PI * 2);
+                  vctx.fill();
+                }
               }
             }
           }
@@ -1100,16 +1498,21 @@ function openWorld(atCity: string): void {
   for (const n of world.spec.npcs ?? []) names.set(n.id, n.name ?? n.id);
   const cityName = (key: string): string => tri.dual.sites().find(s => s.key === key)?.name ?? key;
 
-  // One NPC budget, shared: party followers are permanent; villagers
-  // (nearest village first) and traveler bands split what remains.
+  // One BODY budget, shared: party followers are permanent; villagers
+  // (best-ranked street life first) and traveler bands split what
+  // remains. STREET_NPCS, not the engine's spec cap — these are pure
+  // bodies (no AI session, no network), so the host's runtime cap is
+  // raised to match (`maxNpcs` below).
   let bands: BandWorld | null = null;
   // Disbanded party members stay standing as FREED folk until the player
   // walks away — then they melt back into the streaming pool.
   const freed: Array<{ id: string; siteKey: string; index: number }> = [];
+  // Last streaming-reconcile tick (seconds) — see onFrame.
+  let lastStream = 0;
   const chunks = createTownManager(tri, seed,
-    () => WORLD_MAX_NPCS - party.members.length - freed.length - (bands?.active() ?? 0));
+    () => STREET_NPCS - party.members.length - freed.length - (bands?.active() ?? 0));
   bands = createTravelerBands(tri, seed,
-    () => WORLD_MAX_NPCS - party.members.length - freed.length - chunks.active());
+    () => STREET_NPCS - party.members.length - freed.length - chunks.active());
 
   let footKey = ""; // rebuild the foot bar only when its content changes
   const renderFoot = (nearVillagerId: string | null): void => {
@@ -1186,6 +1589,7 @@ function openWorld(atCity: string): void {
     localId: "player",
     spawnIndex: world.spawnIndexOf.get(atCity) ?? 0,
     hostNpcs: true,
+    maxNpcs: STREET_NPCS,
     constraint: terrainConstraint(tri.grid),
     scheduleFrame: rafFrame,
     now: () => performance.now(),
@@ -1203,6 +1607,14 @@ function openWorld(atCity: string): void {
           freed.splice(i, 1);
         }
       }
+      // Streaming reconciliation is ~8 Hz work, not per-frame work: the
+      // candidate ranking walks every loaded house and costs real
+      // milliseconds at city scale, while spawn radii are tens of meters
+      // — nothing it decides can change in 16 ms. (The melt-back above
+      // stays per-frame: it's a handful of distance checks.)
+      const nowS = performance.now() / 1000;
+      if (nowS - lastStream < 0.12) return;
+      lastStream = nowS;
       // Stream villages around the player through the engine seam —
       // ranked against the host's LIVE bodies (the source of truth).
       const liveMap = new Map<string, { x: number; y: number }>();
@@ -1211,20 +1623,32 @@ function openWorld(atCity: string): void {
         liveMap.set(id, { x: a.x, y: a.y });
       }
       const delta = chunks.update(me, liveMap, performance.now() / 1000, view.visibleRadius());
-      if (delta.structures) host.setStructures(delta.structures);
+      if (delta.buildings) host.setBuildings(delta.buildings);
+      for (const o of delta.addObjects ?? []) host.addObject(o);
+      for (const id of delta.removeObjects ?? []) host.removeObject(id);
       for (const id of delta.despawn) {
         host.removeNpc(id);
         names.delete(id);
       }
+      // A villager's trip ends AT their pantry box — reaching that last
+      // waypoint is what fills the crate (the witness TownManager.pantry
+      // waits for), however long obstacles and door jams delayed them.
+      const shoppingTrip = (id: string, points: Array<{ x: number; y: number; dwell?: number }>): void =>
+        host.setNpcErrand(id, {
+          points,
+          onArrive: i => {
+            if (i === points.length - 1) chunks.tripArrived(id, performance.now() / 1000);
+          },
+        });
       for (const s of delta.spawn) {
         if (host.addNpc(s.npc)) {
           names.set(s.npc.id, s.npc.name ?? s.npc.id);
           // Spawned mid-errand: finish the trip they were already on.
-          if (s.walkTo) host.setNpcErrand(s.npc.id, { points: s.walkTo });
+          if (s.walkTo) shoppingTrip(s.npc.id, s.walkTo);
         }
       }
       // Embodied residents whose pantry ran dry head out shopping.
-      for (const e of delta.errands) host.setNpcErrand(e.id, { points: e.points });
+      for (const e of delta.errands) shoppingTrip(e.id, e.points);
       // Traveler bands: embody the nearby ones; walkers get a road
       // errand toward their destination village.
       const bd = bands!.update(me, performance.now() / 1000);
@@ -1299,12 +1723,62 @@ function initControls(): void {
     lastTs = 0;
   });
   stepBtn.addEventListener("click", () => { playing = false; playBtn.textContent = "▶ Play"; void stepOnce(); });
+  civScrub.addEventListener("input", () => {
+    if (!rt?.tri) return;
+    const frames = rt.tri.historyFrames();
+    if (frames < 2) return;
+    // Build lazily; rebuild when frames accrued since (playing on while
+    // scrubbing re-scales the slider to the grown span).
+    if (!rt.civ || rt.civBuiltFrames !== frames) {
+      rt.civHist = rt.tri.history() ?? undefined;
+      rt.civ = rt.civHist ? createCivScrubber(rt.civHist) : undefined;
+      rt.civBuiltFrames = frames;
+    }
+    rt.civ?.setPos(parseInt(civScrub.value, 10) / 1000);
+    render(false);
+  });
+
   geoScrub.addEventListener("input", () => {
     rt?.geo?.setPos(parseInt(geoScrub.value, 10) / 1000);
   });
   resetBtn.addEventListener("click", () => { if (rt) void loadScenario(rt.scenario, rt.colorTrait); });
   speedInput.addEventListener("input", () => { speedVal.textContent = `${speedInput.value}/s`; });
   seedInput.addEventListener("change", () => { if (rt) void loadScenario(rt.scenario, rt.colorTrait); });
+
+  // CUSTOM CONTENT (the developer-mod seam): a WORLD MANIFEST (the
+  // engine kernel's document — `engine: "aivota-world"`, ordered packs)
+  // or a bare EconomyDoc, told apart by the envelope. Either way the
+  // docs parse at the boot gate, dry-run compile against the full
+  // standard stack so semantic errors (dangling scalars, missing
+  // anchors) surface NOW with the def's name, then the scenario reboots
+  // with them. A bad file reports and changes nothing.
+  contentFile.addEventListener("change", () => {
+    const file = contentFile.files?.[0];
+    if (!file) {
+      customContent = [];
+      contentStatus.textContent = "";
+      if (rt) void loadScenario(rt.scenario, rt.colorTrait);
+      return;
+    }
+    void file.text().then(text => {
+      try {
+        const raw: unknown = JSON.parse(text);
+        const docs = isWorldManifest(raw)
+          ? docsFor(loadWorldManifest(raw, [ECONOMY_MODULE], file.name), ECONOMY_MODULE)
+          : [parseEconomyDoc(raw, file.name)];
+        const eco = compileEconomy([CORE_BASE, CORE_GOODS2, CLOTHING, ...docs], { construction: true });
+        customContent = docs;
+        const added = docs.reduce((a, d) => a + (d.buildings?.length ?? 0), 0);
+        contentStatus.textContent =
+          `✓ ${file.name} — ${added} building${added === 1 ? "" : "s"}, ${eco.goods.length} street goods total`;
+        contentStatus.style.color = "";
+        if (rt) void loadScenario(rt.scenario, rt.colorTrait);
+      } catch (e) {
+        contentStatus.textContent = `✗ ${e instanceof Error ? e.message : String(e)}`;
+        contentStatus.style.color = "#d08080";
+      }
+    });
+  });
 
   requestAnimationFrame(frame);
 }

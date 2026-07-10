@@ -26,6 +26,9 @@ import {
   placeCarriedObject,
   removeAvatar,
   setAvatarSpeech,
+  addWorldObject,
+  removeWorldObject,
+  setWorldBuildings,
   setWorldStructures,
   smoothRemoteAvatars,
   steerAvatar,
@@ -38,7 +41,7 @@ import {
 } from "./engine.js";
 import { createDwellTracker } from "./dwell.js";
 import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
-import { WORLD_MAX_NPCS, type NpcSpec, type StructureSpec, type Vec2, type WorldSpec } from "./types.js";
+import { WORLD_MAX_NPCS, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type Vec2, type WorldSpec } from "./types.js";
 import type { WorldView } from "./world-view.js";
 import { createGazeInterpreter } from "./gaze-intent.js";
 import { approachAim, pickEntity } from "./interact.js";
@@ -98,6 +101,14 @@ export interface WorldHostDeps {
   hostNpcs?: boolean;
   /** RNG for NPC wander (deterministic in tests). Defaults to Math.random. */
   npcRng?: () => number;
+  /** Concurrent cap for runtime-streamed NPCs (addNpc). Defaults to
+   *  WORLD_MAX_NPCS — the right bound when every NPC is a live social
+   *  session and/or broadcast to peers. A single-player STREAMED world
+   *  whose cast is pure bodies (wander/errand controllers, no AI mind —
+   *  e.g. grand-dream's villagers) may raise it: a body costs one
+   *  steering tick per frame. Spec-authored NPCs stay schema-capped
+   *  regardless. */
+  maxNpcs?: number;
   /** Fires (on CHANGE of the in-range set) with the hosted NPCs the LOCAL player is
    *  within conversation range of, nearest first. The React conversation layer uses
    *  it to decide which NPC the player can talk to. Only meaningful when hostNpcs. */
@@ -135,6 +146,13 @@ export interface WorldHostDeps {
    *  bloom — for a game-layer dwell the host doesn't own (e.g. the conversation
    *  start/cancel dwell). Read each frame just before render. */
   cursorProgress?: () => number;
+  /** SPIRIT / stationary mode (AvatarKind "spirit"): the local avatar NEVER moves
+   *  (aim is forced null) and CARRY goes DISTANCE-FREE — the gaze-hovered
+   *  carryable is picked, and the held item is placed at the gaze fixation,
+   *  regardless of reach. The simplified puzzle avatar: the player chooses only
+   *  WHAT to do, never where to stand. (Talk-at-a-distance is the game layer's
+   *  job — see the quest host's spirit dispatcher.) */
+  stationary?: boolean;
 }
 
 /** A running world loop. Feed it peer state + input; it renders and emits outbound. */
@@ -153,6 +171,11 @@ export interface WorldHost {
    *  FROZEN (steering suspended) and the camera slews to FACE the target world
    *  point. Pass null to leave. Driven by the game layer (e.g. dwell-to-talk). */
   setConversation(target: Vec2 | null): void;
+  /** POINT: transiently override the camera to swivel and FACE a world point
+   *  (over-the-shoulder, at max yaw speed), overriding any conversation target
+   *  for `holdMs` (default 2200), then revert. Used when an NPC gives the player
+   *  directions ("it's far, to the north" — the camera turns that way). */
+  pointAt(target: Vec2, holdMs?: number): void;
   /** This frame's settled gaze — the EFFECTIVE fixation point (`committedWorld`:
    *  the looked-at entity's position when the gaze rests on one on screen, else
    *  the fixated ground point; null mid-saccade), what it rests on (`hover`, from
@@ -184,6 +207,18 @@ export interface WorldHost {
    *  engine.setWorldStructures). Collision, door swing, and rendering follow
    *  immediately; door states persist across swaps for surviving ids. */
   setStructures(structures: StructureSpec[]): void;
+  /** Replace the streamed BUILDINGS (engine.setWorldBuildings): registers
+   *  the volumes - roofs, floor slabs, see-inside fade, indoor-avatar
+   *  cull - AND lowers them into their structures in one move. Streaming
+   *  hosts use this instead of setStructures; flattened walls alone are
+   *  a roofless, cull-less house. */
+  setBuildings(buildings: BuildingSpec[]): void;
+  /** Add a STREAMED world object (furniture arriving with its house —
+   *  engine.addWorldObject). False if the id already exists. */
+  addObject(spec: ObjectSpec): boolean;
+  /** Remove a streamed object; whatever it contained is set free where
+   *  it stands. False for an unknown id. */
+  removeObject(objectId: string): boolean;
   /** Bias a hosted NPC's body from its live conversation (mind → body). No-op for
    *  an unknown id or a peer that doesn't host that NPC. */
   setNpcEngagement(npcId: string, engagement: NpcEngagement | null): void;
@@ -311,6 +346,11 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   let carryDwellProgress = 0;
   // Conversation: when set, the avatar is frozen and the camera faces this point.
   let conversationTarget: Vec2 | null = null;
+  // POINT override (NPC directions): while the hold counts down, the camera
+  // faces this point instead of the conversation target, over-the-shoulder, at
+  // max yaw. Counted down by dt each frame (no wall-clock dependency).
+  let pointTarget: Vec2 | null = null;
+  let pointHold = 0;
   // This frame's settled gaze, exposed to the game layer via getGaze().
   let lastCommitted: Vec2 | null = null;
   let lastHover: { kind: "avatar" | "object"; id: string } | null = null;
@@ -385,7 +425,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // proximity pick stays as the fallback for the overhead view.
     let aim: Vec2 | null = intent.aim;
     let interactId: string | undefined;
-    if (me && !intent.sitting && effFix && intent.unsettled < INTERACT_SETTLE_MAX) {
+    if (me && !intent.sitting && effFix && intent.unsettled < INTERACT_SETTLE_MAX && !deps.stationary) {
       const hit = snap ?? pickEntity(effFix, state, localId, tunables.interact);
       if (hit) {
         aim = approachAim({ x: me.x, y: me.y }, { x: hit.x, y: hit.y }, hit.kind, tunables.interact);
@@ -408,7 +448,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
           const dx = fix.x - me.x;
           const dy = fix.y - me.y;
           const d = Math.hypot(dx, dy);
-          aim = d > CARRY_HOLD ? { x: me.x + (dx / d) * (d - CARRY_HOLD), y: me.y + (dy / d) * (d - CARRY_HOLD) } : null;
+          aim = deps.stationary ? null : d > CARRY_HOLD ? { x: me.x + (dx / d) * (d - CARRY_HOLD), y: me.y + (dy / d) * (d - CARRY_HOLD) } : null;
           // Placement is an ARM'S-REACH act: the put-down dwell only accumulates
           // once the avatar has walked close enough to set the object there —
           // dwelling on a distant spot steers toward it, never teleports the
@@ -420,7 +460,8 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
           // it — pickEntity excludes the carried item and finds the creature under it.
           const overCreature =
             snap?.kind === "avatar" || pickEntity(fix, state, localId, tunables.interact)?.kind === "avatar";
-          withinPlaceReach = !overCreature && d <= carryReach + CARRY_HOLD + 0.4;
+          // SPIRIT: place at the fixation regardless of reach (still never onto a creature).
+          withinPlaceReach = !overCreature && (deps.stationary || d <= carryReach + CARRY_HOLD + 0.4);
         }
         const res = carryDwell.step(withinPlaceReach && fix ? { x: fix.x, y: fix.y } : null, dt * 1000);
         carryDwellProgress = res.progress;
@@ -431,7 +472,8 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       } else {
         const target = fix ? pickEntity(fix, state, localId, tunables.interact) : null;
         const obj = target?.kind === "object" ? state.objects[target.id] : undefined;
-        const near = !!obj && Math.hypot(obj.x - me.x, obj.y - me.y) <= carryReach && objectAllows(state.spec, obj.id, "carry");
+        // SPIRIT: a hovered carryable is pickable at any distance (no walking).
+        const near = !!obj && (deps.stationary || Math.hypot(obj.x - me.x, obj.y - me.y) <= carryReach) && objectAllows(state.spec, obj.id, "carry");
         if (near && obj) interactId = obj.id;
         const res = carryDwell.step(near && obj ? { x: obj.x, y: obj.y } : null, dt * 1000);
         carryDwellProgress = res.progress;
@@ -453,11 +495,20 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // CONVERSATION: freeze the avatar while talking (the camera faces the speaker,
     // applied via the render intent below). Mirrors the carry steering-suspension.
     if (conversationTarget) aim = null;
+    if (deps.stationary) aim = null; // SPIRIT: the avatar never moves
+    // POINT override expiry: a directions swivel holds briefly, then reverts to
+    // the conversation target.
+    if (pointTarget) {
+      pointHold -= dt;
+      if (pointHold <= 0) pointTarget = null;
+    }
+    const faceTarget = pointTarget ?? conversationTarget;
     // Gaze resting on a speech bubble — or on the speaker while conversing —
     // asks the camera for the over-the-shoulder framing (player + speaker both
-    // visible; the overhead pose puts the camera between them).
+    // visible; the overhead pose puts the camera between them). A point override
+    // forces the shoulder view too (an over-the-shoulder "look where I point").
     const wantShoulder =
-      snapFromBubble || (!!conversationTarget && snap?.kind === "avatar");
+      !!pointTarget || snapFromBubble || (!!conversationTarget && snap?.kind === "avatar");
 
     const { events } = tickWorld(state, { aim }, dt, undefined, deps.constraint);
     // Advance hosted NPC bodies (no-op when this peer hosts none). Runs after the
@@ -500,7 +551,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       aim,
       sitting: intent.sitting,
       interactId,
-      faceTarget: conversationTarget,
+      faceTarget,
       shoulder: wantShoulder,
       // The spark cursor tracks the genuine gaze fixation (`effFix`) + what it
       // rests on (`snap`), NOT `interactId`/`aim` — so it never sticks to the
@@ -547,6 +598,10 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     setConversation(target) {
       conversationTarget = target;
     },
+    pointAt(target, holdMs = 2200) {
+      pointTarget = { x: target.x, y: target.y };
+      pointHold = Math.max(0, holdMs) / 1000;
+    },
     getGaze() {
       return {
         committedWorld: lastCommitted,
@@ -569,7 +624,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     addNpc(npc) {
       if (!deps.hostNpcs) return false;
       if (npcIds.has(npc.id) || state.avatars[npc.id]) return false;
-      if (npcIds.size >= WORLD_MAX_NPCS) return false; // same cap as the spec, held concurrently
+      if (npcIds.size >= (deps.maxNpcs ?? WORLD_MAX_NPCS)) return false; // spec cap unless the host raised it
       addLocalAvatar(state, npc.id, npc.x, npc.y, npc.facing ?? 0);
       const ctrl = createNpcController(npc);
       npcControllers.push(ctrl);
@@ -597,6 +652,15 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     setStructures(structures) {
       setWorldStructures(state, structures);
+    },
+    setBuildings(buildings) {
+      setWorldBuildings(state, buildings);
+    },
+    addObject(spec) {
+      return addWorldObject(state, spec);
+    },
+    removeObject(objectId) {
+      return removeWorldObject(state, objectId);
     },
     setNpcEngagement(npcId, engagement) {
       npcById.get(npcId)?.setEngagement(engagement);

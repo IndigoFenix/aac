@@ -258,6 +258,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [eyegazeProvider, setEyegazeProvider] = useState<string>('mouse');
+  const [eyegazeSmoothing, setEyegazeSmoothing] = useState<string>('medium');
   const [allowReadProgress, setAllowReadProgress] = useState(true);
   const [allowReadReports, setAllowReadReports] = useState(true);
   const [allowNotes, setAllowNotes] = useState(true);
@@ -370,6 +371,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
+      setEyegazeSmoothing(aac?.eyegazeSmoothing ?? 'medium');
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
@@ -418,6 +420,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
       const originalEyegazeProvider = aac?.eyegazeProvider ?? 'mouse';
+      const originalEyegazeSmoothing = aac?.eyegazeSmoothing ?? 'medium';
       const originalAllowReadProgress = aac?.allowReadProgress ?? true;
       const originalAllowReadReports = aac?.allowReadReports ?? true;
       const originalAllowNotes = aac?.allowNotes ?? true;
@@ -459,6 +462,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
         eyegazeProvider !== originalEyegazeProvider ||
+        eyegazeSmoothing !== originalEyegazeSmoothing ||
         allowReadProgress !== originalAllowReadProgress ||
         allowReadReports !== originalAllowReadReports ||
         allowNotes !== originalAllowNotes ||
@@ -501,6 +505,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
       eyegazeProvider: string;
+      eyegazeSmoothing: string;
       allowReadProgress: boolean;
       allowReadReports: boolean;
       allowNotes: boolean;
@@ -558,6 +563,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       eyegazeEnabled,
       eyegazeTimeout,
       eyegazeProvider,
+      eyegazeSmoothing,
       allowReadProgress,
       allowReadReports,
       allowNotes,
@@ -605,6 +611,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
+      setEyegazeSmoothing(aac?.eyegazeSmoothing ?? 'medium');
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
@@ -1665,6 +1672,27 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           {t('aacSettings.inputSourceHint')}
                         </p>
                       </div>
+                      {eyegazeProvider !== 'mouse' && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.gazeSmoothing')}
+                          </Label>
+                          <Select value={eyegazeSmoothing} onValueChange={setEyegazeSmoothing}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="off">{t('aacSettings.gazeSmoothingOff')}</SelectItem>
+                              <SelectItem value="light">{t('aacSettings.gazeSmoothingLight')}</SelectItem>
+                              <SelectItem value="medium">{t('aacSettings.gazeSmoothingMedium')}</SelectItem>
+                              <SelectItem value="strong">{t('aacSettings.gazeSmoothingStrong')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.gazeSmoothingHint')}
+                          </p>
+                        </div>
+                      )}
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
                           <Label className="text-sm font-medium">

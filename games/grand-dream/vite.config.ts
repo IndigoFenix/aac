@@ -19,7 +19,7 @@ export default defineConfig({
     alias: {
       "@shared": path.resolve(__dirname, "..", "..", "shared"),
       "@popusim": path.resolve(__dirname, "..", "popusim", "src"),
-      "@cells": path.resolve(__dirname, "..", "sandbox-game", "src", "cell-systems"),
+      "@cells": path.resolve(__dirname, "..", "..", "shared", "engine", "cells"),
     },
   },
   root: __dirname,

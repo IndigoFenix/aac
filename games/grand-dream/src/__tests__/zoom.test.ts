@@ -9,14 +9,15 @@
 
 import { describe, expect, it } from "vitest";
 import { runWorldHost } from "@shared/world-engine/world-host";
+import { WORLD_MAX_NPCS } from "@shared/world-engine/index";
 import { buildAcceptanceTri } from "../tri-worlds";
 import { createTravelerBands } from "../traveler-bands";
 import { ERRAND_WALK, createTownFood } from "../food";
 import {
-  HOUSEHOLD, PEOPLE_R, TOWN_LOAD_R, TOWN_UNLOAD_R, WORLD_TILE,
-  createParty, createTownManager, disbandParty, generateScene, generateWorld,
-  nearestCity, parkParty, recruitVillager, terrainConstraint, townPlan,
-  villagerOf, worldPos,
+  HOUSEHOLD, IDLE_RANK_PENALTY, PEOPLE_R, STREET_NPCS, TOWN_LOAD_R, TOWN_UNLOAD_R,
+  WORLD_TILE, createParty, createTownManager, disbandParty, generateScene,
+  generateWorld, houseIndexOf, memberIndex, nearestCity, parkParty, recruitVillager,
+  terrainConstraint, townPlan, villagerNpcId, villagerOf, worldPos,
 } from "../zoom";
 
 describe("zoom-in scenes (§6 sampling)", () => {
@@ -159,10 +160,11 @@ describe("the seamless world (one scale, no village boundary)", () => {
     // A town that holds thousands of people HAS the houses for them, up
     // to what one tile-town physically holds: the street tree grows until
     // the footprint is FULL (riverton's site population overflows it —
-    // houses = min(want, capacity), and capacity is ~a thousand lots).
+    // houses = min(want, capacity), and capacity is ~650 lots at the
+    // realistic scale of dimensions.ts — 15 m pitch, 30 m lanes).
     const lots = Math.max(6, Math.round(pop / HOUSEHOLD));
     expect(pop).toBeGreaterThan(1000);
-    expect(plan.houses.length).toBeGreaterThan(Math.min(lots, 900) * 0.7);
+    expect(plan.houses.length).toBeGreaterThan(Math.min(lots, 700) * 0.7);
     expect(plan.houses.length).toBeLessThanOrEqual(lots);
     // ...at real footprint: hundreds of meters across, inside its km tile.
     expect(plan.radius).toBeGreaterThan(100);
@@ -253,38 +255,108 @@ describe("the seamless world (one scale, no village boundary)", () => {
     const plan = townPlan(a.tri, "riverton", 7);
     const food = createTownFood(a.tri, { key: "riverton", center: home, plan }, 7);
 
-    let sawHome = false;
-    let sawErrand = false;
     // Everything is "on camera" (visibleR huge): a fresh manager at many
-    // moments of the domestic day must never spawn onto open ground.
-    for (let t = 0; (!sawHome || !sawErrand) && t < 2200; t += 15) {
+    // moments of the domestic day must never spawn onto open ground —
+    // every watched mid-errand body starts at its SOURCE building and
+    // walks out, instead of materializing on the street.
+    let sawErrand = false;
+    for (let t = 0; !sawErrand && t < 2200; t += 15) {
       const d = createTownManager(a.tri, 7, () => 6).update(home, undefined, t, 6000);
       for (const s of d.spawn) {
+        if (!s.walkTo) continue;
         const who = villagerOf(s.npc.id);
         if (!who) continue;
-        const h = plan.houses.find(x => x.index === who.index);
+        const h = plan.houses.find(x => x.index === houseIndexOf(who.index));
         if (!h) continue;
-        if (!s.walkTo) {
-          // At home: the body is INSIDE its own four walls (the view
-          // hides indoor villagers — they appear by stepping out).
-          const lx = s.npc.x - home.x;
-          const ly = s.npc.y - home.y;
-          expect(lx).toBeGreaterThan(h.dx);
-          expect(lx).toBeLessThan(h.dx + h.w);
-          expect(ly).toBeGreaterThan(h.dy);
-          expect(ly).toBeLessThan(h.dy + h.h);
-          sawHome = true;
-        } else {
-          // Mid-errand in view: the body starts at its SOURCE building
-          // and walks out, instead of materializing on the street.
-          const src = food.sourceOf(h);
-          expect(Math.hypot(s.npc.x - src.x, s.npc.y - src.y)).toBeLessThan(16);
-          sawErrand = true;
-        }
+        const src = food.sourceOf(h);
+        expect(Math.hypot(s.npc.x - src.x, s.npc.y - src.y)).toBeLessThan(16);
+        sawErrand = true;
       }
     }
-    expect(sawHome).toBe(true);
     expect(sawErrand).toBe(true);
+
+    // Home-phase spawns are INSIDE their own four walls (the view hides
+    // indoor villagers — they appear by stepping out), and a house holds
+    // its whole HOUSEHOLD: step into a home and the family is there.
+    // Homebodies yield their slots to street life, so the one player
+    // position that MUST produce them is standing in their house.
+    const fringe = plan.houses.reduce((p, q) =>
+      Math.hypot(p.dx, p.dy) > Math.hypot(q.dx, q.dy) ? p : q);
+    const inside = {
+      x: home.x + fringe.dx + fringe.w / 2,
+      y: home.y + fringe.dy + fringe.h / 2,
+    };
+    let sawHome = false;
+    for (let t = 0; !sawHome && t < 2200; t += 15) {
+      if (food.errand(fringe, t).phase !== "home") continue;
+      const d = createTownManager(a.tri, 7, () => HOUSEHOLD + 3).update(inside, undefined, t, 6000);
+      const family = new Set(
+        Array.from({ length: HOUSEHOLD }, (_, m) => villagerNpcId("riverton", memberIndex(fringe.index, m))),
+      );
+      const inHouse = d.spawn.filter(s => family.has(s.npc.id));
+      expect(inHouse).toHaveLength(HOUSEHOLD); // the WHOLE family is home
+      for (const s of inHouse) {
+        expect(s.walkTo).toBeUndefined();
+        const lx = s.npc.x - home.x;
+        const ly = s.npc.y - home.y;
+        expect(lx).toBeGreaterThan(fringe.dx);
+        expect(lx).toBeLessThan(fringe.dx + fringe.w);
+        expect(ly).toBeGreaterThan(fringe.dy);
+        expect(ly).toBeLessThan(fringe.dy + fringe.h);
+      }
+      sawHome = true;
+    }
+    expect(sawHome).toBe(true);
+  });
+
+  it("growth replans are GOVERNED: no-change updates never rebuild, and a full town ignores demand it can't house", async () => {
+    const a = await buildAcceptanceTri(42);
+    const rc = a.tri.cities.find(c => c.key === "riverton")!;
+    const home = worldPos(rc.x, rc.y);
+    const mgr = createTownManager(a.tri, 7, () => 6);
+    mgr.update(home, undefined, 0);
+    const before = mgr.loaded().find(t => t.key === "riverton")!.plan;
+
+    // Sixty frames with a static aggregate: the SAME plan object rides
+    // through — zero rebuild cost per frame (the crawl was a full
+    // hundreds-of-ms replan nearly every sim day).
+    for (let i = 1; i <= 60; i++) mgr.update(home, undefined, i * 0.016);
+    expect(mgr.loaded().find(t => t.key === "riverton")!.plan).toBe(before);
+
+    // Riverton OVERFLOWS its footprint (want > built): however the
+    // population drifts up there, no lot can change — days of sim must
+    // not trigger a single replan of this byte-identical town.
+    expect(before.built).toBeLessThan(before.want);
+    await a.tri.advanceDays(10);
+    mgr.update(home, undefined, 100);
+    expect(mgr.loaded().find(t => t.key === "riverton")!.plan).toBe(before);
+  });
+
+  it("the NPC budget buys STREET LIFE: a walker in range wins the slot over homebodies hidden indoors", async () => {
+    const a = await buildAcceptanceTri(42);
+    const rc = a.tri.cities.find(c => c.key === "riverton")!;
+    const home = worldPos(rc.x, rc.y);
+    const plan = townPlan(a.tri, "riverton", 7);
+    const food = createTownFood(a.tri, { key: "riverton", center: home, plan }, 7);
+
+    // At any moment somebody in a town this size is out shopping near
+    // the plaza. Whenever a walker is closer than the idle rank penalty,
+    // a single-slot budget must go to a walker — never to an invisible
+    // resident sitting at home beside the player.
+    let checked = 0;
+    for (let t = 0; t < 2400 && checked < 5; t += 45) {
+      const walkerNear = plan.houses.some(h => {
+        const e = food.errand(h, t);
+        return e.phase !== "home"
+          && Math.hypot(e.pos.x - home.x, e.pos.y - home.y) < IDLE_RANK_PENALTY;
+      });
+      if (!walkerNear) continue;
+      const d = createTownManager(a.tri, 7, () => 1).update(home, undefined, t);
+      expect(d.spawn).toHaveLength(1);
+      expect(d.spawn[0].walkTo).toBeDefined();
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   it("no blink-outs: bodies rank where they ARE, hold their slot beside the player, and host truth heals ghosts", async () => {
@@ -347,43 +419,46 @@ describe("the seamless world (one scale, no village boundary)", () => {
     expect(back.spawn.map(s => s.npc.id)).toContain(ghost);
   });
 
-  it("nearby buildings become REAL engine structures: blocking walls + swinging doors", async () => {
-    const { structuresWalkable, createWorldState, setWorldStructures } = await import("@shared/world-engine/engine");
+  it("nearby buildings stream as VOLUMES: blocking walls, swinging doors, buildingAt", async () => {
+    const { structuresWalkable, createWorldState, setWorldBuildings, buildingAt } =
+      await import("@shared/world-engine/engine");
     const a = await buildAcceptanceTri(42);
     const rc = a.tri.cities.find(c => c.key === "riverton")!;
     const home = worldPos(rc.x, rc.y);
     const mgr = createTownManager(a.tri, 7, () => 4);
 
-    // On the plaza: the surrounding houses stream in as walls AND doors.
+    // On the plaza: the surrounding houses stream in as BUILDINGS.
     const first = mgr.update(home);
-    expect(first.structures).toBeDefined();
-    expect(first.structures!.length).toBeGreaterThan(20);
-    expect(first.structures!.some(s => s.kind === "wall")).toBe(true);
-    expect(first.structures!.some(s => s.kind === "door")).toBe(true);
+    expect(first.buildings).toBeDefined();
+    expect(first.buildings!.length).toBeGreaterThan(4);
 
     // Unchanged position ⇒ no re-send; moving a street over ⇒ a new set.
-    expect(mgr.update(home).structures).toBeUndefined();
+    expect(mgr.update(home).buildings).toBeUndefined();
     const moved = mgr.update({ x: home.x + 220, y: home.y });
-    expect(moved.structures).toBeDefined();
+    expect(moved.buildings).toBeDefined();
 
-    // Fed to the engine, a streamed wall BLOCKS and door state is live —
-    // the same machinery the bounded scenes used, streamed.
+    // Fed to the engine, a streamed building lowers to walls that BLOCK,
+    // doors with live state, AND a registered VOLUME (roofs, see-inside
+    // fade and the indoor-avatar cull all key on buildingAt).
     const w = generateWorld(a.tri, { seed: 7, atCity: "riverton" });
     const state = createWorldState(w.spec, "player", w.spawnIndexOf.get("riverton") ?? 0);
-    setWorldStructures(state, first.structures!);
-    const wall = first.structures!.find(s => s.kind === "wall")!;
+    setWorldBuildings(state, first.buildings!);
+    const b0 = first.buildings![0]!;
+    expect(buildingAt(state, b0.footprint.x + b0.footprint.w / 2, b0.footprint.y + b0.footprint.h / 2)?.id).toBe(b0.id);
+    const wall = state.spec.structures!.find(s => s.kind === "wall")!;
     const mid = { x: (wall.a.x + wall.b.x) / 2, y: (wall.a.y + wall.b.y) / 2 };
     expect(structuresWalkable(state, mid, 0.4, 0)).toBe(false);
-    const door = first.structures!.find(s => s.kind === "door")!;
+    const door = state.spec.structures!.find(s => s.kind === "door")!;
     expect(state.doors[door.id]).toBeDefined();
 
     // Door state SURVIVES a re-stream (a door left open stays open)...
     state.doors[door.id].open = 0.8;
-    setWorldStructures(state, first.structures!);
+    setWorldBuildings(state, first.buildings!);
     expect(state.doors[door.id].open).toBe(0.8);
     // ...and clears with an empty stream (walked far away).
-    setWorldStructures(state, []);
+    setWorldBuildings(state, []);
     expect(Object.keys(state.doors)).toHaveLength(0);
+    expect(buildingAt(state, b0.footprint.x + 1, b0.footprint.y + 1)).toBeNull();
     expect(structuresWalkable(state, mid, 0.4, 0)).toBe(true);
   });
 
@@ -516,5 +591,44 @@ describe("the seamless world (one scale, no village boundary)", () => {
     expect(host.state.avatars["villager_riverton_0"]).toBeUndefined();
     expect(host.removeNpc("villager_riverton_0")).toBe(false);
     host.stop();
+  });
+
+  it("the runtime NPC cap is per-host: pure-body streamed casts may exceed the spec cap", async () => {
+    const a = await buildAcceptanceTri(42);
+    const w = generateWorld(a.tri, { seed: 7, atCity: "riverton" });
+    const mk = (maxNpcs?: number): ReturnType<typeof runWorldHost> => runWorldHost({
+      view: {
+        screenToWorld: () => null,
+        render: () => { /* headless */ },
+        resize: () => { /* headless */ },
+        dispose: () => { /* headless */ },
+      },
+      spec: w.spec,
+      localId: "player",
+      spawnIndex: 0,
+      hostNpcs: true,
+      npcRng: () => 0.5,
+      scheduleFrame: () => () => { /* headless */ },
+      now: () => 0,
+      ...(maxNpcs !== undefined ? { maxNpcs } : {}),
+    });
+
+    // Default: the spec cap, held concurrently (voiced/broadcast NPCs).
+    const capped = mk();
+    let ok = 0;
+    for (let i = 0; i < WORLD_MAX_NPCS + 4; i++) {
+      if (capped.addNpc({ id: `v${i}`, x: i, y: 0 })) ok++;
+    }
+    expect(ok).toBe(WORLD_MAX_NPCS);
+
+    // The seamless world's budget: villager bodies carry no AI session,
+    // so the host accepts the full street cast.
+    const roomy = mk(STREET_NPCS);
+    ok = 0;
+    for (let i = 0; i < STREET_NPCS + 4; i++) {
+      if (roomy.addNpc({ id: `v${i}`, x: i, y: 0 })) ok++;
+    }
+    expect(STREET_NPCS).toBeGreaterThan(WORLD_MAX_NPCS);
+    expect(ok).toBe(STREET_NPCS);
   });
 });

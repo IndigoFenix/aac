@@ -8,6 +8,8 @@
 import {
   baseWord,
   gloss,
+  isQuality,
+  stripEnd,
   type Frame,
   type GlyphLanguage,
   type Lexeme,
@@ -35,6 +37,13 @@ const L: Record<string, Lexeme> = {
   on: { w: "on" },
   for: { w: "for" },
   more: { w: "more" },
+  why: { w: "why" },
+  because: { w: "because" },
+  therefore: { w: "so" },
+  in_order_to: { w: "so that" },
+  when: { w: "when" },
+  until: { w: "until" },
+  something: { w: "something" },
   yes: { w: "yes" },
   no: { w: "no" },
   ok: { w: "okay" },
@@ -63,6 +72,11 @@ const L: Record<string, Lexeme> = {
   color_black: { w: "black" },
   color_white: { w: "white" },
   place: { w: "place" },
+  // Cardinal directions — the "close/far, to the {north}" answers.
+  north: { w: "north" },
+  south: { w: "south" },
+  east: { w: "east" },
+  west: { w: "west" },
   // The village building — "the blue house" location clues. ("home" the AAC
   // feeling-of-home sense never reaches this game's sentences.)
   home: { w: "house" },
@@ -89,6 +103,37 @@ const L: Record<string, Lexeme> = {
   sock: { w: "sock" },
   water: { w: "water", mass: true },
   fire: { w: "fire", mass: true },
+  // Devices (§5) + their toggle states (invariant in English).
+  lamp: { w: "lamp" },
+  window: { w: "window" },
+  heater: { w: "heater" },
+  generator: { w: "generator" },
+  switch: { w: "switch" },
+  off: { w: "off" },
+  open: { w: "open" },
+  closed: { w: "closed" },
+  // Motive batch: verbs, conditions, categories, new pool items.
+  stay: { w: "stay" },
+  like: { w: "like" },
+  play: { w: "play" },
+  read: { w: "read" },
+  wear: { w: "get dressed" }, // only reached via want-to: "I want to get dressed"
+  throw: { w: "throw" },
+  with: { w: "with" },
+  lonely: { w: "lonely" },
+  hungry: { w: "hungry" },
+  smelly: { w: "smelly" },
+  food: { w: "food", mass: true },
+  toy: { w: "toy" },
+  instrument: { w: "instrument" },
+  book: { w: "book" },
+  clothing: { w: "clothes", pl: true },
+  garbage: { w: "garbage", mass: true },
+  hat: { w: "hat" },
+  shirt: { w: "shirt" },
+  scarf: { w: "scarf" },
+  drum: { w: "drum" },
+  guitar: { w: "guitar" },
 };
 
 function pluralize(w: string): string {
@@ -113,6 +158,13 @@ function npWords(np: NP): { words: string[]; my: boolean } {
 type Art = "the" | "a" | "none";
 
 function npText(np: NP, art: Art): string {
+  // A bare QUALITY want ("something hot", "something red") — the object isn't a
+  // specific thing, only a property (motive-driven-needs.md: non-specific wants
+  // read by their quality, never the designated instance).
+  if (isQuality(np.noun.head)) {
+    const extra = np.noun.mods.filter((m) => m !== "not").map((m) => lex(m).w);
+    return `something ${[lex(np.noun.head).w, ...extra].join(" ")}`;
+  }
   const { words, my } = npWords(np);
   if (np.more) {
     const nounIdx = words.length - 1;
@@ -134,6 +186,16 @@ function npText(np: NP, art: Art): string {
 const be = (np: NP) => (isPlural(np.noun) ? "are" : "is");
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+// Lowercase a clause for mid-sentence embedding — but never the pronoun "I".
+const lcClause = (s: string) => (/^I(\b|')/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
+
+const EN_CONN: Record<string, string> = {
+  because: "because",
+  therefore: "so",
+  in_order_to: "so that",
+  when: "when",
+  until: "until",
+};
 
 function subjWord(t: Token): string {
   if (t.head === "i_me") return "I";
@@ -175,15 +237,36 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
     const recip = f.tail ? "" : "you ";
     return f.neg ? `I won't give ${recip}${obj}${to}.` : `I'll give ${recip}${obj}${to}.`;
   }
-  // Subject-less "have"/negated verbs — and any subject-less verb in the
-  // player's mouth — are first person ("I want an apple", "I don't have the
-  // sock", never the imperative misread "Don't have the sock").
-  if (!f.subject && (f.verb.head === "have" || f.neg || opts.firstPerson)) {
+  // Preferences ("I like cookies" / "I like red"): the object is GENERIC —
+  // count nouns pluralize with no article, qualities read bare, mass/plural
+  // nouns stay bare. Never the specific-instance "the".
+  if (f.verb.head === "like" && f.object && !f.neg) {
+    const o = f.object.noun;
+    const obj = isQuality(o.head)
+      ? lex(o.head).w
+      : isPlural(o) || isMass(o)
+        ? npText(f.object, "none")
+        : pluralize(npText(f.object, "none"));
+    const subj = f.subject ? subjWord(f.subject) : "I";
+    return `${cap(subj)} ${conj(f.verb, f.subject, false)} ${obj}${f.question ? "?" : "."}`;
+  }
+
+  // Subject-less "want"/"have"/negated verbs — and any subject-less verb in
+  // the player's mouth — are first person ("I want an apple", "I don't have
+  // the sock", never the imperative misread "Want an apple"/"Don't have it").
+  if (!f.subject && (f.verb.head === "want" || f.verb.head === "have" || f.neg || opts.firstPerson)) {
     f = { ...f, subject: { head: "i_me", mods: [], q: false } };
   }
 
   const subj = f.subject ? subjWord(f.subject) : "";
-  const art: Art = f.verb.head === "want" && !f.neg && !f.tail ? "a" : "the";
+  // Wants are indefinite; mass/plural HAVE objects read bare ("I don't have
+  // food", "the bear has water") — "the" would imply a specific instance.
+  const art: Art =
+    f.verb.head === "want" && !f.neg && !f.tail
+      ? "a"
+      : f.verb.head === "have" && f.object && (isMass(f.object.noun) || isPlural(f.object.noun))
+        ? "none"
+        : "the";
   const obj = f.object ? ` ${npText(f.object, art)}` : "";
   const tail = f.tail
     ? ` ${lex(f.tail.join).w} ${
@@ -206,6 +289,9 @@ export const en: GlyphLanguage = {
     confused: "I'm confused.",
     there: "Over there!",
     thank_you: "Thank you!",
+    // Motive batch: the stay-with level-a line + the dwell-done thanks.
+    stay: "Stay with me.",
+    "i_me + ok + thank_you": "I'm okay, thank you!",
   },
   render(frame: Frame, opts: Required<SpeakOpts>): string {
     switch (frame.kind) {
@@ -231,10 +317,19 @@ export const en: GlyphLanguage = {
         return "What do you want?";
       case "copula": {
         const adj = lex(frame.adj.head).w;
+        // Spoilage reads as a smell VERB: "The fish smells bad."
+        if (frame.adj.head === "smelly") {
+          if (frame.subject.head === "i_me") return "I smell bad.";
+          if (frame.subject.head === "you") return "You smell bad.";
+          const s = npText({ noun: frame.subject }, "the");
+          return `${cap(s)} ${isPlural(frame.subject) ? "smell" : "smells"} bad${frame.question ? "?" : "."}`;
+        }
         if (frame.subject.head === "i_me") return frame.question ? `Am I ${adj}?` : `I'm ${adj}.`;
         if (frame.subject.head === "you") return frame.question ? `Are you ${adj}?` : `You're ${adj}.`;
         const s = npText({ noun: frame.subject }, "the");
-        return frame.question ? `${be({ noun: frame.subject })} ${s} ${adj}?` : `${s} ${be({ noun: frame.subject })} ${adj}.`;
+        return frame.question
+          ? `${cap(be({ noun: frame.subject }))} ${s} ${adj}?`
+          : `${cap(s)} ${be({ noun: frame.subject })} ${adj}.`;
       }
       case "svo":
         return renderSvo(frame, opts);
@@ -258,6 +353,39 @@ export const en: GlyphLanguage = {
           return `${capNp} ${be(frame.np)} ${lex(frame.join).w} ${npText({ noun: frame.comp }, "the")}.`;
         }
         return `${capNp} — ${lex(frame.join).w} ${npText({ noun: frame.comp }, "the")}.`;
+      }
+      case "causal": {
+        const conn = EN_CONN[frame.connective] ?? frame.connective;
+        const cause = lcClause(stripEnd(en.render(frame.cause, opts)));
+        if (!frame.effect) return `${cap(conn)} ${cause}.`;
+        return `${stripEnd(en.render(frame.effect, opts))} ${conn} ${cause}.`;
+      }
+      case "why":
+        if (!frame.thing) return "Why?";
+        return `Why do you want ${npText(frame.thing, "a")}?`;
+      case "device":
+        // Resultative want: "I want the lamp on." / "I want the window open."
+        return `I want ${npText({ noun: frame.device }, "the")} ${lex(frame.state.head).w}.`;
+      case "wantTo":
+        // Want + infinitive: "I want to play." / "I want to get dressed."
+        return `I want to ${lex(frame.verb.head).inf ?? lex(frame.verb.head).w}.`;
+      case "takeMeTo":
+        return `Take me to ${npText({ noun: frame.dest }, "the")}.`;
+      case "stayWith":
+        return "Stay with me.";
+      case "directions": {
+        const thing = cap(npText(frame.np, "the"));
+        const v = be(frame.np);
+        const dir = lex(frame.cardinal).w;
+        const tail =
+          frame.proximity === "here"
+            ? "here"
+            : frame.proximity === "there"
+              ? "there"
+              : frame.proximity === "street"
+                ? "on this street"
+                : `${frame.proximity === "close" ? "close" : "far"}, to the ${dir}`;
+        return `${thing} ${v} ${tail}.`;
       }
       case "gloss":
         return gloss(en, frame.tokens, "not");

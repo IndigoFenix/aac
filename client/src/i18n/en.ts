@@ -2509,6 +2509,12 @@ export const en = {
     inputSourceGazepoint: "Gazepoint Eye Tracker",
     inputSourceWebhid: "WebHID Device",
     inputSourceHint: "Use the mouse cursor for testing, or select an external eye tracker that controls the cursor.",
+    gazeSmoothing: "Gaze Smoothing",
+    gazeSmoothingOff: "Off",
+    gazeSmoothingLight: "Light",
+    gazeSmoothingMedium: "Medium",
+    gazeSmoothingStrong: "Strong",
+    gazeSmoothingHint: "Reduces cursor jitter from hardware eye trackers. Stronger is steadier but follows gaze slightly slower.",
     // Sign language
     signLanguage: "Sign Language Recognition",
     signLanguageDesc: "Recognize sign-language gestures from the camera and submit each completed phrase to the AI as a statement",

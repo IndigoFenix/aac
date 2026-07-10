@@ -100,6 +100,10 @@ const objectSchema = z
     interactions: z.array(z.enum(["push", "carry"])).max(2),
     push: pushSchema.optional(),
     contains: z.array(containmentSlotSchema).min(1).max(8).optional(),
+    // FURNITURE (fixtures): static, solid containers along a room's walls.
+    fixture: z.enum(["chest", "cupboard", "table"]).optional(),
+    openable: z.boolean().optional(),
+    facing: finite.optional(),
   })
   .strict();
 
@@ -208,6 +212,10 @@ const npcSchema = z
     name: z.string().min(1).max(120).optional(),
     persona: npcPersonaSchema.optional(),
     behavior: npcBehaviorSchema.optional(),
+    // Needs don't drift on the town clock ⇒ a determinate, puzzle-bound
+    // resident (a quest-giver) vs. a regular townsperson. The sim ignores it;
+    // game layers read it (see docs/TOWN_AND_NPCS.md).
+    needsFrozen: z.boolean().optional(),
   })
   .strict();
 
@@ -283,10 +291,13 @@ function validateWorldStructure(
     if (!inBounds(o.x, o.y)) {
       issue(`object "${o.id}" at (${o.x}, ${o.y}) is outside the manifold`);
     }
+    if (o.fixture && o.interactions.length > 0) {
+      issue(`fixture "${o.id}" cannot also be ${o.interactions.join("/")} — furniture is static`);
+    }
     if (o.interactions.includes("push") && !o.push) {
       issue(`object "${o.id}" allows "push" but has no push tuning`);
     }
-    if (o.interactions.length === 0 && !o.contains) {
+    if (o.interactions.length === 0 && !o.contains && !o.fixture) {
       issue(`object "${o.id}" has no interactions and is not a container`);
     }
   }

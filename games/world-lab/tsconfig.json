@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src/**/*", "../../shared/**/*"],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    "noEmit": true,
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "paths": {
+      "@shared/*": ["../../shared/*"],
+      "@client-shared/*": ["../../client-shared/src/*"]
+    }
+  }
+}

@@ -104,6 +104,12 @@ const SENTENCE_END = /[.!?…]["')\]]?$/;
 // regional endpoint for data residency.
 let client: SpeechClient | null = null;
 
+/** TEST ONLY: inject a fake SpeechClient so createStreamingSession's rotation/
+ *  recovery logic can be exercised without the Google API. */
+export function __setSttClientForTests(c: SpeechClient | null): void {
+  client = c;
+}
+
 function getClient(): SpeechClient {
   if (!client) {
     const apiEndpoint = process.env.GOOGLE_STT_ENDPOINT || "eu-speech.googleapis.com";
@@ -408,16 +414,37 @@ export interface SttStreamOptions extends SttOptions {
   /** Called with the gRPC stream error (so callers can log the real cause
    *  instead of silently getting an empty transcript). */
   onError?: (message: string) => void;
+  /** Called when the session transparently swaps to a fresh gRPC stream
+   *  (soft/hard rotation before Google's 305s cap, or error recovery). */
+  onRotate?: (why: string) => void;
 }
 
 export interface SttStreamSession {
-  /** Feed a chunk of LINEAR16 PCM (base64 or Buffer) at the configured rate. */
-  write(chunk: string | Buffer): void;
+  /** Feed a chunk of LINEAR16 PCM (base64 or Buffer) at the configured rate.
+   *  Returns whether the chunk was accepted — false when it was dropped
+   *  (after end(), or while a failed stream is throttling recovery), so
+   *  callers don't bill audio that never reached the recognizer. */
+  write(chunk: string | Buffer): boolean;
   /** Half-close and resolve with the final transcript (accumulated finals). */
   end(): Promise<string>;
   /** Tear down without awaiting (on error / cancel). */
   abort(): void;
 }
+
+// Google hard-caps a single streamingRecognize stream at 305s and kills idle
+// streams after ~10s without audio. Neither ends the UTTERANCE from our side
+// (a noisy room can hold the client's VAD open for minutes), so the session
+// transparently rotates to a fresh gRPC stream: proactively at a natural pause
+// (a final result) once past SOFT_ROTATE_MS, unconditionally at HARD_ROTATE_MS,
+// and reactively on the next write after a terminal error — throttled so a
+// persistently-failing backend can't hot-loop reconnects.
+const STREAM_SOFT_ROTATE_MS = 240_000;
+const STREAM_HARD_ROTATE_MS = 290_000;
+const STREAM_RECOVERY_THROTTLE_MS = 5_000;
+// Rolling tail of recent audio replayed across a mid-speech restart so the
+// words spanning the cut aren't lost. Time-pruned on write, so after a silence
+// gap (e.g. an idle-timeout kill) only the fresh chunk remains to replay.
+const STREAM_TAIL_MS = 3_000;
 
 /**
  * Open a Google STT streamingRecognize session for ONE utterance. Audio is fed
@@ -425,7 +452,8 @@ export interface SttStreamSession {
  * final transcript is essentially ready at speech-end — far lower latency than
  * uploading a finished clip, and the streaming recognizer's online LM is more
  * accurate. Defaults to 16kHz LINEAR16 mono (the client's ring-buffer format).
- * One session per utterance (well under the 5-min streaming cap).
+ * The underlying gRPC stream is rotated/recovered transparently (see the
+ * STREAM_*_MS constants), so one session can outlive Google's 305s cap.
  */
 export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSession {
   const client = getClient();
@@ -447,7 +475,7 @@ export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSe
   let model = opts.model;
   let finalText = "";
   let ended = false;
-  let dead = false;            // terminal error — stop writing
+  let dead = false;            // terminal error — recovered on the next write()
   let dataEvents = 0;
   let triedModelFallback = false;
   let buffering = true;        // keep audio until the config is accepted (for a model-fallback restart)
@@ -455,8 +483,27 @@ export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSe
   const MAX_BUFFERED = 400;    // ~30s safety cap; the model error fires almost immediately
   let resolveEnd: ((t: string) => void) | null = null;
   let stream: any;
+  let openedAt = 0;            // when the CURRENT gRPC stream was opened (rotation clock)
+  let lastRecoveryAt = 0;      // throttles error-recovery reopens
+  const tail: { buf: Buffer; t: number }[] = [];
 
   const finish = () => { if (resolveEnd) { resolveEnd(finalText.trim()); resolveEnd = null; } };
+
+  const pushTail = (buf: Buffer) => {
+    const now = Date.now();
+    tail.push({ buf, t: now });
+    while (tail.length && now - tail[0].t > STREAM_TAIL_MS) tail.shift();
+  };
+
+  /** Swap to a fresh gRPC stream mid-session, optionally replaying the audio
+   *  tail so words spanning the cut aren't lost. */
+  const rotate = (why: string, replayTail: boolean) => {
+    try { stream.removeAllListeners(); stream.destroy(); } catch { /* noop */ }
+    dead = false;
+    open();
+    if (replayTail) for (const t of tail) { try { stream.write(t.buf); } catch { /* noop */ } }
+    opts.onRotate?.(why);
+  };
 
   // IMPORTANT (@google-cloud/speech helper): pass the streamingConfig as the
   // ARGUMENT — the helper auto-sends it on the first write — and then write RAW
@@ -464,6 +511,7 @@ export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSe
   // no arg and hand-write `{streamingConfig}`/`{audioContent}` objects.
   const open = () => {
     const s = client.streamingRecognize({ config: buildConfig(model), interimResults: !!opts.onInterim } as any);
+    openedAt = Date.now();
     s.on("data", (data: any) => {
       dataEvents++;
       if (buffering) { buffering = false; buffered.length = 0; } // config accepted — free the replay buffer
@@ -474,6 +522,13 @@ export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSe
       if (result.isFinal) {
         finalText = finalText ? `${finalText} ${transcript}` : transcript;
         opts.onFinal?.(transcript); // commit this phrase now, mid-stream
+        // Natural pause — rotate an aging stream here (nothing in flight)
+        // rather than mid-word at the hard cap. The just-transcribed audio is
+        // dropped from the tail so the fresh stream doesn't re-hear it.
+        if (!ended && Date.now() - openedAt >= STREAM_SOFT_ROTATE_MS) {
+          tail.length = 0;
+          rotate("soft-rotate at final", false);
+        }
       } else if (opts.onInterim) {
         opts.onInterim(transcript);
       }
@@ -510,10 +565,28 @@ export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSe
 
   return {
     write(chunk) {
-      if (ended || dead) return;
+      if (ended) return false;
       const buf = typeof chunk === "string" ? Buffer.from(chunk, "base64") : chunk;
       if (buffering && buffered.length < MAX_BUFFERED) buffered.push(buf);
+      pushTail(buf);
+      if (dead) {
+        // Terminal gRPC error mid-utterance (idle timeout, 305s cap, transient
+        // backend failure) — reopen and replay the tail (which includes this
+        // chunk) instead of silently swallowing the rest of the utterance.
+        const now = Date.now();
+        if (now - lastRecoveryAt < STREAM_RECOVERY_THROTTLE_MS) return false;
+        lastRecoveryAt = now;
+        rotate("error recovery", true);
+        return true;
+      }
+      if (Date.now() - openedAt >= STREAM_HARD_ROTATE_MS) {
+        // No natural pause arrived in time — rotate mid-speech before Google's
+        // 305s kill, replaying the tail across the cut.
+        rotate("hard-rotate at cap", true);
+        return true;
+      }
       try { stream.write(buf); } catch { /* ignore mid-stream write errors */ }
+      return true;
     },
     end() {
       if (ended) return Promise.resolve(finalText.trim());
@@ -521,8 +594,9 @@ export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSe
       return new Promise<string>((resolve) => {
         resolveEnd = resolve;
         try { stream.end(); } catch { resolve(finalText.trim()); }
-        // Safety: never hang the pipeline if the stream never closes.
-        setTimeout(finish, 4000);
+        // Safety: never hang the pipeline if the stream never closes. unref so
+        // the pending timer can't hold the process (or a test run) open.
+        setTimeout(finish, 4000).unref?.();
       });
     },
     abort() {

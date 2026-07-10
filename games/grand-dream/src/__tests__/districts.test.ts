@@ -29,7 +29,7 @@ function grownHouses(net: TownStreets, count: number): TownHouse[] {
     const h = sideways ? 8 : 5.5;
     houses.push({
       index: k, dx: slot.x - w / 2, dy: slot.y - h / 2, w, h, door,
-      color: "#a8875f", arm: slot.arm,
+      color: "#a8875f", floors: 1, arm: slot.arm,
     });
   }
   return houses;
@@ -112,8 +112,8 @@ describe("neighborhood market founding (city fractal step 1)", () => {
     // The plaza market keeps its shipped spot; stalls sit out among the
     // rings, each on a lot no house occupies anymore.
     const plaza = markets[0];
-    expect(plaza.dx).toBe(-8);
-    expect(plaza.dy).toBe(6.5);
+    expect(plaza.dx).toBe(-10); // -marketW/2 (dimensions.ts)
+    expect(plaza.dy).toBe(8); // plazaClear
     for (const m of markets.slice(1)) {
       expect(Math.hypot(m.dx + m.w / 2, m.dy + m.h / 2)).toBeGreaterThan(43);
       expect(plan.houses.some(h => h.dx === m.dx && h.dy === m.dy)).toBe(false);

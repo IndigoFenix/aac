@@ -3,9 +3,15 @@
 // Connects to local companion software that exposes gaze data over a WebSocket server.
 
 import type { EyeGazeProvider, EyeGazeProviderType, EyeGazeProviderStatus, GazeCallback, GazeData } from "./types";
+import { GazeSmoother, type GazeSmootherConfig } from "@shared/gaze-smoothing.js";
 
 /** Vendor-specific parser: converts raw JSON from the companion app to GazeData */
 export type VendorParser = (raw: unknown) => GazeData | null;
+
+// A sample this weak means "no valid gaze" — don't smooth across the gap, or a
+// reacquired eye would drag the cursor from wherever it was lost. Matches the
+// MIN_GAZE_CONFIDENCE gate the dwell layer applies downstream (useEyeGaze.ts).
+const SMOOTHING_CONFIDENCE_FLOOR = 0.3;
 
 export interface WebSocketBridgeConfig {
   type: EyeGazeProviderType;
@@ -15,6 +21,13 @@ export interface WebSocketBridgeConfig {
   parser: VendorParser;
   reconnectMs?: number;
   probeTimeoutMs?: number;
+  /**
+   * Pixel-space smoothing for the raw hardware stream. Hardware trackers send
+   * unsmoothed samples, so the cursor trembles; a One-Euro filter + fixation
+   * lock removes the jitter without adding lag. Pass a config to enable,
+   * `false`/omit to forward samples untouched.
+   */
+  smoothing?: GazeSmootherConfig | false;
 }
 
 // In Electron, local WebSocket servers may take longer to respond (mixed-content negotiation).
@@ -33,10 +46,12 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
   private connected = false;
   private error: string | null = null;
   private destroyed = false;
+  private smoother: GazeSmoother | null;
 
   constructor(config: WebSocketBridgeConfig) {
     this.config = config;
     this.type = config.type;
+    this.smoother = config.smoothing ? new GazeSmoother(config.smoothing) : null;
   }
 
   async probe(): Promise<boolean> {
@@ -107,6 +122,26 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
   onGaze(cb: GazeCallback) { this.callbacks.add(cb); }
   offGaze(cb: GazeCallback) { this.callbacks.delete(cb); }
 
+  /** Swap the smoothing config live (e.g. clinician changed the strength setting). */
+  setSmoothing(config: GazeSmootherConfig | false) {
+    this.smoother = config ? new GazeSmoother(config) : null;
+  }
+
+  /**
+   * Smooth the point in pixel space. Invalid/low-confidence samples pass through
+   * untouched and reset the filter, so a lost-then-reacquired eye doesn't drag
+   * the cursor across the screen from where it was last seen.
+   */
+  private smooth(data: GazeData): GazeData {
+    if (!this.smoother) return data;
+    if (data.confidence < SMOOTHING_CONFIDENCE_FLOOR) {
+      this.smoother.reset();
+      return data;
+    }
+    const { x, y } = this.smoother.filter(data.point.x, data.point.y, data.timestamp);
+    return { ...data, point: { x, y } };
+  }
+
   getStatus(): EyeGazeProviderStatus {
     return {
       type: this.type,
@@ -135,7 +170,8 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
           const raw = JSON.parse(ev.data as string);
           const data = this.config.parser(raw);
           if (data) {
-            for (const cb of this.callbacks) cb(data);
+            const smoothed = this.smooth(data);
+            for (const cb of this.callbacks) cb(smoothed);
           }
         } catch {
           // skip unparseable messages
@@ -148,6 +184,7 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
 
       this.ws.onclose = () => {
         this.connected = false;
+        this.smoother?.reset();
         this.scheduleReconnect();
       };
     } catch (e) {
@@ -242,6 +279,11 @@ function parseGazepoint(raw: unknown): GazeData | null {
 
 // ─── Factory Functions ──────────────────────────────────────────
 
+// Hardware trackers stream raw, unsmoothed samples — enable pixel-space
+// smoothing (One-Euro + fixation lock) so the cursor doesn't tremble on target.
+// Defaults live in shared/gaze-smoothing.ts; pass {} to accept them.
+const HARDWARE_SMOOTHING: GazeSmootherConfig = {};
+
 export function createTobiiProvider(port = 49152): WebSocketBridgeProvider {
   // Use 127.0.0.1, NOT "localhost": our gaze sidecar binds the IPv4 loopback,
   // and on Windows "localhost" often resolves to ::1 (IPv6) first, so a
@@ -253,6 +295,7 @@ export function createTobiiProvider(port = 49152): WebSocketBridgeProvider {
     url: `ws://127.0.0.1:${port}`,
     probeUrl: `http://127.0.0.1:${port}/status`,
     parser: parseTobii,
+    smoothing: HARDWARE_SMOOTHING,
   });
 }
 
@@ -262,6 +305,7 @@ export function createEyeTechProvider(port = 8086): WebSocketBridgeProvider {
     deviceName: "EyeTech Eye Tracker",
     url: `ws://localhost:${port}`,
     parser: parseEyeTech,
+    smoothing: HARDWARE_SMOOTHING,
   });
 }
 
@@ -271,6 +315,7 @@ export function createLCTechProvider(port = 30000): WebSocketBridgeProvider {
     deviceName: "LC Technologies Eyegaze",
     url: `ws://localhost:${port}`,
     parser: parseLCTech,
+    smoothing: HARDWARE_SMOOTHING,
   });
 }
 
@@ -280,5 +325,6 @@ export function createGazepointProvider(port = 4243): WebSocketBridgeProvider {
     deviceName: "Gazepoint Eye Tracker",
     url: `ws://localhost:${port}`,
     parser: parseGazepoint,
+    smoothing: HARDWARE_SMOOTHING,
   });
 }

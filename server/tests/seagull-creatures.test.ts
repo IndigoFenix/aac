@@ -1,27 +1,27 @@
 // Tests for the seagull-dream creature generator's pure-math layers
-// (creatures/genome.ts + creatures/skeleton.ts). No three.js, no DOM —
+// (creatures/blueprint.ts + creatures/skeleton.ts). No three.js, no DOM —
 // safe in the default `npm test` run.
 //
-// The genome is the system's interchange format (instructions/
+// The blueprint is the system's interchange format (instructions/
 // creatures.md): producers include a hallucination-prone LLM, so the
-// clamp/validate contract — clampGenome(anything shaped like a genome)
-// always yields a validateGenome-passing genome — is the load-bearing
+// clamp/validate contract — clampBlueprint(anything shaped like a blueprint)
+// always yields a validateBlueprint-passing blueprint — is the load-bearing
 // invariant here, alongside determinism and grounded rest poses.
 
 import { describe, it, expect } from "@jest/globals";
 import {
-  clampGenome,
-  defaultGenome,
-  randomGenome,
-  validateGenome,
+  clampBlueprint,
+  defaultBlueprint,
+  randomBlueprint,
+  validateBlueprint,
   MAX_LIMB_GROUPS,
   MAX_LIMB_COUNT,
   MAX_CHAINS,
   MAX_CHAIN_COUNT,
   MAX_MEMBRANES,
-  type Genome,
-  type LimbGroupGenome,
-} from "../../games/seagull-dream/src/creatures/genome.js";
+  type Blueprint,
+  type LimbGroupBlueprint,
+} from "../../games/seagull-dream/src/creatures/blueprint.js";
 import {
   buildSkeleton,
   resolveLimbs,
@@ -29,11 +29,24 @@ import {
 } from "../../games/seagull-dream/src/creatures/skeleton.js";
 import { CREATURE_EXAMPLES } from "../../games/seagull-dream/src/creatures/examples.js";
 import {
+  limbChainName,
+  limbTip,
+  type Vec3,
+} from "../../games/seagull-dream/src/creatures/skeleton.js";
+import {
   footCycle,
   legPhaseOffset,
+  locomotionGait,
+  bodyBob,
   DEFAULT_GAIT,
   type GaitParams,
 } from "../../games/seagull-dream/src/creatures/gait.js";
+import {
+  CreatureAnimator,
+  pickHandGroup,
+  pickArmGroup,
+  type AnimFrame,
+} from "../../games/seagull-dream/src/creatures/animation.js";
 import {
   convexHull2D,
   supportMargin,
@@ -42,32 +55,32 @@ import {
 
 const SEEDS = [1, 2, 42, 1337, 0xCAFE, 987654321];
 
-describe("genome: validate + clamp", () => {
-  it("default genome validates", () => {
-    const r = validateGenome(defaultGenome());
+describe("blueprint: validate + clamp", () => {
+  it("default blueprint validates", () => {
+    const r = validateBlueprint(defaultBlueprint());
     expect(r.errors).toEqual([]);
     expect(r.ok).toBe(true);
   });
 
   it("rejects non-objects and structurally impossible input", () => {
-    expect(validateGenome(null).ok).toBe(false);
-    expect(validateGenome(42).ok).toBe(false);
-    expect(validateGenome([]).ok).toBe(false);
-    expect(validateGenome({}).ok).toBe(false);
-    expect(validateGenome({ version: 2 }).ok).toBe(false);
+    expect(validateBlueprint(null).ok).toBe(false);
+    expect(validateBlueprint(42).ok).toBe(false);
+    expect(validateBlueprint([]).ok).toBe(false);
+    expect(validateBlueprint({}).ok).toBe(false);
+    expect(validateBlueprint({ version: 2 }).ok).toBe(false);
   });
 
   it("flags out-of-range and wrong-typed fields with paths", () => {
-    const g = defaultGenome() as unknown as Record<string, Record<string, unknown>>;
+    const g = defaultBlueprint() as unknown as Record<string, Record<string, unknown>>;
     g.spine.girth = 99;
     g.head.eyePairs = "two";
-    const r = validateGenome(g);
+    const r = validateBlueprint(g);
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.startsWith("spine.girth"))).toBe(true);
     expect(r.errors.some((e) => e.startsWith("head.eyePairs"))).toBe(true);
   });
 
-  it("clamp turns LLM-grade garbage into a valid genome", () => {
+  it("clamp turns LLM-grade garbage into a valid blueprint", () => {
     const garbage = {
       version: 1,
       spine: { torsoSegments: 999, torsoLengthM: -5, girth: "fat", girthPeak: NaN },
@@ -77,8 +90,8 @@ describe("genome: validate + clamp", () => {
       skin: { baseColor: "blue", bellyColor: "#GGGGGG" },
       posture: null,
     };
-    const clamped = clampGenome(garbage);
-    const r = validateGenome(clamped);
+    const clamped = clampBlueprint(garbage);
+    const r = validateBlueprint(clamped);
     expect(r.errors).toEqual([]);
     expect(r.ok).toBe(true);
     expect(clamped.limbGroups.length).toBeLessThanOrEqual(MAX_LIMB_GROUPS);
@@ -91,7 +104,7 @@ describe("genome: validate + clamp", () => {
   });
 
   it("clamps the trunk profile: caps, ranges, sorts, drops non-arrays", () => {
-    const clamped = clampGenome({
+    const clamped = clampBlueprint({
       version: 1,
       spine: {
         profile: [
@@ -112,49 +125,49 @@ describe("genome: validate + clamp", () => {
       expect(p.scale).toBeGreaterThanOrEqual(0.15);
       expect(p.scale).toBeLessThanOrEqual(3);
     }
-    expect(validateGenome(clamped).ok).toBe(true);
+    expect(validateBlueprint(clamped).ok).toBe(true);
     // A non-array profile becomes empty, not invalid.
-    expect(clampGenome({ version: 1, spine: { profile: "waist" } }).spine.profile).toEqual([]);
-    expect(clampGenome({ version: 1, spine: {} }).spine.profile).toEqual([]);
+    expect(clampBlueprint({ version: 1, spine: { profile: "waist" } }).spine.profile).toEqual([]);
+    expect(clampBlueprint({ version: 1, spine: {} }).spine.profile).toEqual([]);
   });
 
   it("clamp is idempotent", () => {
-    const once = clampGenome({ version: 1, spine: { girth: 99 } });
-    const twice = clampGenome(once);
+    const once = clampBlueprint({ version: 1, spine: { girth: 99 } });
+    const twice = clampBlueprint(once);
     expect(twice).toEqual(once);
   });
 
   it("clamp preserves in-range values untouched", () => {
-    const g = defaultGenome();
-    expect(clampGenome(g)).toEqual(g);
+    const g = defaultBlueprint();
+    expect(clampBlueprint(g)).toEqual(g);
   });
 });
 
-describe("genome: seeded random producer", () => {
+describe("blueprint: seeded random producer", () => {
   it("is deterministic per seed", () => {
     for (const seed of SEEDS) {
-      expect(randomGenome(seed)).toEqual(randomGenome(seed));
+      expect(randomBlueprint(seed)).toEqual(randomBlueprint(seed));
     }
   });
 
   it("differs across seeds", () => {
-    expect(randomGenome(1)).not.toEqual(randomGenome(2));
+    expect(randomBlueprint(1)).not.toEqual(randomBlueprint(2));
   });
 
-  it("always emits a validateGenome-passing genome", () => {
+  it("always emits a validateBlueprint-passing blueprint", () => {
     for (const seed of SEEDS) {
-      const r = validateGenome(randomGenome(seed));
+      const r = validateBlueprint(randomBlueprint(seed));
       expect(r.errors).toEqual([]);
     }
   });
 });
 
 describe("lab examples", () => {
-  it("every showcase genome clamps to a valid, buildable creature", () => {
+  it("every showcase blueprint clamps to a valid, buildable creature", () => {
     expect(CREATURE_EXAMPLES.length).toBeGreaterThan(0);
     for (const ex of CREATURE_EXAMPLES) {
-      const clamped = clampGenome(ex.genome);
-      const r = validateGenome(clamped);
+      const clamped = clampBlueprint(ex.blueprint);
+      const r = validateBlueprint(clamped);
       expect(r.errors).toEqual([]);
       const skel = buildSkeleton(clamped);
       expect(skel.bones.length).toBeGreaterThan(0);
@@ -169,7 +182,7 @@ describe("lab examples", () => {
 
 describe("torso radius profile", () => {
   it("peaks at girthPeak and tapers toward the ends", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.spine.girth = 0.2;
     g.spine.torsoLengthM = 2;
     g.spine.girthPeak = 0.4;
@@ -188,7 +201,7 @@ describe("torso radius profile", () => {
   });
 
   it("a profile waist pinches the radius between two body sections", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.spine.girth = 0.2;
     g.spine.girthPeak = 0.5;
     g.spine.frontTaper = 0.1;
@@ -212,16 +225,16 @@ describe("torso radius profile", () => {
 });
 
 describe("skeleton", () => {
-  it("is deterministic for the same genome", () => {
+  it("is deterministic for the same blueprint", () => {
     for (const seed of SEEDS) {
-      const g = randomGenome(seed);
+      const g = randomBlueprint(seed);
       expect(buildSkeleton(g)).toEqual(buildSkeleton(g));
     }
   });
 
   it("produces finite, positively-sized bones with valid parent links", () => {
     for (const seed of SEEDS) {
-      const skel = buildSkeleton(randomGenome(seed));
+      const skel = buildSkeleton(randomBlueprint(seed));
       expect(skel.bones.length).toBeGreaterThan(0);
       skel.bones.forEach((b, i) => {
         for (const p of [b.head, b.tail]) {
@@ -241,7 +254,7 @@ describe("skeleton", () => {
 
   it("keeps chains contiguous (each bone starts where the previous ends)", () => {
     for (const seed of SEEDS) {
-      const skel = buildSkeleton(randomGenome(seed));
+      const skel = buildSkeleton(randomBlueprint(seed));
       for (let i = 1; i < skel.bones.length; i++) {
         const b = skel.bones[i];
         const prev = skel.bones[i - 1];
@@ -255,7 +268,7 @@ describe("skeleton", () => {
 
   it("grounds the rest pose: a support touches down, nothing sinks, bellies rest", () => {
     for (const seed of SEEDS) {
-      const g = randomGenome(seed);
+      const g = randomBlueprint(seed);
       const skel = buildSkeleton(g);
       // The axial body never sinks below the ground. Limbs (whose feet
       // and digits press the skin onto the ground) and flexible chains
@@ -276,7 +289,7 @@ describe("skeleton", () => {
   });
 
   it("renders feet and digits: leg chains gain a foot bone + digit chains", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     const grp = g.limbGroups[0];
     grp.count = 1;
     grp.footLengthFrac = 0.25;
@@ -298,11 +311,16 @@ describe("skeleton", () => {
 
   it("stance raises the ankle (plantigrade → unguligrade continuum)", () => {
     const ankleY = (stance: number): number => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.limbGroups.forEach((grp) => {
         grp.count = 1;
         grp.footLengthFrac = 0.3;
         grp.stance = stance;
+        // Tight ankle range so the joint's anatomical window follows its
+        // rest. With a free range, the load term (deliberately) rides the
+        // ankle to max pitch at ANY stance — emergent, but it leaves this
+        // comparison to millimeter noise.
+        grp.ankleRange = 0.2;
       });
       const skel = buildSkeleton(g);
       const foot = skel.bones.find((b) => b.id === "limb0Lfoot")!;
@@ -320,7 +338,7 @@ describe("skeleton", () => {
     // CARRIED (restLevation): a levated (sprawled) limb plants its foot wide
     // and arches the knee out and UP; a depressed limb stands narrow and
     // folds the knee down and under.
-    const archLeg: LimbGroupGenome = {
+    const archLeg: LimbGroupBlueprint = {
       placement: "bilateral",
       count: 1, stationStart: 0.5, stationEnd: 0.5, sizePeak: 1, sizeContrast: 0,
       lengthFrac: 0.9, radiusFrac: 0.1, taper: 0.6,
@@ -330,7 +348,7 @@ describe("skeleton", () => {
       toeContrast: 0, opposition: 0, toeCurl: 0,
     };
     const kneePeak = (restLevation: number): { peak: number; hipY: number } => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.posture.bodyHeight = 0.1; // slung low so the bend shows
       g.limbGroups = [{ ...archLeg, restLevation }];
       const chain = buildSkeleton(g).bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
@@ -350,7 +368,7 @@ describe("skeleton", () => {
     // legs the body is already supported, so the forelegs stay raised; strip
     // the walkers and the forelegs must deploy to keep the body up.
     const foreFootY = (walkRows: number): { fore: number; walk: number } => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.posture.bodyHeight = 0.5;
       g.tail.segments = 0; // keep the CoM mid-body
       const walk = {
@@ -378,7 +396,7 @@ describe("skeleton", () => {
     // A levated (sprawled) limb plants its foot WIDER for a stable base; a
     // depressed limb stands narrow, straight under the body.
     const footX = (restLevation: number): number => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.posture.bodyHeight = 0.5;
       g.limbGroups = [{ ...g.limbGroups[0], count: 1, stationStart: 0.5, stationEnd: 0.5, restLevation }];
       const foot = buildSkeleton(g).bones.find((b) => b.id === "limb0Lfoot")!;
@@ -389,7 +407,7 @@ describe("skeleton", () => {
 
   it("restProtraction swings both legs the same way (mirror-symmetric, not one fore/one aft)", () => {
     const feet = (restProtraction: number) => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.posture.bodyHeight = 0.5;
       g.limbGroups = [{ ...g.limbGroups[0], count: 1, stationStart: 0.5, stationEnd: 0.5, restLevation: 0.3, restProtraction, footLengthFrac: 0.15 }];
       const skel = buildSkeleton(g);
@@ -409,7 +427,7 @@ describe("skeleton", () => {
 
   it("legBalance moves the knee without changing where the foot lands", () => {
     const kneeAndFoot = (legBalance: number) => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.limbGroups = [{ ...g.limbGroups[0], count: 1, stationStart: 0.5, stationEnd: 0.5, legBalance, footLengthFrac: 0.1 }];
       const skel = buildSkeleton(g);
       const chain = skel.bones.filter((b) => b.chain === "limb0L" && !b.id.endsWith("foot"));
@@ -428,7 +446,7 @@ describe("skeleton", () => {
 
   it("stance emerges from posture: held high the foot rises onto its tip, held low it stays flat", () => {
     const ankleRise = (bodyHeight: number): number => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.posture.bodyHeight = bodyHeight;
       g.limbGroups = [{ ...g.limbGroups[0], stance: 0.15, footLengthFrac: 0.28, ankleRange: 1 }];
       const foot = buildSkeleton(g).bones.find((b) => b.id === "limb0Lfoot")!;
@@ -439,7 +457,7 @@ describe("skeleton", () => {
 
   it("legTwist rotates a held limb out of its plane (3D curl)", () => {
     const tip = (legTwist: number) => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       // membrane → not leggy → always held (forward kinematics), so the twist shows.
       g.limbGroups = [{ ...g.limbGroups[0], count: 1, membrane: 0.9, footLengthFrac: 0, restFlexion: 0.6, attachHeight: 0.5, legTwist }];
       const chain = buildSkeleton(g).bones.filter((b) => b.chain === "limb0L");
@@ -456,7 +474,7 @@ describe("skeleton", () => {
     // thick-legged limb relaxes back to its bent rest crouch.
     // Both have strong (thick) legs — only the body weight differs.
     const kneeAngle = (girth: number): number => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.spine.girth = girth; // body weight
       g.posture.bodyHeight = 0.5;
       g.limbGroups = [{ ...g.limbGroups[0], radiusFrac: 0.18, restFlexion: -0.7, stance: 0.5, footLengthFrac: 0.2, ankleRange: 1 }];
@@ -477,7 +495,7 @@ describe("skeleton", () => {
     // Girth → weight (body) and strength (legs): give a fat trunk spindly
     // legs and it sags toward belly-rest instead of standing tall.
     const standHeight = (radiusFrac: number): number => {
-      const g = defaultGenome();
+      const g = defaultBlueprint();
       g.spine.girth = 0.4; // heavy trunk
       g.posture.bodyHeight = 1; // ask to stand as tall as possible
       g.limbGroups = [{ ...g.limbGroups[0], radiusFrac }];
@@ -489,7 +507,7 @@ describe("skeleton", () => {
   });
 
   it("resolveLimbs duplicates a leg type into evenly-spaced rows", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.limbGroups = [{
       ...g.limbGroups[0], count: 4, stationStart: 0.1, stationEnd: 0.9,
       sizePeak: 1, sizeContrast: 0,
@@ -503,7 +521,7 @@ describe("skeleton", () => {
   });
 
   it("size gravitation scales rows toward the peak", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.limbGroups = [{
       ...g.limbGroups[0], count: 3, stationStart: 0.1, stationEnd: 0.9,
       sizePeak: 0, sizeContrast: 0.5, lengthFrac: 1,
@@ -523,8 +541,8 @@ describe("skeleton", () => {
   });
 
   it("role is emergent: a membranous limb carries flatten; a short forelimb lifts off and hangs", () => {
-    const leg: LimbGroupGenome = { ...defaultGenome().limbGroups[0] };
-    const g = defaultGenome();
+    const leg: LimbGroupBlueprint = { ...defaultBlueprint().limbGroups[0] };
+    const g = defaultBlueprint();
     // limb0 = long rear legs (lead, ground), limb1 = membranous forelimb
     // (a wing), limb2 = a short forelimb (an arm) that can't reach.
     g.posture.bodyHeight = 1; // ride high so short forelimbs lift off
@@ -550,7 +568,7 @@ describe("skeleton", () => {
   });
 
   it("builds flexible chains as 'chain*' bone chains rooted on the attach point", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.chains = [{
       attach: "head", station: 0.5, count: 2, radial: false, segments: 5,
       lengthFrac: 0.8, radiusFrac: 0.05, taper: 0.2, aim: 0.5, spread: 0.5, curl: 0.5, tip: "none",
@@ -571,7 +589,7 @@ describe("skeleton", () => {
   });
 
   it("a radial chain crown spawns `count` chains fanned around the attach axis", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.chains = [{
       attach: "head", station: 0.5, count: 6, radial: true, segments: 4,
       lengthFrac: 0.6, radiusFrac: 0.05, taper: 0.3, aim: -0.5, spread: 0.4, curl: 0.3, tip: "none",
@@ -585,7 +603,7 @@ describe("skeleton", () => {
   });
 
   it("chain tips become details: eye → eyeball welded to the chain tip", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.head.eyePairs = 0; // isolate the eyestalk eyes from head eyes
     g.chains = [{
       attach: "head", station: 0.5, count: 2, radial: false, segments: 4,
@@ -598,7 +616,7 @@ describe("skeleton", () => {
   });
 
   it("clamps flexible chains: caps count, coerces enums/bools, drops extras", () => {
-    const clamped = clampGenome({
+    const clamped = clampBlueprint({
       version: 1,
       chains: new Array(9).fill({ attach: "sky", tip: "laser", radial: "yes", count: 99, segments: 0, taper: 0 }),
     });
@@ -610,12 +628,12 @@ describe("skeleton", () => {
       expect(ch.count).toBeLessThanOrEqual(MAX_CHAIN_COUNT);
       expect(ch.taper).toBeGreaterThan(0); // floored so the tip stays solid
     }
-    expect(validateGenome(clamped).ok).toBe(true);
-    expect(clampGenome({ version: 1 }).chains).toEqual([]);
+    expect(validateBlueprint(clamped).ok).toBe(true);
+    expect(clampBlueprint({ version: 1 }).chains).toEqual([]);
   });
 
   it("builds a dorsal midline membrane that rises from the body and tapers at its ends", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.membranes = [{ edge: "dorsal", start: 0.3, end: 0.8, height: 0.4, heightPeak: 0.5, rays: 0 }];
     const skel = buildSkeleton(g);
     expect(skel.membranes.length).toBe(1);
@@ -635,7 +653,7 @@ describe("skeleton", () => {
   });
 
   it("a ventral membrane hangs below the body", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.membranes = [{ edge: "ventral", start: 0.3, end: 0.7, height: 0.3, heightPeak: 0.5, rays: 0 }];
     const skel = buildSkeleton(g);
     const ribs = skel.membranes[0].ribs;
@@ -643,7 +661,7 @@ describe("skeleton", () => {
   });
 
   it("clamps membranes: caps count, coerces edge, drops a zero-height web at build", () => {
-    const clamped = clampGenome({
+    const clamped = clampBlueprint({
       version: 1,
       membranes: new Array(9).fill({ edge: "sideways", height: 99, heightPeak: 5, rays: -3 }),
     });
@@ -653,22 +671,22 @@ describe("skeleton", () => {
       expect(m.height).toBeLessThanOrEqual(1.2);
       expect(m.rays).toBeGreaterThanOrEqual(0);
     }
-    expect(validateGenome(clamped).ok).toBe(true);
-    expect(clampGenome({ version: 1 }).membranes).toEqual([]);
+    expect(validateBlueprint(clamped).ok).toBe(true);
+    expect(clampBlueprint({ version: 1 }).membranes).toEqual([]);
     // A zero-height membrane produces no panel.
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.membranes = [{ edge: "dorsal", start: 0.3, end: 0.8, height: 0, heightPeak: 0.5, rays: 0 }];
     expect(buildSkeleton(g).membranes.length).toBe(0);
   });
 
   it("stays within the limb-group cap from the random producer", () => {
     for (const seed of SEEDS) {
-      expect(randomGenome(seed).limbGroups.length).toBeLessThanOrEqual(MAX_LIMB_GROUPS);
+      expect(randomBlueprint(seed).limbGroups.length).toBeLessThanOrEqual(MAX_LIMB_GROUPS);
     }
   });
 
   it("radial placement spawns `count` ground-solved spokes (no L/R mirror)", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.limbGroups = [{ ...g.limbGroups[0], placement: "radial", count: 5 }];
     const skel = buildSkeleton(g);
     const legChains = new Set(
@@ -683,9 +701,9 @@ describe("skeleton", () => {
   });
 
   it("digits emerge from continuous properties: hoof=1, claw=pair, hand=many; membrane flattens", () => {
-    const base = defaultGenome().limbGroups[0];
-    const build = (over: Partial<LimbGroupGenome>): ReturnType<typeof buildSkeleton> =>
-      buildSkeleton({ ...defaultGenome(), limbGroups: [{ ...base, count: 1, footLengthFrac: 0.2, ...over }] });
+    const base = defaultBlueprint().limbGroups[0];
+    const build = (over: Partial<LimbGroupBlueprint>): ReturnType<typeof buildSkeleton> =>
+      buildSkeleton({ ...defaultBlueprint(), limbGroups: [{ ...base, count: 1, footLengthFrac: 0.2, ...over }] });
     const digitCount = (skel: ReturnType<typeof buildSkeleton>): number =>
       new Set(skel.bones.filter((b) => b.chain.startsWith("limb0Ld")).map((b) => b.chain)).size;
 
@@ -699,8 +717,8 @@ describe("skeleton", () => {
   });
 
   it("a lifted forelimb grows digits (a hand) at its hanging tip", () => {
-    const leg = defaultGenome().limbGroups[0];
-    const g = defaultGenome();
+    const leg = defaultBlueprint().limbGroups[0];
+    const g = defaultBlueprint();
     g.posture.bodyHeight = 1; // ride high so the short forelimb lifts off
     g.limbGroups = [
       { ...leg, count: 1, stationStart: 0.85, stationEnd: 0.85, lengthFrac: 0.9 },
@@ -712,24 +730,24 @@ describe("skeleton", () => {
   });
 
   it("clamp truncates to the limb-group cap", () => {
-    const clamped = clampGenome({ version: 1, limbGroups: new Array(9).fill({ placement: "bilateral" }) });
+    const clamped = clampBlueprint({ version: 1, limbGroups: new Array(9).fill({ placement: "bilateral" }) });
     expect(clamped.limbGroups.length).toBe(MAX_LIMB_GROUPS);
-    expect(validateGenome(clamped).ok).toBe(true);
+    expect(validateBlueprint(clamped).ok).toBe(true);
   });
 
-  it("scales with the genome (bigger torso → bigger skeleton)", () => {
-    const small = defaultGenome();
+  it("scales with the blueprint (bigger torso → bigger skeleton)", () => {
+    const small = defaultBlueprint();
     small.spine.torsoLengthM = 0.3;
-    const big = defaultGenome();
+    const big = defaultBlueprint();
     big.spine.torsoLengthM = 3;
-    const sk1 = buildSkeleton(clampGenome(small) as Genome);
-    const sk2 = buildSkeleton(clampGenome(big) as Genome);
+    const sk1 = buildSkeleton(clampBlueprint(small) as Blueprint);
+    const sk2 = buildSkeleton(clampBlueprint(big) as Blueprint);
     const span = (s: typeof sk1) => s.bounds.max.z - s.bounds.min.z;
     expect(span(sk2)).toBeGreaterThan(span(sk1) * 5);
   });
 
   it("carries body cross-section onto the trunk, easing back to round at the head", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.spine.crossSection = 2.4; // wide & flat (ray-like)
     g.tail.segments = 4;
     g.neck.segments = 3;
@@ -755,21 +773,413 @@ describe("skeleton", () => {
   });
 
   it("clamps body cross-section into range and defaults when absent", () => {
-    expect(clampGenome({ version: 1, spine: { crossSection: 99 } }).spine.crossSection).toBeLessThanOrEqual(3);
-    expect(clampGenome({ version: 1, spine: { crossSection: -5 } }).spine.crossSection).toBeGreaterThanOrEqual(0.3);
-    expect(clampGenome({ version: 1, spine: {} }).spine.crossSection).toBe(1);
+    expect(clampBlueprint({ version: 1, spine: { crossSection: 99 } }).spine.crossSection).toBeLessThanOrEqual(3);
+    expect(clampBlueprint({ version: 1, spine: { crossSection: -5 } }).spine.crossSection).toBeGreaterThanOrEqual(0.3);
+    expect(clampBlueprint({ version: 1, spine: {} }).spine.crossSection).toBe(1);
   });
 
-  it("emits head details: a beak and the genome's eye pairs", () => {
-    const g = defaultGenome();
+  it("emits head parts: a lofted snout chain and the blueprint's eye pairs", () => {
+    const g = defaultBlueprint();
     const skel = buildSkeleton(g);
+    // The muzzle/beak is real loft bones now, not a rigid cone detail. The
+    // "snout" chain is the upper jaw = forehead bridge bones + the snout proper.
+    expect(skel.bones.filter((b) => b.id.startsWith("snout")).length).toBe(2);
+    expect(skel.bones.some((b) => b.chain === "snout")).toBe(true);
+    expect(skel.details.filter((d) => d.kind === "beak").length).toBe(0);
     const eyes = skel.details.filter((d) => d.kind === "eye");
-    const beaks = skel.details.filter((d) => d.kind === "beak");
-    expect(beaks.length).toBe(1);
     expect(eyes.length).toBe(g.head.eyePairs * 2);
     // Eyes mirror across the sagittal plane.
     const xs = eyes.map((e) => e.position.x).sort((a, b) => a - b);
     expect(xs[0]).toBeCloseTo(-xs[xs.length - 1], 9);
+    // No snout when the blueprint says none.
+    g.head.beakLengthFrac = 0;
+    expect(buildSkeleton(g).bones.some((b) => b.chain === "snout")).toBe(false);
+  });
+});
+
+describe("head variety (braincase + rostrum + mandible skull)", () => {
+  const headBone = (skel: ReturnType<typeof buildSkeleton>) =>
+    skel.bones.find((b) => b.id === "head")!;
+  const boneLen = (b: { head: Vec3; tail: Vec3 }): number =>
+    Math.hypot(b.tail.x - b.head.x, b.tail.y - b.head.y, b.tail.z - b.head.z);
+
+  it("lengthFrac elongates the skull bulb; crossSection sets its aspect", () => {
+    const g = defaultBlueprint();
+    const round = headBone(buildSkeleton(g));
+    g.head.lengthFrac = 2;
+    g.head.crossSection = 1.6;
+    const long = headBone(buildSkeleton(g));
+    expect(boneLen(long)).toBeCloseTo(boneLen(round) * 2, 6);
+    expect(long.aspect).toBeCloseTo(1.6, 9);
+    expect(round.aspect).toBeCloseTo(1, 9);
+  });
+
+  it("snoutCurve hooks the snout tip down (and up when negative)", () => {
+    const tipY = (curve: number): number => {
+      const g = defaultBlueprint();
+      g.head.beakLengthFrac = 1.5;
+      g.head.snoutCurve = curve;
+      const skel = buildSkeleton(g);
+      return limbTip(skel, "snout")!.y;
+    };
+    expect(tipY(0.8)).toBeLessThan(tipY(0) - 1e-3);
+    expect(tipY(-0.8)).toBeGreaterThan(tipY(0) + 1e-3);
+  });
+
+  it("snoutFlatten reaches the loft as the snout bones' aspect", () => {
+    const g = defaultBlueprint();
+    g.head.snoutFlatten = 2.0;
+    const skel = buildSkeleton(g);
+    for (const b of skel.bones.filter((x) => x.id.startsWith("snout"))) {
+      expect(b.aspect).toBeCloseTo(2.0, 9);
+    }
+  });
+
+  it("the rostrum springs from the cranium's LOWER-FRONT, running level", () => {
+    // The muzzle is NOT the front of a head tube — it roots below the
+    // cranium's front pole and projects forward. With no curve or pitch its
+    // first segment runs level (parallel to the braincase axis).
+    const g = defaultBlueprint();
+    g.head.beakLengthFrac = 1.2;
+    g.head.snoutCurve = 0;
+    g.head.facePitch = 0;
+    const skel = buildSkeleton(g);
+    const h = headBone(skel);
+    const s = skel.bones.find((b) => b.id === "snout0")!;
+    // Roots BELOW the cranium front pole (the lower-front), not at it.
+    expect(s.head.y).toBeLessThan(h.tail.y - 1e-4);
+    // ...and its axis is level (dead ahead) when uncurved/unpitched.
+    const sa = { x: s.tail.x - s.head.x, y: s.tail.y - s.head.y, z: s.tail.z - s.head.z };
+    expect(Math.abs(sa.y) / boneLen(s)).toBeLessThan(1e-6);
+    expect(sa.z).toBeGreaterThan(0);
+  });
+
+  it("neck lift only positions the head — never reshapes it", () => {
+    // The head's ORIENTATION and internal shape are invariant to neck lift
+    // (lift moves headBase; the head hangs off it at the same angle). This
+    // is the decoupling the horse needed.
+    const headData = (lift: number) => {
+      const g = defaultBlueprint();
+      g.head.beakLengthFrac = 1;
+      g.neck.lift = lift;
+      const skel = buildSkeleton(g);
+      const h = headBone(skel);
+      const tip = limbTip(skel, "snout")!;
+      const dir = { x: h.tail.x - h.head.x, y: h.tail.y - h.head.y, z: h.tail.z - h.head.z };
+      const L = boneLen(h);
+      return {
+        dir: { x: dir.x / L, y: dir.y / L, z: dir.z / L },
+        // Snout tip RELATIVE to the head base (shape, not position).
+        tipRel: { x: tip.x - h.head.x, y: tip.y - h.head.y, z: tip.z - h.head.z },
+        len: L,
+      };
+    };
+    const lo = headData(0.2), hi = headData(1.5);
+    expect(hi.dir.y).toBeCloseTo(lo.dir.y, 9); // orientation unchanged
+    expect(hi.len).toBeCloseTo(lo.len, 9);      // length unchanged
+    expect(hi.tipRel.y).toBeCloseTo(lo.tipRel.y, 9); // shape unchanged
+    expect(hi.tipRel.z).toBeCloseTo(lo.tipRel.z, 9);
+  });
+
+  it("the lower jaw is a separate cut bone; gape swings it open about the joint", () => {
+    const g = defaultBlueprint();
+    g.head.mouthOpen = 0;
+    // mouthOpen 0 = a fused mouth: the jaw never swings, even at full gape.
+    expect(buildSkeleton(g, undefined, { gape: 1 }).mouth!.gapeAngle).toBeCloseTo(0, 9);
+    g.head.mouthOpen = 0.7;
+    const closed = buildSkeleton(g, undefined, { gape: 0 });
+    const open = buildSkeleton(g, undefined, { gape: 1 });
+    // A closed mouth doesn't swing (gapeAngle 0); gape swings the lower jaw.
+    expect(closed.mouth!.gapeAngle).toBeCloseTo(0, 9);
+    expect(open.mouth!.gapeAngle).toBeGreaterThan(0.3);
+    // The lower jaw is a SEPARATE "jaw" chain (upper jaw is the "snout" chain).
+    expect(open.bones.some((b) => b.chain === "jaw")).toBe(true);
+    expect(open.bones.some((b) => b.id === "ramus0")).toBe(true); // links to the skull
+    // The jaw joint sits BELOW the eyes (the mandible hangs below it).
+    const eye = open.details.find((d) => d.kind === "eye")!;
+    expect(open.mouth!.hinge.y).toBeLessThan(eye.position.y);
+  });
+
+  it("mouthOpen scales how WIDE the (rigid) jaw can swing", () => {
+    // With a hinged mandible the jaw always spans the full bite line; a
+    // bigger mouthOpen lets it swing WIDER (a horse barely opens, a croc
+    // opens all the way). Measured at full gape.
+    const gapeAt = (mouthOpen: number): number => {
+      const g = defaultBlueprint();
+      g.head.beakLengthFrac = 1.6;
+      g.head.mouthOpen = mouthOpen;
+      return buildSkeleton(g, undefined, { gape: 1 }).mouth!.gapeAngle;
+    };
+    expect(gapeAt(1)).toBeGreaterThan(gapeAt(0.3) + 0.1); // croc opens far wider than a horse
+  });
+
+  it("the nose is its OWN feature, positioned independently of the muzzle", () => {
+    const g = defaultBlueprint();
+    expect(buildSkeleton(g).bones.some((b) => b.chain === "nose")).toBe(false);
+    g.head.noseLengthFrac = 1.5;
+    g.head.noseSegments = 4;
+    const skel = buildSkeleton(g);
+    const noseBones = skel.bones.filter((b) => b.chain === "nose");
+    expect(noseBones.length).toBe(4);
+    // The nose is stuck on the snout tip; noseHeight slides its root UP toward
+    // the crown (a blowhole on top vs a nose on the front of the face).
+    const rootY = (noseHeight: number): number => {
+      const g2 = defaultBlueprint();
+      g2.head.noseLengthFrac = 1; g2.head.beakLengthFrac = 1.5; g2.head.noseHeight = noseHeight;
+      return buildSkeleton(g2).bones.find((b) => b.id === "nose0")!.head.y;
+    };
+    expect(rootY(1)).toBeGreaterThan(rootY(0) + 0.02); // higher root when noseHeight is up top
+  });
+
+  it("eyeHeight climbs the eyes toward the crown; eyeBulge pushes them proud", () => {
+    const eye = (patch: Partial<Blueprint["head"]>) => {
+      const g = defaultBlueprint();
+      Object.assign(g.head, patch);
+      const skel = buildSkeleton(g);
+      const e = skel.details.filter((d) => d.kind === "eye")[0]!;
+      const h = headBone(skel);
+      const c = {
+        x: (h.head.x + h.tail.x) / 2,
+        y: (h.head.y + h.tail.y) / 2,
+        z: (h.head.z + h.tail.z) / 2,
+      };
+      return {
+        y: e.position.y,
+        fromCenter: Math.hypot(e.position.x - c.x, e.position.y - c.y, e.position.z - c.z),
+      };
+    };
+    expect(eye({ eyeHeight: 1.0 }).y).toBeGreaterThan(eye({ eyeHeight: 0 }).y + 1e-3);
+    expect(eye({ eyeBulge: 1 }).fromCenter).toBeGreaterThan(eye({ eyeBulge: 0 }).fromCenter + 1e-3);
+  });
+
+  it("a round skull holds its face at the horizon; facePitch tips the carriage", () => {
+    // Default quadruped with a lifted neck: the snout points dead level
+    // (elevation 0) by rule, and facePitch offsets from there.
+    const tipYAt = (facePitch: number): number => {
+      const g = defaultBlueprint();
+      g.head.facePitch = facePitch;
+      return limbTip(buildSkeleton(g), "snout")!.y;
+    };
+    const level = (): { dy: number } => {
+      const g = defaultBlueprint();
+      const skel = buildSkeleton(g);
+      const s = skel.bones.find((b) => b.id === "snout0")!;
+      return { dy: (s.tail.y - s.head.y) / Math.hypot(s.tail.x - s.head.x, s.tail.y - s.head.y, s.tail.z - s.head.z) };
+    };
+    expect(Math.abs(level().dy)).toBeLessThan(1e-9);
+    expect(tipYAt(0.5)).toBeGreaterThan(tipYAt(0) + 1e-3);
+    expect(tipYAt(-0.5)).toBeLessThan(tipYAt(0) - 1e-3);
+  });
+
+  it("faceHeight moves the eyes down the face (cranium rises above)", () => {
+    const eyeY = (faceHeight: number): number => {
+      const g = defaultBlueprint();
+      g.head.faceHeight = faceHeight;
+      return buildSkeleton(g).details.filter((d) => d.kind === "eye")[0]!.position.y;
+    };
+    // Lower faceHeight → eyes sit lower on the skull (more dome above).
+    expect(eyeY(-0.8)).toBeLessThan(eyeY(0) - 1e-3);
+    expect(eyeY(0.8)).toBeGreaterThan(eyeY(0) + 1e-3);
+  });
+
+  it("snoutRadiusFrac sets the muzzle girth directly", () => {
+    const baseR = (frac: number): number => {
+      const g = defaultBlueprint();
+      g.head.snoutRadiusFrac = frac;
+      return buildSkeleton(g).bones.find((b) => b.id === "snout0")!.radiusHead;
+    };
+    expect(baseR(0.2) / baseR(0.4)).toBeCloseTo(0.5, 6);
+  });
+
+  it("snoutSegments builds the muzzle from N bones (a bendable trunk)", () => {
+    const segs = (n: number): number => {
+      const g = defaultBlueprint();
+      g.head.snoutSegments = n;
+      g.head.beakLengthFrac = 2;
+      return buildSkeleton(g).bones.filter((b) => b.id.startsWith("snout")).length;
+    };
+    expect(segs(2)).toBe(2);
+    expect(segs(6)).toBe(6);
+  });
+
+  it("muzzleSquash keeps the muzzle tip blunt instead of tapering to a point", () => {
+    const tipR = (squash: number): number => {
+      const g = defaultBlueprint();
+      g.head.muzzleSquash = squash;
+      g.head.beak = 0;
+      const snout = buildSkeleton(g).bones.filter((b) => b.id.startsWith("snout"));
+      return snout[snout.length - 1].radiusTail;
+    };
+    expect(tipR(1)).toBeGreaterThan(tipR(0) * 1.8);
+  });
+
+  it("the human example reads as a face: a separate nose, mouth below eyes, cranium above", () => {
+    const g = clampBlueprint(CREATURE_EXAMPLES.find((e) => e.name.startsWith("Human"))!.blueprint);
+    const skel = buildSkeleton(g);
+    const h = skel.bones.find((b) => b.id === "head")!;
+    const eye = skel.details.filter((d) => d.kind === "eye")[0]!;
+    // The nose is its OWN protrusion (not the muzzle), a thin bump.
+    const nose = skel.bones.filter((b) => b.chain === "nose");
+    expect(nose.length).toBeGreaterThan(0);
+    expect(nose[0].radiusHead).toBeLessThan(0.3 * h.radiusHead);
+    // It protrudes forward of the muzzle front (a nose that sticks out).
+    const noseTip = nose[nose.length - 1].tail;
+    expect(noseTip.z).toBeGreaterThan(h.tail.z);
+    // The mouth seam sits below the eyes.
+    expect(skel.mouth).toBeDefined();
+    expect(eye.position.y).toBeGreaterThan(skel.mouth!.hinge.y);
+    // Cranium: a good dome of skull rises above the eye line.
+    const topY = Math.max(h.head.y, h.tail.y) + h.radiusHead;
+    expect(topY - eye.position.y).toBeGreaterThan(0.4 * h.radiusHead);
+  });
+
+  it("eyes seat on the skull's ellipsoid surface (not floating, not buried)", () => {
+    const g = defaultBlueprint();
+    g.head.lengthFrac = 1.8;
+    g.head.crossSection = 1.5;
+    g.head.eyeHeight = 0.6;
+    const skel = buildSkeleton(g);
+    const h = headBone(skel);
+    const c = {
+      x: (h.head.x + h.tail.x) / 2,
+      y: (h.head.y + h.tail.y) / 2,
+      z: (h.head.z + h.tail.z) / 2,
+    };
+    const eyeR = g.head.eyeSizeFrac * h.radiusHead;
+    for (const e of skel.details.filter((d) => d.kind === "eye")) {
+      const d = Math.hypot(e.position.x - c.x, e.position.y - c.y, e.position.z - c.z);
+      // Within an eye radius of the surface band the seat formula allows
+      // (the face-frame ellipsoid is a stand-in for the loft's exact hull).
+      const rMin = h.radiusHead / Math.sqrt(1.5) - eyeR * 1.5;
+      const rMax = h.radiusHead * g.head.lengthFrac + eyeR * 1.5;
+      expect(d).toBeGreaterThan(rMin);
+      expect(d).toBeLessThan(rMax);
+    }
+  });
+
+  it("braincaseDome raises the cranium without moving the muzzle", () => {
+    const dome = (d: number) => {
+      const g = defaultBlueprint();
+      g.head.braincaseDome = d;
+      const skel = buildSkeleton(g);
+      return { crownY: skel.head!.crown.y, domeHalf: skel.head!.domeHalf, tipZ: limbTip(skel, "snout")!.z };
+    };
+    const lo = dome(0.7), hi = dome(1.3);
+    expect(hi.domeHalf).toBeGreaterThan(lo.domeHalf);
+    expect(hi.crownY).toBeGreaterThan(lo.crownY + 1e-3); // a taller skull vault
+    expect(hi.tipZ).toBeCloseTo(lo.tipZ, 6); // the muzzle is untouched
+  });
+
+  it("facePitch tips the ROSTRUM off the braincase, leaving the braincase level", () => {
+    // The braincase holds the horizon at any facePitch (its bone stays
+    // level); only the muzzle hinges.
+    const braincaseDir = (fp: number): number => {
+      const g = defaultBlueprint();
+      g.head.facePitch = fp;
+      const h = headBone(buildSkeleton(g));
+      return (h.tail.y - h.head.y) / boneLen(h);
+    };
+    expect(Math.abs(braincaseDir(0))).toBeLessThan(1e-9);
+    expect(Math.abs(braincaseDir(0.6))).toBeLessThan(1e-9);
+    const tipY = (fp: number): number => {
+      const g = defaultBlueprint();
+      g.head.beakLengthFrac = 1.4;
+      g.head.facePitch = fp;
+      return limbTip(buildSkeleton(g), "snout")!.y;
+    };
+    expect(tipY(0.6)).toBeGreaterThan(tipY(0) + 1e-3); // +pitch lifts the muzzle
+  });
+
+  it("jawDepth deepens the lower jaw (a thicker mandible)", () => {
+    // The lower jaw is a separate bone whose rings are the muzzle shape
+    // deepened by jawDepth, so a deeper jaw = a bigger jaw-body radius.
+    const jawR = (jawDepth: number): number => {
+      const g = defaultBlueprint();
+      g.head.beakLengthFrac = 1;
+      g.head.mouthOpen = 0.6;
+      g.head.jawDepth = jawDepth;
+      return buildSkeleton(g).bones.find((x) => x.id === "jaw0")!.radiusHead;
+    };
+    expect(jawR(0.4)).toBeGreaterThan(jawR(0.05));
+  });
+
+  it("mouthVertical slides the mouth (bite) line down (subterminal) or up (superior)", () => {
+    const bite = (mv: number): number => {
+      const g = defaultBlueprint();
+      g.head.beakLengthFrac = 1;
+      g.head.mouthOpen = 0.7;
+      g.head.mouthVertical = mv;
+      return buildSkeleton(g).mouth!.biteFrac;
+    };
+    expect(bite(-1)).toBeLessThan(bite(0));
+    expect(bite(1)).toBeGreaterThan(bite(0));
+  });
+
+  it("eyeAngle (orbit convergence) spreads the eyes frontal → lateral", () => {
+    const spread = (ang: number): number => {
+      const g = defaultBlueprint();
+      g.head.eyeAngle = ang;
+      const eyes = buildSkeleton(g).details.filter((d) => d.kind === "eye");
+      return Math.abs(eyes[0]!.position.x);
+    };
+    expect(spread(1.3)).toBeGreaterThan(spread(0.3) + 1e-3);
+  });
+
+  it("exposes skull landmarks + a level frame for the soft-tissue layer", () => {
+    const g = defaultBlueprint();
+    g.head.beakLengthFrac = 1.2;
+    const skel = buildSkeleton(g);
+    expect(skel.head).toBeDefined();
+    // rostrum tip is forward of the braincase front, which is forward of center.
+    expect(skel.head!.rostrumTip.z).toBeGreaterThan(skel.head!.rostrumBase.z);
+    expect(skel.head!.rostrumBase.z).toBeGreaterThan(skel.head!.center.z);
+    // The braincase frame is world-aligned (level head).
+    expect(skel.head!.braincaseAxis.z).toBeCloseTo(1, 9);
+    expect(skel.head!.up.y).toBeCloseTo(1, 9);
+  });
+
+  it("mouthOpen places the commissure: cheek-flagged stations close the jaw behind it", () => {
+    // The VISIBLE mouth is smaller than the mandible's gape: only stations
+    // forward of the commissure (mouthOpen = lips-part fraction from the
+    // tip) open; the rest are cheek-covered (a horse's long closed jaw).
+    const skullFor = (mouthOpen: number) => {
+      const g = defaultBlueprint();
+      g.head.beakLengthFrac = 1.5;
+      g.head.snoutSegments = 4;
+      g.head.mouthOpen = mouthOpen;
+      return buildSkeleton(g).skull!;
+    };
+    const stationsFor = (mouthOpen: number) => {
+      const sk = skullFor(mouthOpen);
+      return sk.stations.slice(sk.muzzleFrom);
+    };
+    // 5 joints (fTip = 1, .75, .5, .25, 0) + the SLIDING corner ring
+    // inserted at exactly 0.3 — the commissure moves continuously, it
+    // does not snap between segments.
+    const horse = stationsFor(0.3);
+    expect(horse.length).toBe(6);
+    expect(horse[0].cheek).toBe(true); // jaw root always cheek-covered
+    expect(horse[horse.length - 1].cheek).toBe(false); // tip parts
+    expect(horse.filter((s) => s.cheek).length).toBe(4); // joints 1,.75,.5 + corner
+    // A croc-style full split (corner exactly at the root): no insert,
+    // only the root corner stays covered…
+    const croc = stationsFor(1);
+    expect(croc.length).toBe(5);
+    expect(croc.filter((s) => s.cheek).length).toBe(1);
+    // …and a fused mouth (mouthOpen 0) is cheek all the way to the tip.
+    const fused = stationsFor(0);
+    expect(fused.every((s) => s.cheek)).toBe(true);
+    // Past 1 the corner slides BEHIND the root along the jawline toward
+    // the hinge (snake/croc whole-head gape): every muzzle station opens
+    // and the guide exposes the corner's longitudinal position.
+    const snake = skullFor(1.4);
+    const snakeSts = snake.stations.slice(snake.muzzleFrom);
+    expect(snakeSts.every((s) => s.cheek === false)).toBe(true);
+    expect(snake.mouthCorner).toBeDefined();
+    expect(snake.mouthCorner!.z).toBeLessThan(snakeSts[0].center.z);
+    // Deeper mouthOpen → the corner sits further back.
+    const snake2 = skullFor(1.2);
+    expect(snake.mouthCorner!.z).toBeLessThan(snake2.mouthCorner!.z);
   });
 });
 
@@ -832,7 +1242,7 @@ describe("gait (procedural walk)", () => {
     // Default quadruped: limb0 = front pair (station 0.18), limb1 = hind
     // (0.85). Under a trot at phase 0.8 the front-left foot is mid-swing
     // and the front-right is planted.
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     const restY = buildSkeleton(g).bones.find((b) => b.id === "limb0Lfoot")!.tail.y;
     const gait: GaitParams = { phase: 0.8, strideFrac: 0.5, stepHeight: 0.3, dutyFactor: 0.6, pattern: "trot" };
     const walk = buildSkeleton(g, gait);
@@ -842,8 +1252,8 @@ describe("gait (procedural walk)", () => {
     expect(stance.tail.y).toBeLessThan(swing.tail.y); // its diagonal partner stays down
   });
 
-  it("the gait is deterministic for the same genome + params", () => {
-    const g = defaultGenome();
+  it("the gait is deterministic for the same blueprint + params", () => {
+    const g = defaultBlueprint();
     const gait: GaitParams = { ...DEFAULT_GAIT, phase: 0.37 };
     const a = buildSkeleton(g, gait).bones.map((b) => b.tail.y);
     const b = buildSkeleton(g, gait).bones.map((b) => b.tail.y);
@@ -851,7 +1261,7 @@ describe("gait (procedural walk)", () => {
   });
 
   it("with no gait the rest pose is unchanged (gait is purely additive)", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     const rest = buildSkeleton(g).bones.map((b) => `${b.tail.x},${b.tail.y},${b.tail.z}`);
     const restAgain = buildSkeleton(g, undefined).bones.map((b) => `${b.tail.x},${b.tail.y},${b.tail.z}`);
     expect(rest).toEqual(restAgain);
@@ -883,7 +1293,7 @@ describe("balance (CoM over the support polygon)", () => {
   });
 
   it("a biped leans its body so the CoM rides over its two feet", () => {
-    const g = defaultGenome();
+    const g = defaultBlueprint();
     g.posture = { bodyPitch: 1.0, bodyHeight: 0.8 };
     g.tail.segments = 0;
     g.neck = { segments: 3, lengthFrac: 1.0, radiusFrac: 0.5, lift: 0.2 }; // long neck → CoM would pull forward
@@ -907,5 +1317,378 @@ describe("balance (CoM over the support polygon)", () => {
     // not far in front of it.
     const margin = supportMargin({ x: mx, z: mz }, convexHull2D(feet));
     expect(Math.abs(margin)).toBeLessThan(0.18 * g.spine.torsoLengthM);
+  });
+});
+
+// ── Animation layer: gait selection, pose overrides, the animator ────────
+
+const humanBlueprint = (): Blueprint =>
+  clampBlueprint(CREATURE_EXAMPLES.find((e) => e.name.startsWith("Human"))!.blueprint);
+
+const raptorBlueprint = (): Blueprint =>
+  clampBlueprint(CREATURE_EXAMPLES.find((e) => e.name.startsWith("Winged biped"))!.blueprint);
+
+/** Drive the animator the way the lab does: update → build → observe. */
+function runAnim(
+  anim: CreatureAnimator,
+  g: Blueprint,
+  seconds: number,
+  cb?: (frame: AnimFrame, skel: ReturnType<typeof buildSkeleton>) => void,
+): void {
+  const dt = 1 / 60;
+  for (let t = 0; t < seconds; t += dt) {
+    const frame = anim.update(dt);
+    const scratch: Blueprint = { ...g, posture: { ...frame.posture } };
+    const skel = buildSkeleton(scratch, frame.gait, frame.pose);
+    anim.observe(skel);
+    cb?.(frame, skel);
+  }
+}
+
+describe("gait selection (locomotionGait)", () => {
+  it("slow speeds walk (duty > 0.5), fast speeds run (duty < 0.5)", () => {
+    expect(locomotionGait(0.1, 0.8).dutyFactor).toBeGreaterThan(0.5);
+    expect(locomotionGait(1, 0.8).dutyFactor).toBeLessThan(0.5);
+  });
+
+  it("stride, lift, cadence and ground speed all grow with the dial", () => {
+    const lo = locomotionGait(0.2, 0.8);
+    const hi = locomotionGait(0.9, 0.8);
+    expect(hi.strideFrac).toBeGreaterThan(lo.strideFrac);
+    expect(hi.stepHeight).toBeGreaterThan(lo.stepHeight);
+    expect(hi.cadenceHz).toBeGreaterThan(lo.cadenceHz);
+    expect(hi.speedMps).toBeGreaterThan(lo.speedMps);
+  });
+
+  it("longer legs cycle slower at the same dial (pendulum scaling)", () => {
+    expect(locomotionGait(0.5, 2.0).cadenceHz).toBeLessThan(locomotionGait(0.5, 0.5).cadenceHz);
+  });
+
+  it("a running gait bobs harder than a walking one", () => {
+    const at = (duty: number): number =>
+      bodyBob({ phase: 0.25, strideFrac: 0.5, stepHeight: 0.2, dutyFactor: duty, pattern: "trot" }, 2).dy;
+    expect(at(0.35)).toBeGreaterThan(at(0.65));
+  });
+});
+
+describe("pose overrides (reach IK + arm swing)", () => {
+  it("limbChainName names the human's limbs the way the skeleton builds them", () => {
+    const g = humanBlueprint();
+    expect(limbChainName(g, 0, 0, -1)).toBe("limb0L"); // legs
+    expect(limbChainName(g, 1, 0, 1)).toBe("limb1R"); // arms
+    const skel = buildSkeleton(g);
+    expect(limbTip(skel, "limb1R")).not.toBeNull();
+    expect(limbTip(skel, "limb1L")).not.toBeNull();
+  });
+
+  it("a limb-target override brings the hand tip to the target", () => {
+    const g = humanBlueprint();
+    const rest = buildSkeleton(g);
+    const shoulder = rest.bones.find((b) => b.chain === "limb1R")!.head;
+    // A point in front of the chest, well inside the arm's reach.
+    const target: Vec3 = { x: shoulder.x, y: shoulder.y - 0.2, z: shoulder.z + 0.3 };
+    const skel = buildSkeleton(g, undefined, {
+      limbTargets: [{ group: 1, index: 0, side: 1, target, grip: 0.8 }],
+    });
+    const tip = limbTip(skel, "limb1R")!;
+    const d = Math.hypot(tip.x - target.x, tip.y - target.y, tip.z - target.z);
+    expect(d).toBeLessThan(0.05);
+    // The other arm is untouched (still hanging near its rest position).
+    const restL = limbTip(rest, "limb1L")!;
+    const stillL = limbTip(skel, "limb1L")!;
+    expect(Math.hypot(stillL.x - restL.x, stillL.y - restL.y, stillL.z - restL.z)).toBeLessThan(1e-9);
+  });
+
+  it("an unreachable target is approached along the reach line, not overshot", () => {
+    const g = humanBlueprint();
+    const target: Vec3 = { x: 3, y: 1.2, z: 3 }; // meters away
+    const skel = buildSkeleton(g, undefined, {
+      limbTargets: [{ group: 1, index: 0, side: 1, target }],
+    });
+    const tip = limbTip(skel, "limb1R")!;
+    const shoulder = skel.bones.find((b) => b.chain === "limb1R")!.head;
+    const armLen = g.limbGroups[1].lengthFrac * g.spine.torsoLengthM * 1.2; // + palm slack
+    expect(Math.hypot(tip.x - shoulder.x, tip.y - shoulder.y, tip.z - shoulder.z)).toBeLessThan(armLen);
+  });
+
+  it("a planted foot keeps its facing through the stride (no outward twist)", () => {
+    // The foot azimuth is solved in the unshifted rest frame, so neither
+    // the stride nor the balance sway may rotate a planted foot. Front-left
+    // (trot offset 0) stays planted for phase < duty; sample early vs late
+    // stance and compare the foot bone's horizontal direction.
+    const g = defaultBlueprint();
+    const azimuthAt = (phase: number): number => {
+      const gait: GaitParams = { phase, strideFrac: 0.6, stepHeight: 0.25, dutyFactor: 0.6, pattern: "trot" };
+      const foot = buildSkeleton(g, gait).bones.find((b) => b.id === "limb0Lfoot")!;
+      return Math.atan2(foot.tail.x - foot.head.x, foot.tail.z - foot.head.z);
+    };
+    expect(Math.abs(azimuthAt(0.05) - azimuthAt(0.5))).toBeLessThan(1e-6);
+  });
+
+  it("the body does not lurch with the step cycle (balance over rest support)", () => {
+    // The support polygon is every recruited foot at its rest plant, so the
+    // horizontal body position is identical at every gait phase — only the
+    // vertical bob varies. Chasing the planted subset used to sway the body
+    // fore/aft and sideways every step.
+    const g = humanBlueprint();
+    const torsoAt = (phase: number): Vec3 => {
+      const gait: GaitParams = { phase, strideFrac: 0.6, stepHeight: 0.25, dutyFactor: 0.6, pattern: "trot" };
+      return buildSkeleton(g, gait).bones.find((b) => b.id === "torso0")!.head;
+    };
+    const a = torsoAt(0.1);
+    const b = torsoAt(0.35); // opposite single-support half of the cycle
+    expect(Math.abs(a.x - b.x)).toBeLessThan(1e-9);
+    expect(Math.abs(a.z - b.z)).toBeLessThan(1e-9);
+  });
+
+  it("hanging arms counter-swing with the gait, in antiphase", () => {
+    const g = humanBlueprint();
+    const gait: GaitParams = { phase: 0.25, strideFrac: 0.5, stepHeight: 0.2, dutyFactor: 0.6, pattern: "trot" };
+    const still = buildSkeleton(g, gait);
+    const swung = buildSkeleton(g, gait, { armSwing: 0.5 });
+    const dzR = limbTip(swung, "limb1R")!.z - limbTip(still, "limb1R")!.z;
+    const dzL = limbTip(swung, "limb1L")!.z - limbTip(still, "limb1L")!.z;
+    expect(Math.abs(dzR)).toBeGreaterThan(0.05); // the swing visibly moves the hand
+    expect(Math.sign(dzR)).toBe(-Math.sign(dzL)); // arms alternate
+    // The legs are unaffected by armSwing (they are recruited, gait-driven).
+    expect(limbTip(swung, "limb0R")!.z).toBeCloseTo(limbTip(still, "limb0R")!.z, 9);
+  });
+});
+
+describe("creature animator (stand / walk / run / pick up / put down)", () => {
+  it("picks the human's arms as the grasping hand group", () => {
+    expect(pickHandGroup(humanBlueprint())).toBe(1);
+    expect(pickHandGroup(defaultBlueprint())).toBe(-1); // a plain quadruped can't grasp
+  });
+
+  it("stands at speed 0 (no gait), walks then runs as the dial rises", () => {
+    const g = humanBlueprint();
+    const anim = new CreatureAnimator(g);
+    let frame = anim.update(1 / 60);
+    expect(frame.gait).toBeUndefined();
+    expect(frame.speedMps).toBe(0);
+    anim.setSpeed(0.35);
+    runAnim(anim, g, 1.0, (f) => { frame = f; });
+    expect(frame.gait).toBeDefined();
+    const walkDuty = frame.gait!.dutyFactor;
+    expect(walkDuty).toBeGreaterThan(0.5);
+    anim.setSpeed(1);
+    runAnim(anim, g, 2.0, (f) => { frame = f; });
+    expect(frame.gait!.dutyFactor).toBeLessThan(0.5); // flight phases
+    expect(frame.speedMps).toBeGreaterThan(0.5);
+    // Running leans the trunk forward of its standing pitch.
+    expect(frame.posture.bodyPitch).toBeLessThan(g.posture.bodyPitch);
+  });
+
+  it("the animator is deterministic for the same inputs", () => {
+    const g = humanBlueprint();
+    const run = (): string => {
+      const anim = new CreatureAnimator(g);
+      anim.setSpeed(0.6);
+      let last: AnimFrame | null = null;
+      runAnim(anim, g, 0.8, (f) => { last = f; });
+      return JSON.stringify(last);
+    };
+    expect(run()).toBe(run());
+  });
+
+  it("picks up: crouches to the object, grips it, and carries it back up", () => {
+    const g = humanBlueprint();
+    const L = g.spine.torsoLengthM;
+    const legLen = g.limbGroups[0].lengthFrac * L;
+    const object: Vec3 = { x: 0.3 * L, y: 0.05, z: 0.45 * L };
+    const anim = new CreatureAnimator(g);
+    runAnim(anim, g, 0.5); // settle, capture the resting hand
+    expect(anim.pickUp(object)).toBe(true);
+    expect(anim.pickUp(object)).toBe(false); // one action at a time
+
+    let minHeight = Infinity;
+    let minGrabDist = Infinity;
+    let sawHold = false;
+    let carryFrame: AnimFrame | null = null;
+    runAnim(anim, g, 4.0, (f, skel) => {
+      minHeight = Math.min(minHeight, f.posture.bodyHeight);
+      if (f.action === "grasp" && f.handChain) {
+        const tip = limbTip(skel, f.handChain);
+        if (tip) {
+          minGrabDist = Math.min(minGrabDist,
+            Math.hypot(tip.x - object.x, tip.y - object.y, tip.z - object.z));
+        }
+      }
+      if (f.action === "carry") { sawHold = f.holding; carryFrame = f; }
+    });
+    expect(anim.currentAction).toBe("carry");
+    expect(sawHold).toBe(true);
+    // It crouched to reach the ground-level object…
+    expect(minHeight).toBeLessThan(g.posture.bodyHeight * 0.5);
+    // …the hand actually closed on it…
+    expect(minGrabDist).toBeLessThan(0.12 * legLen);
+    // …and it stood back up to carry.
+    expect(carryFrame!.posture.bodyHeight).toBeGreaterThan(g.posture.bodyHeight * 0.8);
+  });
+
+  it("puts down: releases the object and returns to a clean stand", () => {
+    const g = humanBlueprint();
+    const L = g.spine.torsoLengthM;
+    const object: Vec3 = { x: 0.3 * L, y: 0.05, z: 0.45 * L };
+    const anim = new CreatureAnimator(g);
+    runAnim(anim, g, 0.5);
+    anim.pickUp(object);
+    runAnim(anim, g, 4.0);
+    expect(anim.currentAction).toBe("carry");
+    expect(anim.putDown({ x: -0.3 * L, y: 0.05, z: 0.45 * L })).toBe(true);
+    let lastHolding = true;
+    runAnim(anim, g, 4.0, (f) => { lastHolding = f.holding; });
+    expect(anim.currentAction).toBe("none");
+    expect(lastHolding).toBe(false);
+    const rest = anim.update(1 / 60);
+    expect(rest.pose.limbTargets).toBeUndefined(); // the arm is FK again
+    expect(rest.posture.bodyHeight).toBeGreaterThan(g.posture.bodyHeight * 0.85);
+  });
+
+  it("can walk while carrying (gait + hand target compose)", () => {
+    const g = humanBlueprint();
+    const L = g.spine.torsoLengthM;
+    const anim = new CreatureAnimator(g);
+    runAnim(anim, g, 0.5);
+    anim.pickUp({ x: 0.3 * L, y: 0.05, z: 0.45 * L });
+    runAnim(anim, g, 4.0);
+    anim.setSpeed(0.5);
+    let frame: AnimFrame | null = null;
+    runAnim(anim, g, 1.5, (f) => { frame = f; });
+    expect(frame!.action).toBe("carry");
+    expect(frame!.gait).toBeDefined();
+    expect(frame!.holding).toBe(true);
+    expect(frame!.pose.limbTargets).toHaveLength(1);
+  });
+
+  it("a large object takes both hands, bracketing it from opposite sides", () => {
+    const g = humanBlueprint();
+    const L = g.spine.torsoLengthM;
+    const size = 0.28; // well past a palm-width
+    const object: Vec3 = { x: 0.1 * L, y: size / 2, z: 0.45 * L };
+    const anim = new CreatureAnimator(g);
+    runAnim(anim, g, 0.5);
+    expect(anim.pickUp(object, size)).toBe(true);
+    let bracketOk = false;
+    let carryFrame: AnimFrame | null = null;
+    runAnim(anim, g, 5.0, (f, skel) => {
+      if (f.action === "grasp" && f.handChains?.length === 2) {
+        const [l, r] = f.handChains.map((c) => limbTip(skel, c)!);
+        // Palms on opposite sides of the object, about a size apart.
+        if (l && r && r.x - l.x > size * 0.6 &&
+          Math.abs((l.x + r.x) / 2 - object.x) < 0.15) bracketOk = true;
+      }
+      if (f.action === "carry") carryFrame = f;
+    });
+    expect(anim.currentAction).toBe("carry");
+    expect(bracketOk).toBe(true);
+    expect(carryFrame!.holding).toBe(true);
+    expect(carryFrame!.pose.limbTargets).toHaveLength(2);
+    expect(carryFrame!.handChains).toEqual(["limb1L", "limb1R"]);
+  });
+
+  it("a thumbless kind lifts with two hands (palms are the pincer)", () => {
+    const g = humanBlueprint();
+    g.limbGroups[1].opposition = 0; // no thumbs
+    expect(pickHandGroup(g)).toBe(-1); // one hand can't grip…
+    expect(pickArmGroup(g)).toBe(1); // …but the free forelimb pair can
+    const L = g.spine.torsoLengthM;
+    const anim = new CreatureAnimator(g);
+    expect(anim.hasHands()).toBe(true);
+    runAnim(anim, g, 0.5);
+    // Even a small object goes two-handed without opposable digits.
+    expect(anim.pickUp({ x: 0.2 * L, y: 0.05, z: 0.45 * L }, 0.08)).toBe(true);
+    let frame: AnimFrame | null = null;
+    runAnim(anim, g, 5.0, (f) => { frame = f; });
+    expect(anim.currentAction).toBe("carry");
+    expect(frame!.pose.limbTargets).toHaveLength(2);
+    // A plain quadruped still can't pick things up either way.
+    expect(pickArmGroup(defaultBlueprint())).toBe(-1);
+  });
+
+  it("bulk slows the lift (size-scaled timeline)", () => {
+    const g = humanBlueprint();
+    const L = g.spine.torsoLengthM;
+    const liftTime = (size: number): number => {
+      const anim = new CreatureAnimator(g);
+      runAnim(anim, g, 0.5);
+      anim.pickUp({ x: 0.2 * L, y: Math.max(0.05, size / 2), z: 0.45 * L }, size);
+      let tLiftStart = -1, tCarry = -1, t = 0;
+      runAnim(anim, g, 8.0, (f) => {
+        t += 1 / 60;
+        if (f.action === "lift" && tLiftStart < 0) tLiftStart = t;
+        if (f.action === "carry" && tCarry < 0) tCarry = t;
+      });
+      return tCarry - tLiftStart;
+    };
+    expect(liftTime(0.4)).toBeGreaterThan(liftTime(0.0) + 0.15);
+  });
+
+  it("a beaked kind with no usable limbs picks up with its mouth", () => {
+    const g = raptorBlueprint();
+    // No thumbs, no free non-membrane forelimb pair (the wings are
+    // membrane) — but a jaw.
+    expect(pickHandGroup(g)).toBe(-1);
+    expect(pickArmGroup(g)).toBe(-1);
+    const anim = new CreatureAnimator(g);
+    expect(anim.hasHands()).toBe(false);
+    expect(anim.canGrasp()).toBe(true);
+
+    const L = g.spine.torsoLengthM;
+    const size = 0.06;
+    // Under the beak's descent arc — positioning the BODY relative to the
+    // object is the host's job (locomotion), not the reach controller's.
+    const object: Vec3 = { x: 0, y: size / 2, z: 0.7 * L };
+    runAnim(anim, g, 0.5);
+    expect(anim.pickUp(object, size)).toBe(true);
+
+    const legLen = Math.max(...g.limbGroups.filter((l) => l.membrane < 0.55).map((l) => l.lengthFrac)) * L;
+    let maxGape = 0;
+    let minBeakDist = Infinity;
+    let carryFrame: AnimFrame | null = null;
+    let carrySkel: ReturnType<typeof buildSkeleton> | null = null;
+    runAnim(anim, g, 6.0, (f, skel) => {
+      maxGape = Math.max(maxGape, f.pose.gape ?? 0);
+      if (f.action === "grasp") {
+        const tip = limbTip(skel, "snout");
+        if (tip) minBeakDist = Math.min(minBeakDist, Math.hypot(tip.x - object.x, tip.y - object.y, tip.z - object.z));
+      }
+      if (f.action === "carry") { carryFrame = f; carrySkel = skel; }
+    });
+    expect(anim.currentAction).toBe("carry");
+    // The jaw gaped wide on approach…
+    expect(maxGape).toBeGreaterThan(0.6);
+    // …and the beak tip actually met the object's surface.
+    expect(minBeakDist).toBeLessThan(0.05 * legLen + size * 0.55 + 0.06);
+    // The object rides in the mouth: snout chain, clamped jaw, no arm IK.
+    expect(carryFrame!.holding).toBe(true);
+    expect(carryFrame!.handChains).toEqual(["snout"]);
+    expect(carryFrame!.pose.limbTargets).toBeUndefined();
+    expect(carryFrame!.pose.gape).toBeGreaterThan(0.05);
+    expect(carryFrame!.pose.gape).toBeLessThan(0.5);
+    expect(limbTip(carrySkel!, "snout")).not.toBeNull();
+  });
+
+  it("a mouth carry puts down and lets go (gape opens, then closes)", () => {
+    const g = raptorBlueprint();
+    const L = g.spine.torsoLengthM;
+    const anim = new CreatureAnimator(g);
+    runAnim(anim, g, 0.5);
+    anim.pickUp({ x: 0, y: 0.03, z: 0.6 * L }, 0.06);
+    runAnim(anim, g, 6.0);
+    expect(anim.currentAction).toBe("carry");
+    expect(anim.putDown({ x: 0.15 * L, y: 0.03, z: 0.55 * L })).toBe(true);
+    let releaseGape = 0;
+    let lastHolding = true;
+    runAnim(anim, g, 6.0, (f) => {
+      if (f.action === "release") releaseGape = Math.max(releaseGape, f.pose.gape ?? 0);
+      lastHolding = f.holding;
+    });
+    expect(anim.currentAction).toBe("none");
+    expect(lastHolding).toBe(false);
+    expect(releaseGape).toBeGreaterThan(0.5); // let go = jaw cracked open
+    const rest = anim.update(1 / 60);
+    expect(rest.pose.gape ?? 0).toBe(0); // mouth closed again at rest
   });
 });

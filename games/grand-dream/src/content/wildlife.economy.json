@@ -1,0 +1,14 @@
+{
+  "species": [
+    {
+      "key": "rats",
+      "role": "commensal",
+      "name": "Rats",
+      "glyph": "🐀",
+      "countScalar": "rats",
+      "countMax": 100000,
+      "capacity": { "by": "population", "rate": 0.02 },
+      "growth": 0.05
+    }
+  ]
+}

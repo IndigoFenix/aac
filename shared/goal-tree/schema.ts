@@ -237,6 +237,17 @@ const converseNodeSchema = z.object({
   via: viaSchema.optional(),
 }).strict();
 
+const causalFactSchema = z.object({
+  connective: z.enum(["because", "therefore", "in_order_to", "when", "until"]),
+  cause: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("possessionLack"), itemEntityId: idSchema }).strict(),
+    z.object({ kind: z.literal("creatureState"), state: z.string().min(1).max(40), creatureNodeId: idSchema.optional() }).strict(),
+    z.object({ kind: z.literal("itemState"), itemEntityId: idSchema, state: z.string().min(1).max(40) }).strict(),
+    z.object({ kind: z.literal("likes"), itemEntityId: idSchema.optional(), facet: z.string().min(1).max(40).optional() }).strict(),
+    z.object({ kind: z.literal("wantsTo"), verb: z.string().min(1).max(40) }).strict(),
+  ]),
+}).strict();
+
 const fulfillNodeSchema = z.object({
   ...goalNodeBaseFields,
   type: z.literal("fulfill"),
@@ -246,8 +257,15 @@ const fulfillNodeSchema = z.object({
   needValue: z.number().int().min(1).max(9).optional(),
   needPlacedInEntityId: idSchema.optional(),
   needForNodeId: idSchema.optional(),
+  needAtPlaceNodeId: idSchema.optional(),
+  needStayWith: z.boolean().optional(),
+  needEscort: z.boolean().optional(),
+  needPlacedOutdoors: z.boolean().optional(),
   needItemState: z.enum(["hot", "cold"]).optional(),
+  needDeviceState: z.enum(["on", "off", "open", "closed"]).optional(),
+  powerDeviceEntityId: idSchema.optional(),
   stationKinds: z.array(z.enum(["fire", "water"])).min(1).max(2).optional(),
+  stationPowerDeviceId: idSchema.optional(),
   likeEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
   stockEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
   propEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
@@ -255,6 +273,18 @@ const fulfillNodeSchema = z.object({
   announce: z.enum(["before", "after", "never"]).optional(),
   boundEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
   thoughtScaffold: z.boolean().optional(),
+  causalFact: causalFactSchema.optional(),
+  condition: z.string().min(1).max(40).optional(),
+  needTarget: z
+    .object({
+      kind: z.string().min(1).max(40).optional(),
+      category: z.string().min(1).max(40).optional(),
+      descriptors: z.array(z.string().min(1).max(40)).min(1).max(4).optional(),
+      state: z.string().min(1).max(40).optional(),
+    })
+    .strict()
+    .optional(),
+  motiveReveal: z.enum(["want", "because", "motive"]).optional(),
   needLocationKnown: z.boolean().optional(),
   knowsItemEntityIds: z.array(idSchema).min(1).max(FULFILL_MAX_ITEMS).optional(),
   zoneHint: z.string().min(1).max(120).optional(),
@@ -278,6 +308,7 @@ const metaSchema = z.object({
   aiCompanion: aiCompanionSchema.optional(),
   learningGoals: z.array(z.string().min(1).max(200)).max(10).optional(),
   syntax: z.enum(["a", "b", "c"]).optional(),
+  layout: z.enum(["village", "house"]).optional(),
   seed: z.number().int().nonnegative().max(0xffffffff).optional(),
 }).strict();
 
@@ -355,6 +386,10 @@ function validateGameStructure(
   // On-behalf needs reference OTHER fulfill nodes — checked after the walk.
   const fulfillNodeIds = new Set<string>();
   const onBehalfRefs: { from: string; to: string }[] = [];
+  // An `in_order_to` goal clause may name another creature — checked after the walk.
+  const causalCreatureRefs: { from: string; to: string }[] = [];
+  // Presence (go-to) needs reference the destination fulfill node.
+  const presenceRefs: { from: string; to: string }[] = [];
 
   for (const { node, depth } of walkGoalTree(game.root as GoalNode)) {
     totalNodes += 1;
@@ -472,8 +507,55 @@ function validateGameStructure(
           }
           onBehalfRefs.push({ from: node.id, to: node.needForNodeId });
         }
+        if (node.needAtPlaceNodeId) {
+          if (node.needAtPlaceNodeId === node.id) {
+            issue(`fulfill "${node.id}" wants the player to go to itself`);
+          }
+          presenceRefs.push({ from: node.id, to: node.needAtPlaceNodeId });
+        }
+        if (node.needStayWith && (node.needItemEntityId || node.needAtPlaceNodeId)) {
+          issue(`fulfill "${node.id}" mixes needStayWith with an item/presence need — pick one`);
+        }
+        if (node.needEscort && !node.needAtPlaceNodeId) {
+          issue(`fulfill "${node.id}" sets needEscort without needAtPlaceNodeId`);
+        }
+        if (node.needPlacedOutdoors && !node.needPlacedInEntityId) {
+          issue(`fulfill "${node.id}" sets needPlacedOutdoors without needPlacedInEntityId`);
+        }
         if (node.needItemState && !node.needItemEntityId) {
           issue(`fulfill "${node.id}" sets needItemState without a need`);
+        }
+        if (node.needDeviceState && !node.needItemEntityId) {
+          issue(`fulfill "${node.id}" sets needDeviceState without a device need`);
+        }
+        if (node.powerDeviceEntityId) {
+          checkRef(node.id, "powerDeviceEntityId", node.powerDeviceEntityId, "converseItem");
+          if (!node.needDeviceState) {
+            issue(`fulfill "${node.id}" sets powerDeviceEntityId without a device need`);
+          }
+        }
+        if (node.stationPowerDeviceId) {
+          checkRef(node.id, "stationPowerDeviceId", node.stationPowerDeviceId, "converseItem");
+          if (!node.stationKinds?.length) {
+            issue(`fulfill "${node.id}" sets stationPowerDeviceId without a station`);
+          }
+        }
+        if (node.causalFact) {
+          if (!node.needItemEntityId) {
+            issue(`fulfill "${node.id}" sets causalFact without a need`);
+          }
+          const cause = node.causalFact.cause;
+          if (cause.kind === "possessionLack" || cause.kind === "itemState") {
+            checkRef(node.id, "causalFact", cause.itemEntityId, "converseItem");
+          }
+          if (cause.kind === "creatureState" && cause.creatureNodeId) {
+            causalCreatureRefs.push({ from: node.id, to: cause.creatureNodeId });
+          }
+        }
+        // A condition needs SOMETHING that remedies it: an item need, or the
+        // stay-with company need ("lonely" clears when the player stays).
+        if (node.condition && !node.needItemEntityId && !node.needStayWith) {
+          issue(`fulfill "${node.id}" sets condition without a need to remedy it`);
         }
         if (node.needLocationKnown === false && !node.needItemEntityId) {
           issue(`fulfill "${node.id}" sets needLocationKnown without a need`);
@@ -483,6 +565,16 @@ function validateGameStructure(
     }
   }
 
+  for (const ref of causalCreatureRefs) {
+    if (!fulfillNodeIds.has(ref.to)) {
+      issue(`fulfill "${ref.from}" causalFact names creature "${ref.to}", which is not a fulfill node`);
+    }
+  }
+  for (const ref of presenceRefs) {
+    if (!fulfillNodeIds.has(ref.to)) {
+      issue(`fulfill "${ref.from}" needAtPlaceNodeId references "${ref.to}", which is not a fulfill node`);
+    }
+  }
   for (const ref of onBehalfRefs) {
     if (!fulfillNodeIds.has(ref.to)) {
       issue(`fulfill "${ref.from}" needForNodeId references "${ref.to}", which is not a fulfill node`);

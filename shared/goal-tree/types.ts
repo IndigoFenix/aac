@@ -351,6 +351,43 @@ export const STATION_KINDS = {
 export type StationKind = keyof typeof STATION_KINDS;
 
 /**
+ * WHY a fulfill creature's need exists — the goal-tree face of the symbol-game
+ * CausalFact (planning-docs/symbol-learning-game/causation-and-elements.md §4).
+ * Closed, ENTITY-ID-based data (no baked glyph strings); the game layer
+ * verbalizes it through the dialogue projection. PURE NARRATION: no static or
+ * simulation certification stage ever reads it, so a game's certifiability is
+ * invariant to its causal facts (that invariant is the property test).
+ */
+/** A parameter-based want predicate — the goal-tree face of the symbol-game
+ *  NeedTarget (motive-driven-needs.md). Closed data; the game layer matches. */
+export interface FulfillNeedTarget {
+  kind?: string;
+  category?: string;
+  descriptors?: string[];
+  state?: string;
+}
+
+export interface FulfillCausalFact {
+  connective: "because" | "therefore" | "in_order_to" | "when" | "until";
+  /** The second clause (the cause / the goal). The need itself is clause one. */
+  cause:
+    | { kind: "possessionLack"; itemEntityId: string } // "{creature} have.not {item}"
+    // "{creature} {state}" (happy/cold/hungry…). `creatureNodeId` names the
+    // creature (a fulfill node id); omitted = the fulfill node's OWN creature.
+    // A deliver's `in_order_to` goal points it at the RECIPIENT ("…in order to
+    // Bear happy").
+    | { kind: "creatureState"; state: string; creatureNodeId?: string }
+    | { kind: "itemState"; itemEntityId: string; state: string } // "{item} {state}"
+    // PREFERENCE (motive batch): "{creature} like {item|facet}" — "I want the
+    // cookie because I like cookies" / "…because I like red" (facet = a bare
+    // quality symbol like "color_red").
+    | { kind: "likes"; itemEntityId?: string; facet?: string }
+    // DESIRE-TO-DO (motive batch): "{creature} want {verb}" — "I want a toy
+    // because I want to play" (verb = a registry action symbol: play/read/wear).
+    | { kind: "wantsTo"; verb: string };
+}
+
+/**
  * A CREATURE and the goal of making it content. This is the goal-tree face of
  * the need-based system (planning-docs/symbol-learning-game/creature-needs.md):
  * the node carries the creature's SEED (need, likes, displayed stock, loose
@@ -385,15 +422,48 @@ export interface FulfillNode extends GoalNodeBase {
    *  not when this creature receives it. Mutually exclusive with
    *  needPlacedInEntityId. */
   needForNodeId?: string;
+  /** PRESENCE (go-to) need (§5): the need fulfills when the PLAYER reaches the
+   *  creature of THIS fulfill node — "go to Bear". No item; the destination is
+   *  another (needless) fulfill creature in its own zone. */
+  needAtPlaceNodeId?: string;
+  /** STAY-WITH need (motive batch): the creature wants the player's COMPANY —
+   *  "stay with me (because I'm lonely)". No item, no destination: the player
+   *  DWELLS near this creature for a while and the need fulfills (the world
+   *  layer times it and reports arrival). Pairs with `condition: "lonely"`. */
+  needStayWith?: boolean;
+  /** ESCORT flavor on a presence need (motive batch): the CREATURE ITSELF must
+   *  reach needAtPlaceNodeId — "take me to Bear". After the player agrees, the
+   *  creature follows; arrival at the destination fulfills. Requires
+   *  needAtPlaceNodeId. */
+  needEscort?: boolean;
+  /** OUTDOORS placement flag (motive batch): stage needPlacedInEntityId in the
+   *  open start-zone plaza instead of the creature's room — "take the smelly
+   *  food OUT to the garbage". Requires needPlacedInEntityId. */
+  needPlacedOutdoors?: boolean;
   /** TRANSFORMED-state requirement (Item Transformations b): the need only
    *  accepts the item once a station has put this state on it ("hot"/"cold" —
    *  a STATION_KINDS `applies` value). The untransformed offer is declined
    *  with "{item} + {state}.not". */
   needItemState?: string;
+  /** DEVICE-state need (§5): needItemEntityId is a fixed DEVICE and the need
+   *  fulfills when it is TOGGLED to this state ("on"/"closed"). The device
+   *  entity carries its initial (opposite) state in its glyph ("window.open").
+   *  A state need — never a hand-over. */
+  needDeviceState?: string;
+  /** POWER chain (§5): a GENERATOR device (kind: item) that powers the device
+   *  need — the need's device is `poweredBy` it, so the player must switch the
+   *  generator ON first. The generator spawns in the room in its resting state.
+   *  Only meaningful with needDeviceState. */
+  powerDeviceEntityId?: string;
   /** Transformation STATIONS staged in this creature's zone (physical
    *  affordances, not creatures): dropping an item on one applies its state.
    *  Reusable — any item, any number of times. */
   stationKinds?: StationKind[];
+  /** POWER-GATED station (§5, the P1 chain): a GENERATOR device (kind: item)
+   *  that must be switched ON before this creature's station will transform
+   *  anything ("power the fridge to cool the food"). Only meaningful with
+   *  stationKinds. */
+  stationPowerDeviceId?: string;
   /** Items it values at baseline — receiving one creates a debt (kind: item). */
   likeEntityIds?: string[];
   /** Possessions on DISPLAY behind its counter — visible, owned, requestable (kind: item). */
@@ -414,6 +484,24 @@ export interface FulfillNode extends GoalNodeBase {
    *  creature (the low-phase errorless aid; fades to evidence-only when the
    *  phase layer lands). Only meaningful with announce "never". */
   thoughtScaffold?: boolean;
+  /** WHY the need exists (causation-and-elements.md §4) — surfaced by the WHY
+   *  act (a `because` fact) or spoken by the need line (an `in_order_to`
+   *  remedy). Narration only; every certification stage ignores it. */
+  causalFact?: FulfillCausalFact;
+  /** A bad SELF-CONDITION this creature is in ("cold"/"dirty" — §5): its line
+   *  leads with it ("i_me + want + {remedy} + because + i_me + cold") and it
+   *  CLEARS when the need fulfills (the getting-better demonstration). Requires
+   *  a need. Narration + a cleared-state demo; certification ignores it. */
+  condition?: string;
+  /** A PARAMETER-based want (motive-driven-needs.md): the need is satisfied by
+   *  ANY item matching this predicate (loose), not just needItemEntityId. When
+   *  a motive generates it (cold → {state:"hot"}), the want reads "something
+   *  hot". needItemEntityId is still the INTENDED instance (cert + base). */
+  needTarget?: FulfillNeedTarget;
+  /** How much a MOTIVE-driven want is revealed (motive-driven-needs.md §4):
+   *  "want" (states the want, WHY reveals the motive), "because" (want because
+   *  motive, default), or "motive" (just the condition — the want is inferred). */
+  motiveReveal?: "want" | "because" | "motive";
   /** Does the creature know WHERE its need item is at start? Default true (the
    *  puzzle-mode always-know rule — its where-is always yields a clue). false =
    *  ask-around missions: it answers "I don't know"; seed the fact on another
@@ -464,6 +552,16 @@ export interface GoalTreeGameMeta {
   /** Dialogue SYNTAX level the player renders creature lines/acts at:
    *  "a" = single glyphs, "b" = two, "c" = full sentences (≈3). Default "b". */
   syntax?: "a" | "b" | "c";
+  /**
+   * How a STAR-shaped world is laid out into geometry (the world engine's
+   * building template the goal tree is mapped onto):
+   *   "village" (default) — a central plaza ringed by separate HOUSES.
+   *   "house"             — ONE building: a central hall with each zone a
+   *                         color-coded ROOM off it (the one-building
+   *                         household puzzle).
+   * Ignored for non-star worlds (they fall back to the east-icicle layout).
+   */
+  layout?: "village" | "house";
   /**
    * The uint32 seed the game was generated from. Downstream procedural stages
    * (village layout, buildings, house colors) derive their randomness from it,

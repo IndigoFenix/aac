@@ -57,4 +57,20 @@ export const GAMES: GameEntry[] = [
     hidden: true,
     gradient: "from-sky-500 to-indigo-900",
   },
+  {
+    id: "world-lab",
+    name: "World Lab",
+    description: "The game-maker's test bench: pick a test world, edit its world file, watch it boot. Dev tool — planets first.",
+    emoji: "🌍",
+    hidden: true,
+    gradient: "from-teal-600 to-slate-900",
+  },
+  {
+    id: "cloud-lab",
+    name: "Cloud Lab",
+    description: "Dev bench for clouds on the shared world-engine: orbit a real planet under the shared sky. Clouds themselves are WIP.",
+    emoji: "☁️",
+    hidden: true,
+    gradient: "from-sky-700 to-slate-900",
+  },
 ];

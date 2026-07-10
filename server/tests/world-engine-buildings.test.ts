@@ -109,3 +109,23 @@ describe("buildings — schema", () => {
     expect(validateWorldSpec(bad).ok).toBe(false);
   });
 });
+
+describe("stuck-in-geometry failsafe", () => {
+  it("a body inside a wall walks straight out, then collision resumes", () => {
+    const s = createWorldState(expandWorldBuildings(spec()), "me");
+    // Teleport INTO the north wall band (y ∈ [10, 10.6] across the top):
+    // a spawn in a wall, a structure streamed over a body — same state.
+    s.avatars.me.x = 16;
+    s.avatars.me.y = 10.3;
+    // Without the failsafe every slide branch fails here and the avatar
+    // is imprisoned. With it, the constraint gates entry into solids
+    // FROM VALID SPACE only — steering north walks out of the wall.
+    steerFor(s, 16, 4, 1.5);
+    expect(s.avatars.me.y).toBeLessThan(10);
+
+    // ...and once OUT, the wall is solid again: steering back into the
+    // building from the north stops at the wall instead of re-entering.
+    steerFor(s, 16, 16, 1.5);
+    expect(s.avatars.me.y).toBeLessThan(10.01);
+  });
+});

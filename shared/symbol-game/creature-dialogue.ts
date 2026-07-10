@@ -21,6 +21,7 @@
 // Remaining interim: I-don't-know → "think.not" (`know` is a queued symbol).
 
 import {
+  causalPhrase,
   giveAsk,
   giveOffer,
   noStock,
@@ -30,10 +31,12 @@ import {
   wantAsk,
   REJECTED_LINE,
   type LeveledGlyphs,
+  type PhraseSpec,
   type SyntaxLevel,
 } from "./dialogue-gen.js";
 import {
   giveItem,
+  itemMatchesNeed,
   knownHoldings,
   needStateOk,
   openNeeds,
@@ -41,11 +44,14 @@ import {
   settleObligations,
   STATE_TAGS,
   valueTo,
+  type Clause,
   type CreatureEvent,
   type CreatureId,
   type CreatureNeed,
   type CreatureWorld,
   type ItemId,
+  type ItemState,
+  type NeedTarget,
 } from "./creatures.js";
 
 // ---------------------------------------------------------------------------
@@ -61,15 +67,23 @@ export type DialogueActKind =
   | "trade" // propose the swap directly (single known holding)
   | "trade-menu" // "trade for what?" — opens the pick list
   | "trade-pick" // a pick inside the trade menu
-  | "back" // leave the trade menu
+  | "back" // leave an open sub-menu (trade / directions list)
+  | "more" // advance to the next page of an open list
   | "how-are-you" // small talk; reveals a hidden need
-  | "where-is" // information request about an item
+  | "where-is" // information request about an ITEM (who holds it)
+  | "ask-directions" // ask where a PLACE is, directly (a single known subject)
+  | "directions-menu" // open the "where is…" list (several known subjects)
+  | "directions-pick" // a pick inside the "where is…" list
+  | "why" // ask WHY a need exists — reveals the cause clause (narration)
   | "confused" // re-model one level down (presentation-level)
   | "bye"; // close the conversation
 
 export interface DialogueAct {
   kind: DialogueActKind;
   itemId?: ItemId;
+  /** For directions acts: the place-fact SUBJECT id the player is asking about
+   *  (resolved to geometry by the host, not by this pure layer). */
+  subjectId?: string;
   glyph: string;
 }
 
@@ -86,6 +100,10 @@ export interface ConversationMemo {
   revealed?: boolean;
   /** The trade-for-what pick list is open. */
   tradeMenu?: boolean;
+  /** A generic paginated pick-list is open (e.g. the "where is…" directions
+   *  menu). `menu` selects the item provider; `page` is the 0-based page,
+   *  wrapped on overflow. */
+  list?: { menu: string; page: number };
 }
 
 export interface ProjectionOpts {
@@ -99,6 +117,11 @@ export interface ProjectionOpts {
   symbolOfCreature?: (creatureId: CreatureId) => string;
   /** Items OTHER creatures asked for — the state-2 where-is menu. */
   askableWhere?: ItemId[];
+  /** The player's KNOWN direction subjects (places they've heard of), MOST-
+   *  RECENT FIRST, each with the glyph naming what they'd ask about ("where is
+   *  the blue house?"). Already filtered to subjects THIS creature can answer
+   *  (town common knowledge + own). Empty/undefined = no directions option. */
+  askDirections?: { id: string; glyph: string }[];
   /** Physical gate on OFFERS/trades: only items actually IN HAND. */
   offerFilter?: (itemId: ItemId) => boolean;
   /**
@@ -118,7 +141,6 @@ const at = (g: LeveledGlyphs, level: SyntaxLevel): string => g[level];
 // modifiers = the descriptors. Same head + different modifiers = right kind,
 // wrong variant — the corrective-response case.
 const headOf = (symbol: string): string => symbol.split(".")[0] ?? symbol;
-const modsOf = (symbol: string): string[] => symbol.split(".").slice(1);
 
 /** State-aware views over the static entity symbols (transformations): `base`
  *  strips STATE tags (an item's INITIAL state travels in its entity glyph),
@@ -130,14 +152,54 @@ function makeSyms(world: CreatureWorld, sym: (id: ItemId) => string) {
     return [parts[0]!, ...parts.slice(1).filter((m) => !STATE_TAGS.has(m))].join(".");
   };
   const now = (id: ItemId): string => [base(id), ...(world.items[id]?.states ?? [])].join(".");
+  // The WANTED composition: base (kind + immutable descriptors) + the required
+  // state, if any — NEVER the item's baked spawn state ("apple.cold" for a
+  // hot-need item). A stateless need is just its base identity.
   const want = (n: Pick<CreatureNeed, "itemId" | "requiresState">): string =>
-    n.requiresState ? `${base(n.itemId)}.${n.requiresState}` : sym(n.itemId);
-  return { base, now, want };
+    n.requiresState ? `${base(n.itemId)}.${n.requiresState}` : base(n.itemId);
+  // What the creature WANTS, decoupled from the designated instance: a TARGET
+  // need reads as its predicate ("something hot" / "food"), never the specific
+  // item the generator picked; an exact need reads as its item.
+  const wantOf = (n: CreatureNeed): string => (n.target ? targetGlyph(n.target) : want(n));
+  return { base, now, want, wantOf };
+}
+
+/** Verbalize a causal CLAUSE as a phrase() spec — the deixis-resolved subject
+ *  (whoSym) plus a state-aware object (syms). Used for the WHY answer and (later)
+ *  the in_order_to need line. */
+function clauseSpec(
+  cl: Clause,
+  whoSym: (id: CreatureId) => string,
+  syms: { base: (id: ItemId) => string; now: (id: ItemId) => string },
+): PhraseSpec {
+  switch (cl.kind) {
+    case "possessionLack":
+      return { subject: whoSym(cl.creature), verb: "have.not", object: syms.base(cl.item) };
+    case "creatureState":
+      return { subject: whoSym(cl.creature), verb: cl.state, key: cl.state };
+    case "itemState":
+      // Base symbol + the state as separate glyphs ("window + open"), NOT the
+      // composed now() form (which would double the state: "window.open + open").
+      return { subject: syms.base(cl.item), verb: cl.state, key: cl.state };
+    case "likes":
+      // Preference (motive batch): "i_me + like + {item|facet}" — the facet is
+      // a bare quality symbol ("color_red" — "I like red").
+      return { subject: whoSym(cl.creature), verb: "like", object: cl.item ? syms.base(cl.item) : (cl.facet ?? "thing") };
+    case "wantsTo":
+      // Desire (motive batch): "i_me + want + {verb}" — "I want to play".
+      return { subject: whoSym(cl.creature), verb: "want", object: cl.verb };
+  }
 }
 
 // -- interim templates (registry gaps noted in the header) -------------------
 
 const BYE: LeveledGlyphs = { a: "goodbye", b: "goodbye", c: "goodbye" };
+// The generic pick-list controls (shared by the directions "where is…" menu):
+// "more" advances a page, "no" backs out, "place?" opens the menu.
+const MORE_PAGE: LeveledGlyphs = { a: "more", b: "more", c: "more" };
+const LIST_BACK: LeveledGlyphs = { a: "no", b: "no", c: "no" };
+const CONFUSED_GLYPH: LeveledGlyphs = { a: "confused", b: "confused", c: "confused" };
+const WHERE_MENU: LeveledGlyphs = { a: "place#question", b: "place#question", c: "place#question" };
 // "no" would read as refusal — the honest single glyph is the not-knowing.
 const DONT_KNOW: LeveledGlyphs = phrase({ subject: "i_me", verb: "think.not", key: "think.not" });
 const HOW_ARE_YOU: LeveledGlyphs = {
@@ -168,6 +230,12 @@ function whereIs(thing: string): LeveledGlyphs {
     c: `place#question + get + ${thing}`,
   };
 }
+/** The WHY ask BUTTON (puzzle-types §Specifics "Ask for reason"). `why` is a
+ *  queued question word (glyph-symbol-vocabulary.md); it renders as its label
+ *  until the symbol ships. The creature's ANSWER is the two-clause causal line. */
+function whyAsk(thing: string): LeveledGlyphs {
+  return { a: "why", b: `why + ${thing}`, c: `why + you + want + ${thing}` };
+}
 /** Multi-item needs: a same-kind need already fulfilled → the ask reads MORE. */
 function wantMore(thing: string): LeveledGlyphs {
   return { a: "more", b: `more + ${thing}`, c: `want + more + ${thing}` };
@@ -175,6 +243,63 @@ function wantMore(thing: string): LeveledGlyphs {
 /** Placement (state) need: "I want {thing} in {dest}". */
 function wantPlace(thing: string, dest: string): LeveledGlyphs {
   return phrase({ subject: "i_me", verb: "want", object: thing, tail: { join: "in", symbol: dest } });
+}
+/** DISPOSAL placement (motive batch): "throw {thing} in {garbage}" — a DISTINCT
+ *  statement from an ordinary placement (the `throw` verb leads, not `want`). */
+function wantThrow(thing: string, dest: string): LeveledGlyphs {
+  return { a: "throw", b: `throw + ${thing}`, c: `you + throw + ${thing} + in + ${dest}` };
+}
+/** Device-state need (§5): "I want the {device} {state}" (on/off/open/closed).
+ *  Level a is the STATE alone — the ON/OFF concept under test. */
+function wantDevice(device: string, state: string): LeveledGlyphs {
+  return { a: state, b: `${device} + ${state}`, c: `i_me + want + ${device} + ${state}` };
+}
+/** Presence (go-to) need (§5): "you + go + to + {dest}" — the player navigates
+ *  to the destination creature. Level a is the destination alone. */
+function wantGo(dest: string): LeveledGlyphs {
+  return { a: dest, b: `go + ${dest}`, c: `you + go + to + ${dest}` };
+}
+/** STAY-WITH want (motive batch): "you + stay + with + i_me" — the company ask. */
+function wantStay(): LeveledGlyphs {
+  return { a: "stay", b: "stay + with + i_me", c: "you + stay + with + i_me" };
+}
+/** ESCORT want (motive batch): "you + take + i_me + to + {dest}". Level b keeps
+ *  the destination (the clarity exception — "take me" without WHERE says nothing). */
+function wantEscort(dest: string): LeveledGlyphs {
+  return { a: dest, b: `take + i_me + to + ${dest}`, c: `you + take + i_me + to + ${dest}` };
+}
+/** The stay-with COMPLETION line — the world layer speaks it when the dwell
+ *  finishes ("I'm okay, thank you!"). Exported for the player. */
+export const STAY_DONE_LINE = "i_me + ok + thank_you";
+/** A bare WHY ask (stay-with — there's no want OBJECT to name). */
+const WHY_PLAIN: LeveledGlyphs = { a: "why", b: "why", c: "why" };
+/** The GLYPH for a parameter want (motive-driven-needs.md): a kind composes with
+ *  its descriptors + state ("apple.hot"); a kind-less want is the salient facet
+ *  alone ("hot" = "something hot"; "food"; "color_red"). */
+function targetGlyph(t: NeedTarget): string {
+  if (t.kind) return [t.kind, ...(t.descriptors ?? []), ...(t.state ? [t.state] : [])].join(".");
+  return t.category ?? t.state ?? ((t.descriptors ?? []).join(".") || "thing");
+}
+/** A MOTIVE line (§C): "i_me + {condition}" — just the plight ("I am cold"),
+ *  the want left to be inferred. */
+function conditionLine(condition: string): LeveledGlyphs {
+  return { a: condition, b: `i_me + ${condition}`, c: `i_me + ${condition}` };
+}
+/** The FACETS a need wants — its parameter TARGET, or (for an exact need) the
+ *  designated item's own facets. Used to judge an OFFERED/CARRIED item against
+ *  the want WITHOUT referencing the designated instance directly. */
+function wantFacets(
+  need: CreatureNeed,
+  world: CreatureWorld,
+): { kind?: string; category?: string; descriptors?: string[]; state?: string } {
+  if (need.target) return need.target;
+  const it = world.items[need.itemId];
+  return { kind: it?.kind, descriptors: it?.descriptors, state: need.requiresState };
+}
+/** Is `item` the RIGHT SORT of thing for `want` (kind + category match)? A
+ *  descriptor/state correction only makes sense for the same sort. */
+function sameSort(want: { kind?: string; category?: string }, item: ItemState): boolean {
+  return (!want.kind || item.kind === want.kind) && (!want.category || item.category === want.category);
 }
 /** On-behalf need: "give {thing} to {who}" — the first recipient frame. */
 function wantFor(thing: string, who: string): LeveledGlyphs {
@@ -265,18 +390,20 @@ export function projectDialogue(
   // visible need is merely the first. State needs (placement / on-behalf) are
   // never hand-overs to THIS creature, and a transformed-state requirement
   // must be MET before the hand-over line/offer appears.
-  const isStateNeed = (n: { placedAt?: string; forCreature?: string }) => !!n.placedAt || !!n.forCreature;
+  const isStateNeed = (n: {
+    placedAt?: string;
+    forCreature?: string;
+    deviceState?: string;
+    atPlace?: string;
+  }) => !!n.placedAt || !!n.forCreature || !!n.deviceState || !!n.atPlace;
   const holdingNeed =
     need && !isStateNeed(need)
-      ? (carried.find((c) =>
-          creature.needs.some(
-            (n) =>
-              !n.fulfilled &&
-              !isStateNeed(n) &&
-              n.itemId === c &&
-              needStateOk(n, world.items[c]?.states ?? []),
-          ),
-        ) ?? null)
+      ? (carried.find((c) => {
+          const it = world.items[c];
+          // Parameter-aware: a carried item that MATCHES an open possession need
+          // (loose target or exact instance) counts as "holding the need".
+          return !!it && creature.needs.some((n) => !n.fulfilled && itemMatchesNeed(n, it));
+        }) ?? null)
       : null;
 
   // -- the line ---------------------------------------------------------------
@@ -284,21 +411,68 @@ export function projectDialogue(
   if (memo.statedPrice) {
     lineGlyph =
       memo.statedPrice.kind === "return"
-        ? at(giveAsk(sym(memo.statedPrice.itemId)), level)
-        : at(wantAsk(sym(memo.statedPrice.itemId)), level);
+        ? at(giveAsk(syms.now(memo.statedPrice.itemId)), level)
+        : at(wantAsk(syms.now(memo.statedPrice.itemId)), level);
   } else if (memo.tradeMenu && need) {
     lineGlyph = at(tradeWhat(syms.want(need)), level); // "cookie for…?"
   } else if (need) {
     if (need.placedAt) {
-      lineGlyph = at(wantPlace(syms.want(need), sym(need.placedAt)), level);
+      lineGlyph = at(
+        need.dispose
+          ? wantThrow(syms.now(need.itemId), sym(need.placedAt))
+          : wantPlace(syms.want(need), sym(need.placedAt)),
+        level,
+      );
     } else if (need.forCreature) {
-      lineGlyph = at(wantFor(syms.want(need), whoSym(need.forCreature)), level);
+      const purpose = need.causalFact?.connective === "in_order_to" ? need.causalFact : undefined;
+      if (purpose) {
+        // The remedy→goal LINE: "give {thing} to {who} + in_order_to + {goal}".
+        const action: PhraseSpec = {
+          subject: "you",
+          verb: "give",
+          object: syms.want(need),
+          tail: { join: "to", symbol: whoSym(need.forCreature) },
+        };
+        lineGlyph = at(causalPhrase(action, purpose.connective, clauseSpec(purpose.cause, whoSym, syms)), level);
+      } else {
+        lineGlyph = at(wantFor(syms.want(need), whoSym(need.forCreature)), level);
+      }
+    } else if (need.atPlace) {
+      if (need.stay) {
+        // STAY-WITH (motive batch): the want ("stay with me") or, at reveal
+        // "motive", just the plight ("I am lonely") — the player infers.
+        lineGlyph =
+          creature.condition && (need.reveal ?? "want") === "motive"
+            ? at(conditionLine(creature.condition), level)
+            : at(wantStay(), level);
+      } else if (need.escort) {
+        // ESCORT (motive batch): "take me to {dest}" — agree, and it follows.
+        lineGlyph = at(wantEscort(whoSym(need.atPlace)), level);
+      } else {
+        // Presence (go-to) need (§5): "you + go + to + {dest}".
+        lineGlyph = at(wantGo(whoSym(need.atPlace)), level);
+      }
+    } else if (need.deviceState) {
+      // Device-state need (§5): "i_me want {device} {state}". WHY reveals the
+      // device's current bad state as the cause.
+      lineGlyph = at(wantDevice(syms.base(need.itemId), need.deviceState), level);
     } else if (holdingNeed) {
       lineGlyph = at(giveAsk(syms.now(holdingNeed)), level);
+    } else if (creature.condition && !isStateNeed(need)) {
+      // MOTIVE need (feedback): the OPENING is either the WANT ("I want something
+      // hot") or just the MOTIVE ("I am cold") — never the two-clause "want
+      // because" as an UNPROMPTED greeting (that reads backwards). The causal
+      // link is the WHY answer; the motive's acts are the same want acts.
+      lineGlyph =
+        (need.reveal ?? "want") === "motive"
+          ? at(conditionLine(creature.condition), level)
+          : at(wantAsk(syms.wantOf(need)), level);
     } else {
-      // A same-kind need already fulfilled → "more" (Counting b, emergent).
+      // A same-kind need already fulfilled → "more"; else the want (a parameter
+      // target reads as "something hot", never the designated item).
+      const wantG = syms.wantOf(need);
       const again = creature.needs.some((n) => n.fulfilled && sym(n.itemId) === sym(need.itemId));
-      lineGlyph = at(again ? wantMore(syms.want(need)) : wantAsk(syms.want(need)), level);
+      lineGlyph = at(again ? wantMore(wantG) : wantAsk(wantG), level);
     }
   } else if (opts.announce === "never" && openNeeds(creature).length > 0) {
     // Request c: the unstated need shows as a persistent EMOTE, never words —
@@ -314,6 +488,15 @@ export function projectDialogue(
   const acts: DialogueAct[] = [];
   const push = (kind: DialogueActKind, glyphs: LeveledGlyphs, itemId?: ItemId) =>
     acts.push({ kind, itemId, glyph: at(glyphs, level) });
+
+  const maxActs = opts.maxActs ?? 8;
+
+  // A generic paginated pick-list is open (the "where is…" directions menu, and
+  // future list menus): show ONLY that page — picks + more + back — like the
+  // trade menu's own early return below.
+  if (memo.list) {
+    return { lineGlyph, acts: listActs(memo.list, opts, level, maxActs) };
+  }
 
   if (memo.tradeMenu && need) {
     // The trade pick list: "cookie for {item}?" per known holding, plus back.
@@ -339,33 +522,66 @@ export function projectDialogue(
     } else {
       push("agree", agreeHelp());
       // "I don't have it" makes no sense while visibly holding a state need's
-      // item — the missing step is the box / the recipient, not finding it.
-      if (!(isStateNeed(need) && carried.includes(need.itemId))) {
-        push("cant", cantGlyph(syms.want(need)), need.itemId);
+      // item — the missing step is the box / the recipient, not finding it — nor
+      // for a presence need (there's no item to have).
+      if (!need.atPlace && !(isStateNeed(need) && carried.includes(need.itemId))) {
+        // "I don't have {want}" names the WANT ("something hot"), not the item.
+        push("cant", cantGlyph(syms.wantOf(need)), need.itemId);
       }
     }
-    // Same-KIND wrong-variant offers (descriptors): carrying "ball.small" when
-    // "ball.big" is wanted still shows the offer — the corrective decline
-    // ("ball + big.not") is the lesson, so the act must be reachable.
-    if (!need.placedAt) {
-      // (Wrong-STATE offers need no special case — the exactly-needed item in
-      // the wrong state IS holdingNeed-ineligible, and the general carried
-      // check below keeps it offerable via the same-symbol guard on syms.now.)
-      for (const c of carried) {
+    // WRONG-VARIANT offers: surface a CARRIED item that is the right SORT of
+    // thing for the want but doesn't fully satisfy it (a cold "hot" item, a
+    // small "big" one) — the corrective decline is the lesson. Judged by the
+    // want's FACETS against the item actually carried, not the designated one.
+    if (!need.placedAt && !need.atPlace) {
+      const w = wantFacets(need, world);
+      // Only surface near-misses of a real SORT (a named kind/category); a
+      // kind-less want ("something hot") has no "wrong variant" to offer — the
+      // player offers a matching item (holdingNeed) instead.
+      const hasSort = !!(w.kind || w.category);
+      for (const c of hasSort ? carried : []) {
         if (c === holdingNeed) continue;
-        if (headOf(sym(c)) !== headOf(sym(need.itemId)) || syms.now(c) === syms.want(need)) continue;
+        const cItem = world.items[c];
+        if (!cItem || !sameSort(w, cItem) || itemMatchesNeed(need, cItem)) continue;
         if (acts.some((a) => a.kind === "offer" && a.itemId === c)) continue;
         push("offer", giveOffer(syms.now(c)), c);
       }
     }
     push("refuse", refuseGlyph(holdingNeed ? syms.now(holdingNeed) : null), need.itemId);
-    push("where-is", whereIs(syms.base(need.itemId)), need.itemId);
+    // Where-is is about finding what's WANTED — "where is something hot" — not
+    // the designated item; a presence (go-to) need has no item to find.
+    if (!need.atPlace) {
+      push("where-is", whereIs(syms.wantOf(need)), need.itemId);
+    }
     // Information requests aren't gated on MY need: heard wants are askable
     // here too — the ask-around loop, where any creature may hold the clue.
     for (const itemId of opts.askableWhere ?? []) {
       if (itemId === need.itemId) continue;
       if (carried.includes(itemId) || world.items[itemId]?.ownerId === playerId) continue;
       push("where-is", whereIs(syms.base(itemId)), itemId);
+    }
+    // WHY: a REVEAL-style because fact (the reason isn't in the line) can be
+    // asked — item lack, a device's bad state, a preference ("I like it"), a
+    // desire ("I want to play"), or the item's own spoilage. A creature-state
+    // because LEADS in the line already, so it gets no why act. The ask names
+    // the WANT (predicate-decoupled), never the designated instance.
+    const fact = need.causalFact;
+    if (
+      (fact?.connective === "because" || fact?.connective === "therefore") &&
+      fact.cause.kind !== "creatureState"
+    ) {
+      push("why", whyAsk(syms.wantOf(need)), need.itemId);
+    }
+    // MOTIVE need: when the want is stated, WHY reveals the motive ("I want hot
+    // because I am cold"). A motive-only opening already shows the plight. The
+    // stay-with need ("stay with me… why? …because I'm lonely") is a state
+    // need, so it gets its own bare WHY.
+    if (creature.condition && (need.reveal ?? "want") !== "motive") {
+      if (!isStateNeed(need)) {
+        push("why", whyAsk(syms.wantOf(need)), need.itemId);
+      } else if (need.stay) {
+        push("why", WHY_PLAIN, need.itemId);
+      }
     }
   } else {
     // STATE 2 — no visible need: small talk, requests, information.
@@ -374,7 +590,7 @@ export function projectDialogue(
       push("request", requestAsk(syms.now(itemId)), itemId);
     }
     if (memo.statedPrice && !carried.includes(memo.statedPrice.itemId)) {
-      push("cant", cantGlyph(sym(memo.statedPrice.itemId)), memo.statedPrice.itemId);
+      push("cant", cantGlyph(syms.now(memo.statedPrice.itemId)), memo.statedPrice.itemId);
     }
     for (const itemId of opts.askableWhere ?? []) {
       if (carried.includes(itemId) || world.items[itemId]?.ownerId === playerId) continue;
@@ -386,14 +602,58 @@ export function projectDialogue(
       push("offer", giveOffer(syms.now(itemId)), itemId);
     }
   }
+  // ASK FOR DIRECTIONS — the town places the player has heard of that THIS
+  // person can point to (host-filtered). One subject → a direct "where is X?";
+  // several → open the paginated "where is…" list. Available in both states:
+  // anyone in town can be asked the way.
+  const askDirs = opts.askDirections ?? [];
+  if (askDirs.length === 1) {
+    acts.push({
+      kind: "ask-directions",
+      subjectId: askDirs[0]!.id,
+      glyph: at(whereIs(askDirs[0]!.glyph), level),
+    });
+  } else if (askDirs.length > 1) {
+    push("directions-menu", WHERE_MENU);
+  }
+
   push("confused", { a: "confused", b: "confused", c: "confused" });
   push("bye", BYE);
 
   // Cap to the board, always keeping confused + bye.
-  const max = opts.maxActs ?? 8;
   const standing = acts.filter((a) => a.kind === "confused" || a.kind === "bye");
   const rest = acts.filter((a) => a.kind !== "confused" && a.kind !== "bye");
-  return { lineGlyph, acts: [...rest.slice(0, Math.max(0, max - standing.length)), ...standing] };
+  return { lineGlyph, acts: [...rest.slice(0, Math.max(0, maxActs - standing.length)), ...standing] };
+}
+
+/**
+ * Render one page of an open pick-list (the directions "where is…" menu, and
+ * any future list menu). Picks + a MORE button (only when there's more than one
+ * page, wrapping) + a BACK button, sized to leave board room for the controls.
+ */
+function listActs(
+  list: { menu: string; page: number },
+  opts: ProjectionOpts,
+  level: SyntaxLevel,
+  maxActs: number,
+): DialogueAct[] {
+  // The menu's item provider. Only "where is…" today; keyed so more can be added.
+  const items: { id: string; glyph: string }[] =
+    list.menu === "where-is" ? (opts.askDirections ?? []) : [];
+  // Reserve slots for more + back + confused.
+  const pageSize = Math.max(1, maxActs - 3);
+  const pages = Math.max(1, Math.ceil(items.length / pageSize));
+  const page = ((list.page % pages) + pages) % pages;
+  const slice = items.slice(page * pageSize, page * pageSize + pageSize);
+  const acts: DialogueAct[] = slice.map((it) => ({
+    kind: "directions-pick",
+    subjectId: it.id,
+    glyph: at(whereIs(it.glyph), level),
+  }));
+  if (pages > 1) acts.push({ kind: "more", glyph: at(MORE_PAGE, level) });
+  acts.push({ kind: "back", glyph: at(LIST_BACK, level) });
+  acts.push({ kind: "confused", glyph: at(CONFUSED_GLYPH, level) });
+  return acts;
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +666,10 @@ export interface ActResult {
   /** A second line spoken right after the response (the building clue that
    *  follows "the bear has it" — "the ball is in the blue house"). */
   followUpGlyph?: string;
+  /** The player asked for directions to this place-fact SUBJECT. The pure layer
+   *  can't compute distance/bearing, so it hands the subject up to the host,
+   *  which resolves the geometry, speaks the phrase, and swivels the camera. */
+  askedDirections?: string;
   close?: boolean;
   memo: ConversationMemo;
 }
@@ -434,7 +698,12 @@ export function selectAct(
       if (placeNeed) {
         return {
           events: [],
-          responseGlyph: at(wantPlace(syms.want(placeNeed), sym(placeNeed.placedAt!)), level),
+          responseGlyph: at(
+            placeNeed.dispose
+              ? wantThrow(syms.now(placeNeed.itemId), sym(placeNeed.placedAt!))
+              : wantPlace(syms.want(placeNeed), sym(placeNeed.placedAt!)),
+            level,
+          ),
           memo,
         };
       }
@@ -448,40 +717,29 @@ export function selectAct(
       }
       const res = giveItem(world, playerId, creatureId, act.itemId);
       if (!res.accepted) {
-        const offered = sym(act.itemId);
-        // Right item, wrong STATE → "apple + hot.not" — go find the station.
-        const stateNeed = creature?.needs.find(
-          (n) =>
-            !n.fulfilled &&
-            !n.placedAt &&
-            !n.forCreature &&
-            n.itemId === act.itemId &&
-            !needStateOk(n, world.items[act.itemId]?.states ?? []),
-        );
-        if (stateNeed?.requiresState) {
-          return {
-            events: [],
-            responseGlyph: at(wrongVariant(headOf(offered), stateNeed.requiresState), level),
-            memo,
-          };
+        // Name the OFFERED item by its LIVE composition ("apple.hot" after the
+        // fire), never its baked spawn glyph — the reason must read true NOW.
+        const offered = syms.now(act.itemId);
+        const oItem = world.items[act.itemId];
+        // Predicate-driven decline: judge the ACTUALLY-OFFERED item's facets
+        // against each open possession need's WANT. Same SORT of thing but the
+        // wrong state/descriptor → name what's missing ("apple + hot.not",
+        // "ball + big.not"); else a plain "don't want it".
+        if (oItem && creature) {
+          for (const n of creature.needs) {
+            if (n.fulfilled || n.placedAt || n.forCreature || n.deviceState || n.atPlace) continue;
+            const w = wantFacets(n, world);
+            if (!sameSort(w, oItem)) continue;
+            if (w.state && !oItem.states.includes(w.state)) {
+              return { events: [], responseGlyph: at(wrongVariant(headOf(offered), w.state), level), memo };
+            }
+            const missing = (w.descriptors ?? []).find((d) => !(oItem.descriptors ?? []).includes(d));
+            if (missing) {
+              return { events: [], responseGlyph: at(wrongVariant(headOf(offered), missing), level), memo };
+            }
+          }
         }
-        // Right KIND, wrong DESCRIPTOR → name what's missing ("ball + big.not")
-        // instead of a flat "don't want" — the decline teaches the modifier.
-        const wanted = creature?.needs.find(
-          (n) =>
-            !n.fulfilled &&
-            !n.placedAt &&
-            headOf(sym(n.itemId)) === headOf(offered) &&
-            sym(n.itemId) !== offered,
-        );
-        const wantedMod = wanted
-          ? (modsOf(sym(wanted.itemId)).find((m) => !modsOf(offered).includes(m)) ??
-            modsOf(sym(wanted.itemId))[0])
-          : undefined;
-        if (wanted && wantedMod) {
-          return { events: [], responseGlyph: at(wrongVariant(headOf(offered), wantedMod), level), memo };
-        }
-        return { events: [], responseGlyph: at(declineOffer(sym(act.itemId)), level), memo };
+        return { events: [], responseGlyph: at(declineOffer(offered), level), memo };
       }
       const settled = settleObligations(world, creatureId);
       const cleared = memo.statedPrice?.itemId === act.itemId ? { revealed: memo.revealed } : memo;
@@ -499,8 +757,8 @@ export function selectAct(
       const item = world.items[act.itemId];
       const refusal =
         item?.ownerId === creatureId && item.bound
-          ? mineDecline(sym(act.itemId))
-          : noStock(sym(act.itemId));
+          ? mineDecline(syms.now(act.itemId))
+          : noStock(syms.now(act.itemId));
       return { events: [], responseGlyph: at(refusal, level), memo };
     }
     case "trade":
@@ -539,7 +797,25 @@ export function selectAct(
     case "trade-menu":
       return { events: [], memo: { ...memo, tradeMenu: true } };
     case "back":
-      return { events: [], memo: { ...memo, tradeMenu: false } };
+      // Leave whichever sub-menu is open (trade counter / directions list).
+      return { events: [], memo: { ...memo, tradeMenu: false, list: undefined } };
+    case "directions-menu":
+      // Open the "where is…" pick list at its first page.
+      return { events: [], memo: { ...memo, list: { menu: "where-is", page: 0 } } };
+    case "more":
+      // Advance the open list a page (projection wraps on overflow).
+      return {
+        events: [],
+        memo: { ...memo, list: memo.list ? { ...memo.list, page: memo.list.page + 1 } : undefined },
+      };
+    case "ask-directions":
+    case "directions-pick":
+      // The pure layer can't measure distance/bearing — hand the subject to the
+      // host, which resolves the town geometry, speaks the phrase, and points.
+      // Close any open list; the answer is a single spoken turn.
+      return act.subjectId
+        ? { events: [], askedDirections: act.subjectId, memo: { ...memo, list: undefined } }
+        : { events: [], memo: { ...memo, list: undefined } };
     case "agree":
       return { events: [], responseGlyph: "thank_you", close: true, memo };
     case "refuse":
@@ -561,7 +837,13 @@ export function selectAct(
               ? wantPlace(syms.want(hidden), sym(hidden.placedAt))
               : hidden.forCreature
                 ? wantFor(syms.want(hidden), whoSym(hidden.forCreature))
-                : wantAsk(syms.want(hidden)),
+                : hidden.atPlace
+                  ? hidden.stay
+                    ? wantStay()
+                    : hidden.escort
+                      ? wantEscort(whoSym(hidden.atPlace))
+                      : wantGo(whoSym(hidden.atPlace))
+                  : wantAsk(syms.wantOf(hidden)),
             level,
           ),
           memo: { ...memo, revealed: true },
@@ -571,13 +853,32 @@ export function selectAct(
     }
     case "where-is": {
       if (!act.itemId || !creature) return { events: [], memo };
-      const fact = creature.knowledge[act.itemId];
+      // DECOUPLED from the designated instance: a TARGET need is answered by a
+      // KNOWN item that ACTUALLY MATCHES the want IN ITS CURRENT STATE — a cold
+      // apple never answers "where is something hot" (the creature simply
+      // doesn't know where something hot is). Exact needs + heard wants resolve
+      // the specific item as before.
+      const ownTargetNeed = creature.needs.find(
+        (n) => !n.fulfilled && n.itemId === act.itemId && n.target,
+      );
+      let itemId = act.itemId;
+      if (ownTargetNeed) {
+        const match = Object.keys(creature.knowledge)
+          .sort()
+          .find((id) => {
+            const it = world.items[id];
+            return !!it && itemMatchesNeed(ownTargetNeed, it);
+          });
+        if (!match) return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+        itemId = match;
+      }
+      const fact = creature.knowledge[itemId];
       // The BUILDING clue ("in the blue house") — the world layer resolves the
       // item's house; with real buildings the holder alone isn't findable.
-      const place = opts.placeOf?.(act.itemId);
+      const place = opts.placeOf?.(itemId);
       if (fact?.kind === "held" && fact.by === creatureId) {
         // First person — never its own name ("I have it", not "rabbit has it").
-        return { events: [], responseGlyph: at(clueSelf(syms.now(act.itemId)), level), memo };
+        return { events: [], responseGlyph: at(clueSelf(syms.now(itemId)), level), memo };
       }
       if (fact?.kind === "held") {
         // whoSym: the player reads as "you", third parties keep their symbol.
@@ -585,11 +886,11 @@ export function selectAct(
         // ball" … "the ball is in the blue house") — never for "you have it".
         const followUp =
           fact.by !== playerId && place
-            ? { followUpGlyph: at(cluePlace(syms.now(act.itemId), place), level) }
+            ? { followUpGlyph: at(cluePlace(syms.now(itemId), place), level) }
             : {};
         return {
           events: [],
-          responseGlyph: at(clueHolder(whoSym(fact.by), syms.now(act.itemId)), level),
+          responseGlyph: at(clueHolder(whoSym(fact.by), syms.now(itemId)), level),
           ...followUp,
           memo,
         };
@@ -599,11 +900,51 @@ export function selectAct(
         // nothing once rooms are walled houses.
         return {
           events: [],
-          responseGlyph: place ? at(cluePlace(syms.now(act.itemId), place), level) : "there",
+          responseGlyph: place ? at(cluePlace(syms.now(itemId), place), level) : "there",
           memo,
         };
       }
       return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+    }
+    case "why": {
+      // Reveal the cause. Effect clause = the creature's sad state ("i_me sad").
+      // A CAUSAL FACT answers with its clause; else a MOTIVE creature answers
+      // with its condition ("because i_me cold"). No world effect, no close.
+      const effect: PhraseSpec = { subject: "i_me", verb: "sad", key: "sad" };
+      const factNeed = creature?.needs.find((n) => !n.fulfilled && n.causalFact);
+      if (factNeed?.causalFact) {
+        const kind = factNeed.causalFact.cause.kind;
+        // Preference/desire facts answer with the WANT as the effect ("I want a
+        // toy because I want to play", "…because I like red"); lack/state facts
+        // keep the sad effect ("I'm sad because the generator is off").
+        const eff: PhraseSpec =
+          kind === "likes" || kind === "wantsTo"
+            ? { subject: "i_me", verb: "want", object: syms.wantOf(factNeed) }
+            : effect;
+        const cause = clauseSpec(factNeed.causalFact.cause, whoSym, syms);
+        return {
+          events: [],
+          responseGlyph: at(causalPhrase(eff, factNeed.causalFact.connective, cause), level),
+          memo,
+        };
+      }
+      if (creature?.condition) {
+        // "I want hot because I am cold" — the want + its motive. The causal link
+        // belongs HERE (the answer), not in the opening greeting. A stay-with
+        // need's want is the company ("stay with me because I'm lonely").
+        const motiveNeed = creature.needs.find(
+          (n) => !n.fulfilled && !n.placedAt && !n.forCreature && !n.deviceState && !n.atPlace,
+        );
+        const stayNeed = creature.needs.find((n) => !n.fulfilled && n.stay);
+        const clause: PhraseSpec = motiveNeed
+          ? { subject: "i_me", verb: "want", object: syms.wantOf(motiveNeed) }
+          : stayNeed
+            ? { subject: "you", verb: "stay", tail: { join: "with", symbol: "i_me" } }
+            : effect;
+        const condClause: PhraseSpec = { subject: "i_me", verb: creature.condition, key: creature.condition };
+        return { events: [], responseGlyph: at(causalPhrase(clause, "because", condClause), level), memo };
+      }
+      return { events: [], memo };
     }
     case "confused":
       return { events: [], memo }; // caller re-projects one level down

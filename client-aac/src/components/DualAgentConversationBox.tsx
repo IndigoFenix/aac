@@ -134,6 +134,7 @@ export function DualAgentConversationBox({
     micActive,
     snapshotTick,
     transcription,
+    interimTranscription,
     muteState,
     setMuteState,
     lastModeChange,
@@ -194,7 +195,11 @@ export function DualAgentConversationBox({
   const cameraOff = !videoCaptureEnabled || !userVideoReady || !!cameraError;
   // The live mic only comes up once the session is initialized; before that
   // it's intentionally idle, so don't flag it as off/broken during startup.
-  const micOff = isInitialized && !micActive;
+  // Deliberately-disabled audio capture (voiceEnabled=false) isn't an error
+  // either — the avatar shows it as closed ears — so the red indicator is
+  // reserved for the mic being off when it SHOULD be on (acquisition failed
+  // or the OS revoked the track).
+  const micOff = isInitialized && voiceEnabled && !micActive;
 
   // (The green "voice live" listening dot that used to sit on the avatar was
   // removed.)
@@ -546,7 +551,7 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={() => setVoiceEnabled(!voiceEnabled)}
                     className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${voiceEnabled ? 'bg-white/20' : ''}`}
-                    title={voiceEnabled ? "Disable audio capture" : "Enable audio capture"}
+                    title={voiceEnabled ? t('status.disableAudioCapture') : t('status.enableAudioCapture')}
                   >
                     {voiceEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                   </Button>
@@ -745,6 +750,17 @@ export function DualAgentConversationBox({
                       >
                         {t('common.reset')}
                       </Button>
+                    </div>
+                  ) : interimTranscription ? (
+                    /* Live rolling STT interim — the device is hearing words
+                       RIGHT NOW; grey/tentative until the recognizer commits a
+                       final (it then clears back to the yellow transcript). */
+                    <div className="flex items-center justify-between w-full">
+                      <div
+                        className="text-sm text-white/50 italic leading-relaxed flex-1 mr-3"
+                      >
+                        {interimTranscription}
+                      </div>
                     </div>
                   ) : transcription ? (
                     /* Someone spoke to the user (Observer transcript that

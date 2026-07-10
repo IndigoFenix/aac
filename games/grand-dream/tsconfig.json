@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["src/**/*", "../popusim/src/**/*", "../sandbox-game/src/cell-systems/**/*", "../../shared/**/*"],
+  "include": ["src/**/*", "../popusim/src/**/*", "../../shared/**/*"],
   "exclude": ["node_modules"],
   "compilerOptions": {
     "noEmit": true,
@@ -10,7 +10,7 @@
     "paths": {
       "@shared/*": ["../../shared/*"],
       "@popusim/*": ["../popusim/src/*"],
-      "@cells/*": ["../sandbox-game/src/cell-systems/*"]
+      "@cells/*": ["../../shared/engine/cells/*"]
     }
   }
 }

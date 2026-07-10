@@ -12,12 +12,13 @@
 import { describe, expect, it } from "vitest";
 import { buildAcceptanceTri } from "../tri-worlds";
 import {
-  FOOD_DAY_SEC, HOUSEHOLD, PANTRY_CAP, PANTRY_DAYS, createTownFood,
+  FOOD_DAY_SEC, FOOD_GOOD, HOUSEHOLD, PANTRY_CAP, PANTRY_DAYS, createTownFood,
+  createTownGoods, pantryBoxAt, type GoodSpec,
 } from "../food";
 import { PLAZA_R, growStreets } from "../streets";
 import {
-  MARKET_MIN_HOUSES, PEOPLE_R, createTownManager, townPlan, worldPos,
-  type TownHouse, type TownPlan,
+  MARKET_MIN_HOUSES, PEOPLE_R, createTownManager, houseIndexOf, townPlan, villagerOf,
+  worldPos, type TownHouse, type TownPlan,
 } from "../zoom";
 import type { TriWorld } from "../tri";
 
@@ -31,7 +32,7 @@ const triWith = (need: number, got: number): TriWorld =>
   }) as unknown as TriWorld;
 
 const house = (index: number, dx: number, dy: number): TownHouse =>
-  ({ index, dx, dy, w: 7, h: 5, door: "south", color: "#a8875f" });
+  ({ index, dx, dy, w: 7, h: 5, door: "south", color: "#a8875f", floors: 1 });
 
 /** A grown street net for the synthetic plans (source selection rides
  *  street distance, so even a stub plan needs streets to walk). */
@@ -40,7 +41,7 @@ const STUB_NET = growStreets(7, "stub", 40);
 /** A synthetic plan: a ring of houses around a plaza market, farm far out. */
 const marketPlan = (houses = 30): TownPlan => ({
   key: "stub", biome: "farmland", groundColor: "#8fae62", radius: 120,
-  want: houses, streets: STUB_NET,
+  want: houses, built: houses, streets: STUB_NET,
   houses: Array.from({ length: houses }, (_, i) => {
     const a = (i / houses) * Math.PI * 2;
     return house(i, Math.cos(a) * 45 - 3.5, Math.sin(a) * 45 - 2.5);
@@ -197,10 +198,13 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
 
     // Live trips: hold six residents embodied and let the clock run —
     // pantries drain, and the manager sends them out (source, then home),
-    // each exactly once per cycle.
+    // each exactly once per cycle. The bodies are parked on open plaza
+    // ground beside the player: an OUTDOOR body beside you holds its
+    // slot (indoor idlers yield theirs to street life).
+    const plan = townPlan(a.tri, "riverton", 7);
     const mgr = createTownManager(a.tri, 7, () => 6);
     const first = mgr.update(home, undefined, 0);
-    const live = new Map(first.spawn.map(({ npc: n }) => [n.id, { x: n.x, y: n.y }]));
+    const live = new Map(first.spawn.map(({ npc: n }, i) => [n.id, { x: home.x + 2 + i * 1.5, y: home.y }]));
     const sentAt = new Map<string, number[]>();
     for (let t = 10; t < PANTRY_DAYS * FOOD_DAY_SEC * 1.5; t += 10) {
       const d = mgr.update(home, live, t);
@@ -209,13 +213,21 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
         // A road route out and back — at least there-and-home.
         expect(e.points.length).toBeGreaterThanOrEqual(2);
         // Bracketed by DOOR TRANSITS: the trip leaves through the
-        // shopper's own door and returns through it, so the first and
-        // last waypoints are the SAME spot (just inside their door) —
-        // the wall is crossed at the doorway, not ground into — while
-        // the stall dwell in the middle is far away.
+        // shopper's own door and returns through it (the first waypoint
+        // and the second-to-last are the SAME spot just inside their
+        // door — the wall is crossed at the doorway, not ground into),
+        // while the stall dwell in the middle is far away. The FINAL
+        // waypoint is the pantry box itself: reaching it is what fills
+        // the crate.
         const p0 = e.points[0];
+        const pIn = e.points[e.points.length - 2];
         const pN = e.points[e.points.length - 1];
-        expect(Math.hypot(p0.x - pN.x, p0.y - pN.y)).toBeLessThan(0.01);
+        expect(Math.hypot(p0.x - pIn.x, p0.y - pIn.y)).toBeLessThan(0.01);
+        const who = villagerOf(e.id)!;
+        const h = plan.houses.find(x => x.index === houseIndexOf(who.index))!;
+        const box = pantryBoxAt(home, h);
+        expect(Math.hypot(pN.x - box.x, pN.y - box.y)).toBeLessThan(0.01);
+        expect(pN.dwell).toBeGreaterThan(0);
         const dwell = e.points.find(pt => pt.dwell !== undefined)!;
         expect(Math.hypot(dwell.x - p0.x, dwell.y - p0.y)).toBeGreaterThan(5);
         sentAt.set(e.id, [...(sentAt.get(e.id) ?? []), t]);
@@ -228,5 +240,162 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
       for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThan(100);
     }
     expect(PEOPLE_R).toBeGreaterThan(0); // radii still exported/coherent
+  });
+});
+
+describe("the witnessed pantry (boxes fill when the shopper reaches them, not by the clock)", () => {
+  it("holds a refill for the real body and commits it at the actual arrival, however late", async () => {
+    const a = await buildAcceptanceTri(42);
+    const rc = a.tri.cities.find(c => c.key === "riverton")!;
+    const home = worldPos(rc.x, rc.y);
+    const mgr = createTownManager(a.tri, 7, () => 6);
+    const first = mgr.update(home, undefined, 0);
+    // Outdoor bodies beside the player hold their slots — the witness
+    // needs the shopper to stay embodied across their trip.
+    const live = new Map(first.spawn.map(({ npc: n }, i) => [n.id, { x: home.x + 2 + i * 1.5, y: home.y }]));
+    const town = mgr.loaded().find(t => t.key === "riverton")!;
+
+    // Walk the clock until a trip is issued to one of them.
+    let sent: { id: string; t: number } | null = null;
+    for (let t = 10; !sent && t < PANTRY_DAYS * FOOD_DAY_SEC * 2; t += 10) {
+      const d = mgr.update(home, live, t);
+      if (d.errands.length) sent = { id: d.errands[0].id, t };
+    }
+    expect(sent).not.toBeNull();
+    const who = villagerOf(sent!.id)!;
+    const house = town.plan.houses.find(h => h.index === houseIndexOf(who.index))!;
+    const { period, trip, offset } = town.food.cycle(house);
+    const cyc = Math.floor((sent!.t + offset) / period);
+
+    // A moment when the CLOCK says the box already refilled...
+    const tFull = cyc * period - offset + trip + 5;
+    expect(town.food.pantry(house, tFull)).toBeGreaterThan(0);
+    // ...but the witness holds it empty: the real body hasn't arrived.
+    expect(mgr.pantry(town, house, tFull)).toBe(0);
+
+    // The shopper reaches the crate 40 s late (steering, door jams):
+    // the box fills THEN — one full boxful — and decays from that
+    // moment at the closed form's own rate.
+    mgr.tripArrived(sent!.id, tFull + 40);
+    const filled = mgr.pantry(town, house, tFull + 40);
+    expect(filled).toBeCloseTo(town.food.fillOf(house) * PANTRY_CAP, 5);
+    const halfway = mgr.pantry(town, house, tFull + 40 + (period - trip) / 2);
+    expect(halfway).toBeCloseTo(filled / 2, 1);
+  });
+
+  it("a watched box never fills on its own — it catches up only once the player looks away", async () => {
+    const a = await buildAcceptanceTri(42);
+    const rc = a.tri.cities.find(c => c.key === "riverton")!;
+    const home = worldPos(rc.x, rc.y);
+    const mgr = createTownManager(a.tri, 7, () => 0); // nobody embodies
+    mgr.update(home, undefined, 0, 600); // the player sees 600 m around
+    const town = mgr.loaded().find(t => t.key === "riverton")!;
+    const house = town.plan.houses[0]; // plaza-adjacent: well inside view
+    const { period, trip, offset } = town.food.cycle(house);
+    const crossT = period + trip - offset; // cycle 1's clock-refill moment
+
+    // Watched continuously across the flip (display calls every ~1 s):
+    // the closed form refills, the box on screen does NOT.
+    expect(mgr.pantry(town, house, crossT - 1)).toBe(0);
+    expect(town.food.pantry(house, crossT + 1)).toBeGreaterThan(0);
+    expect(mgr.pantry(town, house, crossT + 1)).toBe(0);
+    expect(mgr.pantry(town, house, crossT + 2)).toBe(0);
+
+    // The player walks out of sight (still in town-data range): the next
+    // look finds the off-screen truth caught up.
+    mgr.update({ x: home.x + 900, y: home.y }, undefined, crossT + 30, 600);
+    expect(mgr.pantry(town, house, crossT + 30)).toBeGreaterThan(0);
+
+    // Priming: a box FIRST seen mid-decay reads the closed form straight
+    // away — deferral is for flips that happen before the player's eyes,
+    // not a fake empty on arrival in town.
+    const fresh = createTownManager(a.tri, 7, () => 0);
+    fresh.update(home, undefined, crossT + 60, 600);
+    const ftown = fresh.loaded().find(t => t.key === "riverton")!;
+    const fhouse = ftown.plan.houses[0];
+    expect(fresh.pantry(ftown, fhouse, crossT + 60)).toBeGreaterThan(0);
+  });
+});
+
+describe("the good descriptor (food is just the first instance)", () => {
+  /** A second commodity: sold only at the hall counter (no shelves),
+   *  drawn slowly, hoarded long — clothing-shaped, none of food's
+   *  numbers. */
+  const CLOTH: GoodSpec = {
+    key: "cloth",
+    needScalar: "cloth_need",
+    gotScalar: "cloth_got",
+    sellers: ["hall"],
+    shelved: [],
+    producers: ["farm"],
+    perCapitaDaily: 0.05,
+    capDays: 40,
+    shopSec: 30,
+    cartRations: 60,
+  };
+  const triCloth = (need: number, got: number): TriWorld =>
+    ({
+      dual: {
+        settlementScalar: (_k: string, s: string): number =>
+          s === "cloth_need" ? need : s === "cloth_got" ? got : 0,
+      },
+    }) as unknown as TriWorld;
+
+  it("a non-food good reads ITS scalars, sells at ITS counters, sizes ITS boxes", () => {
+    const center = { x: 0, y: 0 };
+    const plan = marketPlan();
+    const cloth = createTownGoods(triCloth(10, 5), { key: "stub", center, plan }, 7, CLOTH);
+
+    // Fill comes from cloth scalars — the food stub would read 0 need ⇒ 1.
+    expect(cloth.fill()).toBe(0.5);
+    // Sources: the hall counter, not the market or the farm gate.
+    expect(cloth.sources).toHaveLength(1);
+    expect(cloth.sources[0].kind).toBe("hall");
+    // No shelves anywhere: nothing is dawn-stocked.
+    expect(cloth.marketStock(0)).toBe(0);
+    expect(cloth.stallDaily(cloth.sources[0])).toBe(0);
+    // Box capacity follows the descriptor, not PANTRY_CAP.
+    expect(cloth.boxCap).toBeCloseTo(HOUSEHOLD * 40 * 0.05, 9);
+    expect(cloth.boxCap).not.toBe(PANTRY_CAP);
+
+    const h = plan.houses[3];
+    let hi = 0;
+    const { period } = cloth.cycle(h);
+    for (let t = 0; t < period * 2; t += period / 50) hi = Math.max(hi, cloth.pantry(h, t));
+    expect(hi).toBeLessThanOrEqual(cloth.boxCap + 1e-9);
+    expect(hi).toBeGreaterThan(0);
+  });
+
+  it("cycles are the good's own: longer hoard ⇒ rarer trips, offsets decorrelated from food", () => {
+    const center = { x: 0, y: 0 };
+    const plan = marketPlan();
+    const food = createTownFood(triWith(10, 10), { key: "stub", center, plan }, 7);
+    const cloth = createTownGoods(triCloth(10, 10), { key: "stub", center, plan }, 7, CLOTH);
+
+    const h = plan.houses[3];
+    // capDays 40 vs 3 on the same street clock: an order of magnitude
+    // between errand periods.
+    expect(cloth.cycle(h).period).toBeGreaterThan(food.cycle(h).period * 5);
+    // The phase draws are namespaced by good key — households don't run
+    // all their errands in lockstep. (Fractions of period, so the raw
+    // magnitudes don't mask a shared draw.)
+    const fFrac = plan.houses.map(x => food.cycle(x).offset / food.cycle(x).period);
+    const cFrac = plan.houses.map(x => cloth.cycle(x).offset / cloth.cycle(x).period);
+    const same = fFrac.filter((v, i) => Math.abs(v - cFrac[i]) < 1e-9).length;
+    expect(same).toBeLessThan(plan.houses.length / 4);
+  });
+
+  it("the food wrapper IS the descriptor path: same numbers either way", () => {
+    const center = { x: 0, y: 0 };
+    const plan = marketPlan();
+    const tri = triWith(10, 7);
+    const viaWrapper = createTownFood(tri, { key: "stub", center, plan }, 7);
+    const viaSpec = createTownGoods(tri, { key: "stub", center, plan }, 7, FOOD_GOOD);
+    const h = plan.houses[11];
+    expect(viaWrapper.boxCap).toBe(PANTRY_CAP);
+    expect(viaSpec.cycle(h)).toEqual(viaWrapper.cycle(h));
+    expect(viaSpec.pantry(h, 500)).toBe(viaWrapper.pantry(h, 500));
+    expect(viaSpec.errand(h, 500).phase).toBe(viaWrapper.errand(h, 500).phase);
+    expect(viaSpec.marketStock(500)).toBe(viaWrapper.marketStock(500));
   });
 });

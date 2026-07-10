@@ -26,8 +26,68 @@ export type CreatureId = string;
  *  item instance is its own entity, as the generator already guarantees). */
 export type ItemId = string;
 
+/**
+ * A CAUSAL connective joining two clauses — the Causation tier of
+ * language-structure-tiers.md. Narration only (see CausalFact).
+ */
+export type Connective = "because" | "therefore" | "in_order_to" | "when" | "until";
+
+/**
+ * One clause of a causal fact, as a STRUCTURED predicate over element ids (never
+ * a baked glyph string — it stays language-invariant and symbolOf-resolvable).
+ * The dialogue projection verbalizes each kind through the shared phrase()
+ * generator (clauseSpec in creature-dialogue.ts).
+ */
+export type Clause =
+  | { kind: "possessionLack"; creature: CreatureId; item: ItemId } // "{who} have.not {item}"
+  | { kind: "creatureState"; creature: CreatureId; state: string } // "{who} {state}" (cold/hungry…)
+  | { kind: "itemState"; item: ItemId; state: string } // "{item} {state}" (window open…)
+  // PREFERENCE (motive batch): "{who} like {item|facet}" — "because I like
+  // cookies" / "because I like red" (facet = a bare quality symbol).
+  | { kind: "likes"; creature: CreatureId; item?: ItemId; facet?: string }
+  // DESIRE-TO-DO (motive batch): "{who} want {verb}" — "because I want to play".
+  | { kind: "wantsTo"; creature: CreatureId; verb: string };
+
+/**
+ * WHY a need exists (or, for `in_order_to`, what a remedy leads to). PURE
+ * NARRATION: it gates nothing — no act's availability and no fulfillment reads
+ * it, so certification is invariant to it (causation-and-elements.md §4.6). The
+ * need itself is the first clause (the effect); `cause` is the second.
+ */
+export interface CausalFact {
+  connective: Connective;
+  cause: Clause;
+}
+
+/**
+ * A parameter-based want (motive-driven-needs.md): a PREDICATE over what would
+ * satisfy a need. LOOSE matching — an item matches iff every SPECIFIED facet
+ * holds (unspecified facets are wildcards). `{state:"hot"}` = "something hot";
+ * `{category:"food"}` = "something to eat"; `{kind:"apple", state:"hot"}` = "a
+ * hot apple"; `{descriptors:["color_red"]}` = "something red".
+ */
+export interface NeedTarget {
+  /** A specific head symbol ("apple"). */
+  kind?: string;
+  /** OR a category/tag a set of kinds shares ("food"). */
+  category?: string;
+  /** Required IMMUTABLE modifier symbols ("big", "color_red") — subset. */
+  descriptors?: string[];
+  /** Required MUTABLE state ("hot") — membership on the item's LIVE states. */
+  state?: string;
+}
+
 export interface CreatureNeed {
+  /** The INTENDED instance (the generator's known-good assignment + the base
+   *  identity source). Matching uses `target` when present, else this exactly. */
   itemId: ItemId;
+  /** A parameter predicate (motive-driven-needs.md): when present, ANY item
+   *  matching it satisfies the need (loose). Absent = exact-instance (`itemId`),
+   *  today's behavior — so this is backward-compatible. */
+  target?: NeedTarget;
+  /** How much a MOTIVE-driven want is revealed (§4): "want" / "because"
+   *  (default) / "motive" (just the condition — the want is inferred). */
+  reveal?: "want" | "because" | "motive";
   /** Worth of fulfilling this need (> BASELINE_LIKE_VALUE). */
   value: number;
   /** Set once, never cleared (puzzle mode: needs don't renew). */
@@ -39,6 +99,13 @@ export interface CreatureNeed {
    * ordinary possession need.
    */
   placedAt?: string;
+  /**
+   * DISPOSAL flavor (motive batch) on a placement need: the destination is the
+   * GARBAGE, so the line reads "throw it away" ("you + throw + {item} + in +
+   * garbage"), a visually DISTINCT statement from an ordinary "put it in the
+   * box" placement. Set from `FulfillNode.needPlacedOutdoors`.
+   */
+  dispose?: boolean;
   /**
    * An ON-BEHALF need (Task c): fulfilled when THIS creature (the recipient)
    * has the item — "I want Bear to have the ball". The wanter never takes the
@@ -53,6 +120,37 @@ export interface CreatureNeed {
    * (applyTransform) put the state on.
    */
   requiresState?: string;
+  /**
+   * A DEVICE-STATE need (Devices, §5): `itemId` is a fixed DEVICE (ItemState
+   * .device) and the need fulfills when it is TOGGLED to this state
+   * ("on"/"closed") — a state need, never a hand-over. `toggleDevice` does it.
+   */
+  deviceState?: string;
+  /**
+   * A PRESENCE (go-to) need (§5): fulfilled when the PLAYER reaches the place —
+   * a destination CREATURE (its id). No item changes hands; `noteArrival` marks
+   * it. `itemId` mirrors this (the destination) so the need shape stays uniform.
+   */
+  atPlace?: CreatureId;
+  /**
+   * STAY-WITH flavor (motive batch) on an atPlace need pointing at the wanter
+   * ITSELF: the player must DWELL nearby for a while, not just arrive. The
+   * WORLD layer owns the timing (creatures.ts stays time-free) and calls
+   * `noteArrival` when the stay is done.
+   */
+  stay?: boolean;
+  /**
+   * ESCORT flavor (motive batch) on an atPlace need: the WANTER must reach the
+   * destination — "take me to Bear". The world layer moves the creature
+   * (follow-the-player) and calls `noteArrival` when IT arrives.
+   */
+  escort?: boolean;
+  /**
+   * WHY this need exists — surfaced by the projection's WHY act (a `because`
+   * fact) or spoken by the need line (an `in_order_to` remedy). Narration only:
+   * it never gates an act or a fulfillment, so certification ignores it.
+   */
+  causalFact?: CausalFact;
 }
 
 export interface CreatureState {
@@ -72,7 +170,24 @@ export interface CreatureState {
    * that creature covers the item, this creature gives it over unprompted.
    */
   knownWants: Record<ItemId, CreatureId>;
+  /**
+   * A bad SELF-CONDITION the creature is in (Creature-state needs, §5): "cold",
+   * "dirty"… — verbalized in its line ("i_me + want + {remedy} + because + i_me
+   * + cold") and CLEARED when its remedy need fulfills (the "getting better"
+   * demonstration, `condition-changed`). Absent = fine.
+   */
+  condition?: string;
 }
+
+/** The good state a bad condition flips to on remedy (the demonstration `to`;
+ *  not rendered as a glyph — the condition just clears). */
+export const CONDITION_REMEDY: Record<string, string> = {
+  cold: "warm",
+  hot: "cool",
+  dirty: "clean",
+  hungry: "full",
+  lonely: "happy",
+};
 
 /** Where an item is, as far as a creature knows. */
 export type ItemLocation =
@@ -100,6 +215,22 @@ export interface ItemState {
   /** Current STATE_TAGS on the item (a hot apple: ["hot"]). Stations swap
    *  them (applyTransform); needs may require one (requiresState). */
   states: string[];
+  /** A fixed DEVICE (lamp/window/heater): TOGGLED in place, never carried or
+   *  owned. Its state lives in `states` ("on"/"open"); `toggleDevice` swaps it. */
+  device?: boolean;
+  /** POWER precondition (§5): this device can only be ACTIVATED (toggled to a
+   *  non-resting state) while `deviceId` is in `state` — a generator you must
+   *  switch on first. Chains: the generator may itself be poweredBy a switch. */
+  poweredBy?: { deviceId: ItemId; state: string };
+  // -- Facets for PARAMETER matching (motive-driven-needs.md). Kind + immutable
+  //    descriptors come from the glyph; category is a shared tag ("food"). A
+  //    NeedTarget matches against these + the live `states`.
+  /** Head symbol ("apple"). */
+  kind?: string;
+  /** A category/tag this item shares with others ("food"). */
+  category?: string;
+  /** Immutable descriptor modifiers ("big", "color_red"). */
+  descriptors?: string[];
 }
 
 export interface CreatureWorld {
@@ -123,7 +254,23 @@ export const STATE_TAGS: ReadonlySet<string> = new Set([
   "dirty",
   "wet",
   "dry",
+  // SPOILAGE (motive batch): baked onto the smelly-food item ("apple.smelly");
+  // no station removes it — the remedy is the garbage, not a transform.
+  "smelly",
+  // DEVICE states (§5) — a device's toggle rides `states` the same way, so
+  // base/now symbol resolution strips them and derivation reads them back.
+  "on",
+  "off",
+  "open",
+  "closed",
 ]);
+
+/** Antonym of a DEVICE state — toggling TO one removes the other. */
+export const DEVICE_ANTONYM: Record<string, string> = { on: "off", off: "on", open: "closed", closed: "open" };
+
+/** RESTING device states — a device may always return to these (no power needed);
+ *  reaching any OTHER state is what a `poweredBy` precondition gates. */
+export const RESTING_DEVICE_STATES: ReadonlySet<string> = new Set(["off", "closed"]);
 
 // ---------------------------------------------------------------------------
 // Events (the observer stream — the game layer narrates/animates these)
@@ -136,7 +283,8 @@ export type CreatureEvent =
   | { type: "need-fulfilled"; creatureId: CreatureId; itemId: ItemId; value: number }
   | { type: "transfer-pending"; itemId: ItemId; from: CreatureId; to: CreatureId }
   | { type: "knowledge-gained"; creatureId: CreatureId; itemId: ItemId; where: ItemLocation }
-  | { type: "item-transformed"; itemId: ItemId; applied: string; removed?: string };
+  | { type: "item-transformed"; itemId: ItemId; applied: string; removed?: string }
+  | { type: "condition-changed"; creatureId: CreatureId; from: string; to: string };
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -145,10 +293,26 @@ export type CreatureEvent =
 export interface CreatureSeed {
   id: CreatureId;
   likes?: ItemId[];
-  needs?: { itemId: ItemId; value: number; placedAt?: string; forCreature?: CreatureId }[];
+  needs?: {
+    itemId: ItemId;
+    value: number;
+    target?: NeedTarget;
+    reveal?: "want" | "because" | "motive";
+    placedAt?: string;
+    forCreature?: CreatureId;
+    requiresState?: string;
+    deviceState?: string;
+    atPlace?: CreatureId;
+    stay?: boolean;
+    escort?: boolean;
+    dispose?: boolean;
+    causalFact?: CausalFact;
+  }[];
   /** Initial debts (the rental vendor's "you may borrow one"). */
   debts?: Record<CreatureId, number>;
   gratitude?: number;
+  /** A bad self-condition ("cold"/"dirty") the creature's need remedies. */
+  condition?: string;
 }
 
 export interface ItemSeed {
@@ -160,6 +324,15 @@ export interface ItemSeed {
   /** Bound from the start — a KEEPSAKE the owner never parts with (Request-c
    *  evidence: the sad bear's beloved apple on display). */
   bound?: boolean;
+  /** A fixed DEVICE (toggled in place, never owned). Its initial state rides
+   *  `states` ("open"/"off"). */
+  device?: boolean;
+  /** POWER precondition — only activatable while its source device is on. */
+  poweredBy?: { deviceId: ItemId; state: string };
+  /** Parameter-matching facets (motive-driven-needs.md). */
+  kind?: string;
+  category?: string;
+  descriptors?: string[];
 }
 
 export function createCreatureWorld(creatures: CreatureSeed[], items: ItemSeed[]): CreatureWorld {
@@ -173,6 +346,7 @@ export function createCreatureWorld(creatures: CreatureSeed[], items: ItemSeed[]
       gratitude: seed.gratitude ?? 1,
       knowledge: {},
       knownWants: {},
+      ...(seed.condition ? { condition: seed.condition } : {}),
     };
   }
   for (const seed of items) {
@@ -185,6 +359,11 @@ export function createCreatureWorld(creatures: CreatureSeed[], items: ItemSeed[]
       displayed: seed.displayed ?? false,
       pendingTransferTo: null,
       states: [...(seed.states ?? [])],
+      ...(seed.device ? { device: true } : {}),
+      ...(seed.poweredBy ? { poweredBy: { ...seed.poweredBy } } : {}),
+      ...(seed.kind ? { kind: seed.kind } : {}),
+      ...(seed.category ? { category: seed.category } : {}),
+      ...(seed.descriptors ? { descriptors: [...seed.descriptors] } : {}),
     };
     // An owner knows its own possessions.
     if (seed.ownerId) {
@@ -207,18 +386,32 @@ export function needStateOk(
   return !need.requiresState || states.includes(need.requiresState);
 }
 
-/** What acquiring `itemId` would be worth to this creature right now. State
- *  needs are NOT possession-worth — a placement need wants the item in the
- *  box, an on-behalf need wants it in SOMEONE ELSE'S hands; neither is
- *  fulfilled by this creature receiving it. `states` = the item's current
- *  STATE_TAGS: a need requiring "hot" puts no worth on the cold one. */
-export function valueTo(creature: CreatureState, itemId: ItemId, states: readonly string[] = []): number {
-  const need = creature.needs.find(
-    (n) =>
-      n.itemId === itemId && !n.fulfilled && !n.placedAt && !n.forCreature && needStateOk(n, states),
-  );
+/**
+ * Is `item` a POSSESSION match for `need` — by its parameter TARGET (loose) when
+ * present, else the exact INTENDED instance (+ its required state)? State needs
+ * (placement / on-behalf / device / presence) are never possession matches.
+ * (motive-driven-needs.md §3; ignores `fulfilled` — callers gate that.)
+ */
+export function itemMatchesNeed(need: CreatureNeed, item: ItemState): boolean {
+  if (need.placedAt || need.forCreature || need.deviceState || need.atPlace) return false;
+  if (need.target) {
+    const t = need.target;
+    if (t.kind && item.kind !== t.kind) return false;
+    if (t.category && item.category !== t.category) return false;
+    if (t.descriptors && !t.descriptors.every((d) => (item.descriptors ?? []).includes(d))) return false;
+    if (t.state && !item.states.includes(t.state)) return false;
+    return true;
+  }
+  return item.id === need.itemId && needStateOk(need, item.states);
+}
+
+/** What acquiring `item` would be worth to this creature right now — its need's
+ *  value if the item MATCHES an open possession need (loose or exact), else
+ *  baseline if a liked instance, else 0. */
+export function valueTo(creature: CreatureState, item: ItemState): number {
+  const need = creature.needs.find((n) => !n.fulfilled && itemMatchesNeed(n, item));
   if (need) return need.value;
-  return creature.likes.includes(itemId) ? BASELINE_LIKE_VALUE : 0;
+  return creature.likes.includes(item.id) ? BASELINE_LIKE_VALUE : 0;
 }
 
 /** The creature's unfulfilled needs, in declaration order (deterministic). */
@@ -283,6 +476,48 @@ export function knownHoldings(
 // ---------------------------------------------------------------------------
 
 /**
+ * Reversible-gift swap (motive-driven-needs.md §3): `incoming` is an EQUIVALENT
+ * for a FULFILLED possession need (matches its TARGET). The creature takes it
+ * (binds it to the need) and hands the OLD bound item back to `giverId` — a
+ * value-neutral exchange that frees the old item for another creature, the
+ * augmenting-path move that keeps loose-match villages dead-end-free. Only fires
+ * for TARGET (loose) needs: an exact-instance need wants its one item, never
+ * swaps.
+ */
+function trySwapEquivalent(
+  world: CreatureWorld,
+  giverId: CreatureId | null,
+  receiver: CreatureState,
+  incoming: ItemState,
+): CreatureEvent[] | null {
+  const need = receiver.needs.find((n) => n.fulfilled && n.target && itemMatchesNeed(n, incoming));
+  if (!need) return null;
+  // The bound item currently satisfying that need (the one to hand back).
+  const old = Object.values(world.items)
+    .sort((a, b) => (a.id < b.id ? -1 : 1))
+    .find((i) => i.id !== incoming.id && i.ownerId === receiver.id && i.bound && itemMatchesNeed(need, i));
+  if (!old) return null;
+  const events: CreatureEvent[] = [];
+  // Take the incoming — it now satisfies the need (bound).
+  const from = incoming.ownerId;
+  incoming.ownerId = receiver.id;
+  incoming.bound = true;
+  incoming.value = need.value;
+  incoming.pendingTransferTo = null;
+  events.push({ type: "item-transferred", itemId: incoming.id, from, to: receiver.id });
+  events.push(...seeItem(world, receiver.id, incoming.id, { kind: "held", by: receiver.id }));
+  // Release the old one back to the giver (value-neutral — no debt change).
+  old.ownerId = giverId;
+  old.bound = false;
+  old.value = BASELINE_LIKE_VALUE;
+  events.push({ type: "item-transferred", itemId: old.id, from: receiver.id, to: giverId });
+  if (giverId && world.creatures[giverId]) {
+    events.push(...seeItem(world, giverId, old.id, { kind: "held", by: giverId }));
+  }
+  return events;
+}
+
+/**
  * `giverId` hands `itemId` to `receiverId` (or the receiver takes it with
  * consent — same rule). Returns whether the receiver ACCEPTS (a creature takes
  * only what it values; the player accepts anything), plus the events.
@@ -302,8 +537,14 @@ export function giveItem(
   const item = world.items[itemId];
   if (!receiver || !item) return { accepted: false, events: [] };
 
-  const worth = valueTo(receiver, itemId, item.states);
+  const worth = valueTo(receiver, item);
   if (worth <= 0 && !opts.receiverAcceptsAnything) {
+    // Reversible-gift swap (motive-driven-needs.md §3): not wanted by an OPEN
+    // need, but if it's an EQUIVALENT for one already FULFILLED, the creature
+    // swaps — takes it, hands the old bound one back. The augmenting-path move
+    // that keeps loose-match villages dead-end-free.
+    const swap = trySwapEquivalent(world, giverId, receiver, item);
+    if (swap) return { accepted: true, events: swap };
     return { accepted: false, events: [] }; // polite decline — not wanted
   }
 
@@ -323,19 +564,20 @@ export function giveItem(
   // Need fulfillment binds the item (retention rule). State needs never
   // fulfill by receiving — the item has to LAND in the right place / with the
   // right creature — and a transformed-state requirement must be MET.
-  const need = receiver.needs.find(
-    (n) =>
-      n.itemId === itemId &&
-      !n.fulfilled &&
-      !n.placedAt &&
-      !n.forCreature &&
-      needStateOk(n, item.states),
-  );
+  const need = receiver.needs.find((n) => !n.fulfilled && itemMatchesNeed(n, item));
   if (need) {
     need.fulfilled = true;
     item.value = need.value;
     item.bound = true;
     events.push({ type: "need-fulfilled", creatureId: receiverId, itemId, value: need.value });
+    // Creature-state need (§5): the remedy landed → flip the bad self-condition
+    // (the "getting better" demonstration). A conditioned puzzle creature has
+    // exactly this one need, so any need it fulfills IS the remedy.
+    if (receiver.condition) {
+      const prev = receiver.condition;
+      receiver.condition = undefined;
+      events.push({ type: "condition-changed", creatureId: receiverId, from: prev, to: CONDITION_REMEDY[prev] ?? "well" });
+    }
   } else if (worth > 0) {
     item.value = worth;
     item.bound = false;
@@ -472,6 +714,122 @@ export function notePlacement(
 }
 
 /**
+ * PRESENCE (go-to) needs (§5): `actorId` (the player) ARRIVED at `placeId` (a
+ * destination creature). Every creature whose open presence need pointed there
+ * fulfills — the player being present is a shared event, so all of them settle,
+ * each with the debt to the actor.
+ */
+export function noteArrival(world: CreatureWorld, actorId: CreatureId | null, placeId: CreatureId): CreatureEvent[] {
+  const events: CreatureEvent[] = [];
+  for (const cid of Object.keys(world.creatures).sort()) {
+    const creature = world.creatures[cid]!;
+    const need = creature.needs.find((n) => !n.fulfilled && n.atPlace === placeId);
+    if (!need) continue;
+    need.fulfilled = true;
+    events.push({ type: "need-fulfilled", creatureId: cid, itemId: placeId, value: need.value });
+    if (actorId && actorId !== cid) {
+      const amount = need.value * (creature.gratitude ?? 1);
+      creature.debts[actorId] = (creature.debts[actorId] ?? 0) + amount;
+      events.push({ type: "debt-gained", debtor: cid, creditor: actorId, amount });
+    }
+    // A presence-remedied condition CLEARS (the lonely creature perks up when
+    // the player stays — same getting-better demo as the item remedies).
+    if (creature.condition) {
+      const prev = creature.condition;
+      creature.condition = undefined;
+      events.push({ type: "condition-changed", creatureId: cid, from: prev, to: CONDITION_REMEDY[prev] ?? "well" });
+    }
+  }
+  return events;
+}
+
+/**
+ * DEVICE-state needs (§5): `actorId` toggled `deviceId` to `toState` (turned on
+ * the lamp, closed the window). The device's toggle swaps in place, then the
+ * (deterministically first) creature with an open device-state need on exactly
+ * (deviceId, toState) fulfills — a STATE need (no possession moves), so the
+ * actor earns the debt and a linked self-condition CLEARS (getting-better demo).
+ */
+export function toggleDevice(
+  world: CreatureWorld,
+  actorId: CreatureId | null,
+  deviceId: ItemId,
+  toState: string,
+): CreatureEvent[] {
+  const device = world.items[deviceId];
+  if (!device || !device.device) return [];
+  // POWER precondition: ACTIVATING a device (any non-resting state) needs its
+  // power source in the required state — no power, no toggle (fetch it first).
+  if (!RESTING_DEVICE_STATES.has(toState) && device.poweredBy) {
+    const src = world.items[device.poweredBy.deviceId];
+    if (!src || !src.states.includes(device.poweredBy.state)) return [];
+  }
+  const events: CreatureEvent[] = [];
+  if (!device.states.includes(toState)) {
+    const from = DEVICE_ANTONYM[toState];
+    device.states = [...device.states.filter((s) => s !== from), toState];
+    events.push({ type: "item-transformed", itemId: deviceId, applied: toState, ...(from ? { removed: from } : {}) });
+  }
+  for (const cid of Object.keys(world.creatures).sort()) {
+    const creature = world.creatures[cid]!;
+    const need = creature.needs.find((n) => !n.fulfilled && n.itemId === deviceId && n.deviceState === toState);
+    if (!need) continue;
+    need.fulfilled = true;
+    events.push({ type: "need-fulfilled", creatureId: cid, itemId: deviceId, value: need.value });
+    if (actorId && actorId !== cid) {
+      const amount = need.value * (creature.gratitude ?? 1);
+      creature.debts[actorId] = (creature.debts[actorId] ?? 0) + amount;
+      events.push({ type: "debt-gained", debtor: cid, creditor: actorId, amount });
+    }
+    if (creature.condition) {
+      const prev = creature.condition;
+      creature.condition = undefined;
+      events.push({ type: "condition-changed", creatureId: cid, from: prev, to: CONDITION_REMEDY[prev] ?? "well" });
+    }
+    break; // one toggle fulfills one need (lowest creature id)
+  }
+  return events;
+}
+
+/**
+ * Turn on the whole POWER CHAIN behind a device (§5): recursively toggle each
+ * `poweredBy` source to its required state, deepest first, so the device can
+ * then be activated. "Switch on the generator to power the fridge" — and if the
+ * generator is itself switched, that switch flips first. A no-op for an
+ * unpowered device.
+ */
+export function powerUp(world: CreatureWorld, actorId: CreatureId | null, deviceId: ItemId): CreatureEvent[] {
+  const device = world.items[deviceId];
+  if (!device?.poweredBy) return [];
+  const { deviceId: srcId, state } = device.poweredBy;
+  const src = world.items[srcId];
+  if (!src || src.states.includes(state)) return [];
+  return [...powerUp(world, actorId, srcId), ...toggleDevice(world, actorId, srcId, state)];
+}
+
+/**
+ * Use a STATION to transform an item (§5). When the station is POWER-GATED, its
+ * `powerDeviceId` must be ON — an unpowered station is dead (no transform). This
+ * is the P1 gate: "switch on the fridge before it can cool the food". The
+ * certifier powers the station up FIRST, so a solution that skips it fails
+ * (the transform no-ops → the need never fulfills) — the gate is real, not
+ * cosmetic. (An ungated station, `powerDeviceId` omitted, transforms as before.)
+ */
+export function useStation(
+  world: CreatureWorld,
+  itemId: ItemId,
+  applies: string,
+  removes?: string,
+  powerDeviceId?: string,
+): CreatureEvent[] {
+  if (powerDeviceId) {
+    const power = world.items[powerDeviceId];
+    if (!power || !power.states.includes("on")) return []; // no power → dead station
+  }
+  return applyTransform(world, itemId, applies, removes);
+}
+
+/**
  * A creature picks up a LOOSE item (claiming it). Provenance applies: if
  * someone placed it, the pickup counts as a gift from the placer (debt et al).
  * Claimed items are never taken this way — that's dialogue territory (§3).
@@ -503,14 +861,15 @@ function priceFor(
   owner: CreatureState,
   requesterId: CreatureId,
 ): { kind: "need"; itemId: ItemId } | { kind: "return"; itemId: ItemId } | null {
-  // A state need (placement / on-behalf) can't be paid by handing the item
-  // over — never a price.
-  const need = openNeeds(owner).find((n) => !n.placedAt && !n.forCreature);
+  // A state need (placement / on-behalf / device) can't be paid by handing the
+  // item over — never a price.
+  const need = openNeeds(owner).find((n) => !n.placedAt && !n.forCreature && !n.deviceState);
   if (need) return { kind: "need", itemId: need.itemId };
   for (const [itemId, where] of Object.entries(owner.knowledge).sort()) {
     if (where.kind !== "held" || where.by !== requesterId) continue;
-    if (world.items[itemId]?.ownerId !== requesterId) continue;
-    if (valueTo(owner, itemId) > 0) return { kind: "return", itemId };
+    const it = world.items[itemId];
+    if (it?.ownerId !== requesterId) continue;
+    if (valueTo(owner, it) > 0) return { kind: "return", itemId };
   }
   return null;
 }

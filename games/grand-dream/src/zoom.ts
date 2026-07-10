@@ -21,12 +21,16 @@
  *                growth APPENDS outward, so house k is stable as the town
  *                grows; hall, workshops, fields). Town plans load within
  *                data radius; the view culls to the camera.
- *   Composition→ every HOUSE has a resident drawn from the site's
- *                syndrome distribution (`sampleVillager(site, houseIdx)`
- *                — same person at the same door every visit, zero
- *                storage). Only the nearest few exist as world-engine
- *                bodies at any moment (`WorldHost.addNpc`/`removeNpc`,
- *                nearest-first within the engine's concurrent cap).
+ *   Composition→ every HOUSE holds a HOUSEHOLD of `HOUSEHOLD` people
+ *                drawn from the site's syndrome distribution — member m
+ *                of house k is `sampleVillager(site, k*HOUSEHOLD + m)`
+ *                (same family behind the same door every visit, zero
+ *                storage; the addressable-person space ≈ the population,
+ *                since houses = pop/HOUSEHOLD). Member 0 is the
+ *                household's SHOPPER (walks the food cycle); the rest
+ *                are homebodies about the room. Only the best-ranked few
+ *                exist as world-engine bodies at any moment
+ *                (`WorldHost.addNpc`/`removeNpc` within the budget).
  *
  * `generateScene` (bounded, certified) is kept as a COMPRESSED VIGNETTE
  * of a village core at `SCENE_TILE` scale — the §6 sampler and the seat
@@ -38,29 +42,70 @@
  */
 
 import {
-  buildingStructures,
   certifyWorldSpec,
   WORLD_MAX_NPCS,
   type BuildingSpec,
   type NpcSpec,
-  type StructureSpec,
   type WallSpec,
   type WorldSpec,
 } from "@shared/world-engine/index";
 import type { Histfig, HistfigSample } from "@popusim/controller/World";
 import type { TriWorld } from "./tri";
-import { ERRAND_WALK, HOUSEHOLD, createTownFood, doorTransit, houseDoorstep, type TownFood } from "./food";
-import { foundNeighborhoodMarkets } from "./districts";
-import { growStreets, type TownStreets, type Vec2 } from "./streets";
+import {
+  ERRAND_WALK, HOUSEHOLD, doorTransit, goodBoxAt, houseDoorstep,
+  pantryBoxAt, streetGoodsFor, type TownFood, type TownGoods,
+} from "./food";
+import { DEFAULT_ECONOMY } from "./economy-core";
+import type { CompiledEconomy } from "./economy";
+import {
+  WORLD_TILE, worldPos,
+  townBias as sharedTownBias, townPlan as sharedTownPlan,
+  type TownBias, type TownHouse, type TownPlan,
+} from "@shared/engine/town/plan";
+import type { TownStreets } from "@shared/engine/town/streets";
+import { houseFurniture } from "@shared/engine/town/furniture";
+import type { ObjectSpec } from "@shared/world-engine/index";
 
 export { HOUSEHOLD };
 
-/** Meters per substrate tile — a tile is a square kilometer. */
-export const WORLD_TILE = 1000;
+// The town-plan half of this module moved into the shared engine's town
+// layer (shared/engine/town/plan.ts) in the engine carve; the geometry,
+// types and constants re-export from here so every pre-carve import
+// keeps working. What stays in this file is the world assembly and the
+// STREAMING half — vignettes, the town manager, embodied villagers and
+// parties — which reads named residents (popusim histfigs) and so
+// belongs with the game until a demography module exists.
+export {
+  MARKET_MIN_HOUSES, WORLD_TILE, worldPos,
+  type TownBias, type TownField, type TownHouse, type TownPlan, type TownWork,
+} from "@shared/engine/town/plan";
 
-/** Tile-center in world units (meters). */
-export function worldPos(tileX: number, tileY: number): { x: number; y: number } {
-  return { x: (tileX + 0.5) * WORLD_TILE, y: (tileY + 0.5) * WORLD_TILE };
+/** The world's work registry (compiled economy, or the standard one). */
+export function worksOf(tri: TriWorld): CompiledEconomy["works"] {
+  return (tri.economy ?? DEFAULT_ECONOMY).works;
+}
+
+/** The typed growth bias for a town — THIS world's registry resolved. */
+export function townBias(tri: TriWorld, siteKey: string): TownBias {
+  return sharedTownBias(tri, tri.economy ?? DEFAULT_ECONOMY, siteKey);
+}
+
+/** THE BUILD-UP KNOB, resolved for a grand-dream town: how many storeys
+ *  above the ground floor it will add under housing pressure —
+ *  capability × cost. The factors that SHOULD feed it (technology,
+ *  wealth, aesthetics, culture, building type) mostly don't exist as
+ *  scalars yet, so v1 derives from the stable proxy the books already
+ *  carry — the settlement's own scale — QUANTIZED so a drifting number
+ *  never re-lays floors under the player's feet. When tech/wealth/
+ *  values land as content, they plug in HERE, feeding this one number. */
+export function buildUpOf(tri: TriWorld, siteKey: string): number {
+  const pop = tri.dual.settlementScalar(siteKey, "population");
+  return pop >= 4000 ? 2 : pop >= 2000 ? 1 : 0;
+}
+
+/** One town, laid out at real scale — THIS world's registry resolved. */
+export function townPlan(tri: TriWorld, siteKey: string, seed: number): TownPlan {
+  return sharedTownPlan(tri, tri.economy ?? DEFAULT_ECONOMY, siteKey, seed, buildUpOf(tri, siteKey));
 }
 
 /* ------------------------- deterministic rng ------------------------- */
@@ -84,362 +129,8 @@ function mulberry32(a: number): () => number {
   };
 }
 
-/* --------------------------- the town plan --------------------------- */
-// One town, laid out at real scale from its live settlement scalars.
-// Deterministic and PREFIX-STABLE: lots form a fixed outward sequence,
-// house k always occupies lot k — population growth appends houses at
-// the edge and never reshuffles the town the player knows.
-
-export interface TownHouse {
-  /** Lot index — also the resident's `sampleVillager` index. */
-  index: number;
-  /** Footprint min-corner relative to the town center, meters. */
-  dx: number;
-  dy: number;
-  w: number;
-  h: number;
-  /** Door on the street-facing edge (houses front their street). */
-  door: "north" | "south" | "east" | "west";
-  color: string;
-  /** Arterial subtree the house's street descends from (districts.ts). */
-  arm?: number;
-}
-
-export interface TownWork {
-  type: "hall" | "farm" | "mine" | "smelter" | "market";
-  dx: number;
-  dy: number;
-  w: number;
-  h: number;
-  door: "north" | "south" | "east" | "west";
-  color: string;
-}
-
-export interface TownField {
-  dx: number;
-  dy: number;
-  w: number;
-  h: number;
-}
-
-export interface TownPlan {
-  key: string;
-  biome: "farmland" | "mining";
-  groundColor: string;
-  /** Edge of the built-up area, meters from center. */
-  radius: number;
-  /** Lots the population asked for (houses may be fewer if the town is
-   *  full) — the cheap growth check TownManager compares against. */
-  want: number;
-  houses: TownHouse[];
-  works: TownWork[];
-  /** Cultivated patches beyond the houses (farmland biome). */
-  fields: TownField[];
-  /** The organic street tree the whole plan hangs off (streets.ts). */
-  streets: TownStreets;
-}
-
-const HOUSE_COLORS = ["#a8875f", "#9b7a52", "#b5936b", "#8f7350"];
-const WORK_STYLE: Record<TownWork["type"], { color: string; w: number; h: number }> = {
-  hall: { color: "#8a6d3b", w: 16, h: 12 },
-  farm: { color: "#c9a94e", w: 13, h: 9 },
-  mine: { color: "#70707a", w: 13, h: 9 },
-  smelter: { color: "#a05038", w: 13, h: 9 },
-  market: { color: "#c9803a", w: 16, h: 10 },
-};
-
-/** A town this big (houses) gets a MARKETPLACE on the plaza: the outskirt
- *  farms are far enough that farm-gate shopping stops being how a town of
- *  this size feeds itself. Below it, people buy at the farm door. */
-export const MARKET_MIN_HOUSES = 24;
-
-/** Door edge facing from a footprint center toward a target point. */
-function doorToward(cx: number, cy: number, tx: number, ty: number): TownHouse["door"] {
-  const dx = tx - cx;
-  const dy = ty - cy;
-  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "east" : "west") : (dy > 0 ? "south" : "north");
-}
-
-/* ---------------- typed growth bias (city-development §2b) ------------ */
-// A town turns toward what feeds it: its arterials aim at its trade
-// partners and its resource sides, and its works cap the tips that point
-// the right way (farm gates toward the fertile tiles, the pithead toward
-// the ore). Bearings are QUANTIZED (16 compass buckets) and memoized per
-// session, so slow substrate drift (mining depletion, greening) doesn't
-// re-lay a town under the player's feet — a re-boot long after the
-// mountain emptied MAY re-lay it, which is development, not noise.
-
-const BEARING_QUANT = Math.PI / 8;
-const quantB = (a: number): number => Math.round(a / BEARING_QUANT) * BEARING_QUANT;
-
-export interface TownBias {
-  /** Arterial bearings, most important first (roads, then resources). */
-  bearings: number[];
-  /** Direction of the fertile side (radians), if the surroundings lean. */
-  fertile: number | null;
-  /** Direction of the ore side, likewise. */
-  ore: number | null;
-}
-
-/** Weighted mean direction of a substrate field around the town's tile —
- *  null when the surroundings are symmetric (no side to lean toward). */
-function fieldBearing(
-  grid: { cols: number; rows: number; fields: Record<string, ArrayLike<number>> } | undefined,
-  cx: number, cy: number, field: string, radius = 4,
-): number | null {
-  const vals = grid?.fields?.[field];
-  if (!vals) return null;
-  let vx = 0, vy = 0, sum = 0;
-  for (let dy = -radius; dy <= radius; dy++) {
-    const y = cy + dy;
-    if (y < 0 || y >= grid!.rows) continue;
-    for (let dx = -radius; dx <= radius; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const x = cx + dx;
-      if (x < 0 || x >= grid!.cols) continue;
-      const v = vals[y * grid!.cols + x];
-      if (!(v > 0)) continue;
-      const inv = 1 / Math.hypot(dx, dy);
-      vx += v * dx * inv;
-      vy += v * dy * inv;
-      sum += v;
-    }
-  }
-  if (sum <= 0) return null;
-  if (Math.hypot(vx, vy) / sum < 0.15) return null; // symmetric — no lean
-  return quantB(Math.atan2(vy, vx));
-}
-
-const biasMemo = new WeakMap<TriWorld, Map<string, TownBias>>();
-
-/** The typed growth bias for a town (session-memoized — see above). */
-export function townBias(tri: TriWorld, siteKey: string): TownBias {
-  let memo = biasMemo.get(tri);
-  if (!memo) {
-    memo = new Map();
-    biasMemo.set(tri, memo);
-  }
-  const hit = memo.get(siteKey);
-  if (hit) return hit;
-
-  const city = tri.cities.find(c => c.key === siteKey);
-  const grid = tri.grid as unknown as Parameters<typeof fieldBearing>[0];
-  const fertile = city ? fieldBearing(grid, city.x, city.y, "fertility") : null;
-  const ore = city ? fieldBearing(grid, city.x, city.y, "ore") : null;
-
-  // Roads out of town head where the road GOES: bearings toward up to
-  // two route-connected neighbor cities (the high street is the highway).
-  const bearings: number[] = [];
-  if (city) {
-    const routes = (tri.dual as { routes?: () => Array<{ site_a: { key: string } | null; site_b: { key: string } | null }> }).routes?.() ?? [];
-    for (const r of routes) {
-      if (bearings.length >= 2) break;
-      const otherKey = r.site_a?.key === siteKey ? r.site_b?.key
-        : r.site_b?.key === siteKey ? r.site_a?.key : null;
-      if (!otherKey) continue;
-      const other = tri.cities.find(c => c.key === otherKey);
-      if (!other || (other.x === city.x && other.y === city.y)) continue;
-      bearings.push(quantB(Math.atan2(other.y - city.y, other.x - city.x)));
-    }
-  }
-  if (fertile !== null) bearings.push(fertile);
-  if (ore !== null) bearings.push(ore);
-
-  const bias: TownBias = { bearings, fertile, ore };
-  memo.set(siteKey, bias);
-  return bias;
-}
-
-export function townPlan(tri: TriWorld, siteKey: string, seed: number): TownPlan {
-  const city = tri.cities.find(c => c.key === siteKey);
-  if (!city) throw new Error(`townPlan: unknown city "${siteKey}"`);
-  const { dual } = tri;
-
-  const ch = tri.charterOf(siteKey);
-  const biome: TownPlan["biome"] = ch.ore_access > ch.farmland ? "mining" : "farmland";
-  const fertMean = ch.farmland / 49;
-  const groundColor = biome === "mining" ? "#8a8a90" : fertMean > 4 ? "#8fae62" : "#d6b87c";
-
-  const pop = Math.max(0, dual.settlementScalar(siteKey, "population"));
-  const houseCount = Math.max(6, Math.round(pop / HOUSEHOLD));
-
-  // The street tree grows first (streets.ts); houses fill its frontage
-  // slots in CONSTRUCTION ORDER. Each lot's jitter rng is seeded by LOT
-  // index and the street event stream is fixed by (seed, site, bias), so
-  // house k is byte-identical whether the town has 50 houses or 800
-  // (prefix stability) — growth extends streets and appends lots at the
-  // fringe. The TYPED BIAS aims the arterials: out along the trade
-  // roads, toward the fertile side, toward the ore.
-  const bias = townBias(tri, siteKey);
-  const net = growStreets(seed, siteKey, houseCount, { bearings: bias.bearings });
-  const houses: TownHouse[] = [];
-  let radius = 40;
-  const count = Math.min(houseCount, net.slots.length);
-  for (let k = 0; k < count; k++) {
-    const slot = net.slots[k];
-    const rng = mulberry32(hashSeed(seed, `${siteKey}:lot:${k}`));
-    // Face the frontage anchor (the slot's own street), from the
-    // UNJITTERED slot so the door edge never flips with the wobble.
-    const door = doorToward(slot.x, slot.y, slot.ax, slot.ay);
-    const depth = 5 + rng() * 1.5; // toward the street — keeps it clear
-    const width = 6.5 + rng() * 2.5;
-    const sideways = door === "east" || door === "west";
-    const w = sideways ? depth : width;
-    const h = sideways ? width : depth;
-    const cx = slot.x + (rng() - 0.5) * 2;
-    const cy = slot.y + (rng() - 0.5) * 2;
-    houses.push({
-      index: k,
-      dx: cx - w / 2,
-      dy: cy - h / 2,
-      w, h, door,
-      color: HOUSE_COLORS[hashSeed(seed, `${siteKey}:c:${k}`) % HOUSE_COLORS.length],
-      arm: slot.arm,
-    });
-    const rr = Math.hypot(cx, cy) + 12;
-    if (rr > radius) radius = rr;
-  }
-
-  // STEP 1 of the city fractal (city-development.md §7): neighborhood
-  // market stalls founded by unserved demand, each a CONVERTED house lot
-  // (same footprint and door, so it stays on its street frontage).
-  // The founding anchor is the town's central source — the plaza market
-  // when the town rates one, else the hall (both at fixed plaza spots,
-  // so founding stays prefix-stable as the town grows).
-  const hasPlazaMarket = houses.length >= MARKET_MIN_HOUSES;
-  const mkStyle = WORK_STYLE.market;
-  const anchor = hasPlazaMarket
-    ? { x: 0, y: 6.5 + mkStyle.h + 1.5 } // plaza market doorstep (south)
-    : { x: 0, y: -5.5 - WORK_STYLE.hall.h - 1.5 }; // hall doorstep (north)
-  const stalls = foundNeighborhoodMarkets(houses, anchor, net);
-  const stallIdx = new Set(stalls.map(s => s.index));
-  const homes = stallIdx.size ? houses.filter(h => !stallIdx.has(h.index)) : houses;
-
-  // Civic buildings hold the plaza; production works cap the street TIPS
-  // (the town's edge, where the lanes peter out into fields and pits) —
-  // one building per counted unit (capped: landmarks, not the ledger).
-  const works: TownWork[] = [];
-  works.push({
-    // The hall stands INSIDE the plaza, door fronting north.
-    type: "hall", dx: -WORK_STYLE.hall.w / 2, dy: -5.5 - WORK_STYLE.hall.h,
-    w: WORK_STYLE.hall.w, h: WORK_STYLE.hall.h, door: "north", color: WORK_STYLE.hall.color,
-  });
-  if (hasPlazaMarket) {
-    // The market backs onto the hall across the plaza center.
-    works.push({
-      type: "market", dx: -mkStyle.w / 2, dy: 6.5,
-      w: mkStyle.w, h: mkStyle.h, door: "south", color: mkStyle.color,
-    });
-  }
-
-  // Street tips — where the works go. Each type prefers the tips that
-  // POINT THE RIGHT WAY (typed placement, city-development §2b): farm
-  // gates toward the fertile side, mine/smelter toward the ore side,
-  // outskirts-ness as the tiebreak (and the whole rule when the
-  // surroundings are symmetric).
-  const tips: Array<{ p: Vec2; dir: { x: number; y: number } }> = [];
-  let maxTipR = 1;
-  for (const s of net.streets) {
-    if (s.ring || s.pts.length < 3) continue;
-    const p = s.pts[s.pts.length - 1];
-    const q = s.pts[s.pts.length - 2];
-    const len = Math.hypot(p.x - q.x, p.y - q.y) || 1;
-    tips.push({ p, dir: { x: (p.x - q.x) / len, y: (p.y - q.y) / len } });
-    maxTipR = Math.max(maxTipR, Math.hypot(p.x, p.y));
-  }
-  const usedTips = new Set<number>();
-  const bestTip = (toward: number | null): number => {
-    let best = -1;
-    let bestScore = -Infinity;
-    for (let i = 0; i < tips.length; i++) {
-      if (usedTips.has(i)) continue;
-      const t = tips[i];
-      const r = Math.hypot(t.p.x, t.p.y);
-      const align = toward === null ? 0 : Math.cos(Math.atan2(t.p.y, t.p.x) - toward);
-      const score = align * 0.75 + (r / maxTipR) * 0.45;
-      if (score > bestScore) { bestScore = score; best = i; }
-    }
-    return best;
-  };
-  const workCounts: Array<[TownWork["type"], number]> = [
-    ["farm", Math.min(6, Math.round(dual.settlementScalar(siteKey, "farms")))],
-    ["mine", Math.min(6, Math.round(dual.settlementScalar(siteKey, "mines")))],
-    ["smelter", Math.min(4, Math.round(dual.settlementScalar(siteKey, "smelters")))],
-  ];
-  const farmSpots: Array<{ x: number; y: number }> = [];
-  for (const [type, n] of workCounts) {
-    const style = WORK_STYLE[type];
-    const toward = type === "farm" ? bias.fertile : bias.ore;
-    for (let k = 0; k < n; k++) {
-      let placed = false;
-      for (;;) {
-        const i = bestTip(toward);
-        if (i < 0) break;
-        usedTips.add(i);
-        const t = tips[i];
-        const x = t.p.x + t.dir.x * 13;
-        const y = t.p.y + t.dir.y * 13;
-        if (works.some(wk => Math.hypot(wk.dx + wk.w / 2 - x, wk.dy + wk.h / 2 - y) < 22)) continue;
-        const door = doorToward(x, y, t.p.x, t.p.y); // door faces back up the street
-        works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
-        if (type === "farm") farmSpots.push({ x, y });
-        const rr = Math.hypot(x, y) + 14;
-        if (rr > radius) radius = rr;
-        placed = true;
-        break;
-      }
-      if (!placed) {
-        // Tips ran out (tiny towns): fall back to the town edge, still
-        // leaning the typed way when there is one.
-        const a = toward ?? (works.length / 6) * Math.PI * 2 + 0.7;
-        const spread = toward === null ? 0 : (k - (n - 1) / 2) * 0.5;
-        const x = Math.cos(a + spread) * (radius + 14);
-        const y = Math.sin(a + spread) * (radius + 14);
-        const door = doorToward(x, y, 0, 0);
-        works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
-        if (type === "farm") farmSpots.push({ x, y });
-      }
-    }
-  }
-  // The founded stalls, in founding order (after the plaza market, so
-  // `works.find(type === "market")` stays the plaza one).
-  for (const s of stalls) {
-    works.push({ type: "market", dx: s.dx, dy: s.dy, w: s.w, h: s.h, door: s.door, color: mkStyle.color });
-  }
-
-  // Fields: cultivated patches past the farm gates (farmland towns) —
-  // the countryside starts where the lanes end.
-  const fields: TownField[] = [];
-  if (biome === "farmland") {
-    const anchors = farmSpots.length
-      ? farmSpots
-      : tips.slice(0, 2).map(t => ({ x: t.p.x, y: t.p.y }));
-    if (anchors.length === 0) anchors.push({ x: radius, y: 0 });
-    const patches = Math.min(14, 2 + Math.round(dual.settlementScalar(siteKey, "farms")) * 2);
-    for (let k = 0; k < patches; k++) {
-      const rng = mulberry32(hashSeed(seed, `${siteKey}:field:${k}`));
-      const at = anchors[k % anchors.length];
-      const rr = Math.hypot(at.x, at.y) || 1;
-      const ux = at.x / rr;
-      const uy = at.y / rr;
-      const out = 30 + rng() * 60;
-      const side = (rng() - 0.5) * 90;
-      fields.push({
-        dx: at.x + ux * out - uy * side - 23,
-        dy: at.y + uy * out + ux * side - 17,
-        w: 46 + rng() * 20,
-        h: 34 + rng() * 14,
-      });
-    }
-  }
-
-  return {
-    key: siteKey, biome, groundColor, radius: radius + 10,
-    want: houseCount, houses: homes, works, fields, streets: net,
-  };
-}
-
-/** The streaming NPC id for a resident — parse back with `villagerOf`. */
+/** The streaming NPC id for a resident — parse back with `villagerOf`.
+ *  `index` is the SAMPLE index (see `memberIndex`), not the house. */
 export function villagerNpcId(siteKey: string, index: number): string {
   return `villager_${siteKey}_${index}`;
 }
@@ -448,6 +139,19 @@ export function villagerNpcId(siteKey: string, index: number): string {
 export function villagerOf(npcId: string): { siteKey: string; index: number } | null {
   const m = /^villager_(.+)_(\d+)$/.exec(npcId);
   return m ? { siteKey: m[1], index: parseInt(m[2], 10) } : null;
+}
+
+/** Sample index of member `m` of house `houseIdx`: a household is
+ *  HOUSEHOLD consecutive sample indices, so every soul the population
+ *  count implies is addressable (houses ≈ pop / HOUSEHOLD). Member 0 is
+ *  the household's SHOPPER — the one who walks the food cycle. */
+export function memberIndex(houseIdx: number, m: number): number {
+  return houseIdx * HOUSEHOLD + m;
+}
+
+/** The house a sample index belongs to (inverse of `memberIndex`). */
+export function houseIndexOf(sampleIndex: number): number {
+  return Math.floor(sampleIndex / HOUSEHOLD);
 }
 
 /* ------------------ bounded vignette (the sampler) ------------------- */
@@ -477,7 +181,7 @@ export interface CityContent {
   groundColor: string;
   buildings: Array<{
     id: string;
-    type: "hall" | "farm" | "mine" | "smelter";
+    type: string;
     color: string;
     dx: number;
     dy: number;
@@ -488,12 +192,9 @@ export interface CityContent {
   villagers: CityVillager[];
 }
 
-const BUILDING_STYLE: Record<"hall" | "farm" | "mine" | "smelter", { color: string; w: number; h: number }> = {
-  hall: { color: "#8a6d3b", w: 7, h: 6 },
-  farm: { color: "#c9a94e", w: 6, h: 5 },
-  mine: { color: "#70707a", w: 6, h: 5 },
-  smelter: { color: "#a05038", w: 6, h: 5 },
-};
+/** Vignette hall style — economy buildings carry their own (registry
+ *  `vignette` + style color). */
+const VIGNETTE_HALL = { color: "#8a6d3b", w: 7, h: 6 };
 
 export function cityContent(tri: TriWorld, siteKey: string, seed: number): CityContent {
   const city = tri.cities.find(c => c.key === siteKey);
@@ -506,11 +207,13 @@ export function cityContent(tri: TriWorld, siteKey: string, seed: number): CityC
   const fertMean = ch.farmland / (PATCH_SIDE * PATCH_SIDE);
   const groundColor = biome === "mining" ? "#8a8a90" : fertMean > 4 ? "#8fae62" : "#d6b87c";
 
-  const counts: Array<["hall" | "farm" | "mine" | "smelter", number]> = [
-    ["hall", 1],
-    ["farm", Math.round(dual.settlementScalar(siteKey, "farms"))],
-    ["mine", Math.round(dual.settlementScalar(siteKey, "mines"))],
-    ["smelter", Math.round(dual.settlementScalar(siteKey, "smelters"))],
+  const counts: Array<[string, number, { color: string; w: number; h: number }]> = [
+    ["hall", 1, VIGNETTE_HALL],
+    ...worksOf(tri).map((def): [string, number, { color: string; w: number; h: number }] => [
+      def.key,
+      Math.round(dual.settlementScalar(siteKey, def.countScalar)),
+      { color: def.style.color, ...def.vignette },
+    ]),
   ];
   const slots: Array<{ x: number; y: number }> = [];
   const spin = rng() * Math.PI * 2;
@@ -523,8 +226,7 @@ export function cityContent(tri: TriWorld, siteKey: string, seed: number): CityC
   const half = SCENE_SIZE / 2;
   const buildings: CityContent["buildings"] = [];
   let slot = 0;
-  outer: for (const [type, n] of counts) {
-    const style = BUILDING_STYLE[type];
+  outer: for (const [type, n, style] of counts) {
     for (let k = 0; k < n; k++) {
       if (buildings.length >= MAX_SCENE_BUILDINGS) break outer;
       let placed = false;
@@ -791,28 +493,35 @@ export function nearestCity(tri: TriWorld, p: { x: number; y: number }): { key: 
 //   TOWN PLANS (cheap data: house/work/field rects) load within a data
 //   radius and unload behind with hysteresis; the view culls to camera.
 //   RESIDENTS (world-engine bodies, the expensive part) exist only for
-//   the houses nearest the player: every update picks the K nearest
+//   the houses nearest the player: every update picks the K best-ranked
 //   candidates inside PEOPLE_R (K = the live NPC budget) and diffs
-//   against what's spawned — walk down a street and the people of THESE
-//   houses are up and about, the previous street's have gone back
-//   indoors. Recruited residents are excluded for the session.
+//   against what's spawned. Ranking prefers STREET LIFE: someone out on
+//   an errand is visible; someone home is behind a closed door the view
+//   hides — so idle residents rank far behind walkers (and only embody
+//   near the player at all), and the tiny engine budget buys people the
+//   player can actually see. Recruited residents are excluded for the
+//   session.
 
 /** Town DATA loads inside this (meters)... */
 export const TOWN_LOAD_R = 1600;
 /** ...and unloads past this (hysteresis). */
 export const TOWN_UNLOAD_R = 2000;
-/** Residents may embody within this range of the player (meters) —
- *  beyond the camera's street-level reach, so bodies appear off-screen. */
-export const PEOPLE_R = 240;
-/** A resident whose BODY is this close to the player never despawns
- *  (someone standing next to you cannot blink out): eviction happens
- *  beyond this, as the crowd turns over off to the sides. */
-export const PEOPLE_EVICT_MIN = 60;
-/** Wander tether radius for a resident, anchored at their house CENTER:
- *  a shuffle inside their own four walls, not a stroll — they leave the
- *  house only on an errand (which crosses the door explicitly), never by
- *  steering into a wall, and while home they sit under the indoor cull. */
-const INDOOR_WANDER_R = 2.5;
+// The streaming NUMBERS are single-sourced in the shared engine since
+// the 2D/3D parity carve (shared/engine/town/residents.ts — every view
+// streams the same people to the same places): STREET_NPCS, PEOPLE_R,
+// PEOPLE_EVICT_MIN, INDOOR_WANDER_R, IDLE_EMBODY_R, IDLE_RANK_PENALTY,
+// BOX_FILL_DWELL. This manager still runs its own multi-town/histfig
+// implementation of the rules; migrating it onto createResidentModel is
+// the parity follow-up.
+import {
+  BOX_FILL_DWELL, IDLE_EMBODY_R, IDLE_RANK_PENALTY, INDOOR_WANDER_R,
+  PEOPLE_EVICT_MIN, PEOPLE_R, STREET_NPCS,
+} from "@shared/engine/town/residents";
+export { IDLE_EMBODY_R, IDLE_RANK_PENALTY, PEOPLE_EVICT_MIN, PEOPLE_R, STREET_NPCS };
+/** A watched pantry's flip detection rides render-call continuity: a
+ *  house whose box was last displayed longer ago than this counts as
+ *  freshly sighted (primed from the closed form, not deferred). */
+const WATCH_STALE_SEC = 2.5;
 /** Buildings become REAL engine structures (blocking walls, swinging
  *  doors) within this range of the player (meters)... */
 export const STRUCT_LOAD_R = 100;
@@ -824,9 +533,14 @@ export interface LoadedTown {
   /** Town center, meters. */
   center: { x: number; y: number };
   plan: TownPlan;
-  /** The town's food-economy projection (street-level add-on to the
-   *  aggregate consume behavior — see food.ts). */
+  /** ALL the town's street-goods projections, in slot order (the
+   *  world's compiled economy registry, filtered to ledgers this
+   *  settlement keeps) — food first, always. */
+  goods: TownGoods[];
+  /** goods[0] — the founding good (compat alias). */
   food: TownFood;
+  /** The tools projection when the world trades them (compat alias). */
+  wares: TownGoods | null;
   /** The street tree (streets.ts) — errands ride it, the view draws it,
    *  houses face it. Same object as `plan.streets`. */
   roads: TownStreets;
@@ -841,10 +555,17 @@ export interface ChunkUpdate {
   /** Shopping trips for residents ALREADY embodied — their pantry ran
    *  low this update; send them to their source and back. */
   errands: Array<{ id: string; points: Array<{ x: number; y: number; dwell?: number }> }>;
-  /** New streamed structure set for `WorldHost.setStructures` — walls +
-   *  swinging doors of the buildings around the player. Undefined when
-   *  the in-range building set did not change this update. */
-  structures?: StructureSpec[];
+  /** New streamed BUILDING set for `WorldHost.setBuildings` — the
+   *  volumes around the player (the host lowers them into walls +
+   *  swinging doors, and the volumes carry roofs / see-inside fade /
+   *  indoor cull in views that render them). Undefined when the
+   *  in-range building set did not change this update. */
+  buildings?: BuildingSpec[];
+  /** FURNITURE arriving with its house (host.addObject) — solid,
+   *  openable fixtures, abstracted away when the house unloads. */
+  addObjects?: ObjectSpec[];
+  /** Furniture leaving with its house (host.removeObject). */
+  removeObjects?: string[];
 }
 
 export interface TownManager {
@@ -866,6 +587,29 @@ export interface TownManager {
   loaded(): LoadedTown[];
   /** Embodied residents currently on the host (budget sharing). */
   active(): number;
+  /** The pantry box DISPLAY value for a house (rations, 0..boxCap) —
+   *  the closed-form `town.food.pantry` wrapped in WITNESS rules:
+   *   - while a real body is mid-trip the box stays empty until the
+   *     shopper actually reaches the crate (`tripArrived`) — a body
+   *     delayed by obstacles or door jams holds the refill back with it;
+   *   - a refill never happens in front of the player: a WATCHED box
+   *     (inside the camera's visible radius) waits for a real shopper,
+   *     and catches up to the closed form only once the player looks
+   *     away. A box seen for the first time reads the closed form
+   *     directly (priming, not a jump).
+   *  Call every rendered frame for on-screen boxes — the watched flip
+   *  detection rides call continuity. */
+  pantry(town: LoadedTown, house: TownHouse, t: number): number;
+  /** The wares (tool chest) DISPLAY value — same witness rules on the
+   *  tools projection; null in worlds without the commodity. */
+  wares(town: LoadedTown, house: TownHouse, t: number): number | null;
+  /** Any good's box DISPLAY value by index into `town.goods` — the
+   *  renderer iterates every crate a house keeps. */
+  goodBox(town: LoadedTown, goodIndex: number, house: TownHouse, t: number): number;
+  /** Witness a shopper reaching their pantry box (the errand's final
+   *  waypoint — main.ts wires the engine's onArrive here): the refill
+   *  commits NOW, wherever the clock thinks the trip is. */
+  tripArrived(npcId: string, now: number): void;
   /** Remove a resident for the session (recruited — they left the crowd). */
   release(npcId: string): void;
   /** Undo `release`: the person rejoined the crowd (a disbanded party
@@ -892,32 +636,133 @@ export function createTownManager(
    *  the door) with door transits, so crossing the wall happens AT the
    *  doorway — the short-range "pathfinding" towns actually need.
    *  `exitFirst` prepends the inside→outside step for a body leaving
-   *  home; the return step (…→inside) is always appended so the shopper
-   *  ends up back indoors. */
+   *  home; the return steps (…→inside→the good's BOX) are always
+   *  appended: the trip ends AT the crate, and reaching that final
+   *  waypoint is what fills the box (tripArrived). */
   const throughDoor = (
     town: LoadedTown, h: TownHouse,
     walkTo: Array<{ x: number; y: number; dwell?: number }>, exitFirst: boolean,
+    box?: { x: number; y: number },
   ): Array<{ x: number; y: number; dwell?: number }> => {
     const d = doorTransit(town.center, h);
-    const pts = exitFirst ? [d.inside, d.outside, ...walkTo] : [...walkTo];
-    pts.push(d.inside);
+    const pts: Array<{ x: number; y: number; dwell?: number }> =
+      exitFirst ? [d.inside, d.outside, ...walkTo] : [...walkTo];
+    pts.push(d.inside, { ...(box ?? pantryBoxAt(town.center, h)), dwell: BOX_FILL_DWELL });
     return pts;
   };
+
+  /** One household ERRAND RUN: a good, the member ROLE that walks it,
+   *  and where its box sits in the house. Role = the good's SLOT
+   *  (registration order — role 0 the food shopper, role 1 the wares
+   *  runner, and so on for every good the town trades), so an N-need
+   *  household is N different people out on different clocks, not one
+   *  runner in a hurry. */
+  interface GoodRun {
+    goods: TownGoods;
+    role: number;
+    box: (center: { x: number; y: number }, h: TownHouse) => { x: number; y: number };
+  }
+  const runCache = new WeakMap<LoadedTown, GoodRun[]>();
+  const goodsRuns = (town: LoadedTown): GoodRun[] => {
+    let runs = runCache.get(town);
+    if (!runs) {
+      runs = town.goods.map((g, i) => {
+        const slot = g.good.slot ?? i;
+        return { goods: g, role: slot, box: (center: { x: number; y: number }, h: TownHouse) => goodBoxAt(center, h, slot) };
+      });
+      runCache.set(town, runs);
+    }
+    return runs;
+  };
+  /** Witness-state key: one ledger entry per (household, good). */
+  const boxKey = (hk: string, goods: TownGoods): string => `${hk}|${goods.good.key}`;
 
   /** Spawned resident id → doorstep position. */
   const bodies = new Map<string, { x: number; y: number }>();
   /** Spawned resident id → their house (for the live food cycle). */
   const bodyHouse = new Map<string, { town: LoadedTown; house: TownHouse }>();
-  /** Last shopping cycle a trip errand was issued for, per body. */
+  /** Last shopping cycle a trip errand was issued for, per body (each
+   *  body runs at most one good, so the npc id suffices). */
   const tripSent = new Map<string, number>();
+  /** Trip currently WALKED by a real body, per (household, good) box
+   *  key — the runner is out and THAT box must not refill until they
+   *  reach it (or vanish). */
+  const tripWalking = new Map<string, { npcId: string; cycle: number }>();
+  /** Witnessed/committed refill per (household, good) box key (which
+   *  cycle's refill is showing and when the box actually filled). */
+  const committed = new Map<string, { cycle: number; at: number }>();
+  /** Last box display call per (household, good) — watched-flip
+   *  continuity. */
+  const lastShown = new Map<string, number>();
+  /** Player position + camera reach at the last update — the "is the
+   *  player looking at this box" test pantry() runs. */
+  let lastP: { x: number; y: number } | null = null;
+  let lastVisibleR: number | undefined;
+  /** Growth-governor state: when each town last replanned (update-clock
+   *  seconds) — a town replans at most once per cooldown window. */
+  const REPLAN_COOLDOWN_S = 5;
+  const replanAt = new Map<string, number>();
   /** Buildings currently lowered into REAL structures, by building id. */
   const solid = new Set<string>();
+  /** Furniture per house building id (built lazily as houses stream). */
+  const furnitureCatalog = new Map<string, ObjectSpec[]>();
+  /** House ids whose furniture is currently in the world. */
+  const furnished = new Set<string>();
+
+  /** Is `pt` inside this house's four walls? */
+  const inHouseRect = (pt: { x: number; y: number }, town: LoadedTown, h: TownHouse): boolean =>
+    pt.x > town.center.x + h.dx && pt.x < town.center.x + h.dx + h.w &&
+    pt.y > town.center.y + h.dy && pt.y < town.center.y + h.dy + h.h;
+
+  /** The HOUSEHOLD key (member 0's npc id) — pantry witness state is
+   *  keyed per household, stable across shopper handover. */
+  const householdKey = (townKey: string, houseIdx: number): string =>
+    villagerNpcId(townKey, memberIndex(houseIdx, 0));
+  const householdKeyOf = (npcId: string): string | null => {
+    const who = villagerOf(npcId);
+    return who ? householdKey(who.siteKey, houseIndexOf(who.index)) : null;
+  };
+  /** Forget a body's in-flight trip (despawned / recruited / ghosted). */
+  const dropTrip = (npcId: string): void => {
+    for (const [k, v] of tripWalking) if (v.npcId === npcId) tripWalking.delete(k);
+  };
+  /** The household member who fills errand ROLE `role`: the (role+1)-th
+   *  member not recruited away — recruit the shopper and a sibling takes
+   *  over that run next cycle; a family down to one soul covers food and
+   *  drops the wares run. Null when nobody's left for the role. */
+  const roleMemberId = (townKey: string, houseIdx: number, role: number): string | null => {
+    let seen = 0;
+    for (let m = 0; m < HOUSEHOLD; m++) {
+      const id = villagerNpcId(townKey, memberIndex(houseIdx, m));
+      if (excluded.has(id)) continue;
+      if (seen === role) return id;
+      seen++;
+    }
+    return null;
+  };
+  /** The errand run THIS body walks for its house, if any. */
+  const runFor = (town: LoadedTown, houseIdx: number, npcId: string): GoodRun | null => {
+    for (const run of goodsRuns(town)) {
+      if (roleMemberId(town.key, houseIdx, run.role) === npcId) return run;
+    }
+    return null;
+  };
+  /** Where member `m` of a household stands: a deterministic spot spread
+   *  about the room (margin off the walls) — five people in a house are
+   *  five bodies around the room, not a stack at its center. */
+  const memberSpot = (town: LoadedTown, h: TownHouse, m: number): { x: number; y: number } => {
+    const rng = mulberry32(hashSeed(seed, `${town.key}:member:${h.index}:${m}`));
+    return {
+      x: town.center.x + h.dx + 1.4 + rng() * Math.max(0.5, h.w - 2.8),
+      y: town.center.y + h.dy + 1.4 + rng() * Math.max(0.5, h.h - 2.8),
+    };
+  };
 
   /** Every building near p as a BuildingSpec at WORLD coordinates. */
   const buildingsNear = (p: { x: number; y: number }, range: number): Map<string, BuildingSpec> => {
     const out = new Map<string, BuildingSpec>();
     const consider = (townKey: string, center: { x: number; y: number }, id: string,
-      b: { dx: number; dy: number; w: number; h: number; door: TownHouse["door"]; color: string }): void => {
+      b: { dx: number; dy: number; w: number; h: number; door: TownHouse["door"]; color: string; floors?: number }): void => {
       const cx = center.x + b.dx + b.w / 2;
       const cy = center.y + b.dy + b.h / 2;
       if (Math.hypot(cx - p.x, cy - p.y) > range) return;
@@ -925,7 +770,11 @@ export function createTownManager(
       out.set(id, {
         id,
         footprint: { x: center.x + b.dx, y: center.y + b.dy, w: b.w, h: b.h },
-        floors: 1,
+        // Storeys from the plan (the build-up knob raised them). Upper
+        // floors are VISUAL for now — no stairs staged in homes; the
+        // ground floor keeps every mechanic (boxes, members, errands).
+        floors: b.floors ?? 1,
+        stairs: false,
         wallThickness: 0.4,
         // The door gap is CENTERED on its wall (edgeStructures centers the
         // gap on `offset`) — the same wall midpoint houseDoorstep /
@@ -937,10 +786,65 @@ export function createTownManager(
       });
     };
     for (const town of towns.values()) {
-      for (const h of town.plan.houses) consider(town.key, town.center, `h_${town.key}_${h.index}`, h);
+      for (const h of town.plan.houses) {
+        const id = `h_${town.key}_${h.index}`;
+        consider(town.key, town.center, id, h);
+        if (out.has(id) && !furnitureCatalog.has(id)) {
+          furnitureCatalog.set(id, houseFurniture(
+            town.center, h,
+            town.goods.map(g => ({ key: g.good.key, slot: g.good.slot })),
+            `_${town.key}`,
+          ).map(piece => ({
+            id: piece.id,
+            x: piece.x,
+            y: piece.y,
+            shape: "box" as const,
+            radius: piece.radius,
+            fixture: piece.kind,
+            openable: piece.openable,
+            facing: piece.facing,
+            interactions: [],
+            contains: [{ relation: piece.kind === "table" ? ("on" as const) : ("in" as const), capacity: 2 }],
+          })));
+        }
+      }
       for (const [i, wk] of town.plan.works.entries()) consider(town.key, town.center, `w_${town.key}_${i}`, wk);
     }
     return out;
+  };
+
+  /** One good's box DISPLAY value under the witness rules (see the
+   *  interface doc on `pantry`) — the machinery is good-agnostic; food
+   *  and wares differ only in which projection and which crate. */
+  const boxLevel = (town: LoadedTown, goods: TownGoods, house: TownHouse, t: number): number => {
+    const { period, trip, offset } = goods.cycle(house);
+    const raw = t + offset;
+    const u = ((raw % period) + period) % period;
+    const cyc = Math.floor(raw / period);
+    const bk = boxKey(householdKey(town.key, house.index), goods);
+    const shownAgo = t - (lastShown.get(bk) ?? -Infinity);
+    lastShown.set(bk, t);
+    // Refill committed for THIS cycle (witnessed arrival, or the
+    // closed form caught up off-camera): decay from that moment at
+    // the closed form's own rate (clamped — an early arrival still
+    // brings home one boxful).
+    const full = goods.fillOf(house) * goods.boxCap;
+    const decayFrom = (at: number): number =>
+      Math.max(0, Math.min(full, full * (1 - (t - at) / Math.max(1e-9, period - trip))));
+    const com = committed.get(bk);
+    if (com && com.cycle >= cyc) return decayFrom(com.at);
+    if (u < trip) return 0; // out shopping per the clock — box ran dry
+    if (tripWalking.has(bk)) return 0; // the real runner is still walking
+    // Refill due, unwitnessed. Watched + continuously displayed: the
+    // box never fills before the player's eyes — it waits for a real
+    // shopper, or for the player to look away. Unwatched (or freshly
+    // sighted): the off-screen truth catches up silently.
+    const hc = houseCenter(town, house);
+    const watched = lastP !== null && lastVisibleR !== undefined
+      && Math.hypot(hc.x - lastP.x, hc.y - lastP.y) < lastVisibleR;
+    if (watched && shownAgo < WATCH_STALE_SEC) return 0;
+    committed.set(bk, { cycle: cyc, at: t - (u - trip) });
+    return decayFrom(t - (u - trip));
   };
 
   return {
@@ -948,6 +852,8 @@ export function createTownManager(
       const spawn: ChunkUpdate["spawn"] = [];
       const despawn: string[] = [];
       const errands: ChunkUpdate["errands"] = [];
+      lastP = { x: p.x, y: p.y };
+      lastVisibleR = visibleR;
 
       // HOST TRUTH first: a body we think exists but the host doesn't
       // hold (addNpc was rejected in a budget race, or it was removed
@@ -959,6 +865,7 @@ export function createTownManager(
             bodies.delete(id);
             bodyHouse.delete(id);
             tripSent.delete(id);
+            dropTrip(id);
           }
         }
       }
@@ -967,16 +874,36 @@ export function createTownManager(
       for (const [key, town] of towns) {
         if (Math.hypot(town.center.x - p.x, town.center.y - p.y) > TOWN_UNLOAD_R) {
           towns.delete(key);
+          replanAt.delete(key);
+          // The town's witnessed-pantry ledger leaves with it.
+          const prefix = `villager_${key}_`;
+          for (const m of [committed, lastShown, tripWalking]) {
+            for (const id of m.keys()) if (id.startsWith(prefix)) m.delete(id);
+          }
         }
       }
+      // Load the NEAREST missing town, ONE per update: a town plan is
+      // EXPENSIVE at city scale (hundreds of ms of street growth) —
+      // never stack two of them into a single frame.
+      let toLoad: { key: string; center: { x: number; y: number } } | null = null;
+      let toLoadD = TOWN_LOAD_R;
       for (const c of tri.cities) {
         if (towns.has(c.key)) continue;
         const center = worldPos(c.x, c.y);
-        if (Math.hypot(center.x - p.x, center.y - p.y) < TOWN_LOAD_R) {
-          const plan = townPlan(tri, c.key, seed);
-          const food = createTownFood(tri, { key: c.key, center, plan }, seed, plan.streets);
-          towns.set(c.key, { key: c.key, center, plan, food, roads: plan.streets });
+        const d = Math.hypot(center.x - p.x, center.y - p.y);
+        if (d < toLoadD) {
+          toLoadD = d;
+          toLoad = { key: c.key, center };
         }
+      }
+      if (toLoad) {
+        const plan = townPlan(tri, toLoad.key, seed);
+        const goods = streetGoodsFor(tri, { key: toLoad.key, center: toLoad.center, plan }, seed, plan.streets);
+        towns.set(toLoad.key, {
+          key: toLoad.key, center: toLoad.center, plan, goods,
+          food: goods[0], wares: goods.find(g => g.good.key === "tools") ?? null,
+          roads: plan.streets,
+        });
       }
 
       // GROWTH while loaded: population moved → the plan re-derives.
@@ -984,13 +911,33 @@ export function createTownManager(
       // fringe lots, and maybe converts a lot into a stall — the town the
       // player is standing in doesn't reshuffle, it BUILDS (the view's
       // reveal trackers animate the difference as construction).
+      // GOVERNED: a replan costs hundreds of ms, and the aggregate sim
+      // moves the population a few souls every sim day — so replans fire
+      // only when they'd CHANGE the town (a full town ignores demand it
+      // can't house), only for meaningful moves (≥2% of the built lots),
+      // at most one town per update and per cooldown window. This was
+      // the city frame-rate crawl: full replans every sim day, rebuilding
+      // a byte-identical overflowing town.
+      let replanned = false;
       for (const [key, town] of towns) {
+        if (replanned) break;
         const pop = Math.max(0, tri.dual.settlementScalar(key, "population"));
         const want = Math.max(6, Math.round(pop / HOUSEHOLD));
         if (want === town.plan.want) continue;
+        // Overflowing town: demand above the built lots builds nothing,
+        // however much it moves — skip until it drops below what stands.
+        if (want > town.plan.built && town.plan.want > town.plan.built) continue;
+        if (Math.abs(want - town.plan.want) < Math.max(2, Math.round(town.plan.built * 0.02))) continue;
+        if (now - (replanAt.get(key) ?? -Infinity) < REPLAN_COOLDOWN_S) continue;
+        replanAt.set(key, now);
+        replanned = true;
         const plan = townPlan(tri, key, seed);
-        const food = createTownFood(tri, { key, center: town.center, plan }, seed, plan.streets);
-        const rebuilt: LoadedTown = { key, center: town.center, plan, food, roads: plan.streets };
+        const goods = streetGoodsFor(tri, { key, center: town.center, plan }, seed, plan.streets);
+        const rebuilt: LoadedTown = {
+          key, center: town.center, plan, goods,
+          food: goods[0], wares: goods.find(g => g.good.key === "tools") ?? null,
+          roads: plan.streets,
+        };
         towns.set(key, rebuilt);
         // Re-point embodied residents at the new plan; a body whose lot
         // vanished (converted or abandoned) despawns via ranking below.
@@ -1001,6 +948,7 @@ export function createTownManager(
           else {
             bodyHouse.delete(id);
             tripSent.delete(id);
+            dropTrip(id);
           }
         }
       }
@@ -1021,31 +969,85 @@ export function createTownManager(
         const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2)) : 0;
         return Math.hypot(a.x + abx * t - p.x, a.y + aby * t - p.y);
       };
+      // RANK: raw distance for street life (someone out walking is
+      // visible), distance + a heavy penalty for idle homebodies (the
+      // view hides them behind their own door — the budget shouldn't
+      // buy people nobody can see). The penalty is waived when the
+      // player is inside that house: THEN the family being home is
+      // exactly what's visible. Each house holds a HOUSEHOLD: the first
+      // non-recruited members fill the ERRAND ROLES (member 0 the food
+      // shopper, member 1 the wares runner where the town trades tools);
+      // the other members are homebodies about the room.
       const candidates: Array<{
-        id: string; town: LoadedTown; house: TownHouse; d: number;
+        id: string; town: LoadedTown; house: TownHouse; d: number; rank: number;
         x: number; y: number; walkTo?: Array<{ x: number; y: number; dwell?: number }>;
-        home: { x: number; y: number }; indoor?: boolean;
+        home: { x: number; y: number }; indoor?: boolean; run?: GoodRun;
       }> = [];
       for (const town of towns.values()) {
+        const runs = goodsRuns(town);
         for (const house of town.plan.houses) {
-          const id = villagerNpcId(town.key, house.index);
-          if (excluded.has(id)) continue;
           const door = houseDoorstep(town.center, house);
-          if (bodies.has(id)) {
-            const at = bodyPos(id, door);
-            const d = Math.hypot(at.x - p.x, at.y - p.y);
-            if (d > PEOPLE_R) continue;
-            candidates.push({ id, town, house, d, x: at.x, y: at.y, home: houseCenter(town, house) });
-            continue;
+          const playerInside = inHouseRect(p, town, house);
+          const runnerOf = new Map<string, GoodRun>();
+          for (const run of runs) {
+            const id = roleMemberId(town.key, house.index, run.role);
+            if (id) runnerOf.set(id, run);
           }
+          const hk = householdKey(town.key, house.index);
+          // Homebodies matter only up close (they're indoors, hidden
+          // until the player steps in) — one cheap gate for the family.
+          const hc = houseCenter(town, house);
+          const homeNear = playerInside
+            || Math.hypot(hc.x - p.x, hc.y - p.y) <= IDLE_EMBODY_R + 8;
+          for (let m = 0; m < HOUSEHOLD; m++) {
+            const id = villagerNpcId(town.key, memberIndex(house.index, m));
+            if (excluded.has(id)) continue;
+            const run = runnerOf.get(id);
+            if (bodies.has(id)) {
+              const at = bodyPos(id, door);
+              const d = Math.hypot(at.x - p.x, at.y - p.y);
+              if (d > PEOPLE_R) continue;
+              const walking = run !== undefined
+                && tripWalking.get(boxKey(hk, run.goods))?.npcId === id;
+              const idle = !walking
+                && (!run || run.goods.errand(house, now).phase === "home");
+              const rank = idle && !playerInside ? d + IDLE_RANK_PENALTY : d;
+              candidates.push({ id, town, house, d, rank, x: at.x, y: at.y, home: houseCenter(town, house) });
+              continue;
+            }
+            if (!run) {
+              // A homebody: indoors at their own spot in the room.
+              if (!homeNear) continue;
+              const spot = memberSpot(town, house, m);
+              const d = Math.hypot(spot.x - p.x, spot.y - p.y);
+              if (d > PEOPLE_R) continue;
+              const rank = playerInside ? d : d + IDLE_RANK_PENALTY;
+              candidates.push({
+                id, town, house, d, rank, x: spot.x, y: spot.y, home: spot, indoor: true,
+              });
+              continue;
+            }
+            spawnRunner(id, town, house, door, playerInside, run);
+          }
+        }
+      }
+      /** An ERRAND RUNNER's streaming candidacy — where their good's
+       *  cycle says they are, with the pop-in relocation rules. Split
+       *  out so the member loop above stays readable. */
+      function spawnRunner(
+        id: string, town: LoadedTown, house: TownHouse,
+        door: { x: number; y: number }, playerInside: boolean, run: GoodRun,
+      ): void {
           // Cheap prefilter: their day happens near the door–source
           // corridor. The ROAD route bows outward from the chord, so
           // allow a generous sagitta margin before skipping.
-          const src = town.food.sourceOf(house);
-          if (segDist(door, src) > PEOPLE_R + 120) continue;
-          const est = town.food.errand(house, now);
+          const src = run.goods.sourceOf(house);
+          if (segDist(door, src) > PEOPLE_R + 120) return;
+          const est = run.goods.errand(house, now);
           const d = Math.hypot(est.pos.x - p.x, est.pos.y - p.y);
-          if (d > PEOPLE_R) continue;
+          if (d > PEOPLE_R) return;
+          if (est.phase === "home" && d > IDLE_EMBODY_R && !playerInside) return;
+          const rank = est.phase === "home" && !playerInside ? d + IDLE_RANK_PENALTY : d;
 
           // WHERE the body materializes (the pop-in rule): people enter
           // the world through buildings, never onto open ground.
@@ -1088,24 +1090,30 @@ export function createTownManager(
           // A mid-trip body ends its errand at the doorstep — send it on
           // through its own door so it settles indoors (and stops
           // grinding on the door frame trying to get back in).
-          if (walkTo && !indoor) walkTo = throughDoor(town, house, walkTo, false);
+          if (walkTo && !indoor) {
+            walkTo = throughDoor(town, house, walkTo, false, run.box(town.center, house));
+          }
           candidates.push({
-            id, town, house, d, x: at.x, y: at.y,
-            ...(walkTo ? { walkTo } : {}), home: houseCenter(town, house), indoor,
+            id, town, house, d, rank, x: at.x, y: at.y,
+            ...(walkTo ? { walkTo } : {}), home: houseCenter(town, house), indoor, run,
           });
-        }
       }
-      candidates.sort((a, b) => a.d - b.d);
+      candidates.sort((a, b) => a.rank - b.rank);
       const budget = Math.max(0, npcBudget());
 
       // LOCKED: spawned residents whose body is beside the player never
       // blink out — they hold their slot first (capped at the budget:
-      // engine-cap pressure still wins). The rest of the budget fills
-      // nearest-first; eviction happens only outside the lock radius.
+      // engine-cap pressure still wins). A body idling INSIDE its own
+      // house holds no lock (the view hides it — culling it is not a
+      // blink-out) unless the player is in there looking at them. The
+      // rest of the budget fills best-rank-first; eviction happens only
+      // outside the lock radius.
       const desired = new Map<string, (typeof candidates)[number]>();
       for (const c of candidates) {
         if (desired.size >= budget) break;
-        if (bodies.has(c.id) && c.d < PEOPLE_EVICT_MIN) desired.set(c.id, c);
+        if (!bodies.has(c.id) || c.d >= PEOPLE_EVICT_MIN) continue;
+        if (inHouseRect(c, c.town, c.house) && !inHouseRect(p, c.town, c.house)) continue;
+        desired.set(c.id, c);
       }
       for (const c of candidates) {
         if (desired.size >= budget) break;
@@ -1118,11 +1126,12 @@ export function createTownManager(
           bodies.delete(id);
           bodyHouse.delete(id);
           tripSent.delete(id);
+          dropTrip(id);
         }
       }
       for (const [id, c] of desired) {
         if (bodies.has(id)) continue;
-        const sample = tri.dual.sampleVillager(c.town.key, c.house.index);
+        const sample = tri.dual.sampleVillager(c.town.key, villagerOf(id)!.index);
         if (!sample) continue;
         bodies.set(id, { x: c.x, y: c.y });
         bodyHouse.set(id, { town: c.town, house: c.house });
@@ -1150,26 +1159,32 @@ export function createTownManager(
           },
           ...(c.walkTo ? { walkTo: c.walkTo } : {}),
         });
-        if (c.walkTo) {
-          // Their current trip is already underway — don't re-issue it.
-          tripSent.set(id, c.town.food.errand(c.house, now).cycle);
+        if (c.walkTo && c.run) {
+          // Their current trip is already underway — don't re-issue it,
+          // and hold that good's box refill for their actual arrival.
+          const cyc = c.run.goods.errand(c.house, now).cycle;
+          tripSent.set(id, cyc);
+          tripWalking.set(boxKey(householdKey(c.town.key, c.house.index), c.run.goods), { npcId: id, cycle: cyc });
         }
       }
 
-      // Live shopping trips: an embodied resident whose cycle entered
-      // its trip window is sent out — once per cycle (the pantry model:
-      // the box ran dry, they go fill it). The waypoints ride the ROADS,
-      // so shoppers walk streets instead of grinding into house walls,
-      // and the trip is bracketed by door transits (out of home, back
-      // in at the end) so the one obstacle in town — the doorway — is
-      // crossed cleanly at both ends.
+      // Live shopping trips: an embodied ERRAND RUNNER whose good's
+      // cycle entered its trip window is sent out — once per cycle (the
+      // box model: it ran dry, they go fill it). The waypoints ride the
+      // ROADS, so runners walk streets instead of grinding into house
+      // walls, and the trip is bracketed by door transits (out of home,
+      // back in at the end) so the one obstacle in town — the doorway —
+      // is crossed cleanly at both ends. Homebody members never shop.
       for (const [id, bh] of bodyHouse) {
         if (despawn.includes(id)) continue;
-        const est = bh.town.food.errand(bh.house, now);
+        const run = runFor(bh.town, bh.house.index, id);
+        if (!run) continue;
+        const est = run.goods.errand(bh.house, now);
         if (est.phase === "home" || !est.walkTo) continue;
         if (tripSent.get(id) === est.cycle) continue;
         tripSent.set(id, est.cycle);
-        errands.push({ id, points: throughDoor(bh.town, bh.house, est.walkTo, true) });
+        tripWalking.set(boxKey(householdKey(bh.town.key, bh.house.index), run.goods), { npcId: id, cycle: est.cycle });
+        errands.push({ id, points: throughDoor(bh.town, bh.house, est.walkTo, true, run.box(bh.town.center, bh.house)) });
       }
 
       // Structures: the buildings around the player become REAL walls
@@ -1191,16 +1206,35 @@ export function createTownManager(
           changed = true;
         }
       }
-      let structures: StructureSpec[] | undefined;
+      let buildings: BuildingSpec[] | undefined;
+      const addObjects: ObjectSpec[] = [];
+      const removeObjects: string[] = [];
       if (changed) {
-        structures = [];
+        buildings = [];
         for (const id of solid) {
           const b = keepable.get(id) ?? nearNow.get(id);
-          if (b) structures.push(...buildingStructures(b));
+          if (b) buildings.push(b);
+        }
+        // FURNITURE follows its house (same rule the symbol game's town
+        // stage runs — the shared furniture model is the parity source).
+        for (const id of [...furnished]) {
+          if (solid.has(id)) continue;
+          for (const o of furnitureCatalog.get(id) ?? []) removeObjects.push(o.id);
+          furnished.delete(id);
+        }
+        for (const id of solid) {
+          if (furnished.has(id) || !furnitureCatalog.has(id)) continue;
+          addObjects.push(...furnitureCatalog.get(id)!);
+          furnished.add(id);
         }
       }
 
-      return { spawn, despawn, errands, ...(structures ? { structures } : {}) };
+      return {
+        spawn, despawn, errands,
+        ...(buildings ? { buildings } : {}),
+        ...(addObjects.length ? { addObjects } : {}),
+        ...(removeObjects.length ? { removeObjects } : {}),
+      };
     },
     loaded() {
       return [...towns.values()];
@@ -1208,11 +1242,40 @@ export function createTownManager(
     active() {
       return bodies.size;
     },
+    pantry(town, house, t) {
+      return boxLevel(town, town.food, house, t);
+    },
+    wares(town, house, t) {
+      return town.wares ? boxLevel(town, town.wares, house, t) : null;
+    },
+    goodBox(town, goodIndex, house, t) {
+      return boxLevel(town, town.goods[goodIndex], house, t);
+    },
+    tripArrived(npcId, now) {
+      const hk = householdKeyOf(npcId);
+      if (!hk) return;
+      // Which good's box this arrival fills: the run the body is
+      // assigned, else whichever walked trip names it (a body released
+      // between issue and arrival).
+      const bh = bodyHouse.get(npcId);
+      const run = bh ? runFor(bh.town, bh.house.index, npcId) : null;
+      let bk = run ? boxKey(hk, run.goods) : null;
+      if (bk === null) {
+        for (const [k, v] of tripWalking) if (v.npcId === npcId) { bk = k; break; }
+      }
+      if (bk === null) return;
+      const e = tripWalking.get(bk);
+      if (e && e.npcId !== npcId) return; // a stale arrival — not this box's trip
+      tripWalking.delete(bk);
+      const cur = run && bh ? run.goods.errand(bh.house, now).cycle : 0;
+      committed.set(bk, { cycle: e?.cycle ?? cur, at: now });
+    },
     release(npcId) {
       excluded.add(npcId);
       bodies.delete(npcId);
       bodyHouse.delete(npcId);
       tripSent.delete(npcId);
+      dropTrip(npcId);
     },
     restore(npcId) {
       excluded.delete(npcId);

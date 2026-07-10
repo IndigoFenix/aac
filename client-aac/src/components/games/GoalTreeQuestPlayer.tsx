@@ -10,10 +10,13 @@ import { useCallback, useEffect, useMemo, useRef, type Ref } from "react";
 import type { BoardOption, GameMessage } from "@shared/games-bridge";
 import type { GoalTreeGame } from "@shared/goal-tree/types";
 import { walkGoalTree } from "@shared/goal-tree/walk";
+import { buildTownPlay, isTownPlayPayload, type TownPlayPayload } from "@shared/symbol-game/town-play";
 import GameEmbed, { type GameEmbedHandle } from "./GameEmbed";
 
 interface GoalTreeQuestPlayerProps {
-  game: GoalTreeGame;
+  /** A certified quest game, OR a living-town config (town-play payload —
+   *  the player rebuilds the identical deterministic session from it). */
+  game: GoalTreeGame | TownPlayPayload;
   onClose: () => void;
   sendMessageToAi?: (msg: string) => void;
   /** "3d" loads the world-engine 3D player (symbol-learning); default 2d. */
@@ -37,12 +40,19 @@ export default function GoalTreeQuestPlayer({
 }: GoalTreeQuestPlayerProps) {
   const lastSentRef = useRef<{ text: string; at: number } | null>(null);
 
+  // A town payload's quest game derives deterministically from its config —
+  // build it here too, so the AI narration labels match what the player runs.
+  const questGame = useMemo<GoalTreeGame>(
+    () => (isTownPlayPayload(game) ? buildTownPlay(game).bundle.game : game),
+    [game],
+  );
+
   const labels = useMemo(() => {
-    const entity = new Map(game.entities.map((e) => [e.id, e.label]));
+    const entity = new Map(questGame.entities.map((e) => [e.id, e.label]));
     const entityLabel = (id: unknown) =>
       (typeof id === "string" && entity.get(id)) || String(id ?? "?");
     const node = new Map<string, string>();
-    for (const { node: n } of walkGoalTree(game.root)) {
+    for (const { node: n } of walkGoalTree(questGame.root)) {
       switch (n.type) {
         case "reach":
           node.set(n.id, entityLabel(n.markerEntityId));
@@ -61,7 +71,7 @@ export default function GoalTreeQuestPlayer({
     const nodeLabel = (id: unknown) =>
       (typeof id === "string" && node.get(id)) || String(id ?? "?");
     return { entityLabel, nodeLabel };
-  }, [game]);
+  }, [questGame]);
 
   const sendGameUpdate = useCallback(
     (text: string) => {
@@ -78,10 +88,10 @@ export default function GoalTreeQuestPlayer({
   // Intro on mount, hand-back on unmount — mirrors CustomAppPlayer.
   useEffect(() => {
     if (!sendMessageToAi) return;
-    const companion = game.meta.aiCompanion;
+    const companion = questGame.meta.aiCompanion;
     const intro = [
-      `[GAME STARTED] The student opened the quest game "${game.meta.title}".`,
-      game.meta.description ?? "",
+      `[GAME STARTED] The student opened the quest game "${questGame.meta.title}".`,
+      questGame.meta.description ?? "",
       companion
         ? `For this game, speak as the companion "${companion.name}": ${companion.persona}`
         : "",
@@ -94,7 +104,7 @@ export default function GoalTreeQuestPlayer({
       sendMessageToAi("[GAME] The student has closed the game. Return to normal conversation.");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game]);
+  }, [questGame]);
 
   const handleMessage = useCallback(
     (msg: GameMessage) => {

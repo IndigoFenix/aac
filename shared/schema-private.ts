@@ -629,6 +629,7 @@ export const aacSettings = pgTable("aac_settings", {
   eyegazeEnabled: boolean("eyegaze_enabled").default(false), // Enable dwell-based symbol selection
   eyegazeTimeout: integer("eyegaze_timeout").default(2000), // Dwell time in ms (1000-10000)
   eyegazeProvider: text("eyegaze_provider"), // 'auto', 'camera', 'tobii', 'eyetech', 'lctech', 'webhid', 'mouse'
+  eyegazeSmoothing: text("eyegaze_smoothing"), // hardware-tracker jitter smoothing strength: 'off'|'light'|'medium'|'strong' (null = 'medium')
 
   // AI identity
   aiName: text("ai_name"), // Custom AI name (e.g. "Buddy", "Sam")
@@ -1870,6 +1871,47 @@ export const sessionDebugLogs = pgTable("session_debug_logs", {
   content: text("content").notNull(),
 }, (table) => [
   index("idx_session_debug_logs_session_seq").on(table.sessionId, table.seq),
+]);
+
+// =============================================================================
+// SESSION COST EVENTS
+// =============================================================================
+
+/**
+ * Per-charge, timestamped cost trail for a session — the time-series behind the
+ * aggregate `chat_sessions.credits_used` / `cost_breakdown` totals. One row per
+ * credit charge (Live turn, HTTP completion, TTS, STT, standalone analysis) as
+ * it lands in the ledger, so admins can reconstruct how spend accrued OVER TIME
+ * within a session (per turn / per interval) rather than only the running total.
+ *
+ * Written unconditionally from `chargeCreditsToLedger` (server/services/
+ * credit-ledger.ts) — NOT gated on debugMode like `session_debug_logs`. Token
+ * columns are present for model-usage charges and null for character-billed
+ * charges (TTS/STT). Cascades on session delete, and is pruned alongside
+ * `session_debug_logs` by the admin "delete old logs" maintenance action.
+ *
+ * Higher-volume than the aggregate columns; keep it pruned.
+ */
+export const sessionCostEvents = pgTable("session_cost_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => chatSessions.id, { onDelete: "cascade", onUpdate: "cascade" }),
+  timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
+  // cost_breakdown key this charge is attributed to (e.g. "observer", "tts",
+  // "board-manager"). "other" when the charge carried no category.
+  category: text("category").notNull(),
+  credits: real("credits").notNull(),
+  // Token detail — populated for LLM/model-usage charges, null for
+  // character-billed charges (TTS/STT) and flat charges. For Live turns the
+  // modality tokens are folded into prompt (input) / completion (output).
+  model: varchar("model"),
+  promptTokens: integer("prompt_tokens"),
+  completionTokens: integer("completion_tokens"),
+  cachedTokens: integer("cached_tokens"),
+  cacheCreationTokens: integer("cache_creation_tokens"),
+  // Human-readable attribution copied from the charge label (audit aid).
+  label: text("label"),
+}, (table) => [
+  index("idx_session_cost_events_session_ts").on(table.sessionId, table.timestamp),
 ]);
 
 // =============================================================================

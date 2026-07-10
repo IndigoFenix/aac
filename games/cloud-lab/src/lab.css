@@ -1,0 +1,78 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #04060c;
+  font-family: ui-monospace, Consolas, monospace;
+  color: #e5e7eb;
+}
+#view {
+  position: fixed;
+  inset: 0;
+}
+#view canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+#panel {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  min-width: 200px;
+  padding: 10px 12px;
+  background: rgba(10, 14, 26, 0.82);
+  border: 1px solid rgba(120, 160, 220, 0.25);
+  border-radius: 10px;
+  font-size: 12px;
+  backdrop-filter: blur(4px);
+  z-index: 5;
+}
+#panel .title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #cfe3ff;
+  margin-bottom: 8px;
+}
+#controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+#controls .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#controls label {
+  flex: 0 0 82px;
+  color: #9db3d0;
+}
+#controls input[type="range"] {
+  flex: 1;
+}
+#controls input[type="text"] {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(120, 160, 220, 0.3);
+  border-radius: 5px;
+  color: #e5e7eb;
+  padding: 2px 6px;
+  font: inherit;
+}
+#controls .val {
+  flex: 0 0 42px;
+  text-align: right;
+  color: #cfe3ff;
+}
+#stats {
+  color: #9db3d0;
+  white-space: pre-line;
+  line-height: 1.5;
+}
+#panel .hint {
+  margin-top: 8px;
+  color: #5f7290;
+  font-size: 11px;
+}

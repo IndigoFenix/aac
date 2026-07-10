@@ -1,0 +1,123 @@
+{
+  "species": [
+    {
+      "key": "sheep",
+      "role": "domestic",
+      "name": "Sheep",
+      "color": "225,220,200,1",
+      "glyph": "🐑",
+      "needs": [{ "resource": "fodder", "value": 0.002 }],
+      "vitals": {
+        "birth": 0.06,
+        "death": 0.02,
+        "starvation": 0.3,
+        "diet": "fodder",
+        "capacity": { "scalar": "farms", "perUnit": 60 }
+      },
+      "foundingShare": 0.02,
+      "countScalar": "sheep_count",
+      "countMax": 5000
+    }
+  ],
+  "commodities": [
+    {
+      "key": "fodder",
+      "scalarMax": 100,
+      "transport": {}
+    },
+    {
+      "key": "wool",
+      "scalarMax": 100,
+      "transport": { "demand": "weaver_wool_draw" }
+    },
+    {
+      "key": "cloth",
+      "scalarMax": 100,
+      "perPersonDaily": 0.0003,
+      "transport": {},
+      "street": {
+        "capDays": 12,
+        "shopSec": 24,
+        "cartRations": 30,
+        "unit": "garment-days",
+        "producers": ["weaver"],
+        "stockColor": "#b98fc0",
+        "boxLabel": "Linen chest",
+        "errandName": "cloth"
+      }
+    }
+  ],
+  "buildings": [
+    {
+      "key": "farm",
+      "countScalar": "farms",
+      "cap": { "by": "farmland", "rate": 0.016666666666666666 },
+      "processes": [
+        { "id": "farm", "input": "farmland", "output": "grain_out", "efficiency": 0.08, "capacityRate": 5 },
+        { "id": "mill", "input": "grain_out", "output": "food_out", "efficiency": 1 },
+        { "id": "cut-fodder", "input": "farmland", "output": "fodder_out", "efficiency": 0.02, "capacityRate": 2 }
+      ],
+      "vars": [{ "name": "grain_out", "max": 200 }],
+      "construction": { "tier": "base", "costs": [{ "stockpile": "granary", "amount": 20 }] },
+      "sells": ["food"],
+      "leansToward": "fertility",
+      "mapCap": 6,
+      "district": "farm",
+      "style": { "color": "#c9a94e", "w": 18, "h": 12 },
+      "vignette": { "w": 6, "h": 5 },
+      "glyph": "🌾",
+      "title": "🌾 Farmstead",
+      "info": [
+        "{farms} farms working {farmland:0} farmland.",
+        "Grain: {per:grain_out/farms}.",
+        "Hay: {per:fodder_out/farms}.",
+        "Sells at the gate to its district."
+      ]
+    },
+    {
+      "key": "sheepfold",
+      "countScalar": "sheepfolds",
+      "cap": { "by": "farmland", "rate": 0.0125 },
+      "processes": [
+        { "id": "graze", "input": "sheep_count", "output": "wool_out", "efficiency": 0.025, "capacityRate": 3 }
+      ],
+      "construction": { "tier": "industry", "costs": [{ "stockpile": "granary", "amount": 20 }] },
+      "leansToward": "fertility",
+      "mapCap": 3,
+      "district": "farm",
+      "style": { "color": "#b0a27c", "w": 16, "h": 11 },
+      "vignette": { "w": 5, "h": 4 },
+      "glyph": "🐑",
+      "title": "🐑 Sheepfold",
+      "info": [
+        "{sheepfolds} sheepfolds penning {sheep_count:0} sheep.",
+        "Wool: {per:wool_out/sheepfolds} — shorn from the flock, not conjured from the grass."
+      ]
+    },
+    {
+      "key": "weaver",
+      "countScalar": "weavers",
+      "cap": { "by": "population", "rate": 0.00015 },
+      "processes": [
+        { "id": "weaver-wool-draw", "input": "weavers", "output": "weaver_wool_draw", "efficiency": 2.5 },
+        { "id": "weave", "input": "wool_got", "output": "cloth_out", "efficiency": 1.6, "capacityRate": 4 }
+      ],
+      "vars": [{ "name": "weaver_wool_draw", "max": 100 }],
+      "construction": { "tier": "industry", "costs": [{ "stockpile": "granary", "amount": 25 }] },
+      "sells": ["cloth"],
+      "shelved": true,
+      "leansToward": null,
+      "mapCap": 3,
+      "district": "craft",
+      "style": { "color": "#8c6d8e", "w": 14, "h": 10 },
+      "vignette": { "w": 5, "h": 4 },
+      "glyph": "🧵",
+      "title": "🧵 Weaver's hall",
+      "info": [
+        "{weavers} weavers.",
+        "Cloth: {per:cloth_out/weavers}.",
+        "Draws {weaver_wool_draw:1} wool/day off the roads."
+      ]
+    }
+  ]
+}

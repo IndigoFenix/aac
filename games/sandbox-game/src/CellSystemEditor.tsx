@@ -16,7 +16,7 @@ import {
   instantiate, stepOne, fastForward, inject,
   validateSpec, SAFE_EXAMPLES, GRID_EXAMPLES,
   type SystemSpec, type CellInstance, type ValidationResult,
-} from './cell-systems';
+} from '@shared/engine/cells';
 import CellGridView from './CellGridView';
 
 /** A spec is grid-oriented if it uses neighbour transport. */

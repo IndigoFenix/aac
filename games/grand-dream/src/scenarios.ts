@@ -11,6 +11,7 @@
 
 import type { DualSpec } from "./dual";
 import { buildAcceptanceTri, buildGenesisTri, buildTectonicTri, type AcceptanceWorld } from "./tri-worlds";
+import type { EconomyDoc } from "./economy";
 
 export interface LabScenario {
   key: string;
@@ -20,8 +21,10 @@ export interface LabScenario {
   json?: Record<string, unknown>;
   dual?: DualSpec;
   /** TRI scenarios boot all three layers; city positions come from the
-   *  substrate (tile coords), not from `layout`. */
-  tri?: (seed: number) => Promise<AcceptanceWorld>;
+   *  substrate (tile coords), not from `layout`. `extraContent` is the
+   *  lab's loaded custom-economy documents — the emergent worlds honor
+   *  it; the fixed acceptance world ignores it. */
+  tri?: (seed: number, extraContent?: EconomyDoc[]) => Promise<AcceptanceWorld>;
 }
 
 /** A ranged influence transmit hung off `convinced`. */
@@ -310,13 +313,18 @@ const triGenesis: LabScenario = {
   desc:
     "The full chain, from nothing, while you watch: the raw terrain settles — drainage " +
     "carves rivers, rivers write fertility, fertility greens and draws wild people " +
-    "(warm tiles) — and every few days the densest crowd FOUNDS A CITY where it " +
-    "stands. Valley towns farm; mountain foundings breed separatists and secede. " +
-    "Pick ⛰️ Raise or ⛏️ Dig and drag on the map: your motion reshapes the land, the " +
-    "rivers re-route instantly, fertility follows, crowds move — and sooner or later " +
-    "a city rises in the valley you made. Press Play to let the days run.",
+    "(warm tiles) — and every few days the densest crowd FOUNDS A VILLAGE where it " +
+    "stands, with just enough farms to feed itself. Surplus fills the granary, the " +
+    "granary builds the rest (watch the label tick village → town), and a " +
+    "metal-starved TOWN sends colonists to found a mining camp on the ridge — " +
+    "the ore counterflow assembles itself. Mountain foundings breed separatists " +
+    "and secede — and an empire twice their strength besieges them back in. " +
+    "Pick ⛰️ Raise or ⛏️ Dig and drag on " +
+    "the map: your motion reshapes the land, the rivers re-route instantly, " +
+    "fertility follows, crowds move — and sooner or later a village rises in the " +
+    "valley you made. Press Play to let the days run.",
   layout: {},
-  tri: (seed: number) => buildGenesisTri(seed),
+  tri: (seed: number, extraContent?: EconomyDoc[]) => buildGenesisTri(seed, extraContent),
 };
 
 /**
@@ -340,7 +348,7 @@ const triTectonic: LabScenario = {
     "the land is good — farm towns in river valleys, separatist mine towns where the " +
     "mountains pay.",
   layout: {},
-  tri: (seed: number) => buildTectonicTri(seed),
+  tri: (seed: number, extraContent?: EconomyDoc[]) => buildTectonicTri(seed, extraContent),
 };
 
 export const SCENARIOS: LabScenario[] = [triGenesis, triWorld, triTectonic, dualTrade, twoCity, chain, migration, idea];

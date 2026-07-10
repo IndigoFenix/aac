@@ -287,6 +287,24 @@ export function projectLayout2D(
   return { zones, doors, ...placeContent(world, plan, zoneRects, doors, config) };
 }
 
+/**
+ * Place a world's CONTENT (spawn, figures, target items, distractors) into a
+ * caller-supplied set of zone rects + doors — the same spiral placement every
+ * built-in projection uses, exposed so an external layout (e.g. the shared/place
+ * house embedder) reuses the exact, validateLayout2D-safe placement instead of
+ * reinventing it. `zoneRects` must cover every world zone; `doors` every passage.
+ */
+export function projectContentOnZones(
+  game: GoalTreeGame,
+  world: LogicalWorld,
+  zoneRects: Map<string, Rect>,
+  doors: DoorLayout[],
+  config: Projector2DConfig = PROJECTOR2D_DEFAULTS,
+): Pick<Layout2D, "figures" | "items" | "spawn"> {
+  const plan = planContent(game, world, config);
+  return placeContent(world, plan, zoneRects, doors, config);
+}
+
 // ---------------------------------------------------------------------------
 // Village projection (star-shaped worlds: plaza + houses)
 // ---------------------------------------------------------------------------
@@ -406,10 +424,12 @@ export function projectVillage2D(
 }
 
 /**
- * The projector games use: village geometry for star worlds, east-icicle for
- * everything else. Seeded from `meta.seed` (falling back to a stable hash of
- * the zone ids), so certification, the client, and tests all derive the SAME
- * layout for the same game.
+ * The projector games CERTIFY on: village geometry for star worlds, east-icicle
+ * for deeper trees. Seeded from `meta.seed` (falling back to a stable hash of the
+ * zone ids), so certification, the client, and tests all derive the SAME layout
+ * for the same game. `layout: "house"` games certify on this too (the certificate
+ * is topology-only); their real floor plan is built later by the shared/place
+ * embedder (docs/SPACE_EMBEDDING.md), a topology-preserving reskin.
  */
 export function projectGameLayout(
   game: GoalTreeGame,

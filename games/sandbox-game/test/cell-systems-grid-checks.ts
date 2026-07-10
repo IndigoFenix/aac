@@ -15,7 +15,7 @@ import {
   GRID_EXAMPLES, diffusion, puddle, dayField, colony, lifecycle, rainlands,
   intDiffusion, intPuddle, intTerrain, intTerrainSteady, intRivers,
   worldgenSubstrate, seedOreAboveTreeline, findFoundingSites,
-} from '../src/cell-systems/index.ts';
+} from '../../../shared/engine/cells/index.ts';
 
 let passed = 0;
 function check(name: string, fn: () => void) {

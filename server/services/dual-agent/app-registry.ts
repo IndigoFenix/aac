@@ -103,7 +103,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     id: "sandbox_game",
     name: "Sandbox",
     description: "Opens an idle sandbox game on the user's screen. The user shapes the landscape and watches as a world emerges from their actions. ALWAYS use open_app to launch this when the user wants to play the sandbox game.",
-    icon: "🪏",
+    icon: "⛏️",
     enabledByDefault: true,
   },
   {

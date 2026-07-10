@@ -7,8 +7,8 @@
 // keyed by spec id, so each system keeps its own saved world.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SystemSpec } from './cell-systems';
-import { createGrid, gridFastForward, serializeGrid, deserializeGrid, setGridWrap, type CellGrid } from './cell-systems';
+import type { SystemSpec } from '@shared/engine/cells';
+import { createGrid, gridFastForward, serializeGrid, deserializeGrid, setGridWrap, type CellGrid } from '@shared/engine/cells';
 import { GRID_COLS, GRID_ROWS } from './config';
 
 /** One system step in real time. ~5 steps/s live; idle time is caught up on load. */

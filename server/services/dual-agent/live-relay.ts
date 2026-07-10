@@ -692,6 +692,7 @@ export type ClientMessage =
   | { type: "conversation_room"; roomId: string | null }  // AAC entered/left a group student chat (shape C) — coordinator joins/leaves the shared conversation room so peer utterances flow both ways
   | { type: "conversation_focus"; personId: string | null }  // student tapped/dwelt on a peer's face in the group chat (or cleared it) — focuses that peer (by personId) as the addressee + tells the BoardManager to build phrases for them
   | { type: "mic_state"; active: boolean; reason?: string }  // mic activated/deactivated — logged to chat history for diagnostics, never injected into any live agent
+  | { type: "speech_method"; method: "silero" | "webSpeechApi" | "energy" | "none" }  // which speech-boundary detector is driving the client (Silero neural VAD vs fallbacks) — diagnostics only, like mic_state
   | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string; quality?: number }> }
   | { type: "voice_descriptors"; data: Array<{ embedding: number[]; quality?: number }>; clipId?: string }  // speaker embeddings computed from heard speech, for server-side voice matching. `clipId` ties this to a speech_audio clip so the server syncs voice + STT before attributing.
   | { type: "speech_text"; text: string; confidence?: number; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number } }  // cost-saving (Phase 1, Whisper path — plumbing kept): on-device transcript of a VAD speech segment. Server injects as [HEARD SPEECH].
@@ -747,6 +748,7 @@ export type ServerMessage =
   | { type: "board"; data: any }
   | { type: "input_glyphs"; data: Array<{ glyph: string; fallback?: string }> }  // experiment (glyphInputTranslation): glyph translation of incoming speech for the header strip — one entry per sentence
   | { type: "transcript"; data: string; speaker?: string; confidence?: string }
+  | { type: "transcript_interim"; data: string }  // rolling live STT interim ("" clears) — grey caption while the recognizer is still hearing; the routed `transcript` (yellow) stays authoritative
   | { type: "context"; data: string }
   | { type: "emote"; data: string }
   | { type: "call_directive"; action: "start"; contactId: string; contactName?: string }  // AI asked to place a call — client dials via its CallClient

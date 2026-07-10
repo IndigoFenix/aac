@@ -6,8 +6,8 @@
 // useWorld. Click a city for a goods boom, or near a route to stir up hostility.
 
 import { useEffect, useRef } from 'react';
-import type { EntityWorld } from './cell-systems';
-import { injectEntity, injectEdge } from './cell-systems';
+import type { EntityWorld } from '@shared/engine/cells';
+import { injectEntity, injectEdge } from '@shared/engine/cells';
 
 interface Props {
   getWorld: () => EntityWorld;

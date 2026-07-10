@@ -21,11 +21,17 @@
 // headless server never pulls it in.
 
 import * as THREE from "three";
-import type { BuildingSpec, StructureSpec, Vec2, WorldSpec } from "./types.js";
-import { buildingAt, insideBuilding, type AvatarState, type WorldState } from "./engine.js";
+import type { BuildingSpec, RoadPath, StructureSpec, Vec2, WorldSpec } from "./types.js";
+import {
+  accessibleBuildings,
+  buildingAt,
+  visibleBuildings,
+  type AvatarState,
+  type WorldState,
+} from "./engine.js";
 import type { RenderIntent, ScreenPick, WorldView, WorldViewDeps } from "./world-view.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
-import { buildObjectModel, type ObjectModel } from "./object-models.js";
+import { buildObjectModel, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
 import {
   DEFAULT_CAMERA_TUNABLES,
   DEFAULT_COMFORT_TUNABLES,
@@ -55,6 +61,16 @@ const MODEL = {
 } as const;
 
 const BACKDROP = "#0f172a";
+
+// Roads. Painted as flat opaque ribbons sitting a hair ABOVE the field (so they
+// never z-fight the ground) in ONE uniform colour — the 2D map's packed-earth
+// tan. A single colour is deliberate: overlapping ribbons (a junction, a
+// crossing) then paint the SAME pixel colour, so the overlap is invisible
+// instead of doubling up the way the semi-transparent 2D lanes do.
+const ROAD_COLOR = "#c9b487";
+/** World-Y the road ribbons sit at — above the grid (0.01), below the border
+ *  (0.03), so they read as paint on the field without fighting its depth. */
+const ROAD_Y = 0.02;
 
 // Structure geometry. World units are METERS — the default avatar is a 1.8 m
 // capsule, so buildings use real-house dimensions: 3 m storeys (walls reach the
@@ -128,18 +144,20 @@ function makeGlyphIconSprite(img: GlyphImage): { sprite: THREE.Sprite; tex: THRE
 }
 
 /**
- * The local avatar's occupancy, for the see-inside fade: which building it is
- * in, which storey it stands on, and how high the camera sits. Null when the
- * avatar is outdoors — nothing fades.
+ * The see-inside context: the set of building ids whose interior is currently
+ * revealed to the local player (visibleBuildings — the room they stand in plus
+ * every room reachable through an open door), the storey they stand on, and how
+ * high the camera sits. Null when there's no local avatar. An empty `visible`
+ * set ⇒ outdoors with nothing open nearby — nothing fades.
  */
 interface FadeContext {
-  building: BuildingSpec;
+  visible: Set<string>;
   floor: number;
   camY: number;
 }
 
-/** Does the OCCUPIED building's horizontal plane at `planeY` block the camera's
- *  view of the occupant? It must lie above the occupant AND at/below the camera
+/** Does a revealed building's horizontal plane at `planeY` block the camera's
+ *  view inside? It must lie above the occupant's storey AND at/below the camera
  *  — a ceiling the camera hasn't risen past yet hides nothing. */
 function planeBlocks(fade: FadeContext, planeY: number): boolean {
   return planeY > fade.floor * FLOOR_HEIGHT + 0.1 && fade.camY > planeY - CAM_FADE_MARGIN;
@@ -292,6 +310,92 @@ export function screenRayToGround(
   const hit = raycaster.ray.intersectPlane(plane, out);
   if (!hit) return null;
   return { x: hit.x, y: hit.z };
+}
+
+/**
+ * Flat ground ribbon for a road: the centerline `points` (world coords) swept to
+ * `width`, laid in the XZ plane at y=ROAD_Y. Pure geometry (no GL state), so it's
+ * unit-testable headless. Joins are MITERED — each vertex offsets along the
+ * average of its two adjacent segment normals, scaled by 1/cos(half-angle) and
+ * clamped — so the ribbon keeps constant width around the gentle street bends
+ * without gaps or overlap seams inside one road. <2 distinct points ⇒ empty
+ * geometry (nothing to draw). All normals point +Y; the caller uses a
+ * double-sided material, so winding is irrelevant.
+ */
+export function buildRoadRibbon(points: Vec2[], width: number): THREE.BufferGeometry {
+  const geom = new THREE.BufferGeometry();
+  // Drop consecutive duplicates — a zero-length segment has no normal.
+  const pts: Vec2[] = [];
+  for (const p of points) {
+    const last = pts[pts.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 1e-6) pts.push(p);
+  }
+  if (pts.length < 2 || width <= 0) return geom;
+
+  const half = width / 2;
+  // Unit normal (in XZ) of the segment a→b, left-hand side.
+  const segN = (a: Vec2, b: Vec2): { x: number; z: number } => {
+    const dx = b.x - a.x;
+    const dz = b.y - a.y;
+    const l = Math.hypot(dx, dz) || 1;
+    return { x: -dz / l, z: dx / l };
+  };
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    let nx: number;
+    let nz: number;
+    let scale = 1;
+    if (i === 0) {
+      const n = segN(pts[0], pts[1]);
+      nx = n.x;
+      nz = n.z;
+    } else if (i === pts.length - 1) {
+      const n = segN(pts[i - 1], pts[i]);
+      nx = n.x;
+      nz = n.z;
+    } else {
+      const n1 = segN(pts[i - 1], pts[i]);
+      const n2 = segN(pts[i], pts[i + 1]);
+      let mx = n1.x + n2.x;
+      let mz = n1.z + n2.z;
+      const ml = Math.hypot(mx, mz);
+      if (ml < 1e-4) {
+        // A ~180° switchback — fall back to the outgoing normal (no miter).
+        nx = n2.x;
+        nz = n2.z;
+      } else {
+        mx /= ml;
+        mz /= ml;
+        // 1/cos(half-angle) keeps the offset edge parallel; clamp the spike on a
+        // sharp corner so a hairpin can't shoot the ribbon out to infinity.
+        scale = Math.min(3, 1 / Math.max(0.34, mx * n2.x + mz * n2.z));
+        nx = mx;
+        nz = mz;
+      }
+    }
+    const ox = nx * half * scale;
+    const oz = nz * half * scale;
+    // Left then right vertex for this centerline point.
+    positions.push(pts[i].x + ox, ROAD_Y, pts[i].y + oz);
+    positions.push(pts[i].x - ox, ROAD_Y, pts[i].y - oz);
+    normals.push(0, 1, 0, 0, 1, 0);
+  }
+
+  const index: number[] = [];
+  for (let s = 0; s < pts.length - 1; s++) {
+    const a = 2 * s; // left  @ s
+    const b = 2 * s + 1; // right @ s
+    const c = 2 * s + 2; // left  @ s+1
+    const d = 2 * s + 3; // right @ s+1
+    index.push(a, c, b, b, c, d);
+  }
+
+  geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geom.setIndex(index);
+  return geom;
 }
 
 /** Soft radial glow (white core → warm gold → transparent) for the gaze spark.
@@ -713,6 +817,16 @@ export interface World3DRendererOptions {
   comfort?: Partial<ComfortTunables>;
   /** An embedded content layer drawn in the world scene (see SceneOverlay). */
   overlay?: SceneOverlay;
+  /** Roads to paint on the ground (streets of a streamed town). Render-only flat
+   *  ribbons; see RoadPath. Built once at construction. */
+  roads?: RoadPath[];
+  /** Override the road ribbon colour (hex). Defaults to ROAD_COLOR (packed-earth
+   *  tan, matching the 2D map). */
+  roadColor?: string;
+  /** SPIRIT avatar: a FIXED angled-overhead camera that frames the whole scene
+   *  (the formless player never moves, so the follow-rig is replaced by a static
+   *  vantage over the manifold). */
+  spirit?: boolean;
 }
 
 /** Merge partial camera/comfort overrides over the defaults (nested poses too). */
@@ -750,6 +864,10 @@ export class World3DRenderer {
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly raycaster = new THREE.Raycaster();
+  /** Last frame's interior-visibility set + the state it was computed against, so
+   *  the gaze pick can refuse anything inside a HIDDEN room (see pickScreen). */
+  private pickVisible = new Set<string>();
+  private pickState: WorldState | null = null;
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly _scratch = new THREE.Vector3();
   /** Screen-up in world space, recomputed each frame for bubble placement. */
@@ -784,6 +902,10 @@ export class World3DRenderer {
   >();
   /** Per-building render meshes: upper floor slabs (by storey) + a roof. */
   private readonly buildingMeshes = new Map<string, { slabs: { floor: number; mesh: THREE.Mesh }[]; roof: THREE.Mesh }>();
+  /** Last-seen spec lists — a swapped reference (streaming) triggers the
+   *  removal sweep for meshes whose structure/building left the world. */
+  private lastStructureList?: StructureSpec[];
+  private lastBuildingList?: BuildingSpec[];
   private readonly bubbles = new Map<string, Bubble3D>();
   /** The player's gaze cursor rendered as a small flying light (see GazeSpark). */
   private readonly spark = new GazeSpark();
@@ -801,6 +923,9 @@ export class World3DRenderer {
 
   /** The smoothed ground point the camera is following (eased toward the local
    *  avatar). Null until the first frame, when it snaps. */
+  /** SPIRIT: a fixed angled-overhead vantage over the whole manifold (the
+   *  formless player never moves, so the follow rig is bypassed). */
+  private spiritCamera = false;
   private camCenter: THREE.Vector3 | null = null;
   /** The smoothed camera HEADING (unit, on the XZ ground plane). The camera sits
    *  behind it and looks ahead along it, so it swings to reveal what's in front of
@@ -825,6 +950,7 @@ export class World3DRenderer {
     this.localId = opts.localId;
     this.modelFactory = opts.modelFactory ?? defaultAvatarModelFactory;
     this.overlay = opts.overlay;
+    this.spiritCamera = !!opts.spirit;
     this.cameraCfg = mergeCamera(opts.camera);
     this.comfort = mergeComfort(opts.comfort);
     // Start at the overhead "home" pose (the avatar spawns at rest → watch/overhead).
@@ -843,6 +969,7 @@ export class World3DRenderer {
 
     this.buildLights();
     this.buildGround(backdrop);
+    this.buildRoads(opts.roads, opts.roadColor);
     this.buildVignette(backdrop);
     this.scene.add(this.spark.group);
     this.overlay?.mount(this.scene);
@@ -921,6 +1048,34 @@ export class World3DRenderer {
     );
     this.scene.add(border);
     this.disposables.push(border.geometry, border.material as THREE.Material);
+  }
+
+  /** Paint the town's roads as flat ground ribbons — one mesh per path, all
+   *  sharing a single opaque tan material at ROAD_Y. Built once (streamed worlds
+   *  aren't a consumer of this view); ribbons overlap harmlessly because they're
+   *  one flat colour. */
+  private buildRoads(roads: RoadPath[] | undefined, roadColor?: string): void {
+    if (!roads || roads.length === 0) return;
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(roadColor ?? ROAD_COLOR),
+      roughness: 1,
+      metalness: 0,
+      side: THREE.DoubleSide,
+    });
+    this.disposables.push(mat);
+    for (const road of roads) {
+      const geom = buildRoadRibbon(road.points, road.width);
+      if (!geom.getIndex()) {
+        // Empty ribbon (fewer than two distinct points) — nothing to add.
+        geom.dispose();
+        continue;
+      }
+      const mesh = new THREE.Mesh(geom, mat);
+      // Ground paint never occludes anything above it; drawn early, under bodies.
+      mesh.renderOrder = -1;
+      this.scene.add(mesh);
+      this.disposables.push(geom);
+    }
   }
 
   /** A fullscreen radial vignette drawn on top of the scene. Its alpha is driven
@@ -1007,6 +1162,14 @@ export class World3DRenderer {
         node = node.parent;
       }
       if (!pick) continue;
+      // The gaze can't rest on anything inside a HIDDEN room — an interior whose
+      // roof is still on (a puzzle-locked area, or a room no open door reveals).
+      // Refuse the hit and let the ray fall through to whatever's visible behind
+      // it, so the player can neither dwell on nor select what they can't see.
+      if (this.pickState) {
+        const hitB = buildingAt(this.pickState, hit.point.x, hit.point.z);
+        if (hitB && !this.pickVisible.has(hitB.id)) continue;
+      }
       const isLocal = pick.kind === "avatar" && pick.id === this.localId;
       // The local avatar fills the lower screen in the shoulder view; by default the
       // ray passes THROUGH it to whatever's behind. Callers wanting to know the gaze
@@ -1042,21 +1205,26 @@ export class World3DRenderer {
     glyphFor?: (glyph: string) => CanvasImageSource[] | null,
     intent?: RenderIntent,
   ): void {
-    // See-inside floor fade — purely GEOMETRIC: when the local avatar is inside
-    // a building, fade exactly the planes of THAT building that sit between it
-    // and the camera (roof / slabs / storey walls above the occupant that the
-    // camera has risen past). The camera HEIGHT decides, not the rig pose — an
-    // overhead cam is above every roof, a shoulder cam may or may not be, and
-    // either way only what actually blocks the view fades. Other buildings
-    // never fade. null ⇒ outdoors, nothing fades.
+    // See-inside fade: reveal the interior of every building currently visible,
+    // fading exactly the planes that sit between it and the camera. Visibility —
+    // not the player's own building — is the single signal. AVATAR mode uses
+    // visibleBuildings (the room you're in + every room an open door joins to
+    // it) and the camera HEIGHT then decides which planes block the view. SPIRIT
+    // mode is the "dollhouse": a formless overhead viewer sees every ACCESSIBLE
+    // room (reachable through unlocked doors) unconditionally, while a puzzle
+    // that LOCKS an area keeps its roof — so it reveals accessibleBuildings.
     const me = state.avatars[this.localId];
-    const myBuilding = me ? buildingAt(state, me.x, me.y) : null;
-    const fade: FadeContext | null =
-      me && myBuilding
-        ? { building: myBuilding, floor: me.floor, camY: this.camera.position.y }
-        : null;
+    const visible = this.spiritCamera
+      ? accessibleBuildings(state, me ? { x: me.x, y: me.y } : undefined)
+      : me
+        ? visibleBuildings(state, { x: me.x, y: me.y })
+        : new Set<string>();
+    const fade: FadeContext = { visible, floor: me?.floor ?? 0, camY: this.camera.position.y };
+    // The gaze pick reads these to refuse hits inside a hidden room.
+    this.pickVisible = visible;
+    this.pickState = state;
 
-    this.syncAvatars(state, dt, faceFor, labelFor, intent?.sitting ?? false, intent?.interactId);
+    this.syncAvatars(state, dt, faceFor, labelFor, intent?.sitting ?? false, intent?.interactId, visible);
     this.syncStructures(state, fade, dt);
     this.syncObjects(state, intent?.interactId, fade, glyphFor, dt);
     this.syncBuildings(state, fade, dt);
@@ -1129,8 +1297,16 @@ export class World3DRenderer {
     faceFor: (id: string) => CanvasImageSource | null,
     labelFor: (id: string) => string,
     sitting: boolean,
-    interactId?: string,
+    interactId: string | undefined,
+    visible: Set<string>,
   ): void {
+    // THE INDOOR CULL (render-only — mechanics never depend on the view):
+    // a body inside a building is hidden unless that building's interior is
+    // VISIBLE (visibleBuildings — the player's room + every room an open door
+    // connects to it). Same rule the 2D overhead view runs — homebodies exist
+    // behind their walls without costing a draw. Keying on visibility (not "the
+    // player's own building") is what lets an adjacent room, seen through an
+    // open door, show its people.
     // Add models for new avatars; update all present ones.
     for (const a of Object.values(state.avatars)) {
       const isLocal = a.id === this.localId;
@@ -1140,6 +1316,10 @@ export class World3DRenderer {
         model.object.userData.pick = { kind: "avatar", id: a.id } satisfies ScreenPick;
         this.avatars.set(a.id, model);
         this.scene.add(model.object);
+      }
+      if (!isLocal) {
+        const inBuilding = buildingAt(state, a.x, a.y);
+        model.object.visible = !inBuilding || visible.has(inBuilding.id);
       }
       model.object.position.set(a.x, a.floor * FLOOR_HEIGHT, a.y);
       model.update(
@@ -1168,10 +1348,27 @@ export class World3DRenderer {
   }
 
   /** Build each structure's mesh once, then (for doors) swing its leaf to match the
-   *  live `open`. Walls are static; door pivots rotate from state.doors[id].open. */
-  private syncStructures(state: WorldState, fade: FadeContext | null, dt: number): void {
+   *  live `open`. Walls are static; door pivots rotate from state.doors[id].open.
+   *  STREAMED worlds replace the set (setStructures/setBuildings) — meshes whose
+   *  structure left the spec are removed and disposed, or a long walk leaks the
+   *  whole town behind you. */
+  private syncStructures(state: WorldState, fade: FadeContext, dt: number): void {
     const structures = state.spec.structures;
     if (!structures) return;
+    if (structures !== this.lastStructureList) {
+      this.lastStructureList = structures;
+      const live = new Set(structures.map((s) => s.id));
+      for (const [id, entry] of this.structureMeshes) {
+        if (live.has(id)) continue;
+        this.scene.remove(entry.object);
+        entry.object.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.geometry) mesh.geometry.dispose();
+        });
+        for (const mat of entry.mats) mat.dispose();
+        this.structureMeshes.delete(id);
+      }
+    }
     for (const s of structures) {
       let entry = this.structureMeshes.get(s.id);
       if (!entry) {
@@ -1187,16 +1384,17 @@ export class World3DRenderer {
         // color tints the LINTEL, not the leaf — the leaf must read as a door.)
         entry.door.leafMat.color.setHex(door?.locked ? STRUCTURE.doorLockedColor : STRUCTURE.doorColor);
       }
-      // A wall/door of a storey ABOVE the occupant, in the occupant's OWN
-      // building, fades once the camera is above that storey. Exterior
-      // (floorless) walls and stairs never fade.
+      // A wall/door of a storey ABOVE the occupant, in a REVEALED building,
+      // fades once the camera is above that storey. Exterior (floorless) walls
+      // and stairs never fade.
       const sFloor = s.kind === "stairs" ? undefined : s.floor;
-      const inMyBuilding =
-        !!fade &&
+      const inVisible =
         s.kind !== "stairs" &&
-        insideBuilding(fade.building, (s.a.x + s.b.x) / 2, (s.a.y + s.b.y) / 2);
-      const faded =
-        !!fade && inMyBuilding && sFloor !== undefined && planeBlocks(fade, sFloor * FLOOR_HEIGHT);
+        (() => {
+          const b = buildingAt(state, (s.a.x + s.b.x) / 2, (s.a.y + s.b.y) / 2);
+          return !!b && fade.visible.has(b.id);
+        })();
+      const faded = inVisible && sFloor !== undefined && planeBlocks(fade, sFloor * FLOOR_HEIGHT);
       for (const mat of entry.mats) fadeToward(mat, faded, dt);
     }
   }
@@ -1204,9 +1402,26 @@ export class World3DRenderer {
   /** Build each building's floor slabs + roof once, then ease exactly the planes
    *  of the OCCUPIED building that sit between the occupant and the camera —
    *  a slab above the camera still hides nothing, other buildings never fade. */
-  private syncBuildings(state: WorldState, fade: FadeContext | null, dt: number): void {
+  private syncBuildings(state: WorldState, fade: FadeContext, dt: number): void {
     const buildings = state.spec.buildings;
     if (!buildings) return;
+    // Streamed worlds swap the set — drop the roofs/slabs of buildings gone.
+    if (buildings !== this.lastBuildingList) {
+      this.lastBuildingList = buildings;
+      const live = new Set(buildings.map((b) => b.id));
+      for (const [id, entry] of this.buildingMeshes) {
+        if (live.has(id)) continue;
+        for (const s of entry.slabs) {
+          this.scene.remove(s.mesh);
+          s.mesh.geometry.dispose();
+          (s.mesh.material as THREE.Material).dispose();
+        }
+        this.scene.remove(entry.roof);
+        entry.roof.geometry.dispose();
+        (entry.roof.material as THREE.Material).dispose();
+        this.buildingMeshes.delete(id);
+      }
+    }
     for (const b of buildings) {
       let entry = this.buildingMeshes.get(b.id);
       if (!entry) {
@@ -1215,17 +1430,23 @@ export class World3DRenderer {
         for (const s of entry.slabs) this.scene.add(s.mesh);
         this.scene.add(entry.roof);
       }
-      const occupied = fade && fade.building.id === b.id ? fade : null;
+      // Reveal this building iff its interior is VISIBLE (`fade.visible` — the
+      // avatar's room + rooms an open door joins to it, or every ACCESSIBLE room
+      // in spirit mode). A LOCKED-off room is never in the set, so it keeps its
+      // roof. AVATAR mode still gates each revealed plane on camera height (only
+      // what actually blocks the view fades); SPIRIT is the formless overhead
+      // dollhouse, so a revealed roof/slab lifts unconditionally.
+      const revealed = fade.visible.has(b.id);
       for (const { floor, mesh } of entry.slabs) {
         fadeToward(
           mesh.material as THREE.MeshStandardMaterial,
-          !!occupied && planeBlocks(occupied, floor * FLOOR_HEIGHT),
+          revealed && (this.spiritCamera || planeBlocks(fade, floor * FLOOR_HEIGHT)),
           dt,
         );
       }
       fadeToward(
         entry.roof.material as THREE.MeshStandardMaterial,
-        !!occupied && planeBlocks(occupied, b.floors * FLOOR_HEIGHT),
+        revealed && (this.spiritCamera || planeBlocks(fade, b.floors * FLOOR_HEIGHT)),
         dt,
       );
     }
@@ -1356,6 +1577,14 @@ export class World3DRenderer {
     glyphFor?: (glyph: string) => CanvasImageSource[] | null,
     dt = 0,
   ): void {
+    // Streamed objects (furniture) leave with their house — drop their meshes.
+    for (const [id, entry] of this.objectMeshes) {
+      if (state.objects[id]) continue;
+      this.scene.remove(entry.mesh);
+      this.scene.remove(entry.shadow);
+      entry.model?.dispose();
+      this.objectMeshes.delete(id);
+    }
     for (const obj of Object.values(state.objects)) {
       const spec = state.spec.objects.find((o) => o.id === obj.id);
       const radius = spec?.radius ?? 0.5;
@@ -1365,7 +1594,8 @@ export class World3DRenderer {
         // to the generic box/sphere when there's no recipe (a new/queued type).
         let mesh: THREE.Object3D;
         let materials: THREE.MeshStandardMaterial[];
-        const model = buildObjectModel({ iconRef: spec?.iconRef, glyph: spec?.glyph, radius }) ?? undefined;
+        const model =
+          buildObjectModel({ iconRef: spec?.iconRef, glyph: spec?.glyph, fixture: spec?.fixture, radius }) ?? undefined;
         if (model) {
           mesh = model.object;
           materials = model.materials;
@@ -1409,6 +1639,12 @@ export class World3DRenderer {
           entry.glyphKey = spec?.glyph;
         }
         entry.model.update(state.time);
+        // A lidded fixture's swing follows its eased `open`; a fixture
+        // faces INTO the room (spec.facing), not its carrier.
+        if (spec?.fixture) {
+          entry.model.setOpen?.(obj.open);
+          entry.mesh.rotation.y = spec.facing ?? 0;
+        }
         // Carried objects turn to face the way their carrier faces (a recipe's
         // forward is +X; align it with the possessor's facing vector).
         if (obj.possessedBy) {
@@ -1433,8 +1669,12 @@ export class World3DRenderer {
       // Containment lifts/lowers the object so on/in/under read as relations.
       let y = radius;
       if (obj.containedIn) {
-        const cr = state.spec.objects.find((o) => o.id === obj.containedIn!.objectId)?.radius ?? 0.5;
-        if (obj.containedIn.relation === "on") y = cr * 2 + radius;
+        const container = state.spec.objects.find((o) => o.id === obj.containedIn!.objectId);
+        const cr = container?.radius ?? 0.5;
+        // A table's top is LOW (decoupled from its footprint radius — see
+        // TABLE_TOP_Y); every other container is a full cube, top at 2×r.
+        const topY = container?.fixture === "table" ? TABLE_TOP_Y : cr * 2;
+        if (obj.containedIn.relation === "on") y = topY + radius;
         else if (obj.containedIn.relation === "in") y = cr;
         // "under" stays on the ground (beneath the container's top).
       }
@@ -1444,11 +1684,13 @@ export class World3DRenderer {
       // Possession tint marks the owner; an INTERACT highlight (gaze on a free
       // object) pulses cyan. Applied across every material of the model.
       // Objects fade with the storey they stand on (same plane rule as slabs),
-      // only inside the occupant's own building.
+      // only inside a REVEALED building.
+      const objBuilding = fade ? buildingAt(state, obj.x, obj.y) : null;
       const faded =
         !!fade &&
         obj.floor > fade.floor &&
-        insideBuilding(fade.building, obj.x, obj.y) &&
+        !!objBuilding &&
+        fade.visible.has(objBuilding.id) &&
         fade.camY > obj.floor * FLOOR_HEIGHT - CAM_FADE_MARGIN;
       for (const mat of entry.materials) {
         if (obj.possessedBy) {
@@ -1503,6 +1745,29 @@ export class World3DRenderer {
   }
 
   private updateCamera(state: WorldState, dt: number, intent?: RenderIntent): void {
+    // SPIRIT: a FIXED angled-overhead vantage that frames the whole manifold. The
+    // formless player never moves, so there is nothing to follow — a static
+    // camera over the scene lets the gaze reach every object/person (the spirit
+    // interacts at any distance). Set once; cheap to re-assert each frame.
+    if (this.spiritCamera) {
+      const { width: W, height: H } = this.spec.manifold;
+      const cx = W / 2;
+      const cz = H / 2;
+      const fov = 42;
+      if (Math.abs(fov - this.camera.fov) > 1e-3) {
+        this.camera.fov = fov;
+        this.camera.updateProjectionMatrix();
+      }
+      // Frame the larger span at ~50° down, from the -Z ("south") side.
+      const span = Math.max(W, H) * 1.15;
+      const dist = span / (2 * Math.tan((fov * Math.PI) / 180 / 2));
+      const pitch = 0.9; // rad below horizontal (~52°)
+      this.camera.position.set(cx, dist * Math.sin(pitch), cz + dist * Math.cos(pitch));
+      this.camera.lookAt(cx, 0, cz);
+      this.lastYawSpeed = 0;
+      if (!this.camCenter) this.camCenter = new THREE.Vector3(cx, 0, cz);
+      return;
+    }
     const me = state.avatars[this.localId];
     const step = Math.max(0, dt);
     const cam = this.cameraCfg;
@@ -1654,7 +1919,14 @@ export class World3DRenderer {
 export function createWorld3DView(
   deps: WorldViewDeps,
   spec: WorldSpec,
-  opts?: { modelFactory?: AvatarModelFactory; backdrop?: string; overlay?: SceneOverlay },
+  opts?: {
+    modelFactory?: AvatarModelFactory;
+    backdrop?: string;
+    overlay?: SceneOverlay;
+    roads?: RoadPath[];
+    roadColor?: string;
+    spirit?: boolean;
+  },
 ): WorldView {
   const { canvas, localId, faceFor, labelFor, glyphFor } = deps;
   const renderer = new World3DRenderer(canvas, spec, {
@@ -1662,6 +1934,9 @@ export function createWorld3DView(
     overlay: opts?.overlay,
     modelFactory: opts?.modelFactory,
     backdrop: opts?.backdrop,
+    roads: opts?.roads,
+    roadColor: opts?.roadColor,
+    spirit: opts?.spirit,
   });
   return {
     screenToWorld: (px, py) => renderer.screenToWorld(px, py),
