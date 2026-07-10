@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
@@ -98,9 +99,18 @@ async function runMigrations() {
           }
         }
         
-        // Update migrations table
-        const hash = String(appliedCount + pendingMigrations.indexOf(migration) + 1);
-        const createdAt = Date.now();
+        // Record the migration EXACTLY as drizzle-orm's own migrator does, so
+        // this runner and the production `migrate()` (server/index.prod.ts) are
+        // interchangeable against the same DB:
+        //   created_at = the journal `when` (folderMillis) — drizzle compares
+        //     THIS to decide what's pending, so it must be the journal value,
+        //     not a wall clock. Using Date.now() here previously desynced the
+        //     two: drizzle would then re-run every migration whose `when`
+        //     exceeded the wall-clock stamp (the 0142 "relation already exists"
+        //     incident).
+        //   hash = sha256 of the raw .sql file — matches drizzle's readMigrationFiles.
+        const hash = crypto.createHash('sha256').update(sql).digest('hex');
+        const createdAt = migration.when;
         await client.query(
           'INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)',
           [hash, createdAt]

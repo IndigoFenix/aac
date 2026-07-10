@@ -33,6 +33,10 @@ Run a full npm test after completing major tasks that touch a large part of the 
 The npm test does not call the real LLM - we use a mock LLM for this instead.
 Don't run test:llm or test:ai without being instructed to.
 
+## Databases
+DO NOT, UNDER ANY CIRCUMSTANCE, AUTHOR DATABASE MIGRATION FILES YOURSELF.
+Edit the schema, then use db:generate to create the files. Otherwise you will mess up the system.
+
 ## General Behaviors
 Use logs whenever needed - preferably logging to a file rather than the console.
 If you try to fix an error and fail, don't hesitate to create a log that will help uncover the issue. The log can always be removed when the issue is fixed.
