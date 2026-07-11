@@ -104,7 +104,7 @@ import { createPortal } from "react-dom";
 import { useEyeGaze } from "@/hooks/useEyeGaze";
 import { useGazeSidecar } from "@/hooks/useGazeSidecar";
 import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
-import { DEFAULT_SMOOTHING_STRENGTH, type GazeSmoothingStrength } from "@shared/gaze-smoothing.js";
+import { parseSmoothingSettings, defaultSmoothingSettings, type GazeSmoothingSettings } from "@shared/gaze-smoothing.js";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
@@ -508,8 +508,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
 
   // Eyegaze dwell settings — stored in DB via student profile
-  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number; smoothing: GazeSmoothingStrength }>({
-    enabled: false, provider: "mouse", timeout: 2000, smoothing: DEFAULT_SMOOTHING_STRENGTH
+  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number; smoothing: GazeSmoothingSettings }>({
+    enabled: false, provider: "mouse", timeout: 2000, smoothing: defaultSmoothingSettings()
   });
   // Sync eyegaze settings from userProfile when it loads
   useEffect(() => {
@@ -519,7 +519,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
         enabled: aac?.eyegazeEnabled ?? false,
         provider: aac?.eyegazeProvider ?? "mouse",
         timeout: aac?.eyegazeTimeout ?? 2000,
-        smoothing: (aac?.eyegazeSmoothing as GazeSmoothingStrength) ?? DEFAULT_SMOOTHING_STRENGTH,
+        smoothing: parseSmoothingSettings(aac?.eyegazeSmoothing),
       });
     }
   }, [userProfile]);
@@ -915,7 +915,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     enabled: eyegazeSettings.enabled && !isCursorControlMode,
     rawFaces,
     preferredProvider: eyegazeSettings.provider,
-    smoothingStrength: eyegazeSettings.smoothing,
+    smoothingSettings: eyegazeSettings.smoothing,
   });
 
   // DLL-based hardware trackers (currently Tobii) need a sidecar process spawned

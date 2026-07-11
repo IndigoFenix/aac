@@ -19,9 +19,11 @@ import { ConversationProvider } from "@/contexts/ConversationContext";
 import { ServerStatusGuard } from "@/components/ServerStatusGuard";
 import { DeviceLimitOverlay } from "@/components/DeviceManager";
 import AppVersionBadge from "@/components/AppVersionBadge";
+import UpdateStatusIndicator from "@/components/UpdateStatusIndicator";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { deregisterCurrentDevice } from "@/lib/device-id";
-import { useState } from "react";
+import { preloadClientModels } from "@/lib/preloadModels";
+import { useEffect, useState } from "react";
 
 interface AuthUser {
   id: string;
@@ -59,6 +61,16 @@ function MainApp() {
     () => localStorage.getItem('synapse_classroom_id')
   );
   const { t, isRTL, direction, language } = useLanguage();
+
+  // Warm the on-device models (Silero VAD, FaceLandmarker) while auth/session
+  // startup runs, so they're ready before the first mic/camera attach. Game
+  // bypass routes don't use them — skip the download there.
+  useEffect(() => {
+    const trimmed = window.location.pathname.replace(/\/$/, "");
+    if (matchGameRoute(window.location.pathname)) return;
+    if (trimmed.endsWith("/social-world") || trimmed.endsWith("/symbol-game")) return;
+    preloadClientModels();
+  }, []);
 
   // Dev/test bypass: the single-player social-world canvas, reachable at
   // /social-world with no auth/student selection. Lets the world's render +
@@ -157,6 +169,7 @@ function MainApp() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-300">{t("app.loading")}</p>
         </div>
+        <UpdateStatusIndicator />
         <AppVersionBadge />
       </div>
     );
@@ -170,6 +183,7 @@ function MainApp() {
           isOpen={true}
           onClose={handleLoginSuccess}
         />
+        <UpdateStatusIndicator />
         <AppVersionBadge />
       </>
     );
@@ -184,6 +198,7 @@ function MainApp() {
           onStudentSelect={handleStudentSelect}
           onLogout={handleLogout}
         />
+        <UpdateStatusIndicator />
         <AppVersionBadge />
       </>
     );
@@ -199,6 +214,7 @@ function MainApp() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-300">{t("app.loading")}</p>
         </div>
+        <UpdateStatusIndicator />
         <AppVersionBadge />
       </div>
     );

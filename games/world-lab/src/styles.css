@@ -115,8 +115,68 @@ html, body {
 .quest-boardpanel {
   width: 28rem; flex: 0 0 auto; height: 100%;
   background: #0b0f1c; border-left: 1px solid #1c2438;
+  display: flex; flex-direction: column;
 }
-.quest-boardpanel-inner { display: flex; flex-direction: column; height: 100%; padding: 8px; }
+.quest-boardpanel-inner { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px; }
+
+/* ── Footer: always-present response affordances (Yes / No / More / Speak) ── */
+.lab-footer {
+  flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; padding: 8px; border-top: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-footer-btn {
+  background: #141b2e; color: #cfd6e4; border: 1px solid #263453;
+  border-radius: 8px; padding: 10px 6px; font: inherit; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.lab-footer-btn:hover { background: #1b2540; }
+.lab-footer-btn:disabled { opacity: 0.4; cursor: default; }
+.lab-footer-btn.lab-yes { border-color: #2e6b3e; color: #8fe0a5; }
+.lab-footer-btn.lab-no { border-color: #6b2e2e; color: #e08f8f; }
+.lab-footer-btn.lab-speak { border-color: #3a4f8a; color: #a9c1ff; }
+
+/* ── Speak menu: the parser vocabulary with glyph icons ── */
+.lab-speak-overlay {
+  position: fixed; inset: 0; z-index: 50; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(3, 6, 15, 0.7); backdrop-filter: blur(2px);
+}
+.lab-speak-panel {
+  width: min(56rem, 94vw); height: min(80vh, 46rem);
+  display: flex; flex-direction: column;
+  background: #0b0f1c; border: 1px solid #263453; border-radius: 12px; overflow: hidden;
+}
+.lab-speak-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid #1c2438; font-weight: 600;
+}
+.lab-speak-compose {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border-bottom: 1px solid #1c2438;
+}
+.lab-speak-sentence {
+  flex: 1; min-height: 2em; padding: 6px 8px; border-radius: 8px;
+  background: #060a14; border: 1px solid #1c2438; font-size: 15px;
+}
+.lab-dim { color: #5b667e; }
+.lab-speak-scroll { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.lab-speak-group { margin-bottom: 14px; }
+.lab-speak-group h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #7c88a2; margin-bottom: 6px;
+}
+.lab-speak-grid {
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+}
+.lab-word {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: #10182b; border: 1px solid #22304e; border-radius: 8px;
+  padding: 6px 4px; cursor: pointer; color: #cfd6e4; font: inherit;
+}
+.lab-word:hover { background: #182541; border-color: #34477a; }
+.lab-word-icon { width: 100%; aspect-ratio: 1; display: block; }
+.lab-word-label { font-size: 11px; text-align: center; line-height: 1.1; }
 .quest-boardpanel-prompt {
   color: #cfd6e4; font-size: 15px; text-align: center;
   min-height: 1.4em; margin-bottom: 8px;

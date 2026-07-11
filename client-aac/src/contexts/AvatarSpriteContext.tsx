@@ -82,6 +82,7 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     voiceEnabled,
     micActive,
     budget,
+    audioActivity,
   } = useDualAgentContext();
   // "Listening" = audio is actively reaching the model: the VAD gate is open on
   // a heard voice/sound, or it's streaming continuously (live audio). Drives the
@@ -183,22 +184,32 @@ export function AvatarSpriteProvider({ children }: { children: ReactNode }) {
     : isRestingState
     ? "rest"
     : "open";
+  // "Hearing ready" = the Silero neural VAD is driving speech detection. Until
+  // it is (model still loading, failed to load, or mic not attached yet) speech
+  // boundaries are unreliable, so the awake avatar keeps its ears closed —
+  // "can't properly hear you yet". If the server config deliberately disables
+  // the neural VAD, the fallback detectors are intended behavior and the ears
+  // open as normal. Sleep keeps its own ear language (open, slow flap).
+  const hearingReady =
+    audioActivity.speechMethod === "silero" || !audioActivity.sileroExpected;
   // Audio capture deliberately toggled off → ears closed ("not listening on
-  // purpose"), same visual language as standby. An UNINTENDED mic loss
-  // (acquisition failure / track revoked) is NOT shown here — that's an error,
-  // surfaced by the red mic-off indicator next to the face mirror instead.
+  // purpose"), same visual language as standby. A hard mic FAILURE also lands
+  // here via hearingReady (no mic → no neural VAD) — the red mic-off indicator
+  // next to the face mirror carries the "this is an error" detail.
   const earState: EarState = !voiceEnabled
     ? "closed"
     : isSleepingState
     ? "open"
     : isStandbyMode
     ? "closed"
+    : !hearingReady
+    ? "closed"
     : isAssistMode
     ? "neutral"
     : "open";
 
   // Ears flap at double speed (1000ms vs 2000ms) while actively listening.
-  const earFlapSpeed: number = isSleepingState ? 5000 : !voiceEnabled || isStandbyMode || isAssistMode ? 0 : listening ? 1000 : 2000;
+  const earFlapSpeed: number = isSleepingState ? 5000 : !voiceEnabled || isStandbyMode || isAssistMode || !hearingReady ? 0 : listening ? 1000 : 2000;
 
   const { renderedEye, renderedEar } = useAvatarFrames(eyeState, earState, earFlapSpeed, snapshotTick);
 

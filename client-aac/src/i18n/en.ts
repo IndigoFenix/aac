@@ -12,6 +12,10 @@ export const en = {
     boardsUnavailable: "Boards unavailable",
     chatUnavailable: "Chat unavailable",
     featuresLimited: "Some features may be limited",
+    updateDownloading: "Downloading update…",
+    updateKeepOpen: "Keep the app open until it finishes",
+    updateReady: "Update ready",
+    updateRestart: "Restart now",
   },
 
   common: {

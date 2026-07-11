@@ -97,6 +97,11 @@ export class EyeGazeService {
     for (const p of this.providers.values()) p.setSmoothing?.(config);
   }
 
+  /** Push the current pixels-per-degree (viewing geometry) to hardware bridges. */
+  setPixelsPerDegree(pixelsPerDegree: number) {
+    for (const p of this.providers.values()) p.setPixelsPerDegree?.(pixelsPerDegree);
+  }
+
   getActiveProvider(): EyeGazeProvider | null {
     return this.active;
   }

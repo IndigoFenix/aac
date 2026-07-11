@@ -20,6 +20,8 @@ import { DEFAULT_GALAXY_PARAMS } from "@shared/space/galaxy";
 import { createWorld } from "@shared/space/world";
 import { createSpaceSky } from "@shared/space/space-sky";
 import type { CelestialBody } from "@shared/space/body";
+import { deriveCloudField } from "@shared/space/cloud-field";
+import { createCloudSystem, computeCloudPixelsPerUnit, type CloudSystem } from "@shared/space/cloud-system";
 
 const viewEl = document.getElementById("view") as HTMLDivElement;
 const controlsEl = document.getElementById("controls") as HTMLDivElement;
@@ -51,23 +53,56 @@ scene.add(world.sceneGroup);
 const starBody = world.bodies.find((b) => b.type === "star") ?? null;
 const sky = createSpaceSky(scene, world.universe);
 
-// The cloud SEAM: a group parented to the framed body (rotates with it). Empty
-// for now — the shared cloud system will populate it.
-const cloudGroup = new THREE.Group();
-cloudGroup.name = "clouds";
+// ── Clouds (shared cloud-system, derived from the body's atmosphere) ──────────
+let cloudSystem: CloudSystem | null = null;
+let cloudNote = "none";
+/** Simple deterministic per-body seed for the cloud field. */
+const bodySeed = (id: string): number => {
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193) >>> 0;
+  return h >>> 0;
+};
+function disposeClouds(): void {
+  if (!cloudSystem) return;
+  cloudSystem.group.parent?.remove(cloudSystem.group);
+  cloudSystem.dispose();
+  cloudSystem = null;
+}
+function buildClouds(b: CelestialBody): void {
+  disposeClouds();
+  const f = b.resolvedPhysics?.features;
+  if (!f) { cloudNote = "no physics"; return; }
+  const field = deriveCloudField({
+    atmosphere: f.atmosphere,
+    planetRadiusM: b.radius,
+    bandCount: f.atmosphericBandCount,
+    bandingIntensity: f.atmosphericBanding,
+    rotationPeriodHours: f.rotation.periodHours,
+    seed: bodySeed(b.id),
+  });
+  if (field.layers.length === 0) {
+    cloudNote = `none (${f.atmosphere.cloudType}, cover ${f.atmosphere.cloudCoverage.toFixed(2)})`;
+    return;
+  }
+  cloudSystem = createCloudSystem({ field, timeSeconds: performance.now() * 0.001 });
+  b.group.add(cloudSystem.group);
+  cloudNote = `${f.atmosphere.cloudType} · ${field.layers.length} layer(s) · cover ${f.atmosphere.cloudCoverage.toFixed(2)}`;
+}
 
 // ── Orbit camera around the framed body (kept at the scene origin) ────────────
 let body: CelestialBody = world.homePlanet ?? world.bodies.find((b) => b.type === "rocky")!;
 const orbit = { yaw: 0.7, pitch: 0.22, dist: 1.8, tYaw: 0.7, tPitch: 0.22, tDist: 1.8 };
+const _camLocal = new THREE.Vector3();
+const _camFwd = new THREE.Vector3();
 
 /** Frame a body: floating-origin rebase so it sits at the scene origin (Float32
- *  precision for its metre-scale terrain), materialise it, re-seat the clouds. */
+ *  precision for its metre-scale terrain), materialise it, rebuild its clouds. */
 function frameBody(b: CelestialBody): void {
   body = b;
   const rec = b.worldPosition.clone();
   world.checkActiveSystem(rec); // rebases every body so `b` → ~origin
   b.materialize?.();
-  b.group.add(cloudGroup);
+  buildClouds(b);
   orbit.tDist = orbit.dist = 1.8;
 }
 frameBody(body);
@@ -150,6 +185,24 @@ renderer.setAnimationLoop(() => {
     sceneAnchorGalactic: world.sceneAnchorGalactic,
     dt: 1 / 60,
   });
+
+  // Drive the clouds: camera pos/forward in the body's local frame, projection,
+  // sun, then the per-frame bake + sprite/shell walk.
+  if (cloudSystem) {
+    scene.updateMatrixWorld();
+    _camLocal.copy(camera.position).sub(c).applyQuaternion(body.inverseOrientation);
+    _camFwd.copy(c).sub(camera.position).normalize().applyQuaternion(body.inverseOrientation);
+    cloudSystem.setRuntimeOpts({
+      // Lab wants the weather map to bake FAST so clouds show immediately (the
+      // game amortises this at 0.5 ms/frame); rebuild the sprite set every frame.
+      opacity: 1, spriteOversize: 1, minDensity: 0.04, windMult: 1,
+      detailMult: 1, vigorMult: 1, bakeBudgetMs: 20, updateInterval: 1,
+    });
+    cloudSystem.setProjection(computeCloudPixelsPerUnit(camera, h), h);
+    cloudSystem.setSunWorldPos(starBody ? starBody.worldPosition : null);
+    cloudSystem.update(_camLocal, performance.now() * 0.001, _camFwd);
+  }
+
   composer.render();
 
   const altKm = altitude / 1000;
@@ -157,7 +210,11 @@ renderer.setAnimationLoop(() => {
     `${body.id} · ${body.type}\n` +
     `radius ${(R / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })} km\n` +
     `altitude ${altKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km · ${orbit.dist.toFixed(2)}×R\n` +
-    `clouds: not implemented yet`;
+    `clouds: ${cloudNote}`;
 });
 
-(window as unknown as Record<string, unknown>).__cloudLab = { scene, world, get body() { return body; }, cloudGroup, camera, sky };
+(window as unknown as Record<string, unknown>).__cloudLab = {
+  scene, world, camera, sky,
+  get body() { return body; },
+  get cloudSystem() { return cloudSystem; },
+};

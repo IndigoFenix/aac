@@ -11,14 +11,15 @@ import { MouseGazeProvider } from "@/lib/eyegaze/mouse-provider";
 import { createTobiiProvider, createEyeTechProvider, createLCTechProvider, createGazepointProvider } from "@/lib/eyegaze/websocket-bridge-provider";
 import { WebHIDGazeProvider } from "@/lib/eyegaze/webhid-provider";
 import type { GazeData, GazePoint, EyeGazeProviderType, EyeGazeProviderStatus } from "@/lib/eyegaze/types";
-import { smoothingConfigForStrength, DEFAULT_SMOOTHING_STRENGTH, type GazeSmoothingStrength } from "@shared/gaze-smoothing.js";
+import { smootherConfigFromSettings, defaultSmoothingSettings, type GazeSmoothingSettings } from "@shared/gaze-smoothing.js";
+import { computePixelsPerDegree, primaryFaceHeightNorm } from "@/lib/eyegaze/viewing-distance";
 
 interface UseEyeGazeOptions {
   enabled: boolean;
   rawFaces: RawTrackedFace[];
   preferredProvider?: EyeGazeProviderType | "auto";
-  /** Per-student pixel-space smoothing strength for hardware trackers. */
-  smoothingStrength?: GazeSmoothingStrength;
+  /** Per-student smoothing settings (One-Euro + fixation, in visual degrees) for hardware trackers. */
+  smoothingSettings?: GazeSmoothingSettings;
 }
 
 // Samples below this confidence don't move the gaze point. Providers signal
@@ -44,7 +45,9 @@ interface UseEyeGazeReturn {
   clearCalibration: () => void;
 }
 
-export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto", smoothingStrength = DEFAULT_SMOOTHING_STRENGTH }: UseEyeGazeOptions): UseEyeGazeReturn {
+export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto", smoothingSettings }: UseEyeGazeOptions): UseEyeGazeReturn {
+  // Resolve to a stable default when the caller omits settings.
+  const settings = smoothingSettings ?? defaultSmoothingSettings();
   // Track whether auto-detection has finished (prevents premature calibration)
   const [detectionDone, setDetectionDone] = useState(false);
   const serviceRef = useRef<EyeGazeService | null>(null);
@@ -85,12 +88,47 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto", smoo
      
   }, []);
 
-  // Push smoothing strength to hardware providers whenever it changes. Runs
-  // after the create-effect registers providers; also re-applies when a
-  // provider is (re)activated since the config lives on the provider instance.
+  // Viewing geometry: the smoother reasons in degrees of visual angle, so it
+  // needs pixels-per-degree. We derive it from the face bounding-box size
+  // (a camera-distance proxy) and the student's distance settings, live.
+  const lastFaceHeightRef = useRef<number | null>(null);
+  const ppdRef = useRef<number>(computePixelsPerDegree(null, settings));
+  const emaPpdRef = useRef<number | null>(null);
+
+  // A value-based key so new settings-object identities (same values) don't
+  // churn the effects below.
+  const settingsKey = JSON.stringify(settings);
+
+  // Push smoothing config + current geometry whenever the settings change. Also
+  // re-applies when a provider is (re)activated since the config lives on the
+  // provider instance.
   useEffect(() => {
-    serviceRef.current?.setSmoothing(smoothingConfigForStrength(smoothingStrength));
-  }, [smoothingStrength, activeProvider]);
+    const service = serviceRef.current;
+    if (!service) return;
+    const ppd = computePixelsPerDegree(lastFaceHeightRef.current, settings);
+    ppdRef.current = ppd;
+    emaPpdRef.current = ppd;
+    service.setSmoothing(smootherConfigFromSettings(settings, ppd));
+    service.setPixelsPerDegree(ppd);
+  }, [settingsKey, activeProvider]);
+
+  // Track face size → viewing distance → pixels-per-degree, pushed live to the
+  // hardware smoother (no filter reset). EMA-smoothed and only pushed on a
+  // meaningful change so ppd jitter can't feed back into the gaze stream.
+  useEffect(() => {
+    const h = primaryFaceHeightNorm(rawFaces);
+    if (h != null) lastFaceHeightRef.current = h;
+    // Fixed-distance mode has no face dependence; the settings effect set it.
+    if (settings.preset === "off" || settings.distanceMode !== "face") return;
+    const target = computePixelsPerDegree(lastFaceHeightRef.current, settings);
+    const prev = emaPpdRef.current ?? target;
+    const next = prev + 0.25 * (target - prev);
+    emaPpdRef.current = next;
+    if (ppdRef.current <= 0 || Math.abs(next - ppdRef.current) / ppdRef.current > 0.02) {
+      ppdRef.current = next;
+      serviceRef.current?.setPixelsPerDegree(next);
+    }
+  }, [rawFaces, settingsKey, activeProvider]);
 
   // Feed rawFaces to camera provider (ref-based, no re-render)
   const facesRef = useRef(rawFaces);

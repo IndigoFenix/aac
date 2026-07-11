@@ -241,6 +241,10 @@ interface DualAgentContextType {
     isSpeaking: boolean;
     energyLevel: number;
     speechMethod: 'silero' | 'webSpeechApi' | 'energy' | 'none';
+    /** True when the neural VAD is supposed to drive speech detection (server
+     *  config; default). While it is and speechMethod isn't 'silero' yet, the
+     *  avatar shows closed ears — "can't reliably hear you yet". */
+    sileroExpected: boolean;
     lastSpeechBoundary: { start: number; end: number } | null;
     lastTriggerReason: string | null;
     ringBufferSamples: number;
@@ -1508,6 +1512,7 @@ function ProviderShell({
       isSpeaking: activityMonitor.isSpeaking,
       energyLevel: activityMonitor.energyLevel,
       speechMethod: activityMonitor.speechMethod,
+      sileroExpected: agent.clientConfig?.activityMonitor?.sileroVadEnabled ?? true,
       lastSpeechBoundary: activityMonitor.lastSpeechBoundary,
       lastTriggerReason: activityMonitor.lastTriggerReason,
       ringBufferSamples: activityMonitor.ringBufferSamples,

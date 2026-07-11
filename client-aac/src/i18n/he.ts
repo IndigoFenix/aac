@@ -14,6 +14,10 @@ export const he: Translations = {
     boardsUnavailable: "לוחות אינם זמינים",
     chatUnavailable: "צ'אט אינו זמין",
     featuresLimited: "חלק מהתכונות עשויות להיות מוגבלות",
+    updateDownloading: "מוריד עדכון…",
+    updateKeepOpen: "השאירו את האפליקציה פתוחה עד לסיום",
+    updateReady: "העדכון מוכן",
+    updateRestart: "הפעל מחדש עכשיו",
   },
 
   common: {

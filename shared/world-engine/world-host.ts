@@ -227,6 +227,11 @@ export interface WorldHost {
   setNpcErrand(npcId: string, errand: NpcErrand | null): void;
   /** Live-update the gaze interpreter + camera/comfort tunables (debug menu). */
   setTunables(t: WorldTunables): void;
+  /** Building ids whose roof is currently NOT fully opaque (the see-inside fade is
+   *  active). A streaming host keys interior population on this — keep a room's
+   *  residents/furniture while its roof is open, abstract once it seals. Empty for
+   *  a view that doesn't model roofs (the 2D top-down). */
+  revealedBuildings(): Set<string>;
   start(): void;
   /** Stop the loop and dispose the view. */
   stop(): void;
@@ -627,6 +632,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     resize(width, height, dpr) {
       view.resize(width, height, dpr);
+    },
+    revealedBuildings() {
+      return view.revealedBuildings?.() ?? new Set<string>();
     },
     say(text, glyph) {
       const line = (text ?? "").trim();

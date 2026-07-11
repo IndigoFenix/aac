@@ -1,16 +1,25 @@
-// Tests for shared/gaze-smoothing.ts — the pixel-space One-Euro + fixation-lock
-// filter applied to raw hardware eye-tracker streams (Tobii etc.). Pure logic,
-// no DOM — safe in `npm test`.
+// Tests for shared/gaze-smoothing.ts — the visual-angle One-Euro + fixation-lock
+// filter applied to raw hardware eye-tracker streams (Tobii etc.), plus the
+// clinician settings model and viewing-geometry helpers. Pure logic, no DOM —
+// safe in `npm test`.
 //
 // The behaviour these guard: a still eye produces trembling raw samples, and
 // the filter must (a) crush that tremor, (b) NOT lag a real saccade, and
-// (c) forget its state cleanly when tracking is lost and reacquired.
+// (c) forget its state cleanly when tracking is lost and reacquired. The filter
+// now reasons in DEGREES of visual angle, so a further guard: its thresholds
+// must scale with the pixels-per-degree fed in (screen density × distance).
 
 import { describe, it, expect } from "@jest/globals";
 import {
   GazeSmoother,
-  smoothingConfigForStrength,
-  DEFAULT_SMOOTHING_STRENGTH,
+  settingsForPreset,
+  defaultSmoothingSettings,
+  parseSmoothingSettings,
+  serializeSmoothingSettings,
+  smootherConfigFromSettings,
+  pixelsPerDegreeFromGeometry,
+  DEFAULT_PIXELS_PER_DEGREE,
+  type GazeSmoothingSettings,
 } from "@shared/gaze-smoothing.js";
 
 const FRAME_MS = 1000 / 60;
@@ -121,42 +130,6 @@ describe("GazeSmoother — reset semantics", () => {
   });
 });
 
-describe("smoothingConfigForStrength — clinician presets", () => {
-  it("maps 'off' to no smoothing", () => {
-    expect(smoothingConfigForStrength("off")).toBe(false);
-  });
-
-  it("defaults unknown/nullish to medium (module defaults)", () => {
-    expect(DEFAULT_SMOOTHING_STRENGTH).toBe("medium");
-    expect(smoothingConfigForStrength("medium")).toEqual({});
-    expect(smoothingConfigForStrength(null)).toEqual({});
-    expect(smoothingConfigForStrength(undefined)).toEqual({});
-  });
-
-  it("orders strength: 'strong' smooths a jittery hold tighter than 'light'", () => {
-    const run = (level: "light" | "strong") => {
-      const cfg = smoothingConfigForStrength(level);
-      const s = new GazeSmoother(cfg === false ? { fixation: false } : cfg);
-      // Disable the lock so we measure the One-Euro band, not a pinned centroid.
-      const noLock = new GazeSmoother({
-        ...(cfg === false ? {} : cfg),
-        fixation: false,
-      });
-      const out: Array<{ x: number; y: number }> = [];
-      for (let i = 0; i < 120; i++) {
-        out.push(noLock.filter(500 + jitter(i, 10), 300 + jitter(i + 30, 10), i * FRAME_MS));
-      }
-      void s;
-      return spread(out.slice(40));
-    };
-    const light = run("light");
-    const strong = run("strong");
-    // Stronger smoothing → smaller residual spread on a shaky still gaze.
-    expect(strong.x).toBeLessThan(light.x);
-    expect(strong.y).toBeLessThan(light.y);
-  });
-});
-
 describe("GazeSmoother — fixation lock disabled", () => {
   it("still smooths but never pins the output when fixation:false", () => {
     const s = new GazeSmoother({ fixation: false });
@@ -169,5 +142,122 @@ describe("GazeSmoother — fixation lock disabled", () => {
     }
     // Without the lock the One-Euro output keeps moving frame-to-frame.
     expect(moved).toBeGreaterThan(100);
+  });
+});
+
+describe("GazeSmoother — angular scaling via pixelsPerDegree", () => {
+  it("smooths more at higher pixels-per-degree (lower angular velocity)", () => {
+    // A fixed pixel step is a SMALLER angle when more pixels subtend a degree,
+    // so the One-Euro sees a slower move → lower cutoff → more smoothing → more
+    // remaining lag after a fixed number of frames.
+    const remainingLag = (ppd: number) => {
+      const s = new GazeSmoother({
+        pixelsPerDegree: ppd,
+        fixation: false,
+        oneEuro: { minCutoff: 1.0, beta: 0.2 },
+      });
+      for (let i = 0; i < 30; i++) s.filter(100, 100, i * FRAME_MS); // settle
+      let out = { x: 0, y: 0 };
+      for (let i = 30; i < 45; i++) out = s.filter(400, 100, i * FRAME_MS); // step
+      return 400 - out.x; // distance still to travel = lag
+    };
+    expect(remainingLag(80)).toBeGreaterThan(remainingLag(20));
+  });
+
+  it("setPixelsPerDegree changes the conversion live without producing NaN", () => {
+    const s = new GazeSmoother({ fixation: false });
+    for (let i = 0; i < 10; i++) s.filter(100 + i, 100, i * FRAME_MS);
+    s.setPixelsPerDegree(80);
+    const a = s.filter(200, 120, 10 * FRAME_MS);
+    s.setPixelsPerDegree(20);
+    const b = s.filter(260, 140, 11 * FRAME_MS);
+    expect(Number.isFinite(a.x)).toBe(true);
+    expect(Number.isFinite(b.x)).toBe(true);
+  });
+});
+
+describe("viewing geometry", () => {
+  it("pixels-per-degree grows in proportion to viewing distance", () => {
+    const near = pixelsPerDegreeFromGeometry(38, 40);
+    const far = pixelsPerDegreeFromGeometry(38, 80);
+    expect(far).toBeGreaterThan(near);
+    expect(far / near).toBeCloseTo(2, 1);
+  });
+
+  it("returns the default on invalid geometry", () => {
+    expect(pixelsPerDegreeFromGeometry(0, 60)).toBe(DEFAULT_PIXELS_PER_DEGREE);
+    expect(pixelsPerDegreeFromGeometry(38, -1)).toBe(DEFAULT_PIXELS_PER_DEGREE);
+  });
+});
+
+describe("smoothing presets — clinician strengths", () => {
+  it("maps the 'off' preset to no smoothing", () => {
+    expect(smootherConfigFromSettings(settingsForPreset("off"))).toBe(false);
+  });
+
+  it("defaults to the medium preset", () => {
+    expect(defaultSmoothingSettings().preset).toBe("medium");
+  });
+
+  it("'strong' smooths a jittery hold tighter than 'light'", () => {
+    const run = (level: "light" | "strong") => {
+      // Disable the lock so we measure the One-Euro band, not a pinned centroid.
+      const cfg = smootherConfigFromSettings({ ...settingsForPreset(level), fixationEnabled: false });
+      const s = new GazeSmoother(cfg === false ? { fixation: false } : cfg);
+      const out: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i < 120; i++) {
+        out.push(s.filter(500 + jitter(i, 10), 300 + jitter(i + 30, 10), i * FRAME_MS));
+      }
+      return spread(out.slice(40));
+    };
+    const light = run("light");
+    const strong = run("strong");
+    // Stronger smoothing → smaller residual spread on a shaky still gaze.
+    expect(strong.x).toBeLessThan(light.x);
+    expect(strong.y).toBeLessThan(light.y);
+  });
+});
+
+describe("settings parse / serialize", () => {
+  it("parses null/undefined to the medium defaults", () => {
+    expect(parseSmoothingSettings(null).preset).toBe("medium");
+    expect(parseSmoothingSettings(undefined).preset).toBe("medium");
+  });
+
+  it("parses a legacy bare preset string", () => {
+    const s = parseSmoothingSettings("strong");
+    expect(s.preset).toBe("strong");
+    expect(s.dispersionDeg).toBeCloseTo(1.4, 5);
+  });
+
+  it("round-trips a custom config through serialize → parse", () => {
+    const s: GazeSmoothingSettings = {
+      ...defaultSmoothingSettings(),
+      preset: "custom",
+      minCutoff: 1.7,
+      beta: 0.33,
+      fixationEnabled: true,
+      dispersionDeg: 0.9,
+      minDurationMs: 175,
+      distanceMode: "fixed",
+      fixedDistanceCm: 45,
+    };
+    expect(parseSmoothingSettings(serializeSmoothingSettings(s))).toEqual(s);
+  });
+
+  it("falls back to defaults on unparseable JSON and clamps out-of-range values", () => {
+    expect(parseSmoothingSettings("{not json").preset).toBe("medium");
+    const clamped = parseSmoothingSettings(
+      JSON.stringify({ preset: "custom", minCutoff: 999, dispersionDeg: -5, fixedDistanceCm: 9999 }),
+    );
+    expect(clamped.minCutoff).toBeLessThanOrEqual(10);
+    expect(clamped.dispersionDeg).toBeGreaterThanOrEqual(0.1);
+    expect(clamped.fixedDistanceCm).toBeLessThanOrEqual(200);
+  });
+
+  it("builds a runtime config that carries pixelsPerDegree when supplied", () => {
+    const cfg = smootherConfigFromSettings(defaultSmoothingSettings(), 52);
+    expect(cfg).not.toBe(false);
+    if (cfg !== false) expect(cfg.pixelsPerDegree).toBe(52);
   });
 });

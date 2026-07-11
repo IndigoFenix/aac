@@ -27,6 +27,14 @@ import { tierByKey } from '@shared/aac/budget-tiers';
 import { BudgetMeters } from '@/components/BudgetMeters';
 import { type SeizureConfig, type SeizureSensitivity, DEFAULT_SEIZURE_CONFIG, coerceSeizureConfig } from '@shared/aac/seizure-config';
 import { COMPETENCY_LABEL } from '@shared/social-bot/state';
+import {
+  parseSmoothingSettings,
+  serializeSmoothingSettings,
+  settingsForPreset,
+  defaultSmoothingSettings,
+  type GazeSmoothingSettings,
+  type GazeSmoothingPreset,
+} from '@shared/gaze-smoothing';
 
 // All trainable social-skill keys, in canonical order. Sourced from the shared
 // competency-label map so this list grows automatically as competencies are added.
@@ -258,7 +266,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [eyegazeProvider, setEyegazeProvider] = useState<string>('mouse');
-  const [eyegazeSmoothing, setEyegazeSmoothing] = useState<string>('medium');
+  const [gazeSmoothing, setGazeSmoothing] = useState<GazeSmoothingSettings>(defaultSmoothingSettings());
+  const [gazeAdvancedOpen, setGazeAdvancedOpen] = useState(false);
   const [allowReadProgress, setAllowReadProgress] = useState(true);
   const [allowReadReports, setAllowReadReports] = useState(true);
   const [allowNotes, setAllowNotes] = useState(true);
@@ -371,7 +380,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
-      setEyegazeSmoothing(aac?.eyegazeSmoothing ?? 'medium');
+      setGazeSmoothing(parseSmoothingSettings(aac?.eyegazeSmoothing));
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
@@ -420,7 +429,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
       const originalEyegazeProvider = aac?.eyegazeProvider ?? 'mouse';
-      const originalEyegazeSmoothing = aac?.eyegazeSmoothing ?? 'medium';
+      const originalGazeSmoothing = serializeSmoothingSettings(parseSmoothingSettings(aac?.eyegazeSmoothing));
       const originalAllowReadProgress = aac?.allowReadProgress ?? true;
       const originalAllowReadReports = aac?.allowReadReports ?? true;
       const originalAllowNotes = aac?.allowNotes ?? true;
@@ -462,7 +471,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
         eyegazeProvider !== originalEyegazeProvider ||
-        eyegazeSmoothing !== originalEyegazeSmoothing ||
+        serializeSmoothingSettings(gazeSmoothing) !== originalGazeSmoothing ||
         allowReadProgress !== originalAllowReadProgress ||
         allowReadReports !== originalAllowReadReports ||
         allowNotes !== originalAllowNotes ||
@@ -563,7 +572,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       eyegazeEnabled,
       eyegazeTimeout,
       eyegazeProvider,
-      eyegazeSmoothing,
+      eyegazeSmoothing: serializeSmoothingSettings(gazeSmoothing),
       allowReadProgress,
       allowReadReports,
       allowNotes,
@@ -611,7 +620,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
-      setEyegazeSmoothing(aac?.eyegazeSmoothing ?? 'medium');
+      setGazeSmoothing(parseSmoothingSettings(aac?.eyegazeSmoothing));
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
@@ -1673,24 +1682,166 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         </p>
                       </div>
                       {eyegazeProvider !== 'mouse' && (
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium">
-                            {t('aacSettings.gazeSmoothing')}
-                          </Label>
-                          <Select value={eyegazeSmoothing} onValueChange={setEyegazeSmoothing}>
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="off">{t('aacSettings.gazeSmoothingOff')}</SelectItem>
-                              <SelectItem value="light">{t('aacSettings.gazeSmoothingLight')}</SelectItem>
-                              <SelectItem value="medium">{t('aacSettings.gazeSmoothingMedium')}</SelectItem>
-                              <SelectItem value="strong">{t('aacSettings.gazeSmoothingStrong')}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground">
-                            {t('aacSettings.gazeSmoothingHint')}
-                          </p>
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">
+                              {t('aacSettings.gazeSmoothing')}
+                            </Label>
+                            <Select
+                              value={gazeSmoothing.preset}
+                              onValueChange={(v) => {
+                                if (v === 'custom') return;
+                                const preset = v as GazeSmoothingPreset;
+                                // The strength preset drives the filter values only —
+                                // keep the independent viewing-distance settings.
+                                setGazeSmoothing((prev) => ({
+                                  ...settingsForPreset(preset),
+                                  distanceMode: prev.distanceMode,
+                                  fixedDistanceCm: prev.fixedDistanceCm,
+                                }));
+                              }}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="off">{t('aacSettings.gazeSmoothingOff')}</SelectItem>
+                                <SelectItem value="light">{t('aacSettings.gazeSmoothingLight')}</SelectItem>
+                                <SelectItem value="medium">{t('aacSettings.gazeSmoothingMedium')}</SelectItem>
+                                <SelectItem value="strong">{t('aacSettings.gazeSmoothingStrong')}</SelectItem>
+                                {gazeSmoothing.preset === 'custom' && (
+                                  <SelectItem value="custom">{t('aacSettings.gazeSmoothingCustom')}</SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              {t('aacSettings.gazeSmoothingHint')}
+                            </p>
+                          </div>
+
+                          {gazeSmoothing.preset !== 'off' && (
+                            <Collapsible open={gazeAdvancedOpen} onOpenChange={setGazeAdvancedOpen}>
+                              <CollapsibleTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+                                >
+                                  <ChevronDown className={cn('w-4 h-4 transition-transform', gazeAdvancedOpen && 'rotate-180')} />
+                                  {t('aacSettings.gazeAdvancedTuning')}
+                                </button>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="space-y-5 pt-3">
+                                <p className="text-xs text-muted-foreground">
+                                  {t('aacSettings.gazeAdvancedTuningHint')}
+                                </p>
+
+                                {/* Responsiveness — One-Euro minimum cutoff */}
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-sm font-medium">{t('aacSettings.gazeResponsiveness')}</Label>
+                                    <span className="text-sm text-muted-foreground">{gazeSmoothing.minCutoff.toFixed(1)}</span>
+                                  </div>
+                                  <Slider
+                                    min={0.3} max={4} step={0.1}
+                                    value={[gazeSmoothing.minCutoff]}
+                                    onValueChange={(val) => setGazeSmoothing((p) => ({ ...p, minCutoff: val[0], preset: 'custom' }))}
+                                  />
+                                  <p className="text-xs text-muted-foreground">{t('aacSettings.gazeResponsivenessHint')}</p>
+                                </div>
+
+                                {/* Fast-movement tracking — One-Euro beta */}
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-sm font-medium">{t('aacSettings.gazeFastTracking')}</Label>
+                                    <span className="text-sm text-muted-foreground">{gazeSmoothing.beta.toFixed(2)}</span>
+                                  </div>
+                                  <Slider
+                                    min={0} max={1} step={0.02}
+                                    value={[gazeSmoothing.beta]}
+                                    onValueChange={(val) => setGazeSmoothing((p) => ({ ...p, beta: val[0], preset: 'custom' }))}
+                                  />
+                                  <p className="text-xs text-muted-foreground">{t('aacSettings.gazeFastTrackingHint')}</p>
+                                </div>
+
+                                {/* Fixation lock toggle */}
+                                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                  <div className="space-y-0.5">
+                                    <Label className="text-sm font-medium">{t('aacSettings.gazeFixationLock')}</Label>
+                                    <p className="text-xs text-muted-foreground">{t('aacSettings.gazeFixationLockHint')}</p>
+                                  </div>
+                                  <Switch
+                                    checked={gazeSmoothing.fixationEnabled}
+                                    onCheckedChange={(c) => setGazeSmoothing((p) => ({ ...p, fixationEnabled: c, preset: 'custom' }))}
+                                  />
+                                </div>
+
+                                {gazeSmoothing.fixationEnabled && (
+                                  <>
+                                    {/* Fixation zone — dispersion threshold in degrees */}
+                                    <div className="space-y-2">
+                                      <div className="flex justify-between items-center">
+                                        <Label className="text-sm font-medium">{t('aacSettings.gazeFixationZone')}</Label>
+                                        <span className="text-sm text-muted-foreground">{gazeSmoothing.dispersionDeg.toFixed(1)}°</span>
+                                      </div>
+                                      <Slider
+                                        min={0.2} max={2.5} step={0.1}
+                                        value={[gazeSmoothing.dispersionDeg]}
+                                        onValueChange={(val) => setGazeSmoothing((p) => ({ ...p, dispersionDeg: val[0], preset: 'custom' }))}
+                                      />
+                                      <p className="text-xs text-muted-foreground">{t('aacSettings.gazeFixationZoneHint')}</p>
+                                    </div>
+
+                                    {/* Hold time — minimum fixation duration */}
+                                    <div className="space-y-2">
+                                      <div className="flex justify-between items-center">
+                                        <Label className="text-sm font-medium">{t('aacSettings.gazeFixationHold')}</Label>
+                                        <span className="text-sm text-muted-foreground">{gazeSmoothing.minDurationMs} ms</span>
+                                      </div>
+                                      <Slider
+                                        min={80} max={400} step={10}
+                                        value={[gazeSmoothing.minDurationMs]}
+                                        onValueChange={(val) => setGazeSmoothing((p) => ({ ...p, minDurationMs: val[0], preset: 'custom' }))}
+                                      />
+                                      <p className="text-xs text-muted-foreground">{t('aacSettings.gazeFixationHoldHint')}</p>
+                                    </div>
+                                  </>
+                                )}
+
+                                {/* Viewing distance — feeds the degree↔pixel conversion */}
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium">{t('aacSettings.gazeDistanceMode')}</Label>
+                                  <Select
+                                    value={gazeSmoothing.distanceMode}
+                                    onValueChange={(v) => setGazeSmoothing((p) => ({ ...p, distanceMode: v === 'fixed' ? 'fixed' : 'face' }))}
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="face">{t('aacSettings.gazeDistanceAuto')}</SelectItem>
+                                      <SelectItem value="fixed">{t('aacSettings.gazeDistanceFixed')}</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-xs text-muted-foreground">{t('aacSettings.gazeDistanceModeHint')}</p>
+                                </div>
+
+                                {gazeSmoothing.distanceMode === 'fixed' && (
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <Label className="text-sm font-medium">{t('aacSettings.gazeFixedDistance')}</Label>
+                                      <span className="text-sm text-muted-foreground">{gazeSmoothing.fixedDistanceCm} cm</span>
+                                    </div>
+                                    <Slider
+                                      min={30} max={120} step={5}
+                                      value={[gazeSmoothing.fixedDistanceCm]}
+                                      onValueChange={(val) => setGazeSmoothing((p) => ({ ...p, fixedDistanceCm: val[0] }))}
+                                    />
+                                    <p className="text-xs text-muted-foreground">{t('aacSettings.gazeFixedDistanceHint')}</p>
+                                  </div>
+                                )}
+                              </CollapsibleContent>
+                            </Collapsible>
+                          )}
                         </div>
                       )}
                       <div className="space-y-2">

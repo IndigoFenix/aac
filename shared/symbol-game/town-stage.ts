@@ -261,32 +261,35 @@ export function createTownStage(
     }
     const buildings = changed ? [...solid].map(id => buildingById.get(id)!) : null;
 
-    // FURNITURE: a house's interior stays ABSTRACTED until the player is
-    // actually INSIDE it — materialize the one house you stand in, abstract
-    // every other. A closed house you merely walk past streams only its
-    // exterior walls, so we never build a roomful of fixtures per house on the
-    // render thread as the town scrolls by. Runs every frame (not gated on a
-    // wall-set change) so stepping in/out flips the furniture even when no
-    // house crossed the load radius.
-    let insideId: string | null = null;
+    // FURNITURE: a house's interior fixtures follow the SAME roof-transparency
+    // gate the residents use — present while the interior is ON SHOW (the player
+    // occupies it, so the renderer fades its roof), abstracted the moment it's
+    // hidden again. Keying furniture and people on ONE signal keeps them in
+    // lockstep: no furnished-but-empty room, no peopled-but-bare room, and they
+    // appear/vanish together. A closed house you merely walk past shows only its
+    // exterior walls, so we never build a roomful of fixtures per house as the
+    // town scrolls by. No signal ⇒ fall back to the raw footprint test (the 2D
+    // lab). Runs every frame so it flips with occupancy, not just wall-set changes.
+    const houseVisible = (h: TownHouse): boolean =>
+      isVisible
+        ? isVisible(h.index)
+        : p.x > center.x + h.dx && p.x < center.x + h.dx + h.w &&
+          p.y > center.y + h.dy && p.y < center.y + h.dy + h.h;
+    const wantFurnished = new Set<string>();
     for (const h of plan.houses) {
-      const fx = center.x + h.dx;
-      const fy = center.y + h.dy;
-      if (p.x >= fx && p.x <= fx + h.w && p.y >= fy && p.y <= fy + h.h) {
-        insideId = `h_${h.index}`;
-        break;
-      }
+      if (houseVisible(h)) wantFurnished.add(`h_${h.index}`);
     }
     const addObjects: ObjectSpec[] = [];
     const removeObjects: string[] = [];
     for (const id of [...furnished]) {
-      if (id === insideId) continue;
+      if (wantFurnished.has(id)) continue;
       for (const o of furnitureOf.get(id) ?? []) removeObjects.push(o.id);
       furnished.delete(id);
     }
-    if (insideId && !furnished.has(insideId) && furnitureOf.has(insideId)) {
-      addObjects.push(...furnitureOf.get(insideId)!);
-      furnished.add(insideId);
+    for (const id of wantFurnished) {
+      if (furnished.has(id) || !furnitureOf.has(id)) continue;
+      addObjects.push(...furnitureOf.get(id)!);
+      furnished.add(id);
     }
 
     // RESIDENTS: one model step; map spawns onto engine NPCs with the

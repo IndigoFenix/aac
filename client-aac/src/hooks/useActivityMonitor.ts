@@ -482,12 +482,14 @@ export function useActivityMonitor({
         // model is available. The energy detector can't tell speech from
         // loudness, so in a noisy room it never fires speech-end and one STT
         // "utterance" runs for minutes; the neural probability stream keeps
-        // statement boundaries detectable. Loads lazily (shared singleton);
-        // on failure the monitor simply keeps its WebSpeech/energy fallback.
+        // statement boundaries detectable. Preloaded at app startup and
+        // retried on failure (lib/modelLoader.ts); this resolves whenever the
+        // load lands — possibly mid-session — and the monitor keeps its
+        // WebSpeech/energy fallback until then.
         if (cfg.sileroVadEnabled) {
           const ringBufForVad = audioRingBuf;
           void loadSileroVad().then((vad) => {
-            if (!vad || neuralDetachedRef.detached) return;
+            if (neuralDetachedRef.detached) return;
             vad.reset();
             const segmenter = new SpeechSegmenter({
               startProb: cfg.vadStartProb,

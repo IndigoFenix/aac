@@ -19,4 +19,12 @@ export * from "./creatures.js";
 export * from "./creature-dialogue.js";
 export * from "./creature-quests.js";
 export * from "./village.js";
+// Deterministic goal/rule/personality system + the concept parser (world-sim).
+export * from "./relations.js";
+export * from "./personality.js";
+export * from "./rules.js";
+export * from "./goal-selection.js";
+export * from "./parse-intent.js";
+export * from "./intent-compile.js";
+export * from "./creature-goal-runtime.js";
 export { REQUESTING_EXCHANGES } from "./catalog/requesting.js";

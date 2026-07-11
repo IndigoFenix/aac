@@ -8,17 +8,18 @@
 // statement boundaries stay detectable in a noisy room.
 //
 // Model file: client-aac/public/models/silero/silero_vad.onnx (v5, MIT —
-// github.com/snakers4/silero-vad). Loading follows the same posture as the
-// wavlm speaker model (useVoiceIdentification): lazy, singleton, and
-// failure-tolerant — if the model or runtime can't load, callers get null and
-// the activity monitor keeps its energy/WebSpeech fallback.
+// github.com/snakers4/silero-vad). Loaded through the shared retrying model
+// loader (lib/modelLoader.ts): preloaded at app startup (preloadModels.ts),
+// retried on failure, and loadSileroVad() resolves whenever a load lands — so
+// the activity monitor attaches the neural VAD mid-session too. Until then it
+// keeps its energy/WebSpeech fallback.
 //
 // Runtime notes:
 //  - onnxruntime-web is already a dependency (via @huggingface/transformers).
 //    Unlike the transformers.js path, its `/wasm` bundle builds the WASM
 //    filename dynamically, so Vite never emits the asset — env.wasm.wasmPaths
 //    is pinned to the self-hosted copy under `<base>/ort/`, staged from
-//    node_modules by scripts/copy-ort-wasm.mjs (wired into the build/dev
+//    node_modules by scripts/prepare-client-models.mjs (wired into the build/dev
 //    scripts).
 //  - numThreads=1: multithreaded WASM needs SharedArrayBuffer, i.e.
 //    cross-origin isolation, which the Electron webview/web mounts don't
@@ -131,48 +132,51 @@ export class SileroVad {
 }
 
 // =============================================================================
-// Singleton loader
+// Shared loader
 // =============================================================================
 
-let vadPromise: Promise<SileroVad | null> | null = null;
+import { createModelLoader } from "./modelLoader";
 
 function modelUrl(): string {
   const base = (import.meta as any).env?.BASE_URL ?? "/";
   return new URL(`${base}models/silero/silero_vad.onnx`, window.location.href).href;
 }
 
-/**
- * Load the shared SileroVad instance (one session per app lifetime). Resolves
- * null — and remembers the failure — when the model or runtime is
- * unavailable, so callers can fall back without re-attempting every session.
- */
-export function loadSileroVad(): Promise<SileroVad | null> {
-  if (vadPromise) return vadPromise;
-  vadPromise = (async () => {
-    try {
-      // Fetch the model ourselves so an SPA index.html fallback (unknown path
-      // → 200 text/html) is detected instead of confusing the ONNX parser.
-      const res = await fetch(modelUrl(), { cache: "force-cache" });
-      if (!res.ok) throw new Error(`model fetch: HTTP ${res.status}`);
-      const ct = res.headers.get("content-type") || "";
-      if (ct.includes("text/html")) throw new Error("model fetch returned HTML (SPA fallback)");
-      const bytes = new Uint8Array(await res.arrayBuffer());
+const sileroLoader = createModelLoader<SileroVad>("silero-vad", async () => {
+  // Fetch the model ourselves so an SPA index.html fallback (unknown path
+  // → 200 text/html) is detected instead of confusing the ONNX parser.
+  const res = await fetch(modelUrl(), { cache: "force-cache" });
+  if (!res.ok) throw new Error(`model fetch: HTTP ${res.status}`);
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("text/html")) throw new Error("model fetch returned HTML (SPA fallback)");
+  const bytes = new Uint8Array(await res.arrayBuffer());
 
-      // WASM-only build — no webgpu/jsep graph needed for a 2MB LSTM.
-      const ort: OrtModule = await import("onnxruntime-web/wasm");
-      ort.env.wasm.numThreads = 1;
-      const base = (import.meta as any).env?.BASE_URL ?? "/";
-      ort.env.wasm.wasmPaths = new URL(`${base}ort/`, window.location.href).href;
-      const session = await ort.InferenceSession.create(bytes, {
-        executionProviders: ["wasm"],
-      });
-      const vad = SileroVad.fromSession(ort, session);
-      console.log(`[SileroVad] loaded (${session.inputNames.includes("state") ? "v5" : "v4"} graph, ${(bytes.length / 1024).toFixed(0)}KB)`);
-      return vad;
-    } catch (err) {
-      console.warn("[SileroVad] unavailable — speech detection falls back to energy/WebSpeech:", err);
-      return null;
-    }
-  })();
-  return vadPromise;
+  // WASM-only build — no webgpu/jsep graph needed for a 2MB LSTM.
+  const ort: OrtModule = await import("onnxruntime-web/wasm");
+  ort.env.wasm.numThreads = 1;
+  const base = (import.meta as any).env?.BASE_URL ?? "/";
+  ort.env.wasm.wasmPaths = new URL(`${base}ort/`, window.location.href).href;
+  const session = await ort.InferenceSession.create(bytes, {
+    executionProviders: ["wasm"],
+  });
+  const vad = SileroVad.fromSession(ort, session);
+  console.log(`[SileroVad] loaded (${session.inputNames.includes("state") ? "v5" : "v4"} graph, ${(bytes.length / 1024).toFixed(0)}KB)`);
+  return vad;
+});
+
+/** Start fetching/compiling the shared VAD now (idempotent) — called at app
+ *  startup so the model is warm before the first mic attach. */
+export function preloadSileroVad(): void {
+  sileroLoader.preload();
+}
+
+/**
+ * Resolve the shared SileroVad instance (one per app lifetime). Never
+ * rejects: load failures retry on a capped backoff (modelLoader.ts) and this
+ * resolves whenever a load lands — callers that attach on resolution pick the
+ * model up mid-session. Speech detection stays on the energy/WebSpeech
+ * fallback until then.
+ */
+export function loadSileroVad(): Promise<SileroVad> {
+  return sileroLoader.get();
 }

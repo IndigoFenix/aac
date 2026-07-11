@@ -40,4 +40,6 @@ export interface EyeGazeProvider {
   getStatus(): EyeGazeProviderStatus;
   /** Update pixel-space smoothing live. Only hardware bridge providers implement this. */
   setSmoothing?(config: import("@shared/gaze-smoothing.js").GazeSmootherConfig | false): void;
+  /** Update the pixel↔degree conversion live as viewing distance changes. Only hardware bridges implement this. */
+  setPixelsPerDegree?(pixelsPerDegree: number): void;
 }

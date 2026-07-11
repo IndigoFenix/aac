@@ -4,64 +4,36 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { FaceTrackingConfig, RawTrackedFace, BoundingBox } from "@/lib/faceTrackingTypes";
 import { DEFAULT_FACE_TRACKING_CONFIG } from "@/lib/faceTrackingTypes";
+import { createModelLoader, type ModelLoader } from "@/lib/modelLoader";
+import { createRawVisionTask, visionAssetSources } from "@/lib/visionTasks";
 
 // =============================================================================
-// SINGLETON LOADER (same pattern as usePersonIdentification.ts)
+// SHARED LOADER (retrying — see lib/modelLoader.ts)
 // =============================================================================
 
-let faceLandmarkerInstance: any = null;
-let faceLandmarkerPromise: Promise<any> | null = null;
-let faceLandmarkerError: Error | null = null;
+// Assets load self-hosted-first with a CDN fallback (visionTasks.ts). The old
+// singleton fetched CDN-only AND cached the first error forever, which is why
+// the FaceMirror would "randomly" stay blank for a whole session; the
+// retrying loader recovers as soon as a source is reachable again.
 
-async function loadFaceLandmarker(maxFaces: number): Promise<any> {
-  if (faceLandmarkerInstance) return faceLandmarkerInstance;
-  if (faceLandmarkerError) throw faceLandmarkerError;
-  if (faceLandmarkerPromise) return faceLandmarkerPromise;
+let faceLoader: ModelLoader<any> | null = null;
 
-  faceLandmarkerPromise = (async () => {
-    try {
-      const vision = await import("@mediapipe/tasks-vision");
-      const { FaceLandmarker, FilesetResolver } = vision;
-
-      const filesetResolver = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
-      );
-
-      const createOptions = (delegate: "GPU" | "CPU") => ({
-        baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          delegate,
-        },
-        runningMode: "VIDEO" as const,
-        numFaces: maxFaces,
-        outputFaceBlendshapes: true,
-        outputFacialTransformationMatrixes: false,
-      });
-
-      try {
-        faceLandmarkerInstance = await FaceLandmarker.createFromOptions(
-          filesetResolver,
-          createOptions("GPU")
-        );
-        console.log("[FaceTracking] FaceLandmarker initialized (GPU)");
-      } catch (gpuErr) {
-        console.warn("[FaceTracking] GPU delegate failed, falling back to CPU:", gpuErr);
-        faceLandmarkerInstance = await FaceLandmarker.createFromOptions(
-          filesetResolver,
-          createOptions("CPU")
-        );
-        console.log("[FaceTracking] FaceLandmarker initialized (CPU fallback)");
-      }
-
-      return faceLandmarkerInstance;
-    } catch (err) {
-      faceLandmarkerError = err as Error;
-      console.error("[FaceTracking] Failed to load FaceLandmarker:", err);
-      throw err;
-    }
-  })();
-
-  return faceLandmarkerPromise;
+/** Shared FaceLandmarker loader (raw instance — detectForVideo). maxFaces is
+ *  baked in on first call (all current consumers use the default); later
+ *  calls reuse the same instance. */
+export function getFaceLandmarkerLoader(
+  maxFaces: number = DEFAULT_FACE_TRACKING_CONFIG.maxFaces,
+): ModelLoader<any> {
+  if (faceLoader) return faceLoader;
+  faceLoader = createModelLoader("face-landmarker", async () => {
+    const inst = await createRawVisionTask("face", {
+      numEntities: maxFaces,
+      assetSources: visionAssetSources("face"),
+    });
+    console.log("[FaceTracking] FaceLandmarker initialized");
+    return inst;
+  });
+  return faceLoader;
 }
 
 // =============================================================================
@@ -118,33 +90,31 @@ export function useFaceTracking(options: UseFaceTrackingOptions): UseFaceTrackin
   // NOTE: this hook no longer owns a <video> element. It reads frames from the
   // shared `videoEl` provided by MultiCameraProvider. See useMultiCamera.tsx.
 
-  // Initialize FaceLandmarker
+  // Initialize FaceLandmarker. get() resolves whenever the load lands —
+  // including after mid-session retries — so tracking self-heals; the status
+  // subscription surfaces the error string while retries are still going.
   useEffect(() => {
     if (!enabled) return;
 
     let mounted = true;
+    const loader = getFaceLandmarkerLoader(config.maxFaces);
 
-    async function init() {
-      try {
-        const landmarker = await loadFaceLandmarker(config.maxFaces);
-        if (mounted) {
-          landmarkerRef.current = landmarker;
-          setIsReady(true);
-          setError(null);
-          console.log("[FaceTracking] Ready");
-        }
-      } catch (err: any) {
-        if (mounted) {
-          setError(err.message || "Failed to load face tracking model");
-          setIsReady(false);
-        }
-      }
-    }
+    loader.get().then((landmarker) => {
+      if (!mounted) return;
+      landmarkerRef.current = landmarker;
+      setIsReady(true);
+      setError(null);
+      console.log("[FaceTracking] Ready");
+    });
 
-    init();
+    const unsubscribe = loader.subscribe((st) => {
+      if (!mounted || st.state !== "error") return;
+      setError(st.lastError || "Failed to load face tracking model");
+    });
 
     return () => {
       mounted = false;
+      unsubscribe();
     };
   }, [enabled, config.maxFaces]);
 

@@ -105,6 +105,11 @@ export interface WorldView {
    *  proximity exact already). `includeLocal` returns the local avatar instead of
    *  passing the ray through it (the spark cursor uses it to hover over the player). */
   pickScreen?(px: number, py: number, opts?: { includeLocal?: boolean }): ScreenPick | null;
+  /** Building ids whose roof is currently NOT fully opaque — the see-inside fade
+   *  is active, so the room is on show. A 3D concern (the streamer keeps a room's
+   *  interior populated while its roof is open); the top-down 2D view has no roofs
+   *  to occlude and omits it. */
+  revealedBuildings?(): Set<string>;
   /** Draw one frame of `state`. `dt` (seconds) drives camera smoothing / animation.
    *  `intent` (optional) lets the camera react to gaze intent (3D); 2D ignores it. */
   render(state: WorldState, dt: number, intent?: RenderIntent): void;

@@ -137,10 +137,11 @@ export interface ResidentModel {
    * the doorstep stands in); `visibleR` is the camera's world reach,
    * feeding only the POP-IN rule (where a body materializes), never
    * whether it exists. `isVisible(houseIndex)` reports whether a house's
-   * INTERIOR is currently visible (the shared visibleBuildings signal) —
-   * embodiment/abstraction keys on THAT, not raw player position. Omit it
-   * and the model falls back to the bare "player inside this house" test
-   * (the 2D lab, which has no door/visibility model).
+   * INTERIOR is ON SHOW — its roof transparent because the player occupies
+   * it (an open door you're standing OUTSIDE of does not count; the roof is
+   * still opaque). Embodiment/abstraction keys on THAT, not raw distance.
+   * Omit it and the model falls back to the bare "player inside this house"
+   * footprint test (the 2D lab, which has no roof/visibility model).
    */
   update(
     p: Pt,
@@ -232,10 +233,10 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     visibleR?: number,
     isVisible?: (houseIndex: number) => boolean,
   ): ResidentUpdate => {
-    // A house's interior is on show when it's VISIBLE (visibleBuildings — the
-    // player is inside, or an open door reveals it), not merely when the player
-    // stands within its walls. Every embodiment/abstraction gate below reads
-    // this. No signal supplied ⇒ fall back to the raw footprint test.
+    // A house's interior is ON SHOW when its roof is transparent — the player
+    // OCCUPIES it (an open door you're outside of doesn't reveal it; the roof
+    // stays opaque). Every embodiment/abstraction gate below reads this. No
+    // signal supplied ⇒ fall back to the raw footprint test.
     const isHouseVisible = (h: TownHouse): boolean =>
       isVisible ? isVisible(h.index) : inHouseRect(p, h);
     interface Candidate extends ResidentSpawn {

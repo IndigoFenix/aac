@@ -79,9 +79,9 @@ import {
   dropObject,
   expandWorldBuildings,
   routeThroughDoors,
+  buildingAt,
   showWorldBubble,
   unlockDoor,
-  visibleBuildings,
   type WorldState,
 } from "../world-engine/engine.js";
 import { createNpcVoice, speechEstimateMs, type NpcVoice } from "../world-engine/npc-voice.js";
@@ -105,6 +105,17 @@ import {
   STAY_DONE_LINE,
   toggleDevice,
   useStation,
+  createCreatureGoalState,
+  defaultCurfewRules,
+  stepCreatureGoals,
+  compileGoal,
+  compileIntent,
+  defaultBinder,
+  parseSentence,
+  type CreatureGoalState,
+  type GoalPlan,
+  type GoalStep,
+  type WorldResolver,
   type VillagePlan,
   type ConversationMemo,
   type CreatureNeed,
@@ -158,6 +169,10 @@ export interface QuestSession {
   granted: Set<string>;
   /** The need-based creature world (fulfill-node games), or null. */
   creatures: DerivedCreatures | null;
+  /** Deterministic goal/rule state (society-rules.md): standing rules + a day/night
+   *  clock. Riverside seeds a default "when night, go home" curfew per creature.
+   *  Null when there are no creatures. */
+  goals: CreatureGoalState | null;
   /** Per-creature staging: where it stands (home) and stows items (stockpile). */
   staging: Map<string, { home: { x: number; y: number }; stockpile: { x: number; y: number } }>;
   /** Per-NPC errand QUEUE — one task at a time (a creature carries one item). */
@@ -278,6 +293,11 @@ export interface QuestHost3D {
   select(id: string, opts?: { spokenExternally?: boolean }): void;
   /** Close the active question/conversation without answering. */
   cancelChoice(): void;
+  /** Speak a composed AAC SENTENCE to a creature (the one in conversation, else the
+   *  nearest) — parsed by the concept parser, compiled to a Rule (installed as a
+   *  standing custom) or a one-shot GoalSpec (the creature acts it out now). A
+   *  conversational statement/question is surfaced but does not yet drive dialogue. */
+  speak(sentence: string): void;
   /** Feed the pointer/gaze in CLIENT px (the host maps to its canvas). A fed
    *  pointer PERSISTS — a still pointer keeps steering — until cleared. */
   setPointer(clientX: number, clientY: number): void;
@@ -513,7 +533,20 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
   // walls each zone into a separate house on the plaza.
   const village = town || house ? null : planVillageBuildings(game, world, embedding.layout);
   if (house) {
-    embedding.spec.buildings = house.buildings;
+    // embedLayoutInWorld TRANSLATED the layout into the manifold (everything
+    // shifted by EMBED_MARGIN - min). house.buildings carry the UNSHIFTED room
+    // rects, so shift their footprints by the SAME delta — else the walls/roofs
+    // (and buildingAt, and the dollhouse camera that frames them) land ~1.5 units
+    // off from the spawn, objects, and zones. Doorway offsets are edge-relative,
+    // so only the footprint origin moves.
+    const shifted = embedding.layout.zones[0];
+    const original = layout.zones[0];
+    const bdx = shifted && original ? shifted.rect.x - original.rect.x : 0;
+    const bdy = shifted && original ? shifted.rect.y - original.rect.y : 0;
+    embedding.spec.buildings = house.buildings.map((b) => ({
+      ...b,
+      footprint: { ...b.footprint, x: b.footprint.x + bdx, y: b.footprint.y + bdy },
+    }));
     embedding.spec = expandWorldBuildings(embedding.spec);
   } else if (village) {
     embedding.spec.buildings = village.buildings;
@@ -521,6 +554,10 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
   }
   const entities = new Map(game.entities.map((e) => [e.id, e]));
   const { embodiedNodeIds, npcIcons } = planEmbodiedNpcs(game, embedding, entities);
+  const derivedCreatures = (() => {
+    const derived = creatureWorldFromGame(game);
+    return derived.nodeByCreature.size ? derived : null;
+  })();
   return {
     game,
     world,
@@ -535,10 +572,10 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     convItems: new Map(converse.items.map((i) => [i.objectId, i])),
     absorbed: new Set(),
     granted: new Set(),
-    creatures: (() => {
-      const derived = creatureWorldFromGame(game);
-      return derived.nodeByCreature.size ? derived : null;
-    })(),
+    creatures: derivedCreatures,
+    goals: derivedCreatures
+      ? createCreatureGoalState(defaultCurfewRules(derivedCreatures.nodeByCreature.keys()))
+      : null,
     staging: new Map(converse.staging.map((s) => [s.nodeId, { home: s.home, stockpile: s.stockpile }])),
     npcTasks: new Map(),
     heardWants: new Set(),
@@ -1216,6 +1253,94 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return Object.values(world.state.objects).find((o) => o.carriedBy === npcId)?.id;
   }
 
+  /** Run one of a compiled goal's action steps (pick/give/place) as a world effect —
+   *  the `onArrive` payload for the errand `issueGoalPlan` builds. Movement is the
+   *  waypoints; these are the things the creature DOES on arriving. (toggle/transform
+   *  await the town resolver gaining item/device lookups.) */
+  function applyGoalStep(session: QuestSession, cid: string, step: GoalStep) {
+    if (!world) return;
+    const npcId = `npc_${cid}`;
+    const objIdFor = (entityId: string) =>
+      [...session.convItems.entries()].find(([, it]) => it.entityId === entityId)?.[0];
+    if (step.kind === "pick") {
+      const o = objIdFor(step.itemId);
+      if (o && !npcCarrying(npcId)) carryObject(world.state, o, npcId);
+    } else if (step.kind === "give" || step.kind === "place") {
+      const o = objIdFor(step.itemId);
+      const c = o ? world.state.objects[o] : undefined;
+      if (o && c?.carriedBy === npcId) dropObject(world.state, o, c.x, c.y);
+    }
+  }
+
+  /** GoalPlan (goal-selection.ts) → an NpcErrand, then queue it: moveTo steps are the
+   *  waypoints; action steps attach to the last waypoint's onArrive. Reuses the door-
+   *  routing + one-task-at-a-time queue via `enqueueNpcErrand`. */
+  function issueGoalPlan(session: QuestSession, cid: string, plan: GoalPlan) {
+    if (!world) return;
+    const points: NpcErrandPoint[] = [];
+    const actionsAt = new Map<number, GoalStep[]>();
+    for (const step of plan.steps) {
+      if (step.kind === "moveTo") points.push({ x: step.pos.x, y: step.pos.y });
+      else {
+        const i = Math.max(0, points.length - 1);
+        (actionsAt.get(i) ?? actionsAt.set(i, []).get(i)!).push(step);
+      }
+    }
+    if (!points.length) return;
+    enqueueNpcErrand(session, `npc_${cid}`, {
+      points,
+      onArrive: (i) => {
+        for (const step of actionsAt.get(i) ?? []) applyGoalStep(session, cid, step);
+      },
+    });
+  }
+
+  /** Avatar id for a creature id — the player's body is PLAYER_ID, others `npc_*`. */
+  function avatarIdOf(cid: string): string {
+    return cid === PLAYER_CREATURE_ID ? PLAYER_ID : `npc_${cid}`;
+  }
+
+  /** A WorldResolver over the live world for compileGoal (goal-selection.ts). Movement
+   *  is supported (positions/home/creature-places); item/device lookups return null
+   *  until the town item bridge is wired, so fetch/give/toggle goals stay unbound. */
+  function makeGoalResolver(session: QuestSession): WorldResolver {
+    const host = world!;
+    const posOf = (cid: string) => {
+      const a = host.state.avatars[avatarIdOf(cid)];
+      return a ? { x: a.x, y: a.y } : null;
+    };
+    return {
+      positionOf: posOf,
+      homeOf: (id) => session.staging.get(id)?.home ?? posOf(id),
+      place: (p) => (p.kind === "creature" ? posOf(p.id) : null),
+      resolveItem: () => null,
+      itemPosition: () => null,
+      stationFor: () => null,
+    };
+  }
+
+  /** The creature the player stands nearest — the fallback target for a spoken
+   *  command/rule when the player isn't in an active conversation. */
+  function nearestCreature(session: QuestSession): string | null {
+    if (!world || !session.creatures) return null;
+    const p = world.state.avatars[PLAYER_ID];
+    if (!p) return null;
+    let best: string | null = null;
+    let bestD = Infinity;
+    for (const cid of session.creatures.nodeByCreature.keys()) {
+      const a = world.state.avatars[`npc_${cid}`];
+      if (!a) continue;
+      const d = Math.hypot(a.x - p.x, a.y - p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = cid;
+      }
+    }
+    return best;
+  }
+
+  let speakSeq = 0;
+
   /**
    * A dialogue `receive` was granted: the vendor walks to the stock item, picks
    * it up, carries it over, and puts it down within the player's reach — then
@@ -1639,11 +1764,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const meTown = state.avatars[PLAYER_ID];
           const townHost = world;
           if (meTown && townHost) {
-            // Interior VISIBILITY — the same signal the renderer uses to see
-            // inside — drives which houses embody their residents (not the raw
-            // "player standing in this house" test). A house `h_<index>` is
-            // visible when the player is inside it or an open door reveals it.
-            const vis = visibleBuildings(state, { x: meTown.x, y: meTown.y });
+            // ROOF STATE is the gate for showing an interior — both its people AND
+            // its furniture. A room is "on show" while its roof is NOT fully opaque:
+            // transparent, or still easing back after you left. So its residents +
+            // furniture appear as the roof opens and abstract only once it fully
+            // SEALS — nothing pops out from under a half-faded roof, and an open
+            // door you're OUTSIDE of (opaque roof) reveals nothing, so ambient
+            // residents can't be conjured or talked to through a wall. Occupancy is
+            // OR'd in so a room populates the instant you step in, before its roof
+            // has begun to fade. Bodies mid-task (out on the lanes, or transiting a
+            // door) stay embodied regardless; the resident model exempts them.
+            const occupiedId = buildingAt(state, meTown.x, meTown.y)?.id ?? null;
+            const revealed = townHost.revealedBuildings();
             const f = session.town.stage.frame(
               { x: meTown.x, y: meTown.y },
               session.townClock,
@@ -1656,7 +1788,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // (spawn through buildings where the view could see thin
               // air). A view-specific input by design, never mechanics.
               120,
-              (houseIndex) => vis.has(`h_${houseIndex}`),
+              (houseIndex) => {
+                const id = `h_${houseIndex}`;
+                return id === occupiedId || revealed.has(id);
+              },
             );
             if (f.buildings) townHost.setBuildings(f.buildings);
             for (const o of f.addObjects) townHost.addObject(o);
@@ -2094,6 +2229,21 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
           }
         }
+        // ── SOCIETY RULES (society-rules.md): advance the day/night clock and let
+        // each creature pick its goal; on a goal CHANGE, issue an errand. Riverside's
+        // default is the "when night, go home" curfew, authored end-to-end through the
+        // concept parser → intent-compile → rules. Same id convention + staging homes +
+        // errand choke point as the hand-over loop above; no world-host changes.
+        if (session.goals && session.creatures && world) {
+          stepCreatureGoals(session.goals, dt, {
+            world: session.creatures.world,
+            creatureIds: session.creatures.nodeByCreature.keys(),
+            resolver: makeGoalResolver(session),
+            isBusy: (cid) =>
+              (session.npcTasks.get(`npc_${cid}`)?.length ?? 0) > 0 || !!npcCarrying(`npc_${cid}`),
+            issue: (cid, plan) => issueGoalPlan(session, cid, plan),
+          });
+        }
         // ── NPC conversation: approach bubble → dwell-to-talk → camera-face → cancel.
         const cvHost = world;
         const meAv = state.avatars[PLAYER_ID];
@@ -2330,6 +2480,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cancelChoice() {
       if (convo) closeCreatureConvo();
       else if (choice) dispatchInput({ type: "cancel-choice", nodeId: choice.nodeId });
+    },
+    speak(sentence) {
+      const s = sess;
+      if (!s || !world) return;
+      const frame = parseSentence(sentence);
+      const target = convo?.nodeId ?? nearestCreature(s);
+      if (!target) {
+        presenter.toast(`💬 "${sentence}" — no one nearby to tell`, "feedback");
+        return;
+      }
+      const compiled = compileIntent(
+        frame,
+        defaultBinder({ player: PLAYER_CREATURE_ID, listener: target }),
+        { id: `say_${speakSeq++}` },
+      );
+      if (compiled.kind === "rule") {
+        s.goals?.rules.push(compiled.rule);
+        presenter.toast(`📜 ${target} rule: ${sentence}`, "feedback");
+      } else if (compiled.kind === "goal") {
+        const plan = compileGoal(compiled.goal, target, makeGoalResolver(s));
+        if (plan) {
+          issueGoalPlan(s, target, plan);
+          presenter.toast(`▶ ${target}: ${sentence}`, "feedback");
+        } else {
+          presenter.toast(`💬 "${sentence}" — can't do that here yet`, "feedback");
+        }
+      } else {
+        presenter.toast(`💬 "${sentence}" → ${frame.kind} (dialogue reply not wired yet)`, "feedback");
+      }
     },
     setPointer(clientX, clientY) {
       lastClient = { x: clientX, y: clientY };

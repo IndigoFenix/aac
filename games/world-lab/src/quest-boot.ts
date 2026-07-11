@@ -98,8 +98,14 @@ function bootQuestGame(
   let session: QuestSession | null = null;
   let host: QuestHost3D | null = null;
 
-  // The REAL board (shared BoardButtonVisual), driven by the host's board view.
-  const board: BoardIsland = mountBoardIsland(boardPanel, (id) => host?.select(id));
+  // The REAL board (shared BoardButtonVisual) + footer (Yes/No/More/Speak). Board
+  // taps drive the host; the footer + Speak menu send composed sentences to the host,
+  // which parses them and drives the target creature (rule/command).
+  const board: BoardIsland = mountBoardIsland(
+    boardPanel,
+    (id) => host?.select(id),
+    (sentence) => host?.speak(sentence),
+  );
   const iconOf = (id: string) => session?.entities.get(id)?.iconRef ?? "❔";
 
   const presenter = {

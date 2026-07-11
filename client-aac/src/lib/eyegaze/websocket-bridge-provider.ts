@@ -47,6 +47,9 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
   private error: string | null = null;
   private destroyed = false;
   private smoother: GazeSmoother | null;
+  // Last viewing-geometry value pushed from the app; re-applied whenever the
+  // smoother is rebuilt (setSmoothing) so a strength change doesn't drop it.
+  private pixelsPerDegree: number | null = null;
 
   constructor(config: WebSocketBridgeConfig) {
     this.config = config;
@@ -125,6 +128,17 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
   /** Swap the smoothing config live (e.g. clinician changed the strength setting). */
   setSmoothing(config: GazeSmootherConfig | false) {
     this.smoother = config ? new GazeSmoother(config) : null;
+    // Rebuilding drops the previous geometry — restore the last known value.
+    if (this.smoother && this.pixelsPerDegree != null) {
+      this.smoother.setPixelsPerDegree(this.pixelsPerDegree);
+    }
+  }
+
+  /** Update the pixel↔degree conversion live as the viewing distance changes. */
+  setPixelsPerDegree(pixelsPerDegree: number) {
+    if (!(pixelsPerDegree > 0)) return;
+    this.pixelsPerDegree = pixelsPerDegree;
+    this.smoother?.setPixelsPerDegree(pixelsPerDegree);
   }
 
   /**

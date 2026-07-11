@@ -96,6 +96,11 @@ const PICK_ITEM_MARGIN = 1.5;
 /** Opacity a faded-out plane settles at (roof/slab/storey wall/object of the
  *  OCCUPIED building sitting between the occupant and the camera). */
 const FADE_OPACITY = 0.07;
+/** At/above this roof opacity the building reads as SEALED (fully opaque). Below
+ *  it the see-inside fade is active — transparent or still easing — so the
+ *  interior is on show. `fadeToward` snaps a sealing roof to exactly 1, so any
+ *  value < 1 is unambiguously "opening/open". */
+const ROOF_SEALED_OPACITY = 0.999;
 /** Ease rate (1/s) of the see-inside fade — clears the view in ~a third of a
  *  second but still reads as a fade, never a pop. */
 const FADE_RATE = 9;
@@ -1197,6 +1202,20 @@ export class World3DRenderer {
     }
   }
 
+  /** Building ids whose roof is NOT fully opaque this frame — the see-inside fade
+   *  has it transparent or still easing back, so the interior is on show. The
+   *  town streamer keys interior population on this: a room's residents + furniture
+   *  stay present while its roof is open and abstract only once it SEALS, so
+   *  nobody/nothing pops out from under a still-transparent roof. */
+  roofRevealedBuildings(): Set<string> {
+    const out = new Set<string>();
+    for (const [id, entry] of this.buildingMeshes) {
+      const mat = entry.roof.material as THREE.MeshStandardMaterial;
+      if (mat.opacity < ROOF_SEALED_OPACITY) out.add(id);
+    }
+    return out;
+  }
+
   render(
     state: WorldState,
     dt: number,
@@ -1388,15 +1407,39 @@ export class World3DRenderer {
       // fades once the camera is above that storey. Exterior (floorless) walls
       // and stairs never fade.
       const sFloor = s.kind === "stairs" ? undefined : s.floor;
-      const inVisible =
-        s.kind !== "stairs" &&
-        (() => {
-          const b = buildingAt(state, (s.a.x + s.b.x) / 2, (s.a.y + s.b.y) / 2);
-          return !!b && fade.visible.has(b.id);
-        })();
-      const faded = inVisible && sFloor !== undefined && planeBlocks(fade, sFloor * FLOOR_HEIGHT);
+      const b = s.kind === "stairs" ? null : buildingAt(state, (s.a.x + s.b.x) / 2, (s.a.y + s.b.y) / 2);
+      const inVisible = !!b && fade.visible.has(b.id);
+      let faded = inVisible && sFloor !== undefined && planeBlocks(fade, sFloor * FLOOR_HEIGHT);
+      // SPIRIT dollhouse: also drop the walls/doors standing BETWEEN the camera
+      // and a room (their outward face looks back at the viewer), so the low 3/4
+      // view sees inside; the rear walls stay. Avatar mode never cuts walls.
+      if (!faded && this.spiritCamera && inVisible && b && (s.kind === "wall" || s.kind === "door")) {
+        faded = this.wallFacesCamera(s, b);
+      }
       for (const mat of entry.mats) fadeToward(mat, faded, dt);
     }
+  }
+
+  /** Dollhouse cutaway test: does this wall/door stand between the camera and its
+   *  room's interior? Its outward normal (away from the room center) points toward
+   *  the camera ⇒ it's a near wall we look OVER — drop it. Rear walls (outward
+   *  normal away from the camera) stay to bound the room. */
+  private wallFacesCamera(s: { a: Vec2; b: Vec2 }, b: BuildingSpec): boolean {
+    const midX = (s.a.x + s.b.x) / 2;
+    const midY = (s.a.y + s.b.y) / 2; // world Y (three.js Z)
+    const bcX = b.footprint.x + b.footprint.w / 2;
+    const bcY = b.footprint.y + b.footprint.h / 2;
+    let nx = -(s.b.y - s.a.y);
+    let ny = s.b.x - s.a.x;
+    const len = Math.hypot(nx, ny) || 1;
+    nx /= len;
+    ny /= len;
+    if (nx * (midX - bcX) + ny * (midY - bcY) < 0) {
+      nx = -nx; // orient OUTWARD (away from the room center)
+      ny = -ny;
+    }
+    // Camera on the outward side of the wall ⇒ it occludes the interior.
+    return nx * (this.camera.position.x - midX) + ny * (this.camera.position.z - midY) > 0;
   }
 
   /** Build each building's floor slabs + roof once, then ease exactly the planes
@@ -1750,20 +1793,42 @@ export class World3DRenderer {
     // camera over the scene lets the gaze reach every object/person (the spirit
     // interacts at any distance). Set once; cheap to re-assert each frame.
     if (this.spiritCamera) {
-      const { width: W, height: H } = this.spec.manifold;
-      const cx = W / 2;
-      const cz = H / 2;
-      const fov = 42;
+      // DOLLHOUSE: frame the focused house — the bounding box of its rooms (all
+      // buildings in a structure scope) — at a LOW 3/4 angle, the readable Sims
+      // vantage the wall-cut opens up (syncStructures drops the camera-facing
+      // walls). Falls back to the whole manifold when there are no buildings.
+      const bs = state.spec.buildings ?? [];
+      let minX = 0;
+      let minZ = 0;
+      let maxX = this.spec.manifold.width;
+      let maxZ = this.spec.manifold.height;
+      if (bs.length) {
+        minX = Infinity;
+        minZ = Infinity;
+        maxX = -Infinity;
+        maxZ = -Infinity;
+        for (const b of bs) {
+          const f = b.footprint;
+          minX = Math.min(minX, f.x);
+          minZ = Math.min(minZ, f.y);
+          maxX = Math.max(maxX, f.x + f.w);
+          maxZ = Math.max(maxZ, f.y + f.h);
+        }
+      }
+      const cx = (minX + maxX) / 2;
+      const cz = (minZ + maxZ) / 2;
+      const fov = 40;
       if (Math.abs(fov - this.camera.fov) > 1e-3) {
         this.camera.fov = fov;
         this.camera.updateProjectionMatrix();
       }
-      // Frame the larger span at ~50° down, from the -Z ("south") side.
-      const span = Math.max(W, H) * 1.15;
+      const span = Math.max(maxX - minX, maxZ - minZ) * 1.2;
       const dist = span / (2 * Math.tan((fov * Math.PI) / 180 / 2));
-      const pitch = 0.9; // rad below horizontal (~52°)
-      this.camera.position.set(cx, dist * Math.sin(pitch), cz + dist * Math.cos(pitch));
-      this.camera.lookAt(cx, 0, cz);
+      const pitch = 0.5; // rad below horizontal (~29°) — the low dollhouse angle
+      const lookY = FLOOR_HEIGHT * 0.55; // center on the room contents, not the floor
+      // Fixed azimuth for now (camera on the +Z "front" side); Slice 2 orbits it.
+      this.camera.position.set(cx, dist * Math.sin(pitch) + lookY, cz + dist * Math.cos(pitch));
+      this.camera.lookAt(cx, lookY, cz);
       this.lastYawSpeed = 0;
       if (!this.camCenter) this.camCenter = new THREE.Vector3(cx, 0, cz);
       return;
@@ -1941,6 +2006,7 @@ export function createWorld3DView(
   return {
     screenToWorld: (px, py) => renderer.screenToWorld(px, py),
     pickScreen: (px, py) => renderer.pickScreen(px, py),
+    revealedBuildings: () => renderer.roofRevealedBuildings(),
     render: (state, dt, intent) => renderer.render(state, dt, faceFor, labelFor, glyphFor, intent),
     resize: (width, height, dpr) => renderer.resize(width, height, dpr),
     setTunables: (t) => renderer.setTunables({ camera: t.camera, comfort: t.comfort }),

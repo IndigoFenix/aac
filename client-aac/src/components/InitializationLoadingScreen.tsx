@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import AppVersionBadge from "@/components/AppVersionBadge";
+import UpdateStatusIndicator from "@/components/UpdateStatusIndicator";
 const axolotlLogo = `${import.meta.env.BASE_URL}aac-avatars/axolotl/axolotl-logo.png`;
 
 export default function InitializationLoadingScreen() {
@@ -164,6 +165,7 @@ export default function InitializationLoadingScreen() {
           </motion.div>
         )}
       </div>
+      <UpdateStatusIndicator />
       <AppVersionBadge />
     </div>
   );

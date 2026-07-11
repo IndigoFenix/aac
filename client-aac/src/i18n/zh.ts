@@ -14,6 +14,10 @@ export const zh: Translations = {
     boardsUnavailable: "面板不可用",
     chatUnavailable: "聊天不可用",
     featuresLimited: "某些功能可能受限",
+    updateDownloading: "正在下载更新…",
+    updateKeepOpen: "请保持应用打开直到完成",
+    updateReady: "更新已就绪",
+    updateRestart: "立即重启",
   },
 
   common: {

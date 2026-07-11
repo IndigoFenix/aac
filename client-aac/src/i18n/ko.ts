@@ -14,6 +14,10 @@ export const ko: Translations = {
     boardsUnavailable: "보드를 사용할 수 없음",
     chatUnavailable: "채팅을 사용할 수 없음",
     featuresLimited: "일부 기능이 제한될 수 있습니다",
+    updateDownloading: "업데이트 다운로드 중…",
+    updateKeepOpen: "완료될 때까지 앱을 열어 두세요",
+    updateReady: "업데이트 준비됨",
+    updateRestart: "지금 다시 시작",
   },
 
   common: {

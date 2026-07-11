@@ -14,6 +14,10 @@ export const yue: Translations = {
     boardsUnavailable: "面板唔可用",
     chatUnavailable: "聊天唔可用",
     featuresLimited: "部分功能可能受限",
+    updateDownloading: "正在下載更新…",
+    updateKeepOpen: "請保持應用程式開啟直到完成",
+    updateReady: "更新已就緒",
+    updateRestart: "立即重新啟動",
   },
 
   common: {

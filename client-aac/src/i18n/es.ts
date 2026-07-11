@@ -14,6 +14,10 @@ export const es: Translations = {
     boardsUnavailable: "Tableros no disponibles",
     chatUnavailable: "Chat no disponible",
     featuresLimited: "Algunas funciones pueden estar limitadas",
+    updateDownloading: "Descargando actualización…",
+    updateKeepOpen: "Mantén la aplicación abierta hasta que termine",
+    updateReady: "Actualización lista",
+    updateRestart: "Reiniciar ahora",
   },
 
   common: {

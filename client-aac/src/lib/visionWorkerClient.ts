@@ -15,10 +15,12 @@
 
 import {
   createVisionLandmarker,
+  visionAssetSources,
   type VisionLandmarker,
   type VisionTaskKind,
   type VisionTaskOptions,
 } from "./visionTasks";
+import { retryDelayMs } from "./modelLoader";
 
 export interface VisionTaskHandle {
   /** True once the task has loaded (on either path). */
@@ -125,20 +127,35 @@ class VisionEngine {
   }
 
   private async load(st: TaskState): Promise<void> {
-    const worker = this.getWorker();
-    if (worker) {
+    // The wasm fileset + model are runtime CDN fetches; retry on a capped
+    // backoff instead of letting one flaky moment poison loadPromise (and
+    // thus the tracker) for the rest of the session. Stops when the task is
+    // released mid-backoff.
+    for (let attempt = 0; ; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, retryDelayMs(attempt - 1)));
+        if (st.refs === 0) return;
+      }
+      const worker = this.getWorker();
+      if (worker) {
+        try {
+          const id = this.nextReqId++;
+          await this.request({ type: "load", id, kind: st.kind, options: st.options });
+          st.path = "worker";
+          st.ready = true;
+          return;
+        } catch (err) {
+          console.warn(`[Vision:${st.kind}] worker load failed; main thread:`, err);
+          // fall through to the main-thread path
+        }
+      }
       try {
-        const id = this.nextReqId++;
-        await this.request({ type: "load", id, kind: st.kind, options: st.options });
-        st.path = "worker";
-        st.ready = true;
+        await this.loadMain(st);
         return;
       } catch (err) {
-        console.warn(`[Vision:${st.kind}] worker load failed; main thread:`, err);
-        // fall through to the main-thread path
+        console.warn(`[Vision:${st.kind}] load attempt ${attempt + 1} failed:`, err);
       }
     }
-    await this.loadMain(st);
   }
 
   private async loadMain(st: TaskState): Promise<void> {
@@ -149,11 +166,15 @@ class VisionEngine {
 
   private async switchToMain(st: TaskState): Promise<void> {
     if (st.path === "main" && st.mainLm) return;
-    try {
-      await this.loadMain(st);
-    } catch (err) {
-      console.error(`[Vision:${st.kind}] main-thread fallback load failed:`, err);
-      st.ready = false;
+    for (let attempt = 0; st.refs > 0; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, retryDelayMs(attempt - 1)));
+      try {
+        await this.loadMain(st);
+        return;
+      } catch (err) {
+        console.error(`[Vision:${st.kind}] main-thread fallback load failed (attempt ${attempt + 1}):`, err);
+        st.ready = false;
+      }
     }
   }
 
@@ -195,8 +216,11 @@ class VisionEngine {
   acquire(kind: VisionTaskKind, options: VisionTaskOptions): VisionTaskHandle {
     let st = this.tasks.get(kind);
     if (!st) {
+      // Resolve asset URLs here (main thread) — the worker receives them in
+      // the load message and can't compute them itself.
       st = {
-        kind, options, refs: 0, path: null, ready: false,
+        kind, options: { ...options, assetSources: options.assetSources ?? visionAssetSources(kind) },
+        refs: 0, path: null, ready: false,
         loadPromise: null, mainLm: null, inFlight: false, lastTs: 0,
       };
       this.tasks.set(kind, st);

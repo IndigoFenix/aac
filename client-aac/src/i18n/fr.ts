@@ -14,6 +14,10 @@ export const fr: Translations = {
     boardsUnavailable: "Tableaux indisponibles",
     chatUnavailable: "Chat indisponible",
     featuresLimited: "Certaines fonctionnalités peuvent être limitées",
+    updateDownloading: "Téléchargement de la mise à jour…",
+    updateKeepOpen: "Gardez l'application ouverte jusqu'à la fin",
+    updateReady: "Mise à jour prête",
+    updateRestart: "Redémarrer maintenant",
   },
 
   common: {
