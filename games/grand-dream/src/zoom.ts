@@ -61,9 +61,9 @@ import {
   WORLD_TILE, worldPos,
   townBias as sharedTownBias, townPlan as sharedTownPlan,
   type TownBias, type TownHouse, type TownPlan,
-} from "@shared/engine/town/plan";
-import type { TownStreets } from "@shared/engine/town/streets";
-import { houseFurniture } from "@shared/engine/town/furniture";
+} from "@shared/world-engine/kernel/town/plan";
+import type { TownStreets } from "@shared/world-engine/kernel/town/streets";
+import { houseFurniture } from "@shared/world-engine/kernel/town/furniture";
 import type { ObjectSpec } from "@shared/world-engine/index";
 
 export { HOUSEHOLD };
@@ -78,7 +78,7 @@ export { HOUSEHOLD };
 export {
   MARKET_MIN_HOUSES, WORLD_TILE, worldPos,
   type TownBias, type TownField, type TownHouse, type TownPlan, type TownWork,
-} from "@shared/engine/town/plan";
+} from "@shared/world-engine/kernel/town/plan";
 
 /** The world's work registry (compiled economy, or the standard one). */
 export function worksOf(tri: TriWorld): CompiledEconomy["works"] {
@@ -516,7 +516,7 @@ export const TOWN_UNLOAD_R = 2000;
 import {
   BOX_FILL_DWELL, IDLE_EMBODY_R, IDLE_RANK_PENALTY, INDOOR_WANDER_R,
   PEOPLE_EVICT_MIN, PEOPLE_R, STREET_NPCS,
-} from "@shared/engine/town/residents";
+} from "@shared/world-engine/kernel/town/residents";
 export { IDLE_EMBODY_R, IDLE_RANK_PENALTY, PEOPLE_EVICT_MIN, PEOPLE_R, STREET_NPCS };
 /** A watched pantry's flip detection rides render-call continuity: a
  *  house whose box was last displayed longer ago than this counts as

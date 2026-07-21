@@ -218,6 +218,7 @@ export function triBase(opts: TriBaseOpts = {}): Omit<DualSpec, "nodes" | "edges
           // Structural: the population the coupling writes, the charter
           // attrs tri.ts samples from the substrate, the unrest input.
           v("population", 1_000_000), v("farmland", 2000), v("ore_access", 2000), v("timberland", 2000),
+          v("pasture", 2000),
           ...eco.vars,
           v("unrest", 1),
         ],

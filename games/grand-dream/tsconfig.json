@@ -10,7 +10,7 @@
     "paths": {
       "@shared/*": ["../../shared/*"],
       "@popusim/*": ["../popusim/src/*"],
-      "@cells/*": ["../../shared/engine/cells/*"]
+      "@cells/*": ["../../shared/world-engine/kernel/cells/*"]
     }
   }
 }

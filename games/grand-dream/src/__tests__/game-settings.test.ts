@@ -6,7 +6,7 @@
  * `world`'s deep validation belongs to the scope's builder.
  */
 import { describe, it, expect } from "vitest";
-import { loadWorldManifest, parseGameSettings, avatarKind, GAME_SCOPES } from "@shared/engine/manifest";
+import { loadWorldManifest, parseGameSettings, avatarKind, GAME_SCOPES } from "@shared/world-engine/kernel/manifest";
 
 const envelope = (game: unknown): Record<string, unknown> => ({
   engine: "aivota-world",
@@ -31,7 +31,11 @@ describe("game settings — the session shape parses", () => {
       initialFocus: "town:riverton",
       avatar: true,
       avatarSpecies: "human_cute",
+      canFly: false,
       creativeMode: true,
+      entities: null,
+      scale: null,
+      culture: null,
     });
   });
 
@@ -52,7 +56,11 @@ describe("game settings — the session shape parses", () => {
       initialFocus: null,
       avatar: false,
       avatarSpecies: "human_cute",
+      canFly: false,
       creativeMode: false,
+      entities: null,
+      scale: null,
+      culture: null,
     });
   });
 
@@ -65,12 +73,18 @@ describe("game settings — the session shape parses", () => {
     expect(explicit.game!.avatarSpecies).toBe("cow");
   });
 
-  it("avatar kinds: walker / spaceship / spirit / none", () => {
+  it("avatar kinds: walker / spirit / none — the pilot is a walker with can_fly", () => {
     const mk = (avatar: unknown) => parseGameSettings({ scope: "structure", world: {}, avatar }, "s");
     expect(avatarKind(mk(true))).toBe("walker");
-    expect(avatarKind(mk("spaceship"))).toBe("spaceship");
     expect(avatarKind(mk("spirit"))).toBe("spirit");
     expect(avatarKind(mk(false))).toBe("none");
+    // "spaceship" was RETIRED: flight is a walker capability, not a kind.
+    expect(() => mk("spaceship")).toThrow(/"spaceship" was retired/);
+    const flyer = parseGameSettings({ scope: "solar_system", world: {}, avatar: true, can_fly: true }, "s");
+    expect(avatarKind(flyer)).toBe("walker");
+    expect(flyer.canFly).toBe(true);
+    expect(() => parseGameSettings({ scope: "town", world: {}, can_fly: "up" }, "s"))
+      .toThrow(/s\.can_fly: must be true or false/);
   });
 
   it("explicit nulls read as the defaults (avatar: null = whole-area view)", () => {
@@ -98,7 +112,7 @@ describe("game settings — reject, never skip", () => {
 
   it("refuses an unknown scope with the ladder in the message", () => {
     expect(load({ scope: "continent", world: {} }))
-      .toThrow(/world\.game\.scope: must be one of: structure, town, region, planet, solar_system, galaxy/);
+      .toThrow(/world\.game\.scope: must be one of: structure, town, region, planet, solar_system, star_cluster, galaxy/);
   });
 
   it("refuses a missing or malformed world", () => {
@@ -113,7 +127,7 @@ describe("game settings — reject, never skip", () => {
     expect(load({ scope: "town", world: {}, initial_focus: "" }))
       .toThrow(/world\.game\.initial_focus: an object ID must be a non-empty string/);
     expect(load({ scope: "town", world: {}, avatar: "yes" }))
-      .toThrow(/world\.game\.avatar: must be true, "spaceship", "spirit", or null/);
+      .toThrow(/world\.game\.avatar: must be true, "spirit", or null/);
     expect(load({ scope: "town", world: {}, creative_mode: "on" }))
       .toThrow(/world\.game\.creative_mode: must be true or false/);
     expect(load({ scope: "town", world: {}, avatar_species: "" }))
@@ -132,5 +146,35 @@ describe("game settings — reject, never skip", () => {
   it("parseGameSettings is exported for loaders gating bare settings", () => {
     expect(parseGameSettings({ scope: "region", world: { seed: 9 } }, "settings").scope).toBe("region");
     expect(() => parseGameSettings({ scope: "region" }, "settings")).toThrow(/settings\.world: required/);
+  });
+});
+
+describe("the ladder law — initial_focus must be at or below the scope", () => {
+  const settings = (scope: string, focus: unknown): Record<string, unknown> => ({
+    scope, world: {}, initial_focus: focus,
+  });
+
+  it("a focus below (or at) the scope passes", () => {
+    expect(parseGameSettings(settings("town", "house:3"), "g").initialFocus).toBe("house:3");
+    expect(parseGameSettings(settings("planet", "site:0"), "g").initialFocus).toBe("site:0");
+    expect(parseGameSettings(settings("galaxy", "home"), "g").initialFocus).toBe("home");
+    expect(parseGameSettings(settings("solar_system", { type: "planet", kind: "rocky" }), "g").initialFocus)
+      .toEqual({ type: "planet", kind: "rocky" });
+  });
+
+  it("a focus ABOVE the scope is refused, path-exact", () => {
+    expect(() => parseGameSettings(settings("structure", "site:0"), "g"))
+      .toThrow(/g\.initial_focus: a structure game cannot focus a town/);
+    expect(() => parseGameSettings(settings("planet", "star:1"), "g"))
+      .toThrow(/g\.initial_focus: a planet game cannot focus a solar_system/);
+    expect(() => parseGameSettings(settings("town", { type: "planet" }), "g"))
+      .toThrow(/g\.initial_focus: a town game cannot focus a planet/);
+  });
+
+  it("owner-specific vocabulary passes the shape gate (the resolver judges it)", () => {
+    expect(parseGameSettings(settings("planet", "town:riverton"), "g").initialFocus).toBe("town:riverton");
+    expect(parseGameSettings(settings("structure", "door:west"), "g").initialFocus).toBe("door:west");
+    expect(parseGameSettings(settings("region", { minFertility: 40 }), "g").initialFocus)
+      .toEqual({ minFertility: 40 });
   });
 });

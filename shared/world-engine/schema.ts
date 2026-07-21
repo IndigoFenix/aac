@@ -51,6 +51,8 @@ const manifoldSchema = z
     kind: z.literal("flat"),
     width: positive.max(WORLD_MANIFOLD_MAX),
     height: positive.max(WORLD_MANIFOLD_MAX),
+    // false = content extent only, physics unclamped (planet-mounted worlds).
+    bounded: z.boolean().optional(),
   })
   .strict();
 
@@ -100,8 +102,11 @@ const objectSchema = z
     interactions: z.array(z.enum(["push", "carry"])).max(2),
     push: pushSchema.optional(),
     contains: z.array(containmentSlotSchema).min(1).max(8).optional(),
-    // FURNITURE (fixtures): static, solid containers along a room's walls.
-    fixture: z.enum(["chest", "cupboard", "table"]).optional(),
+    // FURNITURE (fixtures): static containers along a room's walls — solid
+    // (bar the pass-through kinds, types.ts PASSTHROUGH_FIXTURES).
+    fixture: z
+      .enum(["chest", "cupboard", "table", "bed", "chair", "box", "barrel", "bath", "privy", "bin", "bowl", "oven", "workbench", "refrigerator"])
+      .optional(),
     openable: z.boolean().optional(),
     facing: finite.optional(),
   })

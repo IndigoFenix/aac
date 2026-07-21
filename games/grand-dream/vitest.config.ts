@@ -14,7 +14,7 @@ export default defineConfig({
     alias: {
       "@shared": path.resolve(__dirname, "..", "..", "shared"),
       "@popusim": path.resolve(__dirname, "..", "popusim", "src"),
-      "@cells": path.resolve(__dirname, "..", "..", "shared", "engine", "cells"),
+      "@cells": path.resolve(__dirname, "..", "..", "shared", "world-engine", "kernel", "cells"),
     },
   },
   test: {

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { makeCubeSphereTopology } from "@cells/index";
-import { runSphereTectonics, bakeCellAuthors } from "@shared/engine/geology/sphere-tectonics";
+import { runSphereTectonics, bakeCellAuthors } from "@shared/world-engine/kernel/geology/sphere-tectonics";
 import { prepareSubstrateOn, foundTri, type TriWorld } from "../tri";
 import { triBase, triEconomy, CITIZEN, buildings, TREELINE } from "../tri-worlds";
 

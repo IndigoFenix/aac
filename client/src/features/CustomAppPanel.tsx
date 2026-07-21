@@ -32,7 +32,7 @@ import { RoomEditor } from "./custom-app/RoomEditor";
 import { ObjectEditor } from "./custom-app/ObjectEditor";
 import { GoalTreeGamePreview } from "./custom-app/GoalTreeGamePreview";
 import { editorReducer, initialEditorState } from "./custom-app/editor-state";
-import { GOAL_TREE_APP_TYPE } from "@shared/goal-tree/types";
+import { GOAL_TREE_APP_TYPE } from "@shared/world-engine/solver/types";
 
 interface CustomAppPanelProps {
   isOpen?: boolean;

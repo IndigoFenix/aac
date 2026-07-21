@@ -11,13 +11,13 @@
       <h1>🌍 World Lab</h1>
       <label for="world-select">Test game</label>
       <select id="world-select"></select>
-      <button id="reload">Load world file</button>
-      <button id="descend" hidden></button>
-      <button id="ascend" hidden>⬆ Back up</button>
+      <button id="reload">Build world</button>
+      <button id="paths" aria-pressed="false" title="Draw creature pathfinding: cyan = planned route, yellow = current leg, red = detour-bent aim, grey = wander">🧭 Paths</button>
+      <button id="nations" aria-pressed="false" title="Show who holds the planet: state borders, territory wash, crown flags on every beacon — plus the political-history scrubber">👑 Nations</button>
       <span id="status">—</span>
     </header>
     <div id="layout">
-      <textarea id="world-file" spellcheck="false" aria-label="World file"></textarea>
+      <div id="world-file" class="lab-form" aria-label="World form"></div>
       <div id="view"></div>
     </div>
     <script type="module" src="./src/main.ts"></script>

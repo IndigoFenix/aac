@@ -50,7 +50,7 @@ import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
 import GameEmbed from "@/components/games/GameEmbed";
 import GoalTreeQuestPlayer from "@/components/games/GoalTreeQuestPlayer";
-import { symbolBasicsGame } from "@shared/goal-tree/lessons/symbol-basics";
+import { symbolBasicsGame } from "@shared/world-engine/solver/lessons/symbol-basics";
 import { type GameEmbedHandle } from "@/components/games/GameEmbed";
 import type { BoardOption } from "@shared/games-bridge";
 

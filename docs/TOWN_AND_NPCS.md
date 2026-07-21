@@ -122,11 +122,13 @@ changing what existing callers pass.
      `handOverItem`, the carry veto, thought bubbles, …) The puzzle layer already
      authors its own units/items/anchors (`town-quests.ts` /
      `creature-quests.ts`); that independence is the right shape.
-5. **Descent lands in the living town** *(follow-up)*. `descendToSite`
-   (`games/world-lab/src/descend.ts`) builds via the unified town builder; the
-   static `TownView` becomes a far-LOD camera of that living town, and its
-   baked door-standers are replaced by the streamed living residents (creature
-   bodies via the `modelFactory`; see the creature-builder port).
+5. **Descent lands in the living town.** Descent is the spirit ladder now
+   (`shared/world-engine/spirit/ladder.ts`): it descends scope rungs by gaze —
+   flight → town orbit → ground glide → structure dollhouse — over the flight
+   streaming world, where an approached settlement founds itself and mounts as
+   the living town (streamed creature-body residents replace the static plan
+   building by building). The manual descend module
+   (`games/world-lab/src/descend.ts`, `descendToSite`) was deleted.
 
 Steps 1–3 are the structural **de-fork** (done first). Steps 4–5 are the deeper
 follow-ups.
@@ -154,5 +156,5 @@ follow-ups.
 | Town scope builder (aggregate — being folded in) | `shared/engine/town/town-game.ts` |
 | Living town assembly + quests + stage | `shared/symbol-game/town-play.ts`, `town-quests.ts`, `town-stage.ts` |
 | Playable town runtime (host, dwell-to-talk) | `shared/symbol-game/quest-host.ts` |
-| World-lab town dispatch | `games/world-lab/src/main.ts`, `quest-boot.ts`, `descend.ts`, `worlds.ts` |
+| World-lab town dispatch | `games/world-lab/src/main.ts`, `quest-boot.ts`, `worlds.ts` |
 | Client symbol game (bridge payload) | `client-aac/.../GoalTreeQuestPlayer.tsx`, `SymbolGameSandbox.tsx`, `games/goal-tree-player/…` |

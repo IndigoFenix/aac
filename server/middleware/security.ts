@@ -18,27 +18,48 @@ import rateLimit from "express-rate-limit";
 export const DESKTOP_APP_ORIGIN = "app://aac";
 
 /**
+ * The iPad (Capacitor) AAC client's origin. WKWebView serves the bundle under
+ * the custom `capacitor://` scheme with a fixed `localhost` host — see
+ * `ios.scheme` in capacitor.config.ts. Same reasoning as the desktop origin: a
+ * web page cannot forge a non-http(s) scheme in an Origin header, so allowing
+ * it unconditionally costs nothing and avoids the iPad client silently failing
+ * CORS against a backend whose env wasn't updated.
+ *
+ * NOTE: this is the ORIGIN, not the bundle id — changing `ios.scheme` changes
+ * this string, and the two must move together or every API call 403s.
+ */
+export const IPAD_APP_ORIGIN = "capacitor://localhost";
+
+/**
+ * Every packaged-native-client origin. These are always allowed; only browser
+ * origins are governed by `ALLOWED_ORIGINS`.
+ */
+export const NATIVE_APP_ORIGINS = [DESKTOP_APP_ORIGIN, IPAD_APP_ORIGIN] as const;
+
+/**
  * Resolve the CORS origin allowlist. Reads `ALLOWED_ORIGINS` (comma-separated)
  * if set; otherwise falls back to a development list. In production, NOT
  * setting `ALLOWED_ORIGINS` is a configuration mistake — the function still
  * works but logs a warning. The desktop app origin is always appended.
  */
 export function resolveAllowedOrigins(): string[] {
-  const withDesktop = (origins: string[]): string[] =>
-    origins.includes(DESKTOP_APP_ORIGIN) ? origins : [...origins, DESKTOP_APP_ORIGIN];
+  const withNative = (origins: string[]): string[] => {
+    const missing = NATIVE_APP_ORIGINS.filter((o) => !origins.includes(o));
+    return missing.length ? [...origins, ...missing] : origins;
+  };
 
   const env = process.env.ALLOWED_ORIGINS;
-  if (env) return withDesktop(env.split(",").map((s) => s.trim()).filter(Boolean));
+  if (env) return withNative(env.split(",").map((s) => s.trim()).filter(Boolean));
   if (process.env.NODE_ENV === "production") {
     console.warn(
       "[security] ALLOWED_ORIGINS not set in production — falling back to APP_URL only. " +
       "Set ALLOWED_ORIGINS as a comma-separated list of allowed origins.",
     );
-    // Even with nothing configured, the desktop client's fixed origin is allowed.
-    return withDesktop(process.env.APP_URL ? [process.env.APP_URL] : []);
+    // Even with nothing configured, the packaged clients' fixed origins are allowed.
+    return withNative(process.env.APP_URL ? [process.env.APP_URL] : []);
   }
   // Development defaults.
-  return withDesktop([
+  return withNative([
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:5000",

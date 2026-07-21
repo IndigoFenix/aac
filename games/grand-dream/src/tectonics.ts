@@ -4,4 +4,4 @@
  * engine carve; it was already dependency-free. Its output contract is
  * unchanged: `bakeAuthors` plugs straight into `prepareSubstrate`.
  */
-export * from "@shared/engine/geology/tectonics";
+export * from "@shared/world-engine/kernel/geology/tectonics";

@@ -15,7 +15,13 @@
  *   - Keep retrying the device connection on failure (periodic reconnect).
  *
  * CLI:
- *   node gaze-sidecar.cjs --device tobii --dll "C:\\path\\tobii_stream_engine.dll" --port 49152
+ *   node gaze-sidecar.cjs --device tobii --dll "C:\\path\\tobii_stream_engine.dll" [--port 0]
+ *
+ * Port: omit --port (or pass 0) to bind an OS-assigned free port — the default,
+ * and what the supervisor does. A fixed port (esp. 49152, the first ephemeral
+ * port) collides with other eye-gaze software and lands in Windows' reserved
+ * ranges (EADDRINUSE / EACCES). The actual bound port is sent to the parent over
+ * IPC ({ type: "gaze-sidecar-listening", port }) so the renderer can discover it.
  *
  * Output format on the WebSocket (what parseTobii expects):
  *   { gazePoint: { x: 0-1, y: 0-1 }, validity: 0|1, timestamp: number }
@@ -55,7 +61,9 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const DEVICE = String(args.device || "tobii").toLowerCase();
 const DLL_PATH = args.dll ? String(args.dll) : null;
-const PORT = parseInt(args.port, 10) || 49152;
+// 0 = let the OS assign a free port (avoids fixed-port collisions / reserved
+// ranges). parseArgs may yield undefined -> NaN; both fall through to 0.
+const PORT = Number.isInteger(parseInt(args.port, 10)) ? parseInt(args.port, 10) : 0;
 const RECONNECT_MS = parseInt(args.reconnectMs, 10) || 3000;
 
 function log(...a) {
@@ -318,7 +326,13 @@ server.on("error", (e) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  log(`listening on http://127.0.0.1:${PORT} (ws + /status); dll=${DLL_PATH || "(auto/none)"}`);
+  const addr = server.address();
+  const actualPort = addr && typeof addr === "object" ? addr.port : PORT;
+  log(`listening on http://127.0.0.1:${actualPort} (ws + /status); dll=${DLL_PATH || "(auto/none)"}`);
+  // Tell the supervisor which port the OS gave us, so the renderer can connect
+  // without a hardcoded port. No-op when run standalone (no IPC channel).
+  try { if (process.send) process.send({ type: "gaze-sidecar-listening", port: actualPort }); }
+  catch { /* ignore */ }
   tryConnect();
 });
 

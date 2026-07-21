@@ -2,7 +2,7 @@
 // large worlds get a readable minimum scale and the camera follows the
 // player, clamped to the world bounds.
 
-import type { Layout2D, Rect, Vec2 } from "@shared/goal-tree/layout2d";
+import type { Layout2D, Rect, Vec2 } from "@shared/world-engine/solver/layout2d";
 
 export interface Camera {
   scale: number; // CSS px per world unit

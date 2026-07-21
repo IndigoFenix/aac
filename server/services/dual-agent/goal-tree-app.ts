@@ -7,8 +7,8 @@
 // how to behave during this game (companion persona, [GAME] updates).
 
 import type { CustomApp } from "@shared/schema";
-import { certifyGoalTreeGame, type GoalTreeGame } from "@shared/goal-tree/index";
-import { GOAL_TREE_APP_TYPE } from "@shared/goal-tree/types";
+import { certifyGoalTreeGame, type GoalTreeGame } from "@shared/world-engine/solver/index";
+import { GOAL_TREE_APP_TYPE } from "@shared/world-engine/solver/types";
 import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
 
 export { GOAL_TREE_APP_TYPE };

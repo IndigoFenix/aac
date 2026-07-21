@@ -3,4 +3,4 @@
  * engine's town layer (shared/engine/town/streets.ts) in the engine
  * carve; it was already dependency-free.
  */
-export * from "@shared/engine/town/streets";
+export * from "@shared/world-engine/kernel/town/streets";

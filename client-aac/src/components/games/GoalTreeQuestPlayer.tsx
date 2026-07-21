@@ -8,9 +8,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, type Ref } from "react";
 import type { BoardOption, GameMessage } from "@shared/games-bridge";
-import type { GoalTreeGame } from "@shared/goal-tree/types";
-import { walkGoalTree } from "@shared/goal-tree/walk";
-import { buildTownPlay, isTownPlayPayload, type TownPlayPayload } from "@shared/symbol-game/town-play";
+import type { GoalTreeGame } from "@shared/world-engine/solver/types";
+import { walkGoalTree } from "@shared/world-engine/solver/walk";
+import { buildTownPlay, isTownPlayPayload, type TownPlayPayload } from "@shared/world-engine/interaction/town/town-play";
 import GameEmbed, { type GameEmbedHandle } from "./GameEmbed";
 
 interface GoalTreeQuestPlayerProps {

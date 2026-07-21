@@ -14,7 +14,7 @@ import { System } from "@popusim/controller/System";
 import { World } from "@popusim/controller/World";
 import type {
   CompositionOps, CompositionSite, CompositionSitePop, CompositionRouteInfo, CompositionWorld,
-} from "@shared/engine/civ/composition";
+} from "@shared/world-engine/kernel/civ/composition";
 
 export type SitePop = CompositionSitePop;
 export type LabSite = CompositionSite;

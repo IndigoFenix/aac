@@ -4,9 +4,9 @@
  * (shared/engine/town/city-districts.ts); the DEFAULT_ECONOMY-backed
  * classifier is grand-dream content and stays here.
  */
-export * from "@shared/engine/town/city-districts";
+export * from "@shared/world-engine/kernel/town/city-districts";
 
-import type { WorkClass } from "@shared/engine/town/city-districts";
+import type { WorkClass } from "@shared/world-engine/kernel/town/city-districts";
 import { DEFAULT_ECONOMY } from "./economy-core";
 
 /** The standard classifier (DEFAULT_ECONOMY's registry) — callers with a

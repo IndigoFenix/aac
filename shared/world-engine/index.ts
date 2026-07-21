@@ -5,6 +5,16 @@
 // the client renders (in 2D or 3D) and the call mesh syncs. certifyWorldSpec()
 // is the single gate any stored/generated spec must pass before reaching the
 // engine — the runtime may assume any spec it is handed has certified.
+//
+// LAYOUT — everything the simulation needs to run LOCALLY (offline) lives under this folder.
+// The network/LLM control surfaces that drive "bodies" from outside stay OUT (shared/social-world,
+// shared/social-bot). This barrel is the sim CORE (engine/world-host/render/npc-body/net-format);
+// the consolidated domains sit alongside it:
+//   kernel/       the generic simulation kernel (cells · civ · geology · town · behavior)
+//   solver/       the deterministic goal-tree solver
+//   interaction/  NPC dialogue + the non-LLM intent decoder (the beta sentence builder)
+//   space/ planet/ place/   celestial + world-embedding sim
+// net.ts is the pure, offline wire FORMAT (no I/O) — the actual transport is in social-world.
 
 export * from "./types.js";
 export * from "./schema.js";

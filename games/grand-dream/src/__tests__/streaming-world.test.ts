@@ -5,9 +5,9 @@
  */
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { DEFAULT_GALAXY_PARAMS, GALAXY } from "@shared/space/galaxy";
-import { createWorld } from "@shared/space/world";
-import { createPlayer } from "@shared/space/flight-sim";
+import { DEFAULT_GALAXY_PARAMS, GALAXY } from "@shared/world-engine/space/galaxy";
+import { createWorld } from "@shared/world-engine/space/world";
+import { createPlayer } from "@shared/world-engine/space/flight-sim";
 
 const LY_M = GALAXY.lyToSceneMeters;
 

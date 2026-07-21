@@ -5,8 +5,8 @@
  * shared foundTri to PopuSim's `bootLab`, keeping the pre-carve
  * signature for every call site and test.
  */
-export * from "@shared/engine/civ/tri";
-import { foundTri as foundTriCore, type TriPrep, type FoundTriOpts, type TriWorld } from "@shared/engine/civ/tri";
+export * from "@shared/world-engine/kernel/civ/tri";
+import { foundTri as foundTriCore, type TriPrep, type FoundTriOpts, type TriWorld } from "@shared/world-engine/kernel/civ/tri";
 import { bootLab } from "./boot";
 
 /** The pre-carve signature: PopuSim is this game's composition layer. */

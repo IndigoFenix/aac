@@ -23,8 +23,17 @@ import type { BoardButtonInput, BoardRenderDeps, GlyphRenderProps, IconVisual } 
 // The component lives in the .tsx (the bare `@shared/glyph-compositor`
 // resolves to the types-only .ts) — import it explicitly, as the AAC does.
 import { GlyphCompositor } from "@shared/glyph-compositor.tsx";
-import type { QuestBoardView } from "@shared/symbol-game/quest-host";
-import { LEXICON } from "@shared/symbol-game/parse-intent";
+import type { CityHudChip, FamilyHudEntry, PocketEntry, QuestBoardView } from "@shared/world-engine/interaction/quest/quest-host";
+import { LEXICON, parseSentence, type IntentKind } from "@shared/world-engine/interaction/intent/parse-intent";
+import {
+  emptyRecency,
+  noteUtterance,
+  surfaceNext,
+  TYPE_CHIPS,
+  type RecencyMemory,
+  type SurfaceNoun,
+} from "@shared/world-engine/interaction/intent/surface-next";
+import { getVocabularyItem, modifiersFor } from "@shared/glyph-registry";
 import { labImageResolver } from "./glyph-resolver";
 
 // Icon/text sizing mirrors AppMiniBoard's 4-row column, so the buttons read the
@@ -95,6 +104,86 @@ function BoardStrip({ view, onSelect }: { view: QuestBoardView | null; onSelect:
   );
 }
 
+// ── Family strip: the dollhouse household, one emoji-state chip per member ────
+// (family-hud.ts). A tap ADDRESSES that member — spoken commands go to it — so
+// the chip is the stable eyegaze target a moving body can't be.
+
+function FamilyStrip({ members, onSelect }: { members: FamilyHudEntry[]; onSelect: (id: string) => void }) {
+  if (members.length === 0) return null;
+  return (
+    <div className="lab-family">
+      {members.map((m) => (
+        <button
+          key={m.id}
+          data-dwell
+          className={`lab-family-chip${m.selected ? " selected" : ""}${m.present ? "" : " away"}`}
+          title={m.state}
+          onClick={() => onSelect(m.id)}
+        >
+          <span className="lab-family-emoji">{m.emoji}</span>
+          <span className="lab-family-name">{m.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── City strip: per-district cohort chips + the city-total row (④) ───────────
+// (city-hud.ts). The family HUD's civic sibling — one glanceable chip per
+// district: its glyph, souls, the wellbeing face, key stocks worst-shortage
+// first. Appears only once the town outgrows the tracked cap.
+
+function CityStrip({ chips }: { chips: CityHudChip[] }) {
+  if (chips.length === 0) return null;
+  return (
+    <div className="lab-city">
+      {chips.map((c) => (
+        <div
+          key={String(c.district)}
+          className={`lab-city-chip${c.district === "city" ? " total" : ""}`}
+          title={`${c.label} — ${c.tracked} tracked + ${c.pooled} pooled`}
+        >
+          <span className="lab-city-glyph">
+            <LabGlyph glyph={c.glyph} fallback={c.label} ariaLabel={c.label} noBackground />
+          </span>
+          <span className="lab-city-pop">👥{c.population}</span>
+          <span className="lab-city-well">{c.emoji}</span>
+          {c.stocks.map((s) => (
+            <span key={s.glyph} className={`lab-city-stock${s.shortage > 0.5 ? " short" : ""}`}>
+              <span className="lab-city-stock-glyph">
+                <LabGlyph glyph={s.glyph} fallback={s.glyph} ariaLabel={s.glyph} noBackground />
+              </span>
+              {s.count}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Inventory strip: pocketed small items, hover/tap to select ────────────────
+
+function PocketStrip({ items, onSelect }: { items: PocketEntry[]; onSelect: (glyph: string) => void }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="lab-pocket">
+      {items.map((it) => (
+        <button
+          key={it.glyph}
+          data-dwell
+          className={`lab-pocket-item${it.selected ? " selected" : ""}`}
+          title={it.label}
+          onClick={() => onSelect(it.glyph)}
+        >
+          <LabGlyph glyph={it.glyph} fallback={it.label} ariaLabel={it.label} noBackground />
+          {it.count > 1 && <span className="lab-pocket-count">{it.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Footer: the always-present response affordances (concept-parser.md §3) ────
 
 function Footer({
@@ -155,46 +244,214 @@ function useVocabularyGroups() {
   }, []);
 }
 
-function SpeakMenu({ onClose, onSpeak }: { onClose: () => void; onSpeak: (sentence: string) => void }) {
+/** A learned noun/subject the player can compose with — the vocabulary grows with
+ *  knowledge (an item you've seen, the creature's need, a place you've heard of).
+ *  `kind`/`affords` carry the noun's world semantics for the SURFACER. */
+export interface NounEntry {
+  symbol: string;
+  label: string;
+  kind?: "place" | "item" | "creature" | "unknown";
+  affords?: string[];
+  /** Spec-derived object properties (object-properties.ts) — how the things
+   *  tab FILES this noun, and what the verb pre-load matches on. */
+  properties?: string[];
+}
+
+/** One speakable WORD button (glyph icon + label). */
+function WordButton({ symbol, label, onTap }: { symbol: string; label?: string; onTap: (w: string) => void }) {
+  return (
+    <button className="lab-word" title={symbol} onClick={() => onTap(symbol)}>
+      <span className="lab-word-icon">
+        <LabGlyph glyph={symbol} fallback={symbol} ariaLabel={symbol} noBackground />
+      </span>
+      <span className="lab-word-label">{label ?? wordLabel(symbol)}</span>
+    </button>
+  );
+}
+
+/**
+ * The SURFACER-driven sentence builder (language-expansion.md): only
+ * meaningful continuations show (surface-next.ts), WORDS visually distinct
+ * from CONTROLS (sentence-type chips, category tabs, modifier rail — the
+ * user-decided dual surface). Category tabs are the graceful fallback to the
+ * full vocabulary; modifiers compose onto the last word's head (the AAC
+ * SentenceConstructorBoard pattern).
+ */
+function SpeakMenu({
+  onClose,
+  onSpeak,
+  nouns,
+  recency,
+  onUttered,
+}: {
+  onClose: () => void;
+  onSpeak: (sentence: string) => void;
+  nouns: NounEntry[];
+  recency: RecencyMemory;
+  onUttered: (mem: RecencyMemory) => void;
+}) {
   const groups = useVocabularyGroups();
   const [words, setWords] = useState<string[]>([]);
+  const [seedKind, setSeedKind] = useState<IntentKind | undefined>(undefined);
+  const [openCat, setOpenCat] = useState<string | null>(null);
   const sentence = words.join(" + ");
 
+  const surfaceNouns: SurfaceNoun[] = useMemo(
+    () =>
+      nouns.map((n) => ({
+        symbol: n.symbol.split(".")[0] ?? n.symbol,
+        label: n.label,
+        kind: n.kind ?? "unknown",
+        affords: n.affords ?? ["want", "get", "give"],
+        properties: n.properties ?? [],
+      })),
+    [nouns],
+  );
+  const suggestion = useMemo(
+    () => surfaceNext(words, { nouns: surfaceNouns, recency, seedKind, capacity: 16 }),
+    [words, surfaceNouns, recency, seedKind],
+  );
+  // The modifier rail: the ACTIVE head's applicable modifiers (registry-driven,
+  // the AAC pattern) — rendered as CONTROLS that compose onto the head.
+  const lastWord = words[words.length - 1];
+  const railMods = useMemo(() => {
+    if (!lastWord) return [];
+    const item = getVocabularyItem(lastWord.split(".")[0] ?? lastWord);
+    if (!item) return [];
+    return modifiersFor(item.pos).slice(0, 8);
+  }, [lastWord]);
+
+  const tapWord = (w: string) => {
+    setWords((cur) => {
+      // A DESCRIPTOR composes onto the head it modifies (the AAC-board rule) —
+      // whether reached via the modifier rail, the suggested grid, or a
+      // category tab — instead of being appended as a stray new head word
+      // ("banana" + "hot" → "banana.hot", never "banana + hot"). Registry-
+      // driven, exactly like the rail: the tapped word must be a modifier that
+      // applies to the current head's part of speech, and not already present.
+      const last = cur[cur.length - 1];
+      if (last) {
+        const head = getVocabularyItem(last.split(".")[0] ?? last);
+        const tapped = getVocabularyItem(w);
+        if (
+          head &&
+          tapped?.modifier?.appliesTo.includes(head.pos) &&
+          !last.split(".").slice(1).includes(w)
+        ) {
+          return [...cur.slice(0, -1), `${last}.${w}`];
+        }
+      }
+      return [...cur, w];
+    });
+    setOpenCat(null);
+  };
   const play = () => {
     if (!words.length) return;
     onSpeak(sentence); // the host parses, compiles, and drives the creature (then toasts)
+    onUttered(noteUtterance(recency, parseSentence(sentence)));
     setWords([]);
+    setSeedKind(undefined);
   };
+
+  const catWords = openCat
+    ? openCat === "things"
+      ? nouns.map((n) => ({ symbol: n.symbol, label: n.label }))
+      : (groups.find((g) => g.cat === openCat)?.words ?? []).map((w) => ({ symbol: w, label: wordLabel(w) }))
+    : null;
 
   return (
     <div className="lab-speak-overlay" data-dwell-trap onClick={onClose}>
       <div className="lab-speak-panel" onClick={(e) => e.stopPropagation()}>
         <div className="lab-speak-head">
-          <span>Speak — the parser vocabulary</span>
+          <span>Speak</span>
           <button className="lab-footer-btn" onClick={onClose}>✕ Close</button>
         </div>
         <div className="lab-speak-compose">
           <div className="lab-speak-sentence">{sentence || <span className="lab-dim">tap words to build a sentence…</span>}</div>
           <button className="lab-footer-btn" disabled={!words.length} onClick={() => setWords((w) => w.slice(0, -1))}>⌫</button>
-          <button className="lab-footer-btn" disabled={!words.length} onClick={() => setWords([])}>Clear</button>
-          <button className="lab-footer-btn lab-speak" disabled={!words.length} onClick={play}>▶ Play</button>
+          <button className="lab-footer-btn" disabled={!words.length} onClick={() => { setWords([]); setSeedKind(undefined); }}>Clear</button>
+          <button
+            className={`lab-footer-btn lab-speak${suggestion.complete ? " ready" : ""}`}
+            disabled={!words.length}
+            onClick={play}
+          >
+            ▶ Play
+          </button>
         </div>
+        {/* Sentence-type chips — CONTROLS (refiners), never spoken words. */}
+        {suggestion.typeChips.length > 0 && (
+          <div className="lab-typechips">
+            {TYPE_CHIPS.map((c) => (
+              <button
+                key={c.kind}
+                className={`lab-control lab-typechip${seedKind === c.kind ? " selected" : ""}`}
+                onClick={() => setSeedKind((cur) => (cur === c.kind ? undefined : c.kind))}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* Modifier rail — CONTROLS that refine the active head word. */}
+        {railMods.length > 0 && (
+          <div className="lab-modrail">
+            {railMods.map((m) => (
+              <button
+                key={m.key}
+                className="lab-control lab-mod"
+                title={m.key}
+                onClick={() => setWords((cur) => [...cur.slice(0, -1), `${cur[cur.length - 1]}.${m.key}`])}
+              >
+                <span className="lab-mod-icon">
+                  <LabGlyph glyph={m.key} fallback={m.key} ariaLabel={m.key} noBackground />
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="lab-speak-scroll">
-          {groups.map((g) => (
-            <section key={g.cat} className="lab-speak-group">
-              <h4>{g.label}</h4>
+          {catWords ? (
+            <section className="lab-speak-group">
+              <h4>{openCat === "things" ? "Things" : (CATEGORY_LABEL[openCat!] ?? openCat)}</h4>
               <div className="lab-speak-grid">
-                {g.words.map((w) => (
-                  <button key={w} className="lab-word" title={w} onClick={() => setWords((cur) => [...cur, w])}>
-                    <span className="lab-word-icon">
-                      <LabGlyph glyph={w} fallback={w} ariaLabel={w} noBackground />
-                    </span>
-                    <span className="lab-word-label">{wordLabel(w)}</span>
-                  </button>
+                {catWords.map((w) => (
+                  <WordButton key={w.symbol} symbol={w.symbol} label={w.label} onTap={tapWord} />
                 ))}
               </div>
             </section>
-          ))}
+          ) : (
+            <section className="lab-speak-group">
+              <div className="lab-speak-grid">
+                {suggestion.buttons.map((b) => (
+                  <WordButton key={b.symbol} symbol={b.symbol} label={b.label} onTap={tapWord} />
+                ))}
+              </div>
+            </section>
+          )}
+          {/* Category tabs — the fallback ladder to the full vocabulary. */}
+          <div className="lab-cattabs">
+            <button
+              className={`lab-control lab-cattab${openCat === null ? " selected" : ""}`}
+              onClick={() => setOpenCat(null)}
+            >
+              ★ suggested
+            </button>
+            <button
+              className={`lab-control lab-cattab${openCat === "things" ? " selected" : ""}`}
+              onClick={() => setOpenCat("things")}
+            >
+              Things
+            </button>
+            {groups.map((g) => (
+              <button
+                key={g.cat}
+                className={`lab-control lab-cattab${openCat === g.cat ? " selected" : ""}`}
+                onClick={() => setOpenCat(g.cat)}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -206,33 +463,75 @@ function SpeakMenu({ onClose, onSpeak }: { onClose: () => void; onSpeak: (senten
 function BoardApp({
   onSelect,
   onSpeak,
+  onPocketSelect,
+  onFamilySelect,
   registerSet,
+  registerSetNouns,
+  registerSetPocket,
+  registerSetFamily,
+  registerSetCity,
 }: {
   onSelect: (id: string) => void;
   onSpeak: (sentence: string) => void;
+  onPocketSelect: (glyph: string) => void;
+  onFamilySelect: (id: string) => void;
   registerSet: (fn: (v: QuestBoardView | null) => void) => void;
+  registerSetNouns: (fn: (nouns: NounEntry[]) => void) => void;
+  registerSetPocket: (fn: (items: PocketEntry[]) => void) => void;
+  registerSetFamily: (fn: (members: FamilyHudEntry[]) => void) => void;
+  registerSetCity: (fn: (chips: CityHudChip[]) => void) => void;
 }) {
   const [view, setView] = useState<QuestBoardView | null>(null);
+  const [nouns, setNouns] = useState<NounEntry[]>([]);
+  const [pocket, setPocket] = useState<PocketEntry[]>([]);
+  const [family, setFamily] = useState<FamilyHudEntry[]>([]);
+  const [city, setCity] = useState<CityHudChip[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Recent-utterance memory (surface-next.ts) — player-entered words only,
+  // per session (a fresh session is a fresh board — predictability).
+  const [recency, setRecency] = useState<RecencyMemory>(emptyRecency);
   useEffect(() => {
     registerSet(setView);
-  }, [registerSet]);
+    registerSetNouns(setNouns);
+    registerSetPocket(setPocket);
+    registerSetFamily(setFamily);
+    registerSetCity(setCity);
+  }, [registerSet, registerSetNouns, registerSetPocket, registerSetFamily, registerSetCity]);
   return (
     <>
+      <CityStrip chips={city} />
+      <FamilyStrip members={family} onSelect={onFamilySelect} />
       <BoardStrip view={view} onSelect={onSelect} />
+      <PocketStrip items={pocket} onSelect={onPocketSelect} />
       <Footer
         onAffirm={() => onSpeak("yes")}
         onDecline={() => onSpeak("no")}
         onMore={() => onSpeak("more")}
         onSpeak={() => setMenuOpen(true)}
       />
-      {menuOpen && <SpeakMenu onClose={() => setMenuOpen(false)} onSpeak={onSpeak} />}
+      {menuOpen && (
+        <SpeakMenu
+          nouns={nouns}
+          recency={recency}
+          onUttered={setRecency}
+          onClose={() => setMenuOpen(false)}
+          onSpeak={onSpeak}
+        />
+      )}
     </>
   );
 }
 
 export interface BoardIsland {
   set(view: QuestBoardView | null): void;
+  /** Replace the "Things you know" vocabulary in the Speak menu (learned nouns). */
+  setNouns(nouns: NounEntry[]): void;
+  /** Replace the inventory strip (pocketed small items). */
+  setPocket(items: PocketEntry[]): void;
+  /** Replace the dollhouse family strip (emoji-state chips; empty = hidden). */
+  setFamily(members: FamilyHudEntry[]): void;
+  /** Replace the CITY HUD strip (④ per-district cohort chips; empty = hidden). */
+  setCity(chips: CityHudChip[]): void;
   dispose(): void;
 }
 
@@ -243,16 +542,36 @@ export function mountBoardIsland(
   container: HTMLElement,
   onSelect: (id: string) => void,
   onSpeak: (sentence: string) => void = () => {},
+  onPocketSelect: (glyph: string) => void = () => {},
+  onFamilySelect: (id: string) => void = () => {},
 ): BoardIsland {
   const root: Root = createRoot(container);
   let setViewRef: ((v: QuestBoardView | null) => void) | null = null;
+  let setNounsRef: ((n: NounEntry[]) => void) | null = null;
+  let setPocketRef: ((p: PocketEntry[]) => void) | null = null;
+  let setFamilyRef: ((m: FamilyHudEntry[]) => void) | null = null;
+  let setCityRef: ((c: CityHudChip[]) => void) | null = null;
   root.render(
     <StrictMode>
-      <BoardApp onSelect={onSelect} onSpeak={onSpeak} registerSet={(fn) => (setViewRef = fn)} />
+      <BoardApp
+        onSelect={onSelect}
+        onSpeak={onSpeak}
+        onPocketSelect={onPocketSelect}
+        onFamilySelect={onFamilySelect}
+        registerSet={(fn) => (setViewRef = fn)}
+        registerSetNouns={(fn) => (setNounsRef = fn)}
+        registerSetPocket={(fn) => (setPocketRef = fn)}
+        registerSetFamily={(fn) => (setFamilyRef = fn)}
+        registerSetCity={(fn) => (setCityRef = fn)}
+      />
     </StrictMode>,
   );
   return {
     set: (view) => setViewRef?.(view),
+    setNouns: (nouns) => setNounsRef?.(nouns),
+    setPocket: (items) => setPocketRef?.(items),
+    setFamily: (members) => setFamilyRef?.(members),
+    setCity: (chips) => setCityRef?.(chips),
     dispose: () => root.unmount(),
   };
 }

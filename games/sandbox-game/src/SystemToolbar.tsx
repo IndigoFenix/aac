@@ -3,7 +3,7 @@
 // ring as the terrain toolbar).
 
 import { useEffect, useRef, useState } from 'react';
-import type { ToolSpec } from '@shared/engine/cells';
+import type { ToolSpec } from '@shared/world-engine/kernel/cells';
 import type { GazeState } from './TerrainCanvas';
 
 interface Props {

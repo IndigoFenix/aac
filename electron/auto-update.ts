@@ -22,21 +22,17 @@
 import { app, ipcMain, type BrowserWindow } from "electron";
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from "electron-updater";
 import log from "electron-log";
+import type { UpdateStatus } from "../shared/native-update";
 
 /** Re-check cadence while the app is running. 4h is enough to catch
  *  pushes without thrashing the CDN; first check still fires on launch. */
 const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
-/** Renderer-facing status payload. Keep this stable — the AAC client
- *  consumes it through preload-bridged `aacUpdate.on(...)`. */
-export type UpdateStatus =
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "available"; version: string }
-  | { kind: "not-available"; version: string }
-  | { kind: "downloading"; percent: number; bytesPerSecond: number }
-  | { kind: "downloaded"; version: string }
-  | { kind: "error"; message: string };
+/** Renderer-facing status payload. Defined once in shared/native-update.ts and
+ *  re-exported here for existing importers — the AAC client consumes the same
+ *  union through preload-bridged `aacUpdate.on(...)`, so a change to it is now
+ *  a compile error on both sides rather than a silent IPC mismatch. */
+export type { UpdateStatus };
 
 let lastStatus: UpdateStatus = { kind: "idle" };
 let recheckTimer: NodeJS.Timeout | null = null;
@@ -137,10 +133,18 @@ export function setupAutoUpdater(mainWindow: BrowserWindow): void {
       log.info("[auto-update] installNow requested but no download is ready");
       return false;
     }
-    log.info("[auto-update] installing now (quitAndInstall)");
-    // isSilent=false: show the NSIS UAC prompt if perMachine; quitAndInstall
-    // calls app.quit internally so window/sidecar cleanup hooks fire.
-    autoUpdater.quitAndInstall(false, true);
+    log.info("[auto-update] installing now (quitAndInstall, silent)");
+    // Fully automated update: quitAndInstall closes the app (firing our
+    // window/sidecar cleanup hooks), runs the installer, and relaunches.
+    //   isSilent=true       → NSIS runs with /S: no installer window.
+    //   isForceRunAfter=true → adds --force-run: the new build reopens itself.
+    // Elevation is handled by electron-updater, not us: our builds are
+    // perMachine:false, so a per-user install updates silently with zero
+    // prompts. If a user chose all-users at first install, the installer
+    // (or electron-updater's EACCES→elevate.exe fallback) raises the one
+    // mandatory Windows UAC consent prompt — a security boundary we can't
+    // and shouldn't suppress. Neither path shows the old wizard window.
+    autoUpdater.quitAndInstall(true, true);
     return true;
   });
 

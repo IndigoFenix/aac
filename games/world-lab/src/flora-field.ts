@@ -1,0 +1,323 @@
+/**
+ * FLORA FIELD — the planet's plants as a WORLD-FIXED streaming layer.
+ *
+ * Tree positions are a pure function of (world seed, position on the planet):
+ * the sphere is tiled in CUBE-FACE coordinates (the same six faces the terrain
+ * chunks use), and every tile's scatter is seeded by hash(face, tx, ty, seed).
+ * A tile therefore holds the SAME trees at the SAME world spots whether you
+ * fly over it, land in it, walk into it, or come back a session later —
+ * nothing is anchored to the player or to a landing.
+ *
+ * Tiles stream by DISTANCE from the ground focus (the surface point under the
+ * player), airborne or grounded — flying low over a forest shows the forest.
+ * Representation is the creature-lab plant-LOD ladder, instanced:
+ *   FAR  — baked impostor billboards (bakePlantImpostor), one draw per species
+ *   NEAR — the species' real LOD1 static geometry (buildPlantLods), same
+ *          placements, swapped in as the focus approaches (impostors RESOLVE
+ *          into real trees).
+ * Both representations share one set of deterministic placements per tile.
+ *
+ * What grows where comes from the planet's ECOLOGY: each tile reads the biome
+ * field at its center (grid.fields.biome — 0 barren, then DEFAULT_BIOSPHERE
+ * order) and scatters that biome's species mix on the real terrain, skipping
+ * water. Fauna stays with the interactive wilderness chunk (NPC bodies);
+ * this layer is pure flora rendering.
+ */
+import * as THREE from "three";
+import type { CelestialBody } from "@shared/world-engine/space/world-types";
+import { PLANET_FACES } from "@shared/world-engine/planet/chunk";
+import { speciesBlueprint } from "@shared/world-engine/creatures/species";
+import {
+  buildPlantLods,
+  bakePlantImpostor,
+  makeImpostorMesh,
+  plantMaterial,
+  type PlantImpostor,
+} from "@shared/world-engine/creatures/plant-lod";
+
+const TILE_M = 200;          // tile edge (metres of arc at the face centre)
+const LOAD_R = 1_500;        // tiles stream in inside this of the ground focus
+const UNLOAD_R = 2_100;      // …and out past this (hysteresis)
+const NEAR_R = 260;          // impostors RESOLVE to real geometry inside this
+const BUILD_BUDGET = 2;      // tile builds per ensure() call (spread the cost)
+
+// Per-biome scatter counts per tile (biome field: 0 barren, 1 tree, 2 grass,
+// 3 grazer range) + display heights matching the interactive chunk's bodies.
+const OAK_COUNT = [1, 60, 11, 8];
+const GRASS_COUNT = [2, 16, 44, 40];
+const OAK_H = 4.6;
+const GRASS_H = 0.6;
+
+function mulberry(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a += 0x6d2b79f5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const hashTile = (face: number, tx: number, ty: number, seed: number): number =>
+  (Math.imul(face + 1, 73856093) ^ Math.imul(tx, 19349663) ^ Math.imul(ty, 83492791) ^ Math.imul(seed, 2654435761)) >>> 0;
+
+// ── Species assets (session-lifetime; shared by every tile and body) ────────
+interface SpeciesAssets {
+  impostor: PlantImpostor;
+  billboardGeom: THREE.BufferGeometry;
+  billboardMat: THREE.Material;
+  realGeom: THREE.BufferGeometry;
+  realMat: THREE.Material;
+  realHeightM: number;
+}
+const assetsCache = new Map<string, SpeciesAssets>();
+
+function speciesAssets(renderer: THREE.WebGLRenderer, species: string): SpeciesAssets {
+  let a = assetsCache.get(species);
+  if (!a) {
+    const blueprint = speciesBlueprint(species);
+    const lods = buildPlantLods(blueprint);
+    const impostor = bakePlantImpostor(renderer, lods, blueprint);
+    const billboard = makeImpostorMesh(impostor);
+    // Keep LOD1 (the near representation); LOD0's full leaf-card geometry is
+    // not used by the field — release it.
+    lods.lod0.geometry.dispose();
+    a = {
+      impostor,
+      billboardGeom: billboard.geometry,
+      billboardMat: billboard.material as THREE.Material,
+      realGeom: lods.lod1.geometry,
+      realMat: plantMaterial(),
+      realHeightM: Math.max(0.1, lods.bounds.max.y - lods.bounds.min.y),
+    };
+    assetsCache.set(species, a);
+  }
+  return a;
+}
+
+// ── Cube-face tiling (world-fixed addresses) ────────────────────────────────
+function faceOf(d: THREE.Vector3): number {
+  const ax = Math.abs(d.x);
+  const ay = Math.abs(d.y);
+  const az = Math.abs(d.z);
+  if (ax >= ay && ax >= az) return d.x >= 0 ? 0 : 1;
+  if (ay >= az) return d.y >= 0 ? 2 : 3;
+  return d.z >= 0 ? 4 : 5;
+}
+/** Face-plane coords of a unit direction on `face` (u, v ∈ [-1, 1]). */
+function faceUV(face: number, d: THREE.Vector3): { u: number; v: number } {
+  const F = PLANET_FACES[face];
+  const n = d.x * F.n[0] + d.y * F.n[1] + d.z * F.n[2];
+  return {
+    u: (d.x * F.u[0] + d.y * F.u[1] + d.z * F.u[2]) / n,
+    v: (d.x * F.v[0] + d.y * F.v[1] + d.z * F.v[2]) / n,
+  };
+}
+function dirOfUV(face: number, u: number, v: number, out: THREE.Vector3): THREE.Vector3 {
+  const F = PLANET_FACES[face];
+  out.set(F.n[0] + F.u[0] * u + F.v[0] * v, F.n[1] + F.u[1] * u + F.v[1] * v, F.n[2] + F.u[2] * u + F.v[2] * v);
+  return out.normalize();
+}
+
+// ── Per-tile state ──────────────────────────────────────────────────────────
+interface Placement { x: number; z: number; y: number; yaw: number; v: number }
+interface Tile {
+  group: THREE.Group;
+  /** Tile centre in BODY-LOCAL coords (distance tests). */
+  center: THREE.Vector3;
+  placements: Map<string, Placement[]>;
+  billboards: THREE.InstancedMesh[];
+  real: THREE.InstancedMesh[] | null;
+  near: boolean;
+}
+
+export interface FloraField {
+  /** Stream tiles around `focusWorld` (the surface point under the player);
+   *  tiles within NEAR_R of `nearWorld` swap impostors for real geometry.
+   *  `exclude` skips tiles near a live town anchor (its own flora rules). */
+  ensure(focusWorld: THREE.Vector3, nearWorld: THREE.Vector3 | null, exclude?: { world: THREE.Vector3; r: number }): void;
+  dispose(): void;
+}
+
+export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialBody): FloraField | null {
+  const geo = body.geography;
+  if (!geo || !body.walkable) return null;
+  const surface = geo.surface;
+  const R = body.radius;
+  const seed = (geo.spec?.geology?.seed ?? 1) >>> 0;
+  const uTile = TILE_M / R; // face-plane tile step (exact at face centre)
+  const tiles = new Map<string, Tile>();
+  const _local = new THREE.Vector3();
+  const _near = new THREE.Vector3();
+  const _excl = new THREE.Vector3();
+  const _dir = new THREE.Vector3();
+  const _m = new THREE.Matrix4();
+  const _q = new THREE.Quaternion();
+  const _p = new THREE.Vector3();
+  const _s = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  /** Instance a species' placements with either representation's sizing. */
+  const buildMesh = (
+    placements: Placement[],
+    geomHeightM: number,
+    targetH: number,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+  ): THREE.InstancedMesh => {
+    const mesh = new THREE.InstancedMesh(geometry, material, placements.length);
+    for (let i = 0; i < placements.length; i++) {
+      const pl = placements[i];
+      const s = (targetH / geomHeightM) * pl.v;
+      _q.setFromAxisAngle(UP, pl.yaw);
+      _m.compose(_p.set(pl.x, pl.y, pl.z), _q, _s.set(s, s, s));
+      mesh.setMatrixAt(i, _m);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    // Instances spread across the tile — the geometry's own bounding sphere
+    // would cull them wrongly.
+    mesh.frustumCulled = false;
+    return mesh;
+  };
+
+  const buildTile = (face: number, tx: number, ty: number, key: string): void => {
+    const dir = dirOfUV(face, (tx + 0.5) * uTile, (ty + 0.5) * uTile, _dir).clone();
+    const h0raw = surface.heightAt([dir.x, dir.y, dir.z]);
+    if (h0raw < 0) {
+      // Open water — an empty tile entry so we don't re-test every pass.
+      tiles.set(key, { group: new THREE.Group(), center: dir.multiplyScalar(R), placements: new Map(), billboards: [], real: null, near: false });
+      return;
+    }
+    const cell = geo.grid.topo.cellAt ? geo.grid.topo.cellAt([dir.x, dir.y, dir.z]) : 0;
+    const biomeRaw = geo.grid.fields.biome ? geo.grid.fields.biome[cell] : 0;
+    const biome = Math.max(0, Math.min(3, Math.round(biomeRaw)));
+    const h0 = Math.max(0, h0raw);
+
+    const group = new THREE.Group();
+    group.name = `flora:${key}`;
+    group.position.copy(dir).multiplyScalar(R + h0);
+    group.quaternion.setFromUnitVectors(UP, dir);
+    body.group.add(group);
+    group.updateWorldMatrix(true, false);
+
+    // Tile-local terrain (the same tangent-walk sampler towns use).
+    const east = new THREE.Vector3(1, 0, 0).applyQuaternion(group.quaternion);
+    const north = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion);
+    const _g = new THREE.Vector3();
+    const dirAt = (x: number, z: number): [number, number, number] => {
+      _g.copy(dir).multiplyScalar(R).addScaledVector(east, x).addScaledVector(north, z).normalize();
+      return [_g.x, _g.y, _g.z];
+    };
+    const groundAt = (x: number, z: number): number => {
+      const h = Math.max(0, surface.heightAt(dirAt(x, z)));
+      return (h - h0) - (x * x + z * z) / (2 * R);
+    };
+    const waterAt = (x: number, z: number): boolean => surface.heightAt(dirAt(x, z)) < 0;
+
+    // Deterministic scatter — a pure function of the tile address + the seed.
+    const rng = mulberry(hashTile(face, tx, ty, seed));
+    const half = TILE_M / 2;
+    const scatter = (count: number): Placement[] => {
+      const out: Placement[] = [];
+      for (let i = 0; i < count; i++) {
+        const x = (rng() * 2 - 1) * half;
+        const z = (rng() * 2 - 1) * half;
+        const yaw = rng() * Math.PI * 2;
+        const v = 0.85 + rng() * 0.5;
+        if (waterAt(x, z)) continue; // consume the draws either way — determinism
+        out.push({ x, z, y: groundAt(x, z), yaw, v });
+      }
+      return out;
+    };
+    const placements = new Map<string, Placement[]>();
+    placements.set("oak", scatter(OAK_COUNT[biome]));
+    placements.set("grass", scatter(GRASS_COUNT[biome]));
+
+    const billboards: THREE.InstancedMesh[] = [];
+    for (const [species, pls] of placements) {
+      if (!pls.length) continue;
+      const a = speciesAssets(renderer, species);
+      const mesh = buildMesh(pls, a.impostor.heightM, species === "oak" ? OAK_H : GRASS_H, a.billboardGeom, a.billboardMat);
+      mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
+      group.add(mesh);
+      billboards.push(mesh);
+    }
+    tiles.set(key, { group, center: dir.clone().multiplyScalar(R + h0), placements, billboards, real: null, near: false });
+  };
+
+  const setNear = (tile: Tile, near: boolean): void => {
+    if (tile.near === near) return;
+    tile.near = near;
+    if (near && !tile.real) {
+      tile.real = [];
+      for (const [species, pls] of tile.placements) {
+        if (!pls.length) continue;
+        const a = speciesAssets(renderer, species);
+        const mesh = buildMesh(pls, a.realHeightM, species === "oak" ? OAK_H : GRASS_H, a.realGeom, a.realMat);
+        mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
+        tile.group.add(mesh);
+        tile.real.push(mesh);
+      }
+    }
+    for (const m of tile.billboards) m.visible = !near;
+    if (tile.real) for (const m of tile.real) m.visible = near;
+  };
+
+  const disposeTile = (tile: Tile, key: string): void => {
+    for (const m of tile.billboards) { tile.group.remove(m); m.dispose(); }
+    if (tile.real) for (const m of tile.real) { tile.group.remove(m); m.dispose(); }
+    tile.group.removeFromParent();
+    tiles.delete(key);
+  };
+
+  return {
+    ensure(focusWorld, nearWorld, exclude) {
+      // Everything in BODY-LOCAL coordinates (the planet moves and spins).
+      body.group.worldToLocal(_local.copy(focusWorld));
+      const rf = _local.length();
+      if (rf < 1e-3) return;
+      const focusLocal = _local;
+      const nearLocal = nearWorld ? body.group.worldToLocal(_near.copy(nearWorld)) : null;
+      const exclLocal = exclude ? body.group.worldToLocal(_excl.copy(exclude.world)) : null;
+
+      _dir.copy(focusLocal).divideScalar(rf);
+      const face = faceOf(_dir);
+      const { u, v } = faceUV(face, _dir);
+      const ctx = Math.floor(u / uTile);
+      const cty = Math.floor(v / uTile);
+      const reach = Math.ceil(LOAD_R / TILE_M) + 1;
+
+      // Stream in (budgeted): nearest rings first.
+      let budget = BUILD_BUDGET;
+      outer:
+      for (let ring = 0; ring <= reach; ring++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          for (let dy = -ring; dy <= ring; dy++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+            const tx = ctx + dx;
+            const ty = cty + dy;
+            const key = `${face}:${tx}:${ty}`;
+            if (tiles.has(key)) continue;
+            dirOfUV(face, (tx + 0.5) * uTile, (ty + 0.5) * uTile, _dir);
+            _p.copy(_dir).multiplyScalar(rf);
+            if (_p.distanceTo(focusLocal) > LOAD_R) continue;
+            if (exclLocal && exclude && _p.distanceTo(exclLocal) < exclude.r) continue;
+            buildTile(face, tx, ty, key);
+            if (--budget <= 0) break outer;
+          }
+        }
+      }
+
+      // Near-resolve + stream out.
+      for (const [key, tile] of tiles) {
+        const d = tile.center.distanceTo(focusLocal);
+        if (d > UNLOAD_R) { disposeTile(tile, key); continue; }
+        setNear(tile, nearLocal !== null && tile.center.distanceTo(nearLocal) < NEAR_R);
+      }
+    },
+    dispose() {
+      for (const [key, tile] of tiles) disposeTile(tile, key);
+    },
+  };
+}

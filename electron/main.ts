@@ -253,6 +253,29 @@ app.on("ready", async () => {
     callback({ responseHeaders: headers });
   });
 
+  // Fix YouTube embed error 153: the renderer's origin is `app://aac`, which is
+  // not a valid http(s) origin, so requests to YouTube arrive with an invalid
+  // Referer/Origin and the IFrame player refuses to play (error 153 = missing/
+  // invalid referrer). Rewrite Referer/Origin on YouTube-bound requests to a
+  // real https origin so the embed is accepted. Scoped to YouTube's own hosts so
+  // it never touches the app's API or any other traffic.
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    {
+      urls: [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*",
+        "*://*.googlevideo.com/*",
+        "*://*.ytimg.com/*",
+      ],
+    },
+    (details, callback) => {
+      const headers = details.requestHeaders;
+      headers["Referer"] = "https://www.youtube.com/";
+      headers["Origin"] = "https://www.youtube.com";
+      callback({ requestHeaders: headers });
+    },
+  );
+
   // Create the gaze sidecar supervisor. It stays idle until the renderer calls
   // gaze:ensure (when a student's settings select an eye tracker).
   gazeSupervisor = new GazeSidecarSupervisor(gazeSupervisorPaths());
@@ -350,6 +373,12 @@ function getMimeType(filePath: string): string {
   const types: Record<string, string> = {
     ".html": "text/html",
     ".js": "application/javascript",
+    // ES module scripts hard-fail on non-JS MIME types: the ONNX runtime
+    // dynamically import()s its .mjs loader glue from app://aac/ort/, so
+    // serving it as octet-stream breaks Silero VAD in the packaged app
+    // (works in dev only because Vite serves .mjs correctly).
+    ".mjs": "text/javascript",
+    ".wasm": "application/wasm",
     ".css": "text/css",
     ".json": "application/json",
     ".png": "image/png",

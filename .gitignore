@@ -10,6 +10,11 @@ client-aac/public/ort
 client-aac/public/mediapipe
 client-aac/public/models/mediapipe
 release
+# Generated iOS native project — emitted by `npx cap add ios` on a macOS
+# runner during release. Everything we customize about it lives in
+# capacitor.config.ts + scripts/ios-configure.mjs, so the ~200-file Xcode
+# project is disposable and stays out of the repo.
+ios
 .DS_Store
 server/public
 vite.config.ts.*
@@ -30,3 +35,6 @@ hila-session-debug.json
 # (rds-ca-bundle.pem is the PUBLIC AWS RDS CA bundle and is intentionally kept.)
 *.pem
 !rds-ca-bundle.pem
+
+# Star-flash trap output (games/world-lab/DEBUG-STAR-FLASH.md)
+games/world-lab/flash-out/

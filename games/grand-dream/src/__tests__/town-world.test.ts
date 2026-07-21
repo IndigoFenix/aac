@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { createTownWorld } from "@shared/engine/town/town-world";
-import { townPlan } from "@shared/engine/town/plan";
-import { streetGoods } from "@shared/engine/town/goods";
-import { compileEconomy } from "@shared/engine/modules/economy";
+import { createTownWorld } from "@shared/world-engine/kernel/town/town-world";
+import { townPlan } from "@shared/world-engine/kernel/town/plan";
+import { streetGoods } from "@shared/world-engine/kernel/town/goods";
+import { compileEconomy } from "@shared/world-engine/kernel/modules/economy";
 import { CORE_BASE, CORE_GOODS2 } from "../economy-core";
 
 const ECO = compileEconomy([CORE_BASE, CORE_GOODS2], { construction: true });

@@ -67,6 +67,12 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
         videoId,
         width: "100%",
         height: "100%",
+        // Serve from the nocookie host and declare a real https referrer. In the
+        // Electron/Capacitor shells the page origin is `app://aac`, which YouTube
+        // rejects with error 153 (invalid referrer). The desktop main process
+        // rewrites the Referer/Origin headers; these vars align the postMessage
+        // handshake with that same https origin.
+        host: "https://www.youtube-nocookie.com",
         playerVars: {
           autoplay: 1,
           controls: 0,
@@ -74,6 +80,7 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
           rel: 0,
           playsinline: 1,
           fs: 0,
+          widget_referrer: "https://www.youtube.com/",
         },
         events: {
           onReady: () => {
@@ -86,7 +93,10 @@ export default function YouTubeVideoPlayer({ videoId, title, onClose }: YouTubeV
             else if (event.data === 2) setIsPlaying(false);
             else if (event.data === 0) setIsPlaying(false);
           },
-          onError: () => {
+          onError: (event: any) => {
+            // YT error codes: 2=bad param, 5=HTML5 player, 100=removed/private,
+            // 101/150=embedding disabled, 153=missing/invalid referrer.
+            console.error(`[YouTubeVideoPlayer] playback error ${event?.data} for video ${videoId}`);
             if (!destroyed) setHasError(true);
           },
         },

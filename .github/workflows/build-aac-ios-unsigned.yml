@@ -1,0 +1,156 @@
+name: Build AAC iPad (unsigned)
+
+# Builds the Aivota AAC iPad app WITHOUT code signing and uploads the resulting
+# .ipa as a run artifact. Counterpart to release-aac-ios.yml (which signs and
+# ships to TestFlight) for the case where no paid Apple Developer Program
+# membership / App Store Connect credentials exist yet.
+#
+# WHAT THIS IS FOR: getting a testable build onto a physical iPad via Apple's
+# free provisioning, before the paid pipeline is set up. The artifact this
+# produces is an UNSIGNED .ipa. It cannot be installed directly and it cannot
+# go through TestFlight — it must be re-signed onto a device with a free Apple
+# ID using a sideload tool:
+#
+#   • Sideloadly (Windows or macOS) — https://sideloadly.io
+#   • AltStore (Windows or macOS)   — https://altstore.io
+#
+# Those tools sign the app with your free Apple ID and install it over USB.
+# Free-provisioning limits apply: the app EXPIRES AFTER 7 DAYS (reinstall to
+# renew), ~3 apps / 3 devices per Apple ID, no push notifications, no OTA
+# bundle updates. The bundle id com.aivota.aac may be rewritten to a unique id
+# by the sideload tool — that is expected and fine for testing.
+#
+# WHY A macOS RUNNER: iOS apps can only be compiled by Xcode, which is
+# macOS-only. Building unsigned still needs Xcode; only the signing/upload
+# steps are removed. No secrets are required to run this workflow.
+#
+# This also doubles as the iOS build smoke test — if the web bundle, the
+# Capacitor project generation, or the Xcode compile break, this fails here
+# without needing any Apple account.
+#
+# Trigger: manual only (workflow_dispatch).
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: 'Backend the build talks to (baked as VITE_API_URL)'
+        required: false
+        default: 'https://aivota-demo-us.onrender.com'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-aac-ios-unsigned
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build unsigned .ipa
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Builds dist/public-aac with a RELATIVE asset base (NATIVE_BUILD=1) and
+      # the backend baked in. Identical bundle to the Windows build except for
+      # VITE_API_URL.
+      - name: Build web bundle
+        env:
+          VITE_API_URL: ${{ inputs.backend_url }}
+        run: npm run ios:build
+
+      # `ios/` is gitignored; generate it fresh from the Capacitor template.
+      - name: Generate iOS project
+        run: npx cap add ios
+
+      # Copies the web bundle in, installs CocoaPods, then applies our
+      # Info.plist customizations. See scripts/ios-configure.mjs.
+      - name: Sync + configure iOS project
+        run: npm run ios:sync
+
+      # Stamp the marketing version from package.json for traceability. The
+      # build number is the run number. Neither is required for sideloading,
+      # but it makes an installed build identifiable.
+      - name: Set version and build number
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Marketing version: $VERSION, build: $GITHUB_RUN_NUMBER"
+          cd ios/App
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" App/Info.plist
+
+      # Archive with signing fully disabled. No certificate, profile, team, or
+      # API key is needed. The archive holds an unsigned App.app under
+      # Products/Applications.
+      - name: Archive (unsigned)
+        run: |
+          cd ios/App
+          xcodebuild archive \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      # Package the unsigned App.app into an .ipa by hand. `xcodebuild
+      # -exportArchive` can't help here — every export method needs a signing
+      # identity — so we build the Payload/ layout an .ipa is (just a zip) and
+      # let the sideload tool sign it later.
+      - name: Package unsigned .ipa
+        run: |
+          APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::Expected app not found at $APP — archive step may have failed."
+            exit 1
+          fi
+          rm -rf "$RUNNER_TEMP/Payload"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          VERSION=$(node -p "require('./package.json').version")
+          IPA="$RUNNER_TEMP/aivota-aac-ipad-unsigned-v${VERSION}-build${GITHUB_RUN_NUMBER}.ipa"
+          (cd "$RUNNER_TEMP" && zip -qr "$IPA" Payload)
+          echo "Built $IPA"
+          ls -lh "$IPA"
+
+      - name: Upload unsigned .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aivota-aac-ipad-unsigned-ipa
+          path: ${{ runner.temp }}/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summary
+        run: |
+          {
+            echo "### Aivota AAC iPad — unsigned build"
+            echo ""
+            echo "- Version: $(node -p "require('./package.json').version") (build $GITHUB_RUN_NUMBER)"
+            echo "- Backend: ${{ inputs.backend_url }}"
+            echo ""
+            echo "Download the .ipa from this run's artifacts, then install it on a"
+            echo "physical iPad with a **free** Apple ID using a sideload tool:"
+            echo ""
+            echo "- Sideloadly (Windows/macOS): https://sideloadly.io"
+            echo "- AltStore (Windows/macOS): https://altstore.io"
+            echo ""
+            echo "The tool re-signs the app with your Apple ID over USB. The install"
+            echo "**expires after 7 days** under free provisioning — reinstall to renew."
+          } >> "$GITHUB_STEP_SUMMARY"

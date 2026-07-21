@@ -9,7 +9,8 @@
     "jsx": "react-jsx",
     "paths": {
       "@shared/*": ["../../shared/*"],
-      "@client-shared/*": ["../../client-shared/src/*"]
+      "@client-shared/*": ["../../client-shared/src/*"],
+      "@popusim/*": ["../popusim/src/*"]
     }
   }
 }

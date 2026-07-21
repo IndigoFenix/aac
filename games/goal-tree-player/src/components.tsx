@@ -10,9 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import { DwellTracker } from "@shared/gaze-kit";
-import type { EntityDef, GoalNode } from "@shared/goal-tree/types";
-import type { NarrationKind, ObjectiveSummary } from "@shared/goal-tree/space";
-import type { ChoiceOptionView } from "@shared/goal-tree/space";
+import type { EntityDef, GoalNode } from "@shared/world-engine/solver/types";
+import type { NarrationKind, ObjectiveSummary } from "@shared/world-engine/solver/space";
+import type { ChoiceOptionView } from "@shared/world-engine/solver/space";
 
 export interface GazeSample {
   x: number;

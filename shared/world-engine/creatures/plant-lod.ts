@@ -29,6 +29,7 @@ import { buildSkeleton } from "./skeleton";
 import { buildCreatureMesh } from "./mesh";
 import { MAX_GROWTH_SEGMENTS } from "./growth";
 import { makeCrossedPlanesGeometry } from "./crossed-planes";
+import { litMaterial, surfaceMaterial, type LitMaterial } from "../materials";
 
 /** Default tier budgets (segments). LOD1 is a PREFIX of LOD0. */
 export const PLANT_LOD_BUDGETS = { lod0: MAX_GROWTH_SEGMENTS, lod1: 60 };
@@ -198,8 +199,19 @@ function appendCanopyBlobs(blueprint: Blueprint, target: THREE.BufferGeometry): 
   merged.setAttribute("color", new THREE.BufferAttribute(col, 3));
   merged.setAttribute("sway", new THREE.BufferAttribute(sw, 1));
   merged.setIndex(new THREE.BufferAttribute(index, 1));
-  // plantMaterial uses flatShading (face normals derived in-shader), so
-  // vertex normals aren't needed — skip computeVertexNormals.
+  // NORMALS ARE MANDATORY — do not "optimise" this away again.
+  //
+  // This used to skip computeVertexNormals because plantMaterial was assumed
+  // to use flatShading (face normals derived in-shader from derivatives).
+  // That assumption holds ONLY for MeshStandardMaterial: MeshToonMaterial has
+  // no flatShading and silently drops it (see materials.ts), so in TOON mode
+  // the shader reads the missing `normal` attribute as (0,0,0) — and
+  // normalize(vec3(0)) is NaN. Toon feeds that straight into the gradient-map
+  // lookup as dot(normal, light), so every lit plant pixel renders NaN: black
+  // trees, and — once a bloom pass blurs those texels across the image — an
+  // entirely black frame. Computing normals is a no-op under flatShading and
+  // required under toon, so it is unconditional.
+  merged.computeVertexNormals();
   merged.computeBoundingSphere();
   for (const g of blobs) g.dispose();
   target.dispose();
@@ -207,6 +219,14 @@ function appendCanopyBlobs(blueprint: Blueprint, target: THREE.BufferGeometry): 
 }
 
 // ── Public builders ──────────────────────────────────────────────────────
+
+/** Any geometry handed to a LIT material needs normals — see the note in the
+ *  merge above. Cheap belt-and-braces: builders that already supply them are
+ *  untouched, and one that forgets can no longer poison the frame with NaN. */
+function ensureNormals(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  if (!g.getAttribute("normal")) g.computeVertexNormals();
+  return g;
+}
 
 export function buildPlantLods(blueprint: Blueprint): PlantLods {
   const l0 = buildStaticGeometry(blueprint, PLANT_LOD_BUDGETS.lod0, {
@@ -224,8 +244,8 @@ export function buildPlantLods(blueprint: Blueprint): PlantLods {
     triangles: (g.getIndex() ? g.getIndex()!.count : g.getAttribute("position").count) / 3,
   });
   return {
-    lod0: stats(l0.geometry),
-    lod1: stats(l1geo),
+    lod0: stats(ensureNormals(l0.geometry)),
+    lod1: stats(ensureNormals(l1geo)),
     bounds: l0.bounds,
     dispose() {
       l0.geometry.dispose();
@@ -236,13 +256,8 @@ export function buildPlantLods(blueprint: Blueprint): PlantLods {
 
 /** One shared material for every static plant (vertex colors carry the
  *  kind look) — the whole point of per-vertex color in the pipeline. */
-export function plantMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.85,
-    metalness: 0,
-    flatShading: true,
-  });
+export function plantMaterial(): LitMaterial {
+  return surfaceMaterial();
 }
 
 // ── Impostor bake ────────────────────────────────────────────────────────
@@ -358,11 +373,8 @@ export function makeImpostorMesh(impostor: PlantImpostor): THREE.Mesh {
   }
   both.setIndex(new THREE.BufferAttribute(combined, 1));
   single.dispose();
-  const mat = new THREE.MeshStandardMaterial({
-    map: impostor.texture,
-    alphaTest: 0.5,
-    roughness: 0.9,
-    metalness: 0,
-  });
+  // LIT, like the mesh it stands in for — an impostor shaded differently from
+  // the real plant would pop at the LOD swap.
+  const mat = litMaterial({ map: impostor.texture, alphaTest: 0.5, roughness: 0.9 });
   return new THREE.Mesh(both, mat);
 }

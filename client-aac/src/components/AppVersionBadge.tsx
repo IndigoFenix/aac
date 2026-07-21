@@ -1,24 +1,22 @@
 // A small, unobtrusive version label for the startup screens (there's no
-// in-app settings page to read it from). Under Electron it reads the packaged
-// app version through the preload (`electronAPI.getVersion()`); on the web build
-// it falls back to the version baked in at build time (see vite.config.aac.ts).
+// in-app settings page to read it from). On a native host it reads the real
+// installed app version at runtime; on the web build it falls back to the
+// version baked in at build time (see vite.config.aac.ts).
 
 import { useEffect, useState } from "react";
+import { capabilities, getNativeVersion } from "@/lib/platform";
 
 export default function AppVersionBadge() {
   // Start with the build-time version so the label is present immediately on the
-  // web build; Electron overwrites it with the live packaged version once ready.
+  // web build; a native host overwrites it with the live version once ready.
   const [version, setVersion] = useState<string | null>(
     typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : null
   );
 
   useEffect(() => {
-    const api = (window as unknown as {
-      electronAPI?: { getVersion?: () => Promise<string> };
-    }).electronAPI;
-    if (!api?.getVersion) return;
+    if (!capabilities().nativeVersion) return;
     let alive = true;
-    api.getVersion().then(v => { if (alive && v) setVersion(v); }).catch(() => {});
+    getNativeVersion().then(v => { if (alive && v) setVersion(v); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 

@@ -27,7 +27,7 @@ import {
   GOAL_TREE_MAX_ENTITIES,
   CHOOSE_MAX_OPTIONS,
   COLLECT_MAX_COUNT,
-} from "@shared/goal-tree/types";
+} from "@shared/world-engine/solver/types";
 
 // ---------------------------------------------------------------------------
 // Recursive goal-node schema

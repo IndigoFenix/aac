@@ -28,7 +28,12 @@ export interface GazeSupervisorPaths {
   sidecarNodeModules: string;
   /** Absolute path to the bundled 32-bit node.exe (for ia32 DLLs). */
   ia32Runtime: string;
-  /** WebSocket/status port the sidecar serves on. */
+  /**
+   * Port to request the sidecar bind. Defaults to 0 = let the OS assign a free
+   * port. A fixed port (esp. 49152) collides with other eye-gaze software and
+   * Windows reserved ranges; the actual bound port is discovered over IPC and
+   * surfaced as GazeStatus.port. Set a value only for tests/special cases.
+   */
   port?: number;
 }
 
@@ -39,6 +44,12 @@ export interface GazeStatus {
   dllFound: boolean;
   /** True when the sidecar process is running. */
   running: boolean;
+  /**
+   * The localhost port the sidecar is actually serving gaze on, reported by the
+   * child over IPC after it binds (the OS assigns it). Null until it reports, or
+   * while stopped. The renderer connects to ws://127.0.0.1:<port>.
+   */
+  port: number | null;
   /** Last status code reported by the sidecar (e.g. "connected"). */
   sidecarCode: string | null;
   sidecarMessage: string | null;
@@ -59,12 +70,21 @@ export class GazeSidecarSupervisor {
   private sidecarCode: string | null = null;
   private sidecarMessage: string | null = null;
   private lastError: string | null = null;
-  private stopping = false;
+  /** Live port the current sidecar bound to, reported over IPC. Null when unknown. */
+  private port: number | null = null;
+  /**
+   * Children we killed on purpose. The "exit" event arrives asynchronously, long
+   * after the kill call returns, so intent has to be recorded per-child rather
+   * than in a flag that has already been reset by then.
+   */
+  private intentionalKills = new WeakSet<ChildProcess>();
   private restartTimer: NodeJS.Timeout | null = null;
   private restartDelay = RESTART_BASE_MS;
 
   constructor(paths: GazeSupervisorPaths) {
-    this.paths = { port: 49152, ...paths };
+    // Default to 0: the sidecar binds an OS-assigned free port and reports it
+    // back over IPC. An explicit paths.port overrides (tests / special cases).
+    this.paths = { port: 0, ...paths };
   }
 
   // ── Public API ──
@@ -93,7 +113,7 @@ export class GazeSidecarSupervisor {
     }
 
     if (!this.dllPath) {
-      this.stop();
+      this.killChild();
       this.log(`[supervisor] no DLL found for "${device}" — awaiting manual locate`);
       return this.getStatus();
     }
@@ -125,14 +145,31 @@ export class GazeSidecarSupervisor {
     return this.ensure(device);
   }
 
+  /**
+   * Shut the sidecar down and forget the device. Called when the active student's
+   * settings no longer select an eye tracker (e.g. after an account switch), so
+   * the supervisor must go fully inert: no restart, and no leftover status for the
+   * client to render as a problem.
+   */
   stop(): void {
-    this.stopping = true;
+    this.killChild();
+    this.device = null;
+    this.dllPath = null;
+    this.dllArch = null;
+    this.sidecarCode = null;
+    this.sidecarMessage = null;
+    this.lastError = null;
+    this.port = null;
+  }
+
+  /** Kill the current child (if any) without reporting it as a crash. */
+  private killChild(): void {
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
     if (this.child) {
+      this.intentionalKills.add(this.child);
       try { this.child.kill(); } catch { /* ignore */ }
       this.child = null;
     }
-    this.stopping = false;
   }
 
   getStatus(): GazeStatus {
@@ -142,6 +179,7 @@ export class GazeSidecarSupervisor {
       dllArch: this.dllArch,
       dllFound: !!this.dllPath,
       running: !!(this.child && !this.child.killed),
+      port: this.port,
       sidecarCode: this.sidecarCode,
       sidecarMessage: this.sidecarMessage,
       needsDll: !!this.device && !this.dllPath,
@@ -153,11 +191,9 @@ export class GazeSidecarSupervisor {
 
   private spawnSidecar(): void {
     // Tear down any existing child first.
-    if (this.child) {
-      try { this.child.kill(); } catch { /* ignore */ }
-      this.child = null;
-    }
-    if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
+    this.killChild();
+    // New process → old port is stale until this one reports which port it bound.
+    this.port = null;
 
     if (!this.dllPath || !this.device) return;
 
@@ -198,14 +234,30 @@ export class GazeSidecarSupervisor {
     child.stdout?.on("data", (buf) => this.handleSidecarOutput(buf.toString()));
     child.stderr?.on("data", (buf) => this.log(`[sidecar:stderr] ${buf.toString().trimEnd()}`));
 
-    child.on("exit", (code, signal) => {
-      this.log(`[supervisor] sidecar exited code=${code} signal=${signal}`);
-      if (this.child === child) this.child = null;
-      if (!this.stopping) {
-        this.sidecarCode = "exited";
-        this.sidecarMessage = `Sidecar exited (code=${code})`;
-        this.scheduleRestart();
+    // The sidecar reports the OS-assigned port it bound (see gaze-sidecar.cjs).
+    child.on("message", (msg: unknown) => {
+      if (this.child !== child) return; // stale child
+      const m = msg as { type?: string; port?: number } | null;
+      if (m && m.type === "gaze-sidecar-listening" && typeof m.port === "number") {
+        this.port = m.port;
+        this.log(`[supervisor] sidecar listening on port ${m.port}`);
       }
+    });
+
+    child.on("exit", (code, signal) => {
+      const intentional = this.intentionalKills.has(child);
+      this.log(
+        `[supervisor] sidecar exited code=${code} signal=${signal}` +
+        (intentional ? " (stopped on request)" : ""),
+      );
+      if (this.child === child) { this.child = null; this.port = null; }
+      if (intentional) return;
+
+      this.sidecarCode = "exited";
+      this.sidecarMessage = signal
+        ? `Eye tracker stopped unexpectedly (signal ${signal})`
+        : `Eye tracker stopped unexpectedly (code ${code})`;
+      this.scheduleRestart();
     });
 
     child.on("error", (err) => {
@@ -234,7 +286,7 @@ export class GazeSidecarSupervisor {
   }
 
   private scheduleRestart(): void {
-    if (this.stopping || this.restartTimer || !this.dllPath) return;
+    if (this.restartTimer || !this.dllPath || !this.device) return;
     const delay = this.restartDelay;
     this.restartDelay = Math.min(this.restartDelay * 2, RESTART_MAX_MS);
     this.log(`[supervisor] restarting sidecar in ${delay}ms`);

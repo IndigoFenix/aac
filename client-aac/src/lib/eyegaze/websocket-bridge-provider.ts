@@ -4,6 +4,7 @@
 
 import type { EyeGazeProvider, EyeGazeProviderType, EyeGazeProviderStatus, GazeCallback, GazeData } from "./types";
 import { GazeSmoother, type GazeSmootherConfig } from "@shared/gaze-smoothing.js";
+import { capabilities, getGazeBridge } from "@/lib/platform";
 
 /** Vendor-specific parser: converts raw JSON from the companion app to GazeData */
 export type VendorParser = (raw: unknown) => GazeData | null;
@@ -18,6 +19,14 @@ export interface WebSocketBridgeConfig {
   deviceName: string;
   url: string;
   probeUrl?: string;     // HTTP endpoint to check if companion is running
+  /**
+   * Resolve the live endpoint just before each probe/connect. Used when the
+   * companion binds a dynamic (OS-assigned) port — e.g. our gaze sidecar, whose
+   * port is discovered from the supervisor. Returns null when no endpoint is
+   * available yet (companion not running); the provider then skips connecting.
+   * When omitted, `url`/`probeUrl` are used as-is.
+   */
+  resolveEndpoint?: () => Promise<{ url: string; probeUrl?: string } | null>;
   parser: VendorParser;
   reconnectMs?: number;
   probeTimeoutMs?: number;
@@ -30,10 +39,11 @@ export interface WebSocketBridgeConfig {
   smoothing?: GazeSmootherConfig | false;
 }
 
-// In Electron, local WebSocket servers may take longer to respond (mixed-content negotiation).
-// Use a longer probe timeout to avoid false negatives.
-const isElectron = typeof window !== "undefined" && !!(window as any).electronAPI;
-const DEFAULT_PROBE_TIMEOUT = isElectron ? 1500 : 500;
+// On a native host, local WebSocket servers may take longer to respond
+// (mixed-content negotiation in Electron; local-network permission on iOS).
+// Use a longer probe timeout there to avoid false negatives. A browser tab on
+// https:// has the connection killed outright, so it should fail fast instead.
+const DEFAULT_PROBE_TIMEOUT = capabilities().localhostBridge ? 1500 : 500;
 
 export class WebSocketBridgeProvider implements EyeGazeProvider {
   readonly type: EyeGazeProviderType;
@@ -57,7 +67,25 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
     this.smoother = config.smoothing ? new GazeSmoother(config.smoothing) : null;
   }
 
+  /**
+   * Refresh url/probeUrl from resolveEndpoint (if configured). Returns false when
+   * no endpoint is available (companion not up yet), so callers can bail out.
+   */
+  private async refreshEndpoint(): Promise<boolean> {
+    if (!this.config.resolveEndpoint) return true;
+    try {
+      const ep = await this.config.resolveEndpoint();
+      if (!ep || !ep.url) return false;
+      this.config.url = ep.url;
+      this.config.probeUrl = ep.probeUrl;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async probe(): Promise<boolean> {
+    if (!(await this.refreshEndpoint())) return false;
     const timeout = this.config.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT;
 
     // Try HTTP probe first (faster, non-destructive)
@@ -168,7 +196,15 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
 
   // ── Private ──
 
-  private connect() {
+  private async connect() {
+    if (this.destroyed) return;
+
+    // Resolve the live port before each (re)connect, so a sidecar restart on a
+    // new OS-assigned port is picked up automatically.
+    if (!(await this.refreshEndpoint())) {
+      this.scheduleReconnect();
+      return;
+    }
     if (this.destroyed) return;
 
     try {
@@ -298,16 +334,31 @@ function parseGazepoint(raw: unknown): GazeData | null {
 // Defaults live in shared/gaze-smoothing.ts; pass {} to accept them.
 const HARDWARE_SMOOTHING: GazeSmootherConfig = {};
 
-export function createTobiiProvider(port = 49152): WebSocketBridgeProvider {
-  // Use 127.0.0.1, NOT "localhost": our gaze sidecar binds the IPv4 loopback,
-  // and on Windows "localhost" often resolves to ::1 (IPv6) first, so a
-  // localhost connection would never reach the sidecar. (This is why the
-  // standalone tobii-test, which used 127.0.0.1, connected but the app didn't.)
+// The gaze sidecar binds an OS-assigned port (a fixed 49152 collided with other
+// eye-gaze software and Windows reserved ranges). Discover the live port from
+// the supervisor on each probe/connect, so a sidecar restart on a new port is
+// picked up automatically. Returns null when the sidecar isn't up yet.
+async function resolveTobiiEndpoint(): Promise<{ url: string; probeUrl: string } | null> {
+  try {
+    const status = await getGazeBridge()?.status();
+    const port = status?.port;
+    if (!port) return null;
+    // Use 127.0.0.1, NOT "localhost": the sidecar binds the IPv4 loopback, and on
+    // Windows "localhost" often resolves to ::1 (IPv6) first, so a localhost
+    // connection would never reach it.
+    return { url: `ws://127.0.0.1:${port}`, probeUrl: `http://127.0.0.1:${port}/status` };
+  } catch {
+    return null;
+  }
+}
+
+export function createTobiiProvider(): WebSocketBridgeProvider {
   return new WebSocketBridgeProvider({
     type: "tobii",
     deviceName: "Tobii Eye Tracker",
-    url: `ws://127.0.0.1:${port}`,
-    probeUrl: `http://127.0.0.1:${port}/status`,
+    // Placeholder — the real endpoint comes from resolveEndpoint (dynamic port).
+    url: "ws://127.0.0.1:0",
+    resolveEndpoint: resolveTobiiEndpoint,
     parser: parseTobii,
     smoothing: HARDWARE_SMOOTHING,
   });

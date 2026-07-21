@@ -16,12 +16,12 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { DEFAULT_GALAXY_PARAMS } from "@shared/space/galaxy";
-import { createWorld } from "@shared/space/world";
-import { createSpaceSky } from "@shared/space/space-sky";
-import type { CelestialBody } from "@shared/space/body";
-import { deriveCloudField } from "@shared/space/cloud-field";
-import { createCloudSystem, computeCloudPixelsPerUnit, type CloudSystem } from "@shared/space/cloud-system";
+import { DEFAULT_GALAXY_PARAMS } from "@shared/world-engine/space/galaxy";
+import { createWorld } from "@shared/world-engine/space/world";
+import { createSpaceSky } from "@shared/world-engine/space/space-sky";
+import type { CelestialBody } from "@shared/world-engine/space/body";
+import { deriveCloudField } from "@shared/world-engine/space/cloud-field";
+import { createCloudSystem, computeCloudPixelsPerUnit, type CloudSystem } from "@shared/world-engine/space/cloud-system";
 
 const viewEl = document.getElementById("view") as HTMLDivElement;
 const controlsEl = document.getElementById("controls") as HTMLDivElement;

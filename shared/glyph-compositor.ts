@@ -126,30 +126,33 @@ export function parseGlyph(input: string): ParsedGlyph {
   const trimmed = raw.trim();
   if (!trimmed) return { slots: [], toneTags: [], raw };
 
-  // Split tone tags from glyph body
-  const hashIdx = trimmed.indexOf("#");
-  const body = hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed;
-  const tagPart = hashIdx >= 0 ? trimmed.slice(hashIdx + 1) : "";
-
-  // Parse tone tags
+  // Tone tags may ride ANY token, not only the sentence tail — the dialogue
+  // layer leads with the question word ("place#question + cookie"). Splitting
+  // the whole string at the FIRST `#` used to discard every slot after it
+  // (the where-is buttons showed only the where icon). Strip and collect tags
+  // per token instead; both `#past#question` and `#past.question` parse.
   const toneTags: ToneTag[] = [];
-  if (tagPart) {
-    for (const t of tagPart.split(".").map((s) => s.trim()).filter(Boolean)) {
-      if (KNOWN_TONE_TAGS.has(t as ToneTag) && !toneTags.includes(t as ToneTag)) {
-        toneTags.push(t as ToneTag);
+  const collectTags = (tagPart: string) => {
+    for (const seg of tagPart.split(/[#.]/).map((s) => s.trim()).filter(Boolean)) {
+      if (KNOWN_TONE_TAGS.has(seg as ToneTag) && !toneTags.includes(seg as ToneTag)) {
+        toneTags.push(seg as ToneTag);
       }
     }
-  }
+  };
 
   // Parse slots. A `+`-token that is a connector keyword (and/or/but/if/
   // because) does NOT become a content slot — it binds forward to the next
   // slot as a `join`. A leading connector (no preceding slot) or a trailing
   // one (no following slot) is dropped.
-  const tokens = body.split("+").map((s) => s.trim()).filter(Boolean);
+  const tokens = trimmed.split("+").map((s) => s.trim()).filter(Boolean);
   const slots: ParsedSlot[] = [];
   let pendingJoin: Join | undefined;
-  for (const tok of tokens) {
+  for (const rawTok of tokens) {
     if (slots.length >= MAX_SLOTS) break;
+    const hashIdx = rawTok.indexOf("#");
+    const tok = hashIdx >= 0 ? rawTok.slice(0, hashIdx).trim() : rawTok;
+    if (hashIdx >= 0) collectTags(rawTok.slice(hashIdx + 1));
+    if (!tok) continue;
     if (JOINS.has(tok.toLowerCase())) {
       if (slots.length > 0) pendingJoin = tok.toLowerCase() as Join;
       continue;

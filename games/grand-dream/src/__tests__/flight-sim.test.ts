@@ -7,10 +7,10 @@
  */
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { createPlayer, type Input } from "@shared/space/flight-sim";
+import { createPlayer, type Input } from "@shared/world-engine/space/flight-sim";
 import type {
   CelestialBody, GravityContext, AtmosphericReading, PlayerWorld,
-} from "@shared/space/world-types";
+} from "@shared/world-engine/space/world-types";
 
 const R_EARTH = 6.371e6;
 const GM_EARTH = 3.986e14;
@@ -83,13 +83,39 @@ describe("flight-sim — the ported seagull physics against a mock world", () =>
     expect(p.state.wheelFactor).toBe(1);
   });
 
-  it("flies — position advances and wing speed holds", () => {
+  it("beginFlight: the walk→fly handoff launches from a ground pose into flight", () => {
+    const { world } = mockWorld();
+    const p = createPlayer(world, { canFly: true });
+    // A point ON the surface (a town would sit here), heading "east".
+    const groundDir = new THREE.Vector3(0.3, 0.8, 0.52).normalize();
+    const groundPos = groundDir.clone().multiplyScalar(R_EARTH);
+    const heading = new THREE.Vector3(1, 0, 0); // arbitrary — projected to tangent
+    p.beginFlight(groundPos, heading, 40);
+    // Airborne now, lifted just off the surface, forward tangent to the ground.
+    expect(p.state.mode).toBe("flying");
+    const up = groundDir; // surface normal at the launch point
+    const liftAlt = p.state.position.length() - R_EARTH;
+    expect(liftAlt).toBeGreaterThan(0);
+    expect(liftAlt).toBeLessThan(60); // just off the ground, not teleported up
+    expect(Math.abs(p.state.forward.dot(up))).toBeLessThan(1e-6); // tangent heading
+    expect(p.state.forward.length()).toBeCloseTo(1, 6);
+    // And it then actually flies away from the launch point.
+    const p0 = p.state.position.clone();
+    for (let i = 0; i < 30; i++) p.update(centeredGaze(), 0.05);
+    expect(p.state.position.distanceTo(p0)).toBeGreaterThan(20);
+  });
+
+  it("flies — position advances and wing speed holds at the wheel's cruise", () => {
     const { world } = mockWorld();
     const p = createPlayer(world);
     const p0 = p.state.position.clone();
     for (let i = 0; i < 60; i++) p.update(centeredGaze(), 0.05);
-    expect(p.state.position.distanceTo(p0)).toBeGreaterThan(100); // moved
-    expect(p.state.wingSpeed).toBeGreaterThan(0);
+    // THE WHEEL IS THE SPEED: at wheelFactor 1 the ship settles to
+    // MIN_FLIGHT_SPEED (32 m/s) regardless of altitude — 3 s ⇒ ~96 m
+    // (the old altitude governor made this >100; it's gone by design).
+    expect(p.state.position.distanceTo(p0)).toBeGreaterThan(85); // moved at cruise
+    expect(p.state.wingSpeed).toBeGreaterThan(25);
+    expect(p.state.wingSpeed).toBeLessThan(45); // no altitude boost
   });
 
   it("the mouse wheel is an exponential throttle, clamped", () => {

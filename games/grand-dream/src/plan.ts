@@ -4,4 +4,4 @@
  * never touched the composition layer (the planner is politically
  * silent), so it moved whole.
  */
-export * from "@shared/engine/civ/plan";
+export * from "@shared/world-engine/kernel/civ/plan";

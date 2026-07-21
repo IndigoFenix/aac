@@ -89,6 +89,10 @@ export interface WorldViewDeps {
   /** Symbol images for a composed AAC glyph string (the speech-bubble glyph strip),
    *  or null/[] when none are available (plain speech, or not yet decoded). */
   glyphFor?: (glyph: string) => CanvasImageSource[] | null;
+  /** Same glyph images WITHOUT the tone plate, for a model-less object that IS
+   *  its glyph in the world (a background square would read as a floating card).
+   *  Omit to reuse `glyphFor`. */
+  glyphIconFor?: (glyph: string) => CanvasImageSource[] | null;
 }
 
 /** A pluggable renderer for the world engine. The host drives it once a frame. */
@@ -118,6 +122,58 @@ export interface WorldView {
   resize(width: number, height: number, dpr: number): void;
   /** Live-update tunables (debug menu). Optional — the 2D view has nothing to tune. */
   setTunables?(t: WorldTunables): void;
+  /** HOST-EMBED (seamless walk↔fly): hand the shared camera to (true) or away from
+   *  (false) this view's grounded chase rig. Only the 3D view embedded in a flight
+   *  scene implements it — WALKING drives the camera, the flight camera owns it
+   *  airborne. Omitted by the owner-mode / 2D views. */
+  setDriveCamera?(on: boolean): void;
+  /** HOST-EMBED: turn on the SPIRIT (dollhouse) cutaway for a focused building
+   *  WITHOUT taking the camera — an owner-camera host (the flight world orbiting
+   *  a town) reveals a building's interior with the footprint, clears with null.
+   *  3D-only. */
+  setSpiritFocus?(frame: { x: number; y: number; w: number; h: number } | null): void;
+  /** SPIRIT LADDER: opt this view's OWNER-mode camera writes off — an external
+   *  rig owns the shared camera while the view keeps rendering. 3D-only. */
+  setExternalCamera?(on: boolean): void;
+  /** SPIRIT LADDER (planet law: the planet owns the player's cursor): opt this
+   *  view's OWN spark off — the view still computes its cursor target (hover
+   *  snap, select) and reports it via externalCursorWorld for the planet's
+   *  spark to draw. 3D-only. */
+  setExternalCursor?(on: boolean): void;
+  /** Reveal building INTERIORS from occupancy/accessibility (cutaway walls,
+   *  open roofs)? Default on. The spirit GROUND rung turns it off: its local
+   *  avatar is a parked stand-in, not an occupant, so passing a house in the
+   *  street must not strip its walls. 3D-only. */
+  setInteriorReveal?(on: boolean): void;
+  /** SPIRIT LADDER: the cursor target computed on the last render while the
+   *  external-cursor opt-out is on — WORLD coords into `out`; null when there
+   *  is none. 3D-only. */
+  externalCursorWorld?(
+    out: import("three").Vector3,
+  ): { hovering: boolean; select: number } | null;
+  /** SPIRIT LADDER: the render camera an external rig poses. 3D-only. */
+  camera?: import("three").PerspectiveCamera;
+  /** SPIRIT LADDER: the dollhouse rig pose for `frame` at azimuth `spiritAz`,
+   *  WORLD coords — pose only, never writes the camera. 3D-only. */
+  dollhousePose?(
+    frame: { x: number; y: number; w: number; h: number } | null,
+    spiritAz: number,
+    out: { pos: import("three").Vector3; look: import("three").Vector3; up: import("three").Vector3; fov: number },
+  ): void;
+  /** HOST-EMBED: force an avatar body (in)visible regardless of sim state — the
+   *  coordinator hides the town's local walker while it's airborne. 3D-only. */
+  setAvatarHidden?(id: string, hidden: boolean): void;
+  /** POSSESSION: drop an avatar's cached body model so the next frame rebuilds
+   *  it through the modelFactory (re-skin without a world rebuild). 3D-only. */
+  resetAvatarModel?(id: string): void;
+  /** HOST-EMBED chart rebase: the anchor this view hangs under moved to a new
+   *  surface chart (world poses preserved; WorldHost.rebase carried the sim) —
+   *  re-express the view's eased LOCAL-frame caches (follow centre, heading,
+   *  spark) through `delta` = newAnchorWorld⁻¹ · oldAnchorWorld. 3D-only. */
+  rebaseLocal?(delta: import("three").Matrix4): void;
+  /** DIAGNOSTICS: one-line snapshot of the last cutaway/visibility pass
+   *  (spirit toggle, frame, visible/blackout counts, local avatar). 3D-only. */
+  debugCutaway?(): string;
   dispose(): void;
 }
 

@@ -26,8 +26,19 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client-aac"),
-  // Electron build uses relative paths; web production uses /aac/; dev uses /
-  base: process.env.ELECTRON_BUILD === "1" ? "./" : process.env.NODE_ENV === "production" ? "/aac/" : "/",
+  // Native shells (Electron's app:// protocol, Capacitor's capacitor://
+  // scheme) serve the bundle from a filesystem root, so asset URLs must be
+  // RELATIVE — an absolute /aac/ base 404s under both. Web production is
+  // served under /aac/; dev is served from /.
+  //
+  // NATIVE_BUILD is the general flag; ELECTRON_BUILD is still honoured so the
+  // existing electron:build script and any local muscle memory keep working.
+  base:
+    process.env.NATIVE_BUILD === "1" || process.env.ELECTRON_BUILD === "1"
+      ? "./"
+      : process.env.NODE_ENV === "production"
+        ? "/aac/"
+        : "/",
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public-aac"),
     emptyOutDir: true,

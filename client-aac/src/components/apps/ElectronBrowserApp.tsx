@@ -29,6 +29,7 @@ import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { isUrlPermitted } from "@shared/permitted-websites";
 import { DwellEngine } from "@shared/dwell-engine";
 import type { PermittedWebsite } from "@shared/schema";
+import { getBrowserBridge } from "@/lib/platform";
 import type { WebviewTag } from "@/types/electron-webview";
 
 interface ElectronBrowserAppProps {
@@ -142,13 +143,13 @@ export default function ElectronBrowserApp({
 
   // ── Push the allowlist to the main process (hard nav gate) on mount ──
   useEffect(() => {
-    const api = (window as unknown as { electronAPI?: { browser?: { setAllowlist?: (l: unknown) => void; clearAllowlist?: () => void } } }).electronAPI;
-    api?.browser?.setAllowlist?.(permittedWebsites);
+    const browser = getBrowserBridge();
+    browser?.setAllowlist?.(permittedWebsites);
     if (!isUrlPermitted(url, permittedWebsites)) {
       setBlocked(true);
       notifyContext(`[BROWSER] Blocked opening a non-permitted URL (${url}).`);
     }
-    return () => { api?.browser?.clearAllowlist?.(); };
+    return () => { browser?.clearAllowlist?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

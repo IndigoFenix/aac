@@ -9,8 +9,8 @@
 import { describe, expect, it } from "vitest";
 import {
   docsFor, isWorldManifest, loadWorldManifest, type EngineModule,
-} from "@shared/engine/manifest";
-import { ECONOMY_MODULE } from "@shared/engine/modules/economy";
+} from "@shared/world-engine/kernel/manifest";
+import { ECONOMY_MODULE } from "@shared/world-engine/kernel/modules/economy";
 import { compileEconomy } from "../economy";
 import { CORE_BASE, CORE_GOODS2 } from "../economy-core";
 

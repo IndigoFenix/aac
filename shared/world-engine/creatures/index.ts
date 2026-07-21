@@ -10,9 +10,22 @@
 export * from "./species";
 export type { Blueprint } from "./blueprint";
 export { clampBlueprint, defaultBlueprint, plantBlueprint } from "./blueprint";
+export {
+  GARMENT_KINDS,
+  GARMENT_RANGES,
+  MAX_GARMENTS,
+  OUTFIT_PRESET_COUNT,
+  clampGarment,
+  clampOutfit,
+  defaultGarment,
+  outfitPresetFor,
+  type GarmentBlueprint,
+  type GarmentKind,
+  type OutfitBlueprint,
+} from "./clothing";
 export { buildSkeleton } from "./skeleton";
 export { buildCreatureMesh, buildFruitMesh } from "./mesh";
-export { CreatureAnimator } from "./animation";
+export { CreatureAnimator, type BodyActivity } from "./animation";
 export {
   createBakedCreature,
   createDynamicCreature,

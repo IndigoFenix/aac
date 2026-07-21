@@ -32,6 +32,7 @@ import type {
   Vec2,
   WorldSpec,
 } from "./types.js";
+import { PASSTHROUGH_FIXTURES } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Runtime state
@@ -65,21 +66,69 @@ export interface AvatarState {
   /** Seconds since the last network packet — caps dead-reckoning so a peer whose
    *  packets stop (e.g. a backgrounded tab) freezes instead of gliding away. */
   tAge?: number;
+  /** Can this body OPEN doors (and containers)? The player and hands-having
+   *  creatures can; a graspless one (a pet) cannot — it may only pass through /
+   *  take from things ANOTHER opened. Set by the game layer; ABSENT ⇒ true (the
+   *  player and every ordinary body). Read by `tickDoors`. */
+  canOpen?: boolean;
   /** A one-shot GESTURE for a creature-bodied avatar (e.g. an NPC pointing the
    *  way). Display-only — `tickWorld` never reads it. The renderer's creature
    *  factory fires it once per new `id` (converting the world target into the
    *  body's local frame) and animates it; set by the game layer. */
   gesture?: AvatarGesture;
+  /** A sustained ACTIVITY the body is performing (asleep on a bed, eating at
+   *  the table, sitting, playing). Display-only like `gesture` — `tickWorld`
+   *  never reads it. The game layer SETS it while the activity is underway and
+   *  clears it when it ends; the renderer's model factory poses the body (a 2D
+   *  renderer may ignore it entirely). */
+  activity?: AvatarActivity;
+  /** OUTFIT override — an outfit-preset index (creatures/clothing.ts
+   *  `outfitPresetFor`) the body is WEARING now. Display-only like `activity`
+   *  (`tickWorld` never reads it): the creature model factory watches it and
+   *  re-dresses the body live when it changes (the visible change of clothes).
+   *  Absent = the factory's own `outfitFor` default. */
+  wearing?: number;
+  /** RENDER ALTITUDE — metres the body floats ABOVE its ground stand height.
+   *  Display-only (`tickWorld` never reads it; the sim stays plan-view 2D). The
+   *  FLIGHT channel: while a `can_fly` avatar is airborne, the game layer drives
+   *  the plan `(x, y)` + this altitude from the reused space flight-sim, so the
+   *  renderer lifts the body (and the follow camera) off the ground without a
+   *  scene swap. 0 / absent = grounded. */
+  altitude?: number;
 }
 
-/** A deictic gesture request on an avatar (currently just pointing). */
+/** What a body is DOING at its station — the species-agnostic activity set the
+ *  creature rig knows how to pose (see creatures/animation.ts BodyActivity). */
+export type AvatarActivityKind = "sleep" | "eat" | "sit" | "play";
+
+/** A sustained, display-only activity on an avatar. Unlike a gesture it has no
+ *  one-shot id: it stays set for as long as the activity runs and the renderer
+ *  blends the pose in/out as it appears/clears. */
+export interface AvatarActivity {
+  kind: AvatarActivityKind;
+  /** The world object (a FIXTURE) the activity centers on — a sleeper's BED,
+   *  so the view can lay the body ON it (bodies can't stand on solid fixtures,
+   *  so the sim keeps the sleeper standing beside it). Unknown/absent id ⇒ the
+   *  body performs the activity where it stands (a doze in place). */
+  objId?: string;
+}
+
+/** A one-shot gesture request on an avatar: a deictic POINT, or the carry
+ *  reaches — PICKUP (reach → grasp → lift into the carry pose, which the body
+ *  HOLDS until a putdown; the model stays full-fidelity while carrying) and
+ *  PUTDOWN (lower → release). The animator no-ops a pickup mid-action and a
+ *  putdown when nothing is carried, so hosts may fire these unconditionally. */
 export interface AvatarGesture {
-  kind: "point";
-  /** WORLD point to point at (the factory converts to the body-local frame). */
+  kind: "point" | "pickup" | "putdown";
+  /** WORLD point to gesture at (the factory converts to the body-local frame):
+   *  what's pointed at, or the spot the object is taken from / lowered to. */
   targetX: number;
   targetY: number;
-  /** How long to hold the point, seconds. */
+  /** How long to hold the point, seconds (point only). */
   holdS: number;
+  /** Apparent size of the picked object, meters (pickup only) — a wide object
+   *  takes a two-handed bracket, and a graspless species mouths it. */
+  sizeM?: number;
   /** Monotonic id — the renderer performs the gesture once per NEW id. */
   id: number;
 }
@@ -143,9 +192,14 @@ export interface ObjectState {
   /** When placed on/in/under a container, where it rests; null when free. */
   containedIn: { objectId: string; relation: ContainRelation } | null;
   // --- fixtures ----------------------------------------------------------------
-  /** Eased lid swing of an `openable` fixture, 0 (shut) → 1 (open) — opens
-   *  while someone stands beside it (the door rule). Render-only meaning. */
+  /** Eased lid swing of an `openable` fixture, 0 (shut) → 1 (open). The lid now
+   *  follows `heldOpen` (an EXPLICIT open state a creature sets when it accesses
+   *  the container), not proximity — so an opened lid STAYS open until closed. */
   open: number;
+  /** Is this fixture explicitly OPEN? Set by the game layer when a creature
+   *  opens the container (to reach its contents) and cleared when it's done —
+   *  the lid eases toward this, and access checks read it. Absent ⇒ shut. */
+  heldOpen?: boolean;
 }
 
 /**
@@ -158,12 +212,66 @@ export interface DoorState {
   id: string;
   open: number;
   locked: boolean;
+  /** Is the door explicitly HELD open? A body that CAN open doors sets this as
+   *  it comes to pass through (and it eases open); it stays open while any body
+   *  lingers and shuts once all leave — so a graspless creature can follow
+   *  through, and slip through a door another left open, but can never open a
+   *  shut one itself. `pinned` (an "open the door" command) keeps it open with
+   *  nobody near. Absent ⇒ shut. */
+  held?: boolean;
+  pinned?: boolean;
 }
+
+/**
+ * Ground-height sampler for an IRREGULAR site: world/sim (x, y) in, ground
+ * height in METERS out. MUST be pure and deterministic (peers sample it
+ * independently from the same seed; heights are never networked). The sim
+ * stays plan-view 2D — no z coordinate — but the sampler's GRADIENT shapes
+ * movement ("2.5D"): between SLOPE_SLOW_ANGLE and SLOPE_WALL_ANGLE the stride
+ * scales linearly toward 0, and at/above the wall angle terrain blocks like a
+ * wall (same gate + stuck-escape failsafe as structures). Flat ground (no
+ * sampler, or a constant one) is byte-identical to the sampler-free sim.
+ */
+export type GroundSampler = (x: number, y: number) => number;
+
+/**
+ * Water-coverage sampler: true where (x, y) is water. Same contract as
+ * GroundSampler (pure, deterministic, never networked). Water is a MECHANICS
+ * field only — impassable to walkers/NPC bodies via the movement gate (with
+ * the same stuck-escape failsafe); rendering it is the host's ground-mesh
+ * concern. Absent ⇒ dry everywhere.
+ */
+export type WaterSampler = (x: number, y: number) => boolean;
+
+/**
+ * Movement-DRAG sampler (construction v1): a stride scale for heavy going —
+ * 1 = free ground, 0.5 = wading. Composes with the slope cost exactly like
+ * it: velocity keeps the INTENT (steering/facing/arrive read it), only the
+ * ground covered shrinks. The canonical producer is storage-room clutter
+ * (unplaced furniture slows a room without ever BLOCKING it — pathing,
+ * routing and the service floods stay untouched); mud/snow later. Absent ⇒
+ * ×1 exact, keeping every existing world byte-identical. Applies to every
+ * body advanceAvatar moves — the player and the NPCs alike.
+ */
+export type DragSampler = (x: number, y: number) => number;
 
 export interface WorldState {
   spec: WorldSpec;
-  /** This peer's participant id (its avatar is the one tickWorld advances). */
+  /** This peer's participant id — THE SPARK. Network identity only: who owns
+   *  what, and which inbound packets to ignore ("never let the network move
+   *  us"). It is NOT "the player's body": a spark is not an avatar.
+   *
+   *  Kept distinct from `drivenId` on purpose. These two were ONE field, which
+   *  silently worked only because the spark's default body shares its id — and
+   *  that conflation is what forced possession to DESTROY a creature and
+   *  re-skin the player walker, rather than simply drive the creature's body. */
   localId: string;
+  /** THE BODY THIS SPARK DRIVES — the avatar `tickWorld` steers from the gaze.
+   *  Defaults to `localId` (the spark's own body); claiming a creature points it
+   *  at that creature's body instead, and releasing points it back. The claimed
+   *  creature is never removed: its controller is merely suspended, so its
+   *  personality/needs/job resume when the spark leaves (see the party model). */
+  drivenId: string;
   avatars: Record<string, AvatarState>;
   objects: Record<string, ObjectState>;
   /** Live door swing/lock state, keyed by door id (only `door` structures). */
@@ -171,6 +279,14 @@ export interface WorldState {
   /** Display-only speech bubbles, keyed by a caller-chosen id (re-using a key
    *  replaces that bubble). The single caption channel — see showWorldBubble. */
   bubbles: Record<string, WorldBubble>;
+  /** Ground-height sampler (see GroundSampler). Its gradient shapes movement
+   *  (slope slow/wall) as well as vertical placement. Absent ⇒ flat 0. */
+  ground?: GroundSampler;
+  /** Water sampler (see WaterSampler) — impassable to walkers. Absent ⇒ dry. */
+  water?: WaterSampler;
+  /** Movement-drag sampler (see DragSampler) — stride scale for heavy
+   *  going (storage clutter). Absent ⇒ free ground everywhere. */
+  drag?: DragSampler;
   time: number;
 }
 
@@ -218,6 +334,13 @@ export interface WorldEngineConfig {
   steerMaxSpeed: number;
   /** (Unused since the "arrive" rewrite — kept for config back-compat.) */
   steerStopRadius: number;
+  /** Approach gain (1/sec): desired speed is `gain × distance-to-stop`, capped at
+   *  `steerMaxSpeed`. So the creature runs flat out only while the gaze is further
+   *  than `steerMaxSpeed / gain` ahead, and eases down proportionally inside that.
+   *  Distance-proportional ON PURPOSE: the old √(2·a·d) arrive law only tapered
+   *  inside `maxSpeed²/(2·accel)` ≈ 0.7 m, so the walker cruised at full speed
+   *  until it was basically on top of the aim, then stopped dead. */
+  steerApproachGain: number;
   /** Aim within this distance of the avatar is treated as "on" it: the avatar
    *  stops moving and just turns to FACE the aim. Also the margin the avatar aims
    *  to STOP SHORT of the gaze (the "arrive" target), so it decelerates and
@@ -264,6 +387,8 @@ export const WORLD_ENGINE_DEFAULTS: WorldEngineConfig = {
   steerAccel: 18,
   steerMaxSpeed: 5,
   steerStopRadius: 0.5,
+  // Full speed once the gaze is > 5/2 = 2.5 m ahead; proportional inside that.
+  steerApproachGain: 2,
   // Kept below the ball's touchRadius (1.2) so aiming AT the ball still lets the
   // avatar reach it (it stops this far short of the gaze, but is still within
   // grab range while decelerating).
@@ -299,14 +424,23 @@ export function createWorldState(
   localId: string,
   spawnIndex = 0,
   spawnAt?: Vec2,
+  ground?: GroundSampler,
+  water?: WaterSampler,
 ): WorldState {
   const r = WORLD_ENGINE_DEFAULTS.avatarRadius;
   let x: number;
   let y: number;
   let facing: number;
   if (spawnAt) {
-    x = Math.min(spec.manifold.width - r, Math.max(r, spawnAt.x));
-    y = Math.min(spec.manifold.height - r, Math.max(r, spawnAt.y));
+    if (spec.manifold.bounded === false) {
+      // Unbounded (planet-mounted): a handoff may legitimately land outside
+      // the content rect — the planet has ground there.
+      x = spawnAt.x;
+      y = spawnAt.y;
+    } else {
+      x = Math.min(spec.manifold.width - r, Math.max(r, spawnAt.x));
+      y = Math.min(spec.manifold.height - r, Math.max(r, spawnAt.y));
+    }
     facing = 0;
   } else {
     const spawn = spec.spawns[spawnIndex % spec.spawns.length];
@@ -335,7 +469,70 @@ export function createWorldState(
     }
   }
 
-  return { spec, localId, avatars: { [localId]: avatar }, objects, doors, bubbles: {}, time: 0 };
+  return {
+    spec,
+    localId,
+    drivenId: localId, // a fresh spark drives its own body until it claims one
+    avatars: { [localId]: avatar },
+    objects,
+    doors,
+    bubbles: {},
+    ...(ground ? { ground } : {}),
+    ...(water ? { water } : {}),
+    time: 0,
+  };
+}
+
+/** Ground height under a world point — 0 when the world has no sampler (flat).
+ *  THE single read point for state.ground, shared by renderers and tests. */
+export function groundHeightAt(state: WorldState, x: number, y: number): number {
+  return state.ground?.(x, y) ?? 0;
+}
+
+// --- Terrain movement costs (the "2.5D" walking rules) ----------------------
+// Threshold parity with the flight sim's walker (flight-config PLAYER:
+// walkSlopeSlowAngle 0.55, walkSlopeWallAngle 0.95, groundNormalEpsilon 1.5) —
+// mirrored, NOT imported: the town engine stays flight-free.
+/** Slope angle (rad, ≈31°) above which the stride starts shrinking. */
+const SLOPE_SLOW_ANGLE = 0.55;
+/** Slope angle (rad, ≈54°) at/above which terrain blocks like a wall. */
+const SLOPE_WALL_ANGLE = 0.95;
+/** Central finite-difference epsilon (m) for the ground gradient. */
+const SLOPE_SAMPLE_EPSILON = 1.5;
+
+/** Slope angle (rad) of the ground at (x, y) — direction-blind (gradient
+ *  magnitude), so up- and downhill cost the same. */
+function slopeAngleAt(ground: GroundSampler, x: number, y: number): number {
+  const e = SLOPE_SAMPLE_EPSILON;
+  const gx = (ground(x + e, y) - ground(x - e, y)) / (2 * e);
+  const gy = (ground(x, y + e) - ground(x, y - e)) / (2 * e);
+  return Math.atan(Math.hypot(gx, gy));
+}
+
+/** Stride multiplier for the ground under (x, y): 1 at/below SLOPE_SLOW_ANGLE,
+ *  linear → 0 approaching SLOPE_WALL_ANGLE. Over-steep ground returns 1: the
+ *  gate's failsafe lets a body ALREADY on a cliff walk out, so the scale must
+ *  not trap it (mirrors the stuck-in-geometry escape). */
+function slopeStrideScale(ground: GroundSampler, x: number, y: number): number {
+  const ang = slopeAngleAt(ground, x, y);
+  if (ang <= SLOPE_SLOW_ANGLE || ang >= SLOPE_WALL_ANGLE) return 1;
+  return 1 - (ang - SLOPE_SLOW_ANGLE) / (SLOPE_WALL_ANGLE - SLOPE_SLOW_ANGLE);
+}
+
+/** True if the terrain fields let a walker stand at `p`: not water, not
+ *  wall-steep. Point test (terrain has no meaningful body radius). Shared by
+ *  the movement gate and hosts' waypoint/detour oracles. */
+export function terrainWalkable(state: WorldState, p: Vec2): boolean {
+  if (state.water?.(p.x, p.y)) return false;
+  if (state.ground && slopeAngleAt(state.ground, p.x, p.y) >= SLOPE_WALL_ANGLE) return false;
+  return true;
+}
+
+/** The terrain fields as a MoveConstraint, or undefined when the world has
+ *  neither (flat dry worlds keep the sampler-free code path). */
+function makeTerrainConstraint(state: WorldState): MoveConstraint | undefined {
+  if (!state.ground && !state.water) return undefined;
+  return { walkable: (p) => terrainWalkable(state, p) };
 }
 
 /**
@@ -388,7 +585,7 @@ export function steerAvatar(
   // constraint (scoped to the NPC's storey) with any external one, then re-derive
   // its floor so an NPC can use stairs as well.
   if (step > 0) {
-    advanceAvatar(a, aim, state.spec, config, step, effectiveConstraint(state, constraint, config, a.floor));
+    advanceAvatar(a, aim, state, config, step, effectiveConstraint(state, constraint, config, a.floor));
     updateAvatarFloor(state, a);
   }
 }
@@ -411,7 +608,7 @@ export function tickWorld(
 ): WorldTickResult {
   const step = Math.min(Math.max(dt, 0), config.maxStep);
   const events: WorldEvent[] = [];
-  const local = state.avatars[state.localId];
+  const local = state.avatars[state.drivenId];
 
   // Pre-update possessor speed feeds the hard-brake ("kick") release test.
   const prevSpeed = local ? Math.hypot(local.vx, local.vy) : 0;
@@ -424,7 +621,7 @@ export function tickWorld(
   if (local && step > 0) {
     // Collide against the avatar's CURRENT storey, move, then re-derive its floor
     // (a stairway it stepped onto ramps it up/down).
-    advanceAvatar(local, input.aim, state.spec, config, step, effectiveConstraint(state, constraint, config, local.floor));
+    advanceAvatar(local, input.aim, state, config, step, effectiveConstraint(state, constraint, config, local.floor));
     updateAvatarFloor(state, local);
   }
   state.time += step;
@@ -452,11 +649,12 @@ const FACE_TURN_RATE = 12;
 function advanceAvatar(
   a: AvatarState,
   aim: Vec2 | null,
-  spec: WorldSpec,
+  state: WorldState,
   config: WorldEngineConfig,
   step: number,
   constraint?: MoveConstraint,
 ): void {
+  const spec = state.spec;
   let ax = 0;
   let ay = 0;
   let faceAim: Vec2 | null = null;
@@ -485,11 +683,10 @@ function advanceAvatar(
       }
       if (d > 1e-4) faceAim = { x: dirx, y: diry };
     } else {
-      // "Arrive" steering: pick the fastest speed from which we can still brake to
-      // rest over the remaining distance at steerAccel (v = √(2·a·d)), so the
-      // avatar eases down as it nears the gaze and settles a hair short instead of
-      // sliding past. The clamp keeps the per-step velocity change within accel.
-      const desiredSpeed = Math.min(config.steerMaxSpeed, Math.sqrt(2 * config.steerAccel * dStop));
+      // Speed is a CONSTANT FUNCTION OF DISTANCE: `gain × dStop`, capped at
+      // steerMaxSpeed. Far gaze → flat out; the last few metres are a smooth
+      // proportional ease onto the aim rather than a cruise-then-stop.
+      const desiredSpeed = Math.min(config.steerMaxSpeed, config.steerApproachGain * dStop);
       let cx = (dirx * desiredSpeed - a.vx) / step;
       let cy = (diry * desiredSpeed - a.vy) / step;
       const cm = Math.hypot(cx, cy);
@@ -530,13 +727,24 @@ function advanceAvatar(
     a.vy = 0;
   }
 
+  // Terrain slope cost: the stride (positional step) shrinks on steep ground —
+  // a hill is work. Velocity keeps the INTENT (steering/facing/arrive read it);
+  // only the ground covered shrinks. Symmetric v1: the scale is direction-blind
+  // (gradient magnitude), so downhill costs the same as uphill. `× 1` on flat
+  // or sampler-free ground is exact, keeping flat worlds byte-identical.
+  let stride = state.ground ? step * slopeStrideScale(state.ground, a.x, a.y) : step;
+  // Movement drag (construction v1) — clutter/heavy ground shrinks the
+  // stride the same way slope does. Clamped so a bad sampler can neither
+  // freeze a body (min 0.15) nor speed one up (max 1).
+  if (state.drag) stride *= Math.min(1, Math.max(0.15, state.drag(a.x, a.y)));
+
   // Proposed step, then (optionally) constrained: if the target cell is solid,
   // slide along whichever axis stays walkable and zero the blocked component, so
   // the avatar grazes walls instead of sticking or tunnelling. Mirrors the
   // Space2D slide; lifted here so any constrained world (a goal-tree quest's
   // rooms) gets it without re-implementing locomotion.
-  const nx = a.x + a.vx * step;
-  const ny = a.y + a.vy * step;
+  const nx = a.x + a.vx * stride;
+  const ny = a.y + a.vy * stride;
   if (!constraint) {
     a.x = nx;
     a.y = ny;
@@ -667,10 +875,13 @@ function simulateObject(
     }
   }
 
-  // 2. Simulate only what THIS peer owns.
-  if (obj.possessedBy === state.localId && local) {
+  // 2. Simulate only what THIS peer owns. Keyed to the DRIVEN BODY, not the
+  //    spark: `possessedBy`/`freeRollOwner` are stamped with the possessing
+  //    AVATAR's id (`local.id` / `possessor.id`), so a spark driving a claimed
+  //    creature must test against that body or its toy would go unsimulated.
+  if (obj.possessedBy === state.drivenId && local) {
     dribbleOrRelease(obj, local, prevPossessorSpeed, step, state.time, push, config, events);
-  } else if (obj.possessedBy === null && obj.freeRollOwner === state.localId) {
+  } else if (obj.possessedBy === null && obj.freeRollOwner === state.drivenId) {
     freeRoll(obj, state.spec, push, spec.radius, config, step, events);
   }
   // Otherwise the object is owned by a remote peer (or resting under server
@@ -929,6 +1140,7 @@ function effectiveConstraint(
     external,
     makeStructureConstraint(state, floor, config),
     makeFixtureConstraint(state, floor),
+    makeTerrainConstraint(state),
   );
 }
 
@@ -1117,36 +1329,37 @@ export function removeWorldObject(state: WorldState, id: string): boolean {
 }
 
 /** Fixtures are SOLID: a square footprint of the object's radius, on its
- *  floor. Composed into the effective constraint beside the structures. */
-function makeFixtureConstraint(state: WorldState, floor: number): MoveConstraint | undefined {
-  const fixtures = state.spec.objects.filter((o) => o.fixture);
-  if (!fixtures.length) return undefined;
-  return {
-    walkable: (p, r) => {
-      for (const f of fixtures) {
-        const o = state.objects[f.id];
-        if (!o || o.floor !== floor) continue;
-        if (Math.abs(p.x - o.x) < f.radius + r && Math.abs(p.y - o.y) < f.radius + r) return false;
-      }
-      return true;
-    },
-  };
+ *  floor. Composed into the effective constraint beside the structures.
+ *  Pass-through kinds (a chair — see PASSTHROUGH_FIXTURES) are skipped:
+ *  they stand where bodies must be able to stand. Exported so PLANNING
+ *  predicates (the host's detour/waypoint logic) can see the same solids
+ *  locomotion collides with — a blind planner slides along tables forever. */
+export function fixturesWalkable(state: WorldState, p: Vec2, radius: number, floor = 0): boolean {
+  for (const f of state.spec.objects) {
+    if (!f.fixture || PASSTHROUGH_FIXTURES.has(f.fixture)) continue;
+    const o = state.objects[f.id];
+    if (!o || o.floor !== floor) continue;
+    if (Math.abs(p.x - o.x) < f.radius + radius && Math.abs(p.y - o.y) < f.radius + radius) return false;
+  }
+  return true;
 }
 
-/** Ease every `openable` fixture's lid: open while someone stands beside
- *  it, shut once everyone steps away — the door rule, on furniture. */
+function makeFixtureConstraint(state: WorldState, floor: number): MoveConstraint | undefined {
+  if (!state.spec.objects.some((o) => o.fixture && !PASSTHROUGH_FIXTURES.has(o.fixture))) return undefined;
+  return { walkable: (p, r) => fixturesWalkable(state, p, r, floor) };
+}
+
+/** Ease every `openable` fixture's lid toward its EXPLICIT open state
+ *  (`heldOpen`) — a creature opens the container to reach its contents and the
+ *  lid stays open until closed, rather than swinging on mere proximity. */
 function tickFixtures(state: WorldState, step: number, config: WorldEngineConfig): void {
-  const avatars = Object.values(state.avatars);
   for (const spec of state.spec.objects) {
     if (!spec.fixture || !spec.openable) continue;
     const o = state.objects[spec.id];
     if (!o) continue;
-    const range = spec.radius + 1.4;
-    const near = avatars.some(
-      (a) => a.floor === o.floor && Math.abs(a.x - o.x) < range && Math.abs(a.y - o.y) < range,
-    );
-    const target = near ? 1 : 0;
+    const target = o.heldOpen ? 1 : 0;
     o.open += (target - o.open) * (1 - Math.exp(-config.doorSwingRate * step));
+    if (Math.abs(target - o.open) < 0.01) o.open = target;
   }
 }
 
@@ -1171,10 +1384,51 @@ export function insideBuilding(b: BuildingSpec, x: number, y: number): boolean {
   return x >= bx && x <= bx + w && y >= by && y <= by + h;
 }
 
+/** Spatial index over a buildings array — buildingAt is called per body and
+ *  per door EVERY FRAME (indoor cull, door connectivity, roof visibility),
+ *  and a linear scan over a whole town's staged rooms was a measurable slice
+ *  of the frame. Keyed by ARRAY IDENTITY (WeakMap): setWorldBuildings and
+ *  every other writer replaces the array wholesale, never mutates in place,
+ *  so a cached grid can never go stale. */
+const BUILDING_GRID_CELL = 32;
+const buildingGridCache = new WeakMap<BuildingSpec[], Map<string, BuildingSpec[]>>();
+function buildingGridOf(buildings: BuildingSpec[]): Map<string, BuildingSpec[]> {
+  let grid = buildingGridCache.get(buildings);
+  if (grid) return grid;
+  grid = new Map();
+  for (const b of buildings) {
+    const { x, y, w, h } = b.footprint;
+    const cx0 = Math.floor(x / BUILDING_GRID_CELL);
+    const cx1 = Math.floor((x + w) / BUILDING_GRID_CELL);
+    const cy0 = Math.floor(y / BUILDING_GRID_CELL);
+    const cy1 = Math.floor((y + h) / BUILDING_GRID_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const key = `${cx},${cy}`;
+        const cell = grid.get(key);
+        if (cell) cell.push(b);
+        else grid.set(key, [b]);
+      }
+    }
+  }
+  buildingGridCache.set(buildings, grid);
+  return grid;
+}
+
 /** The building whose footprint contains (x,y), or null — used by the renderer to
  *  decide when to fade the floors above an occupant. */
 export function buildingAt(state: WorldState, x: number, y: number): BuildingSpec | null {
-  for (const b of state.spec.buildings ?? []) if (insideBuilding(b, x, y)) return b;
+  const buildings = state.spec.buildings;
+  if (!buildings?.length) return null;
+  // Tiny sets: the scan beats the hash + key allocation.
+  if (buildings.length <= 12) {
+    for (const b of buildings) if (insideBuilding(b, x, y)) return b;
+    return null;
+  }
+  const cell = buildingGridOf(buildings).get(
+    `${Math.floor(x / BUILDING_GRID_CELL)},${Math.floor(y / BUILDING_GRID_CELL)}`,
+  );
+  if (cell) for (const b of cell) if (insideBuilding(b, x, y)) return b;
   return null;
 }
 
@@ -1420,15 +1674,24 @@ function tickDoors(state: WorldState, step: number, config: WorldEngineConfig): 
     const cx = (s.a.x + s.b.x) / 2;
     const cy = (s.a.y + s.b.y) / 2;
     const radius = doorOpenRadius(s, config);
-    let near = false;
+    let anyNear = false;
+    let capableNear = false; // a body that CAN open doors is here to work the door
     for (const a of avatars) {
       if (Math.hypot(a.x - cx, a.y - cy) > radius) continue;
-      near = true;
+      anyNear = true;
+      if (a.canOpen !== false) capableNear = true;
       if (door.locked && s.keyObjectId && state.objects[s.keyObjectId]?.carriedBy === a.id) {
         door.locked = false; // the key turns the lock
       }
     }
-    const target = !door.locked && near ? 1 : 0;
+    // OPENING is a CAPABILITY (not free proximity): only a body that can open
+    // doors works one, and once open it is HELD — it stays open while ANY body
+    // lingers (so a graspless follower keeps it open and can slip through), and
+    // shuts only when everyone has left. A `pinned` door (an "open the door"
+    // command) stays open with nobody near.
+    if (!door.locked && capableNear) door.held = true;
+    else if (!anyNear && !door.pinned) door.held = false;
+    const target = !door.locked && door.held ? 1 : 0;
     if (step > 0) {
       door.open += (target - door.open) * (1 - Math.exp(-config.doorSwingRate * step));
     }
@@ -1460,11 +1723,18 @@ export function lockDoor(state: WorldState, doorId: string): void {
  * On first sight the display snaps to the reported pose. `floor` is optional on
  * the packet (older peers / the presence relay may omit it) and defaults to 0.
  */
+/** Is `id` a body THIS peer simulates — its spark's own body, or a creature the
+ *  spark has claimed? The network may never move either: our sim is
+ *  authoritative for both, and a claimed body is streamed OUT by us. */
+export function isLocallyDriven(state: WorldState, id: string): boolean {
+  return id === state.localId || id === state.drivenId;
+}
+
 export function applyRemoteAvatar(
   state: WorldState,
   avatar: Omit<AvatarState, "floor"> & { floor?: number },
 ): void {
-  if (avatar.id === state.localId) return; // never let the network move us
+  if (isLocallyDriven(state, avatar.id)) return; // never let the network move us
   const cur = state.avatars[avatar.id];
   if (!cur) {
     state.avatars[avatar.id] = {
@@ -1503,7 +1773,7 @@ export function smoothRemoteAvatars(
   const posK = 1 - Math.exp(-config.smoothPosRate * dt);
   const velK = 1 - Math.exp(-config.smoothVelRate * dt);
   for (const a of Object.values(state.avatars)) {
-    if (a.id === state.localId || a.tx === undefined || a.ty === undefined) continue;
+    if (isLocallyDriven(state, a.id) || a.tx === undefined || a.ty === undefined) continue;
     // Dead-reckon the TARGET forward by its last known velocity, so it keeps
     // advancing between packets (each packet resets it via applyRemoteAvatar);
     // this is what lets the display glide continuously instead of stepping. Stop
@@ -1529,9 +1799,24 @@ export function smoothRemoteAvatars(
   }
 }
 
+/** CLAIM a body: point this spark's gaze-steering at `id`, or null to return to
+ *  the spark's own body. The claimed body is NOT removed, moved or re-skinned —
+ *  it keeps its model, and the CALLER suspends its controller so its own drives
+ *  pause and resume on release. Returns false if that body isn't present. */
+export function setDrivenBody(state: WorldState, id: string | null): boolean {
+  const next = id ?? state.localId;
+  if (!state.avatars[next]) return false;
+  state.drivenId = next;
+  return true;
+}
+
 /** Remove a peer who left the room (and any speech bubble anchored to them). */
 export function removeAvatar(state: WorldState, id: string): void {
   if (id === state.localId) return;
+  // A claimed body leaving the world (town unload, despawn) releases the spark
+  // back to its own body — never leave a spark steering a ghost. Guarding on
+  // drivenId instead would make a claimed body un-removable.
+  if (state.drivenId === id) state.drivenId = state.localId;
   delete state.avatars[id];
   delete state.bubbles[`speech:${id}`];
 }
@@ -1615,7 +1900,8 @@ export function applyRemoteObject(
   const obj = state.objects[objectId];
   if (!obj) return;
   // Ignore remote position while WE own it — our sim is authoritative for it.
-  if (obj.possessedBy === state.localId || obj.freeRollOwner === state.localId) return;
+  // Driven body, not the spark: see the ownership note in tickObject.
+  if (obj.possessedBy === state.drivenId || obj.freeRollOwner === state.drivenId) return;
   Object.assign(obj, patch);
 }
 
@@ -1663,6 +1949,10 @@ function canGrab(
 }
 
 function clampToManifold(a: AvatarState, spec: WorldSpec, radius: number): void {
+  // An unbounded manifold (a planet-mounted session) has no walls: the rect
+  // is content extent, not a physical boundary. The planet's own terrain
+  // fields (ground/water samplers answer everywhere) are the only limits.
+  if (spec.manifold.bounded === false) return;
   const { width, height } = spec.manifold;
   if (a.x < radius) { a.x = radius; if (a.vx < 0) a.vx = 0; }
   if (a.x > width - radius) { a.x = width - radius; if (a.vx > 0) a.vx = 0; }
@@ -1676,6 +1966,7 @@ function bounceOffWalls(
   radius: number,
   restitution: number,
 ): void {
+  if (spec.manifold.bounded === false) return; // no walls to bounce off
   const { width, height } = spec.manifold;
   if (obj.x < radius) { obj.x = radius; obj.vx = Math.abs(obj.vx) * restitution; }
   if (obj.x > width - radius) { obj.x = width - radius; obj.vx = -Math.abs(obj.vx) * restitution; }

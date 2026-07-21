@@ -16,8 +16,8 @@ import { makeCubeSphereTopology } from "@cells/index";
 import {
   createSphereTectonics, sphereTectonicEpoch, runSphereTectonics,
   bakeHeight, bakeOre, bakeCellAuthors,
-} from "@shared/engine/geology/sphere-tectonics";
-import { SEA_HEIGHT } from "@shared/engine/geology/tectonics";
+} from "@shared/world-engine/kernel/geology/sphere-tectonics";
+import { SEA_HEIGHT } from "@shared/world-engine/kernel/geology/tectonics";
 
 const topo = makeCubeSphereTopology(16);
 

@@ -12,8 +12,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  FOOD_DAY_SEC, HOUSEHOLD, TOOLS_GOOD, createTownFood, createTownGoods,
-  createTownWares, pantryBoxAt, waresBoxAt,
+  FOOD_DAY_SEC, HOUSEHOLD, SURPLUS_FRAC_MAX, SURPLUS_FRAC_MIN, TOOLS_GOOD,
+  createTownFood, createTownGoods, createTownWares, pantryBoxAt, waresBoxAt,
 } from "../food";
 import {
   createTownManager, memberIndex, townBias, townPlan, villagerNpcId, worldPos,
@@ -131,7 +131,10 @@ describe("the tools projection (second need, same machinery)", () => {
     // capDays 9 vs 3 at the same fill — the walk legs differ but the
     // period is dominated by the box, so the ratio holds loosely.
     expect(wc.period).toBeGreaterThan(fc.period * 2);
-    expect(wc.period).toBe(TOOLS_GOOD.capDays * FOOD_DAY_SEC); // fill 1
+    // fill 1: capDays scaled by the household's hashed SURPLUS BUFFER
+    // (§13a — the runner refills at the buffer, not at empty).
+    expect(wc.period).toBeLessThanOrEqual(TOOLS_GOOD.capDays * FOOD_DAY_SEC * (1 - SURPLUS_FRAC_MIN));
+    expect(wc.period).toBeGreaterThanOrEqual(TOOLS_GOOD.capDays * FOOD_DAY_SEC * (1 - SURPLUS_FRAC_MAX));
   });
 
   it("the two boxes live in opposite corners of the house", () => {

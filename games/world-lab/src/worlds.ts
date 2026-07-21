@@ -1,306 +1,97 @@
 /**
- * The lab's test-game registry — every entry is a COMPLETE aivota-world
- * document (manifest envelope + `game` settings). Selecting one in the
- * dropdown loads it into the world file; the lab boots whatever the file
- * says, so editing the JSON is the whole modding loop.
+ * The lab's preset registry — every entry is an `ObjectDef` TREE plus its
+ * session settings (project_scope_object_vacuum_law: sub-entity-first). The
+ * dropdown loads a tree into the form; editing the tree (add bodies, add a
+ * family, toggle exhaustive) is the whole modding loop. `getDocument()` lowers
+ * the tree to the runnable `aivota-world` document.
  *
- * Data only (the one import is the symbol game's village economy CONTENT,
- * inlined into the town document's packs — one JSON is the whole game):
- * the grand-dream test suite imports this file to pin that every shipped
- * test world actually parses and builds.
+ * Data only. Kept deliberately small: Spirit Dollhouse is the one demo still in
+ * active use; the rest showcase what the tree editor can now author.
  */
-import { TOWN_PLAY_ECONOMY } from "@shared/symbol-game/town-play";
+import type { TreeWorld } from "./spec-form";
 
-export interface TestWorld {
+export interface NamedWorld {
   id: string;
   name: string;
-  doc: Record<string, unknown>;
+  world: TreeWorld;
 }
 
-export const TEST_WORLDS: TestWorld[] = [
+/** Street-clock physics — a compressed day so needs/building move at demo pace. */
+const STREET_CLOCK = { day_length_s: 240, sleep_fraction: 0.05, construction: 180 };
+
+export const TEST_WORLDS: NamedWorld[] = [
   {
-    id: "earthlike",
-    name: "Earthlike Planet",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        scope: "planet",
-        world: {
-          topology: { kind: "cube-sphere", faceN: 24 },
-          geology: { seed: 7, epochs: 350, continentR: 0.38 },
-          settle: true,
-          radius: 2000,
-        },
-        initial_focus: null,
-        avatar: null,
-        creative_mode: false,
+    id: "spirit-dollhouse",
+    name: "Spirit Dollhouse — a hand-authored family",
+    world: {
+      // A TOWN whose focused house holds EXACTLY these four souls (creatures
+      // exhaustive) — watched as a spirit: the cutaway camera, dwell to
+      // talk/gift, chips + Speak to command. The item list seeds their floor
+      // and box. This is the town → structure → creature/item tree.
+      tree: {
+        kind: "town",
+        params: { seed: 7, days: 220, syntax: "b", locale: "en" },
+        contains: [{
+          kind: "structure",
+          focus: true,
+          exhaustive: ["creature"],
+          contains: [
+            { kind: "creature", params: { name: "Mara", outfit: 4, likes: ["apple"] } },
+            { kind: "creature", params: { name: "Orrin", outfit: 1, likes: ["banana"] } },
+            { kind: "creature", params: { name: "Pip", species: "frog_person", outfit: 0, likes: ["grape"] } },
+            { kind: "creature", params: { name: "Biscuit", pet: true, likes: ["apple"] } },
+            { kind: "item", params: { glyph: "apple", at: "floor" } },
+            { kind: "item", params: { glyph: "ball", at: "floor" } },
+            { kind: "item", params: { glyph: "teddy", at: "box" } },
+            { kind: "item", params: { glyph: "shirt.dirty", at: "floor" } },
+          ],
+        }],
       },
-      packs: [],
+      session: { avatar: "spirit", scale: STREET_CLOCK },
     },
   },
   {
-    id: "archipelago",
-    name: "Archipelago Planet",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        scope: "planet",
-        world: {
-          topology: { kind: "cube-sphere", faceN: 24 },
-          geology: { seed: 11, epochs: 400, continentR: 0.25, plates: 7 },
-          settle: true,
-          radius: 2000,
-        },
-        initial_focus: null,
-        avatar: null,
-        creative_mode: false,
-      },
-      packs: [],
+    id: "riverside-town",
+    name: "Riverside Town — walk it",
+    world: {
+      // A plain living town, entered on foot. No family defined — the town
+      // generates its own residents.
+      tree: { kind: "town", params: { seed: 7, days: 220 } },
+      session: { avatar: true, scale: STREET_CLOCK },
     },
   },
   {
-    id: "focus-site",
-    name: "Planet: Best Farmland (avatar)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        scope: "planet",
-        world: {
-          topology: { kind: "cube-sphere", faceN: 24 },
-          geology: { seed: 7, epochs: 350, continentR: 0.38 },
-          settle: true,
-          radius: 2000,
-        },
-        // The first founding site with real farmland in its charter box —
-        // the camera flies there and the avatar stands on it.
-        initial_focus: { type: "site", minFertility: 40 },
-        avatar: true,
-        creative_mode: false,
+    id: "earthlike-system",
+    name: "Earthlike System — a defined star + planets",
+    world: {
+      // A SOLAR SYSTEM authored body by body: a sun-mass star and two planets
+      // orbiting it (one earthlike, one small). The tree editor authors every
+      // body; building the defined system from the tree is the paused
+      // render-from-tree work, so it currently boots the seed's home system.
+      tree: {
+        kind: "solar_system",
+        params: { seed: 1337 },
+        exhaustive: ["body"],
+        contains: [
+          { kind: "body", params: { mass: 333000, age: 4.6 } },
+          { kind: "body", params: { orbitAU: 1, mass: 1, radius: 2000, geology: { seed: 42 } } },
+          { kind: "body", params: { orbitAU: 1.6, mass: 0.3, radius: 1400, geology: { seed: 7 } } },
+        ],
       },
-      packs: [],
+      session: { avatar: "spirit" },
     },
   },
   {
-    id: "galaxy",
-    name: "Spiral Galaxy",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        scope: "galaxy",
-        world: { seed: 9 }, // probed: a compact 5-arm spiral
-        initial_focus: "home",
-        avatar: null,
-        creative_mode: false,
-      },
-      packs: [],
-    },
-  },
-  {
-    id: "solar",
-    name: "Solar System (default: real Sol, flight)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        // THE DEFAULT solar_system game: the ported seagull stack at real scale.
-        // A bare solar_system document (no `star` spec, no planet `initial_focus`)
-        // flies the real home Sol in a ship — spawn on the most habitable world
-        // (Earth), steer with the mouse, wheel = speed. Every body bakes its real
-        // geography as it grows past ~1px, and you can fly star to star.
-        // `world.seed` picks the system; 1337 = the pinned home Sol.
-        scope: "solar_system",
-        world: { seed: 1337 },
-        initial_focus: null,
-        avatar: "spaceship",
-        creative_mode: false,
-      },
-      packs: [],
-    },
-  },
-  {
-    id: "solar-orrery",
-    name: "Solar System (orrery: browse + descend)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        scope: "solar_system",
-        // OPT-IN orrery view (pinning a `star` spec selects it): a compact map
-        // of the system you browse from outside and DESCEND into a planet. A
-        // pinned sun (the IMF would hand us a red dwarf 4 times in 5); planet-seed
-        // 1 rolls a solar analogue with a temperate world at 1.01 AU — planet:2,
-        // where we point the focus.
-        world: { seed: 1, star: { massInit: 1, age: 4.6, feh: 0 } },
-        initial_focus: "planet:2",
-        avatar: null,
-        creative_mode: false,
-      },
-      packs: [],
-    },
-  },
-  {
-    id: "full-descent",
-    name: "Galaxy → Settlement (full descent)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: ["economy"],
-      game: {
-        scope: "galaxy",
-        world: { seed: 9 },
-        // The whole ladder in one document: focus the home star, descend
-        // into its system, approach a rocky world, land at a founding
-        // site, found the settlement — the economy packs below are what
-        // the settlement produces and eats.
-        initial_focus: "home",
-        avatar: true,
-        creative_mode: false,
-      },
-      packs: [{ name: "village", economy: TOWN_PLAY_ECONOMY }],
-    },
-  },
-  {
-    id: "region",
-    name: "Tectonic Region (flat map)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        scope: "region",
-        world: {
-          size: { cols: 96, rows: 64 },
-          geology: { seed: 7, epochs: 350 },
-          settle: true,
-        },
-        initial_focus: null,
-        avatar: null,
-        creative_mode: false,
-      },
-      packs: [],
-    },
-  },
-  {
-    id: "descend",
-    name: "Region → Settlement (descend)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: ["economy"],
-      game: {
-        scope: "region",
-        world: {
-          size: { cols: 96, rows: 64 },
-          geology: { seed: 7, epochs: 350 },
-          settle: true,
-        },
-        // The best-crowded site — and because this document ALSO ships
-        // town-level economy content, the lab can DESCEND into it: the
-        // site's charter founds the settlement, one button down.
-        initial_focus: "site:0",
-        avatar: true,
-        creative_mode: false,
-      },
-      packs: [{ name: "village", economy: TOWN_PLAY_ECONOMY }],
-    },
-  },
-  {
-    id: "village",
-    name: "Riverside Village (town)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        // A town is ALWAYS living (there is no separate "living-town" type — see
-        // docs/TOWN_AND_NPCS.md): a real createTownWorld economy whose residents
-        // walk the streets and whom you meet by walking up and dwelling to talk.
-        // The optional quest overlay draws its givers from those residents. Walk
-        // with the mouse; answer on the REAL response board (shared/symbol-game).
-        scope: "town",
-        world: { seed: 7, days: 220, questCount: 2, syntax: "b", locale: "en" },
-        initial_focus: null,
-        avatar: true,
-        creative_mode: false,
-      },
-      packs: [],
-    },
-  },
-  {
-    id: "barren",
-    name: "Barren Planet",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        scope: "planet",
-        world: {
-          topology: { kind: "cube-sphere", faceN: 24 },
-          geology: { seed: 3, epochs: 500, continentR: 0.8 },
-          settle: false, // no rivers, no fertility — dust and stone
-          rain: 0,
-          radius: 2000,
-          detail: 1.2,
-        },
-        initial_focus: null,
-        avatar: null,
-        creative_mode: false,
-      },
-      packs: [],
-    },
-  },
-  {
-    id: "spirit-puzzle",
-    name: "Spirit Puzzle (structure)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        // A freestanding creature-quest puzzle played as a SPIRIT: stationary,
-        // formless, no walking — look at an item to pick it up / put it down,
-        // look at someone to talk. The simplified puzzle mode (avatar "spirit").
-        scope: "structure",
-        world: { seed: 3, questCount: 2 },
-        initial_focus: null,
-        avatar: "spirit",
-        creative_mode: false,
-      },
-      packs: [],
-    },
-  },
-  {
-    id: "household",
-    name: "Household (one building)",
-    doc: {
-      engine: "aivota-world",
-      engineVersion: 1,
-      uses: [],
-      game: {
-        // The one-building household: the same creature-quest puzzle mapped onto
-        // a SINGLE building (a central hall with each helper a color room off
-        // it) instead of a village of separate houses. Played as a SPIRIT.
-        scope: "structure",
-        world: { seed: 5, questCount: 3, layout: "house" },
-        initial_focus: null,
-        avatar: "spirit",
-        creative_mode: false,
-      },
-      packs: [],
+    id: "home-planet",
+    name: "Home Planet — a body in a vacuum",
+    world: {
+      // A single BODY as the root — a planet with no surrounding system (its
+      // sun/stars come later). Watched from orbit as a spirit; gaze-zoom down.
+      tree: { kind: "body", params: { geology: { seed: 7 }, radius: 6000, rain: 1.5 } },
+      session: { avatar: "spirit" },
     },
   },
 ];
 
 /** The dropdown's default selection. */
-export const DEFAULT_WORLD_ID = "earthlike";
+export const DEFAULT_WORLD_ID = "spirit-dollhouse";

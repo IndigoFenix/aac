@@ -88,12 +88,17 @@ function makeStandalone(svg: string, heightPx: number): string {
  * buildCausalSvg (side-by-side or stacked by size); any other glyph goes
  * through the single-glyph compositor path.
  */
-async function glyphToStandaloneSvg(glyph: string, resolveImage: ImageResolver, rtl: boolean): Promise<string | null> {
+async function glyphToStandaloneSvg(
+  glyph: string,
+  resolveImage: ImageResolver,
+  rtl: boolean,
+  noBackground: boolean,
+): Promise<string | null> {
   const causal = splitCausalGlyph(glyph);
   if (causal) {
     const [eff, cau] = await Promise.all([
-      singleGlyphToStandaloneSvg(causal.effect, resolveImage, rtl),
-      singleGlyphToStandaloneSvg(causal.cause, resolveImage, rtl),
+      singleGlyphToStandaloneSvg(causal.effect, resolveImage, rtl, noBackground),
+      singleGlyphToStandaloneSvg(causal.cause, resolveImage, rtl, noBackground),
     ]);
     // Degrade gracefully if a clause failed — render whichever we have.
     if (!eff || !cau) return eff ?? cau;
@@ -107,10 +112,15 @@ async function glyphToStandaloneSvg(glyph: string, resolveImage: ImageResolver, 
       rtl,
     );
   }
-  return singleGlyphToStandaloneSvg(glyph, resolveImage, rtl);
+  return singleGlyphToStandaloneSvg(glyph, resolveImage, rtl, noBackground);
 }
 
-async function singleGlyphToStandaloneSvg(glyph: string, resolveImage: ImageResolver, rtl: boolean): Promise<string | null> {
+async function singleGlyphToStandaloneSvg(
+  glyph: string,
+  resolveImage: ImageResolver,
+  rtl: boolean,
+  noBackground: boolean,
+): Promise<string | null> {
   // Pass 1 — collect the external (non-data) URLs this glyph needs.
   const needed = new Set<string>();
   const collect: ImageResolver = (input) => {
@@ -118,7 +128,7 @@ async function singleGlyphToStandaloneSvg(glyph: string, resolveImage: ImageReso
     if (u && !u.startsWith("data:")) needed.add(u);
     return u;
   };
-  renderToStaticMarkup(createElement(GlyphCompositor, { glyph, rtl, resolveImage: collect, fillSlot: true }));
+  renderToStaticMarkup(createElement(GlyphCompositor, { glyph, rtl, resolveImage: collect, fillSlot: true, noBackground }));
   await Promise.all(Array.from(needed, (u) => fetchAsDataUrl(u)));
 
   // Pass 2 — render for real, swapping each external URL for its inlined data URL.
@@ -128,7 +138,7 @@ async function singleGlyphToStandaloneSvg(glyph: string, resolveImage: ImageReso
     if (u.startsWith("data:")) return u;
     return urlToDataUrl.get(u) ?? null;
   };
-  const markup = renderToStaticMarkup(createElement(GlyphCompositor, { glyph, rtl, resolveImage: inline, fillSlot: true }));
+  const markup = renderToStaticMarkup(createElement(GlyphCompositor, { glyph, rtl, resolveImage: inline, fillSlot: true, noBackground }));
   const svg = extractSvg(markup);
   return svg ? makeStandalone(svg, RASTER_HEIGHT) : null;
 }
@@ -138,21 +148,24 @@ async function singleGlyphToStandaloneSvg(glyph: string, resolveImage: ImageReso
  * draws it at its natural aspect). Cached per `glyph|rtl`. `resolveImage` maps
  * each symbol to its artwork URL (app-specific bundled assets); omit it to fall
  * back to the compositor's emoji rendering. Returns null for an empty glyph.
+ * `noBackground` drops the compositor's tone plate so the artwork reads alone
+ * against the world (a model-less object wears its bare glyph, no white square).
  */
 export async function rasterizeGlyphToUrl(
   glyph: string,
-  opts: { resolveImage?: ImageResolver; rtl?: boolean } = {},
+  opts: { resolveImage?: ImageResolver; rtl?: boolean; noBackground?: boolean } = {},
 ): Promise<string | null> {
   if (!glyph || !glyph.trim()) return null;
   const resolveImage = opts.resolveImage ?? nullResolver;
   const rtl = opts.rtl ?? false;
-  const key = `${glyph}|${rtl ? "r" : ""}`;
+  const noBackground = opts.noBackground ?? false;
+  const key = `${glyph}|${rtl ? "r" : ""}|${noBackground ? "n" : ""}`;
   if (urlCache.has(key)) return urlCache.get(key)!;
   let p = inflight.get(key);
   if (!p) {
     p = (async () => {
       try {
-        const svg = await glyphToStandaloneSvg(glyph, resolveImage, rtl);
+        const svg = await glyphToStandaloneSvg(glyph, resolveImage, rtl, noBackground);
         const url = svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : null;
         urlCache.set(key, url);
         return url;
@@ -176,6 +189,10 @@ export async function rasterizeGlyphToUrl(
  */
 export interface GlyphImageSource {
   glyphFor: (glyph: string) => GlyphImage[] | null;
+  /** Same images WITHOUT the tone plate — for a glyph shown bare in the world
+   *  (a model-less object), where a background square would read as a card
+   *  floating in the scene rather than as the thing itself. */
+  glyphIconFor: (glyph: string) => GlyphImage[] | null;
   clear: () => void;
 }
 
@@ -186,14 +203,14 @@ export function createGlyphImageSource(opts: { resolveImage?: ImageResolver; rtl
   const cache = new Map<string, HTMLImageElement | null>();
   const started = new Set<string>();
 
-  const glyphFor = (glyph: string): GlyphImage[] | null => {
+  const makeResolver = (noBackground: boolean) => (glyph: string): GlyphImage[] | null => {
     if (!glyph || !glyph.trim()) return null;
-    const key = `${glyph}|${rtlFn() ? "r" : ""}`;
+    const key = `${glyph}|${rtlFn() ? "r" : ""}|${noBackground ? "n" : ""}`;
     const have = cache.get(key);
     if (have) return [have];
     if (started.has(key)) return null; // pending or failed
     started.add(key);
-    rasterizeGlyphToUrl(glyph, { resolveImage, rtl: rtlFn() })
+    rasterizeGlyphToUrl(glyph, { resolveImage, rtl: rtlFn(), noBackground })
       .then((url) => {
         if (!url) return;
         const img = new Image();
@@ -205,5 +222,9 @@ export function createGlyphImageSource(opts: { resolveImage?: ImageResolver; rtl
     return null;
   };
 
-  return { glyphFor, clear: () => { cache.clear(); started.clear(); } };
+  return {
+    glyphFor: makeResolver(false),
+    glyphIconFor: makeResolver(true),
+    clear: () => { cache.clear(); started.clear(); },
+  };
 }

@@ -608,7 +608,9 @@ function buildBundledIconsBlock(): string {
       const transform = v.modifier?.transform ?? "other";
       const group =
         transform === "dimension" ? "size_shape"
-        : transform === "halo_warm" || transform === "halo_cool" ? "temperature"
+        // hot/cold used to be identifiable by their halo transforms; they're
+        // badge descriptors now, so the temperature group keys off the pair.
+        : v.key === "hot" || v.key === "cold" ? "temperature"
         : "other_modifier";
       let arr = modifierGroups.get(group);
       if (!arr) { arr = []; modifierGroups.set(group, arr); }

@@ -12,8 +12,8 @@
 import { describe, expect, it } from "vitest";
 import { buildAcceptanceTri } from "../tri-worlds";
 import {
-  FOOD_DAY_SEC, FOOD_GOOD, HOUSEHOLD, PANTRY_CAP, PANTRY_DAYS, createTownFood,
-  createTownGoods, pantryBoxAt, type GoodSpec,
+  FOOD_DAY_SEC, FOOD_GOOD, HOUSEHOLD, PANTRY_CAP, PANTRY_DAYS, SURPLUS_FRAC_MAX,
+  createTownFood, createTownGoods, pantryBoxAt, type GoodSpec,
 } from "../food";
 import { PLAZA_R, growStreets } from "../streets";
 import {
@@ -163,8 +163,11 @@ describe("street-level food economy (add-on to the consume behavior)", () => {
         expect(e.walkTo).toBeNull();
         expect(e.pos).toEqual(e.home);
       } else {
-        // Out shopping: the box at home is empty — that's WHY they went.
-        expect(food.pantry(h, t)).toBe(0);
+        // Out shopping: the box at home has run LOW — down toward the
+        // household's SURPLUS BUFFER (§13a; en route it still holds the
+        // buffer plus the trip's not-yet-eaten margin, never half-full).
+        // That's WHY they went.
+        expect(food.pantry(h, t)).toBeLessThan(food.boxCap * (SURPLUS_FRAC_MAX + 0.15));
         const wt = e.walkTo!;
         const last = wt[wt.length - 1];
         expect(Math.hypot(last.x - e.home.x, last.y - e.home.y)).toBeLessThan(0.01);

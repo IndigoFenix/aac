@@ -25,21 +25,28 @@ import {
   objectAllows,
   placeCarriedObject,
   removeAvatar,
+  routeThroughDoors,
   setAvatarSpeech,
+  setDrivenBody,
   addWorldObject,
   removeWorldObject,
   setWorldBuildings,
   setWorldStructures,
   smoothRemoteAvatars,
   steerAvatar,
+  fixturesWalkable,
   structuresWalkable,
+  terrainWalkable,
   tickWorld,
   WORLD_ENGINE_DEFAULTS,
+  type GroundSampler,
+  type WaterSampler,
   type MoveConstraint,
   type WorldEngineConfig,
   type WorldState,
 } from "./engine.js";
 import { createDwellTracker } from "./dwell.js";
+import { speciesBodyRadius } from "./creatures/species.js";
 import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
 import { WORLD_MAX_NPCS, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type Vec2, type WorldSpec } from "./types.js";
 import type { WorldView } from "./world-view.js";
@@ -47,11 +54,15 @@ import { createGazeInterpreter } from "./gaze-intent.js";
 import { approachAim, pickEntity } from "./interact.js";
 import { DEFAULT_WORLD_TUNABLES, type WorldTunables } from "./world-tunables.js";
 import {
+  createDetourMemory,
   createNpcController,
+  detourAim,
+  sideOfBend,
   DEFAULT_CONVERSATION_RADIUS,
   type NpcController,
   type NpcEngagement,
   type NpcErrand,
+  type NpcErrandPath,
   type NpcProximity,
 } from "./npc-controller.js";
 
@@ -93,6 +104,15 @@ export interface WorldHostDeps {
   spawnIndex: number;
   /** Resolved spawn point (centroid-of-peers + offset already applied), or omit. */
   spawnAt?: Vec2;
+  /** IRREGULAR-GROUND seam: height sampler for the site (see GroundSampler —
+   *  pure, meters). Stored on the world state; the 3D view reads it there to
+   *  stand bodies/buildings/roads on the terrain, and the sim reads its
+   *  GRADIENT for slope movement costs (slow/wall). Omit ⇒ flat 0. */
+  groundAt?: GroundSampler;
+  /** WATER seam, beside `groundAt`: true where (x, y) is water — impassable to
+   *  the local walker and NPC bodies (see WaterSampler). Mechanics only; the
+   *  host's ground mesh renders it. Omit ⇒ dry everywhere. */
+  waterAt?: WaterSampler;
   net?: WorldHostNet;
   /** Host this spec's NPCs on THIS peer: spawn them, advance their bodies each
    *  frame, and broadcast them like owned avatars. Exactly one peer in a room
@@ -141,6 +161,11 @@ export interface WorldHostDeps {
     dwellMs?: number;
     canPick?: (objectId: string) => boolean;
     onPickDenied?: (objectId: string) => void;
+    /** PRE-GATE: false = the object offers NO pick affordance at all (no dwell
+     *  ring, no denied event) — unlike `canPick`, whose veto fires after a
+     *  completed dwell so the game can explain WHY. A formless spirit that
+     *  simply cannot grab the world uses this; ownership vetoes keep canPick. */
+    pickable?: (objectId: string) => boolean;
   };
   /** Extra dwell-to-select progress (0..1) to fold into the gaze-cursor spark's
    *  bloom — for a game-layer dwell the host doesn't own (e.g. the conversation
@@ -167,9 +192,14 @@ export interface WorldHost {
   setPointer(px: number, py: number): void;
   /** Pointer left the surface (avatar coasts to a stop). */
   clearPointer(): void;
-  /** Enter/leave an NPC conversation: while a target is set the local avatar is
-   *  FROZEN (steering suspended) and the camera slews to FACE the target world
-   *  point. Pass null to leave. Driven by the game layer (e.g. dwell-to-talk). */
+  /** Freeze the sim (advance dt=0) while still rendering + updating the pointer
+   *  pick, so a debug tool can inspect a still frame. Pass false to resume. */
+  setPaused(paused: boolean): void;
+  /** Enter/leave an NPC conversation: while a target is set the local avatar
+   *  FOLLOWS it — steering toward the point to stay at talking distance and facing
+   *  it (so a partner that walks off is followed, not left behind) — and the camera
+   *  slews to FACE it. Pass the partner's LIVE position each frame. Pass null to
+   *  leave. Driven by the game layer (e.g. dwell-to-talk). */
   setConversation(target: Vec2 | null): void;
   /** POINT: transiently override the camera to swivel and FACE a world point
    *  (over-the-shoulder, at max yaw speed), overriding any conversation target
@@ -189,6 +219,11 @@ export interface WorldHost {
     unsettled: number;
     dwellProgress: number;
   };
+  /** ONE-SHOT screen pick at a canvas-relative CSS pixel — the entity under the
+   *  point, resolved IMMEDIATELY (no dwell/settle), so a debug tool can click to
+   *  inspect even while PAUSED (the settled-gaze `hover` can't advance at dt=0).
+   *  A bubble resolves to its speaker avatar; null = empty ground. */
+  pickAt(px: number, py: number): { kind: "avatar" | "object"; id: string } | null;
   /** Logical size (CSS px) + DPR changed. */
   resize(width: number, height: number, dpr: number): void;
   /** The local user spoke: show a speech bubble over the local avatar and broadcast
@@ -203,6 +238,11 @@ export interface WorldHost {
   addNpc(npc: NpcSpec): boolean;
   /** Despawn a runtime-hosted NPC (body, controller, proximity). False = unknown. */
   removeNpc(npcId: string): boolean;
+  /** THE body's collision radius — what locomotion actually enforces for this
+   *  NPC (its species-sized per-NPC config, else the engine default). Route
+   *  planners MUST probe at exactly this girth: fatter reads a legal lane as
+   *  a wall, thinner plans through furniture. */
+  npcRadiusOf(npcId: string): number;
   /** Replace the streamed structure set (walls/doors around the player — see
    *  engine.setWorldStructures). Collision, door swing, and rendering follow
    *  immediately; door states persist across swaps for surviving ids. */
@@ -213,6 +253,11 @@ export interface WorldHost {
    *  hosts use this instead of setStructures; flattened walls alone are
    *  a roofless, cull-less house. */
   setBuildings(buildings: BuildingSpec[]): void;
+  /** Replace the DRAG ZONES (construction v1): rects of heavy going —
+   *  storage-room clutter slows bodies without ever blocking them. The
+   *  zones compile into the engine's DragSampler (stride scale; slope
+   *  composes on top). Empty array clears — free ground everywhere. */
+  setDragZones(zones: Array<{ x: number; y: number; w: number; h: number; scale: number }>): void;
   /** Add a STREAMED world object (furniture arriving with its house —
    *  engine.addWorldObject). False if the id already exists. */
   addObject(spec: ObjectSpec): boolean;
@@ -225,6 +270,23 @@ export interface WorldHost {
   /** Send a hosted NPC on a scripted waypoint errand (vendor fetch-and-deliver);
    *  null cancels. No-op for an unknown id or a peer that doesn't host it. */
   setNpcErrand(npcId: string, errand: NpcErrand | null): void;
+  /** Confine a hosted NPC's idle WANDER to a clear rect (an IDLE PAD — see
+   *  NpcController.setWanderRect): pacing stays inside furniture-free ground,
+   *  and a body outside the pad stands instead of blind-roaming (the host
+   *  paths it there). Null clears. No-op for an unknown id. */
+  setNpcWanderRect(npcId: string, rect: { x: number; y: number; w: number; h: number } | null): void;
+  /** Is that NPC's scripted errand still running (body EN ROUTE)? The pure schedule
+   *  can say "home" while the body is still finishing its walk — this is the body's
+   *  truth, for "where are you going?". False for unknown/errand-less NPCs. */
+  npcErrandActive(npcId: string): boolean;
+  /** DEBUG PATHS: start/stop capturing each hosted NPC's steering decision each
+   *  frame (see npcPaths). Off by default — the capture allocates per NPC per
+   *  frame and a town hosts hundreds, so this is opt-in. */
+  setPathDebug(on: boolean): void;
+  /** DEBUG PATHS: this frame's steering snapshot per hosted NPC — the errand
+   *  plan, the aimed-at waypoint, and the detour-bent aim actually steered to.
+   *  Empty unless setPathDebug(true). Live objects; read, don't keep. */
+  npcPaths(): NpcPathSnapshot[];
   /** Live-update the gaze interpreter + camera/comfort tunables (debug menu). */
   setTunables(t: WorldTunables): void;
   /** Building ids whose roof is currently NOT fully opaque (the see-inside fade is
@@ -232,11 +294,62 @@ export interface WorldHost {
    *  residents/furniture while its roof is open, abstract once it seals. Empty for
    *  a view that doesn't model roofs (the 2D top-down). */
   revealedBuildings(): Set<string>;
+  /** Toggle SPIRIT/stationary mode live (see WorldHostDeps.stationary) — the
+   *  POSSESSION seam: a spirit entering a creature's body becomes an ordinary
+   *  walker (aim drives it, carry goes reach-gated); dismissing flips back. */
+  setStationary(on: boolean): void;
+  /** CLAIM a creature's body for this spark (`null` = release, back to the
+   *  spark's own body). The claimed creature is NOT removed, moved or re-skinned
+   *  — it already wears its own model, and its controller is merely suspended
+   *  while claimed, so its drives resume the moment the spark leaves. Returns
+   *  false if that body isn't in the world. */
+  claimBody(bodyId: string | null): boolean;
+  /** CHART REBASE (planet-mounted ground): the tangent chart this sim runs in
+   *  was re-anchored under the walker (floating origin on the sphere) — the
+   *  caller moved the render anchor so WORLD poses are unchanged, and this
+   *  re-expresses every sim-frame coordinate in the NEW chart: avatar/NPC
+   *  positions, velocities, facings (+ remote-interp targets), object
+   *  positions/velocities, and each NPC controller's remembered points
+   *  (home / wander waypoint / errand polyline). `mapPoint` maps a sim POINT
+   *  old→new; `mapVec` maps a sim-frame VECTOR (linear part only — it must
+   *  preserve magnitudes). Streamed structures/buildings/drag zones are NOT
+   *  remapped — planet ground chunks don't carry them; a caller that does
+   *  must re-stream them after the rebase. */
+  rebase(mapPoint: (p: Vec2) => Vec2, mapVec: (v: Vec2) => Vec2): void;
+  /** The body this spark currently drives (its own id when nothing is claimed). */
+  drivenBody(): string;
   start(): void;
+  /** EXTERNAL CLOCK (host-embed): advance + render exactly ONE frame, driven by
+   *  another loop (the space-flight composer) instead of this host's own
+   *  scheduleFrame. Lets the town run inside the flight scene under a single rAF —
+   *  the coordinator calls this each frame instead of start(). `dt` is clamped and
+   *  gated by setPaused() just like the internal loop. Don't mix with start(). */
+  step(dt: number, now: number): void;
   /** Stop the loop and dispose the view. */
   stop(): void;
   /** The live world state (read-only use — e.g. diagnostics). */
   readonly state: WorldState;
+}
+
+/** DEBUG PATHS: one hosted NPC's steering decision for one frame — everything a
+ *  path overlay needs to show WHY a body is going where it's going.
+ *
+ *  The three layers, outermost first:
+ *    errand — the PLAN: door-routed waypoints + which leg is live.
+ *    aim    — the point the controller chose this frame (the live waypoint, or a
+ *             wander target when no errand runs).
+ *    bent   — what locomotion actually steers at, after detourAim bends the aim
+ *             around whatever is in the way. `detoured` when it differs.
+ *
+ *  A null aim means braking (dwelling, or the errand just finished). */
+export interface NpcPathSnapshot {
+  npcId: string;
+  at: { x: number; y: number };
+  floor: number;
+  errand: NpcErrandPath | null;
+  aim: { x: number; y: number } | null;
+  bent: { x: number; y: number } | null;
+  detoured: boolean;
 }
 
 /** Below this `unsettled` an INTERACT pick may engage — so a target is only chosen
@@ -248,8 +361,11 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // Mutable so setTunables() can swap interact knobs live (gaze + camera/comfort are
   // pushed into the interpreter + view; the interact config is read here in frame()).
   let tunables: WorldTunables = deps.tunables ?? DEFAULT_WORLD_TUNABLES;
+  // SPIRIT/stationary mode, mutable live (setStationary) — possession flips a
+  // formless spirit into an ordinary walker and back.
+  let stationary = !!deps.stationary;
 
-  const state: WorldState = createWorldState(spec, localId, deps.spawnIndex, deps.spawnAt);
+  const state: WorldState = createWorldState(spec, localId, deps.spawnIndex, deps.spawnAt, deps.groundAt, deps.waterAt);
 
   // The gaze→aim interpreter (fixation gate + weakening + auto-sit). Sits between
   // the raw pointer and the engine's single `aim`, so the engine is untouched. Its
@@ -270,7 +386,14 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     }
   }
   const npcRng = deps.npcRng ?? Math.random;
+  // The spark's own body + every NPC body we host. A CLAIMED creature is
+  // already an NPC here, so claiming needs no change to what we stream out.
   const ownedAvatarIds = [localId, ...npcIds];
+  /** THE BODY THIS SPARK DRIVES — `localId` until a creature is claimed, then
+   *  that creature's body (see WorldState.drivenId / setDrivenBody). Read it
+   *  FRESH every use: a claim can re-point it on any frame. `localId` remains
+   *  the spark's NETWORK identity and must not be substituted for this. */
+  const driven = (): string => state.drivenId;
   const npcById = new Map(npcControllers.map((c) => [c.npcId, c]));
 
   // Proximity is computed from the SPEC's NPCs + their positions in `state.avatars`,
@@ -279,11 +402,18 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // NPC its player is standing next to. Emit only when the in-range SET changes.
   const npcRadii = new Map<string, number>();
   // Per-NPC locomotion override: a spec `speed` walks that body slower (or
-  // faster) than the player's steerMaxSpeed default.
+  // faster) than the player's steerMaxSpeed default, and a spec `species`
+  // sizes its collision/planning radius (speciesBodyRadius — a big creature
+  // collides AND plans at its own girth).
   const npcConfigs = new Map<string, WorldEngineConfig>();
   const npcConfig = (n: NpcSpec): void => {
-    if (n.behavior?.speed) {
-      npcConfigs.set(n.id, { ...WORLD_ENGINE_DEFAULTS, steerMaxSpeed: n.behavior.speed });
+    const radius = speciesBodyRadius(n.species);
+    if (n.behavior?.speed || radius !== WORLD_ENGINE_DEFAULTS.avatarRadius) {
+      npcConfigs.set(n.id, {
+        ...WORLD_ENGINE_DEFAULTS,
+        avatarRadius: radius,
+        ...(n.behavior?.speed ? { steerMaxSpeed: n.behavior.speed } : {}),
+      });
     }
   };
   for (const n of spec.npcs ?? []) {
@@ -293,7 +423,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   let lastProximityKey = "";
   const emitProximityIfChanged = (): void => {
     if (!deps.onNpcProximity || npcRadii.size === 0) return;
-    const player = state.avatars[localId];
+    const player = state.avatars[driven()];
     if (!player) return;
     const nearby: NpcProximity[] = [];
     for (const [npcId, radius] of npcRadii) {
@@ -310,32 +440,107 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     }
   };
 
+  /** Detour shoulder memory for every mover this host steers — the NPCs by id,
+   *  and the local player under PLAYER_DETOUR_KEY. See createDetourMemory: the
+   *  commitment expires on a timer rather than clearing on a straight frame,
+   *  which is what stops a body dithering between shoulders (the table spin). */
+  const detourSides = createDetourMemory();
+  const PLAYER_DETOUR_KEY = "__player__"; // can't collide with an NPC id
+
+  /** DEBUG PATHS (off by default — the capture allocates per NPC per frame, and
+   *  a town hosts hundreds). Filled by advanceNpcs while on; read by npcPaths(). */
+  let pathDebug = false;
+  const pathSnaps = new Map<string, NpcPathSnapshot>();
+
   /** Step every hosted NPC body for this frame (controller → aim → locomotion). */
   const advanceNpcs = (dt: number): void => {
     if (!npcControllers.length) return;
-    const humans = Object.values(state.avatars).filter((a) => !npcIds.has(a.id));
+    // "Humans" = bodies an NPC should react to: anything not autonomous, PLUS a
+    // CLAIMED creature — a body with a spark in it is a person to its
+    // neighbours, even though its id is still an NPC's.
+    const humans = Object.values(state.avatars).filter(
+      (a) => !npcIds.has(a.id) || a.id === driven(),
+    );
     for (const ctrl of npcControllers) {
+      // A CLAIMED body is steered by the spark's gaze in tickWorld this frame.
+      // SUSPEND its controller — never delete it: the creature keeps its
+      // personality, needs and job, and simply resumes them on release. (When
+      // the spark becomes a decision-GUIDE rather than a driver, this is where
+      // the controller starts consuming the gaze as a goal instead of yielding.)
+      if (ctrl.npcId === driven()) continue;
       const self = state.avatars[ctrl.npcId];
       if (!self) continue;
+      // THIS body's collision radius — planner probes must match locomotion
+      // exactly (a fatter probe reads a body-wide furniture lane as a wall),
+      // and per-NPC configs make it creature-specific (a big pet plans at
+      // its own girth).
+      const bodyR = (npcConfigs.get(ctrl.npcId) ?? WORLD_ENGINE_DEFAULTS).avatarRadius;
+      // Terrain (water / wall-steep slope) joins the oracle so wander waypoints
+      // and detours refuse blocked ground — an NPC stalls at a lake edge instead
+      // of spinning against the movement gate.
+      const walk = (p: { x: number; y: number }, radius: number) =>
+        structuresWalkable(state, p, radius, self.floor) &&
+        // Solid FIXTURES too — locomotion collides with them, so a planner
+        // blind to them aims THROUGH tables and the body slides along the
+        // face instead of detouring around it.
+        fixturesWalkable(state, p, radius, self.floor) &&
+        terrainWalkable(state, p) &&
+        (deps.constraint?.walkable(p, radius) ?? true);
       const aim = ctrl.computeAim({
         self,
         humans,
         now: state.time,
         width: spec.manifold.width,
         height: spec.manifold.height,
+        // Unbounded (planet-mounted) worlds: the extent is content, not
+        // walls — the controller must not clamp waypoints to it, or an NPC
+        // could never AIM past the town edge (the follow-into-the-wild bug).
+        bounded: spec.manifold.bounded !== false,
         rng: npcRng,
         // The same ground truth locomotion collides against — lets the
         // controller refuse to aim at blocked ground (wander waypoints).
-        walkable: (p, radius) =>
-          structuresWalkable(state, p, radius, self.floor) &&
-          (deps.constraint?.walkable(p, radius) ?? true),
+        walkable: walk,
+        radius: bodyR,
       });
-      steerAvatar(state, ctrl.npcId, aim, dt, npcConfigs.get(ctrl.npcId), deps.constraint);
+      // Walk AROUND what's in the way, not into it — the local detour bends the aim
+      // past a building face instead of grinding along it (npc-controller detourAim).
+      // NEVER on a routed pass-through leg (errandLegTight — door transits, indoor
+      // dogleg corners): the plan already avoids the furniture, and a local bend
+      // drags the body off its verified corridor into exactly the traps the route
+      // was built to skirt.
+      let bent = aim;
+      if (aim && !ctrl.errandLegTight()) {
+        bent = detourAim(self, aim, walk, bodyR, detourSides.prefer(ctrl.npcId, state.time));
+        // RENEW on every bent frame; NEVER clear on a straight one — the hold is
+        // what carries one bypass through to the end (createDetourMemory).
+        if (bent !== aim) detourSides.record(ctrl.npcId, sideOfBend(self, aim, bent), state.time);
+      }
+      // DEBUG: snapshot the whole decision — the errand PLAN, the waypoint the
+      // controller picked (`aim`), and what the detour actually steers at
+      // (`bent`). aim ≠ bent is a live bypass; a body whose bent aim thrashes
+      // while the plan stands still is the pathfinding failure worth seeing.
+      if (pathDebug) {
+        pathSnaps.set(ctrl.npcId, {
+          npcId: ctrl.npcId,
+          at: { x: self.x, y: self.y },
+          floor: self.floor,
+          errand: ctrl.errandPath(),
+          aim: aim ? { x: aim.x, y: aim.y } : null,
+          bent: bent ? { x: bent.x, y: bent.y } : null,
+          detoured: !!aim && !!bent && (aim.x !== bent.x || aim.y !== bent.y),
+        });
+      }
+      steerAvatar(state, ctrl.npcId, bent, dt, npcConfigs.get(ctrl.npcId), deps.constraint);
+    }
+    // Bodies that stopped being hosted shouldn't linger as ghost lines.
+    if (pathDebug && pathSnaps.size > npcControllers.length) {
+      for (const id of pathSnaps.keys()) if (!npcIds.has(id)) pathSnaps.delete(id);
     }
   };
 
   let pointer: { x: number; y: number } | null = null;
   let running = false;
+  let paused = false;
   let cancel: (() => void) | null = null;
   let last = 0;
   let lastSend = 0;
@@ -349,7 +554,60 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   const carryDwellMs = deps.carry?.dwellMs ?? 650;
   const carryDwell = createDwellTracker({ dwellMs: carryDwellMs, tolerance: 1.6, graceMs: 450 });
   let carryDwellProgress = 0;
-  // Conversation: when set, the avatar is frozen and the camera faces this point.
+  // Carry guards (kill the pick↔drop cycling + accidental drops): a just-DROPPED
+  // item can't be re-picked until the gaze LEAVES it; a just-PICKED item can't be
+  // dropped within CARRY_LOOKAWAY_DIST of the pick spot until the gaze moves that
+  // far away (or off, a saccade). Combined with the no-drop-while-talking guard.
+  const CARRY_LOOKAWAY_DIST = 2.0;
+  let noRepickId: string | null = null;
+  let recentPickSpot: Vec2 | null = null;
+
+  // PLAYER DOOR-NAV: when a walk target is in another room, steer through the
+  // connecting doorways (the same routeThroughDoors NPC errands use) instead of
+  // grinding on a wall. Waypoints are followed + consumed; the route is recomputed
+  // only when the goal moves (stable while you fixate).
+  let navGoal: Vec2 | null = null;
+  let navWaypoints: Vec2[] = [];
+  const NAV_ARRIVE = 1.0;
+  const navThroughDoors = (from: Vec2, dest: Vec2): Vec2 => {
+    if (!state.spec.buildings?.length) return dest;
+    if (!navGoal || Math.hypot(navGoal.x - dest.x, navGoal.y - dest.y) > 1.5) {
+      const route = routeThroughDoors(state, from, dest);
+      navWaypoints = route.length > 1 ? route.slice(0, -1) : []; // transit points only
+      navGoal = { x: dest.x, y: dest.y };
+    }
+    while (navWaypoints.length && Math.hypot(from.x - navWaypoints[0]!.x, from.y - navWaypoints[0]!.y) < NAV_ARRIVE) {
+      navWaypoints.shift();
+    }
+    return navWaypoints[0] ?? dest;
+  };
+  // The gaze resting ON a door means "go through it": push the walk target to the
+  // door's FAR side (away from the player), which routeThroughDoors then routes to.
+  const DOOR_LINGER_R = 1.4;
+  const doorThrough = (from: Vec2, p: Vec2): Vec2 => {
+    let best: StructureSpec | null = null;
+    let bestD = DOOR_LINGER_R;
+    for (const s of state.spec.structures ?? []) {
+      if (s.kind !== "door") continue;
+      const d = Math.hypot((s.a.x + s.b.x) / 2 - p.x, (s.a.y + s.b.y) / 2 - p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    if (!best || best.kind !== "door") return p;
+    const mx = (best.a.x + best.b.x) / 2;
+    const my = (best.a.y + best.b.y) / 2;
+    let nx = -(best.b.y - best.a.y);
+    let ny = best.b.x - best.a.x;
+    const l = Math.hypot(nx, ny) || 1;
+    nx /= l;
+    ny /= l;
+    const side = nx * (from.x - mx) + ny * (from.y - my) >= 0 ? -1 : 1; // away from the player
+    return { x: mx + nx * 1.6 * side, y: my + ny * 1.6 * side };
+  };
+  // Conversation: when set, the avatar follows this point (to talking distance,
+  // facing it) and the camera faces it. Updated to the partner's live position.
   let conversationTarget: Vec2 | null = null;
   // POINT override (NPC directions): while the hold counts down, the camera
   // faces this point instead of the conversation target, over-the-shoulder, at
@@ -363,14 +621,14 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   let lastDwellProgress = 0;
   /** The object this peer is currently carrying, or undefined. */
   const carriedId = (): string | undefined =>
-    Object.values(state.objects).find((o) => o.carriedBy === localId)?.id;
+    Object.values(state.objects).find((o) => o.carriedBy === driven())?.id;
 
   const frame = (dt: number, now: number): void => {
     // Interpret the raw pointer into an aim EACH frame against the (moving) camera:
     // the fixation gate drops flicks, weakening eases off during saccades, and the
     // idle timer latches WATCH/sitting. The mapped aim tracks the screen point even
     // as the follow camera scrolls. The full intent also drives the camera below.
-    const me = state.avatars[localId];
+    const me = state.avatars[driven()];
     const intent = gaze.update({
       pointer,
       screenToWorld: (px, py) => view.screenToWorld(px, py),
@@ -395,19 +653,19 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       if (hit) {
         if (hit.kind === "bubble") {
           const anchor = state.bubbles[hit.id]?.anchor;
-          if (anchor?.kind === "avatar" && anchor.id !== localId && state.avatars[anchor.id]) {
+          if (anchor?.kind === "avatar" && anchor.id !== driven() && state.avatars[anchor.id]) {
             const av = state.avatars[anchor.id]!;
             snap = { kind: "avatar", id: anchor.id, x: av.x, y: av.y };
             snapFromBubble = true;
           } else if (anchor && anchor.kind === "point") {
             // A point-anchored caption (over an object/spot): gaze goes there.
-            const under = pickEntity({ x: anchor.x, y: anchor.y }, state, localId, tunables.interact);
+            const under = pickEntity({ x: anchor.x, y: anchor.y }, state, driven(), tunables.interact);
             snap = under
               ? { kind: under.kind, id: under.id, x: under.x, y: under.y }
               : null;
             snapFromBubble = !!snap;
           }
-        } else if (hit.kind === "avatar" && hit.id === localId) {
+        } else if (hit.kind === "avatar" && hit.id === driven()) {
           hoverSelf = true;
         } else if (hit.kind === "object" && hit.id === carriedId()) {
           // The item you're carrying is NOT a target — ignore it, so it never
@@ -430,8 +688,8 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // proximity pick stays as the fallback for the overhead view.
     let aim: Vec2 | null = intent.aim;
     let interactId: string | undefined;
-    if (me && !intent.sitting && effFix && intent.unsettled < INTERACT_SETTLE_MAX && !deps.stationary) {
-      const hit = snap ?? pickEntity(effFix, state, localId, tunables.interact);
+    if (me && !intent.sitting && effFix && intent.unsettled < INTERACT_SETTLE_MAX && !stationary) {
+      const hit = snap ?? pickEntity(effFix, state, driven(), tunables.interact);
       if (hit) {
         aim = approachAim({ x: me.x, y: me.y }, { x: hit.x, y: hit.y }, hit.kind, tunables.interact);
         interactId = hit.id;
@@ -446,47 +704,95 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     if (deps.carry && me) {
       const carrying = carriedId();
       const fix = effFix; // the effective fixation point (null mid-saccade)
+      // What the gaze rests on (pickEntity excludes the carried item). A CREATURE
+      // under the gaze is a TALK target, never a drop spot; a free carryable is a
+      // pick / swap target.
+      const groundPick = fix ? pickEntity(fix, state, driven(), tunables.interact) : null;
+      const overCreature = snap?.kind === "avatar" || groundPick?.kind === "avatar";
+      const hoveredObj =
+        groundPick?.kind === "object" &&
+        objectAllows(state.spec, groundPick.id, "carry") &&
+        deps.carry.pickable?.(groundPick.id) !== false // pre-gate: no affordance at all
+          ? state.objects[groundPick.id]
+          : undefined;
+      const inReach = (o: { x: number; y: number }) =>
+        stationary || Math.hypot(o.x - me.x, o.y - me.y) <= carryReach;
+      const tryPick = (id: string) => {
+        // Ownership veto: a completed pick-dwell on someone else's item is DENIED
+        // (the attempt still "happened" — the game layer shows why).
+        if (deps.carry?.canPick?.(id) === false) {
+          deps.carry.onPickDenied?.(id);
+          return false;
+        }
+        carryObject(state, id, driven());
+        return true;
+      };
+      // LOOK-AWAY clears the cooldowns: the re-pick lock lifts once the gaze is no
+      // longer on that item; the nearby-drop lock lifts once the gaze leaves the
+      // pick spot (moved CARRY_LOOKAWAY_DIST away, or a saccade with no fixation).
+      if (noRepickId && groundPick?.id !== noRepickId) noRepickId = null;
+      if (
+        recentPickSpot &&
+        (!fix || Math.hypot(fix.x - recentPickSpot.x, fix.y - recentPickSpot.y) > CARRY_LOOKAWAY_DIST)
+      ) {
+        recentPickSpot = null;
+      }
+
       if (carrying) {
         interactId = carrying;
-        let withinPlaceReach = false;
-        if (fix) {
+        // SWAP: dwelling on a DIFFERENT free carryable sets the held item down
+        // there and takes the new one. (Not the just-dropped item on cooldown.)
+        const swapObj =
+          hoveredObj && hoveredObj.id !== noRepickId && inReach(hoveredObj) ? hoveredObj : undefined;
+        const talking = !!conversationTarget;
+        const nearPick =
+          !!recentPickSpot &&
+          !!fix &&
+          Math.hypot(fix.x - recentPickSpot.x, fix.y - recentPickSpot.y) < CARRY_LOOKAWAY_DIST;
+        let placeSpot: Vec2 | null = null;
+        if (fix && !swapObj) {
           const dx = fix.x - me.x;
           const dy = fix.y - me.y;
-          const d = Math.hypot(dx, dy);
-          aim = deps.stationary ? null : d > CARRY_HOLD ? { x: me.x + (dx / d) * (d - CARRY_HOLD), y: me.y + (dy / d) * (d - CARRY_HOLD) } : null;
-          // Placement is an ARM'S-REACH act: the put-down dwell only accumulates
-          // once the avatar has walked close enough to set the object there —
-          // dwelling on a distant spot steers toward it, never teleports the
-          // object to it. NEVER place while the gaze rests on a CREATURE — that's
-          // what dumped items onto creatures' tiles; giving an item is a dialogue
-          // act, not a drop. (The avatar still approaches; only the drop is blocked.)
-          // Check the creature via pickEntity too, not just snap: the held item can
-          // SHADOW the creature in the screen pick (item-priority), so snap may miss
-          // it — pickEntity excludes the carried item and finds the creature under it.
-          const overCreature =
-            snap?.kind === "avatar" || pickEntity(fix, state, localId, tunables.interact)?.kind === "avatar";
-          // SPIRIT: place at the fixation regardless of reach (still never onto a creature).
-          withinPlaceReach = !overCreature && (deps.stationary || d <= carryReach + CARRY_HOLD + 0.4);
+          const d = Math.hypot(dx, dy) || 1;
+          // Walking: stop ~CARRY_HOLD short so the held item leads onto the spot.
+          aim = stationary ? null : d > CARRY_HOLD ? { x: me.x + (dx / d) * (d - CARRY_HOLD), y: me.y + (dy / d) * (d - CARRY_HOLD) } : null;
+          // Never place while TALKING, over a CREATURE, or too NEARBY the pick spot
+          // (until the gaze has looked away). Placement is arm's reach (walking).
+          const reachOk = stationary || d <= carryReach + CARRY_HOLD + 0.4;
+          if (!talking && !overCreature && !nearPick && reachOk) placeSpot = { x: fix.x, y: fix.y };
+        } else if (swapObj && !stationary) {
+          const dx = swapObj.x - me.x;
+          const dy = swapObj.y - me.y;
+          const d = Math.hypot(dx, dy) || 1;
+          aim = d > CARRY_HOLD ? { x: me.x + (dx / d) * (d - CARRY_HOLD), y: me.y + (dy / d) * (d - CARRY_HOLD) } : null;
         }
-        const res = carryDwell.step(withinPlaceReach && fix ? { x: fix.x, y: fix.y } : null, dt * 1000);
+        const dwellTarget = swapObj ? { x: swapObj.x, y: swapObj.y } : placeSpot;
+        const res = carryDwell.step(dwellTarget, dt * 1000);
         carryDwellProgress = res.progress;
         if (res.fired) {
-          const a = carryDwell.anchor();
-          if (a) placeCarriedObject(state, carrying, a);
+          if (swapObj) {
+            placeCarriedObject(state, carrying, { x: swapObj.x, y: swapObj.y });
+            noRepickId = carrying; // don't instantly re-grab what we just set down
+            if (tryPick(swapObj.id)) recentPickSpot = { x: swapObj.x, y: swapObj.y };
+          } else if (placeSpot) {
+            const a = carryDwell.anchor();
+            if (a) {
+              placeCarriedObject(state, carrying, a);
+              noRepickId = carrying;
+              recentPickSpot = null;
+            }
+          }
         }
       } else {
-        const target = fix ? pickEntity(fix, state, localId, tunables.interact) : null;
-        const obj = target?.kind === "object" ? state.objects[target.id] : undefined;
-        // SPIRIT: a hovered carryable is pickable at any distance (no walking).
-        const near = !!obj && (deps.stationary || Math.hypot(obj.x - me.x, obj.y - me.y) <= carryReach) && objectAllows(state.spec, obj.id, "carry");
-        if (near && obj) interactId = obj.id;
-        const res = carryDwell.step(near && obj ? { x: obj.x, y: obj.y } : null, dt * 1000);
+        // PICK: dwell on a free carryable in reach — never the just-dropped one
+        // until the gaze has left it (noRepickId).
+        const pickObj = hoveredObj && hoveredObj.id !== noRepickId && inReach(hoveredObj) ? hoveredObj : undefined;
+        if (pickObj) interactId = pickObj.id;
+        const res = carryDwell.step(pickObj ? { x: pickObj.x, y: pickObj.y } : null, dt * 1000);
         carryDwellProgress = res.progress;
-        if (res.fired && near && obj) {
-          // Ownership veto: a completed pick-dwell on someone else's item is
-          // DENIED (the attempt still "happened" — the game layer shows why).
-          if (deps.carry.canPick?.(obj.id) === false) deps.carry.onPickDenied?.(obj.id);
-          else carryObject(state, obj.id, localId);
+        if (res.fired && pickObj && tryPick(pickObj.id)) {
+          recentPickSpot = { x: pickObj.x, y: pickObj.y };
+          noRepickId = null;
         }
       }
     }
@@ -497,10 +803,43 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     lastHover = snap ? { kind: snap.kind, id: snap.id } : null;
     lastUnsettled = intent.unsettled;
     lastDwellProgress = carryDwellProgress;
-    // CONVERSATION: freeze the avatar while talking (the camera faces the speaker,
-    // applied via the render intent below). Mirrors the carry steering-suspension.
-    if (conversationTarget) aim = null;
-    if (deps.stationary) aim = null; // SPIRIT: the avatar never moves
+    // CONVERSATION: FOLLOW the partner while talking. The walk aim becomes the
+    // partner (LIVE position, fed each frame by the game layer) rather than the
+    // gaze — approachAim walks to talking distance and faces them, so if the NPC
+    // moves off (an errand) the player follows instead of standing frozen; once
+    // at talking distance it holds + faces (no drift). Routed through doors below
+    // like any walk aim. Mirrors the carry steering-suspension, but steered toward
+    // the speaker instead of nulled.
+    if (conversationTarget && me && !stationary) {
+      aim = approachAim({ x: me.x, y: me.y }, conversationTarget, "avatar", tunables.interact);
+    }
+    // PLAYER DOOR-NAV: route the walk aim through doorways when the target is in
+    // another room (walk out of a building, into the next room), instead of the
+    // straight aim grinding on a wall. Skipped while stationary.
+    if (!stationary && aim && me) {
+      const from = { x: me.x, y: me.y };
+      aim = navThroughDoors(from, doorThrough(from, aim));
+      // …and AROUND building exteriors on the way — the same local detour the
+      // NPCs steer with (a door-bound aim passes through the walkable gap, so
+      // door approaches are never deflected). Probe at the body's REAL radius
+      // and keep the last-committed shoulder, exactly like the NPC path.
+      const preBend = aim;
+      aim = detourAim(
+        from,
+        preBend,
+        (p, radius) =>
+          structuresWalkable(state, p, radius, me.floor) &&
+          terrainWalkable(state, p) &&
+          (deps.constraint?.walkable(p, radius) ?? true),
+        WORLD_ENGINE_DEFAULTS.avatarRadius,
+        detourSides.prefer(PLAYER_DETOUR_KEY, state.time),
+      );
+      // Same rule as the NPCs: renew while bent, expire when genuinely free.
+      if (aim !== preBend) {
+        detourSides.record(PLAYER_DETOUR_KEY, sideOfBend(from, preBend, aim), state.time);
+      }
+    }
+    if (stationary) aim = null; // SPIRIT: the avatar never moves
     // POINT override expiry: a directions swivel holds briefly, then reverts to
     // the conversation target.
     if (pointTarget) {
@@ -523,7 +862,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // the fixation each frame so it lifts to the spark on pick-up and glides with
     // it until the place-dwell drops it (placeCarriedObject already uses the same
     // point). Skip mid-saccade (effFix null) so it doesn't jump to the origin.
-    if (deps.stationary && effFix) {
+    if (stationary && effFix) {
       const heldId = carriedId();
       const held = heldId ? state.objects[heldId] : undefined;
       if (held) {
@@ -544,6 +883,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       if (events.length) pendingEvents.push(...events);
 
       // Position → relay (Phase 1), lower rate, position-only.
+      // DELIBERATELY the spark's OWN body, not `driven()`: presence is keyed by
+      // participant id, and a claimed creature already streams to peers as an
+      // ordinary NPC body over the mesh channel (it lives in ownedAvatarIds).
+      // Publishing the claimed body here too would double-render it. Rendering a
+      // remote spark as a light beside the body it claimed is future work — it
+      // needs a rare spark→body claim message, never per-frame gaze.
       if (net.publishPresence && now - lastPresence >= PRESENCE_INTERVAL_MS) {
         const local = state.avatars[localId];
         if (local) {
@@ -582,7 +927,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         ...(snap
           ? { hoverId: snap.id, hoverKind: snap.kind }
           : hoverSelf
-            ? { hoverId: localId, hoverKind: "avatar" as const }
+            ? { hoverId: driven(), hoverKind: "avatar" as const }
             : {}),
         selectProgress: Math.max(carryDwellProgress, deps.cursorProgress?.() ?? 0),
       },
@@ -593,7 +938,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     if (!running) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    frame(dt, now);
+    // Paused: still render (and update the pointer pick, so click-to-inspect works)
+    // but advance the sim by ZERO — nothing moves, no clock/errand/chatter tick.
+    frame(paused ? 0 : dt, now);
     cancel = deps.scheduleFrame(loop);
   };
 
@@ -615,6 +962,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     clearPointer() {
       pointer = null;
     },
+    setPaused(p) {
+      paused = p;
+    },
     setConversation(target) {
       conversationTarget = target;
     },
@@ -630,17 +980,54 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         dwellProgress: lastDwellProgress,
       };
     },
+    pickAt(px, py) {
+      if (!view.pickScreen) return null;
+      const hit = view.pickScreen(px, py, { includeLocal: false });
+      if (!hit) return null;
+      if (hit.kind === "bubble") {
+        const anchor = state.bubbles[hit.id]?.anchor;
+        return anchor?.kind === "avatar" && state.avatars[anchor.id]
+          ? { kind: "avatar", id: anchor.id }
+          : null;
+      }
+      return { kind: hit.kind, id: hit.id };
+    },
     resize(width, height, dpr) {
       view.resize(width, height, dpr);
     },
     revealedBuildings() {
       return view.revealedBuildings?.() ?? new Set<string>();
     },
+    setStationary(on) {
+      stationary = on;
+    },
+    claimBody(bodyId) {
+      if (!setDrivenBody(state, bodyId)) return false;
+      // The claimed body is driven from the gaze this frame on — re-emit
+      // proximity, since who counts as a "human" to the other NPCs just moved.
+      lastProximityKey = "\0";
+      return true;
+    },
+    drivenBody() {
+      return state.drivenId;
+    },
     say(text, glyph) {
       const line = (text ?? "").trim();
       if (!line) return;
-      // Show it locally (over our own avatar) and broadcast it once. setAvatarSpeech
-      // stamps it with state.time so it fades on the local clock.
+      // THE SPARK SPEAKS — deliberately `localId`, NOT `driven()`.
+      //
+      // The player and their avatar are SEPARATE UNITS. A claimed creature can
+      // speak for itself (its own dialogue, from its own needs); the player only
+      // TELLS it what to do. So words the player puts through the board/chat are
+      // the PLAYER's words, never the ridden body's — the quest path agrees
+      // (its speaker is hardcoded PLAYER_CREATURE_ID, and a ridden body is
+      // something you talk TO, not as).
+      //
+      // Anchoring to the spark's own body is exact today because nothing claims
+      // in the social world. Once claiming reaches it, the spark's body must
+      // track the body it claimed, so this bubble reads as the light floating
+      // beside the avatar rather than back at a parked, formless body.
+      // setAvatarSpeech stamps it with state.time so it fades on the local clock.
       setAvatarSpeech(state, localId, { text: line, glyph });
       net?.send([sayMessage(localId, line, glyph)]);
     },
@@ -659,6 +1046,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       lastProximityKey = "\0"; // cast changed — re-emit proximity next frame
       return true;
     },
+    npcRadiusOf(npcId) {
+      return (npcConfigs.get(npcId) ?? WORLD_ENGINE_DEFAULTS).avatarRadius;
+    },
     removeNpc(npcId) {
       if (!npcIds.has(npcId)) return false;
       npcIds.delete(npcId);
@@ -669,15 +1059,84 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       if (oi >= 0) ownedAvatarIds.splice(oi, 1);
       npcRadii.delete(npcId);
       npcConfigs.delete(npcId);
+      detourSides.forget(npcId);
+      pathSnaps.delete(npcId);
       removeAvatar(state, npcId);
       lastProximityKey = "\0";
       return true;
+    },
+    rebase(mapPoint, mapVec) {
+      const remapPose = (a: {
+        x: number; y: number; vx: number; vy: number; fx: number; fy: number;
+        tx?: number; ty?: number; tvx?: number; tvy?: number; tfx?: number; tfy?: number;
+      }): void => {
+        const p = mapPoint({ x: a.x, y: a.y });
+        a.x = p.x;
+        a.y = p.y;
+        const v = mapVec({ x: a.vx, y: a.vy });
+        a.vx = v.x;
+        a.vy = v.y;
+        const f = mapVec({ x: a.fx, y: a.fy });
+        const fl = Math.hypot(f.x, f.y);
+        if (fl > 1e-9) {
+          a.fx = f.x / fl;
+          a.fy = f.y / fl;
+        }
+        // Remote-interpolation targets ride along (a peer's body mid-lerp must
+        // not slide back toward its pre-rebase coordinates).
+        if (a.tx !== undefined && a.ty !== undefined) {
+          const t = mapPoint({ x: a.tx, y: a.ty });
+          a.tx = t.x;
+          a.ty = t.y;
+        }
+        if (a.tvx !== undefined && a.tvy !== undefined) {
+          const tv = mapVec({ x: a.tvx, y: a.tvy });
+          a.tvx = tv.x;
+          a.tvy = tv.y;
+        }
+        if (a.tfx !== undefined && a.tfy !== undefined) {
+          const tf = mapVec({ x: a.tfx, y: a.tfy });
+          const tl = Math.hypot(tf.x, tf.y);
+          if (tl > 1e-9) {
+            a.tfx = tf.x / tl;
+            a.tfy = tf.y / tl;
+          }
+        }
+      };
+      for (const a of Object.values(state.avatars)) remapPose(a);
+      for (const o of Object.values(state.objects)) {
+        const p = mapPoint({ x: o.x, y: o.y });
+        o.x = p.x;
+        o.y = p.y;
+        const v = mapVec({ x: o.vx, y: o.vy });
+        o.vx = v.x;
+        o.vy = v.y;
+      }
+      for (const ctrl of npcControllers) ctrl.rebase(mapPoint);
+      if (conversationTarget) conversationTarget = mapPoint(conversationTarget);
+      if (pointTarget) pointTarget = mapPoint(pointTarget);
     },
     setStructures(structures) {
       setWorldStructures(state, structures);
     },
     setBuildings(buildings) {
       setWorldBuildings(state, buildings);
+    },
+    setDragZones(zones) {
+      if (!zones.length) {
+        delete state.drag;
+        return;
+      }
+      const zs = zones.map((z) => ({ ...z }));
+      state.drag = (x, y) => {
+        let scale = 1;
+        for (const z of zs) {
+          if (x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h) {
+            scale = Math.min(scale, z.scale);
+          }
+        }
+        return scale;
+      };
     },
     addObject(spec) {
       return addWorldObject(state, spec);
@@ -691,6 +1150,19 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     setNpcErrand(npcId, errand) {
       npcById.get(npcId)?.setErrand(errand);
     },
+    setNpcWanderRect(npcId, rect) {
+      npcById.get(npcId)?.setWanderRect(rect);
+    },
+    npcErrandActive(npcId) {
+      return npcById.get(npcId)?.hasErrand() ?? false;
+    },
+    setPathDebug(on) {
+      pathDebug = on;
+      if (!on) pathSnaps.clear(); // stale lines must not outlive the toggle
+    },
+    npcPaths() {
+      return [...pathSnaps.values()];
+    },
     setTunables(t) {
       tunables = t;
       gaze.setTunables(t.gaze);
@@ -701,6 +1173,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       running = true;
       last = deps.now();
       cancel = deps.scheduleFrame(loop);
+    },
+    step(dt, now) {
+      frame(paused ? 0 : Math.min(0.05, Math.max(0, dt)), now);
     },
     stop() {
       running = false;

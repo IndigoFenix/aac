@@ -5,7 +5,7 @@ import type {
   GoalNode,
   GoalTreeGame,
   OvercomeNode,
-} from "@shared/goal-tree/types.js";
+} from "@shared/world-engine/solver/types.js";
 
 export function entity(
   id: string,

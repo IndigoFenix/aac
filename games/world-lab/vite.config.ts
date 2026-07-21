@@ -12,6 +12,9 @@ export default defineConfig({
     alias: {
       "@shared": path.resolve(__dirname, "..", "..", "shared"),
       "@client-shared": path.resolve(__dirname, "..", "..", "client-shared", "src"),
+      // The Composition demography backend (kernel/civ seam) — imported as
+      // engine source, the grand-dream pattern (nations P0 civ boot).
+      "@popusim": path.resolve(__dirname, "..", "popusim", "src"),
     },
   },
   root: __dirname,

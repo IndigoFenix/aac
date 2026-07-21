@@ -15,7 +15,7 @@
 
 import fs from "fs";
 import path from "path";
-import { certifyGoalTreeGame } from "@shared/goal-tree/index";
+import { certifyGoalTreeGame } from "@shared/world-engine/solver/index";
 import type { MemoryProcessor } from "../chat/tool-router";
 
 const LOG_FILE = path.resolve(process.cwd(), "server", "quest-game-debug.log");

@@ -16,8 +16,13 @@
  *  edges of daylight — useful for lighting and for "at dawn" rules later. */
 export type DayPhase = "dawn" | "day" | "dusk" | "night";
 
+import { REAL_DAY_S } from "./scale.js";
+
 export interface WorldClockConfig {
-  /** Length of one full day+night, in sim seconds. Default 1200 (20 min). */
+  /** Length of one full day+night, in sim seconds. Default REAL_DAY_S
+   *  (86 400 — realism is the anchor, space-time-compression.md §1); a
+   *  compressed world passes its own day (e.g. the town session's 60 s
+   *  observed day, creature-goal-runtime.ts). */
   dayLength: number;
   /** Fraction of the cycle that is DAYLIGHT (dawn→dusk inclusive), 0..1. */
   daylightFraction: number;
@@ -27,7 +32,7 @@ export interface WorldClockConfig {
 }
 
 export const DEFAULT_WORLD_CLOCK_CONFIG: WorldClockConfig = {
-  dayLength: 1200,
+  dayLength: REAL_DAY_S,
   daylightFraction: 0.6,
   transition: 0.08,
 };

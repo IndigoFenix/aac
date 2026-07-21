@@ -33,6 +33,14 @@ Run a full npm test after completing major tasks that touch a large part of the 
 The npm test does not call the real LLM - we use a mock LLM for this instead.
 Don't run test:llm or test:ai without being instructed to.
 
+### Test layout & fast paths (avoid the ~25-min full `npm test` for routine work)
+Tests split by DB dependency — a DB-backed test needs jest's `globalSetup` (Postgres + Drizzle migrate); pure tests don't. Prefer the narrowest fast path, and use `-- <word>` to slice any of them (single word only — a multi-term `a|b` pattern breaks on Windows cmd.exe):
+- `npm run test:engine` — `server/tests/world-engine/` (anything importing `@shared/world-engine`). DB-free, the fastest domain. Put new world-engine tests in that folder.
+- `npm run test:unit` — everything EXCEPT `integration/`. DB-free (`jest.config.unit.js` drops globalSetup). The pure-logic surface (board/agent/glyph/speech/prompt units + world-engine + mocked-LLM). ~13 min full; slice it.
+- `npm run test:integration` — `server/tests/integration/` only (Postgres/API). Run when touching DB/API.
+- `npm test` — the whole suite (both). Use before major merges.
+A test that needs the DB belongs in `integration/` (so `test:unit` can stay DB-free) — move it there rather than restoring globalSetup.
+
 ## Databases
 DO NOT, UNDER ANY CIRCUMSTANCE, AUTHOR DATABASE MIGRATION FILES YOURSELF.
 Edit the schema, then use db:generate to create the files. Otherwise you will mess up the system.

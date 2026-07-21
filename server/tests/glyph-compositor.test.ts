@@ -610,3 +610,35 @@ describe("applyRelationalModifier", () => {
     expect(parseGlyph("hour.next.next").slots[0].modifiers).toEqual(["next", "next"]);
   });
 });
+
+// ── Mid-sentence tone tags: the dialogue layer LEADS with the question word
+// ("place#question + cookie"). Splitting at the first `#` used to discard
+// every slot after it — the where-is buttons rendered as just the where icon.
+
+describe("parseGlyph — tone tags on any token", () => {
+  it("keeps the slots that follow a tagged token", () => {
+    const g = parseGlyph("place#question + cookie");
+    expect(g.slots.map((s) => s.key)).toEqual(["place", "cookie"]);
+    expect(g.toneTags).toEqual(["question"]);
+  });
+  it("keeps modifiers and later slots intact around the tag", () => {
+    const g = parseGlyph("place#question + get + apple.hot");
+    expect(g.slots.map((s) => s.key)).toEqual(["place", "get", "apple"]);
+    expect(g.slots[2].modifiers).toEqual(["hot"]);
+    expect(g.toneTags).toEqual(["question"]);
+  });
+  it("collects tags from multiple tokens without duplicates", () => {
+    const g = parseGlyph("water#past + hot#question");
+    expect(g.slots.map((s) => s.key)).toEqual(["water", "hot"]);
+    expect(g.toneTags).toEqual(["past", "question"]);
+  });
+  it("still parses the trailing-tag canonical forms", () => {
+    expect(parseGlyph("i_me+want+water.big#question").slots.map((s) => s.key)).toEqual([
+      "i_me",
+      "want",
+      "water",
+    ]);
+    expect(parseGlyph("help#past#question").toneTags).toEqual(["past", "question"]);
+    expect(parseGlyph("help#past.question").toneTags).toEqual(["past", "question"]);
+  });
+});

@@ -477,6 +477,25 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       posture: { bodyHeight: 0.7 },
     },
   },
+  {
+    name: "Sheep (woolly)",
+    blueprint: {
+      version: 1,
+      // Stocky woolly barrel on short legs: girth up, legs down, blunt
+      // front/rear tapers so the fleece reads as one rounded mass.
+      spine: { torsoLengthM: 1.0, girth: 0.28, girthPeak: 0.5, frontTaper: 0.35, rearTaper: 0.4 },
+      neck: { segments: 2, lengthFrac: 0.22, radiusFrac: 0.6, lift: 0.5 },
+      tail: { segments: 2, lengthFrac: 0.18, radiusFrac: 0.25, droop: 0.9 },
+      // A small bare head poking out of the fleece.
+      head: { sizeFrac: 0.38, beak: 0.15, beakLengthFrac: 0.6, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.0 },
+      limbGroups: [
+        { placement: "bilateral", count: 2, stationStart: 0.18, stationEnd: 0.82, lengthFrac: 0.45, radiusFrac: 0.1, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.16, toeCount: 1 },
+      ],
+      // Wool: pale cream body over a lighter belly; dark hooves/face accent.
+      skin: { baseColor: "#e6dfcd", bellyColor: "#d8d0bc", accentColor: "#4a4038" },
+      posture: { bodyHeight: 0.65 },
+    },
+  },
   // ── Plants — nothing but a growth on a nub. Plant height ≈ 0.1 m
   // (the nub torso) × stem.lengthFrac; skin.baseColor is the stem color.
   {
@@ -484,7 +503,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     blueprint: plant(
       {
         seed: 12,
-        stem: { lengthFrac: 90, girth: 0.035, segments: 6, taper: 0.6, lean: 0, waviness: 0.35, flatten: 0, lobes: 0, curl: 0, twist: 0, gravitropism: 0.35, hardness: 0.55, rootFlare: 1.8 },
+        stem: { lengthFrac: 300, girth: 0.035, segments: 6, taper: 0.6, lean: 0, waviness: 0.35, flatten: 0, lobes: 0, curl: 0, twist: 0, gravitropism: 0.35, hardness: 0.55, rootFlare: 1.8 },
         branching: { levels: 3, branchStart: 0.45, nodes: 3, whorl: 3, phyllotaxis: 2.4, branchAngle: 0.85, lengthRatio: 0.55, radiusRatio: 0.55, jitter: 0.55 },
         foliage: { leafDensity: 2.5, leafSizeFrac: 1.1, leafAspect: 0.6, leafDroop: 0.15, leafColor: "#3f6d2e" },
       },
@@ -553,6 +572,61 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       { name: "berry bush", skin: { baseColor: "#5c4630", accentColor: "#41321f" } },
     ),
   },
+  // ── Orchard plants — shoot growths whose terminal twigs BEAR fruit
+  // (fruitDensity > 0), so towns can plant orchards that visibly carry the
+  // fruit kinds the market items above/below use. Visual plausibility at
+  // town-scenery distance is the bar, not botany.
+  {
+    name: "Apple tree",
+    blueprint: plant(
+      {
+        seed: 17,
+        // A smaller, rounder oak habit with red fruit dangling off the twigs.
+        stem: { lengthFrac: 40, girth: 0.04, segments: 5, taper: 0.55, lean: 0, waviness: 0.3, flatten: 0, lobes: 0, curl: 0, twist: 0, gravitropism: 0.3, hardness: 0.6, rootFlare: 1.6 },
+        branching: { levels: 3, branchStart: 0.35, nodes: 3, whorl: 3, phyllotaxis: 2.4, branchAngle: 0.9, lengthRatio: 0.6, radiusRatio: 0.55, jitter: 0.5 },
+        foliage: { leafDensity: 2.2, leafSizeFrac: 1.0, leafAspect: 0.6, leafDroop: 0.1, leafColor: "#4a7a33" },
+        fruit: { sizeM: 0.11, aspect: 0.95, bulge: 0.48, neck: 0.22, tipTaper: 0.22, stemFrac: 0.4, color: "#c0392b" },
+        fruitDensity: 0.6,
+        fruitPlacement: "along",
+      },
+      { name: "apple tree", skin: { baseColor: "#6b5236", accentColor: "#463521" } },
+    ),
+  },
+  {
+    name: "Banana plant",
+    blueprint: plant(
+      {
+        seed: 23,
+        // Palm-ish habit: a bare green trunk that only fronds at the crown
+        // (branchStart high), long drooping leaves, curved yellow fruit
+        // hanging among them.
+        stem: { lengthFrac: 28, girth: 0.06, segments: 5, taper: 0.75, lean: 0.1, waviness: 0.15, flatten: 0, lobes: 0, curl: 0, twist: 0, gravitropism: 0.5, hardness: 0.45, rootFlare: 1.4 },
+        branching: { levels: 1, branchStart: 0.85, nodes: 2, whorl: 4, phyllotaxis: 2.4, branchAngle: 1.15, lengthRatio: 0.4, radiusRatio: 0.45, jitter: 0.35 },
+        foliage: { leafDensity: 4, leafSizeFrac: 2, leafAspect: 0.3, leafDroop: -0.5, leafColor: "#3f7a34" },
+        fruit: { sizeM: 0.05, aspect: 5, bulge: 0.5, neck: 0.35, tipTaper: 0.45, curvature: 1.3, stemFrac: 0.3, color: "#e3c018" },
+        fruitDensity: 1.2,
+        fruitPlacement: "along",
+      },
+      { name: "banana plant", skin: { baseColor: "#7a8a4a", accentColor: "#5c6b36" } },
+    ),
+  },
+  {
+    name: "Grape vine",
+    blueprint: plant(
+      {
+        seed: 29,
+        // A leafy trellis bush hung with small purple berries — dense
+        // fruitDensity so they read as clusters at a distance.
+        stem: { lengthFrac: 15, girth: 0.03, segments: 4, taper: 0.5, lean: 0.25, waviness: 0.55, flatten: 0, lobes: 0, curl: 0, twist: 0, gravitropism: 0.2, hardness: 0.55, rootFlare: 1.2 },
+        branching: { levels: 2, branchStart: 0.1, nodes: 3, whorl: 3, phyllotaxis: 2.4, branchAngle: 1.0, lengthRatio: 0.65, radiusRatio: 0.6, jitter: 0.6 },
+        foliage: { leafDensity: 3.5, leafSizeFrac: 1.4, leafAspect: 0.8, leafDroop: 0, leafColor: "#3f6d2e" },
+        fruit: { sizeM: 0.035, aspect: 1.15, bulge: 0.5, neck: 0.1, tipTaper: 0.1, stemFrac: 0.5, color: "#5b2a6e" },
+        fruitDensity: 2,
+        fruitPlacement: "along",
+      },
+      { name: "grape vine", skin: { baseColor: "#5c4630", accentColor: "#41321f" } },
+    ),
+  },
   // ── Fruit samples & root vegetables (type "fruit" / "root"). Each is
   // ONE determinate fruit body — the shape lives in the profile (bulge /
   // neck / tipTaper), curvature, lobes, and pole crown. These double as
@@ -569,6 +643,14 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     blueprint: plant(
       { type: "fruit", seed: 2, fruit: { sizeM: 0.035, aspect: 5.5, bulge: 0.5, neck: 0.35, tipTaper: 0.45, curvature: 1.4, stemFrac: 0, color: "#e3c018" } },
       { name: "banana", skin: { baseColor: "#6a5a2e" } },
+    ),
+  },
+  {
+    name: "Grape",
+    blueprint: plant(
+      // One berry of the bunch — the market/ground item the grape vine yields.
+      { type: "fruit", seed: 9, fruit: { sizeM: 0.025, aspect: 1.2, bulge: 0.5, neck: 0.12, tipTaper: 0.1, stemFrac: 0, color: "#5b2a6e" } },
+      { name: "grape", skin: { baseColor: "#3f7a34" } },
     ),
   },
   {

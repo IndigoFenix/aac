@@ -156,6 +156,50 @@ describe("applyCorsPolicy", () => {
     });
   });
 
+  it("always allows the iPad app origin (capacitor://localhost), even when not in ALLOWED_ORIGINS", async () => {
+    // The Capacitor client's origin is fixed by ios.scheme in
+    // capacitor.config.ts and, like app://, cannot be forged by a web page.
+    process.env.ALLOWED_ORIGINS = "https://aivota.ai";
+    await withApp(async (port) => {
+      const res = await probe(port, {
+        Host: "aivota-demo-us.onrender.com",
+        "X-Forwarded-Proto": "https",
+        Origin: "capacitor://localhost",
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers["access-control-allow-origin"]).toBe("capacitor://localhost");
+    });
+  });
+
+  it("allows the iPad app origin even with no ALLOWED_ORIGINS configured in prod", async () => {
+    // ALLOWED_ORIGINS + APP_URL both unset (deleted in beforeEach). This is the
+    // footgun the unconditional native origins exist to prevent: an iPad build
+    // must not silently fail CORS against a backend whose env wasn't updated.
+    await withApp(async (port) => {
+      const res = await probe(port, {
+        Host: "aivota-demo-us.onrender.com",
+        "X-Forwarded-Proto": "https",
+        Origin: "capacitor://localhost",
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers["access-control-allow-origin"]).toBe("capacitor://localhost");
+    });
+  });
+
+  it("does not allow a lookalike capacitor origin on another host", async () => {
+    // Only the exact capacitor://localhost origin is blessed. A different host
+    // under the same scheme is not our app.
+    process.env.ALLOWED_ORIGINS = "https://aivota.ai";
+    await withApp(async (port) => {
+      const res = await probe(port, {
+        Host: "aivota.ai",
+        "X-Forwarded-Proto": "https",
+        Origin: "capacitor://evil.example.com",
+      });
+      expect(res.status).toBe(500);
+    });
+  });
+
   it("supports wildcard subdomain entries in ALLOWED_ORIGINS", async () => {
     process.env.ALLOWED_ORIGINS = "https://*.aivota.ai";
     await withApp(async (port) => {

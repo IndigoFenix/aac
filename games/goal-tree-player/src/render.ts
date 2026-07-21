@@ -1,12 +1,12 @@
 // Canvas renderer for the goal-tree player. Pure draw — all state lives in
 // the shared sim/runtime; this file just paints it.
 
-import type { GoalTreeGame } from "@shared/goal-tree/types";
-import type { LogicalWorld, ZoneKind } from "@shared/goal-tree/logical-world";
-import type { Layout2D, Vec2 } from "@shared/goal-tree/layout2d";
-import { rectCenter } from "@shared/goal-tree/layout2d";
-import type { Space2DState } from "@shared/goal-tree/space2d";
-import type { ObjectiveSummary } from "@shared/goal-tree/space";
+import type { GoalTreeGame } from "@shared/world-engine/solver/types";
+import type { LogicalWorld, ZoneKind } from "@shared/world-engine/solver/logical-world";
+import type { Layout2D, Vec2 } from "@shared/world-engine/solver/layout2d";
+import { rectCenter } from "@shared/world-engine/solver/layout2d";
+import type { Space2DState } from "@shared/world-engine/solver/space2d";
+import type { ObjectiveSummary } from "@shared/world-engine/solver/space";
 import { type Camera, worldToScreen } from "./camera";
 
 export interface FrameView {

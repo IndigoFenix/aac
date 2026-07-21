@@ -17,10 +17,10 @@
 
 import * as THREE from "three";
 import type { SceneOverlay } from "@shared/world-engine/render3d";
-import type { Layout2D } from "@shared/goal-tree/layout2d";
-import { rectCenter } from "@shared/goal-tree/layout2d";
-import type { LogicalWorld, FigureRole } from "@shared/goal-tree/logical-world";
-import type { DemoCue, EntityDef } from "@shared/goal-tree/types";
+import type { Layout2D } from "@shared/world-engine/solver/layout2d";
+import { rectCenter } from "@shared/world-engine/solver/layout2d";
+import type { LogicalWorld, FigureRole } from "@shared/world-engine/solver/logical-world";
+import type { DemoCue, EntityDef } from "@shared/world-engine/solver/types";
 
 /** The live state the overlay reflects each frame — supplied by the player from
  *  its Space3D + runtime state (no game logic lives here). */

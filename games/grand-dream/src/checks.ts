@@ -4,7 +4,7 @@
  * conscience while poking at scenarios by hand.
  */
 
-import type { CompositionWorld } from "@shared/engine/civ/composition";
+import type { CompositionWorld } from "@shared/world-engine/kernel/civ/composition";
 import type { DualWorld } from "./dual";
 
 export interface Check {

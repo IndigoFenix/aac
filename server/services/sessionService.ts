@@ -170,9 +170,9 @@ import {
   LoopDetectionConfig,
   type CreateQuestGameToolArgs,
 } from "./chat/tool-router";
-import { certifyGoalTreeGame } from "@shared/goal-tree/index";
-import { walkGoalTree } from "@shared/goal-tree/walk";
-import { GOAL_TREE_APP_TYPE } from "@shared/goal-tree/types";
+import { certifyGoalTreeGame } from "@shared/world-engine/solver/index";
+import { walkGoalTree } from "@shared/world-engine/solver/walk";
+import { GOAL_TREE_APP_TYPE } from "@shared/world-engine/solver/types";
 import { customAppRepository } from "../repositories/customAppRepository";
 import {
   composeAacPersona,

@@ -32,6 +32,14 @@ html, body {
 }
 #bar button:hover, #bar select:hover { border-color: #3a4f7d; }
 
+/* A pressed toggle in the bar (the paths overlay) — lit, not just hovered. */
+#bar button[aria-pressed="true"] {
+  background: #1d2b1c;
+  border-color: #4ade80;
+  color: #4ade80;
+}
+#bar button[aria-pressed="true"]:hover { border-color: #86efac; }
+
 #status {
   margin-left: auto;
   color: #8b94a8;
@@ -53,16 +61,108 @@ html, body {
   height: 100%;
   resize: horizontal;
   background: #0b0f1c;
-  color: #b9d0a8;
+  color: #cfd6e4;
   border: none;
   border-right: 1px solid #1c2438;
-  padding: 12px;
-  font: 12px/1.5 ui-monospace, Consolas, monospace;
+  padding: 10px 12px;
+  font: 12px/1.4 system-ui, sans-serif;
   outline: none;
+  overflow: auto;
 }
+
+/* ── the generated world FORM (spec-form.ts) ─────────────────────────────── */
+.sf-section { margin: 0 0 14px; }
+.sf-h {
+  margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: #9fb3d8; border-bottom: 1px solid #1c2438; padding-bottom: 3px;
+}
+.sf-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.sf-label { flex: 0 0 42%; color: #b9d0a8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-ctl {
+  flex: 1; min-width: 0; background: #141b2e; color: #cfd6e4; border: 1px solid #263453;
+  border-radius: 6px; padding: 3px 6px; font: inherit; outline: none;
+}
+.sf-ctl:focus { border-color: #f2c14e; }
+input.sf-ctl[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: #f2c14e; }
+.sf-num { flex: 1; display: flex; gap: 4px; align-items: center; min-width: 0; }
+.sf-dice { background: #141b2e; border: 1px solid #263453; border-radius: 6px; cursor: pointer; padding: 2px 5px; }
+.sf-dice:hover { border-color: #f2c14e; }
+.sf-fixed { flex: 1; color: #8b94a8; font-style: italic; }
+.sf-obj { margin: 6px 0; padding: 6px 8px; border: 1px solid #1c2438; border-radius: 8px; background: #0d1324; }
+.sf-objlabel, .sf-objtoggle { color: #9fb3d8; font-weight: 600; display: block; margin-bottom: 4px; cursor: default; }
+.sf-objtoggle { cursor: pointer; }
+.sf-objbody { padding-left: 4px; }
+.sf-json {
+  flex: 1; width: 100%; background: #0b0f1c; color: #b9d0a8; border: 1px solid #263453;
+  border-radius: 6px; padding: 6px; font: 11px/1.4 ui-monospace, Consolas, monospace; resize: vertical; outline: none;
+}
+.sf-json:focus { border-color: #f2c14e; }
+.sf-bad { border-color: #ff8686 !important; }
+.sf-adv { margin-top: 8px; border-top: 1px solid #1c2438; padding-top: 8px; }
+.sf-adv > summary { cursor: pointer; color: #8b94a8; }
+
+/* ── recursive tree editor ───────────────────────────────────────────────── */
+.sf-node {
+  border: 1px solid #263453; border-radius: 8px; background: #0d1324;
+  padding: 6px 8px; margin: 6px 0;
+}
+.sf-root { border-color: #35507e; }
+.sf-nodehead { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.sf-nodetitle { font-weight: 700; color: #cfd6e4; flex: 0 0 auto; }
+.sf-kind { flex: 0 0 auto; width: auto; font-weight: 700; }
+.sf-rm {
+  flex: 0 0 auto; background: transparent; color: #ff8686; border: none;
+  cursor: pointer; font-size: 13px; padding: 0 4px;
+}
+.sf-rm:hover { color: #ffb3b3; }
+.sf-focus { margin-left: auto; flex: 0 0 auto; color: #f2c14e; font-size: 11px; cursor: pointer; }
+.sf-focus input { accent-color: #f2c14e; vertical-align: middle; }
+.sf-childgroup { margin: 6px 0 2px 8px; padding-left: 8px; border-left: 2px solid #1c2438; }
+.sf-grouphead { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.sf-add {
+  background: #16233d; color: #b9d0a8; border: 1px solid #2f4a72;
+  border-radius: 6px; padding: 2px 8px; font: inherit; cursor: pointer;
+}
+.sf-add:hover { border-color: #f2c14e; color: #cfd6e4; }
+.sf-exh { color: #8b94a8; font-size: 11px; cursor: pointer; }
+.sf-exh input { accent-color: #f2c14e; vertical-align: middle; }
 
 #view { flex: 1; position: relative; }
 #view canvas { display: block; }
+
+/* Left column: tabs over the world-JSON OR the debug readout (they SHARE the space). */
+.lab-left {
+  width: 380px; min-width: 240px; height: 100%; resize: horizontal; overflow: hidden;
+  display: flex; flex-direction: column; border-right: 1px solid #1c2438; background: #0b0f1c;
+}
+.lab-left > #world-file { width: auto; flex: 1; border-right: none; min-width: 0; resize: none; }
+.lab-tabs { flex: 0 0 auto; display: flex; border-bottom: 1px solid #1c2438; background: #10162a; }
+.lab-tab {
+  flex: 1; background: transparent; color: #8b94a8; border: none;
+  border-bottom: 2px solid transparent; padding: 6px 8px; font: inherit; cursor: pointer;
+}
+.lab-tab:hover { color: #cfd6e4; }
+.lab-tab.on { color: #cfd6e4; border-bottom-color: #f2c14e; }
+
+.lab-debug {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  font: 12px/1.5 ui-monospace, Consolas, monospace; color: #cfd6e4;
+}
+.lab-debug-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-bottom: 1px solid #1c2438; background: #10162a;
+}
+.lab-debug-ctl {
+  background: #141b2e; color: #cfd6e4; border: 1px solid #263453;
+  border-radius: 6px; padding: 2px 6px; font: inherit; cursor: pointer;
+}
+.lab-debug-clicked { flex: 1; color: #f2c14e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-debug-body { flex: 1; overflow: auto; padding: 6px 8px; }
+.lab-debug-sec > summary { cursor: pointer; font-weight: 600; padding: 3px 0; color: #9fb3d8; }
+.lab-debug-c { margin-left: 10px; border-radius: 4px; }
+.lab-debug-c > summary { cursor: pointer; padding: 2px 0; color: #b9d0a8; }
+.lab-debug-c.flash { background: #3a2f10; }
+.lab-debug pre { margin: 2px 0 8px; white-space: pre-wrap; word-break: break-word; color: #b9d0a8; }
 
 /* ── Playable scopes: the symbol game (living town / quest village) ──────── */
 
@@ -70,6 +170,13 @@ html, body {
 /* `display: flex` etc. would beat the hidden attribute — never let an unseen
    overlay blanket the stage and swallow the pointer. */
 .quest-root [hidden] { display: none !important; }
+
+/* EMBEDDED town (seamless walk↔fly): only the in-world HUD (toast/win) floats
+   over the flight canvas — the button board is the lab's top-level chrome, not
+   part of this overlay. Pointer-transparent except the win panel's button. */
+.quest-embed { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 7; }
+.quest-embed [hidden] { display: none !important; }
+.quest-embed .quest-win { pointer-events: auto; }
 
 .quest-stage { flex: 1; position: relative; min-width: 0; }
 .quest-canvas { width: 100%; height: 100%; display: block; }
@@ -119,7 +226,66 @@ html, body {
 }
 .quest-boardpanel-inner { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px; }
 
+/* ── Family strip: dollhouse member chips — a state EMOJI + a name. A tap
+   ADDRESSES that member (spoken commands go to it); selected = gold ring. ── */
+.lab-family {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 6px 8px; overflow-x: auto;
+  border-bottom: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-family:empty { display: none; }
+.lab-family-chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 3.4rem; padding: 4px 6px;
+  background: #141b2e; border: 2px solid #263453; border-radius: 10px;
+  color: #cfd6e4; font: inherit; cursor: pointer;
+}
+.lab-family-chip.selected { border-color: #f2c14e; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.4); }
+/* Not in the world right now (out working/shopping/walking) — dimmed, not gone. */
+.lab-family-chip.away { opacity: 0.5; border-style: dashed; }
+.lab-family-emoji { font-size: 1.5rem; line-height: 1.7rem; }
+.lab-family-name { font-size: 0.72rem; opacity: 0.85; white-space: nowrap; }
+
+/* ── City strip: per-district cohort chips (④ city HUD) — a glyph, souls,
+   the wellbeing face, key stocks worst-shortage-first. Appears only once
+   the town outgrows the tracked cap; the "city" row is the total. ── */
+.lab-city {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 5px 8px; overflow-x: auto;
+  border-bottom: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-city:empty { display: none; }
+.lab-city-chip {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 5px;
+  padding: 3px 8px;
+  background: #141b2e; border: 2px solid #263453; border-radius: 10px;
+  color: #cfd6e4; font-size: 0.8rem; white-space: nowrap;
+}
+.lab-city-chip.total { border-color: #3d517e; background: #182238; }
+.lab-city-glyph { width: 1.4rem; height: 1.4rem; display: inline-flex; }
+.lab-city-pop { font-variant-numeric: tabular-nums; }
+.lab-city-well { font-size: 1rem; }
+.lab-city-stock { display: inline-flex; align-items: center; gap: 2px; opacity: 0.9; font-variant-numeric: tabular-nums; }
+.lab-city-stock.short { color: #e88a7a; }
+.lab-city-stock-glyph { width: 1.1rem; height: 1.1rem; display: inline-flex; }
+
 /* ── Footer: always-present response affordances (Yes / No / More / Speak) ── */
+.lab-pocket {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 6px 8px; overflow-x: auto;
+  border-top: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-pocket:empty { display: none; }
+.lab-pocket-item {
+  position: relative;
+  flex: 0 0 auto; width: 3rem; height: 3rem; padding: 4px;
+  background: #141b2e; border: 2px solid #263453; border-radius: 10px; cursor: pointer;
+}
+.lab-pocket-item.selected { border-color: #f2c14e; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.4); }
+/* Stack count badge — items are fungible stacks, so an entry shows how many are held. */
+.lab-pocket-count {
+  position: absolute; right: -3px; bottom: -3px; min-width: 1.1rem; padding: 0 3px;
+  font-size: 0.72rem; font-weight: 700; line-height: 1.2rem; text-align: center;
+  color: #0a0e19; background: #f2c14e; border-radius: 999px;
+}
+
 .lab-footer {
   flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr);
   gap: 6px; padding: 8px; border-top: 1px solid #1c2438; background: #0a0e19;
@@ -177,6 +343,25 @@ html, body {
 .lab-word:hover { background: #182541; border-color: #34477a; }
 .lab-word-icon { width: 100%; aspect-ratio: 1; display: block; }
 .lab-word-label { font-size: 11px; text-align: center; line-height: 1.1; }
+
+/* CONTROLS (language-expansion.md dual surface): sentence-type chips, category
+   tabs and the modifier rail are REFINERS, not spoken words — rendered as flat
+   amber-tinted pills, visually distinct from the card-like word buttons. */
+.lab-control {
+  background: #1f1a0c; border: 1px dashed #6b5a26; border-radius: 999px;
+  color: #d8c27a; padding: 4px 10px; font: inherit; font-size: 12px;
+  cursor: pointer; line-height: 1.2;
+}
+.lab-control:hover { background: #2a2310; border-color: #97803a; }
+.lab-control.selected { background: #3a3013; border-style: solid; border-color: #caa94e; color: #f0e0a8; }
+.lab-typechips, .lab-cattabs {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0;
+}
+.lab-cattabs { padding: 8px 0 2px; }
+.lab-modrail { display: flex; gap: 6px; padding: 8px 12px 0; overflow-x: auto; }
+.lab-mod { width: 2.6rem; height: 2.6rem; padding: 3px; border-radius: 10px; flex: 0 0 auto; }
+.lab-mod-icon { width: 100%; height: 100%; display: block; }
+.lab-footer-btn.lab-speak.ready { box-shadow: 0 0 0 2px #3fae6a inset; }
 .quest-boardpanel-prompt {
   color: #cfd6e4; font-size: 15px; text-align: center;
   min-height: 1.4em; margin-bottom: 8px;
@@ -214,3 +399,30 @@ html, body {
 }
 .quest-boardpanel .icon-fill-emoji { line-height: 1; font-size: 92cqmin; }
 .quest-boardpanel .icon-fill-img { width: 100%; height: 100%; object-fit: contain; }
+
+/* ── Loading veil — a compositor-driven spinner that keeps turning even
+   while a synchronous build lump freezes the main thread (CSS transform
+   animations run off-thread in Chromium). ─────────────────────────────── */
+.lab-veil {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; background: rgba(7, 11, 22, 0.62); backdrop-filter: blur(2px);
+  color: #dbe4f0; font: 13px ui-monospace, Menlo, monospace;
+}
+.lab-veil.hidden { display: none; }
+.lab-spin {
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 4px solid rgba(148, 179, 222, 0.25); border-top-color: #8fc1ff;
+  animation: lab-spin-rot 0.9s linear infinite;
+}
+@keyframes lab-spin-rot { to { transform: rotate(360deg); } }
+/* Small non-blocking badge — a town founding while the ship flies. */
+.lab-founding {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(143, 193, 255, 0.35);
+  border-radius: 999px; padding: 5px 14px;
+  color: #dbe4f0; font: 12px ui-monospace, Menlo, monospace; pointer-events: none;
+}
+.lab-founding.hidden { display: none; }
+.lab-founding .lab-spin { width: 14px; height: 14px; border-width: 2px; }

@@ -33,12 +33,13 @@
 //     the parts and takes the descriptor scale.
 
 import * as THREE from "three";
+import { propMaterial, type LitMaterial } from "./materials";
 
 export interface ObjectModel {
   /** Root to add to the scene, position, and YAW (carries `userData.pick`). */
   object: THREE.Group;
-  /** Every standard material in the model — for emissive highlight + floor-fade. */
-  materials: THREE.MeshStandardMaterial[];
+  /** Every lit material in the model — for emissive highlight + floor-fade. */
+  materials: LitMaterial[];
   /** Apply the composed glyph's descriptors (color/size/temperature). Idempotent
    *  — call on creation and again whenever `glyph` changes. */
   applyDescriptors(glyph: string | undefined): void;
@@ -59,9 +60,9 @@ interface Ctx {
   r: number;
   /** Parts group (takes the descriptor scale). */
   content: THREE.Group;
-  materials: THREE.MeshStandardMaterial[];
+  materials: LitMaterial[];
   /** Body materials a color descriptor recolors (wheels/stems/eyes stay fixed). */
-  tintable: THREE.MeshStandardMaterial[];
+  tintable: LitMaterial[];
   /** Each tintable material's original color, to restore when the tint clears. */
   tintBase: THREE.Color[];
   disposables: Array<{ dispose(): void }>;
@@ -74,12 +75,8 @@ function mat(
   ctx: Ctx,
   color: THREE.ColorRepresentation,
   opts: { roughness?: number; metalness?: number; tint?: boolean } = {},
-): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(color),
-    roughness: opts.roughness ?? 0.6,
-    metalness: opts.metalness ?? 0,
-  });
+): LitMaterial {
+  const m = propMaterial(color, { roughness: opts.roughness, metalness: opts.metalness });
   ctx.materials.push(m);
   ctx.disposables.push(m);
   if (opts.tint) {
@@ -118,6 +115,27 @@ type Recipe = (ctx: Ctx) => void;
  *  RECIPE builds its top here and render3d's "on"-containment lift rests
  *  items on the same height, so what's on a table sits ON it. */
 export const TABLE_TOP_Y = 0.8;
+
+/** A bed's sleeping surface, as a fraction of its footprint radius above the
+ *  ground: the bed RECIPE's blanket top sits at local −0.16r with the mesh
+ *  lifted by r (base at y = −r), i.e. 0.84r up. render3d rests a SLEEPING
+ *  body (AvatarState.activity "sleep") on the same height. */
+export const BED_TOP_FRAC = 0.84;
+
+/** A SEAT's sitting surface, per fixture kind, as a fraction of its footprint
+ *  radius above the ground — the same contract as BED_TOP_FRAC (every recipe is
+ *  drawn with its base at local −r and the mesh lifted by r, so a local height
+ *  h reads as (1 + h/r)·r off the floor). render3d rests a SITTING body
+ *  (AvatarState.activity "sit") on this height.
+ *
+ *    chair — seat box centred at 1.05r, half-height 0.15r → top 1.2r → 2.2r
+ *            (≈ 0.48 m at the standard r = 0.22: a chair).
+ *    privy — bench seat centred at −0.05r, half-height 0.06r → top 0.01r → 1.01r
+ *            (≈ 0.5 m at r = 0.5: a toilet).
+ *
+ *  A kind ABSENT here has no seat the renderer can resolve (a tub, a workbench),
+ *  so its body performs the crouch where it stands. */
+export const SEAT_TOP_FRAC: Readonly<Record<string, number>> = { chair: 2.2, privy: 1.01 };
 
 const RECIPES: Record<string, Recipe> = {
   ball: (ctx) => {
@@ -281,6 +299,36 @@ const RECIPES: Record<string, Recipe> = {
     };
   },
 
+  // The FOOD box (goods corner, `food` good). A tall upright cabinet with one
+  // front door hinged at its side — the silhouette differs from the chest at a
+  // glance, which is the point: the pantry should be findable across the room.
+  // Matte enamel only; per the seizure-safety law nothing here goes glossy.
+  "fixture:refrigerator": (ctx) => {
+    const { r } = ctx;
+    const enamel = mat(ctx, "#dfe4e8", { roughness: 0.85, tint: true });
+    const trim = mat(ctx, "#9aa5ad", { roughness: 0.8 });
+    // Body — a tall box against the wall, front facing +X.
+    part(ctx, new THREE.BoxGeometry(r * 1.3, r * 3.0, r * 1.7), enamel, [0, r * 0.5, 0]);
+    // Freezer/fridge split line across the front.
+    part(ctx, new THREE.BoxGeometry(r * 0.06, r * 0.1, r * 1.72), trim, [r * 0.66, r * 1.15, 0]);
+    // Door hinged along the far side (-Z), swinging open toward +X.
+    const hinge = new THREE.Group();
+    hinge.position.set(r * 0.65, r * 0.5, -r * 0.85);
+    const door = new THREE.Mesh(new THREE.BoxGeometry(r * 0.12, r * 2.9, r * 1.66), enamel);
+    ctx.disposables.push(door.geometry);
+    door.position.set(0, 0, r * 0.83); // extends across the front from the hinge
+    hinge.add(door);
+    // Handle — a vertical bar on the swinging edge.
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(r * 0.1, r * 0.9, r * 0.1), trim);
+    ctx.disposables.push(handle.geometry);
+    handle.position.set(r * 0.12, r * 0.3, r * 1.5);
+    hinge.add(handle);
+    ctx.content.add(hinge);
+    ctx.setOpen = (frac) => {
+      hinge.rotation.y = -frac * (Math.PI * 0.6);
+    };
+  },
+
   "fixture:cupboard": (ctx) => {
     const { r } = ctx;
     const wood = mat(ctx, "#6f4e2f", { roughness: 0.8, tint: true });
@@ -330,6 +378,191 @@ const RECIPES: Record<string, Recipe> = {
         part(ctx, legGeom, leg, [sx * r * 0.85, legCy, sz * r * 0.85]);
       }
     }
+  },
+
+  // ---- The household STATIONS (bed / chair / box): the furniture
+  // Sims-mode needs are satisfied AT. Same conventions as the fixtures
+  // above: forward (+X) faces INTO the room, base at y = -r, sized to be
+  // readable at dollhouse camera distance. Nothing opens.
+
+  "fixture:bed": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#8a6238", { roughness: 0.85 });
+    const linen = mat(ctx, "#efe9dc", { roughness: 0.9 });
+    const blanket = mat(ctx, "#7d92b8", { roughness: 0.9, tint: true });
+    // Low platform frame, headboard against the wall (-X — the piece
+    // faces into the room, so the wall is behind it).
+    part(ctx, new THREE.BoxGeometry(r * 1.95, r * 0.5, r * 1.45), wood, [0, -r * 0.75, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.12, r * 1.1, r * 1.45), wood, [-r * 0.94, -r * 0.45, 0]);
+    // Mattress, blanket over the foot end, pillow at the head.
+    part(ctx, new THREE.BoxGeometry(r * 1.8, r * 0.3, r * 1.3), linen, [0, -r * 0.35, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.15, r * 0.34, r * 1.38), blanket, [r * 0.3, -r * 0.33, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.42, r * 0.18, r * 0.9), linen, [-r * 0.62, -r * 0.11, 0]);
+  },
+
+  "fixture:chair": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#9a7248", { roughness: 0.8, tint: true });
+    const leg = mat(ctx, "#7a5a38", { roughness: 0.8 });
+    // Seat at sitting height (~0.45 m at the standard 0.22 m half-extent).
+    const seatY = r * 1.05;
+    part(ctx, new THREE.BoxGeometry(r * 1.7, r * 0.3, r * 1.7), wood, [0, seatY, 0]);
+    const legH = seatY - r * 0.15 + r; // ground to seat underside
+    const legGeom = new THREE.BoxGeometry(r * 0.22, legH, r * 0.22);
+    ctx.disposables.push(legGeom);
+    for (const sx of [1, -1]) {
+      for (const sz of [1, -1]) {
+        part(ctx, legGeom, leg, [sx * r * 0.65, -r + legH / 2, sz * r * 0.65]);
+      }
+    }
+    // Back rest — the chair FACES the table (+X), so the back is at -X.
+    part(ctx, new THREE.BoxGeometry(r * 0.2, r * 2.3, r * 1.7), wood, [-r * 0.75, seatY + r * 1.3, 0]);
+  },
+
+  // A plain lidded BOX — the generic personal container (every household member
+  // owns one). Deliberately EMPTY: what makes a box a "toy box" is only what
+  // happens to be inside it, so nothing is baked into the model. Squarer and
+  // plainer than the chest (domed lid + bands) so the two read apart.
+  "fixture:box": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#b98a4b", { roughness: 0.85, tint: true });
+    const edge = mat(ctx, "#8a6238", { roughness: 0.8 });
+    // Body, with a darker base rim.
+    part(ctx, new THREE.BoxGeometry(r * 1.7, r * 1.2, r * 1.7), wood, [0, -r * 0.4, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.78, r * 0.14, r * 1.78), edge, [0, -r * 0.95, 0]);
+    // Flat lid, hinged along the BACK edge (-X — the piece faces into the room).
+    const hinge = new THREE.Group();
+    hinge.position.set(-r * 0.85, r * 0.22, 0);
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(r * 1.74, r * 0.16, r * 1.74), edge);
+    ctx.disposables.push(lid.geometry);
+    lid.position.set(r * 0.87, 0, 0); // extends forward from the hinge
+    hinge.add(lid);
+    ctx.content.add(hinge);
+    ctx.setOpen = (frac) => {
+      hinge.rotation.z = frac * (Math.PI * 0.55); // up and over the back
+    };
+  },
+
+  // ---- Sims-mode ROUND 2 stations: bath (hygiene) / privy (waste) /
+  // water barrel (thirst) / trash bin / pet bowl. Same conventions.
+
+  "fixture:bath": (ctx) => {
+    const { r } = ctx;
+    const tub = mat(ctx, "#d8d2c4", { roughness: 0.55, tint: true });
+    const rim = mat(ctx, "#c4bcaa", { roughness: 0.6 });
+    const water = mat(ctx, "#7db8d4", { roughness: 0.15 });
+    // An open tub: floor slab + four walls, a fat rounded rim, water inside.
+    part(ctx, new THREE.BoxGeometry(r * 1.9, r * 0.16, r * 1.2), tub, [0, -r * 0.9, 0]);
+    const wallH = r * 0.95;
+    const wallY = -r + r * 0.16 + wallH / 2;
+    const sideGeom = new THREE.BoxGeometry(r * 1.9, wallH, r * 0.16);
+    const endGeom = new THREE.BoxGeometry(r * 0.16, wallH, r * 1.2);
+    ctx.disposables.push(sideGeom, endGeom);
+    part(ctx, sideGeom, tub, [0, wallY, r * 0.52]);
+    part(ctx, sideGeom, tub, [0, wallY, -r * 0.52]);
+    part(ctx, endGeom, tub, [r * 0.87, wallY, 0]);
+    part(ctx, endGeom, tub, [-r * 0.87, wallY, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 2.0, r * 0.14, r * 1.3), rim, [0, wallY + wallH / 2, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.6, r * 0.04, r * 0.9), water, [0, wallY + wallH * 0.22, 0]);
+  },
+
+  "fixture:privy": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#8a6238", { roughness: 0.85, tint: true });
+    const seat = mat(ctx, "#a88960", { roughness: 0.8 });
+    const dark = mat(ctx, "#2b2119", { roughness: 0.9 });
+    // An outhouse-style bench seat: box with a dark hole, low back panel.
+    part(ctx, new THREE.BoxGeometry(r * 1.5, r * 0.9, r * 1.5), wood, [0, -r * 0.55, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.55, r * 0.12, r * 1.55), seat, [0, -r * 0.05, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.34, r * 0.34, r * 0.06, 16), dark, [r * 0.1, r * 0.03, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.14, r * 1.4, r * 1.5), wood, [-r * 0.7, r * 0.6, 0]);
+  },
+
+  "fixture:barrel": (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#7a5a38", { roughness: 0.85, tint: true });
+    const band = mat(ctx, "#4a4a52", { roughness: 0.5, metalness: 0.4 });
+    const water = mat(ctx, "#6fb0cf", { roughness: 0.15 });
+    // A staved water barrel: bulged cylinder, two iron bands, water disc up top.
+    part(ctx, new THREE.CylinderGeometry(r * 0.8, r * 0.8, r * 1.9, 14), wood, [0, -r * 0.05, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.86, r * 0.86, r * 0.12, 14), band, [0, r * 0.55, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.86, r * 0.86, r * 0.12, 14), band, [0, -r * 0.65, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.72, r * 0.72, r * 0.05, 14), water, [0, r * 0.88, 0]);
+  },
+
+  "fixture:bin": (ctx) => {
+    const { r } = ctx;
+    const metal = mat(ctx, "#8a919c", { roughness: 0.45, metalness: 0.5, tint: true });
+    const dark = mat(ctx, "#5c636e", { roughness: 0.5, metalness: 0.4 });
+    // A lidded trash can; the lid eases up while someone stands close.
+    part(ctx, new THREE.CylinderGeometry(r * 0.75, r * 0.62, r * 1.6, 14), metal, [0, -r * 0.2, 0]);
+    const hinge = new THREE.Group();
+    hinge.position.set(-r * 0.75, r * 0.6, 0);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.82, r * 0.82, r * 0.14, 14), dark);
+    ctx.disposables.push(lid.geometry);
+    lid.position.set(r * 0.75, 0, 0);
+    hinge.add(lid);
+    ctx.content.add(hinge);
+    part(ctx, new THREE.CylinderGeometry(r * 0.1, r * 0.1, r * 0.16, 8), dark, [0, r * 0.75, 0]);
+    ctx.setOpen = (frac) => {
+      hinge.rotation.z = frac * (Math.PI * 0.45);
+    };
+  },
+
+  "fixture:bowl": (ctx) => {
+    const { r } = ctx;
+    const dish = mat(ctx, "#c0504d", { roughness: 0.5, tint: true });
+    const inner = mat(ctx, "#9c3a37", { roughness: 0.6 });
+    // The pet's floor dish: squat truncated cone with a darker inside.
+    part(ctx, new THREE.CylinderGeometry(r * 0.95, r * 0.7, r * 0.6, 16), dish, [0, -r * 0.7, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.8, r * 0.8, r * 0.06, 16), inner, [0, -r * 0.44, 0]);
+  },
+
+  "fixture:oven": (ctx) => {
+    const { r } = ctx;
+    const iron = mat(ctx, "#3c3a38", { roughness: 0.6, metalness: 0.35, tint: true });
+    const top = mat(ctx, "#26241f", { roughness: 0.5, metalness: 0.4 });
+    const brass = mat(ctx, "#a8834a", { roughness: 0.45, metalness: 0.5 });
+    const ember = mat(ctx, "#ff7a1a", { roughness: 0.3 });
+    ember.emissive = new THREE.Color("#c94f10");
+    ember.emissiveIntensity = 0.9;
+    // A squat cast-iron cook oven: body on stubby feet, a dark cooktop
+    // with two burner rings, a brass-latched fire door with an ember glow.
+    part(ctx, new THREE.BoxGeometry(r * 1.8, r * 1.2, r * 1.5), iron, [0, -r * 0.3, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.9, r * 0.14, r * 1.6), top, [0, r * 0.35, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.34, r * 0.34, r * 0.05, 14), iron, [-r * 0.42, r * 0.44, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.26, r * 0.26, r * 0.05, 14), iron, [r * 0.42, r * 0.44, 0]);
+    // The fire door on the FRONT (+x — `facing` turns it into the room).
+    part(ctx, new THREE.BoxGeometry(r * 0.08, r * 0.6, r * 0.7), top, [r * 0.92, -r * 0.35, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.06, r * 0.3, r * 0.4), ember, [r * 0.95, -r * 0.35, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.05, r * 0.05, r * 0.25, 8), brass, [r * 0.97, -r * 0.1, r * 0.42], [0, 0, Math.PI / 2]);
+    // Feet + a flue elbow rising at the back.
+    for (const [fx, fz] of [[-0.75, -0.6], [-0.75, 0.6], [0.75, -0.6], [0.75, 0.6]] as const) {
+      part(ctx, new THREE.CylinderGeometry(r * 0.09, r * 0.12, r * 0.35, 8), top, [r * fx, -r * 1.05, r * fz]);
+    }
+    part(ctx, new THREE.CylinderGeometry(r * 0.16, r * 0.16, r * 1.1, 10), iron, [-r * 0.65, r * 0.9, -r * 0.45]);
+  },
+
+  "fixture:workbench": (ctx) => {
+    const { r } = ctx;
+    // The carpenter's bench (construction v1): a heavy slab on trestle
+    // legs, a vice block at one end, tools resting on the top.
+    const slabWood = mat(ctx, "#8f6a3e", { roughness: 0.85, tint: true });
+    const legWood = mat(ctx, "#6b4d2b", { roughness: 0.85 });
+    const iron = mat(ctx, "#4b4a48", { roughness: 0.55, metalness: 0.3 });
+    const slabTop = r * 0.55;
+    part(ctx, new THREE.BoxGeometry(r * 1.9, r * 0.22, r * 1.3), slabWood, [0, slabTop, 0]);
+    for (const [sx, sz] of [[-0.7, -0.45], [-0.7, 0.45], [0.7, -0.45], [0.7, 0.45]] as const) {
+      part(ctx, new THREE.BoxGeometry(r * 0.18, r * (1 + 0.55), r * 0.18), legWood, [r * sx, (slabTop - r) / 2, r * sz]);
+    }
+    // A low stretcher shelf with stacked offcuts.
+    part(ctx, new THREE.BoxGeometry(r * 1.5, r * 0.08, r * 0.9), legWood, [0, -r * 0.45, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.0, r * 0.18, r * 0.35), slabWood, [-r * 0.1, -r * 0.32, 0]);
+    // The vice block on the +x end, a mallet + saw resting on the top.
+    part(ctx, new THREE.BoxGeometry(r * 0.32, r * 0.3, r * 0.5), iron, [r * 0.85, slabTop + r * 0.22, -r * 0.3]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.07, r * 0.07, r * 0.55, 8), legWood, [-r * 0.35, slabTop + r * 0.16, r * 0.25], [0, 0, Math.PI / 2]);
+    part(ctx, new THREE.BoxGeometry(r * 0.2, r * 0.22, r * 0.2), slabWood, [-r * 0.05, slabTop + r * 0.18, r * 0.25]);
+    part(ctx, new THREE.BoxGeometry(r * 0.7, r * 0.04, r * 0.16), iron, [r * 0.25, slabTop + r * 0.14, -r * 0.05]);
   },
 
   crate: (ctx) => {

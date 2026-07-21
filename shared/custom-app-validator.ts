@@ -11,8 +11,8 @@ import type {
   CustomAppDefinition,
   GameDefinition,
 } from "./custom-app-types";
-import { certifyGoalTreeGame } from "./goal-tree/index";
-import { GOAL_TREE_APP_TYPE } from "./goal-tree/types";
+import { certifyGoalTreeGame } from "./world-engine/solver/index";
+import { GOAL_TREE_APP_TYPE } from "./world-engine/solver/types";
 import { certifyWorldSpec } from "./world-engine/index";
 import { WORLD_APP_TYPE } from "./world-engine/types";
 

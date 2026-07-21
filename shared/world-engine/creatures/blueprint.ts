@@ -24,9 +24,11 @@ import {
   defaultGrowth,
   growthValidationErrors,
 } from "./growth";
+import { GARMENT_KINDS, MAX_GARMENTS, clampOutfit, type OutfitBlueprint } from "./clothing";
 
 export { MAX_GROWTHS };
 export type { GrowthBlueprint };
+export type { OutfitBlueprint };
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -485,6 +487,9 @@ export interface Blueprint {
   growths: GrowthBlueprint[];
   skin: SkinBlueprint;
   posture: PostureBlueprint;
+  /** What the creature WEARS (clothing.ts) — garments over body REGIONS, so
+   *  one outfit dresses any species. Absent = bare (every older blueprint). */
+  outfit?: OutfitBlueprint;
 }
 
 /** Total limb TYPES one creature can carry. Few, by design — real
@@ -971,6 +976,25 @@ export function validateBlueprint(value: unknown): ValidationResult {
     }
   }
 
+  // Outfit: OPTIONAL (bare creatures / older blueprints) — present must be a
+  // legal garment list (clothing.ts owns the shape; ranges are clamp's job).
+  if (g.outfit !== undefined) {
+    if (!isRecord(g.outfit) || !Array.isArray((g.outfit as Record<string, unknown>).garments)) {
+      errors.push("outfit: expected { garments: [...] } when present");
+    } else {
+      const garments = (g.outfit as { garments: unknown[] }).garments;
+      if (garments.length > MAX_GARMENTS) {
+        errors.push(`outfit.garments: ${garments.length} exceeds max ${MAX_GARMENTS}`);
+      }
+      garments.forEach((gar, i) => {
+        const rec = isRecord(gar) ? gar : {};
+        if (!GARMENT_KINDS.includes(rec.kind as (typeof GARMENT_KINDS)[number])) {
+          errors.push(`outfit.garments[${i}].kind: expected one of ${GARMENT_KINDS.join("/")}`);
+        }
+      });
+    }
+  }
+
   return { ok: errors.length === 0, errors };
 }
 
@@ -1103,6 +1127,10 @@ export function clampBlueprint(value: unknown): Blueprint {
       accentColor: clampColor(skinIn.accentColor, d.skin.accentColor),
     },
     posture: clampSection(g.posture, POSTURE_RANGES as unknown as Record<string, FieldRange>, d.posture),
+    ...(() => {
+      const outfit = clampOutfit(g.outfit);
+      return outfit ? { outfit } : {};
+    })(),
   };
 }
 

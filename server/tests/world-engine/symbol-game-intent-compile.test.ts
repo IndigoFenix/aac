@@ -1,0 +1,303 @@
+// IntentFrame → Rule/GoalSpec (intent-compile.ts): the bridge from the parsed frame to
+// the action layer, binding lazy refs to world ids. Pure — safe in default `npm test`.
+
+import { describe, it, expect } from "@jest/globals";
+import { parseSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
+import {
+  compileIntent,
+  defaultBinder,
+  type IntentBinder,
+} from "@shared/world-engine/interaction/intent/intent-compile.js";
+
+// The child "child" speaks to the creature "bear"; "farmer" is a role.
+const binder: IntentBinder = defaultBinder({ player: "child", listener: "bear", roles: ["farmers"] });
+const compile = (s: string, b: IntentBinder = binder, id = "r1") =>
+  compileIntent(parseSentence(s), b, { id });
+
+describe("rule compilation — when/if/until → Rule", () => {
+  it("when night go home → an agent rule the child authored", () => {
+    const c = compile("when + night + go + home");
+    expect(c.kind).toBe("rule");
+    if (c.kind !== "rule") return;
+    expect(c.rule).toMatchObject({
+      author: "child",
+      binding: { kind: "agent", id: "bear" },
+      trigger: { kind: "worldState", token: "night" },
+      lifetime: "while",
+      action: { kind: "goHome" },
+      enabled: true,
+    });
+    expect(c.rule.sourceGlyph).toContain("night");
+  });
+
+  it("farmers eat when hungry → a GROUP rule with a creatureState trigger", () => {
+    const c = compile("farmers + eat + when + hungry");
+    expect(c.kind).toBe("rule");
+    if (c.kind !== "rule") return;
+    expect(c.rule.binding).toEqual({ kind: "group", role: "farmers" });
+    expect(c.rule.trigger).toEqual({ kind: "creatureState", state: "hungry" });
+    expect(c.rule.action).toEqual({ kind: "satisfy", need: "eat" });
+  });
+
+  it("if window.open shut → an EDGE rule toggling the device shut (state rides the head via `.`)", () => {
+    const c = compile("if + window.open + shut"); // "window.open" = the open window (glyph modifier)
+    expect(c.kind).toBe("rule");
+    if (c.kind !== "rule") return;
+    expect(c.rule.lifetime).toBe("edge");
+    expect(c.rule.trigger).toEqual({ kind: "itemState", item: { kind: "window" }, state: "open" });
+    // "shut [it]" — the action's implied object is the condition's window (anaphora).
+    expect(c.rule.action).toEqual({ kind: "toggle", device: { match: { kind: "window" } }, state: "closed" });
+  });
+
+  it("build house until town → an UNTIL rule with a capped build", () => {
+    const c = compile("build + house + until + town");
+    expect(c.kind).toBe("rule");
+    if (c.kind !== "rule") return;
+    expect(c.rule.lifetime).toBe("until");
+    expect(c.rule.action).toEqual({ kind: "build", structure: "house", cap: 1 });
+    expect(c.rule.trigger).toEqual({ kind: "worldState", token: "town" });
+  });
+});
+
+describe("command compilation — imperative → GoalSpec", () => {
+  it("you go home → a goHome goal for the listener", () => {
+    const c = compile("you + go + home");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "goHome" }, actor: "bear" });
+  });
+
+  it("bare 'build' → a build order with the default settlement target (the FOUNDING seam)", () => {
+    const c = compile("build");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "build", structure: "town", cap: 1 } });
+  });
+
+  it("go to market → goTo a named place", () => {
+    const c = compile("go + to + market");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "goTo", place: { kind: "named", id: "market" } } });
+  });
+
+  it("give ball to bear → a give goal with a match item + recipient", () => {
+    const c = compile("give + ball + to + bear");
+    expect(c.kind).toBe("goal");
+    if (c.kind !== "goal") return;
+    expect(c.goal).toEqual({ kind: "give", item: { match: { kind: "ball" } }, to: "bear" });
+  });
+
+  it("descriptors ride into the item match (get ball.big)", () => {
+    const c = compile("get + ball.big");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "fetch", item: { match: { kind: "ball", descriptors: ["big"] } } } });
+  });
+
+  it("you follow i_me → a follow goal targeting the player (party recruit)", () => {
+    const c = compile("you + follow + i_me");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "follow", target: "child" } });
+  });
+
+  it("you go there → goTo the gaze point when the world supplies it", () => {
+    const withGaze = defaultBinder({ player: "child", listener: "bear", gazePlace: { kind: "point", x: 4, y: 9 } });
+    const c = compile("you + go + there", withGaze);
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "goTo", place: { kind: "point", x: 4, y: 9 } } });
+  });
+});
+
+describe("conversational kinds pass through as dialogue (not goals)", () => {
+  it("a request is a dialogue move, not an action", () => {
+    expect(compile("i_me + want + ball").kind).toBe("dialogue");
+  });
+  it("a greeting and a question pass through too", () => {
+    expect(compile("hi").kind).toBe("dialogue");
+    expect(compile("where + ball").kind).toBe("dialogue");
+  });
+});
+
+describe("sequence + binding fallbacks", () => {
+  it("a sequence compiles each clause", () => {
+    const c = compile("go + home + then + rest");
+    expect(c.kind).toBe("sequence");
+    if (c.kind !== "sequence") return;
+    expect(c.items[0]).toMatchObject({ kind: "goal", goal: { kind: "goHome" } });
+    expect(c.items[1]).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "rest" } });
+  });
+
+  it("a rule that can't bind its action reports unbound (no world for a gaze item)", () => {
+    // "get this" — a gaze item with no gaze resolution → the fetch can't bind.
+    const c = compile("get + this");
+    expect(c.kind).toBe("unbound");
+  });
+
+  it("a gaze item resolves when the world supplies the fixation", () => {
+    const withGaze = defaultBinder({ player: "child", listener: "bear", gazeItem: "apple7" });
+    const c = compile("get + this", withGaze);
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "fetch", item: { id: "apple7" } } });
+  });
+});
+
+describe("round-2 verbs — drink/wash/clean/sit/wake_up, throw-away, hug, help, carry", () => {
+  it("bare self-care verbs compile to satisfy goals", () => {
+    for (const [verb, need] of [
+      ["you + drink", "drink"],
+      ["you + wash", "wash"],
+      ["you + brush_teeth", "brush_teeth"],
+      ["you + clean", "clean"],
+      ["you + sit", "sit"],
+      ["you + wake_up", "wake_up"],
+      ["you + wear", "wear"], // round 3 — the change-of-clothes command
+    ] as const) {
+      expect(compile(verb)).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need }, actor: "bear" });
+    }
+  });
+
+  it("eat/drink WITH a named item CONSUME that item, never the abstract need", () => {
+    // "you eat banana" must NOT silently drop the banana into the self-care
+    // hunger need (which only household residents can serve) — it targets the
+    // named food so the addressed creature actually goes and eats it.
+    expect(compile("you + eat + banana")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "consume", item: { match: { kind: "banana" } } },
+    });
+    expect(compile("you + drink + water")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "consume", item: { match: { kind: "water" } } },
+    });
+    // A descriptor rides along ("eat the hot banana").
+    expect(compile("you + eat + banana.hot")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "consume", item: { match: { kind: "banana", descriptors: ["hot"] } } },
+    });
+    // BARE eat/drink still raise the founding motive.
+    expect(compile("you + eat")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "eat" } });
+  });
+
+  it("wash/clean WITH an object stay transforms (the verb's other life)", () => {
+    expect(compile("wash + cup")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "transform", item: { match: { kind: "cup" } }, state: "clean" },
+    });
+    expect(compile("clean + table")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "transform", item: { match: { kind: "table" } }, state: "clean" },
+    });
+  });
+
+  it("throw with no destination → put it in the BIN (throwing away)", () => {
+    expect(compile("throw + sock")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "putIn", item: { match: { kind: "sock" } }, container: { kind: "named", id: "bin" } },
+    });
+  });
+
+  it("carry is a fetch synonym", () => {
+    expect(compile("carry + ball")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "fetch", item: { match: { kind: "ball" } } },
+    });
+  });
+
+  it("hug compiles to a socialAct aimed at the named creature", () => {
+    expect(compile("hug + mara")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "socialAct", target: "mara", act: "hug" },
+    });
+  });
+
+  it("help compiles to an adoption order on the target", () => {
+    expect(compile("help + dog")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "help", target: "dog" },
+    });
+  });
+});
+
+describe("placement compilation (construction v1) — the relation is preserved", () => {
+  const furn: IntentBinder = {
+    ...defaultBinder({ player: "child", listener: "bear" }),
+    isFurniture: (ref) => ref?.kind === "entity" && ["chair", "table", "bed"].includes(ref.symbol),
+  };
+
+  it("put chair near table → a place goal carrying the relation + anchor", () => {
+    const c = compileIntent(parseSentence("put + chair + near + table"), furn, { id: "p1" });
+    expect(c.kind).toBe("goal");
+    if (c.kind !== "goal") return;
+    expect(c.goal).toEqual({
+      kind: "place",
+      item: { match: { kind: "chair" } },
+      at: { relation: "near", anchor: { kind: "named", id: "table" } },
+    });
+  });
+
+  it("put apple in box stays the classic containment putIn (regression)", () => {
+    const c = compileIntent(parseSentence("put + apple + in + box"), furn, { id: "p2" });
+    expect(c).toMatchObject({
+      kind: "goal",
+      goal: { kind: "putIn", item: { match: { kind: "apple" } }, container: { kind: "named", id: "box" } },
+    });
+  });
+
+  it("put ball near tree → even a non-furniture item PLACES beside a spatial anchor", () => {
+    const c = compileIntent(parseSentence("put + ball + near + tree"), furn, { id: "p3" });
+    expect(c).toMatchObject({
+      kind: "goal",
+      goal: { kind: "place", at: { relation: "near", anchor: { kind: "named", id: "tree" } } },
+    });
+  });
+
+  it("put chair here → a point anchor reads as relation 'at' (the gaze spot)", () => {
+    const b: IntentBinder = {
+      ...defaultBinder({ player: "child", listener: "bear", gazePlace: { kind: "point", x: 3, y: 4 } }),
+      isFurniture: furn.isFurniture!,
+    };
+    const c = compileIntent(parseSentence("put + chair + here"), b, { id: "p4" });
+    expect(c.kind).toBe("goal");
+    if (c.kind !== "goal") return;
+    expect(c.goal).toMatchObject({
+      kind: "place",
+      at: { relation: "at", anchor: { kind: "point", x: 3, y: 4 } },
+    });
+  });
+
+  it("without the isFurniture hook, put keeps its legacy containment shape", () => {
+    const c = compile("put + chair + in + box");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "putIn" } });
+  });
+});
+
+// ── Verb × object-CATEGORY dispatch (language-expansion.md phase 2): household
+// chores named by their category object route to the matching NEED TEMPLATE,
+// never a one-item transform or a structure build.
+
+describe("household chores — verb × category → satisfy", () => {
+  it("wash + clothing → the LAUNDRY chore (not an item transform)", () => {
+    expect(compile("you + wash + clothing")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "satisfy", need: "laundry" },
+      actor: "bear",
+    });
+  });
+
+  it("clean + home/house → the TIDY sweep; clean + clothing → laundry", () => {
+    expect(compile("you + clean + home")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
+    expect(compile("you + clean + house")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
+    expect(compile("you + clean + clothing")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "laundry" } });
+  });
+
+  it("cook/make + food → the COOKING chore (never 'build a food structure')", () => {
+    expect(compile("you + cook + food")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "cook" } });
+    expect(compile("you + make + food")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "cook" } });
+  });
+
+  it("bare self-care verbs keep their old readings", () => {
+    expect(compile("you + wash")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "wash" } });
+    expect(compile("you + clean")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
+    expect(compile("make + house")).toMatchObject({ kind: "goal", goal: { kind: "build", structure: "house" } });
+  });
+});
+
+describe("phase + modal composition through the compiler", () => {
+  it("stop + eat compiles to the halt, never a goal for the inner verb", () => {
+    expect(compile("you + stop + eat")).toMatchObject({ kind: "goal", goal: { kind: "stay" } });
+    expect(compile("stop + eat")).toMatchObject({ kind: "goal", goal: { kind: "stay" } });
+  });
+
+  it("want + play stays a conversational move (a desire, not an order)", () => {
+    expect(compile("i_me + want + play")).toMatchObject({ kind: "dialogue" });
+  });
+});

@@ -105,6 +105,11 @@ const TICK_INTERVAL_MS = 50; // throttle rAF to ~20Hz
 // Eyegaze providers emit 20-90Hz while tracking; even blinks are shorter
 // than this. No sample for this long means the signal is gone, not still.
 const STALE_GAZE_MS = 500;
+// The engine reports the firing tick as target:null, so the border would be
+// cleared one tick short of closing — the student sees it select while the
+// circle still has a gap. Hold the completed ring this long so closing the
+// circle reads as the confirmation that the selection happened.
+const COMPLETION_HOLD_MS = 250;
 
 /** Find the [data-dwell] element under a point, respecting [data-dwell-trap] boundaries. */
 function hitTestDwell(x: number, y: number): HTMLElement | null {
@@ -233,6 +238,8 @@ export function EyeTrackingDwellProvider({
 
     let rafId: number;
     let lastTickTime = 0;
+    // Timestamp until which the completed ring stays painted; 0 = not holding.
+    let completionHoldUntil = 0;
 
     const tick = (time: number) => {
       rafId = requestAnimationFrame(tick);
@@ -246,6 +253,7 @@ export function EyeTrackingDwellProvider({
       if (!point || isCalibratingRef.current) {
         setGazePosition(point ?? null);
         setDwellTarget(null);
+        completionHoldUntil = 0;
         engine.clearTarget();
         return;
       }
@@ -255,13 +263,27 @@ export function EyeTrackingDwellProvider({
       const dwellEl = hitTestDwell(point.x, point.y);
       const r = engine.update(dwellEl, point, time, gazeUpdatedAtRef.current);
 
+      // Measure before the click: the handler may re-render the board and
+      // detach the element, which would collapse its rect to zeros.
+      const firedRect = r.fired?.getBoundingClientRect() ?? null;
       if (r.fired) r.fired.click();
 
-      setDwellTarget(
-        r.target
-          ? { element: r.target, rect: r.target.getBoundingClientRect(), progress: r.progress }
-          : null,
-      );
+      if (r.target) {
+        completionHoldUntil = 0;
+        setDwellTarget({
+          element: r.target,
+          rect: r.target.getBoundingClientRect(),
+          progress: r.progress,
+        });
+      } else if (r.fired && firedRect) {
+        // Paint the closed circle on the element that just fired, using the
+        // pre-click rect so it survives the board re-rendering underneath it.
+        completionHoldUntil = time + COMPLETION_HOLD_MS;
+        setDwellTarget({ element: r.fired, rect: firedRect, progress: 1 });
+      } else if (time >= completionHoldUntil) {
+        completionHoldUntil = 0;
+        setDwellTarget(null);
+      }
       setDwellDebug({
         hoverEnabled: r.hoverEnabled,
         movementFromAnchor: r.movementFromAnchor,

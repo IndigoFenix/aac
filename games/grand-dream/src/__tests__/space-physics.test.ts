@@ -8,10 +8,10 @@
  */
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { DEFAULT_GALAXY_PARAMS } from "@shared/space/galaxy";
-import type { StarRecord } from "@shared/space/galaxy";
-import { buildHomeBlueprint, resolveSystem, type ResolvedBody } from "@shared/space/physics/index";
-import { buildPlanetGeography, geographyParamsFromFeatures, hasOceanFeatures } from "@shared/space/planet-geography";
+import { DEFAULT_GALAXY_PARAMS } from "@shared/world-engine/space/galaxy";
+import type { StarRecord } from "@shared/world-engine/space/galaxy";
+import { buildHomeBlueprint, resolveSystem, type ResolvedBody } from "@shared/world-engine/space/physics/index";
+import { buildPlanetGeography, geographyParamsFromFeatures, hasOceanFeatures } from "@shared/world-engine/space/planet-geography";
 
 const SUN: StarRecord = {
   id: "home_star", systemSeed: 1337, feh: 0, massInit: 1, age: 4.6, radius: 1, intrinsic: 1,

@@ -4,4 +4,4 @@
  * module; grand-dream's content (economy-core.ts, content/*.json) and
  * every internal `./economy` import keep working through this re-export.
  */
-export * from "@shared/engine/modules/economy/economy";
+export * from "@shared/world-engine/kernel/modules/economy/economy";

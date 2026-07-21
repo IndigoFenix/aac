@@ -19,9 +19,11 @@
 
 import * as THREE from "three";
 import type { Blueprint } from "./blueprint";
-import { skullRaycast } from "./skeleton";
+import { resolveLimbs, skullRaycast } from "./skeleton";
 import type { CreatureBone, CreatureSkeleton, MouthSpec, Vec3 } from "./skeleton";
 import { standaloneFruitStructure, type GrowthFruitBlueprint } from "./growth";
+import type { GarmentBlueprint } from "./clothing";
+import { surfaceMaterial } from "../materials";
 
 // Live-tunable loft quality (lab sliders; later per-LOD presets).
 export const LOFT = {
@@ -636,30 +638,9 @@ export function buildFruitMesh(fruit: GrowthFruitBlueprint, scale = 1, detail = 
   // Skin attributes are inert on a non-skinned mesh; drop them.
   g.deleteAttribute("skinIndex");
   g.deleteAttribute("skinWeight");
-  const mesh = new THREE.Mesh(
-    g,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0, flatShading: true }),
-  );
+  const mesh = new THREE.Mesh(g, surfaceMaterial({ roughness: 0.7 }));
   mesh.geometry.computeBoundingSphere();
   return mesh;
-}
-
-// ── Cel shading ─────────────────────────────────────────────────────────
-// A shared few-step toon ramp for MeshToonMaterial: lighting quantizes
-// into flat bands (vertex colors and the mouth-interior tints pass
-// through unchanged — they are colors, not lighting). Lazy singleton;
-// never disposed with a mesh.
-
-let toonRamp: THREE.DataTexture | null = null;
-function getToonRamp(): THREE.DataTexture {
-  if (!toonRamp) {
-    const steps = new Uint8Array([70, 135, 200, 255]);
-    toonRamp = new THREE.DataTexture(steps, steps.length, 1, THREE.RedFormat);
-    toonRamp.minFilter = THREE.NearestFilter;
-    toonRamp.magFilter = THREE.NearestFilter;
-    toonRamp.needsUpdate = true;
-  }
-  return toonRamp;
 }
 
 // ── Helpers over skeleton data ───────────────────────────────────────────
@@ -715,6 +696,223 @@ function chainRings(chain: CreatureBone[], boneIndexOf: (i: number) => number): 
     }
   }
   return rings;
+}
+
+// ── Clothing ─────────────────────────────────────────────────────────────
+
+/**
+ * Emit an OUTFIT (clothing.ts) as offset shells re-lofted over the SAME rings
+ * the body used — same bones, same weights — so garments deform with every
+ * gait/pose in both the dynamic and baked paths and the dressed creature stays
+ * ONE draw call. Nothing is species-specific: a torso garment covers a SPINE
+ * SPAN (rear 0 → front 1) plus partial sleeves on whatever limbs ROOT inside
+ * that span; a hat rides the skull landmarks (a headless creature wears none).
+ * The same shirt is a shirt on a human, a blanket on a quadruped, a tube on a
+ * snake.
+ */
+function emitOutfit(
+  geo: GeoBuilder,
+  skel: CreatureSkeleton,
+  blueprint: Blueprint,
+  outfit: NonNullable<Blueprint["outfit"]>,
+  chains: Map<string, { bones: CreatureBone[]; indices: number[] }>,
+  sides: number,
+): void {
+  const garments = outfit.garments;
+  const spine = chains.get("spine")!;
+  const headIdx = chains.get("head")!.indices[0];
+  // Garments (clothing.ts) are OFFSET SHELLS re-lofted over the SAME rings
+  // the body used — same bones, same weights — so they deform with every
+  // gait/pose in both the dynamic and baked paths and the dressed creature
+  // stays ONE draw call. Nothing is species-specific: a torso garment covers
+  // a SPINE SPAN (rear 0 → front 1) plus partial sleeves on whatever limbs
+  // ROOT inside that span; a hat rides the skull landmarks. The same shirt
+  // is a shirt on a human, a blanket on a quadruped, a tube on a snake.
+  // Fresh spine rings (the axial set was junction-tweaked); ring 0 = REAR.
+  const trunkRings = chainRings(spine.bones, (i) => spine.indices[Math.min(i, spine.indices.length - 1)]);
+  const cumOf = (rings: RingSpec[]): { cum: number[]; total: number } => {
+    const cum = [0];
+    for (let i = 1; i < rings.length; i++) cum.push(cum[i - 1] + rings[i].center.distanceTo(rings[i - 1].center));
+    return { cum, total: cum[cum.length - 1] || 1 };
+  };
+  /** Interpolated copy of the ring at fraction `f` of the chain's length. */
+  const ringAtFrac = (rings: RingSpec[], cum: number[], total: number, f: number): RingSpec => {
+    const d = Math.min(1, Math.max(0, f)) * total;
+    let i = 0;
+    while (i < cum.length - 2 && cum[i + 1] < d) i++;
+    const t = (d - cum[i]) / Math.max(1e-9, cum[i + 1] - cum[i]);
+    const a = rings[i];
+    const b = rings[i + 1];
+    return {
+      center: a.center.clone().lerp(b.center, t),
+      direction: a.direction.clone().lerp(b.direction, t).normalize(),
+      radius: a.radius + (b.radius - a.radius) * t,
+      flatten: a.flatten + (b.flatten - a.flatten) * t,
+      aspect: (a.aspect ?? 1) + ((b.aspect ?? 1) - (a.aspect ?? 1)) * t,
+      chordBoost: (a.chordBoost ?? 0) + ((b.chordBoost ?? 0) - (a.chordBoost ?? 0)) * t,
+      boneA: t < 0.5 ? a.boneA : b.boneA,
+      boneB: t < 0.5 ? a.boneB : b.boneB,
+      weightA: t < 0.5 ? a.weightA : b.weightA,
+    };
+  };
+  /** Clean copies of the rings spanning [f0, f1], with exact interpolated
+   *  hem rings at both boundaries. */
+  const sliceRings = (rings: RingSpec[], f0: number, f1: number): RingSpec[] => {
+    const { cum, total } = cumOf(rings);
+    const out: RingSpec[] = [ringAtFrac(rings, cum, total, f0)];
+    rings.forEach((r, i) => {
+      const f = cum[i] / total;
+      if (f > f0 + 1e-4 && f < f1 - 1e-4) {
+        out.push({ ...r, center: r.center.clone(), direction: r.direction.clone() });
+      }
+    });
+    out.push(ringAtFrac(rings, cum, total, f1));
+    return out;
+  };
+  /** Turn body rings into a fabric shell: inflate (fit + a hem/cuff ease
+   *  that grows toward `easeEnd`), recolor, band the trim rings. */
+  const fabricize = (
+    rings: RingSpec[],
+    g: GarmentBlueprint,
+    fabric: THREE.Color,
+    trim: THREE.Color,
+    opts2: { trimFirst?: boolean; trimLast?: boolean; easeEnd?: "first" | "last" },
+  ): void => {
+    rings.forEach((r, i) => {
+      const t = rings.length > 1 ? i / (rings.length - 1) : 0;
+      const ease = opts2.easeEnd === "last" ? t : opts2.easeEnd === "first" ? 1 - t : 0;
+      r.radius += Math.max(r.radius * 0.08, 0.006) + r.radius * 0.12 * g.flare * ease;
+      const banded = (opts2.trimFirst && i === 0) || (opts2.trimLast && i === rings.length - 1);
+      r.colorBase = banded ? trim : fabric;
+      r.colorBelly = banded ? trim : fabric;
+    });
+  };
+  const emitShell = (rings: RingSpec[], capFirst: boolean, capLast: boolean): void => {
+    if (rings.length < 2) return;
+    const colors: RingColors = { base: rings[0].colorBase!, belly: rings[0].colorBelly! };
+    const { firstRing, lastRing } = loftChain(geo, rings, sides, colors);
+    const a = rings[0];
+    const b = rings[rings.length - 1];
+    // Caps sit flat at the hem plane; the body passing through hides the
+    // interior, the visible annulus reads as the hem's underside.
+    if (capFirst) capRing(geo, firstRing, sides, a.center.clone(), a.colorBase!, a.boneA, true);
+    if (capLast) capRing(geo, lastRing, sides, b.center.clone(), b.colorBase!, b.boneA, false);
+  };
+  // Limb root stations in the clothing convention (rear 0 → front 1):
+  // resolveLimbs stations are 0 chest .. 1 hip, so invert. Chains are named
+  // `limb{flat}{L|R|r}` — parse the flat index back to its resolved limb.
+  const resolved = resolveLimbs(blueprint).limbs;
+  const limbFracOf = (chainName: string): number | null => {
+    const m = /^limb(\d+)/.exec(chainName);
+    if (!m) return null;
+    const limb = resolved[Number(m[1])];
+    return limb ? 1 - limb.station : null;
+  };
+
+  for (const g of garments) {
+    geo.section(`garment:${g.kind}`);
+    const fabric = new THREE.Color(g.color);
+    const trim = new THREE.Color(g.accentColor);
+
+    if (g.kind === "hat") {
+      // A crown riding the braincase + an optional brim annulus. Ring plane
+      // ⊥ the face-frame up; sized to cover the skull whatever its aspect.
+      const lm = skel.head;
+      if (!lm) continue; // headless wears no hat
+      const up = vec(lm.up);
+      const R = Math.max(lm.radius, lm.halfLen) * 1.06 + 0.004;
+      const baseC = vec(lm.center).addScaledVector(up, lm.domeHalf * 0.45);
+      const hCrown = Math.max(0.15, g.coverage) * lm.radius * 1.3;
+      const ring = (h: number, r: number, c: THREE.Color): RingSpec => ({
+        center: baseC.clone().addScaledVector(up, h),
+        direction: up.clone(),
+        radius: r,
+        flatten: 0,
+        colorBase: c,
+        colorBelly: c,
+        boneA: headIdx,
+        boneB: headIdx,
+        weightA: 1,
+      });
+      if (g.flare > 0.05) {
+        // Brim: a shallow cone from the outer rim up to the crown base.
+        const brim = [ring(-hCrown * 0.06, R * (1 + g.flare * 1.2), trim), ring(0.01, R, trim)];
+        loftChain(geo, brim, sides, { base: trim, belly: trim });
+      }
+      const crown = [ring(0, R, trim), ring(hCrown * 0.55, R * 0.96, fabric), ring(hCrown, R * 0.62, fabric)];
+      const { lastRing } = loftChain(geo, crown, sides, { base: fabric, belly: fabric });
+      capRing(geo, lastRing, sides, baseC.clone().addScaledVector(up, hCrown + R * 0.12), fabric, headIdx, false);
+      continue;
+    }
+
+    // Trunk span (rear 0 → front 1): shirt/dress hang from the FRONT end,
+    // pants rise from the REAR end (clothing.ts coverage semantics).
+    const span: [number, number] =
+      g.kind === "pants" ? [0, Math.min(1, g.coverage)] : [Math.max(0, 1 - g.coverage), 1];
+    const bodice = sliceRings(trunkRings, span[0], span[1]);
+    fabricize(bodice, g, fabric, trim, {
+      // Collar at the front end of a shirt/dress, waistband at a pants' top;
+      // the open hem gets the flare ease.
+      trimFirst: g.kind !== "pants",
+      trimLast: g.kind === "pants",
+      easeEnd: "first",
+    });
+    // The rear hem BEFORE the skirt widens it — the skirt hangs from here.
+    const hem = bodice[0];
+    emitShell(bodice, true, true);
+
+    // DRESS: a skirt cone hung from the rear hem, dropping toward the
+    // ground (world -Y — gravity, whatever the trunk's pitch), widening by
+    // flare. Bound to the hem's bones, so it sways with the hip.
+    if (g.kind === "dress") {
+      const drop = Math.max(hem.radius * 0.6, hem.center.y * g.skirtLength);
+      const steps = 3;
+      const skirt: RingSpec[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        skirt.push({
+          center: hem.center.clone().add(new THREE.Vector3(0, -drop * t, 0)),
+          direction: new THREE.Vector3(0, -1, 0),
+          radius: hem.radius * (1 + g.flare * 1.8 * t),
+          flatten: 0,
+          aspect: hem.aspect,
+          colorBase: t === 1 ? trim : fabric,
+          colorBelly: t === 1 ? trim : fabric,
+          boneA: hem.boneA,
+          boneB: hem.boneB,
+          weightA: hem.weightA,
+        });
+      }
+      emitShell(skirt, false, true);
+    }
+
+    // SLEEVES / PANT LEGS: partial shells over every limb chain whose ROOT
+    // station falls inside the trunk span. `limbCoverage` is the fraction
+    // of the limb the sleeve runs down; the cuff gets the trim band.
+    if (g.limbCoverage > 0.02) {
+      for (const [name, chain] of chains) {
+        if (!name.startsWith("limb")) continue;
+        const frac = limbFracOf(name);
+        if (frac === null || frac < span[0] || frac > span[1]) continue;
+        const limbRings = chainRings(chain.bones, (i) => chain.indices[Math.min(i, chain.indices.length - 1)]);
+        // Match the body loft's membrane chord so a sleeve follows a wing.
+        const chainLen = chain.bones.reduce(
+          (sum, b) => sum + Math.hypot(b.tail.x - b.head.x, b.tail.y - b.head.y, b.tail.z - b.head.z),
+          0,
+        );
+        limbRings.forEach((r, i) => {
+          const t = limbRings.length > 1 ? i / (limbRings.length - 1) : 0;
+          r.chordBoost =
+            r.flatten * chainLen * LOFT.membraneChordFrac * Math.sin(Math.PI * Math.min(1, t * 1.2)) ** 0.7;
+        });
+        const sleeve = sliceRings(limbRings, 0, Math.min(1, g.limbCoverage));
+        fabricize(sleeve, g, fabric, trim, { trimLast: true, easeEnd: "last" });
+        // Sink the root under the bodice so the join never shows.
+        sleeve[0].center.addScaledVector(sleeve[0].direction, -sleeve[0].radius * 0.5);
+        emitShell(sleeve, false, true);
+      }
+    }
+  }
 }
 
 // ── Main entry ───────────────────────────────────────────────────────────
@@ -1642,6 +1840,14 @@ export function buildCreatureMesh(
     }
   }
 
+  // ── Clothing ──────────────────────────────────────────────────────────
+  // Garments (clothing.ts) loft over the SAME rings and bones as the skin —
+  // slightly inflated, fabric-colored — so they follow every gait and pose
+  // for free (dynamic or baked) and the dressed creature stays one draw call.
+  if (blueprint.outfit && blueprint.outfit.garments.length > 0) {
+    emitOutfit(geo, skel, blueprint, blueprint.outfit, chains, sides);
+  }
+
   // ── Bones + skinned mesh ──────────────────────────────────────────────
   // Pure-translation rest pose: each bone's local position is its head
   // offset from the parent's head; bind pose == rest pose.
@@ -1663,18 +1869,11 @@ export function buildCreatureMesh(
 
   // Cel/toon shading is a MATERIAL swap only — the geometry, vertex colors
   // and skinning are identical, so the lab (and later the game) can toggle
-  // it without touching the build.
-  // Toon shading uses SMOOTH normals under the ramp (this three version's
-  // MeshToonMaterial has no flatShading) — bands quantize the curvature,
-  // which is the classic cel look; the standard material keeps its facets.
-  const material = opts.toon
-    ? new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: getToonRamp() })
-    : new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.85,
-      metalness: 0,
-      flatShading: true,
-    });
+  // it without touching the build. `opts.toon` forces one creature's shading
+  // for side-by-side comparison; unset follows the engine-wide mode.
+  const material = surfaceMaterial({
+    mode: opts.toon === undefined ? undefined : opts.toon ? "toon" : "standard",
+  });
   const mesh = new THREE.SkinnedMesh(geo.build(), material);
   mesh.add(threeBones[0]);
   mesh.updateMatrixWorld(true);

@@ -12,13 +12,34 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Set test environment variables.
-// global-setup.ts also sets these before any worker starts; this is the in-worker fallback
-// for cases where setupFilesAfterEnv runs before the parent's env propagates.
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL =
-  process.env.DATABASE_URL ??
-  process.env.TEST_DATABASE_URL ??
-  'postgresql://test:test@localhost:5432/test_db';
+
+// Force the connection at the TEST database, in every worker, BEFORE any test
+// file imports server/db.ts (setupFilesAfterEnv runs first). Configs that drop
+// `globalSetup` (jest.config.unit.js, jest.config.engine.js) never get the
+// parent's redirect, so without this the worker would inherit whatever
+// DATABASE_URL `.env` loaded — i.e. the REAL database. We deliberately do NOT
+// honor a pre-existing DATABASE_URL here: TEST_DATABASE_URL is the source of
+// truth for tests. (This once wiped a live DB via truncateAll — never again.)
+const TEST_DB_URL =
+  process.env.TEST_DATABASE_URL ?? 'postgresql://test:test@localhost:5432/test_db';
+
+const testDbName = (() => {
+  try {
+    return new URL(TEST_DB_URL).pathname.replace(/^\//, '');
+  } catch {
+    return '';
+  }
+})();
+
+if (!testDbName.toLowerCase().includes('test')) {
+  throw new Error(
+    `[test setup] Refusing to run: test database name "${testDbName}" does not contain ` +
+      `"test". Set TEST_DATABASE_URL to a dedicated test database.`,
+  );
+}
+
+process.env.DATABASE_URL = TEST_DB_URL;
 
 // Increase timeout for async operations
 jest.setTimeout(30000);

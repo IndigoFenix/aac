@@ -6,8 +6,8 @@
  * the shared coupling to `bootLab`, keeping the pre-carve signature for
  * every call site and test.
  */
-export * from "@shared/engine/civ/dual";
-import { bootDual as bootDualCore, type DualSpec, type DualWorld } from "@shared/engine/civ/dual";
+export * from "@shared/world-engine/kernel/civ/dual";
+import { bootDual as bootDualCore, type DualSpec, type DualWorld } from "@shared/world-engine/kernel/civ/dual";
 import { bootLab } from "./boot";
 
 /** The pre-carve signature: PopuSim is this game's composition layer. */

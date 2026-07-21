@@ -13,16 +13,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { onPlatformMessage, sendToParent } from "@shared/games-bridge";
-import type { GoalNode } from "@shared/goal-tree/types";
-import { certifyGoalTreeGame } from "@shared/goal-tree/index";
-import type { NarrationKind, ObjectiveSummary } from "@shared/goal-tree/space";
+import type { GoalNode } from "@shared/world-engine/solver/types";
+import { certifyGoalTreeGame } from "@shared/world-engine/solver/index";
+import type { NarrationKind, ObjectiveSummary } from "@shared/world-engine/solver/space";
 import {
   createQuestHost3D,
   type QuestBoardView,
   type QuestHost3D,
   type QuestSession,
-} from "@shared/symbol-game/quest-host";
-import { buildTownPlay, isTownPlayPayload } from "@shared/symbol-game/town-play";
+} from "@shared/world-engine/interaction/quest/quest-host";
+import { buildTownPlay, isTownPlayPayload } from "@shared/world-engine/interaction/town/town-play";
 import { playerImageResolver } from "./glyph-resolver";
 import {
   ChoicePanel,

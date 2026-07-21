@@ -55,8 +55,17 @@ import {
   type GrowthPlacement,
   type GrowthType,
 } from "@shared/world-engine/creatures/growth";
+import {
+  GARMENT_KINDS,
+  GARMENT_RANGES,
+  MAX_GARMENTS,
+  defaultGarment,
+  type GarmentBlueprint,
+  type GarmentKind,
+} from "@shared/world-engine/creatures/clothing";
 import { buildCreatureMesh, LOFT, type BuiltCreature } from "@shared/world-engine/creatures/mesh";
 import { bakePlantImpostor, buildPlantLods, makeImpostorMesh, plantMaterial } from "@shared/world-engine/creatures/plant-lod";
+import { propMaterial, terrainMaterial } from "@shared/world-engine/materials";
 import { CREATURE_EXAMPLES } from "@shared/world-engine/creatures/examples";
 import { DEFAULT_GAIT, GAIT_PATTERNS, type GaitParams, type GaitPattern } from "@shared/world-engine/creatures/gait";
 import { CreatureAnimator, type AnimFrame } from "@shared/world-engine/creatures/animation";
@@ -86,10 +95,7 @@ scene.add(sun);
 
 // Ground: soft disc + grid, creature stands at the origin.
 {
-  const disc = new THREE.Mesh(
-    new THREE.CircleGeometry(40, 48),
-    new THREE.MeshStandardMaterial({ color: "#222a33", roughness: 1 }),
-  );
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(40, 48), terrainMaterial({ color: "#222a33" }));
   disc.rotation.x = -Math.PI / 2;
   scene.add(disc);
   const grid = new THREE.GridHelper(80, 80, 0x33404e, 0x273039);
@@ -104,8 +110,8 @@ scene.add(sun);
 // (the plant's leafy top pokes above it). Toggled from rebuildGeometry.
 const soilPlane = new THREE.Mesh(
   new THREE.CircleGeometry(0.5, 40),
-  new THREE.MeshStandardMaterial({
-    color: "#5a4326", roughness: 1, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false,
+  terrainMaterial({
+    color: "#5a4326", transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false,
   }),
 );
 soilPlane.rotation.x = -Math.PI / 2;
@@ -357,7 +363,7 @@ function ensureObject(): THREE.Mesh {
   if (!objectMesh) {
     objectMesh = new THREE.Mesh(
       new THREE.BoxGeometry(objectMisc.size, objectMisc.size, objectMisc.size),
-      new THREE.MeshStandardMaterial({ color: "#a2703f", roughness: 0.8 }),
+      propMaterial("#a2703f", { roughness: 0.8 }),
     );
     objectMeshSize = objectMisc.size;
     scene.add(objectMesh);
@@ -993,6 +999,67 @@ function buildPanel(): void {
     colorRow(s, "base", "baseColor");
     colorRow(s, "belly", "bellyColor");
     colorRow(s, "accent", "accentColor");
+  }
+
+  // Outfit — the clothing designer (clothing.ts): garments as data over body
+  // REGIONS (spine spans + limbs rooted in them + skull landmarks), so the
+  // same rows dress any species. An array section, like the trunk profile.
+  {
+    const s = section("outfit (clothing)");
+    const outfit = (blueprint.outfit ??= { garments: [] });
+    const gColor = (parent: HTMLElement, label: string, g: GarmentBlueprint, key: "color" | "accentColor"): void => {
+      const row = el("div", "lab-row", parent);
+      el("label", undefined, row).textContent = label;
+      const input = el("input", undefined, row);
+      input.type = "color";
+      input.value = g[key];
+      input.addEventListener("input", () => { g[key] = input.value; rebuild(); });
+    };
+    outfit.garments.forEach((g, i) => {
+      const row = el("div", "lab-row", s);
+      el("label", undefined, row).textContent = `garment ${i}`;
+      const sel = el("select", undefined, row) as HTMLSelectElement;
+      for (const k of GARMENT_KINDS) {
+        const opt = el("option", undefined, sel) as HTMLOptionElement;
+        opt.value = k;
+        opt.textContent = k;
+        if (k === g.kind) opt.selected = true;
+      }
+      sel.addEventListener("change", () => {
+        // Swapping kind re-seats that kind's dial defaults (each kind reads
+        // them differently); the designer's colors carry over.
+        const fresh = defaultGarment(sel.value as GarmentKind);
+        outfit.garments[i] = { ...fresh, color: g.color, accentColor: g.accentColor };
+        buildPanel();
+        rebuild();
+      });
+      const remove = el("button", "danger", row);
+      remove.textContent = "remove";
+      remove.addEventListener("click", () => { outfit.garments.splice(i, 1); buildPanel(); rebuild(); });
+      gColor(s, "  fabric", g, "color");
+      gColor(s, "  trim", g, "accentColor");
+      slider(s, "  coverage", g as unknown as Record<string, number>, "coverage", GARMENT_RANGES.coverage);
+      if (g.kind !== "hat") {
+        slider(s, "  limb coverage", g as unknown as Record<string, number>, "limbCoverage", GARMENT_RANGES.limbCoverage);
+      }
+      slider(s, "  flare", g as unknown as Record<string, number>, "flare", GARMENT_RANGES.flare);
+      if (g.kind === "dress") {
+        slider(s, "  skirt length", g as unknown as Record<string, number>, "skirtLength", GARMENT_RANGES.skirtLength);
+      }
+    });
+    if (outfit.garments.length < MAX_GARMENTS) {
+      const row = el("div", "lab-row", s);
+      el("label", undefined, row).textContent = "add";
+      for (const k of GARMENT_KINDS) {
+        const add = el("button", undefined, row);
+        add.textContent = k;
+        add.addEventListener("click", () => {
+          outfit.garments.push(defaultGarment(k));
+          buildPanel();
+          rebuild();
+        });
+      }
+    }
   }
 
   // Loft quality + view toggles.

@@ -308,10 +308,22 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
     && !!item?.composable?.emptyImagePath
     && !!slot
     && !slot.payload;
+  // The mirror swap — a CONTAINER FRAME (building/room) trades its standalone
+  // icon for a carved-out backing plate once something is nested inside it.
+  // Unlike the empty swap this applies on every surface, because it's what the
+  // symbol genuinely looks like when full, not a construction affordance.
+  const useFilledImage =
+    !useEmptyImage
+    && !!item?.composable?.filledImagePath
+    && !!slot?.payload;
   // Gender-body modifier (he/she/they) swaps the host art to a `-male`/
   // `-female`/`-plural` body variant. Composes after the empty-image swap.
   const genderSuffix = collectGenderSuffix(slot);
-  let resolverImagePath = useEmptyImage ? item!.composable!.emptyImagePath : item?.imagePath;
+  let resolverImagePath = useEmptyImage
+    ? item!.composable!.emptyImagePath
+    : useFilledImage
+      ? item!.composable!.filledImagePath
+      : item?.imagePath;
   if (genderSuffix && resolverImagePath) {
     resolverImagePath = `${resolverImagePath}-${genderSuffix}`;
   }
@@ -383,28 +395,6 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
         height={layout.height}
         fill="transparent"
       />
-
-      {/* Halos render under everything */}
-      {transforms.has("halo_warm") && (
-        <circle
-          cx={layout.x + SLOT_UNIT / 2}
-          cy={layout.y + SLOT_UNIT / 2}
-          r={SLOT_UNIT * 0.46}
-          fill="none"
-          stroke="#F97316"
-          strokeWidth={4}
-        />
-      )}
-      {transforms.has("halo_cool") && (
-        <circle
-          cx={layout.x + SLOT_UNIT / 2}
-          cy={layout.y + SLOT_UNIT / 2}
-          r={SLOT_UNIT * 0.46}
-          fill="none"
-          stroke="#3B82F6"
-          strokeWidth={4}
-        />
-      )}
 
       {/* Main symbol — animated sprite first (when the SYMBOL declares one
           and the host wired a renderer), then static image, then emoji

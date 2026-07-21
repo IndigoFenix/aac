@@ -1,0 +1,46 @@
+{
+  "species": [
+    {
+      "key": "horse",
+      "role": "domestic",
+      "name": "Horse",
+      "color": "150,110,70,1",
+      "glyph": "🐴",
+      "vitals": {
+        "birth": 0.05,
+        "death": 0.008,
+        "capacity": { "scalar": "stables", "perUnit": 6 }
+      },
+      "foundingShare": 0.03,
+      "countScalar": "horse_count",
+      "countMax": 2000
+    }
+  ],
+  "buildings": [
+    {
+      "key": "stable",
+      "countScalar": "stables",
+      "cap": { "by": "pasture", "rate": 0.016666666666666666 },
+      "processes": [
+        { "id": "muster", "input": "horse_count", "output": "horsepower", "efficiency": 1, "capacityRate": 8 }
+      ],
+      "vars": [{ "name": "horsepower", "max": 200 }],
+      "construction": {
+        "tier": "industry",
+        "costs": [{ "stockpile": "granary", "amount": 30 }]
+      },
+      "leansToward": "eco_grass",
+      "mapCap": 3,
+      "district": "farm",
+      "style": { "color": "#96703f", "w": 17, "h": 11 },
+      "vignette": { "w": 6, "h": 4 },
+      "glyph": "🐴",
+      "title": "🐴 Stable",
+      "info": [
+        "{stables} stables on {pasture:0} chartered pasture.",
+        "{horse_count:0} horses — {horsepower:0} mustered for the roads.",
+        "Mounted traffic travels the open grass and the roads at speed."
+      ]
+    }
+  ]
+}

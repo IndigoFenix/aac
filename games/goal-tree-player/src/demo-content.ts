@@ -3,7 +3,7 @@
 // Once platform wiring exists, the player will receive certified games from
 // the platform instead; this file then only serves standalone/dev runs.
 
-import type { GoalTreeGame } from "@shared/goal-tree/types";
+import type { GoalTreeGame } from "@shared/world-engine/solver/types";
 
 export function demoGame(): GoalTreeGame {
   return {

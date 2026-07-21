@@ -66,6 +66,29 @@ export type ActionKind =
   // Deictic pointing: raise the chosen limb toward a direction, hold, drop.
   | "point" | "point-hold" | "point-back";
 
+/**
+ * A sustained ACTIVITY the body performs in place — SPECIES-AGNOSTIC by
+ * construction: each one is pure posture/pose modulation through the same
+ * solvers every body plan already rides (bodyHeight folds the legs via the
+ * strain engine, bodyPitch bows the trunk, a hand IK target reaches — no
+ * per-species keyframes anywhere).
+ *   • "sleep" — legs fold, the frame emits `recline` so the model lays the
+ *     whole body flat (lying is a root transform, not a solver pose);
+ *   • "eat"  — a periodic hand-to-mouth for a handed kind, a bow for the rest;
+ *   • "sit"  — a held crouch (the strain engine folds the legs), trunk upright;
+ *   • "play" — a light bounce + sway.
+ * Unlike an action it has no timeline: the caller holds it set and the animator
+ * eases it in/out (`setActivity`).
+ */
+export type BodyActivity = "none" | "sleep" | "eat" | "sit" | "play";
+
+// Activity tuning: blend rate + the rhythm of the periodic ones.
+const ACTIVITY_BLEND_RATE = 2.6; // 1/s → ~0.4 s ease in/out
+const EAT_PERIOD_S = 1.6; // one hand-to-mouth / bow per period
+const PLAY_BOUNCE_HZ = 1.8;
+const SIT_CROUCH = 0.55; // held crouch amount 0..1 (legs fold, trunk stays up)
+const SLEEP_CROUCH = 0.3; // relaxed, slightly-bent legs while lying
+
 type SideKey = "L" | "R";
 const sideKey = (s: 1 | -1): SideKey => (s > 0 ? "R" : "L");
 
@@ -96,6 +119,10 @@ export interface AnimFrame {
   speedMps: number;
   /** Current action phase, for UIs/tests. */
   action: ActionKind;
+  /** Eased 0..1 "lie the body flat" amount (the sleep activity). The MODEL
+   *  applies it as a root rotation — lying isn't a solver pose, so the pure-math
+   *  animator only reports how far along the recline is. */
+  recline?: number;
 }
 
 /** The limb group usable as a ONE-handed grasper: bilateral, non-membranous,
@@ -193,6 +220,12 @@ export class CreatureAnimator {
 
   private action: ActionKind = "none";
   private actionT = 0;
+  /** Sustained activity: the currently-posed kind, the caller's target kind,
+   *  and the eased blend amount for the posed kind. A kind change eases the
+   *  old pose out to 0 first, then switches and eases the new one in. */
+  private activity: BodyActivity = "none";
+  private activityTarget: BodyActivity = "none";
+  private activityAmt = 0;
   /** Limb group + sides doing the current grasp (2 sides = two-handed). */
   private activeGroup: number;
   private sides: Array<1 | -1> = [];
@@ -242,6 +275,29 @@ export class CreatureAnimator {
 
   get currentAction(): ActionKind {
     return this.action;
+  }
+
+  /** Hold (or clear, with "none") a sustained body activity. Idempotent — a
+   *  host sets it every frame from its own state; the animator eases the pose
+   *  in while set and back out once cleared. */
+  setActivity(kind: BodyActivity): void {
+    this.activityTarget = kind;
+  }
+
+  get currentActivity(): BodyActivity {
+    return this.activity;
+  }
+
+  /** Eased 0..1 strength of the CURRENT activity's pose — a model syncs its own
+   *  root transforms (the slide onto a bed) to this so they blend as one move. */
+  activityLevel(): number {
+    return ease(this.activityAmt);
+  }
+
+  /** True while any activity pose is in effect or still blending out — a baked
+   *  NPC's temporary dynamic body must not retire until this clears. */
+  activityBusy(): boolean {
+    return this.activityTarget !== "none" || this.activityAmt > 0.01;
   }
 
   hasHands(): boolean {
@@ -564,6 +620,52 @@ export class CreatureAnimator {
       this.gape = 0;
     }
 
+    // ── Sustained activity: ease the blend, kind changes go through 0 ─────
+    if (this.activity !== this.activityTarget) {
+      this.activityAmt = Math.max(0, this.activityAmt - dt * ACTIVITY_BLEND_RATE);
+      if (this.activityAmt <= 0) this.activity = this.activityTarget;
+    } else if (this.activity !== "none") {
+      this.activityAmt = Math.min(1, this.activityAmt + dt * ACTIVITY_BLEND_RATE);
+    } else {
+      this.activityAmt = 0;
+    }
+    // Walking dissolves the pose (a woken sleeper stands and goes): the
+    // activity's strength fades out with the (eased) speed dial, so a body
+    // that starts moving mid-activity stands up smoothly rather than popping.
+    const act = ease(this.activityAmt) * (1 - clamp01(this.speed / 0.2));
+    // Per-kind posture modulation (applied to the posture below). All of it is
+    // solver INPUT — the strain engine folds legs for the crouches, the trunk
+    // bows through bodyPitch — so it fits any body plan the builder makes.
+    let actCrouch = 0; // extra crouch 0..1, same channel the reach feedback uses
+    let actPitch = 0; // added trunk pitch (negative = bow forward)
+    let actLift = 0; // direct bodyHeight offset (the play bounce)
+    let recline = 0;
+    let eatCycle = 0; // 0..1..0 rhythm shared by the bow and the hand-to-mouth
+    switch (this.activity) {
+      case "sleep":
+        recline = act;
+        actCrouch = SLEEP_CROUCH * act;
+        break;
+      case "sit":
+        actCrouch = SIT_CROUCH * act;
+        actPitch = 0.06 * act; // settle slightly back — seated, not stooping
+        break;
+      case "eat":
+        eatCycle = act * (0.5 - 0.5 * Math.cos((this.time / EAT_PERIOD_S) * Math.PI * 2));
+        // A handed kind carries food up instead of diving down; a handless one
+        // bows to the plate (the mouth does the work).
+        actPitch = -(this.handGroup >= 0 ? 0.12 : 0.4) * eatCycle;
+        break;
+      case "play": {
+        const bounce = Math.abs(Math.sin(this.time * Math.PI * PLAY_BOUNCE_HZ));
+        actLift = 0.05 * act * bounce;
+        actPitch = 0.05 * act * Math.sin(this.time * Math.PI * 2 * 0.9); // sway
+        break;
+      }
+      default:
+        break;
+    }
+
     // ── Posture: base + idle sway + reach crouch/lean ────────────────────
     const idleSway = !moving && this.action === "none" ? 0.012 * Math.sin(this.time * 1.4) : 0;
     const crouchE = ease(this.crouch);
@@ -579,9 +681,12 @@ export class CreatureAnimator {
     // still stops the dive the moment the beak arrives.
     const leanBase = this.usingMouth ? 1.05 : 0.3;
     const reachLean = crouchE * (leanBase + 0.55 * Math.max(0, this.basePosture.bodyPitch));
+    // Activity and reach share the crouch channel — the strain engine folds the
+    // legs for whichever asks deeper.
+    const foldE = Math.max(crouchE, ease(actCrouch));
     const posture: AnimPosture = {
-      bodyPitch: this.basePosture.bodyPitch - reachLean - 0.14 * this.speed,
-      bodyHeight: Math.max(0.02, this.basePosture.bodyHeight * (1 - 0.95 * crouchE) + idleSway),
+      bodyPitch: this.basePosture.bodyPitch - reachLean - 0.14 * this.speed + actPitch,
+      bodyHeight: Math.max(0.02, this.basePosture.bodyHeight * (1 - 0.95 * foldE) + idleSway + actLift),
     };
 
     // ── Pose overrides ────────────────────────────────────────────────────
@@ -610,6 +715,17 @@ export class CreatureAnimator {
         });
       }
     }
+    // EAT, for a kind with a graspable hand and no action running: a rhythmic
+    // hand-to-mouth — the hand rises from its rest position to just before the
+    // mouth and back, once per period. Handless kinds already bow instead.
+    if (eatCycle > 0.001 && this.action === "none" && this.handGroup >= 0) {
+      const s: 1 | -1 = 1;
+      const rest = this.restHandOf(s);
+      const mouth = v3(0.05 * this.legLen, this.legLen * 1.02, 0.24 * this.g.spine.torsoLengthM);
+      pose.limbTargets = [
+        { group: this.handGroup, index: 0, side: s, target: lerpV(rest, mouth, ease(eatCycle)), grip: 0.6 },
+      ];
+    }
 
     return {
       gait,
@@ -620,6 +736,7 @@ export class CreatureAnimator {
       handChain: handChains?.[0],
       speedMps,
       action: this.action,
+      recline,
     };
   }
 }

@@ -14,7 +14,7 @@ import { injectTile, pendingCount, worldStep } from "@cells/index";
 import { runWorldHost, type WorldHost } from "@shared/world-engine/world-host";
 import { bootLab } from "./boot";
 import { bootDual, type DualWorld } from "./dual";
-import type { CompositionWorld } from "@shared/engine/civ/composition";
+import type { CompositionWorld } from "@shared/world-engine/kernel/civ/composition";
 import type { TriWorld, CivHistory } from "./tri";
 import { SCENARIOS, cloneScenarioJson, type LabScenario } from "./scenarios";
 import { runChecks } from "./checks";
@@ -31,10 +31,10 @@ import { CORE_BASE, CORE_GOODS2, DEFAULT_ECONOMY } from "./economy-core";
 import { CLOTHING } from "./economy-clothing";
 import { compileEconomy, type EconomyDoc } from "./economy";
 import { parseEconomyDoc } from "./economy-json";
-import { docsFor, isWorldManifest, loadWorldManifest } from "@shared/engine/manifest";
-import { ECONOMY_MODULE } from "@shared/engine/modules/economy";
+import { docsFor, isWorldManifest, loadWorldManifest } from "@shared/world-engine/kernel/manifest";
+import { ECONOMY_MODULE } from "@shared/world-engine/kernel/modules/economy";
 import { pointAt } from "./streets";
-import { houseFurniture } from "@shared/engine/town/furniture";
+import { houseFurniture } from "@shared/world-engine/kernel/town/furniture";
 import {
   PEOPLE_R, STREET_NPCS, WORLD_TILE, createParty, createTownManager, disbandParty,
   generateWorld, nearestCity, parkParty, recruitVillager, terrainConstraint,

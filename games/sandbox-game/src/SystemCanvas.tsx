@@ -9,8 +9,8 @@
 
 import { useEffect, useRef } from 'react';
 import type { GazeState } from './TerrainCanvas';
-import type { CellGrid, SystemSpec, ToolSpec, LayerSpec } from '@shared/engine/cells';
-import { injectTile, setStageTile } from '@shared/engine/cells';
+import type { CellGrid, SystemSpec, ToolSpec, LayerSpec } from '@shared/world-engine/kernel/cells';
+import { injectTile, setStageTile } from '@shared/world-engine/kernel/cells';
 
 interface Props {
   getGrid: () => CellGrid;

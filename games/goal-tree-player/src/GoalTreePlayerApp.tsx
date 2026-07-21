@@ -11,11 +11,11 @@ import { useEffect, useRef, useState } from "react";
 import { onPlatformMessage, sendToParent } from "@shared/games-bridge";
 import { GazeSmoother } from "@shared/gaze-kit";
 import { DwellTracker } from "@shared/gaze-kit";
-import type { EntityDef, GoalNode, GoalTreeGame } from "@shared/goal-tree/types";
-import { certifyGoalTreeGame } from "@shared/goal-tree/index";
-import type { LogicalWorld } from "@shared/goal-tree/logical-world";
-import { buildLogicalWorld } from "@shared/goal-tree/logical-world";
-import { projectGameLayout } from "@shared/goal-tree/projector2d";
+import type { EntityDef, GoalNode, GoalTreeGame } from "@shared/world-engine/solver/types";
+import { certifyGoalTreeGame } from "@shared/world-engine/solver/index";
+import type { LogicalWorld } from "@shared/world-engine/solver/logical-world";
+import { buildLogicalWorld } from "@shared/world-engine/solver/logical-world";
+import { projectGameLayout } from "@shared/world-engine/solver/projector2d";
 import {
   applyRuntimeInput,
   createRuntimeContext,
@@ -23,14 +23,14 @@ import {
   type RuntimeContext,
   type RuntimeResult,
   type RuntimeState,
-} from "@shared/goal-tree/runtime";
+} from "@shared/world-engine/solver/runtime";
 import type {
   NarrationKind,
   ObjectiveSummary,
   SpaceInput,
-} from "@shared/goal-tree/space";
-import type { Layout2D, Vec2 } from "@shared/goal-tree/layout2d";
-import { dist, rectCenter, rectContains } from "@shared/goal-tree/layout2d";
+} from "@shared/world-engine/solver/space";
+import type { Layout2D, Vec2 } from "@shared/world-engine/solver/layout2d";
+import { dist, rectCenter, rectContains } from "@shared/world-engine/solver/layout2d";
 import {
   applySpace2DCommand,
   createSpace2DState,
@@ -38,7 +38,7 @@ import {
   tickSpace2D,
   type Space2DState,
   type WalkIntent,
-} from "@shared/goal-tree/space2d";
+} from "@shared/world-engine/solver/space2d";
 import { computeCamera, screenToWorld, type Camera } from "./camera";
 import { drawFrame } from "./render";
 import {

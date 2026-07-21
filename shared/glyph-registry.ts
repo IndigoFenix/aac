@@ -44,8 +44,6 @@ export type ModifierTransform =
   | "hands"        // hands-holding-symbol overlay (my, your)
   | "glow"         // emphasis glow lines (very)
   | "shrink"       // smaller render (little)
-  | "halo_warm"    // warm halo (hot)
-  | "halo_cool"    // cool halo (cold)
   | "dimension"    // arrow decorations + image warp (big/small/long/short/tall/wide/thin)
   | "color"        // colored frame around slot rim — color name lives in modifier.colorValue
   | "emotion"      // emotion face badge in a corner — rendered like "badge" (uses the modifier's emoji)
@@ -203,6 +201,19 @@ export interface ComposableFacet {
    * since the empty image already conveys the empty state.
    */
   emptyImagePath?: string;
+  /**
+   * Optional alternate `imagePath` used when the host DOES carry a payload —
+   * the mirror of `emptyImagePath`, and NOT gated behind `showEmptyHostSlot`.
+   *
+   * This is the CONTAINER FRAME case (`building`, `room`): the bare symbol is
+   * a complete little icon of its own, but once something is nested inside it
+   * the art has to become a frame that carves out room for the payload. So
+   * `building` renders `places/building` alone and `places/building-bg` in
+   * `building(farm)`. Distinct from `emptyImagePath`, which exists purely as
+   * the sentence builder's "drop something here" construction affordance and
+   * is therefore hidden everywhere else.
+   */
+  filledImagePath?: string;
 }
 
 /**
@@ -441,6 +452,13 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { do: ["common", "hands"] }, tone: "request",
     imagePath: "actions/hands/take", emoji: "🫳", directional: true, exposeToAi: true,
     composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  // PUT — the placement directive (construction v1: "put + chair + near +
+  // table"). The parser already knew the verb; this button makes it
+  // composable on the board.
+  { key: "put", tKey: "aac.glyph.put", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "hands"] }, tone: "request",
+    emoji: "⤵️", directional: true, exposeToAi: true,
+    composable: { accepts: ["noun"], suggestCategories: ["what", "where"] } },
   // emoji = two crossing arrows (give one way, take the other).
   { key: "trade", tKey: "aac.glyph.trade", pos: "verb", categories: ["do"],
     modeChips: { do: ["social", "hands"] }, tone: "request", emoji: "🔀", exposeToAi: true,
@@ -453,6 +471,21 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { do: ["common", "hands"] }, tone: "comment",
     imagePath: "actions/hands/hold", emoji: "✊", exposeToAi: true,
     composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  // PHYSICAL CARRYING (actions/body) — distinct from `get`/`take` (which is
+  // about acquiring POSSESSION, the opposite of `give`). These are about
+  // handling: lift it into your hands, hold-and-move it, set it down.
+  { key: "pick_up", tKey: "aac.glyph.pick_up", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "body"] }, tone: "request",
+    imagePath: "actions/body/pick_up", emoji: "🤏", exposeToAi: true,
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  { key: "carry", tKey: "aac.glyph.carry", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "body"] }, tone: "request",
+    imagePath: "actions/body/carry", emoji: "📦", exposeToAi: true,
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what", "where"] } },
+  { key: "drop", tKey: "aac.glyph.drop", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "body"] }, tone: "request",
+    imagePath: "actions/body/drop", emoji: "🫳", exposeToAi: true,
+    composable: { accepts: ["noun"], suggestCategories: ["what", "where"] } },
   { key: "make", tKey: "aac.glyph.make", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "request",
     imagePath: "actions/hands/make", emoji: "🔨", exposeToAi: true,
@@ -572,17 +605,15 @@ const VOCAB: VocabularyItem[] = [
     composable: { accepts: ["noun"], suggestCategories: ["what"] } },
   { key: "brush_teeth", tKey: "aac.glyph.brush_teeth", pos: "verb", categories: ["do"],
     modeChips: { do: ["body"] }, tone: "comment", emoji: "🪥" },
-  // emoji weak — open / close currently use folder emoji (file-manager
-  // semantics, not physical doors / containers).
+  // emoji weak — `open`'s folder emoji reads file-manager rather than a
+  // physical door / lid.
   { key: "open", tKey: "aac.glyph.open", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "comment", emoji: "📂",
     imagePath: "actions/hands/open",
     composable: { accepts: ["noun"], suggestCategories: ["what"] } },
-  { key: "close", tKey: "aac.glyph.close", pos: "verb", categories: ["do"],
-    modeChips: { do: ["common", "hands"] }, tone: "comment", emoji: "📁",
-    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
-  // shut — a physical-close synonym (its own key; `close`'s folder-emoji reads
-  // file-manager, this one reads a door/lid shutting).
+  // SHUT is open's antonym — there is deliberately NO `close` record (user
+  // law: no synonyms in a vocabulary the LLM reads, and "close" would collide
+  // with close = NEAR). One word for the act, and it reads as a door/lid.
   { key: "shut", tKey: "aac.glyph.shut", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "comment", emoji: "🚪",
     imagePath: "actions/hands/shut", exposeToAi: true,
@@ -644,7 +675,8 @@ const VOCAB: VocabularyItem[] = [
   { key: "phone", tKey: "aac.glyph.phone", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📱" },
   { key: "chair", tKey: "aac.glyph.chair", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🪑" },
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🪑",
+    imagePath: "things/furniture/chair" },
   { key: "bed", tKey: "aac.glyph.bed", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛏️" },
   { key: "shirt", tKey: "aac.glyph.shirt", pos: "noun", categories: ["what"],
@@ -737,13 +769,56 @@ const VOCAB: VocabularyItem[] = [
 
   // ── Things ───────────────────────────────────────────────────────────────
   { key: "cup", tKey: "aac.glyph.cup", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🥤" },
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🥤",
+    imagePath: "things/tools/cup" },
   { key: "plate", tKey: "aac.glyph.plate", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🍽️" },
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🍽️",
+    imagePath: "things/tools/plate" },
+  { key: "bowl", tKey: "aac.glyph.bowl", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🥣",
+    imagePath: "things/tools/bowl" },
   { key: "fork", tKey: "aac.glyph.fork", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🍴" },
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🍴",
+    imagePath: "things/tools/fork" },
+  { key: "knife", tKey: "aac.glyph.knife", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🔪",
+    imagePath: "things/tools/knife" },
   { key: "spoon", tKey: "aac.glyph.spoon", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🥄" },
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🥄",
+    imagePath: "things/tools/spoon" },
+
+  // ── Furniture ────────────────────────────────────────────────────────────
+  // The world-engine's station kinds (kernel/town/stations.ts). Containers all
+  // share one silhouette family and differ by construction — see the container
+  // motif in planning-docs/world-engine-icon-gaps.md.
+  { key: "table", tKey: "aac.glyph.table", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🪑",
+    imagePath: "things/furniture/table" },
+  { key: "box", tKey: "aac.glyph.box", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📦",
+    imagePath: "things/furniture/box" },
+  { key: "cabinet", tKey: "aac.glyph.cabinet", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🗄️",
+    imagePath: "things/furniture/cabinet" },
+  { key: "barrel", tKey: "aac.glyph.barrel", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛢️",
+    imagePath: "things/furniture/barrel" },
+  // The BIN — the disposal can (the `fixture:bin` model is a lidded trash can;
+  // the station affords `throw`). This is the ONE disposal word: the old
+  // redundant `garbage` glyph was folded into `bin` (they were the same trash
+  // can). "throw + <thing> + in + bin" is the disposal statement.
+  { key: "bin", tKey: "aac.glyph.bin", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🗑️",
+    imagePath: "things/furniture/bin" },
+  { key: "oven", tKey: "aac.glyph.oven", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🔥",
+    imagePath: "things/furniture/oven" },
+  { key: "refrigerator", tKey: "aac.glyph.refrigerator", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧊",
+    imagePath: "things/furniture/refrigerator" },
+  { key: "sink", tKey: "aac.glyph.sink", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🚰",
+    imagePath: "things/furniture/sink" },
   { key: "soap", tKey: "aac.glyph.soap", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧼" },
   // emoji weak — toilet-paper roll emoji approximates "towel".
@@ -942,6 +1017,37 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { where: ["places"] }, tone: "comment", emoji: "🌲" },
   { key: "city", tKey: "aac.glyph.city", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment", emoji: "🏙️" },
+  // AREA vs PLACE (nations arc, user law): a PLACE is a point (the 🗺️ pin
+  // above); an AREA is a broad TERRITORY — hence the grid. One word-concept
+  // from "my room" to "Riverside's land", and the noun every law scopes to
+  // ("no + fight + in + area"). `town` is its named, bounded sibling.
+  { key: "area", tKey: "aac.glyph.area", pos: "place", categories: ["where"],
+    modeChips: { where: ["places"] }, tone: "comment", emoji: "🔲",
+    imagePath: "places/area" },
+  { key: "town", tKey: "aac.glyph.town", pos: "place", categories: ["where"],
+    modeChips: { where: ["places"] }, tone: "comment", emoji: "🏘️" },
+  // BUILDING and ROOM are also CONTAINER FRAMES: the compositor can nest any
+  // symbol inside one (`building(farm)`, `room(bed)`) using the `-bg` plates,
+  // so a structure's icon is its shell plus whatever the spec declares. Used
+  // bare they're the generic nouns. See buildContainerGlyph in the compositor.
+  { key: "building", tKey: "aac.glyph.building", pos: "place", categories: ["where"],
+    modeChips: { where: ["places"] }, tone: "comment", emoji: "🏢",
+    imagePath: "places/building", exposeToAi: true,
+    composable: {
+      accepts: ["noun", "animal", "person", "place", "verb"],
+      suggestCategories: ["what", "where"],
+      position: "center",
+      filledImagePath: "places/building-bg",
+    } },
+  { key: "room", tKey: "aac.glyph.room", pos: "place", categories: ["where"],
+    modeChips: { where: ["places"] }, tone: "comment", emoji: "🚪",
+    imagePath: "places/room", exposeToAi: true,
+    composable: {
+      accepts: ["noun", "animal", "person", "place", "verb"],
+      suggestCategories: ["what", "where"],
+      position: "center",
+      filledImagePath: "places/room-bg",
+    } },
 
   // ── Indicators (deictic pointers — cross-listed under WHO and WHAT) ──────
   { key: "that", tKey: "aac.glyph.that", pos: "noun", categories: ["who", "what"],
@@ -1160,13 +1266,31 @@ const VOCAB: VocabularyItem[] = [
     imagePath: "adjectives/dimension/thin", emoji: "📏", exposeToAi: true,
     modifier: { appliesTo: ["noun", "animal"], transform: "dimension", order: 12, dimension: "thin" } },
 
-  // Temperature
+  // Temperature — the `temperature` STATE axis (world-engine facts.ts). Drawn
+  // as badge DESCRIPTORS, not the old warm/cool halo rings: a ring around the
+  // rim reads as "selected" rather than "hot", and it collided with the color
+  // modifier's frame. Badge art carries the meaning on its own.
   { key: "hot", tKey: "aac.glyph.hot", pos: "modifier", categories: ["what"],
     modeChips: { what: ["all"] }, tone: "comment", emoji: "🔥", exposeToAi: true,
-    modifier: { appliesTo: ["noun"], transform: "halo_warm", order: 20 } },
+    imagePath: "adjectives/state/hot",
+    modifier: { appliesTo: ["noun"], transform: "badge", order: 20, pairKey: "cold" } },
   { key: "cold", tKey: "aac.glyph.cold", pos: "modifier", categories: ["what"],
     modeChips: { what: ["all"] }, tone: "comment", emoji: "❄️", exposeToAi: true,
-    modifier: { appliesTo: ["noun"], transform: "halo_cool", order: 21 } },
+    imagePath: "adjectives/state/cold",
+    modifier: { appliesTo: ["noun"], transform: "badge", order: 21, pairKey: "hot" } },
+
+  // Cleanliness — the `cleanliness` STATE axis. `clean` is registered as the
+  // state ADJECTIVE here; the same-spelled world-engine ACTION ("clean the
+  // table") stays a LEXICON-only parse token, distinguished syntactically —
+  // the state is a modifier (`table.clean`), the action a bare verb head.
+  { key: "dirty", tKey: "aac.glyph.dirty", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment", emoji: "🫧", exposeToAi: true,
+    imagePath: "adjectives/state/dirty",
+    modifier: { appliesTo: ["noun", "animal"], transform: "badge", order: 27, pairKey: "clean" } },
+  { key: "clean", tKey: "aac.glyph.clean", pos: "modifier", categories: ["what"],
+    modeChips: { what: ["all"] }, tone: "comment", emoji: "✨", exposeToAi: true,
+    imagePath: "adjectives/state/clean",
+    modifier: { appliesTo: ["noun", "animal"], transform: "badge", order: 28, pairKey: "dirty" } },
 
   // Sensory qualities (smell / taste opposite pairs) — badge modifiers on nouns,
   // e.g. `food.smelly`. Also standalone WHAT chips.

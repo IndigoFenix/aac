@@ -84,6 +84,16 @@ export interface FlatManifoldSpec {
   kind: "flat";
   width: number;
   height: number;
+  /**
+   * Whether the rectangle is a PHYSICAL boundary (default true). When false,
+   * the extent describes the CONTENT only (procgen footprint, render framing,
+   * spec certification) and physics is unclamped: bodies and objects may move
+   * freely past the edge. Planet-mounted sessions (an embedded town, a
+   * wilderness chunk) set false — there the planet is the reference frame and
+   * the ground sampler answers everywhere, so a city edge must never be a
+   * wall. Standalone worlds (2D quests, the city viewer) keep true.
+   */
+  bounded?: boolean;
 }
 export type ManifoldSpec = FlatManifoldSpec;
 
@@ -137,8 +147,31 @@ export interface ContainmentSlot {
 /** Archetypal FURNITURE: static containers stood along a room's walls.
  *  A chest and a cupboard hold things "in" (lidded — they ease open when
  *  someone stands close, the door rule); a table holds things "on",
- *  visibly (containment lifts them to the tabletop). */
-export type FixtureKind = "chest" | "cupboard" | "table";
+ *  visibly (containment lifts them to the tabletop). The household
+ *  STATIONS (Sims-mode: needs are satisfied AT furniture) — a bed
+ *  (energy), a chair at the table (meals/social), a box (fun). */
+export type FixtureKind =
+  | "chest" | "cupboard" | "table" | "bed" | "chair" | "box"
+  // Sims-mode round 2 stations: the water BARREL (thirst's home container),
+  // the BATH tub (hygiene), the PRIVY (waste), the trash BIN ("throw it
+  // away"), and the pet's food BOWL (a floor dish — pets eat what waits there).
+  | "barrel" | "bath" | "privy" | "bin" | "bowl"
+  // Round 7: the OVEN — food preparation's station (the cook's transform
+  // turns raw pantry food into hot meals here).
+  | "oven"
+  // Construction v1: the carpenter's WORKBENCH — the furniture-craft
+  // transform station, standing only in a workshop (an optional room).
+  | "workbench"
+  // The FOOD box — the goods corner raises this for the `food` good in place
+  // of a generic chest (anachronism deliberate; tech levels come later).
+  | "refrigerator";
+
+/** Fixture kinds a walker passes THROUGH: no collision footprint. A chair
+ *  is knee-high and tucked right against the table — making it solid
+ *  would wall off the table's own use (sitting at it). Everything else
+ *  stays solid like a chest. The pet BOWL is ankle-high on the floor —
+ *  a solid dish would trip the household. */
+export const PASSTHROUGH_FIXTURES: ReadonlySet<FixtureKind> = new Set<FixtureKind>(["chair", "bowl"]);
 
 export interface ObjectSpec {
   id: string;
@@ -377,6 +410,12 @@ export interface NpcSpec {
   facing?: number;
   /** Display name. When omitted the brain's generated persona name is shown. */
   name?: string;
+  /** Species id (creature registry) — sets the body's COLLISION/PLANNING
+   *  radius via speciesBodyRadius (locomotion, the indoor router, detours all
+   *  read it). Absent = the people default. The avatar MODEL may resolve its
+   *  own species elsewhere (icons, family overrides) — this field is the
+   *  physical body. */
+  species?: string;
   persona?: NpcPersonaSpec;
   behavior?: NpcBehaviorSpec;
   /**

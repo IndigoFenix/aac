@@ -32,8 +32,8 @@ import {
   type GiverMotive,
   type QuestComplexity,
   type SyntaxLevel,
-} from "@shared/symbol-game";
-import { buildTownPlay, type TownPlayPayload } from "@shared/symbol-game/town-play";
+} from "@shared/world-engine/interaction";
+import { buildTownPlay, type TownPlayPayload } from "@shared/world-engine/interaction/town/town-play";
 import { useLanguage } from "@/contexts/LanguageContext";
 import GoalTreeQuestPlayer from "@/components/games/GoalTreeQuestPlayer";
 import type { GameEmbedHandle } from "@/components/games/GameEmbed";

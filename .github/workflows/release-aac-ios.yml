@@ -1,0 +1,227 @@
+name: Release AAC iPad
+
+# Builds the Aivota AAC iPad app (Capacitor + WKWebView) and uploads it to
+# TestFlight. Counterpart to release-aac.yml, which builds the Windows
+# installer — same web bundle, different native shell.
+#
+# WHY A macOS RUNNER: iOS apps can only be compiled, signed and packaged by
+# Xcode, which is macOS-only. There is no Windows or Linux path. This workflow
+# is therefore the ONLY way to produce an iPad build without owning a Mac.
+#
+# WHY THERE IS NO AUTO-UPDATE FEED HERE: Apple does not permit replacing the
+# app binary outside the App Store, so there is no equivalent of the S3
+# latest.yml feed that release-aac.yml publishes. iPad updates ship through
+# TestFlight / the App Store. (OTA swapping of the *web bundle* is permitted
+# and is scaffolded in capacitor.config.ts, but is deliberately switched off
+# until the shell is verified on a real device.)
+#
+# ── REQUIRED SECRETS ────────────────────────────────────────────────────────
+# Create these in Settings → Secrets and variables → Actions:
+#
+#   APPLE_TEAM_ID              Your 10-character Apple Developer Team ID.
+#                              Find it at developer.apple.com → Membership.
+#
+#   APP_STORE_CONNECT_KEY_ID   App Store Connect API key id (10 chars).
+#   APP_STORE_CONNECT_ISSUER_ID  The issuer UUID shown above the key list.
+#   APP_STORE_CONNECT_KEY_P8   The FULL contents of the AuthKey_XXXX.p8 file
+#                              you download when creating the key, including
+#                              the BEGIN/END PRIVATE KEY lines.
+#                              Create at App Store Connect → Users and Access
+#                              → Integrations → App Store Connect API, with
+#                              the "App Manager" role.
+#                              NOTE: Apple lets you download the .p8 ONCE.
+#
+# Before the first run you must also create the app record in App Store
+# Connect with bundle id com.aivota.aac (matching capacitor.config.ts), or the
+# upload step fails with "no suitable application record".
+#
+# Trigger: manual only for now (workflow_dispatch). Once the first build is
+# verified on a device, wire it to the same `v*` tags as release-aac.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: 'Backend the build talks to (baked as VITE_API_URL)'
+        required: false
+        default: 'https://aivota-demo-us.onrender.com'
+      upload:
+        description: 'Upload to TestFlight (uncheck to build only)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-aac-ios
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & upload to TestFlight
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fail early and legibly rather than 40 minutes later inside xcodebuild.
+      - name: Verify required secrets are present
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          missing=""
+          [ -z "$TEAM_ID" ]   && missing="$missing APPLE_TEAM_ID"
+          [ -z "$KEY_ID" ]    && missing="$missing APP_STORE_CONNECT_KEY_ID"
+          [ -z "$ISSUER_ID" ] && missing="$missing APP_STORE_CONNECT_ISSUER_ID"
+          [ -z "$KEY_P8" ]    && missing="$missing APP_STORE_CONNECT_KEY_P8"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — see the header of this workflow file for how to create each one."
+            exit 1
+          fi
+          echo "All required secrets present."
+
+      # Builds dist/public-aac with a RELATIVE asset base (NATIVE_BUILD=1) and
+      # the backend baked in. Identical bundle to the Windows build except for
+      # VITE_API_URL.
+      - name: Build web bundle
+        env:
+          VITE_API_URL: ${{ inputs.backend_url }}
+        run: npm run ios:build
+
+      # `ios/` is gitignored; generate it fresh from the Capacitor template.
+      - name: Generate iOS project
+        run: npx cap add ios
+
+      # Copies the web bundle in, installs CocoaPods, then applies our
+      # Info.plist customizations (camera/mic/local-network usage strings,
+      # orientation, full-screen). See scripts/ios-configure.mjs.
+      - name: Sync + configure iOS project
+        run: npm run ios:sync
+
+      # Version the build from package.json so TestFlight builds are ordered
+      # and traceable to a commit. CFBundleVersion must strictly increase for
+      # every upload, so the run number is appended.
+      - name: Set version and build number
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Marketing version: $VERSION, build: $GITHUB_RUN_NUMBER"
+          cd ios/App
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" App/Info.plist
+
+      - name: Write App Store Connect API key
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          mkdir -p ~/private_keys
+          # xcodebuild discovers the key by this exact filename convention.
+          printf '%s' "$KEY_P8" > ~/private_keys/AuthKey_${KEY_ID}.p8
+          chmod 600 ~/private_keys/AuthKey_${KEY_ID}.p8
+
+      # -allowProvisioningUpdates lets Xcode create/refresh the signing
+      # certificate and provisioning profile via the API key, so no
+      # certificates need to be exported from a Mac we don't have.
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          cd ios/App
+          xcodebuild archive \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic
+
+      - name: Export IPA
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>uploadSymbols</key><true/>
+            <key>destination</key><string>export</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+
+      # Keep the IPA even when not uploading, so a build-only run is still
+      # useful (e.g. handing the artifact to someone with a Mac).
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aivota-aac-ipad-ipa
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to TestFlight
+        if: ${{ inputs.upload }}
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          IPA=$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)
+          echo "Uploading $IPA"
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Aivota AAC iPad build"
+            echo ""
+            echo "- Version: $(node -p "require('./package.json').version") (build $GITHUB_RUN_NUMBER)"
+            echo "- Backend: ${{ inputs.backend_url }}"
+            echo "- Uploaded to TestFlight: ${{ inputs.upload }}"
+            echo ""
+            if [ "${{ inputs.upload }}" = "true" ]; then
+              echo "Processing on Apple's side takes ~5-15 minutes before the build"
+              echo "appears in TestFlight. Add testers in App Store Connect → TestFlight."
+            else
+              echo "Build-only run — download the IPA from this run's artifacts."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

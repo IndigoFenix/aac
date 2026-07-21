@@ -12,13 +12,13 @@ import {
   createTownGoods as sharedCreateTownGoods, hasLedger, streetGoods,
   PANTRY_DAYS, SHOP_SEC,
   type GoodSpec, type TownFood, type TownGoods,
-} from "@shared/engine/town/goods";
-import type { TownPlan } from "@shared/engine/town/plan";
-import type { TownStreets } from "@shared/engine/town/streets";
+} from "@shared/world-engine/kernel/town/goods";
+import type { TownPlan } from "@shared/world-engine/kernel/town/plan";
+import type { TownStreets } from "@shared/world-engine/kernel/town/streets";
 import type { TriWorld } from "./tri";
 import { DEFAULT_ECONOMY } from "./economy-core";
 
-export * from "@shared/engine/town/goods";
+export * from "@shared/world-engine/kernel/town/goods";
 
 /** This world's work/goods registry — the compiled economy it was built
  *  from, or the standard one (pre-content worlds and stub tris). */
