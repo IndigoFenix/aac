@@ -426,3 +426,64 @@ describe("pursue — re-run each tick: move → act → done, resume/adapt/aband
     expect(pursue({ kind: "consume", item: { id: "apple1" } }, "bear", gone)).toEqual({ kind: "blocked" });
   });
 });
+
+describe("consume with a DINING preference (`at`) — the need templates' satisfy.at rides the pursuit (S2)", () => {
+  // The resolver's dining table sits at (3,0); the apple is loose at (10,0).
+  const dining = (carrier: string | null = null): WorldResolver => ({
+    ...resolver(carrier),
+    diningSpot: (_self, kinds) => (kinds.includes("table") ? { x: 3, y: 0 } : null),
+  });
+
+  it("carries the item to the table: walk to it, pick it up, walk to the table, eat THERE", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    expect(planGoal(goal, "bear", dining())).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 10, y: 0 } }, // to the apple
+        { kind: "pick", itemId: "apple1" }, // hold it
+        { kind: "moveTo", pos: { x: 3, y: 0 } }, // to the table
+        { kind: "eat", itemId: "apple1" },
+      ],
+    });
+  });
+
+  it("already in hand: just walk to the table and eat", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    expect(planGoal(goal, "bear", dining("bear"))).toEqual({
+      steps: [{ kind: "moveTo", pos: { x: 3, y: 0 } }, { kind: "eat", itemId: "apple1" }],
+    });
+  });
+
+  it("no such station nearby → falls through to eating where it lies (the templates' else-in-place)", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["bowl"] };
+    expect(planGoal(goal, "bear", dining())).toEqual({
+      steps: [{ kind: "moveTo", pos: { x: 10, y: 0 } }, { kind: "eat", itemId: "apple1" }],
+    });
+  });
+
+  it("a resolver WITHOUT the dining hook behaves exactly as a bare consume (commands unchanged)", () => {
+    const withAt: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    const bare: GoalSpec = { kind: "consume", item: { id: "apple1" } };
+    expect(planGoal(withAt, "bear", resolver())).toEqual(planGoal(bare, "bear", resolver()));
+  });
+
+  it("held by ANOTHER creature stays unreachable, dining or not", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    expect(planGoal(goal, "bear", dining("mara"))).toBeNull();
+  });
+});
+
+describe("rest with a dwell length (`dwellS`) — a need's nap vs the commanded-sit default (S2)", () => {
+  it("carries the dwell through to the rest step", () => {
+    const goal: GoalSpec = { kind: "rest", place: { kind: "named", id: "bed" }, dwellS: 42 };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [{ kind: "moveTo", pos: { x: 4, y: 0 } }, { kind: "rest", place: { kind: "named", id: "bed" }, dwellS: 42 }],
+    });
+  });
+
+  it("absent dwell emits the bare step (the command default stays the executor's)", () => {
+    const goal: GoalSpec = { kind: "rest", place: { kind: "named", id: "bed" } };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [{ kind: "moveTo", pos: { x: 4, y: 0 } }, { kind: "rest", place: { kind: "named", id: "bed" } }],
+    });
+  });
+});
