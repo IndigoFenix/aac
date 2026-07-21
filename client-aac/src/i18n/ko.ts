@@ -1007,6 +1007,10 @@ export const ko: Translations = {
     driverNotFound: "시선 추적기 드라이버를 찾을 수 없음",
     locateDriver: "드라이버 찾기…",
   },
+  audioScan: {
+    start: "보드 읽어 주기",
+    stop: "읽기 중지",
+  },
   guessing: {
     category: {
       things: "사물",

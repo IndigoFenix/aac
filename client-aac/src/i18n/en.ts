@@ -1005,6 +1005,10 @@ export const en = {
     driverNotFound: "Eye tracker driver not found",
     locateDriver: "Locate driver…",
   },
+  audioScan: {
+    start: "Read board aloud",
+    stop: "Stop reading",
+  },
   guessing: {
     category: {
       things: "A thing",

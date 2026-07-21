@@ -30,6 +30,7 @@ import {
   Bell,
   Siren,
   MonitorSmartphone,
+  Ear,
 } from "lucide-react";
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
 import { EnergyBar } from "@/components/EnergyBar";
@@ -50,6 +51,7 @@ import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessCo
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
+import { useBoardAudio } from "@/contexts/BoardAudioContext";
 import { FaceMirror } from "@/components/FaceMirror";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { IdentificationBadge } from "@/components/IdentificationBadge";
@@ -184,6 +186,7 @@ export function DualAgentConversationBox({
   const { t, isRTL } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { mode: dwellMode } = useEyeTrackingDwell();
+  const { scanning: audioScanning, toggleScan: toggleAudioScan } = useBoardAudio();
 
   // Camera / microphone "off or not working" detection — drives the indicators
   // that replace the face mirror. The shared user-camera <video> readiness
@@ -831,6 +834,27 @@ export function DualAgentConversationBox({
                 </div>
               )}
             </div>
+
+            {/* Audio-scan toggle (the "ear") — sits next to the mirror. Reads
+                every board button aloud one at a time; press again (or press any
+                board button) to stop. data-audio-scan-toggle marks it so the
+                stop-on-press handler ignores this button. */}
+            <button
+              type="button"
+              data-dwell
+              data-audio-scan-toggle
+              onClick={toggleAudioScan}
+              className={`shrink-0 self-center flex items-center justify-center rounded-lg transition-colors ${
+                audioScanning
+                  ? "bg-yellow-400 text-gray-900 ring-2 ring-yellow-300 animate-pulse"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+              style={{ width: 52, height: 80 }}
+              title={audioScanning ? t("audioScan.stop") : t("audioScan.start")}
+              aria-label={audioScanning ? t("audioScan.stop") : t("audioScan.start")}
+            >
+              <Ear className="w-8 h-8" />
+            </button>
 
             {/* Microphone-error indicator — sits to the LEFT of the mirror (right
                 in RTL, since the header row follows the text direction). Shown

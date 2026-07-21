@@ -1007,6 +1007,10 @@ export const yue: Translations = {
     driverNotFound: "搵唔到眼動儀驅動程式",
     locateDriver: "搵驅動程式…",
   },
+  audioScan: {
+    start: "讀出版面",
+    stop: "停止讀出",
+  },
   guessing: {
     category: {
       things: "一樣嘢",

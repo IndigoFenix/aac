@@ -2191,6 +2191,19 @@ export class AgentCoordinator {
         // startSocialPeerSession self-guards against double starts.
         void this.startSocialPeerSession("client_launch");
         return;
+      case "context_injection":
+        // The client reads board buttons aloud with its own (client-side) TTS
+        // during hold-to-highlight and audio-scan. Echo-suppress it exactly like
+        // the server-voiced student TTS: forward the [OWN_SPEECH] note to the
+        // Observer so it disregards hearing the readout through the mic instead
+        // of transcribing it as a fresh user statement. Context injections don't
+        // fire an Observer turn, so this never provokes a response. Only the
+        // OWN_SPEECH echo note is honored here — other context_injection text
+        // stays ignored on this path, as before.
+        if (typeof msg.text === "string" && msg.text.startsWith("[OWN_SPEECH]")) {
+          this.observer?.sendContextInjection(msg.text);
+        }
+        return;
       default:
         // Many client message types (focus_frame, page_navigate, etc.) are
         // handled by the legacy path but aren't part of the MVP routing

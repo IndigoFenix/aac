@@ -1007,6 +1007,10 @@ export const ru: Translations = {
     driverNotFound: "\u0414\u0440\u0430\u0439\u0432\u0435\u0440 \u0430\u0439\u0442\u0440\u0435\u043a\u0435\u0440\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d",
     locateDriver: "\u041d\u0430\u0439\u0442\u0438 \u0434\u0440\u0430\u0439\u0432\u0435\u0440\u2026",
   },
+  audioScan: {
+    start: "Озвучить доску",
+    stop: "Остановить чтение",
+  },
   guessing: {
     category: {
       things: "Вещь",

@@ -1007,6 +1007,10 @@ export const he: Translations = {
     driverNotFound: "מנהל ההתקן של עוקב העיניים לא נמצא",
     locateDriver: "אתר מנהל התקן…",
   },
+  audioScan: {
+    start: "הקראת הלוח",
+    stop: "הפסקת ההקראה",
+  },
   guessing: {
     category: {
       things: "דבר",

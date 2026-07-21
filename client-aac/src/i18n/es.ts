@@ -1007,6 +1007,10 @@ export const es: Translations = {
     driverNotFound: "No se encontr\u00f3 el controlador del rastreador ocular",
     locateDriver: "Buscar controlador\u2026",
   },
+  audioScan: {
+    start: "Leer el tablero en voz alta",
+    stop: "Detener la lectura",
+  },
   guessing: {
     category: {
       things: "Una cosa",

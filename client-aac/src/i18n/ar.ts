@@ -1007,6 +1007,10 @@ export const ar: Translations = {
     driverNotFound: "\u062a\u0639\u0630\u0651\u0631 \u0627\u0644\u0639\u062b\u0648\u0631 \u0639\u0644\u0649 \u0628\u0631\u0646\u0627\u0645\u062c \u062a\u0634\u063a\u064a\u0644 \u0645\u062a\u062a\u0628\u0639 \u0627\u0644\u0639\u064a\u0646",
     locateDriver: "\u062a\u062d\u062f\u064a\u062f \u0645\u0648\u0642\u0639 \u0628\u0631\u0646\u0627\u0645\u062c \u0627\u0644\u062a\u0634\u063a\u064a\u0644\u2026",
   },
+  audioScan: {
+    start: "قراءة اللوحة بصوت عالٍ",
+    stop: "إيقاف القراءة",
+  },
   guessing: {
     category: {
       things: "شيء",

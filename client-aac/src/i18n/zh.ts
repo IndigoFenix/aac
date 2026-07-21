@@ -1007,6 +1007,10 @@ export const zh: Translations = {
     driverNotFound: "未找到眼动仪驱动程序",
     locateDriver: "定位驱动程序…",
   },
+  audioScan: {
+    start: "朗读版面",
+    stop: "停止朗读",
+  },
   guessing: {
     category: {
       things: "一样东西",

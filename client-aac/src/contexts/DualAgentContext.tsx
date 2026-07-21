@@ -10,6 +10,7 @@ import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useActivityMonitor } from "@/hooks/useActivityMonitor";
 import { useVoiceEngagementSignal } from "@/hooks/useVoiceEngagementSignal";
+import { useBoardAudio } from "@/contexts/BoardAudioContext";
 import { dataFlowForState, type DataFlowConfig } from "@/lib/sleepSystemLogic";
 import { sustainedVocalization, DEFAULT_VOCAL_CUE, type AudioEnergySample } from "@shared/aac/audio-cue";
 import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
@@ -1235,6 +1236,20 @@ function DualAgentProviderInner({
 
   const liveAgentSendContextOnlyRef = useRef(liveAgent.sendContextOnly);
   liveAgentSendContextOnlyRef.current = liveAgent.sendContextOnly;
+
+  // Board readout echo suppression. The client reads board buttons aloud with
+  // its own (client-side) TTS during hold-to-highlight and audio-scan. That
+  // audio reaches the mic just like the server-voiced student TTS does, so we
+  // mirror the server's own-speech path exactly: tell the Observer the sentence
+  // is the device's own voice ([OWN_SPEECH]) so it isn't transcribed as a fresh
+  // user statement and the AI doesn't respond to the readout. No mic mute — the
+  // same prompt-side mechanism the Speaker's own voice relies on.
+  const { lastSpoken: boardReadout } = useBoardAudio();
+  useEffect(() => {
+    if (boardReadout?.text) {
+      liveAgentSendContextOnlyRef.current(`[OWN_SPEECH] (student voice) ${boardReadout.text}`);
+    }
+  }, [boardReadout]);
 
   const sendContextOnly = useCallback(
     (text: string) => {

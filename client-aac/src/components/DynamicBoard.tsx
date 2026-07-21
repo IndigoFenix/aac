@@ -678,6 +678,7 @@ export default function DynamicBoard({
       return (
         <motion.button
           data-dwell
+          data-speech={labelText}
           data-mirror-id={button.id}
           data-testid={`board-${kind}`}
           key={`btn-${kind}-${index}`}
@@ -708,6 +709,7 @@ export default function DynamicBoard({
       return (
         <motion.button
           data-dwell
+          data-speech={button.label}
           data-mirror-id={button.id}
           key={`btn-${button.label}-${index}`}
           initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
@@ -742,7 +744,7 @@ export default function DynamicBoard({
         button={button}
         onClick={() => handleButtonClick(button)}
         borderClassName={borderClass}
-        extraButtonProps={{ "data-mirror-id": button.id }}
+        extraButtonProps={{ "data-mirror-id": button.id, "data-speech": button.spokenText || button.label }}
         getFaceImage={getFaceImage ?? undefined}
         iconFontSize={iconFontSize}
         textFontSize={textFontSize}
@@ -867,6 +869,7 @@ export default function DynamicBoard({
       {/* Grid */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div
+          data-scan-root
           className="grid gap-2 w-full h-full"
           style={{
             gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,

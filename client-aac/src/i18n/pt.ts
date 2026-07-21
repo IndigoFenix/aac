@@ -1007,6 +1007,10 @@ export const pt: Translations = {
     driverNotFound: "Driver do rastreador ocular n\u00e3o encontrado",
     locateDriver: "Localizar driver\u2026",
   },
+  audioScan: {
+    start: "Ler o quadro em voz alta",
+    stop: "Parar a leitura",
+  },
   guessing: {
     category: {
       things: "Uma coisa",

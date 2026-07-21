@@ -99,6 +99,8 @@ import { isValidSignLanguageCode, isValidLanguageCode } from "@/i18n";
 import { serializeGestureContext, describeFaceForScene, describeHandForScene } from "@/lib/gestureContextSerializer";
 import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
 import DwellOverlay from "@/components/DwellOverlay";
+import HoldHighlightOverlay from "@/components/HoldHighlightOverlay";
+import { BoardAudioProvider } from "@/contexts/BoardAudioContext";
 import GazeCalibrationOverlay from "@/components/GazeCalibrationOverlay";
 import { createPortal } from "react-dom";
 import { useEyeGaze } from "@/hooks/useEyeGaze";
@@ -1943,6 +1945,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       applyCalibration={eyeGaze.applyCalibration}
       clearCalibrationData={eyeGaze.clearCalibration}
     >
+    <BoardAudioProvider language={currentLanguage} voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}>
     <div className="h-dvh flex flex-col relative overflow-hidden bg-bg-soft pb-safe">
       {/* Eyegaze Provider Detection Notification */}
       <AnimatePresence>
@@ -2933,7 +2936,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
     </div>
     <DwellOverlay />
+    <HoldHighlightOverlay enabled={eyegazeSettings.enabled} holdDurationMs={eyegazeSettings.timeout} />
     <GazeCalibrationOverlay />
+    </BoardAudioProvider>
     </EyeTrackingDwellProvider>
     </CameraAttentivenessWrapper>
     </AccessibilityProvider>

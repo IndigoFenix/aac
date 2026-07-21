@@ -1007,6 +1007,10 @@ export const de: Translations = {
     driverNotFound: "Eyetracker-Treiber nicht gefunden",
     locateDriver: "Treiber suchen\u2026",
   },
+  audioScan: {
+    start: "Tafel vorlesen",
+    stop: "Vorlesen beenden",
+  },
   guessing: {
     category: {
       things: "Ein Ding",

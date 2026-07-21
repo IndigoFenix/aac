@@ -1007,6 +1007,10 @@ export const fr: Translations = {
     driverNotFound: "Pilote du suiveur oculaire introuvable",
     locateDriver: "Localiser le pilote…",
   },
+  audioScan: {
+    start: "Lire le tableau à voix haute",
+    stop: "Arrêter la lecture",
+  },
   guessing: {
     category: {
       things: "Une chose",
