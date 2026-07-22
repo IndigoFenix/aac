@@ -180,9 +180,10 @@ type Lex =
 /** A verb's ARGUMENT FRAME: the relation its bare second argument fills when
  *  no preposition was composed. "give apple mara" reads mara as the RECIPIENT
  *  (implied "to"); "throw apple bin" reads bin as the DESTINATION (implied
- *  "in") — general semantics, not per-utterance special cases. AAC composers
- *  routinely drop function words; the frame recovers the role. */
-type ImpliedRel = "to" | "in";
+ *  "in"); "take ball dog" reads dog as the SOURCE (implied "from") — general
+ *  semantics, not per-utterance special cases. AAC composers routinely drop
+ *  function words; the frame recovers the role. */
+type ImpliedRel = "to" | "in" | "from";
 
 const V = (verb: string, directive = false, transfer = false, implied?: ImpliedRel): Lex => ({
   cat: "verb",
@@ -199,7 +200,7 @@ const STATE_VERBS = new Set(["want", "need", "have", "like", "feel"]);
 
 /** GOAL-directed movement verbs: a person/place after them is the DESTINATION, not
  *  the subject — "come i_me" = "[you] come to me", "follow i_me" = "follow me". */
-const MOVEMENT_GOAL_VERBS = new Set(["go", "come", "follow", "run", "chase"]);
+const MOVEMENT_GOAL_VERBS = new Set(["go", "come", "walk", "follow", "run", "chase"]);
 
 /** Verb COMPOSITION classes (semantic-tests.md §Commands): several verb tokens
  *  in one clause COMPOSE — they never silently last-win. A MODAL wraps the
@@ -209,6 +210,23 @@ const MOVEMENT_GOAL_VERBS = new Set(["go", "come", "follow", "run", "chase"]);
  *  ("stop + eat" = cease eating — never a command to eat). */
 const MODAL_VERBS = new Set(["want", "need", "like"]);
 const MOTION_AUX = new Set(["go", "come"]);
+
+/** SYNONYM FAMILIES: words that name the SAME primitive (they compile to the
+ *  same GoalSpec) reduce to one canonical head, so a premise check never denies
+ *  "are you taking?" at a creature that reported "get", and cross-language
+ *  vocabularies may collapse a family to one word without changing semantics.
+ *  This is the merge seam for overly-specific near-synonyms (get/take,
+ *  give/bring, go/walk/run) — the engine already treats them as one. */
+export const VERB_FAMILY: Record<string, string> = {
+  take: "get", pick_up: "get",
+  bring: "give",
+  come: "go", walk: "go", run: "go",
+  chase: "follow",
+  wait: "stay",
+};
+
+/** A verb's canonical family head ("take" → "get"); unknown verbs pass through. */
+export const canonicalVerb = (v: string): string => VERB_FAMILY[v] ?? v;
 
 export const LEXICON: Record<string, Lex> = {
   // People / deixis
@@ -224,12 +242,15 @@ export const LEXICON: Record<string, Lex> = {
 
   // Verbs — movement (directive)
   go: V("go", true), come: V("come", true), stop: V("stop", true), follow: V("follow", true),
-  wait: V("wait", true), stay: V("stay", true), run: V("run", true), turn: V("turn", true),
+  wait: V("wait", true), stay: V("stay", true), run: V("run", true), walk: V("walk", true),
+  turn: V("turn", true),
   // Verbs — handling (directive; some transfer). `implied` = the argument
   // frame: the role a bare second noun fills (give X mara → to mara; throw X
-  // bin → in the bin). get/take deliberately carry none — their second-noun
-  // reading (a source, "from") isn't built yet.
-  get: V("get", true, true), take: V("take", true, true), give: V("give", true, true, "to"),
+  // bin → in the bin; take X dog → from the dog). Acquisition verbs imply a
+  // SOURCE, delivery verbs a RECIPIENT — the to/from opposition
+  // (semantic-gaps.md): an explicit marker of the OTHER direction turns an
+  // acquisition into a transport ("take ball TO dog" delivers).
+  get: V("get", true, true), take: V("take", true, true, "from"), give: V("give", true, true, "to"),
   bring: V("bring", true, true, "to"), // give's fetch-first twin — same frame, same roles
   put: V("put", true, false, "in"), drop: V("drop", true, false, "in"),
   throw: V("throw", true, false, "in"), push: V("push", true),
@@ -260,6 +281,9 @@ export const LEXICON: Record<string, Lex> = {
   // Verbs — self-care poses + routines (board core vocabulary)
   sit: V("sit", true), wake_up: V("wake_up", true), brush_teeth: V("brush_teeth", true),
   wear: V("wear", true),
+  // Recolour a named item at a coloring tub ("color the shirt red") — directive,
+  // transitive; the colour rides as a `color_*` descriptor/modifier.
+  color: V("color", true),
 
   // Question words
   where: { cat: "question", q: "where" }, what: { cat: "question", q: "what" },
@@ -604,31 +628,38 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
     }
   }
 
-  // A transfer's RECIPIENT or a movement verb's DESTINATION: the person after the verb
-  // that isn't the subject (else any other) → an implicit "to" target ("you give i_me
-  // ball" → to me; "you follow i_me" → follow me). Subject stays whatever was found.
+  // A transfer's RECIPIENT/SOURCE or a movement verb's DESTINATION: the person after
+  // the verb that isn't the subject (else any other) → an implicit target bound by
+  // the verb's OWN argument frame ("you give i_me ball" → to me; "take ball i_me" →
+  // from me; "you follow i_me" → follow me). Subject stays whatever was found.
   if ((transfer || movementGoal) && !target) {
     const recip =
       persons.find((p) => p !== subjectPerson && !beforeVerb(p)) ??
       persons.find((p) => p !== subjectPerson);
     if (recip) {
       target = recip.ref;
-      relation = "to";
+      relation = implied ?? "to";
     }
   }
 
   // THE ARGUMENT FRAME (verb `implied` relation): with two free nouns and no
   // explicit target, the second fills the verb's implied role — "give apple
-  // mara" → to mara; "throw apple bin" → in the bin. The classifier picks the
-  // role-fitting noun regardless of order (a CREATURE takes "to", a PLACE
-  // takes "in"); without one, position decides (object first, argument last).
+  // mara" → to mara; "throw apple bin" → in the bin; "take ball dog" → from
+  // the dog. The classifier picks the role-fitting noun regardless of order
+  // (a CREATURE takes "to", a PLACE takes "in", a SOURCE is a creature or a
+  // container/place); without one, position decides (object first, argument
+  // last).
   let objectEntry = entities.find((e) => e.index !== subjectEntityIndex);
   if (implied && !target) {
     const free = entities.filter((e) => e.index !== subjectEntityIndex);
     if (free.length >= 2) {
-      const wantClass = implied === "to" ? "creature" : "place";
+      const wantClasses: readonly string[] =
+        implied === "to" ? ["creature"] : implied === "in" ? ["place"] : ["creature", "place"];
       const targetEntry =
-        [...free].reverse().find((e) => classify(e.ref) === wantClass) ?? free[free.length - 1]!;
+        [...free].reverse().find((e) => {
+          const c = classify(e.ref);
+          return c !== undefined && wantClasses.includes(c);
+        }) ?? free[free.length - 1]!;
       target = targetEntry.ref;
       relation = implied;
       objectEntry = free.find((e) => e !== targetEntry);

@@ -79,12 +79,20 @@ export function defaultGarment(kind: GarmentKind): GarmentBlueprint {
   }
 }
 
-// ── Outfit presets ──────────────────────────────────────────────────────────
-// A small tasteful wardrobe for town residents: shirt+pants combos in varied
-// colors, a couple of dresses, two hats. Deterministic — `outfitPresetFor`
-// maps ANY integer hash to the same preset forever, so a resident keeps their
-// clothes across sessions, and a whole town wears at most OUTFIT_PRESET_COUNT
-// distinct outfits (= that many bakes, not hundreds).
+// ── Garment colour palette + outfit index ───────────────────────────────────
+// Clothing is a COLOURED ITEM (goods-kinds.ts `CLOTHING_KINDS` = these heads ×
+// these colours): a garment glyph carries a `color_*` FACET (`shirt.color_red`),
+// and a resident's worn outfit is one point in the bounded product below. The
+// colours are the AAC board's discrete `color_*` glyphs (not free hex), so a
+// whole town wears at most `OUTFIT_PRESET_COUNT` (= heads × colours) distinct
+// outfits — that many bakes, warmed at boot, not hundreds. A culture can narrow
+// the palette later (Phase 2); this is the default set.
+//
+// The index space is HEAD-MAJOR and STABLE: `i = head*colours + colour`. It is
+// the integer carried on `AvatarState.wearing` (engine.ts) and reconstructed by
+// the render factory via `outfitPresetFor(i)`, so the bijection here is the one
+// contract the live change-of-clothes rides. `outfitIndexOf`/`garmentGlyphOf`
+// are the two directions quest-host needs to bridge a worn GLYPH to that index.
 
 const presetGarment = (
   kind: GarmentKind,
@@ -93,32 +101,131 @@ const presetGarment = (
   over: Partial<GarmentBlueprint> = {},
 ): GarmentBlueprint => ({ ...defaultGarment(kind), color, accentColor, ...over });
 
-const OUTFIT_PRESETS: ReadonlyArray<OutfitBlueprint> = [
-  // 0: the default blues — blue shirt, slate pants.
-  { garments: [presetGarment("shirt", "#3f6db4", "#2c3e50"), presetGarment("pants", "#4a4a55", "#2c2c33")] },
-  // 1: sage shirt, brown pants.
-  { garments: [presetGarment("shirt", "#5b8a4e", "#3a5c33"), presetGarment("pants", "#6d5a43", "#4a3d2c")] },
-  // 2: terracotta shirt, navy pants, straw hat.
-  { garments: [presetGarment("shirt", "#b4643f", "#7d3f24"), presetGarment("pants", "#39465e", "#242e40"), presetGarment("hat", "#c9b06a", "#8a7442")] },
-  // 3: mustard shirt, olive pants.
-  { garments: [presetGarment("shirt", "#c9a83f", "#8a7226"), presetGarment("pants", "#55603f", "#39422a")] },
-  // 4: rose dress.
-  { garments: [presetGarment("dress", "#b44a6d", "#7d2c47")] },
-  // 5: plum dress, cream sun hat.
-  { garments: [presetGarment("dress", "#6d4a8a", "#47305c"), presetGarment("hat", "#e0d7c4", "#b3a488")] },
-];
+/** The garment HEADS that are both economy kinds (goods-kinds `CLOTHING_HEADS`)
+ *  and the coloured "main" garment a body wears. A shirt renders over default
+ *  slate pants; a dress renders alone. */
+export const GARMENT_WEARABLE_HEADS = ["shirt", "dress"] as const;
+export type WearableHead = (typeof GARMENT_WEARABLE_HEADS)[number];
 
-/** Number of distinct outfit presets `outfitPresetFor` can return. */
-export const OUTFIT_PRESET_COUNT = OUTFIT_PRESETS.length;
+/** The garment colour VOCABULARY — every `color_*` a garment CAN be, so a
+ *  glyph of any of these is always a valid, countable, washable clothing kind
+ *  (goods-kinds `CLOTHING_KINDS` = heads × these). It is a fixed superset, NOT
+ *  the small set a given town wears: a culture's dress `palette` (Phase 2) is a
+ *  SUBSET selected from here per session. Order is STABLE — it fixes the
+ *  outfit-index space, and the curated default (below) is kept FIRST so the
+ *  common colours keep low, warm-at-boot indices. Do not reorder without
+ *  rebaking. */
+export const GARMENT_COLORS = [
+  "color_red", "color_blue", "color_green", "color_yellow", // the curated default, first
+  "color_orange", "color_purple", "color_pink", "color_brown", "color_black", "color_white",
+] as const;
+export type GarmentColorGlyph = (typeof GARMENT_COLORS)[number];
 
-/** Deterministic preset picker: the SAME hash returns the SAME outfit,
- *  forever (any integer, negative fine). Returns a fresh copy so callers may
- *  tweak colors without corrupting the shared preset. */
-export function outfitPresetFor(hash: number): OutfitBlueprint {
-  const n = OUTFIT_PRESETS.length;
-  const h = Number.isFinite(hash) ? Math.floor(hash) : 0;
-  const preset = OUTFIT_PRESETS[((h % n) + n) % n];
-  return { garments: preset.garments.map((g) => ({ ...g })) };
+/** A town's ACTIVE dress: the garment heads its residents wear and the colour
+ *  palette they wear them in — a per-session SUBSET of the vocabulary above,
+ *  set from `game.culture.dress` (Phase 2) or the curated default. This bounds
+ *  what residents wear, what stores stock, and what gets baked at boot. */
+export interface DressPalette {
+  heads: readonly string[];
+  colors: readonly string[];
+}
+
+/** The curated default a town wears when its world declares no culture dress —
+ *  a small, tasteful set (keeps boot bakes ≈ heads × 4). */
+export const DEFAULT_DRESS_PALETTE: DressPalette = {
+  heads: GARMENT_WEARABLE_HEADS,
+  colors: ["color_red", "color_blue", "color_green", "color_yellow"],
+};
+
+/** Colour glyph → the fabric + trim hexes the mesh lofts (clothing.ts is the
+ *  garment-appearance owner; these are tasteful clothing shades, distinct from
+ *  object-models' flat prop tints). Any `color_*` the palette lists must appear
+ *  here. */
+export const GARMENT_COLOR_HEX: Record<string, { fabric: string; accent: string }> = {
+  color_red: { fabric: "#c43b3b", accent: "#7d2626" },
+  color_blue: { fabric: "#3f6db4", accent: "#2c3e50" },
+  color_green: { fabric: "#5b8a4e", accent: "#3a5c33" },
+  color_yellow: { fabric: "#c9a83f", accent: "#8a7226" },
+  color_orange: { fabric: "#b4643f", accent: "#7d3f24" },
+  color_purple: { fabric: "#6d4a8a", accent: "#47305c" },
+  color_pink: { fabric: "#b44a6d", accent: "#7d2c47" },
+  color_brown: { fabric: "#6d5a43", accent: "#4a3d2c" },
+  color_black: { fabric: "#2e2e33", accent: "#161619" },
+  color_white: { fabric: "#e0dcd2", accent: "#b3ab99" },
+};
+
+/** Default trousers worn under any coloured shirt (the shirt carries the
+ *  colour; the legs stay a neutral slate). */
+const DEFAULT_PANTS = () => presetGarment("pants", "#4a4a55", "#2c2c33");
+
+/** Number of distinct outfit presets `outfitPresetFor` can return (heads ×
+ *  colours = the boot-bake count). */
+export const OUTFIT_PRESET_COUNT = GARMENT_WEARABLE_HEADS.length * GARMENT_COLORS.length;
+
+const wrap = (i: number, n: number): number => ((Math.floor(i) % n) + n) % n;
+
+/** Split an outfit index into its (head, colour glyph). Head-major, stable. */
+export function garmentOfIndex(index: number): { head: WearableHead; color: GarmentColorGlyph } {
+  const nc = GARMENT_COLORS.length;
+  const i = wrap(Number.isFinite(index) ? index : 0, OUTFIT_PRESET_COUNT);
+  return { head: GARMENT_WEARABLE_HEADS[Math.floor(i / nc)]!, color: GARMENT_COLORS[i % nc]! };
+}
+
+/** The stable index for a (head, colour) — the inverse of `garmentOfIndex`.
+ *  Unknown head/colour fall back to the first slot so the caller always gets a
+ *  bake that exists. */
+export function outfitIndexOf(head: string, colorGlyph: string): number {
+  const hi = Math.max(0, GARMENT_WEARABLE_HEADS.indexOf(head as WearableHead));
+  const ci = Math.max(0, GARMENT_COLORS.indexOf(colorGlyph as GarmentColorGlyph));
+  return hi * GARMENT_COLORS.length + ci;
+}
+
+/** The item GLYPH a body at this outfit index wears — `shirt.color_red`. The
+ *  worn-record and the doffed `.dirty` unit are built from this, so the laundry
+ *  chain sees a colour-bearing key. */
+export function garmentGlyphOfIndex(index: number): string {
+  const { head, color } = garmentOfIndex(index);
+  return `${head}.${color}`;
+}
+
+/** Build a valid ACTIVE dress from a culture's declared (kinds, palette): drop
+ *  anything outside the garment vocabulary, and fall back to the curated default
+ *  for an absent/empty selection. The one place culture dress meets the garment
+ *  vocabulary — so an invalid or partial declaration can never yield an outfit
+ *  slot that has no bake. */
+export function dressPaletteFrom(kinds?: readonly string[], palette?: readonly string[]): DressPalette {
+  const heads = (kinds ?? []).filter((h) => (GARMENT_WEARABLE_HEADS as readonly string[]).includes(h));
+  const colors = (palette ?? []).filter((c) => (GARMENT_COLORS as readonly string[]).includes(c));
+  return {
+    heads: heads.length ? heads : DEFAULT_DRESS_PALETTE.heads,
+    colors: colors.length ? colors : DEFAULT_DRESS_PALETTE.colors,
+  };
+}
+
+/** A STABLE outfit index for a body within a town's ACTIVE dress — the culture
+ *  palette drives which colours (and heads) residents actually wear, so the
+ *  same body picks the same culture-appropriate garment forever. Empty facets
+ *  fall back to the vocabulary/curated default so this never returns an invalid
+ *  slot. */
+export function outfitIndexForDress(hash: number, dress: DressPalette): number {
+  const h = Number.isFinite(hash) ? Math.abs(Math.floor(hash)) : 0;
+  const heads = dress.heads.length ? dress.heads : GARMENT_WEARABLE_HEADS;
+  const colors = dress.colors.length ? dress.colors : DEFAULT_DRESS_PALETTE.colors;
+  const head = heads[h % heads.length]!;
+  // Divide out the head choice so head and colour vary independently.
+  const color = colors[Math.floor(h / heads.length) % colors.length]!;
+  return outfitIndexOf(head, color);
+}
+
+/** Deterministic preset picker: the SAME index (or hash) returns the SAME
+ *  outfit forever. Returns a fresh copy so callers may tweak without corrupting
+ *  the shared blueprint. A shirt slot renders the coloured shirt over default
+ *  pants; a dress slot renders the coloured dress alone. */
+export function outfitPresetFor(index: number): OutfitBlueprint {
+  const { head, color } = garmentOfIndex(index);
+  const hex = GARMENT_COLOR_HEX[color] ?? GARMENT_COLOR_HEX.color_blue!;
+  const main = presetGarment(head, hex.fabric, hex.accent);
+  return { garments: head === "shirt" ? [main, DEFAULT_PANTS()] : [main] };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;

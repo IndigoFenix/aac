@@ -543,6 +543,7 @@ export const ar: Translations = {
       swim: "\u064a\u0633\u0628\u062d",
       wash: "\u064a\u063a\u0633\u0644",
       wear: "\u064a\u0631\u062a\u062f\u064a",
+      color: "\u062a\u0644\u0648\u064a\u0646",
       brush_teeth: "\u064a\u0646\u0638\u0641 \u0627\u0644\u0623\u0633\u0646\u0627\u0646",
       open: "\u064a\u0641\u062a\u062d",
       push: "\u064a\u062f\u0641\u0639",

@@ -52,6 +52,10 @@ export interface WildernessParams {
   trees?: number;
   rocks?: number;
   creatures?: number;
+  /** Keep-clear disc override (city-founding: a town session scatters AROUND
+   *  its plaza/site, not through it). Default: the centre spawn clearing. */
+  clearAt?: { x: number; y: number };
+  clearR?: number;
 }
 
 /** Deterministic scatter RNG (mulberry32 — the landing-cell convention). */
@@ -75,13 +79,14 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
   const side = Math.max(60, params.side ?? 240);
   const rng = mulberry(params.seed);
   const spawn = { x: side / 2, y: side / 2 };
-  const CLEAR_R = 6; // keep the spawn clearing open
+  const clearAt = params.clearAt ?? spawn;
+  const clearR = Math.max(0, params.clearR ?? 6); // keep the clearing open
 
   const place = (): { x: number; y: number } => {
     for (let tries = 0; tries < 12; tries++) {
       const x = 8 + rng() * (side - 16);
       const y = 8 + rng() * (side - 16);
-      if (Math.hypot(x - spawn.x, y - spawn.y) < CLEAR_R) continue;
+      if (Math.hypot(x - clearAt.x, y - clearAt.y) < clearR) continue;
       return { x, y };
     }
     return { x: 8, y: 8 };

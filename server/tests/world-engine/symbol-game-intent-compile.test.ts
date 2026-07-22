@@ -167,6 +167,23 @@ describe("round-2 verbs — drink/wash/clean/sit/wake_up, throw-away, hug, help,
     expect(compile("you + eat")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "eat" } });
   });
 
+  it("color + item + colour → a color goal; the colour is the TARGET, not an item filter", () => {
+    // "color the shirt red" recolours ANY shirt to red — the colour must NOT
+    // restrict which shirt is found (else it would only match one already red).
+    const c = compile("color + shirt.color_red");
+    expect(c).toMatchObject({
+      kind: "goal",
+      goal: { kind: "color", item: { match: { kind: "shirt" } }, color: "color_red" },
+    });
+    if (c.kind === "goal" && c.goal.kind === "color") {
+      // the colour is stripped from the item ref's descriptors (no `color_red`
+      // filter), so a blue shirt is a valid target to recolour.
+      expect((c.goal.item as { match?: { descriptors?: string[] } }).match?.descriptors ?? []).not.toContain("color_red");
+    }
+    // a color command with no colour named is not a color goal (unclear).
+    expect(compile("color + shirt")).not.toMatchObject({ kind: "goal", goal: { kind: "color" } });
+  });
+
   it("wash/clean WITH an object stay transforms (the verb's other life)", () => {
     expect(compile("wash + cup")).toMatchObject({
       kind: "goal",

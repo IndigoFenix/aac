@@ -32,6 +32,7 @@ import {
   type TownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
 import type { TownPlayConfig } from "./town-play.js";
+import { headOf } from "../../variations.js";
 
 /** The BUILDING-MATERIAL stack glyphs a site's stock accepts. `wood` is the
  *  carpenter chain's existing stack glyph (construction v1 — the workshop
@@ -43,7 +44,7 @@ export const SITE_MATERIAL_GLYPHS: readonly string[] = ["wood", "stone"];
 export function isSiteMaterial(glyph: string): boolean {
   // Stack signatures are composed glyphs — "wood" and any facted variant of
   // it ("wood.wet") are the same material head.
-  const head = glyph.split(".")[0] ?? glyph;
+  const head = headOf(glyph);
   return SITE_MATERIAL_GLYPHS.includes(head);
 }
 
@@ -175,6 +176,9 @@ export function siteTownConfig(
     questCount: 0,
     startPop: opts?.startPop ?? 0,
     charter: opts?.charter ?? { farmland: 60, ore_access: 0 },
+    // The site WAS open country — its town keeps the gatherable
+    // surroundings (explicit, not the founding-age default).
+    wilderness: true,
     deltas,
   };
 }

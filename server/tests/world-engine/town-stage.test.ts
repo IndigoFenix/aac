@@ -86,25 +86,26 @@ describe("town-stage: the open town", () => {
     expect(stage.castSpawns.get(wanter.nodeId)).toEqual(door);
   });
 
-  it("exposes the street tree as ground-ribbon roads in world coords", () => {
+  it("exposes the street tree as ground-ribbon roads in world coords — the plaza ring is topology, never pavement", () => {
     const { plan, stage } = setup();
-    // One ribbon per non-trivial street, positioned around the town centre.
-    const drawn = plan.streets.streets.filter(s => s.pts.length >= 2);
+    // One ribbon per non-trivial street EXCEPT the plaza ring (user,
+    // 2026-07-22: a painted circle at every town's heart reads artificial —
+    // the ring stays the arterials' topological root, but the plaza is open
+    // ground they converge on).
+    const drawn = plan.streets.streets.filter(s => s.pts.length >= 2 && !s.ring);
     expect(stage.roads).toHaveLength(drawn.length);
     expect(stage.roads.length).toBeGreaterThan(0);
     for (const r of stage.roads) {
       expect(r.points.length).toBeGreaterThanOrEqual(2);
       expect(r.width).toBeGreaterThan(0);
     }
-    // Points are town-local lifted by centre: the plaza ring's ribbon starts at
-    // centre + the ring's first town-local point.
+    // The ring's ribbon is NOT among them.
     const ring = plan.streets.streets.find(s => s.ring)!;
     const want = { x: stage.center.x + ring.pts[0].x, y: stage.center.y + ring.pts[0].y };
     const ringRoad = stage.roads.find(
       r => Math.abs(r.points[0].x - want.x) < 1e-6 && Math.abs(r.points[0].y - want.y) < 1e-6,
     );
-    expect(ringRoad).toBeDefined();
-    expect(ringRoad!.width).toBeCloseTo(2.8);
+    expect(ringRoad).toBeUndefined();
   });
 
   it("streams by the SHARED mechanics: homebodies indoors, budgeted, no churn", () => {

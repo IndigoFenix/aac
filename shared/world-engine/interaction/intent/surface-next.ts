@@ -18,6 +18,7 @@
 
 import { LEXICON, parseSentence, type IntentFrame, type IntentKind, type ParseContext } from "./parse-intent.js";
 import { PROPERTY_FOR_VERB, type ObjectProperty } from "../../object-properties.js";
+import { headOf } from "../../variations.js";
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -144,17 +145,17 @@ const CONNECTIVES = byCat("connective");
 const QUANTITIES = byCat("quantity");
 const ATTRIBUTES = byCat("attribute");
 
-const MOVEMENT = new Set(["go", "come", "follow", "run", "chase"]);
+const MOVEMENT = new Set(["go", "come", "walk", "follow", "run", "chase"]);
 /** Verbs whose object is optional (self-care / intransitives) — a bare verb
  *  command is already meaningful ("you sleep", "you stop"). */
 const OBJECT_OPTIONAL = new Set([
   "eat", "drink", "sleep", "rest", "play", "talk", "wash", "clean", "brush_teeth",
-  "sit", "wake_up", "wear", "stop", "stay", "wait", "run", "turn", "come", "go", "build", "help", "hug",
+  "sit", "wake_up", "wear", "stop", "stay", "wait", "run", "walk", "turn", "come", "go", "build", "help", "hug",
 ]);
 /** High-frequency opener verbs (concept-parser.md "core 40"). */
 const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play"];
 
-const head = (token: string): string => token.replace(/#\w+/g, "").split(".")[0] ?? token;
+const head = (token: string): string => headOf(token.replace(/#\w+/g, ""));
 const lexOf = (token: string) => LEXICON[head(token)];
 
 // ---------------------------------------------------------------------------

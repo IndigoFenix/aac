@@ -144,6 +144,13 @@ export function createTownWorld(opts: TownWorldOpts): TownWorld {
   let pop = Math.max(0, opts.startPop);
   let day = 0;
 
+  // Day-0 books (city-founding): an AGE-0 town is never fast-forwarded, so
+  // the composition slots must be readable before the first step — its
+  // founding population is real people, not a 0 until tomorrow. Any stepped
+  // town overwrites these at its first day start, byte-identically.
+  write("population", pop);
+  for (const d of demand) write(d.scalar, pop * d.perHead);
+
   const stepOne = (): boolean => {
     // Day start: the composition writes (population, demand) — exactly
     // the coupling's slots, minimally filled.

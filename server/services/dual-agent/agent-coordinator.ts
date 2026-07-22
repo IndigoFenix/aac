@@ -771,6 +771,9 @@ export class AgentCoordinator {
   // re-routing decisions don't need to walk back to settings).
   private observerModel = "";
   private speakerModel = "";
+  /** Model id used for the HTTP Board Manager (invoke + prewarm + cost
+   *  attribution). Set at init from the `aac_boardmanager_http` setting. */
+  private boardManagerHttpModel = BOARD_MANAGER_DEFAULT_MODEL;
   private useVertex = false;
   /** Cached provider key from settingsRepository — needed by createSpeakerAgent
    *  to bind onUsage outside of the original start() closure. */
@@ -2306,9 +2309,12 @@ export class AgentCoordinator {
     // 2. Resolve voices (used by fallback Speaker path and student-interpret
     //    path) and fetch the aac_chat LLM config. They're independent — run
     //    them concurrently rather than back-to-back.
-    const [, aacChat] = await Promise.all([
+    const [, aacChat, observerHttpCfg, speakerHttpCfg, boardMgrHttpCfg] = await Promise.all([
       this.resolveVoices(),
       settingsRepository.getLLMConfig("aac_chat"),
+      settingsRepository.getLLMConfig("aac_observer_http"),
+      settingsRepository.getLLMConfig("aac_speaker_http"),
+      settingsRepository.getLLMConfig("aac_boardmanager_http"),
     ]);
 
     // 3. Determine models. Default both Observer and Speaker to the
@@ -2319,9 +2325,14 @@ export class AgentCoordinator {
     //    if the GA native-audio model keeps malforming its tool calls.
     this.observerModel = process.env.AAC_OBSERVER_MODEL || aacChat.model;
     // Economy-Observer backend runs a cheap text model (no native-audio
-    // premium); it only emits tool calls, never audio. Defaults to the Board
-    // Manager's fast model; override via AAC_OBSERVER_HTTP_MODEL.
-    this.observerHttpModel = process.env.AAC_OBSERVER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
+    // premium); it only emits tool calls, never audio. Resolves from the
+    // `aac_observer_http` admin setting (default gemini-2.5-flash); env var
+    // AAC_OBSERVER_HTTP_MODEL still wins for per-deployment tuning.
+    this.observerHttpModel = process.env.AAC_OBSERVER_HTTP_MODEL || observerHttpCfg.model;
+    // Board Manager HTTP text model — from the `aac_boardmanager_http` admin
+    // setting (default gemini-2.5-flash). Used by the HTTP Board Manager's
+    // invoke + prompt-cache prewarm + usage tracking.
+    this.boardManagerHttpModel = boardMgrHttpCfg.model;
     this.speakerModel = process.env.AAC_SPEAKER_MODEL || aacChat.model;
     this.useVertex = aacChat.provider === "gemini";
     this.aacChatProvider = aacChat.provider;
@@ -2329,7 +2340,7 @@ export class AgentCoordinator {
     // `aac_chat` model is typically a Live variant (native-audio) which
     // 404s on generateContent. Default to the same text model the Board
     // Manager uses; override via AAC_SPEAKER_HTTP_MODEL when tuning.
-    const httpSpeakerModel = process.env.AAC_SPEAKER_HTTP_MODEL || BOARD_MANAGER_DEFAULT_MODEL;
+    const httpSpeakerModel = process.env.AAC_SPEAKER_HTTP_MODEL || speakerHttpCfg.model;
     // Speaker backend selection.
     //  - Per-student `liveAudioSpeaker` AAC setting (default true →
     //    "live"); only an explicit false → "http". A missing field
@@ -2643,7 +2654,7 @@ export class AgentCoordinator {
         `Student: ${this.studentId}`,
         `Observer: ${aacChat.provider}/${this.observerModel}`,
         `Speaker:  ${aacChat.provider}/${this.speakerModel} (mode=${this.speakerMode})`,
-        `BoardMgr: ${BOARD_MANAGER_DEFAULT_PROVIDER}/${boardMgrMode === "live" ? LIVE_BOARD_MANAGER_MODEL : BOARD_MANAGER_DEFAULT_MODEL} (mode=${boardMgrMode})`,
+        `BoardMgr: ${BOARD_MANAGER_DEFAULT_PROVIDER}/${boardMgrMode === "live" ? LIVE_BOARD_MANAGER_MODEL : this.boardManagerHttpModel} (mode=${boardMgrMode})`,
         `Mute: ${this.muteState}`,
         `DirectAudio: ${this.useDirectAudio}`,
       ].join("\n"));
@@ -2658,7 +2669,7 @@ export class AgentCoordinator {
         studentName: studentRow?.firstName || studentRow?.name?.split(" ")[0],
         observerModel: this.observerModel,
         speakerModel: this.speakerModel,
-        boardMgrModel: boardMgrMode === "live" ? LIVE_BOARD_MANAGER_MODEL : BOARD_MANAGER_DEFAULT_MODEL,
+        boardMgrModel: boardMgrMode === "live" ? LIVE_BOARD_MANAGER_MODEL : this.boardManagerHttpModel,
         useDirectAudio: this.useDirectAudio,
         fullAttention: this.fullAttentionMode,
       });
@@ -5882,8 +5893,8 @@ export class AgentCoordinator {
           this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, LIVE_BOARD_MANAGER_MODEL, usage),
       });
     }
-    flowNote("COORDINATOR", `Board Manager mode=http (${BOARD_MANAGER_DEFAULT_PROVIDER}/${BOARD_MANAGER_DEFAULT_MODEL})`);
-    return new BoardManagerAgent(BOARD_MANAGER_DEFAULT_PROVIDER);
+    flowNote("COORDINATOR", `Board Manager mode=http (${BOARD_MANAGER_DEFAULT_PROVIDER}/${this.boardManagerHttpModel})`);
+    return new BoardManagerAgent(BOARD_MANAGER_DEFAULT_PROVIDER, this.boardManagerHttpModel);
   }
 
   private routeFocusRequest(event: FocusRequestEvent): void {
@@ -7944,7 +7955,7 @@ export class AgentCoordinator {
         builderState: this.builderState ?? undefined,
         guessingState: this.guessingState ?? undefined,
         provider: BOARD_MANAGER_DEFAULT_PROVIDER,
-        model: BOARD_MANAGER_DEFAULT_MODEL,
+        model: this.boardManagerHttpModel,
         signal: controller.signal,
         forceRebuildDirective: forceRebuildDirective ?? undefined,
         interlocutorRegister: this.resolveInterlocutorRegister(),
@@ -7986,7 +7997,7 @@ export class AgentCoordinator {
       // handling above. Resetting it here would defeat the retry cap.)
       // Track Board Manager HTTP usage (no modality details — text-only).
       if (result.usage) {
-        this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, BOARD_MANAGER_DEFAULT_MODEL, {
+        this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, this.boardManagerHttpModel, {
           promptTokens: result.usage.promptTokens,
           completionTokens: result.usage.completionTokens,
           cachedTokens: result.usage.cachedTokens ?? 0,

@@ -142,13 +142,19 @@ export function candidateInZone(
   return zoneAt(zones, c.dx + c.w / 2, c.dy + c.h / 2)?.ord === zone.ord;
 }
 
-// ── ZONE-STEERED AUTO-EXPANSION (the ①b deferred piece) ─────────────────
-// Prosperity founds NEW structures inside zones, through the SAME
-// FoundedBuilding path the player's build order takes (same scaffolds,
-// same completion sweep, same roster staffing). The house annex ladder
-// (construction.ts nextAnnexWant) is untouched — this is the TOWN-scope
-// twin of the household accumulator, and it only ever builds INSIDE
-// zones: an unzoned town auto-grows exactly as before (annexes only).
+// ── NEED-STEERED AUTO-EXPANSION (①b deferred piece + city-founding) ─────
+// The town founds NEW structures through the SAME FoundedBuilding path
+// the player's build order takes (same scaffolds, same completion sweep,
+// same roster staffing). The house annex ladder (construction.ts
+// nextAnnexWant) is untouched. Two funding modes:
+//   • URGENT NEED (survival) — a homeless population raises a house, a
+//     hungry one a farm, without banking anything (city-founding.md: "if
+//     there is sufficient need the people will perform actions
+//     autonomously").
+//   • BANKED PROSPERITY (surplus) — the historical threshold spend.
+// Charters CONSTRAIN when present (nations-and-empires §3a: a zoning
+// charter is a build-law); with none, growth follows real need on open
+// ground — the street tree picks the lot, never a painted shape.
 
 /** Town prosperity banked before ONE founding is spent (≈ 5-8 healthy
  *  days at the daily cap — a town founds slower than a household annexes). */
@@ -161,6 +167,18 @@ export const FOUNDING_NEED_FLOOR = 0.1;
 /** The flat score of a structure with no economy half (market, workshop)
  *  — above the floor, below any real shortage, so towns diversify at rest. */
 export const FOUNDING_NEED_DEFAULT = 0.2;
+/** NEED URGENCY (city-founding): a need past these gates builds NOW,
+ *  bypassing the prosperity bank — prosperity funds surplus growth, never
+ *  survival. Crowding is ~0..2 (1 = every house exactly full; the
+ *  established-town equilibrium hovers there, so urgency starts above it);
+ *  shortage is 0..1. */
+export const URGENT_CROWDING = 1.25;
+export const URGENT_SHORTAGE = 0.6;
+/** OPEN-GROUND growth (no charters) only follows a REAL need — at least
+ *  this score. Zoned ground keeps the legacy fill-at-rest (a charter is
+ *  the player saying "build here eventually"); open ground never sprawls
+ *  content towns. */
+export const OPEN_GROWTH_MIN = 0.9;
 
 /** Deterministic town-need signals (the host reads them off the live
  *  books — town.scalar / eco.fills — all replay-stable). */
@@ -221,13 +239,15 @@ export interface FoundingGrowthInput {
   /** Feasible lots for `spec` INSIDE `zone` right now, best-first — the
    *  host's zone-aware foundingOptions filtered by candidateInZone. Empty
    *  = that zone's ground is full (geometric capacity, feasibility inside
-   *  the enumeration). */
-  candidatesFor(spec: StructureSpec, zone: ZoneCharter): FoundingCandidate[];
+   *  the enumeration). `zone: null` = OPEN GROUND (an unchartered town) —
+   *  no zone filter, the street tree's own enumeration. */
+  candidatesFor(spec: StructureSpec, zone: ZoneCharter | null): FoundingCandidate[];
 }
 
 export interface FoundingGrowthOrder {
   spec: StructureSpec;
   building: FoundedBuilding;
+  /** The chartered zone the lot fell in, or -1 for open ground. */
   zoneOrd: number;
 }
 
@@ -242,9 +262,10 @@ export interface FoundingGrowthOrder {
  *
  * Deterministic given its input: charters in ord order × the catalog in
  * row order, ranked by structureNeedScore (ties: catalog order, then zone
- * ord), gated by the economy cap (count < by × rate), the yard stock, and
- * geometric zone capacity. No zones (or none feasible) ⇒ null and the
- * bank keeps accruing harmlessly — an unzoned town never auto-founds.
+ * ord; open ground ranks as ord -1), gated by the economy cap (count <
+ * by × rate), the yard stock, and geometric capacity. URGENT need founds
+ * before the bank fills; otherwise the threshold decides. An unzoned,
+ * content, well-housed town founds nothing — need is the license.
  *
  * Mutates `deltas` (accrual; on an order: spendCosts + foundBuilding +
  * the threshold deducted) and returns the order for the host to reflect
@@ -257,23 +278,59 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     FOUNDING_PROSPERITY_DAILY_CAP,
     Math.max(0, input.gain),
   );
-  if (d.civic.prosperity < FOUNDING_PROSPERITY_THRESHOLD) return null;
+  const banked = d.civic.prosperity >= FOUNDING_PROSPERITY_THRESHOLD;
   const zones = d.zones().filter((z) => z.category !== null);
-  if (!zones.length) return null; // unzoned towns: today's behavior exactly
 
   const districtOf = (k: string): string | null => input.economyOf(k)?.district ?? null;
-  const ranked: Array<{ zone: ZoneCharter; spec: StructureSpec; idx: number; score: number }> = [];
-  for (const zone of zones) {
-    input.catalog.forEach((spec, idx) => {
-      if (!categoriesOfSpec(spec, districtOf).has(zone.category!)) return;
-      const eco = spec.economy ? input.economyOf(spec.economy) : null;
-      ranked.push({ zone, spec, idx, score: structureNeedScore(spec, eco, input.signals) });
-    });
+  interface RankRow {
+    zone: ZoneCharter | null;
+    spec: StructureSpec;
+    idx: number;
+    score: number;
+    urgent: boolean;
+  }
+  const ranked: RankRow[] = [];
+  const consider = (zone: ZoneCharter | null, spec: StructureSpec, idx: number): void => {
+    const eco = spec.economy ? input.economyOf(spec.economy) : null;
+    let worst = 0;
+    for (const g of eco?.sells ?? []) worst = Math.max(worst, input.signals.shortage(g));
+    // NEED URGENCY (city-founding): survival builds bypass the bank —
+    // a homeless population raises a house, a hungry one a farm, TODAY
+    // (materials and the one-per-day tick still gate).
+    const urgent =
+      spec.role === "house"
+        ? input.signals.crowding >= URGENT_CROWDING
+        : worst >= URGENT_SHORTAGE;
+    const score = structureNeedScore(spec, eco, input.signals);
+    if (!zone) {
+      // OPEN GROUND (no charter constrains this town — nations §3c: laws
+      // constrain when present, absence is not a freeze): only REAL need
+      // builds here — a house for a crowded town, a producer for a real
+      // shortage. Zoned fill-at-rest (markets, workshops) needs a charter.
+      if (spec.role !== "house" && !(eco?.sells ?? []).length) return;
+      if (!urgent && score < OPEN_GROWTH_MIN) return;
+    }
+    ranked.push({ zone, spec, idx, score, urgent });
+  };
+  if (zones.length) {
+    for (const zone of zones) {
+      input.catalog.forEach((spec, idx) => {
+        if (!categoriesOfSpec(spec, districtOf).has(zone.category!)) return;
+        consider(zone, spec, idx);
+      });
+    }
+  } else {
+    input.catalog.forEach((spec, idx) => consider(null, spec, idx));
   }
   // Need first; ties break toward catalog row order, then the OLDER zone.
-  ranked.sort((a, b) => b.score - a.score || a.idx - b.idx || a.zone.ord - b.zone.ord);
+  ranked.sort(
+    (a, b) => b.score - a.score || a.idx - b.idx || (a.zone?.ord ?? -1) - (b.zone?.ord ?? -1),
+  );
 
   for (const r of ranked) {
+    // Without a banked threshold, only URGENT need founds (survival now;
+    // surplus growth waits for the bank).
+    if (!banked && !r.urgent) continue;
     // The economy cap (the pasture-charter precedent), read DISCRETELY:
     // the next whole building must fit under by × rate (a 0.5 cap
     // charters nothing — buildings aren't fractional).
@@ -281,13 +338,17 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     if (eco && input.countOf(r.spec.type) + 1 > input.capValueOf(eco.cap.by) * eco.cap.rate) continue;
     // Real materials — the yard must cover it (missing wood halts growth).
     if (!costsMet(r.spec, d.stock)) continue;
-    // Geometric zone capacity — feasibility inside the enumeration.
+    // Geometric capacity — feasibility inside the enumeration.
     const candidate = input.candidatesFor(r.spec, r.zone)[0];
     if (!candidate) continue;
     if (!spendCosts(r.spec, d.stock)) continue;
     const building = d.foundBuilding(candidate, input.day, r.spec.buildDays);
-    d.civic.prosperity = Math.max(0, d.civic.prosperity - FOUNDING_PROSPERITY_THRESHOLD);
-    return { spec: r.spec, building, zoneOrd: r.zone.ord };
+    // The bank pays only when it can — an urgent build before the
+    // threshold is materials-paid, never a negative balance.
+    if (banked) {
+      d.civic.prosperity = Math.max(0, d.civic.prosperity - FOUNDING_PROSPERITY_THRESHOLD);
+    }
+    return { spec: r.spec, building, zoneOrd: r.zone?.ord ?? -1 };
   }
   return null; // every admitted structure capped/short/full — keep banking
 }

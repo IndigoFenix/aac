@@ -54,6 +54,10 @@ export interface IntentBinder {
    *  (the wear primitive); a non-garment "wear" stays the dress self-care
    *  motive. Absent ⇒ nothing is clothing (legacy: bare dress motive). */
   isClothing?(ref?: Ref): boolean;
+  /** Does the ref name a DEVICE (a toggleable thing — a lamp, a tap)? "stop
+   *  {device}" turns it off instead of halting the listener. Absent ⇒ nothing
+   *  is a device (legacy: "stop X" is a plain halt). */
+  isDevice?(ref?: Ref): boolean;
 }
 
 export interface DefaultBinderOptions {
@@ -165,6 +169,17 @@ const SELF_NEEDS = new Set([
 // unambiguous item reading; "play"/"wear" with an object are left to the
 // need machinery until a targeted use/equip primitive exists.
 const INGEST_VERBS = new Set(["eat", "drink"]);
+
+/** The colour a `color`/recolour command names — a `color_*` value carried as a
+ *  descriptor on the object (`shirt.color_red`) or a standalone colour modifier
+ *  ("color shirt red"). Null when no colour was named. */
+function pickColorFacet(frame: IntentFrame): string | null {
+  const mods = [
+    ...(frame.object?.kind === "entity" ? frame.object.modifiers : []),
+    ...frame.modifiers,
+  ];
+  return mods.find((m) => m.startsWith("color_")) ?? null;
+}
 // VERB × OBJECT-CATEGORY dispatch (language-expansion.md): a household chore
 // named by its category object routes to the matching NEED TEMPLATE, not an
 // item transform — "wash the clothes" is the LAUNDRY chore (basket → tub),
@@ -202,51 +217,139 @@ export function compileAction(frame: IntentFrame, binder: IntentBinder): GoalSpe
   const item = () => binder.item(frame.object);
   const destRef = frame.target ?? frame.object; // movement: object doubles as destination
 
+  // THE TRANSPORT ENDPOINT RULE (semantic-gaps.md §To and From): every transfer
+  // verb moves a theme between a SOURCE and a DESTINATION. The verb's argument
+  // frame fills its INTRINSIC endpoint (take ⇒ from, give ⇒ to); an EXPLICIT
+  // relation of the OTHER direction adds the second endpoint and turns an
+  // acquisition into a delivery ("take ball TO dog" ≡ carry it to the dog).
+  // A marker that merely repeats the intrinsic direction changes nothing
+  // ("give ball from dog" ≡ "give ball dog" — the frame slot absorbs it).
+  const boundRef = (...rels: string[]): Ref | undefined =>
+    frame.bound?.find((b) => rels.includes(b.relation))?.ref ??
+    (frame.relation !== undefined && rels.includes(frame.relation) ? frame.target : undefined);
+  /** An explicit/implied SOURCE endpoint, as a place (a container, a spot, a
+   *  creature's hands). Creature-first: "take from dog" names the dog's hands
+   *  (the classifier-backed binder nulls non-creatures on that channel). */
+  const sourceOf = (): PlaceRef | null => {
+    const ref = boundRef("from");
+    if (!ref) return null;
+    const c = binder.creature(ref);
+    if (c) return { kind: "creature", id: c };
+    return binder.place(ref);
+  };
+  /** A DESTINATION endpoint: a creature recipient wins ("give"), else a place
+   *  ("the yard", "the box"). Returns one of the two shapes or null. */
+  const destOf = (ref: Ref | undefined): { to?: CreatureId; container?: PlaceRef } | null => {
+    if (!ref) return null;
+    const c = binder.creature(ref);
+    if (c) return { to: c };
+    const p = binder.place(ref);
+    return p ? { container: p } : null;
+  };
+  /** Deliver `it` to a resolved destination — the shared arm of every
+   *  transport reading (give/bring/carry-to/take-to). */
+  const deliver = (it: ItemRef, dest: { to?: CreatureId; container?: PlaceRef }): GoalSpec | null =>
+    dest.to ? { kind: "give", item: it, to: dest.to }
+    : dest.container ? { kind: "putIn", item: it, container: dest.container }
+    : null;
+
   switch (v) {
     case "go":
-    case "come": {
+    case "come":
+    case "walk":
+    case "run": {
+      // walk/run are gaits of the same movement primitive ("run home", "walk
+      // to the store") — one goTo; the gait is presentation, not semantics.
       const place = binder.place(destRef);
       if (place?.kind === "home") return { kind: "goHome" };
       if (place) return { kind: "goTo", place };
       const c = binder.creature(destRef);
       return c ? { kind: "goTo", place: { kind: "creature", id: c } } : null;
     }
-    case "follow": {
+    case "follow":
+    case "chase": {
+      // chase = follow at urgency — same pursuit primitive, distinct word.
       const c = binder.creature(frame.object) ?? binder.creature(frame.target);
       return c ? { kind: "follow", target: c } : null;
     }
     case "stay":
     case "wait":
-    case "stop":
       return { kind: "stay", place: binder.place(frame.target) ?? undefined };
+    case "stop": {
+      // "stop {device}" — halt the ACTIVE THING, not the listener: a running
+      // device turns off ("stop the water" shuts the tap). Anything else
+      // stays the plain halt command.
+      if (frame.object && binder.isDevice?.(frame.object)) {
+        const it = item();
+        if (it) return { kind: "toggle", device: it, state: "off" };
+      }
+      return { kind: "stay", place: binder.place(frame.target) ?? undefined };
+    }
     case "get":
     case "take":
-    case "pick_up": {
-      // get/take = acquire POSSESSION; pick_up = the physical lift. Both reach
-      // the item and take it into hand — same primitive (fetch), distinct word.
-      const it = item();
-      return it ? { kind: "fetch", item: it } : null;
-    }
+    case "pick_up":
     case "carry": {
-      // "carry X" = pick it up and hold (fetch). "carry X to Y" = carry it
-      // there — putIn stows it in a real container Y, else the place step sets
-      // it down on the ground at Y (carrying it across the room, then release).
+      // The ACQUISITION family: reach the item and take it into hand — same
+      // primitive (fetch), distinct words (get/take = possession, pick_up =
+      // the physical lift, carry = hold-and-move). An explicit "to" makes it
+      // a DELIVERY ("take/carry ball to dog" — fetch first, then hand over /
+      // stow: the give/putIn plans already regress the pickup). An explicit
+      // "from" (or take's implied second noun) names the SOURCE; objectless
+      // "take from dog" takes whatever the source holds. Carry keeps its
+      // CONTAINER preference for the destination (hold-and-move things into
+      // places); take/get prefer a RECIPIENT — the classifier-backed binder
+      // settles ambiguous words either way.
       const it = item();
-      if (!it) return null;
-      const to = binder.place(frame.target);
-      return to ? { kind: "putIn", item: it, container: to } : { kind: "fetch", item: it };
+      const toRef = boundRef("to");
+      if (it && toRef) {
+        const dest =
+          v === "carry"
+            ? (() => {
+                const p = binder.place(toRef);
+                return p ? { container: p } : destOf(toRef);
+              })()
+            : destOf(toRef);
+        if (dest) {
+          const g = deliver(it, dest);
+          if (g) return g;
+        }
+      }
+      const from = sourceOf();
+      if (it) return from ? { kind: "fetch", item: it, from } : { kind: "fetch", item: it };
+      return from ? { kind: "fetch", item: { match: {} }, from } : null;
     }
     case "give":
     case "bring": {
       const it = item();
-      const to = binder.creature(frame.target);
-      if (it && to) return { kind: "give", item: it, to };
-      // "give/bring <goods> to <place>" (city-expansion ②): a non-creature
-      // recipient is a stock DESTINATION — the yard, a house, a chest — so
-      // the order reads as containment ("put wood in the yard"). The host's
-      // transfer layer turns endpoint-shaped putIns into agreements.
-      const place = binder.place(frame.target);
-      return it && place ? { kind: "putIn", item: it, container: place } : null;
+      if (!it) return null;
+      const dest = destOf(frame.target);
+      if (dest) {
+        // "give/bring <goods> to <place>" (city-expansion ②): a non-creature
+        // recipient is a stock DESTINATION — the yard, a house, a chest — so
+        // the order reads as containment ("put wood in the yard"). The host's
+        // transfer layer turns endpoint-shaped putIns into agreements.
+        const g = deliver(it, dest);
+        if (g) return g;
+      }
+      // "give X" with no recipient: hand it to the SPEAKER — the asking child
+      // is the default recipient (semantic-gaps.md: "give {object}" ⇒ to me).
+      return { kind: "give", item: it, to: binder.player };
+    }
+    case "color": {
+      // "color the shirt red" — recolour a NAMED item (pick it up, carry it to a
+      // coloring tub, swap its colour). GENERIC over any tintable item; the
+      // colour is a `color_*` value on the object or a standalone modifier.
+      const color = pickColorFacet(frame);
+      if (!color) return null;
+      // The target COLOUR is not a filter on WHICH item to find — strip it from
+      // the object ref so "color the shirt red" recolours ANY shirt (typically a
+      // differently-coloured one), not only one that is already red.
+      const objRef: Ref | undefined =
+        frame.object?.kind === "entity"
+          ? { ...frame.object, modifiers: frame.object.modifiers.filter((m) => !m.startsWith("color_")) }
+          : frame.object;
+      const it = binder.item(objRef);
+      return it ? { kind: "color", item: it, color } : null;
     }
     case "put":
     case "drop": {
@@ -303,6 +406,16 @@ export function compileAction(frame: IntentFrame, binder: IntentBinder): GoalSpe
       // social self-care motive — seek any housemate and chat.
       const to = binder.creature(frame.target) ?? binder.creature(frame.object);
       return to ? { kind: "converse", target: to } : { kind: "satisfy", need: "talk" };
+    }
+    case "play": {
+      // "play with Mara" — TOGETHER is the point (semantic-gaps.md §With): a
+      // marked companion makes it a social act toward that partner (walk over
+      // and play — the same shape as hug/converse), with or without a toy.
+      // Bare "play" stays the fun self-care motive.
+      const partner = binder.creature(boundRef("with"));
+      return partner
+        ? { kind: "socialAct", target: partner, act: "play" }
+        : { kind: "satisfy", need: "play" };
     }
     case "open":
     case "shut": {

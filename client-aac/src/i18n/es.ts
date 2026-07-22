@@ -543,6 +543,7 @@ export const es: Translations = {
       swim: "Nadar",
       wash: "Lavar",
       wear: "Llevar",
+      color: "Colorear",
       brush_teeth: "Cepillar dientes",
       open: "Abrir",
       push: "Empujar",

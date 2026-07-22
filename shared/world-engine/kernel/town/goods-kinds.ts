@@ -12,28 +12,65 @@
 // head still routes them to their good's flow.
 
 import { RARE_IMPORT_KIND } from "./trade.js";
+import { GARMENT_WEARABLE_HEADS, GARMENT_COLORS } from "../../creatures/clothing.js";
+import { headOf, variantKindsOf } from "../../variations.js";
+
+/** WHICH GOOD VARIES IN WHICH variation dimension(s) — the generic replacement
+ *  for hand-writing each good's `head × values` product. Clothing varies in
+ *  COLOUR today; a future material good (furniture) adds `["material"]` here and
+ *  its kinds enumerate automatically (no head-conflation surface to re-audit).
+ *  A good absent from this map has no variation dimension (fruit, water). */
+export const GOOD_DIMENSIONS: Record<string, readonly string[]> = {
+  clothing: ["color"],
+};
 
 // FOOD comes in KINDS (fruit): stacks hold kind glyphs under the "food" category,
 // and residents' LIKES pick among them (creatures.ts preferredOf). Other goods
 // are their own single kind. The kind names are translated glyphs.
 export const FOOD_KINDS: readonly string[] = ["apple", "banana", "grape"];
-// CLOTHING comes in GARMENT kinds the same way (wardrobes hold shirts and
-// dresses, not abstract "clothing" units). A worn garment dirties into its
-// `.dirty` STATE VARIANT — a distinct stack key (so it never counts as clean
-// clothing) whose HEAD still names the garment (so head-based rules — tidy's
-// provisioned-heads skip, evict banking — keep routing it to the clothing
-// flow). "laundry" is the CATEGORY of those dirty variants: the laundry
+// CLOTHING comes in GARMENT kinds the same way, and each garment now carries a
+// COLOUR as a facet (`shirt.color_red`) — so a clothing KIND is a (head × colour)
+// pair, exactly like fruit is a kind of food. `CLOTHING_HEADS` names the bare
+// garments (shirt/dress) for head-based routing; `CLOTHING_KINDS` is the full
+// coloured product every count/deal/carry projection enumerates through
+// (`kindsOf` → `stackTotalOf`/`splitStock`/`carryKindsOf`/`kindOrder`). The
+// palette + heads live in creatures/clothing.ts (the garment-appearance owner);
+// a culture can narrow the palette later (Phase 2). A worn garment dirties into
+// its `.dirty` STATE VARIANT — a distinct stack key `shirt.color_red.dirty` (so
+// it never counts as clean clothing) whose HEAD still names the garment (so
+// head-based rules — tidy's provisioned-heads skip, evict banking — keep routing
+// it to the clothing flow; the colour is a MIDDLE facet, untouched by the wash's
+// `dirty` drop). "laundry" is the CATEGORY of those dirty variants: the laundry
 // template's item type.
-export const CLOTHING_KINDS: readonly string[] = ["shirt", "dress"];
+export const CLOTHING_HEADS: readonly string[] = GARMENT_WEARABLE_HEADS;
+/** The clothing stack-kind vocabulary — every garment head × the colour
+ *  dimension, via the GENERIC variant enumeration (variations.ts). Same result
+ *  as the old hand-written `head × colour` product, but now one code path with
+ *  every other varying good. */
+export const CLOTHING_KINDS: readonly string[] = CLOTHING_HEADS.flatMap((h) =>
+  variantKindsOf(h, GOOD_DIMENSIONS.clothing!, { color: GARMENT_COLORS }),
+);
 export const LAUNDRY_KINDS: readonly string[] = CLOTHING_KINDS.map((k) => `${k}.dirty`);
+/** Is this glyph a DIRTY garment (the laundry category), colour and facet-order
+ *  tolerant — a garment head plus a `dirty` state facet anywhere in it. Robust
+ *  where an exact `LAUNDRY_KINDS.includes` would miss a colourless or
+ *  differently-ordered authored glyph. */
+export const isLaundryGlyph = (glyph: string): boolean =>
+  CLOTHING_HEADS.includes(headOf(glyph)) && glyph.split(".").slice(1).includes("dirty");
 export const kindsOf = (goodKey: string): readonly string[] =>
   goodKey === "food" ? FOOD_KINDS
   : goodKey === "clothing" ? CLOTHING_KINDS
   : goodKey === "laundry" ? LAUNDRY_KINDS
   : goodKey === "meal" ? MEAL_KINDS
   : [goodKey];
-export const isKindOf = (glyph: string, goodKey: string): boolean =>
-  kindsOf(goodKey).includes(glyph.split(".")[0] ?? glyph);
+export const isKindOf = (glyph: string, goodKey: string): boolean => {
+  // Clothing kinds are (head × colour) pairs, so a glyph's HEAD (never its full
+  // coloured key) is what names its garment; laundry is head + a `dirty` facet.
+  // Other goods' kinds ARE their heads (fruit) — the plain membership test.
+  if (goodKey === "clothing") return CLOTHING_HEADS.includes(headOf(glyph));
+  if (goodKey === "laundry") return isLaundryGlyph(glyph);
+  return kindsOf(goodKey).includes(headOf(glyph));
+};
 /** TREATS: rare imported food kinds — never dealt into pantry mixes or counted
  *  toward provisioning, but they ARE food (a gifted cookie satisfies a food
  *  want, and a hungry soul will eat one from its hand). */
@@ -49,9 +86,9 @@ export const MEAL_KINDS: readonly string[] = [...FOOD_KINDS, ...TREAT_KINDS].map
  *  clothing — and shirt.dirty too: the head routes, so a dirty garment banks
  *  into the wardrobe chest, not a phantom laundry box). */
 export const goodKeyOfGlyph = (glyph: string): string => {
-  const head = glyph.split(".")[0] ?? glyph;
+  const head = headOf(glyph);
   if (FOOD_KINDS.includes(head) || TREAT_KINDS.includes(head)) return "food";
-  if (CLOTHING_KINDS.includes(head)) return "clothing";
+  if (CLOTHING_HEADS.includes(head)) return "clothing";
   return head;
 };
 /** Total units of a good across its kind stacks. */
@@ -87,8 +124,7 @@ export const LARGE_KINDS: readonly string[] = [
   "bin", "bowl", "bath", "privy", "oven", "refrigerator", "workbench", "shelf",
 ];
 /** Is this stack glyph too large to go in a creature's inventory? */
-export const isLargeGlyph = (glyph: string): boolean =>
-  LARGE_KINDS.includes(glyph.split(".")[0] ?? glyph);
+export const isLargeGlyph = (glyph: string): boolean => LARGE_KINDS.includes(headOf(glyph));
 /** How many SMALL items a body may keep on it (hands + bag). The bound is what
  *  makes a shopping trip a real decision — a full bag is a legible reason a
  *  creature can SAY ("I can't carry any more") instead of hoarding the market.

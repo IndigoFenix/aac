@@ -543,6 +543,7 @@ export const he: Translations = {
       swim: "לשחות",
       wash: "לרחוץ",
       wear: "ללבוש",
+      color: "לצבוע",
       brush_teeth: "לצחצח שיניים",
       open: "לפתוח",
       push: "לדחוף",

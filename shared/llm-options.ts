@@ -6,7 +6,18 @@
 // ──────────────────────────────────────────────────────────────────
 
 export type LLMProviderKey = "openai" | "gemini" | "claude";
-export type UseCaseKey = "clinician" | "aac_chat" | "aac_moderator" | "deep_analysis" | "crm_chat";
+export type UseCaseKey =
+  | "clinician"
+  | "aac_chat"
+  | "aac_moderator"
+  | "deep_analysis"
+  | "crm_chat"
+  // Per-agent HTTP-mode model overrides for the AAC live agents. These only
+  // take effect on the HTTP (generateContent) fallback path — the live /
+  // native-audio path has no equivalent selectable model. Gemini-only.
+  | "aac_observer_http"
+  | "aac_speaker_http"
+  | "aac_boardmanager_http";
 
 export interface ModelOption {
   provider: LLMProviderKey;
@@ -53,6 +64,12 @@ export interface UseCaseInfo {
   requiresStructuredOutput: boolean;
   /** Use case requires a Live/Realtime-capable model (WebSocket session) */
   requiresLive?: boolean;
+  /**
+   * Use case runs on the HTTP (generateContent) path only — exclude
+   * Live/native-audio models (they 404 on generateContent) from the picker.
+   * Mutually exclusive with `requiresLive`.
+   */
+  requiresHttp?: boolean;
 }
 
 export interface LLMConfigValue {
@@ -111,6 +128,36 @@ export const USE_CASES: Record<UseCaseKey, UseCaseInfo> = {
     requiresStreaming: false,
     requiresStructuredOutput: true,
   },
+  aac_observer_http: {
+    label: "AAC Observer (HTTP mode)",
+    description: "Model for the Observer's economy/HTTP backend — the cheap text path used when the live native-audio Observer is off. Gemini-only; ignored on the live path.",
+    defaultProvider: "gemini",
+    defaultModel: "gemini-2.5-flash",
+    requiresTools: true,
+    requiresStreaming: false,
+    requiresStructuredOutput: false,
+    requiresHttp: true,
+  },
+  aac_speaker_http: {
+    label: "AAC Speaker (HTTP mode)",
+    description: "Model for the Speaker's HTTP backend — text reply → server TTS, used when the live native-audio Speaker is off. Gemini-only; ignored on the live path.",
+    defaultProvider: "gemini",
+    defaultModel: "gemini-2.5-flash",
+    requiresTools: false,
+    requiresStreaming: true,
+    requiresStructuredOutput: false,
+    requiresHttp: true,
+  },
+  aac_boardmanager_http: {
+    label: "AAC Board Manager (HTTP mode)",
+    description: "Model for the Board Manager's HTTP text backend (the default board-build path). Gemini-only; the live Board Manager uses a fixed native-audio model instead.",
+    defaultProvider: "gemini",
+    defaultModel: "gemini-2.5-flash",
+    requiresTools: true,
+    requiresStreaming: false,
+    requiresStructuredOutput: false,
+    requiresHttp: true,
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────
@@ -167,6 +214,32 @@ export const MODEL_OPTIONS: ModelOption[] = [
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: true,
+  },
+  {
+    provider: "gemini",
+    modelId: "gemini-3.5-flash-lite",
+    displayName: "Gemini 3.5 Flash-Lite",
+    description: "Fastest model in the 3.5 line (~350 tok/s). Higher per-token cost than 2.5 Flash but strong throughput. HTTP only — no live/native-audio variant. On Vertex AI.",
+    tier: "economy",
+    inputCostPer1M: 0.30,
+    outputCostPer1M: 2.50,
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsStructuredOutput: true,
+    availableOnVertex: true,
+  },
+  {
+    provider: "gemini",
+    modelId: "gemini-3.6-flash",
+    displayName: "Gemini 3.6 Flash",
+    description: "Agentic-optimized flash tier: stronger reasoning/tool-use, ~17% fewer output tokens than 3.5 Flash (up to 65% on long chains). ~10x the per-token cost of 2.5 Flash. HTTP only — no live/native-audio variant. On Vertex AI.",
+    tier: "standard",
+    inputCostPer1M: 1.50,
+    outputCostPer1M: 7.50,
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsStructuredOutput: true,
+    availableOnVertex: true,
   },
   {
     provider: "gemini",
@@ -267,6 +340,9 @@ export const SETTING_KEYS: Record<UseCaseKey, string> = {
   aac_moderator: "llm_aac_moderator",
   deep_analysis: "llm_deep_analysis",
   crm_chat: "llm_crm_chat",
+  aac_observer_http: "llm_aac_observer_http",
+  aac_speaker_http: "llm_aac_speaker_http",
+  aac_boardmanager_http: "llm_aac_boardmanager_http",
 };
 
 // ──────────────────────────────────────────────────────────────────
@@ -275,6 +351,20 @@ export const SETTING_KEYS: Record<UseCaseKey, string> = {
 
 export function getModelsForProvider(provider: LLMProviderKey, requiresLive?: boolean): ModelOption[] {
   return MODEL_OPTIONS.filter((m) => m.provider === provider && (!requiresLive || m.supportsLive));
+}
+
+/**
+ * Whether a model is selectable for a use case, honoring both the live
+ * requirement (must support live) and the http requirement (must NOT be a
+ * live/native-audio model, which 404s on generateContent).
+ */
+export function modelAllowedForUseCase(
+  m: ModelOption,
+  info: Pick<UseCaseInfo, "requiresLive" | "requiresHttp">,
+): boolean {
+  if (info.requiresLive && !m.supportsLive) return false;
+  if (info.requiresHttp && m.supportsLive) return false;
+  return true;
 }
 
 export function getModelOption(provider: LLMProviderKey, modelId: string): ModelOption | undefined {

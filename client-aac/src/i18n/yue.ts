@@ -543,6 +543,7 @@ export const yue: Translations = {
       swim: "游水",
       wash: "洗",
       wear: "著",
+      color: "上色",
       brush_teeth: "刷牙",
       open: "開",
       push: "推",

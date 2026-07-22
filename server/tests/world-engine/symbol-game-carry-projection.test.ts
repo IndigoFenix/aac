@@ -6,7 +6,7 @@
 // Pantry counts and market baskets keep the strict kindsOf: treats are never
 // dealt into mixes or counted toward provisioning.
 import { describe, expect, it } from "@jest/globals";
-import { carryKindsOf, carryTotalOf } from "@shared/world-engine/kernel/town/goods-kinds.js";
+import { carryKindsOf, carryTotalOf, CLOTHING_KINDS } from "@shared/world-engine/kernel/town/goods-kinds.js";
 import { RARE_IMPORT_KIND } from "@shared/world-engine/kernel/town/trade.js";
 
 describe("carryKindsOf — the hand projection", () => {
@@ -16,7 +16,10 @@ describe("carryKindsOf — the hand projection", () => {
     );
   });
   it("non-food goods project exactly their own kinds", () => {
-    expect(carryKindsOf("clothing")).toEqual(["shirt", "dress"]);
+    // Clothing kinds are (head × palette colour) pairs — every clean garment key.
+    expect(carryKindsOf("clothing")).toEqual(CLOTHING_KINDS);
+    expect(carryKindsOf("clothing")).toContain("shirt.color_red");
+    expect(carryKindsOf("clothing").every((k) => /^(shirt|dress)\.color_/.test(k))).toBe(true);
     expect(carryKindsOf("water")).toEqual(["water"]);
   });
   it("counts a treat-only hand under food — the strict kind list would read 0", () => {

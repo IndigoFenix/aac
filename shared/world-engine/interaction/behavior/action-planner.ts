@@ -33,19 +33,33 @@ import type { Vec2 } from "../../types.js";
 export type Predicate =
   | { kind: "at"; place: PlaceRef } // the actor stands at a place
   | { kind: "near"; item: ItemId } // the actor stands by an item
-  | { kind: "holding"; item: ItemId } // the item is in the actor's hand
+  // `takeFrom` = a SOURCE creature the plan may take the item FROM ("take ball
+  // from dog"): its hands are a legitimate pickup spot, not a block.
+  | { kind: "holding"; item: ItemId; takeFrom?: CreatureId } // the item is in the actor's hand
   | { kind: "in"; item: ItemId; container: PlaceRef } // the item sits in a container
   | { kind: "possessed"; item: ItemId; by: CreatureId } // a creature holds the item
   // `at` = dining preference (station kinds): eat THERE when one resolves.
   | { kind: "consumed"; item: ItemId; at?: readonly string[] } // the item is used up (eaten/drunk)
   | { kind: "facet"; item: ItemId; state: string } // the item carries a state (clean/hot)
   | { kind: "toggled"; item: ItemId; state: string } // a device is open/closed/on/off
-  // `dwellS` = episode length (a need's nap vs the commanded-sit default) — a
-  // plan parameter riding the predicate, not world state.
-  | { kind: "rested"; place: PlaceRef; dwellS?: number } // the body has occupied a rest station (bed/chair/box)
+  // `dwellS` = episode length (a need's nap vs the commanded-sit default);
+  // `pose` overrides the fixture-derived pose — plan parameters riding the
+  // predicate, not world state.
+  | { kind: "rested"; place: PlaceRef; dwellS?: number; pose?: "sleep" | "sit" | "play" } // the body has occupied a rest station
   | { kind: "openState"; place: PlaceRef; open: boolean } // a container lid is open/shut
   | { kind: "worn"; item: ItemId } // the garment is ON the body
-  | { kind: "socialized"; partner: CreatureId }; // the actor has exchanged with the partner
+  | { kind: "colored"; item: ItemId; color: string } // the item carries the colour facet
+  | { kind: "socialized"; partner: CreatureId } // the actor has exchanged with the partner
+  // Stack-economy micro-targets (S3): `units` of `category` moved between the
+  // named store and the actor's abstract bag. Terminal by design — one leg, one
+  // act; the SELECTOR paces multi-leg errands (take at the market, then a fresh
+  // stow-at-home goal), exactly the needs walker's bounded-step granularity.
+  | { kind: "unitsTaken"; from: PlaceRef; category: string; units: number; affords?: string; tplKey?: string }
+  | { kind: "unitsStowed"; into: PlaceRef; category: string; units: number; tplKey?: string }
+  | { kind: "stackProcessed"; at: PlaceRef; category: string; drop?: string; add?: string; dwellS?: number; tplKey?: string }
+  | { kind: "stackEquipped"; category: string; tplKey?: string }
+  | { kind: "stackDropped"; category: string; units: number; tplKey?: string }
+  | { kind: "stackConsumed"; category: string; at?: readonly string[]; tplKey?: string };
 
 // ---------------------------------------------------------------------------
 // Operators — HOW to make a predicate true (the "mechanism" layer)
@@ -75,7 +89,16 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
     case "holding": {
       const holder = r.carrierOf?.(target.item) ?? null;
       if (holder === self) return []; // already in hand — nothing to do
-      if (holder) return null; // someone else holds it — not snatchable
+      if (holder) {
+        // An explicitly named SOURCE creature may be taken from ("take ball
+        // from dog"): walk to the holder, hand-to-hand take. Any OTHER holder
+        // stays not-snatchable.
+        if (target.takeFrom !== undefined && holder === target.takeFrom) {
+          const to = r.positionOf(holder);
+          return to ? [...legTo(to), { kind: "pick", itemId: target.item, from: holder }] : null;
+        }
+        return null;
+      }
       const near = achieve({ kind: "near", item: target.item }, self, r);
       return near ? [...near, { kind: "pick", itemId: target.item }] : null;
     }
@@ -136,7 +159,15 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
       // resolved (no such station here) → null (blocked).
       const pos = r.place(target.place);
       if (!pos) return null;
-      return [...legTo(pos), { kind: "rest", place: target.place, ...(target.dwellS !== undefined ? { dwellS: target.dwellS } : {}) }];
+      return [
+        ...legTo(pos),
+        {
+          kind: "rest",
+          place: target.place,
+          ...(target.dwellS !== undefined ? { dwellS: target.dwellS } : {}),
+          ...(target.pose ? { pose: target.pose } : {}),
+        },
+      ];
     }
     case "openState": {
       // Walk to the container, then work its lid. OPENING needs a grasp — a
@@ -155,12 +186,107 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
       const hold = achieve({ kind: "holding", item: target.item }, self, r);
       return hold ? [...hold, { kind: "equip", itemId: target.item }] : null;
     }
+    case "colored": {
+      // Recolour with the item IN HAND at a coloring tub (a water barrel/bath):
+      // regress `holding` (carry it over), walk to the tub if one resolves, then
+      // swap the colour. No tub nearby → recolour in hand where you stand (like
+      // `consumed`'s else-in-place), so a commanded colour never dead-ends. The
+      // terminal `color` step's `last` ends the pursuit.
+      const hold = achieve({ kind: "holding", item: target.item }, self, r);
+      if (!hold) return null;
+      const tub = r.colorStation?.(self) ?? null;
+      const leg = tub ? legTo(tub) : [];
+      return [...hold, ...leg, { kind: "color", itemId: target.item, color: target.color }];
+    }
     case "socialized": {
       // Walk to the partner, then EXCHANGE. Re-planned each tick, so a partner
       // that wanders is chased (the position updates); gone entirely → null
       // (blocked). The terminal `converse` step's `last` ends the pursuit.
       const to = r.positionOf(target.partner);
       return to ? [...legTo(to), { kind: "converse", target: target.partner }] : null;
+    }
+    case "unitsTaken": {
+      // Walk to the store and WITHDRAW — the executor moves the units into the
+      // abstract bag (market accounting, lid access, carry bounds all its own).
+      // The store must be a NAMED object: the id the walk resolves is the id
+      // the withdraw acts on, one source of truth.
+      if (target.from.kind !== "named") return null;
+      const pos = r.place(target.from);
+      if (!pos) return null;
+      return [
+        ...legTo(pos),
+        {
+          kind: "withdraw",
+          fromId: target.from.id,
+          goodKey: target.category,
+          units: target.units,
+          ...(target.affords ? { affords: target.affords } : {}),
+          ...(target.tplKey ? { tplKey: target.tplKey } : {}),
+        },
+      ];
+    }
+    case "unitsStowed": {
+      // Walk to the container and STOW the carried units into it.
+      if (target.into.kind !== "named") return null;
+      const pos = r.place(target.into);
+      if (!pos) return null;
+      return [
+        ...legTo(pos),
+        {
+          kind: "stow",
+          intoId: target.into.id,
+          goodKey: target.category,
+          units: target.units,
+          ...(target.tplKey ? { tplKey: target.tplKey } : {}),
+        },
+      ];
+    }
+    case "stackProcessed": {
+      // Walk to the station and WORK the carried units there (the executor
+      // dwells the body posed and lands the facet edit — dirty drops, hot adds).
+      if (target.at.kind !== "named") return null;
+      const pos = r.place(target.at);
+      if (!pos) return null;
+      return [
+        ...legTo(pos),
+        {
+          kind: "processStack",
+          atId: target.at.id,
+          goodKey: target.category,
+          ...(target.drop ? { drop: target.drop } : {}),
+          ...(target.add ? { add: target.add } : {}),
+          ...(target.dwellS !== undefined ? { dwellS: target.dwellS } : {}),
+          ...(target.tplKey ? { tplKey: target.tplKey } : {}),
+        },
+      ];
+    }
+    case "stackEquipped":
+      // In place — you dress where you stand (the carried garment goes ON).
+      return [{ kind: "equipStack", goodKey: target.category, ...(target.tplKey ? { tplKey: target.tplKey } : {}) }];
+    case "stackDropped":
+      // In place — set the carried units down at the feet.
+      return [
+        {
+          kind: "dropStack",
+          goodKey: target.category,
+          units: target.units,
+          ...(target.tplKey ? { tplKey: target.tplKey } : {}),
+        },
+      ];
+    case "stackConsumed": {
+      // Eat from the BAG: walk to the dining station when the preference
+      // resolves (the seat show), else consume where you stand — the
+      // consumeAt/consumeHere pair as one plan.
+      const spot = target.at?.length ? (r.diningSpot?.(self, target.at) ?? null) : null;
+      return [
+        ...(spot ? legTo(spot) : []),
+        {
+          kind: "consumeStack",
+          goodKey: target.category,
+          ...(target.at ? { at: target.at } : {}),
+          ...(target.tplKey ? { tplKey: target.tplKey } : {}),
+        },
+      ];
     }
   }
 }
@@ -173,11 +299,14 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
  *  social acts, and host-policy goals (build/area/trade/help/place) stay in
  *  compileGoal — they aren't precondition chains over a carried item. */
 export function goalTarget(goal: GoalSpec, self: CreatureId, r: WorldResolver): Predicate | null {
-  const resolve = (ref: Parameters<WorldResolver["resolveItem"]>[0]) => r.resolveItem(ref, self);
+  const resolve = (ref: Parameters<WorldResolver["resolveItem"]>[0], from?: PlaceRef) =>
+    r.resolveItem(ref, self, from);
   switch (goal.kind) {
     case "fetch": {
-      const id = resolve(goal.item);
-      return id ? { kind: "holding", item: id } : null;
+      const id = resolve(goal.item, goal.from);
+      if (!id) return null;
+      const takeFrom = goal.from?.kind === "creature" ? goal.from.id : undefined;
+      return { kind: "holding", item: id, ...(takeFrom !== undefined ? { takeFrom } : {}) };
     }
     case "give": {
       const id = resolve(goal.item);
@@ -200,15 +329,67 @@ export function goalTarget(goal: GoalSpec, self: CreatureId, r: WorldResolver): 
       return id ? { kind: "toggled", item: id, state: goal.state } : null;
     }
     case "rest":
-      return { kind: "rested", place: goal.place, ...(goal.dwellS !== undefined ? { dwellS: goal.dwellS } : {}) };
+      return {
+        kind: "rested",
+        place: goal.place,
+        ...(goal.dwellS !== undefined ? { dwellS: goal.dwellS } : {}),
+        ...(goal.pose ? { pose: goal.pose } : {}),
+      };
     case "setOpen":
       return { kind: "openState", place: goal.place, open: goal.open };
     case "wear": {
       const id = resolve(goal.item);
       return id ? { kind: "worn", item: id } : null;
     }
+    case "color": {
+      const id = resolve(goal.item);
+      return id ? { kind: "colored", item: id, color: goal.color } : null;
+    }
     case "converse":
       return { kind: "socialized", partner: goal.target };
+    case "takeUnits":
+      return {
+        kind: "unitsTaken",
+        from: goal.from,
+        category: goal.category,
+        units: goal.units,
+        ...(goal.affords ? { affords: goal.affords } : {}),
+        ...(goal.tplKey ? { tplKey: goal.tplKey } : {}),
+      };
+    case "putUnits":
+      return {
+        kind: "unitsStowed",
+        into: goal.into,
+        category: goal.category,
+        units: goal.units,
+        ...(goal.tplKey ? { tplKey: goal.tplKey } : {}),
+      };
+    case "processUnits":
+      return {
+        kind: "stackProcessed",
+        at: goal.at,
+        category: goal.category,
+        ...(goal.drop ? { drop: goal.drop } : {}),
+        ...(goal.add ? { add: goal.add } : {}),
+        ...(goal.dwellS !== undefined ? { dwellS: goal.dwellS } : {}),
+        ...(goal.tplKey ? { tplKey: goal.tplKey } : {}),
+      };
+    case "equipUnits":
+      return { kind: "stackEquipped", category: goal.category, ...(goal.tplKey ? { tplKey: goal.tplKey } : {}) };
+    case "dropUnits":
+      return {
+        kind: "stackDropped",
+        category: goal.category,
+        units: goal.units,
+        ...(goal.tplKey ? { tplKey: goal.tplKey } : {}),
+      };
+    case "consumeUnits":
+      return {
+        kind: "stackConsumed",
+        category: goal.category,
+        ...(goal.at ? { at: goal.at } : {}),
+        ...(goal.tplKey ? { tplKey: goal.tplKey } : {}),
+      };
     case "goTo":
       return { kind: "at", place: goal.place };
     default:

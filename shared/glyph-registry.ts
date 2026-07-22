@@ -603,6 +603,11 @@ const VOCAB: VocabularyItem[] = [
   { key: "wear", tKey: "aac.glyph.wear", pos: "verb", categories: ["do"],
     modeChips: { do: ["body"] }, tone: "comment", emoji: "👕", exposeToAi: true,
     composable: { accepts: ["noun"], suggestCategories: ["what"] } },
+  // Recolour an item ("color the shirt red") — composable so it takes the thing
+  // then a colour modifier, the same shape as wear(shirt).
+  { key: "color", tKey: "aac.glyph.color", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "hands"] }, tone: "comment", emoji: "🎨", exposeToAi: true,
+    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
   { key: "brush_teeth", tKey: "aac.glyph.brush_teeth", pos: "verb", categories: ["do"],
     modeChips: { do: ["body"] }, tone: "comment", emoji: "🪥" },
   // emoji weak — `open`'s folder emoji reads file-manager rather than a

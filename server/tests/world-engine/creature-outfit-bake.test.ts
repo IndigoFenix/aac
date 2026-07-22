@@ -10,6 +10,8 @@ import {
   OUTFIT_PRESET_COUNT,
   outfitPresetFor,
   clampOutfit,
+  GARMENT_WEARABLE_HEADS,
+  GARMENT_COLORS,
 } from "@shared/world-engine/creatures/clothing.js";
 import {
   getSpeciesAssets,
@@ -36,9 +38,9 @@ function findMesh(root: THREE.Object3D): THREE.Mesh {
 }
 
 describe("outfitPresetFor — deterministic wardrobe", () => {
-  it("offers 4–6 presets, each a valid clamped outfit", () => {
+  it("offers one preset per (garment head × palette colour), each a valid clamped outfit", () => {
+    expect(OUTFIT_PRESET_COUNT).toBe(GARMENT_WEARABLE_HEADS.length * GARMENT_COLORS.length);
     expect(OUTFIT_PRESET_COUNT).toBeGreaterThanOrEqual(4);
-    expect(OUTFIT_PRESET_COUNT).toBeLessThanOrEqual(6);
     for (let i = 0; i < OUTFIT_PRESET_COUNT; i++) {
       const outfit = outfitPresetFor(i);
       expect(outfit.garments.length).toBeGreaterThan(0);

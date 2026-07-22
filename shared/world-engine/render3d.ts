@@ -1743,6 +1743,12 @@ export class World3DRenderer {
   /** The current interpolated rig pose (placeCamera reads it each frame). */
   private readonly rig: CameraRigPose;
 
+  /** STREET-LEVEL fog window (owner mode). Below `refHeight` the window is
+   *  exactly this (legacy haze); above it the window scales linearly with
+   *  camera altitude so a spirit orbit high over a flat world still SEES the
+   *  ground instead of a fog-filled backdrop. */
+  private readonly fogBase = { near: 40, far: 150, refHeight: 60 };
+
   private readonly disposables: { dispose(): void }[] = [];
 
   /** Optional embedded content layer (goal-tree quest, symbol-game props, …). */
@@ -1776,7 +1782,7 @@ export class World3DRenderer {
       this.renderer.setClearColor(new THREE.Color(backdrop), 1);
       // We draw the scene then a vignette pass, so take over clearing.
       this.renderer.autoClear = false;
-      this.scene.fog = new THREE.Fog(new THREE.Color(backdrop), 40, 150);
+      this.scene.fog = new THREE.Fog(new THREE.Color(backdrop), this.fogBase.near, this.fogBase.far);
       this.camera = new THREE.PerspectiveCamera(this.rig.fov, 1, 0.1, 1000);
       this.camLocalFrame = this.camera; // owner mode: local frame IS world frame
     }
@@ -2532,6 +2538,7 @@ export class World3DRenderer {
     this.syncBuildings(state, fade, dt);
     this.syncBubbles(state, glyphFor);
     this.updateCamera(state, dt, intent);
+    this.updateFog();
     this.updateComfort(state, dt);
     this.updateSpark(state, intent);
     this.spark.update(dt);
@@ -2545,6 +2552,27 @@ export class World3DRenderer {
       this.renderer!.render(this.scene, this.camera);
       this.renderer!.clearDepth();
       this.renderer!.render(this.overlayScene, this.overlayCamera);
+    }
+  }
+
+  /** ALTITUDE-ADAPTIVE FOG (owner mode): the fixed street window (40..150 m)
+   *  swallowed the ground whenever the camera rose past ~150 m — a flat world
+   *  watched from the spirit ladder's town orbit rendered as bare backdrop.
+   *  Scale the window with camera height above `refHeight` (continuous, so
+   *  street level keeps its exact legacy haze) and stretch the far plane to
+   *  keep the scaled window drawable. Host-embed scenes have no own fog. */
+  private updateFog(): void {
+    if (this.host) return;
+    const fog = this.scene.fog;
+    if (!(fog instanceof THREE.Fog)) return;
+    const b = this.fogBase;
+    const k = Math.max(1, Math.max(0, this.camera.position.y) / b.refHeight);
+    fog.near = b.near * k;
+    fog.far = b.far * k;
+    const far = Math.max(1000, fog.far * 1.25);
+    if (Math.abs(far - this.camera.far) > 1) {
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
     }
   }
 

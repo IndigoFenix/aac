@@ -487,3 +487,135 @@ describe("rest with a dwell length (`dwellS`) — a need's nap vs the commanded-
     });
   });
 });
+
+describe("takeUnits / putUnits — the stack economy's bounded micro-goals (S3)", () => {
+  it("takeUnits: walk to the named store, then withdraw N into the bag", () => {
+    const goal: GoalSpec = { kind: "takeUnits", from: { kind: "named", id: "chest1" }, category: "food", units: 4, tplKey: "provision:food" };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 4, y: 0 } },
+        { kind: "withdraw", fromId: "chest1", goodKey: "food", units: 4, tplKey: "provision:food" },
+      ],
+    });
+  });
+
+  it("takeUnits by AFFORDANCE (fun's toy) carries the selector through", () => {
+    const goal: GoalSpec = { kind: "takeUnits", from: { kind: "named", id: "toybox" }, category: "", units: 1, affords: "play", tplKey: "fun" };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 4, y: 0 } },
+        { kind: "withdraw", fromId: "toybox", goodKey: "", units: 1, affords: "play", tplKey: "fun" },
+      ],
+    });
+  });
+
+  it("putUnits: walk to the container, then stow N out of the bag", () => {
+    const goal: GoalSpec = { kind: "putUnits", into: { kind: "named", id: "chest1" }, category: "food", units: 3, tplKey: "provision:food" };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 4, y: 0 } },
+        { kind: "stow", intoId: "chest1", goodKey: "food", units: 3, tplKey: "provision:food" },
+      ],
+    });
+  });
+
+  it("an unresolvable store blocks (null), never a partial plan", () => {
+    const gone: WorldResolver = { ...resolver(), place: () => null };
+    const goal: GoalSpec = { kind: "takeUnits", from: { kind: "named", id: "chest1" }, category: "food", units: 1 };
+    expect(planGoal(goal, "bear", gone)).toBeNull();
+  });
+
+  it("a non-named store ref blocks — the walked id and the acted-on id must be ONE", () => {
+    const goal: GoalSpec = { kind: "takeUnits", from: { kind: "point", x: 4, y: 0 }, category: "food", units: 1 };
+    expect(planGoal(goal, "bear", resolver())).toBeNull();
+  });
+
+  it("compileGoal routes both through the planner (identical result)", () => {
+    for (const goal of [
+      { kind: "takeUnits", from: { kind: "named", id: "chest1" }, category: "food", units: 2 },
+      { kind: "putUnits", into: { kind: "named", id: "chest1" }, category: "food", units: 2 },
+    ] as GoalSpec[]) {
+      expect(compileGoal(goal, "bear", resolver())).toEqual(planGoal(goal, "bear", resolver()));
+    }
+  });
+
+  it("pursue drives the micro-goal: move while far, act(last) on arrival — terminal by design", () => {
+    let bear = { x: 0, y: 0 };
+    const r: WorldResolver = {
+      ...resolver(),
+      arrived: (_self, pos) => Math.hypot(bear.x - pos.x, bear.y - pos.y) <= 1.3,
+    };
+    const goal: GoalSpec = { kind: "takeUnits", from: { kind: "named", id: "chest1" }, category: "food", units: 2 };
+    expect(pursue(goal, "bear", r)).toEqual({ kind: "move", pos: { x: 4, y: 0 } });
+    bear = { x: 3.5, y: 0 };
+    expect(pursue(goal, "bear", r)).toEqual({
+      kind: "act",
+      step: { kind: "withdraw", fromId: "chest1", goodKey: "food", units: 2 },
+      last: true,
+    });
+  });
+});
+
+describe("processUnits / equipUnits / dropUnits — the dwelled transform and the in-place stack acts (S3 slice 2)", () => {
+  it("processUnits: walk to the station, then the dwelled facet edit", () => {
+    const goal: GoalSpec = { kind: "processUnits", at: { kind: "named", id: "bath1" }, category: "laundry", drop: "dirty", dwellS: 6, tplKey: "laundry" };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 4, y: 0 } },
+        { kind: "processStack", atId: "bath1", goodKey: "laundry", drop: "dirty", dwellS: 6, tplKey: "laundry" },
+      ],
+    });
+  });
+
+  it("equipUnits / dropUnits are act-only plans — you dress and unload where you stand", () => {
+    expect(planGoal({ kind: "equipUnits", category: "clothing", tplKey: "dress" }, "bear", resolver())).toEqual({
+      steps: [{ kind: "equipStack", goodKey: "clothing", tplKey: "dress" }],
+    });
+    expect(planGoal({ kind: "dropUnits", category: "", units: 2, tplKey: "unload" }, "bear", resolver())).toEqual({
+      steps: [{ kind: "dropStack", goodKey: "", units: 2, tplKey: "unload" }],
+    });
+  });
+
+  it("pursue on an act-only plan acts immediately (last) — no phantom walk", () => {
+    expect(pursue({ kind: "equipUnits", category: "clothing" }, "bear", resolver())).toEqual({
+      kind: "act",
+      step: { kind: "equipStack", goodKey: "clothing" },
+      last: true,
+    });
+  });
+
+  it("an unresolvable station blocks processUnits (null)", () => {
+    const gone: WorldResolver = { ...resolver(), place: () => null };
+    expect(planGoal({ kind: "processUnits", at: { kind: "named", id: "bath1" }, category: "laundry" }, "bear", gone)).toBeNull();
+  });
+});
+
+describe("consumeUnits — eat from the bag (S4), and the rest pose override", () => {
+  it("with a resolvable dining station: walk there, then consume from the bag", () => {
+    const dining: WorldResolver = { ...resolver(), diningSpot: () => ({ x: 3, y: 0 }) };
+    const goal: GoalSpec = { kind: "consumeUnits", category: "food", at: ["table"], tplKey: "hunger:food" };
+    expect(planGoal(goal, "bear", dining)).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 3, y: 0 } },
+        { kind: "consumeStack", goodKey: "food", at: ["table"], tplKey: "hunger:food" },
+      ],
+    });
+  });
+
+  it("no station (or no hook): consume in place — the consumeHere shape", () => {
+    const goal: GoalSpec = { kind: "consumeUnits", category: "food", at: ["table"] };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [{ kind: "consumeStack", goodKey: "food", at: ["table"] }],
+    });
+  });
+
+  it("rest carries a pose override through to the step (fun's play, the open-air sleep)", () => {
+    const goal: GoalSpec = { kind: "rest", place: { kind: "point", x: 1, y: 2 }, dwellS: 7, pose: "play" };
+    expect(planGoal(goal, "bear", resolver())).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 1, y: 2 } },
+        { kind: "rest", place: { kind: "point", x: 1, y: 2 }, dwellS: 7, pose: "play" },
+      ],
+    });
+  });
+});

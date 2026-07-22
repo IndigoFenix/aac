@@ -19,6 +19,7 @@ import {
 } from "@shared/world-engine/scale";
 import { buildPlanetWorld } from "@shared/world-engine/planet/planet-game";
 import { createWalkChart } from "@shared/world-engine/planet/walk-chart";
+import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan";
 import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play";
 import { clusterStages, widenSpecWindow } from "@shared/world-engine/interaction/town/town-cluster";
 import { buildTownScope } from "@shared/world-engine/interaction/town/town-play-game";
@@ -587,8 +588,14 @@ export function bootLivingTown(
     ? built.play.plan.houses.find((ho) => ho.index === built.focus!.house) ?? null
     : null;
   const stageCentre = { x: play.stage.center.x, z: play.stage.center.y };
+  // WILDERNESS SURROUNDINGS (city-founding): explicit `world.wilderness`
+  // wins; absent, a FOUNDING-AGE town (days ≤ 1) defaults to open country —
+  // the settlers' material source is the land around them.
+  const wildOn =
+    built.spec.config.wilderness ?? (built.spec.config.days ?? 220) <= FOUNDING_AGE_DAYS;
   return bootQuestGame(container, built.play.bundle.game, setStatus, {
     town: play,
+    ...(wildOn ? { wilderness: { seed: built.spec.config.seed } } : {}),
     scale: labSessionScale(loaded.game!.scale),
     culture: loaded.game!.culture,
     // The host keeps its SPIRIT interaction semantics (gaze-only, dwell to
@@ -797,8 +804,13 @@ export function bootTownEmbedded(
     ...(waterAt ? { waterAt } : {}),
     ...(opts?.tradePartners ? { tradePartners: opts.tradePartners } : {}),
   });
+  // Same founding-age default as the standalone town boot: a freshly-founded
+  // site's town keeps its gatherable surroundings after promotion.
+  const embedWild =
+    play.config.wilderness ?? (play.config.days ?? 220) <= FOUNDING_AGE_DAYS;
   host.start(play.bundle.game, play, {
     ...(opts?.spirit ? { spirit: true } : {}),
+    ...(embedWild ? { wilderness: { seed: play.config.seed } } : {}),
     scale: opts?.scale ?? DOLLHOUSE_SCALE,
   });
   (window as unknown as Record<string, unknown>).__questEmbed = host;

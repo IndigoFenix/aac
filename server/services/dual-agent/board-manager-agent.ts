@@ -893,13 +893,18 @@ export const BOARD_MANAGER_DEFAULT_MODEL = "gemini-2.5-flash";
  */
 export class BoardManagerAgent {
   private readonly defaultProvider: ChatProvider;
+  /** Model used for the prompt-cache prewarm key. Kept in sync with the
+   *  model the Coordinator passes on each `invoke()` (input.model) so the
+   *  warmed cache actually hits. Defaults to BOARD_MANAGER_DEFAULT_MODEL. */
+  private readonly defaultModel: string;
   /** Tokens billed by prompt-cache CREATE calls (prewarm or in-invoke) not
    *  yet folded into a turn's usage. Added to the next invocation's
    *  promptTokens so the ledger bills cache writes at the normal input rate. */
   private pendingCacheCreateTokens = 0;
 
-  constructor(provider: LLMProviderKey) {
+  constructor(provider: LLMProviderKey, defaultModel: string = BOARD_MANAGER_DEFAULT_MODEL) {
     this.defaultProvider = getChatProvider(provider);
+    this.defaultModel = defaultModel;
   }
 
   /** Create the explicit prompt cache ahead of the first invocation so the
@@ -911,7 +916,7 @@ export class BoardManagerAgent {
     const tools: ChatTool[] = flatDecls.map(toChatTool);
     void geminiProvider
       .ensurePromptCache({
-        model: BOARD_MANAGER_DEFAULT_MODEL,
+        model: this.defaultModel,
         systemPrompt,
         tools,
         toolChoice: "required",

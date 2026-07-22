@@ -41,12 +41,15 @@
 import type { TownHouse } from "./plan";
 import {
   HOUSEHOLD,
-  HOUSE_STATIONS,
-  WORK_STATIONS,
   type BuildingProgram,
   type StationDef,
   type StationKind,
 } from "./stations";
+import {
+  DEFAULT_WORKSTATION_REGISTRY,
+  workExtraStationDefs,
+  type WorkstationRegistry,
+} from "./workstations";
 import {
   buildingRoomPlan,
   houseRoomPlan,
@@ -92,16 +95,22 @@ export function houseFurniture(
    *  across every loaded town's furniture. */
   scope = "",
   delta?: BuildingDelta,
+  /** The workstation registry to furnish from — the default global registry
+   *  unless a per-culture `architecture` resolved its own (P2). */
+  registry: WorkstationRegistry = DEFAULT_WORKSTATION_REGISTRY,
 ): FurniturePiece[] {
   return furnishPlan(
     center, house, houseRoomPlan(center, house, delta),
-    HOUSE_STATIONS, `furn${scope}_${house.index}`, goods, delta,
+    registry.house, `furn${scope}_${house.index}`, goods, delta,
   );
 }
 
 /** The furniture of one WORK building (§9 slice 5) — the same driver and
- *  fit rule over the WORK_STATIONS registry (no goods corners, no
- *  member boxes; a store room fills with stock chests). */
+ *  fit rule over the registry's work stations (no goods corners, no
+ *  member boxes; a store room fills with stock chests). A building's own
+ *  EXTRA stations (`work.stations`, from its StructureSpec — a weaver's
+ *  loom, a dyer's vat) are appended to the base set, so buildings of the
+ *  same program can still furnish differently. */
 export function workFurniture(
   center: { x: number; y: number },
   index: number,
@@ -109,10 +118,13 @@ export function workFurniture(
   program: BuildingProgram,
   scope = "",
   delta?: BuildingDelta,
+  /** The workstation registry to furnish from (P2 per-culture, else default). */
+  registry: WorkstationRegistry = DEFAULT_WORKSTATION_REGISTRY,
 ): FurniturePiece[] {
+  const defs = [...registry.work, ...workExtraStationDefs(work.stations, registry)];
   return furnishPlan(
     center, work, buildingRoomPlan(center, index, work, program, delta),
-    WORK_STATIONS, `furn${scope}_w${index}`, [], delta,
+    defs, `furn${scope}_w${index}`, [], delta,
   );
 }
 

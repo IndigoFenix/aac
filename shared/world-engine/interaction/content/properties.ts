@@ -23,18 +23,18 @@ import {
   OBJECT_PROPERTIES,
   type ObjectProperty,
 } from "../../object-properties.js";
+import { headOf } from "../../variations.js";
 import {
   FURNITURE_ITEMS,
-  HOUSE_STATIONS,
   STATION_PROPERTIES,
-  WORK_STATIONS,
   furnitureKindOfGlyph,
   type StationKind,
 } from "../../kernel/town/stations.js";
+import { DEFAULT_WORKSTATION_REGISTRY } from "../../kernel/town/workstations.js";
 import {
-  CLOTHING_KINDS,
+  CLOTHING_HEADS,
   FOOD_KINDS,
-  LAUNDRY_KINDS,
+  isLaundryGlyph,
   MEAL_KINDS,
   TREAT_KINDS,
 } from "../../kernel/town/goods-kinds.js";
@@ -46,11 +46,10 @@ import type { AffordanceTag } from "../types.js";
  *  DERIVED, so the board's "openable" sub-tab and the mechanic that opens the
  *  lid can never drift apart. */
 const OPENABLE_KINDS: ReadonlySet<StationKind> = new Set<StationKind>([
-  ...[...HOUSE_STATIONS, ...WORK_STATIONS]
-    .filter((s) => s.openable)
-    // A row's `kindByGood` models count too — the pantry's refrigerator IS the
-    // goods chest row, so its lid opens for the same reason the chest's does.
-    .flatMap((s) => [s.kind, ...Object.values(s.kindByGood ?? {})]),
+  // The registry already unions house + work rows and their `kindByGood`
+  // models (the pantry's refrigerator IS the goods chest row, so its lid
+  // opens for the same reason the chest's does).
+  ...DEFAULT_WORKSTATION_REGISTRY.openableKinds,
   ...FURNITURE_ITEMS.filter((f) => f.openable).map((f) => f.kind),
 ]);
 
@@ -84,7 +83,7 @@ const CATEGORY_PROPERTIES: Readonly<Record<string, ObjectProperty>> = {
   book: "book",
 };
 
-const head = (symbol: string): string => symbol.split(".")[0] ?? symbol;
+const head = headOf;
 
 /**
  * Every object property of a noun symbol, in OBJECT_PROPERTIES order (stable
@@ -109,7 +108,7 @@ export function propertiesOf(symbol: string): ObjectProperty[] {
   if (good) out.add(good);
   if (FOOD_KINDS.includes(h) || TREAT_KINDS.includes(h)) out.add("food");
   if (MEAL_KINDS.includes(symbol) || MEAL_KINDS.includes(h)) out.add("food");
-  if (CLOTHING_KINDS.includes(h) || LAUNDRY_KINDS.includes(symbol)) out.add("clothing");
+  if (CLOTHING_HEADS.includes(h) || isLaundryGlyph(symbol)) out.add("clothing");
 
   // 3. POOLS + the shared category map — the taught vocabulary's spec.
   for (const pool of Object.values(POOLS)) {

@@ -21,6 +21,7 @@
 import { phrase, type LeveledGlyphs } from "./dialogue-gen.js";
 import type { CreatureId } from "../behavior/creatures.js";
 import type { GoalSpec, ItemRef, PlaceRef } from "../behavior/rules.js";
+import { headOf } from "../../variations.js";
 
 /** Symbol resolvers the pure layer can't own (the world names things). The
  *  creature resolver arrives deixis-ready: the caller maps the LISTENER of the
@@ -37,7 +38,14 @@ export interface IntentLineSyms {
 export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGlyphs | null {
   switch (goal.kind) {
     case "fetch":
-      return phrase({ subject: "i_me", verb: "get", object: syms.item(goal.item) });
+      // The SOURCE rides the line when the order named one ("I'll take the
+      // ball from the dog") — the from-endpoint spoken back, same as "to".
+      return phrase({
+        subject: "i_me",
+        verb: "get",
+        object: syms.item(goal.item),
+        ...(goal.from ? { tail: { join: "from", symbol: syms.place(goal.from) } } : {}),
+      });
     case "give":
       return phrase({
         subject: "i_me",
@@ -77,8 +85,13 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       const thing = syms.item(goal.item);
       return { a: goal.state, b: `${thing} + ${goal.state}`, c: `i_me + make + ${thing} + ${goal.state}` };
     }
-    case "satisfy":
-      return { a: goal.need, b: `i_me + ${goal.need}`, c: `i_me + ${goal.need}` };
+    case "satisfy": {
+      // Chore keys speak their ACTIVITY words ("laundry" → "I'll wash the
+      // clothing"), never the raw template key; verb-keys stay themselves.
+      const act = NEED_ACTIVITY[goal.need] ?? { verb: goal.need };
+      if (act.object) return phrase({ subject: "i_me", verb: act.verb, object: act.object });
+      return { a: act.verb, b: `i_me + ${act.verb}`, c: `i_me + ${act.verb}` };
+    }
     case "rest": {
       // "I'll rest at the bed" — the station is the teaching point (level a).
       const where = syms.place(goal.place);
@@ -95,10 +108,48 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       const g = syms.item(goal.item);
       return { a: g, b: `wear + ${g}`, c: `i_me + wear + ${g}` };
     }
+    case "color": {
+      // "I'll color the shirt red" — the colour is the teaching point (level a).
+      const g = syms.item(goal.item);
+      return { a: goal.color, b: `${g} + ${goal.color}`, c: `i_me + color + ${g} + ${goal.color}` };
+    }
     case "converse": {
       // "I'll talk to Mara" — the partner is the teaching point (level a).
       const who = syms.creature(goal.target);
       return { a: who, b: `talk + ${who}`, c: `i_me + talk + to + ${who}` };
+    }
+    case "takeUnits": {
+      // "I'll get food" — the good is the teaching point; the count stays
+      // unspoken (a shopping bag, not arithmetic).
+      const what = goal.category || goal.affords || "thing";
+      return phrase({ subject: "i_me", verb: "get", object: what });
+    }
+    case "putUnits": {
+      // "I'll put food in the chest" — the putIn shape over the stack.
+      const what = goal.category || "thing";
+      return phrase({ subject: "i_me", verb: "put", object: what, tail: { join: "in", symbol: syms.place(goal.into) } });
+    }
+    case "processUnits": {
+      // "I'll wash the clothes" / "I'll make food hot" — the transform's shape
+      // over the stack (drop = the wash; add = the cook's state).
+      const what = goal.category || "thing";
+      if (goal.add) return { a: goal.add, b: `${what} + ${goal.add}`, c: `i_me + make + ${what} + ${goal.add}` };
+      return phrase({ subject: "i_me", verb: "wash", object: what });
+    }
+    case "equipUnits": {
+      // "I'll wear the clothes" — the change of clothes.
+      const what = goal.category || "thing";
+      return phrase({ subject: "i_me", verb: "wear", object: what });
+    }
+    case "dropUnits": {
+      // "I'll drop the thing" — the put-it-down answer.
+      const what = goal.category || "thing";
+      return phrase({ subject: "i_me", verb: "drop", object: what });
+    }
+    case "consumeUnits": {
+      // "I'll eat the food" — the bag meal.
+      const what = goal.category || "thing";
+      return phrase({ subject: "i_me", verb: "eat", object: what });
     }
     case "consume": {
       // "I'll eat the banana" — the named item is the teaching point (level a).
@@ -131,7 +182,7 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       // A stock haul (city-expansion ②): the goods + destination ride the
       // goal, so the line phrases without the ledger — "I'll give the wood
       // to Mara" / "I'll put the wood in the yard".
-      const heads = Object.keys(goal.goods).map((g) => g.split(".")[0] ?? g);
+      const heads = Object.keys(goal.goods).map((g) => headOf(g));
       const obj = heads[0] ?? "thing";
       const toCreature = goal.to.kind === "creature";
       // A creature recipient resolves deixis-ready ("you"/its symbol); a
@@ -144,6 +195,126 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
         tail: { join: toCreature ? "to" : "in", symbol: dest },
       });
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The COMMAND ECHO (semantic-gaps.md §Commands)
+// ---------------------------------------------------------------------------
+
+/**
+ * A directly commanded creature SPEAKS the order back as it understood it —
+ * proper grammar, connectors included ("wash clothes" → "I will wash the
+ * clothes") — through the same goalIntentLine every announcement uses. The
+ * reserved bare "ok" is EARNED: it answers only when the child's own glyphs
+ * already matched the canonical form (heads in order, "you" ↔ "i_me" deixis
+ * flipped). One rule, every verb: the echo is a re-render of what COMPILED, so
+ * a wrong echo means a parser bug and a right echo that isn't obeyed means an
+ * action bug — the teaching tool and the debugging tool are the same line.
+ */
+export function commandEcho(
+  frame: { raw: string[] },
+  goal: GoalSpec,
+  syms: IntentLineSyms,
+): { line: LeveledGlyphs | null; perfect: boolean } {
+  const line = goalIntentLine(goal, syms);
+  if (!line) return { line: null, perfect: false };
+  const heads = (tokens: string[]): string[] =>
+    tokens
+      .map((t) => headOf(t.split("#")[0]!).trim().toLowerCase())
+      .filter(Boolean);
+  // The echo speaks first person; the child addresses second person — the
+  // deixis flip is not an error ("you wash clothes" matches "i_me wash
+  // clothes"). Modifiers/operators are content, not syntax: heads only.
+  const canon = heads(line.c.split("+"));
+  const spoken = heads(frame.raw).map((h) => (h === "you" ? "i_me" : h));
+  const perfect = canon.length === spoken.length && canon.every((h, i) => h === spoken[i]);
+  return { line, perfect };
+}
+
+// ---------------------------------------------------------------------------
+// Goal → live ACTIVITY (the "what is X doing?" answer's world hook)
+// ---------------------------------------------------------------------------
+
+/** Self-care/chore need keys → the activity frame they show as ("laundry" is
+ *  washing the clothes). Keys that are already verbs pass through. */
+const NEED_ACTIVITY: Record<string, { verb: string; object?: string }> = {
+  laundry: { verb: "wash", object: "clothing" },
+  cook: { verb: "cook", object: "food" },
+  clean: { verb: "clean" },
+};
+
+/**
+ * The ACTIVITY a goal reads as while being pursued — the same verbs commands
+ * use (one vocabulary in both directions: a creature STATES what it does with
+ * the words that order it). Feeds ProjectionOpts.activityOf, so "what is the
+ * dog eating?" answers "dog + eat + apple" from the live pursuit. Null = the
+ * goal has no activity reading (host-policy orders).
+ */
+export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: string; object?: string } | null {
+  switch (goal.kind) {
+    case "fetch":
+      return { verb: "get", object: syms.item(goal.item) };
+    case "takeUnits":
+      return { verb: "get", object: goal.category || goal.affords || "thing" };
+    case "give":
+      return { verb: "give", object: syms.item(goal.item) };
+    case "transfer":
+      return { verb: "give", object: headOf(Object.keys(goal.goods)[0] ?? "") || "thing" };
+    case "putIn":
+    case "place":
+      return { verb: "put", object: syms.item(goal.item) };
+    case "putUnits":
+      return { verb: "put", object: goal.category || "thing" };
+    case "drop":
+      return { verb: "drop", object: syms.item(goal.item) };
+    case "dropUnits":
+      return { verb: "drop", object: goal.category || "thing" };
+    case "goTo":
+      return { verb: "go", object: syms.place(goal.place) };
+    case "goHome":
+      return { verb: "go", object: "home" };
+    case "follow":
+      return { verb: "follow", object: syms.creature(goal.target) };
+    case "stay":
+      return { verb: "stay" };
+    case "toggle":
+      return { verb: goal.state === "open" ? "open" : "shut", object: syms.item(goal.device) };
+    case "transform":
+      return { verb: "make", object: syms.item(goal.item) };
+    case "satisfy":
+      return NEED_ACTIVITY[goal.need] ?? { verb: goal.need };
+    case "rest":
+      return { verb: goal.pose === "sleep" ? "sleep" : "rest" };
+    case "setOpen":
+      return { verb: goal.open ? "open" : "shut", object: syms.place(goal.place) };
+    case "wear":
+      return { verb: "wear", object: syms.item(goal.item) };
+    case "color":
+      return { verb: "color", object: syms.item(goal.item) };
+    case "equipUnits":
+      return { verb: "wear", object: goal.category || "thing" };
+    case "converse":
+      return { verb: "talk", object: syms.creature(goal.target) };
+    case "socialAct":
+      return { verb: goal.act, object: syms.creature(goal.target) };
+    case "help":
+      return { verb: "help", object: syms.creature(goal.target) };
+    case "consume":
+      return { verb: "eat", object: syms.item(goal.item) };
+    case "consumeUnits":
+      return { verb: "eat", object: goal.category || "thing" };
+    case "processUnits":
+      // The wash drops "dirty"; the cook adds "hot" — the verb follows the edit.
+      return goal.add
+        ? { verb: "cook", object: goal.category || "thing" }
+        : { verb: "wash", object: goal.category || "thing" };
+    case "build":
+      return { verb: "build", ...(goal.structure !== "town" ? { object: goal.structure } : {}) };
+    case "trade":
+      return { verb: "trade", object: goal.give };
+    case "area":
+      return null; // host-instant policy — never a body's ongoing activity
   }
 }
 

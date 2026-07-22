@@ -18,6 +18,7 @@
 import { mulberry32, hashSeed } from "@shared/prng.js";
 import { projectContentOnZones } from "../solver/projector2d.js";
 import { START_ZONE_ID } from "../solver/logical-world.js";
+import { headOf } from "../variations.js";
 import type {
   LogicalWorld,
   PassageGuard,
@@ -100,7 +101,7 @@ function zoneCategories(game: GoalTreeGame, world: LogicalWorld, zoneId: string)
   for (const p of world.items) {
     if (p.zoneId !== zoneId) continue;
     for (const id of p.itemEntityIds) {
-      const head = (glyphOf.get(id) ?? id).split(".")[0]!;
+      const head = headOf(glyphOf.get(id) ?? id);
       const cat = KIND_CATEGORY[head];
       if (cat) cats.add(cat);
     }

@@ -277,11 +277,19 @@ export interface WorldResolver {
   positionOf(id: CreatureId): Vec2 | null;
   homeOf(id: CreatureId): Vec2 | null;
   place(place: PlaceRef): Vec2 | null;
-  /** Resolve an item reference to a concrete item id (nearest match / by id). */
-  resolveItem(ref: ItemRef, seeker: CreatureId): ItemId | null;
+  /** Resolve an item reference to a concrete item id (nearest match / by id).
+   *  `from` = an explicit SOURCE endpoint ("take ball from box"): candidates are
+   *  restricted to that source — held by the creature / in-or-at the place.
+   *  Implementations may ignore it (legacy: nearest match anywhere). */
+  resolveItem(ref: ItemRef, seeker: CreatureId, from?: PlaceRef): ItemId | null;
   itemPosition(id: ItemId): Vec2 | null;
   /** A station that applies `state` (fire→hot, water→cold). */
   stationFor(state: string): Vec2 | null;
+  /** The nearest COLORING tub to `self` — a water barrel/bath doubling as the
+   *  dye vat, where a `color` command carries the item to recolour it. Null ⇒
+   *  none reachable (the command can't be fulfilled). Optional: absent ⇒ the
+   *  coloring leg is skipped (recolour where you stand — the test seam). */
+  colorStation?(self: CreatureId): Vec2 | null;
   /** Where `self` would EAT given a station-kind preference (["table"], a pet's
    *  ["bowl"]) — the dining leg of a consume-with-`at` plan. Null (or absent) ⇒
    *  no such station nearby ⇒ the item is consumed where it lies. */
@@ -309,7 +317,10 @@ export interface WorldResolver {
 export type GoalStep =
   | { kind: "moveTo"; pos: Vec2 }
   | { kind: "faceHold"; target?: CreatureId } // stop and face (follow/stay/react)
-  | { kind: "pick"; itemId: ItemId }
+  // `from` = the SOURCE CREATURE the planner authorized a hand-to-hand take
+  // from ("take ball from dog") — the executor performs the handover; without
+  // it, picking something another creature holds stays refused.
+  | { kind: "pick"; itemId: ItemId; from?: CreatureId }
   | { kind: "give"; itemId: ItemId; to: CreatureId }
   | { kind: "place"; itemId: ItemId; place: PlaceRef }
   | { kind: "drop"; itemId: ItemId } // set the held item down where you stand (ground putdown)
@@ -317,8 +328,20 @@ export type GoalStep =
   | { kind: "transform"; itemId: ItemId; state: string }
   | { kind: "openClose"; place: PlaceRef; open: boolean } // open/shut a container lid
   | { kind: "equip"; itemId: ItemId } // put a held garment ON (doff the old as .dirty)
+  | { kind: "color"; itemId: ItemId; color: string } // recolor a held item at the tub (withVariation)
   | { kind: "converse"; target: CreatureId } // exchange with the partner (on arrival)
-  | { kind: "rest"; place: PlaceRef; dwellS?: number } // occupy a station and dwell there (sleep/sit/play)
+  | { kind: "rest"; place: PlaceRef; dwellS?: number; pose?: "sleep" | "sit" | "play" } // occupy a station and dwell there
+  // Stack-economy manipulation (S3): move `units` between the reached store and
+  // the abstract bag. `fromId`/`intoId` are the resolved object ids (a chest, a
+  // market stall, "well", a loose "small:*" prop).
+  | { kind: "withdraw"; fromId: string; goodKey: string; units: number; affords?: string; tplKey?: string }
+  | { kind: "stow"; intoId: string; goodKey: string; units: number; tplKey?: string }
+  // Named -Stack to keep clear of the SINGLE-PROP steps (`equip` wears a held
+  // physical prop; `drop` releases one): these act on the abstract bag.
+  | { kind: "processStack"; atId: string; goodKey: string; drop?: string; add?: string; dwellS?: number; tplKey?: string }
+  | { kind: "equipStack"; goodKey: string; tplKey?: string }
+  | { kind: "dropStack"; goodKey: string; units: number; tplKey?: string }
+  | { kind: "consumeStack"; goodKey: string; at?: readonly string[]; tplKey?: string }
   | { kind: "selfAct"; need: string } // eat / rest / sleep
   | { kind: "eat"; itemId: ItemId } // consume a SPECIFIC item on arrival (use it up)
   | { kind: "socialAct"; target: CreatureId; act: string }; // hug (…comfort/greet later) — on arrival, at the target
@@ -370,8 +393,19 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
       return { steps };
     }
     case "fetch": {
-      const id = r.resolveItem(goal.item, self);
-      if (!id || !move(r.itemPosition(id))) return null;
+      const id = r.resolveItem(goal.item, self, goal.from);
+      if (!id) return null;
+      // A source CREATURE holding the item: walk to the holder for the
+      // hand-to-hand take (the from-authorized pick). Else the classic
+      // walk-to-it-and-lift.
+      const holder = r.carrierOf?.(id) ?? null;
+      const fromCid = goal.from?.kind === "creature" ? goal.from.id : undefined;
+      if (holder && holder !== self && holder === fromCid) {
+        if (!move(r.positionOf(holder))) return null;
+        steps.push({ kind: "pick", itemId: id, from: fromCid });
+        return { steps };
+      }
+      if (!move(r.itemPosition(id))) return null;
       steps.push({ kind: "pick", itemId: id });
       return { steps };
     }
@@ -398,6 +432,11 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
       steps.push({ kind: "place", itemId: id, place: goal.container });
       return { steps };
     }
+    case "color":
+      // Planner-owned (a station verb like transform/wear): the `colored` target
+      // regresses acquire-the-item → walk-to-tub → recolour. planGoal is the
+      // single owner so the static bake and the live pursuit never drift.
+      return planGoal(goal, self, r);
     case "toggle": {
       const id = r.resolveItem(goal.device, self);
       if (!id || !move(r.itemPosition(id))) return null;
@@ -423,6 +462,15 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
       return planGoal(goal, self, r);
     case "converse":
       // Planner-owned: `socialized` regresses walk-to-partner → exchange.
+      return planGoal(goal, self, r);
+    case "takeUnits":
+    case "putUnits":
+    case "processUnits":
+    case "equipUnits":
+    case "dropUnits":
+    case "consumeUnits":
+      // Planner-owned (S3): the stack economy's bounded micro-goals — move the
+      // units, work them at a station, wear one, or set them down.
       return planGoal(goal, self, r);
     case "satisfy":
       return { steps: [{ kind: "selfAct", need: goal.need }] };

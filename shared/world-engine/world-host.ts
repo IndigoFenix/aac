@@ -854,7 +854,13 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     const wantShoulder =
       !!pointTarget || snapFromBubble || (!!conversationTarget && snap?.kind === "avatar");
 
-    const { events } = tickWorld(state, { aim }, dt, undefined, deps.constraint);
+    // The DRIVEN body moves at ITS OWN girth: when a spark claims a creature,
+    // `state.drivenId` is that NPC's id, so tickWorld must steer, wall-collide
+    // and manifold-clamp it at the claimed body's radius — not the spark's
+    // default. Unclaimed, drivenId === localId (never in npcConfigs) → undefined
+    // → WORLD_ENGINE_DEFAULTS, exactly as before.
+    const drivenConfig = npcConfigs.get(driven());
+    const { events } = tickWorld(state, { aim }, dt, drivenConfig, deps.constraint);
     // SPIRIT: a carried object rides the GAZE. A formless stationary avatar can't
     // walk it into place, and the engine parks a carried item a fixed step in
     // FRONT of the carrier — so in spirit mode it would just sit by the invisible

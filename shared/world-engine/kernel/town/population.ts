@@ -33,6 +33,7 @@
 import { resolveStructure, type StructureSpec } from "./structures.js";
 import { zoneAt, type TownGrowthSignals, type ZoneCharter } from "./zoning.js";
 import { stackTotal, stackUnits, type StockEndpoint } from "./transfer.js";
+import { headOf } from "../../variations.js";
 import type { FoundedBuilding, TownDeltas } from "./construction.js";
 
 // ---------------------------------------------------------------------------
@@ -265,11 +266,11 @@ export interface CohortRates {
  *  quantities are continuous). Plain glyph first, facted variants in
  *  stable key order — the spendCosts convention. Returns units drawn. */
 function drawStock(stack: Record<string, number>, glyph: string, n: number): number {
-  const head = glyph.split(".")[0] ?? glyph;
+  const head = headOf(glyph);
   let left = Math.max(0, n);
   let drawn = 0;
   const keys = Object.keys(stack)
-    .filter((k) => (k.split(".")[0] ?? k) === head)
+    .filter((k) => headOf(k) === head)
     .sort((a, b) => (a === head ? -1 : b === head ? 1 : a < b ? -1 : 1));
   for (const k of keys) {
     if (left <= 1e-9) break;
@@ -329,10 +330,13 @@ export function cohortRatesStep(row: CohortRow, day: number, rates: CohortRates)
 // ---------------------------------------------------------------------------
 
 /** Souls the tracked tier carries at most (TownPlayConfig.trackedResidents
- *  override). 30 = six full households — exactly the historical 6-house
- *  village floor, so the smallest towns are ALWAYS fully tracked and the
- *  tier stays dormant (byte-identical) below city scale. */
-export const TRACKED_RESIDENTS_DEFAULT = 30;
+ *  override). ABSTRACTION IS FOR CITIES (user, 2026-07-22): a village's
+ *  people are real residents, never a district statistic — the old cap of
+ *  30 pooled two-thirds of a 24-house demo town, and its sampled cosmetic
+ *  walkers blinked on the plaza. 150 keeps every village/small-town demo
+ *  fully tracked (dormant tier, byte-identical) and reserves cohorts for
+ *  genuine city scale. */
+export const TRACKED_RESIDENTS_DEFAULT = 150;
 
 /** Keep-score margin (meters of focus distance) a pooled household must
  *  beat a tracked one by before they SWAP — the no-flap hysteresis: after

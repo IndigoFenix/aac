@@ -541,6 +541,7 @@ export const en = {
       swim: "Swim",
       wash: "Wash",
       wear: "Wear",
+      color: "Color",
       brush_teeth: "Brush teeth",
       open: "Open",
       push: "Push",

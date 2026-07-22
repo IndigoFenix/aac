@@ -30,6 +30,7 @@ import type { CompiledEconomy } from "@shared/world-engine/kernel/modules/econom
 import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/furniture.js";
 import { buildingRoomPlan, houseRoomPlan } from "@shared/world-engine/kernel/town/rooms.js";
 import { workProgram, type BuildingProgram } from "@shared/world-engine/kernel/town/stations.js";
+import type { WorkstationRegistry } from "@shared/world-engine/kernel/town/workstations.js";
 import type { TownHost } from "@shared/world-engine/kernel/town/host.js";
 import type { TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
 import type { TownHouse, TownPlan, TownWork } from "@shared/world-engine/kernel/town/plan.js";
@@ -94,6 +95,9 @@ export interface TownStageOpts {
    *  the reference frame; followers can leave). Standalone town-scope worlds
    *  (own canvas, synthetic ground) stay bounded. */
   onPlanet?: boolean;
+  /** THE WORKSTATION REGISTRY this town furnishes from (game.culture.
+   *  architecture, resolved). Absent = the default global registry. */
+  registry?: WorkstationRegistry;
 }
 
 export interface TownStageFrame {
@@ -276,13 +280,16 @@ export function* createTownStageSteps(
   const siteKey = plan.key;
 
   // Roads: the organic street tree (streets.ts), town-local points lifted into
-  // world coords. Widths follow the 2D map's read — the plaza ring and arterials
-  // are broader than the branch lanes — so the same hierarchy shows underfoot.
+  // world coords. Widths follow the 2D map's read — arterials broader than the
+  // branch lanes — so the same hierarchy shows underfoot. The PLAZA RING is
+  // topology only (the root the arterials gate on), NEVER pavement: a painted
+  // circle at every town's heart read as artificial (user, 2026-07-22). The
+  // plaza is open ground the arterials converge on.
   const roads: RoadPath[] = plan.streets.streets
-    .filter(s => s.pts.length >= 2)
+    .filter(s => s.pts.length >= 2 && !s.ring)
     .map(s => ({
       points: s.pts.map(p => ({ x: center.x + p.x, y: center.y + p.y })),
-      width: s.ring ? 2.8 : s.gen === 0 ? 3.4 : 2.4,
+      width: s.gen === 0 ? 3.4 : 2.4,
     }));
 
   // --- The quest cast: always-on NPCs at their REAL town anchors. ---
@@ -535,19 +542,20 @@ export function* createTownStageSteps(
     if (laidOut++ % 150 === 149) yield "furnishing homes";
     furnitureOf.set(
       `h_${h.index}`,
-      houseFurniture(center, h, goodDefs, "", opts.deltas?.get(`h_${h.index}`)).map(toObjectSpec),
+      houseFurniture(center, h, goodDefs, "", opts.deltas?.get(`h_${h.index}`), opts.registry).map(toObjectSpec),
     );
   }
-  // Work interiors furnish from their own registry (WORK_STATIONS —
-  // counter, stock chests), gated on show like a house's. A work UNDER
-  // CONSTRUCTION (①b) has no furniture until its build clock runs out.
+  // Work interiors furnish from the town's registry (the culture's, or the
+  // default — counter, stock chests + any StructureSpec.stations), gated on
+  // show like a house's. A work UNDER CONSTRUCTION (①b) has no furniture until
+  // its build clock runs out.
   const refreshWorkFurniture = (i: number): void => {
     const wk = plan.works[i]!;
     if (wk.vacated || !workBuilt.get(i)) {
       furnitureOf.delete(`w_${i}`);
       return;
     }
-    const pieces = workFurniture(center, i, wk, workProgramOf(wk));
+    const pieces = workFurniture(center, i, wk, workProgramOf(wk), "", undefined, opts.registry);
     if (pieces.length) furnitureOf.set(`w_${i}`, pieces.map(toObjectSpec));
   };
   plan.works.forEach((_, i) => refreshWorkFurniture(i));
@@ -625,7 +633,7 @@ export function* createTownStageSteps(
         registerHouse(h);
         furnitureOf.set(
           `h_${h.index}`,
-          houseFurniture(center, h, goodDefs, "", opts.deltas.get(`h_${h.index}`)).map(toObjectSpec),
+          houseFurniture(center, h, goodDefs, "", opts.deltas.get(`h_${h.index}`), opts.registry).map(toObjectSpec),
         );
         changed = true;
       }
@@ -651,7 +659,7 @@ export function* createTownStageSteps(
         const old = furnitureOf.get(key) ?? [];
         furnitureOf.set(
           key,
-          houseFurniture(center, hs.house, goodDefs, "", opts.deltas.get(key)).map(toObjectSpec),
+          houseFurniture(center, hs.house, goodDefs, "", opts.deltas.get(key), opts.registry).map(toObjectSpec),
         );
         if (furnished.has(key)) {
           for (const o of old) deltaRemoveObjects.push(o.id);
@@ -787,7 +795,10 @@ export function* createTownStageSteps(
     const remove: string[] = [...upd.despawn];
 
     // THE CARAVAN — the intercity line's pair of carriers, streamed exactly
-    // like haulers: bodies exist only mid-visit and in range.
+    // like haulers: bodies exist only mid-visit and in range. "In range"
+    // covers the CAMERA's reach too (visibleR): a spirit watching from
+    // orbit must never see a carrier blink in or out mid-street.
+    const embodyR = Math.max(HAULER_EMBODY_R, visibleR ?? 0);
     if (trade) {
       const trip = trade.caravan(tSec);
       for (let i = 0; i < 2; i++) {
@@ -801,7 +812,7 @@ export function* createTownStageSteps(
           continue;
         }
         const d = Math.hypot(trip.pos.x - p.x, trip.pos.y - p.y);
-        if (!live && d <= HAULER_EMBODY_R) {
+        if (!live && d <= embodyR) {
           liveHaulers.add(id);
           add.push({
             id, x: trip.pos.x + i * 1.1, y: trip.pos.y + i * 0.7,
@@ -812,7 +823,7 @@ export function* createTownStageSteps(
             },
           });
           if (trip.walkTo) errands.push({ npcId: id, points: trip.walkTo });
-        } else if (live && d > HAULER_EMBODY_R + 60) {
+        } else if (live && d > embodyR + 60) {
           remove.push(id);
           liveHaulers.delete(id);
         }
@@ -838,7 +849,7 @@ export function* createTownStageSteps(
           continue;
         }
         const d = Math.hypot(trip.pos.x - p.x, trip.pos.y - p.y);
-        if (!live && d <= HAULER_EMBODY_R) {
+        if (!live && d <= embodyR) {
           liveHaulers.add(id);
           add.push({
             id, x: trip.pos.x, y: trip.pos.y,
@@ -849,7 +860,7 @@ export function* createTownStageSteps(
             },
           });
           if (trip.walkTo) errands.push({ npcId: id, points: trip.walkTo });
-        } else if (live && d > HAULER_EMBODY_R + 60) {
+        } else if (live && d > embodyR + 60) {
           remove.push(id);
           liveHaulers.delete(id);
         }

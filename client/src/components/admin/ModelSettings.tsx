@@ -11,6 +11,7 @@ import { Loader2, Save, AlertCircle } from 'lucide-react';
 import {
   PROVIDER_LABELS,
   getProvidersWithModels,
+  modelAllowedForUseCase,
   type LLMProviderKey,
   type UseCaseKey,
   type LLMConfigValue,
@@ -59,9 +60,9 @@ export function ModelSettings() {
   const { useCases, modelOptions } = data;
 
   const getModelsForUseCase = (provider: LLMProviderKey, useCaseKey: UseCaseKey): ModelOption[] => {
-    const requiresLive = (useCases as Record<UseCaseKey, UseCaseInfo>)[useCaseKey]?.requiresLive;
+    const info = (useCases as Record<UseCaseKey, UseCaseInfo>)[useCaseKey];
     return ((modelOptions || []) as ModelOption[]).filter(
-      (m) => m.provider === provider && (!requiresLive || m.supportsLive)
+      (m) => m.provider === provider && modelAllowedForUseCase(m, info || {})
     );
   };
 
@@ -72,8 +73,10 @@ export function ModelSettings() {
   };
 
   const getAvailableProviders = (useCaseKey: UseCaseKey): LLMProviderKey[] => {
-    const requiresLive = (useCases as Record<UseCaseKey, UseCaseInfo>)[useCaseKey]?.requiresLive;
-    return getProvidersWithModels(requiresLive);
+    const info = (useCases as Record<UseCaseKey, UseCaseInfo>)[useCaseKey];
+    // HTTP-only per-agent overrides are wired for Gemini only.
+    if (info?.requiresHttp) return ['gemini'];
+    return getProvidersWithModels(info?.requiresLive);
   };
 
   const handleProviderChange = (useCase: string, provider: LLMProviderKey) => {

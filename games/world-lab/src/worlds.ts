@@ -36,14 +36,14 @@ export const TEST_WORLDS: NamedWorld[] = [
           focus: true,
           exhaustive: ["creature"],
           contains: [
-            { kind: "creature", params: { name: "Mara", outfit: 4, likes: ["apple"] } },
+            { kind: "creature", params: { name: "Mara", outfit: 16, likes: ["apple"] } },
             { kind: "creature", params: { name: "Orrin", outfit: 1, likes: ["banana"] } },
             { kind: "creature", params: { name: "Pip", species: "frog_person", outfit: 0, likes: ["grape"] } },
             { kind: "creature", params: { name: "Biscuit", pet: true, likes: ["apple"] } },
             { kind: "item", params: { glyph: "apple", at: "floor" } },
             { kind: "item", params: { glyph: "ball", at: "floor" } },
             { kind: "item", params: { glyph: "teddy", at: "box" } },
-            { kind: "item", params: { glyph: "shirt.dirty", at: "floor" } },
+            { kind: "item", params: { glyph: "shirt.color_blue.dirty", at: "floor" } },
           ],
         }],
       },
@@ -58,6 +58,45 @@ export const TEST_WORLDS: NamedWorld[] = [
       // generates its own residents.
       tree: { kind: "town", params: { seed: 7, days: 220 } },
       session: { avatar: true, scale: STREET_CLOCK },
+    },
+  },
+  {
+    id: "sunset-town",
+    name: "Sunset Town — a culture's dress palette",
+    world: {
+      // The SAME town, but its CULTURE declares a warm dress palette
+      // (`game.culture.dress`): every resident wears reds/oranges/pinks/purples
+      // and the tailor stocks only those, so the whole street reads as one
+      // culture. Walk it and compare to Riverside's default palette.
+      tree: { kind: "town", params: { seed: 7, days: 220 } },
+      session: {
+        avatar: true,
+        scale: STREET_CLOCK,
+        culture: {
+          dress: { palette: ["color_red", "color_orange", "color_pink", "color_purple"] },
+        },
+      },
+    },
+  },
+  {
+    id: "frontier-homestead",
+    name: "Frontier Homestead — found a town from nothing",
+    world: {
+      // CITY-FOUNDING (city-founding.md): a TOWN at age 0 — a site with a
+      // population and a supply box but NO buildings. Wilderness surroundings
+      // come by default at age 0 (trees hold wood, rocks hold stone). The
+      // spirit orders builds ("build farm" founds it by ACT on a street lot —
+      // areas come from the world's own partitioning, never a painted disc;
+      // nations-and-empires §3c) and the day-tick growth loops run on the
+      // town machinery from day one.
+      tree: {
+        kind: "town",
+        params: { seed: 11, days: 0, population: 5, stock: { wood: 14, stone: 6 } },
+      },
+      // Construction 720 (vs the street clock's 180): a house rises in ~60 s
+      // real time — founding is WATCHED, so builds must finish while the
+      // player's attention holds.
+      session: { avatar: "spirit", scale: { ...STREET_CLOCK, construction: 720 } },
     },
   },
   {

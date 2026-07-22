@@ -130,6 +130,7 @@ const L: Record<string, Lexeme> = {
   play: { w: "play" },
   read: { w: "read" },
   wear: { w: "get dressed" }, // only reached via want-to: "I want to get dressed"
+  color: { w: "color" }, // recolour an item at the tub ("color the shirt red")
   throw: { w: "throw" },
   with: { w: "with" },
   lonely: { w: "lonely" },
@@ -149,6 +150,13 @@ const L: Record<string, Lexeme> = {
   understand: { w: "understand" },
   // Movement (the going frame renders it; listed for wantTo/gloss paths).
   go: { w: "go", v3: "goes" },
+  // The movement gaits + pursuit family (semantic-gaps batch): commandable
+  // verbs render conjugated, never as raw symbols.
+  walk: { w: "walk" },
+  run: { w: "run" },
+  chase: { w: "chase" },
+  follow: { w: "follow" },
+  stop: { w: "stop" },
   // Nations P6 — the political words. `fight` is what the absolute taboo
   // ring forbids; `town`/`area` are the law-scope nouns P2 put on the
   // board ("no + fight + in + town") without ever giving them a lexeme.

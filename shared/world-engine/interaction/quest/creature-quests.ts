@@ -17,6 +17,7 @@
 import { certifyGoalTreeGame } from "../../solver/index.js";
 import type { FulfillNode, GoalTreeGame, OvercomeNode, EntityDef, StationKind, FulfillCausalFact, FulfillNeedTarget } from "../../solver/types.js";
 import { STATION_KINDS } from "../../solver/types.js";
+import { headOf } from "../../variations.js";
 import { walkGoalTree } from "../../solver/walk.js";
 import {
   claimItem,
@@ -1205,7 +1206,7 @@ export function certifyCreatureQuestWorld(game: GoalTreeGame): CreatureCertifica
   // Inference guarantee (Request c): a never-announcing wanter must stage
   // same-kind EVIDENCE (a bound keepsake) — else nothing points at the want.
   const glyphHead = (entityId: string): string =>
-    (game.entities.find((e) => e.id === entityId)?.glyph ?? entityId).split(".")[0]!;
+    headOf(game.entities.find((e) => e.id === entityId)?.glyph ?? entityId);
   const evidenceGaps = creatureIds
     .map((cid) => nodeByCreature.get(cid)!)
     .filter((node) => node.announce === "never" && node.needItemEntityId)

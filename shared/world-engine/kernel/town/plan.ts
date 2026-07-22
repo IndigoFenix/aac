@@ -13,7 +13,7 @@
 
 import type { CompiledEconomy } from "../modules/economy/economy";
 import type { TownHost } from "./host";
-import type { BuildingProgram } from "./stations";
+import type { BuildingProgram, StationKind } from "./stations";
 import { quantB } from "./approach";
 import { HOUSEHOLD } from "./goods";
 import { TOWN_DIMS } from "./dimensions";
@@ -22,6 +22,12 @@ import { growStreets, type TownStreets, type Vec2 } from "./streets";
 
 /** Meters per substrate tile — a tile is a square kilometer. */
 export const WORLD_TILE = 1000;
+
+/** FOUNDING AGE (city-founding): a town this many days old or younger has
+ *  NO pre-built history — the plan lays no base houses or civic works even
+ *  with a real population; settlers raise everything through founded
+ *  deltas. Day one IS the founding ("age 0" in the design doc). */
+export const FOUNDING_AGE_DAYS = 1;
 
 /** Tile-center in world units (meters). */
 export function worldPos(tileX: number, tileY: number): { x: number; y: number } {
@@ -95,6 +101,11 @@ export interface TownWork {
    *  StructureSpec's program, so the stage never falls through
    *  workProgram()'s generic default). Absent = workProgram(type). */
   program?: BuildingProgram;
+  /** EXTRA stations this building furnishes beyond its program's base work
+   *  set (a founded building carries its StructureSpec's `stations` — a
+   *  weaver's loom, a dyer's vat). Consumed by workFurniture; absent = just
+   *  the base work stations. Mirrors `program` — the interior-override seam. */
+  stations?: readonly StationKind[];
   /** Roster staff override (①b: per-spec jobs replaces the flat
    *  STAFF_PER_WORK). Absent = the roster default. */
   jobs?: number;
@@ -301,10 +312,11 @@ export function townPlan(
   housePalette: readonly string[] = HOUSE_COLORS,
   foundedSlots: readonly number[] = [],
   species?: string,
+  ageDays?: number,
 ): TownPlan {
   // The generator IS the implementation; the sync path just drains it, so
   // the two can never drift (staged output is byte-identical by construction).
-  const gen = townPlanSteps(tri, eco, siteKey, seed, buildUp, housePalette, foundedSlots, species);
+  const gen = townPlanSteps(tri, eco, siteKey, seed, buildUp, housePalette, foundedSlots, species, ageDays);
   for (;;) {
     const r = gen.next();
     if (r.done) return r.value;
@@ -330,6 +342,11 @@ export function* townPlanSteps(
    *  `speciesBodyRadius`. Absent = the people default (byte-identical
    *  legacy output). */
   species?: string,
+  /** THE TOWN'S AGE in days (city-founding): ≤ FOUNDING_AGE_DAYS lays no
+   *  base houses/works regardless of population — settlers build everything
+   *  through founded deltas. Absent = established (byte-identical legacy
+   *  output; far-LOD hosts never pass it). */
+  ageDays?: number,
 ): Generator<string, TownPlan> {
   const city = tri.cities.find(c => c.key === siteKey);
   if (!city) throw new Error(`townPlan: unknown city "${siteKey}"`);
@@ -343,8 +360,13 @@ export function* townPlanSteps(
   const pop = Math.max(0, dual.settlementScalar(siteKey, "population"));
   // ZERO-BUILDING GROWTH (①b): a founded site's town (startPop 0) lays NO
   // base houses — it grows building-by-building through founded deltas.
-  // Any real population keeps the historical 6-house floor.
-  const houseCount = pop <= 0 ? 0 : Math.max(6, Math.round(pop / HOUSEHOLD));
+  // FOUNDING AGE (city-founding): a town aged ≤ FOUNDING_AGE_DAYS has no
+  // pre-built history either, whatever its population — its people arrived
+  // with the wagon and every building they'll ever have goes up through the
+  // same founded deltas. Any older real population keeps the historical
+  // 6-house floor.
+  const founding = (ageDays ?? Number.POSITIVE_INFINITY) <= FOUNDING_AGE_DAYS;
+  const houseCount = pop <= 0 || founding ? 0 : Math.max(6, Math.round(pop / HOUSEHOLD));
 
   // The street tree grows first (streets.ts); houses fill its frontage
   // slots in CONSTRUCTION ORDER. Each lot's jitter rng is seeded by LOT

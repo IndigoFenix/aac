@@ -231,16 +231,36 @@ export function mountSpecForm(container: HTMLElement, onChange: () => void = () 
     });
     buildScale();
 
-    // culture (universal taboos)
+    // culture (universal taboos + dress palette)
+    const curCulture = isObj(session.culture) ? (session.culture as Dict) : {};
+    const curDress = isObj(curCulture.dress) ? (curCulture.dress as Dict) : {};
+    const commas = (v: unknown) => (Array.isArray(v) ? v.join(", ") : "");
+    const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+
     const cul = el("input", "sf-ctl"); cul.type = "text"; cul.placeholder = "fight, steal…";
-    const absolutes = isObj(session.culture) ? (session.culture as Dict).absolutes : undefined;
-    if (Array.isArray(absolutes)) cul.value = absolutes.join(", ");
-    cul.addEventListener("input", () => {
-      const list = cul.value.split(",").map((s) => s.trim()).filter(Boolean);
-      if (list.length) session.culture = { absolutes: list }; else delete session.culture;
+    cul.value = commas(curCulture.absolutes);
+    const dressPal = el("input", "sf-ctl"); dressPal.type = "text"; dressPal.placeholder = "color_red, color_pink…";
+    dressPal.value = commas(curDress.palette);
+    const dressKinds = el("input", "sf-ctl"); dressKinds.type = "text"; dressKinds.placeholder = "shirt, dress";
+    dressKinds.value = commas(curDress.kinds);
+
+    const syncCulture = () => {
+      const c: Dict = {};
+      const abs = list(cul.value);
+      if (abs.length) c.absolutes = abs;
+      const dress: Dict = {};
+      const pal = list(dressPal.value);
+      const kinds = list(dressKinds.value);
+      if (pal.length) dress.palette = pal;
+      if (kinds.length) dress.kinds = kinds;
+      if (Object.keys(dress).length) c.dress = dress;
+      if (Object.keys(c).length) session.culture = c; else delete session.culture;
       onChange();
-    });
+    };
+    for (const inp of [cul, dressPal, dressKinds]) inp.addEventListener("input", syncCulture);
     row(sec, "Taboos", cul, "Universal absolute taboos (parental controls).");
+    row(sec, "Dress palette", dressPal, "Colours residents wear (color_* glyphs) — the town's culture.");
+    row(sec, "Dress kinds", dressKinds, "Garment kinds worn: shirt, dress (blank = both).");
   }
 
   function renderNode(node: ObjectDef, parent: HTMLElement, isRoot: boolean, onRemove?: () => void): void {

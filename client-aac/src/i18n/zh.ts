@@ -543,6 +543,7 @@ export const zh: Translations = {
       swim: "游泳",
       wash: "洗",
       wear: "穿",
+      color: "上色",
       brush_teeth: "刷牙",
       open: "开",
       push: "推",

@@ -5,7 +5,7 @@ import { activityLogService } from "../services/activityLogService";
 import { userRepository, interpretationRepository, settingsRepository, instituteRepository, crmRepository } from "../repositories";
 import { chatRepository } from "../repositories/chatRepository";
 import { insertApiProviderSchemaWithValidation } from "@shared/schema";
-import { MODEL_OPTIONS, USE_CASES, type UseCaseKey, type LLMConfigValue } from "@shared/llm-options";
+import { MODEL_OPTIONS, USE_CASES, modelAllowedForUseCase, type UseCaseKey, type LLMConfigValue } from "@shared/llm-options";
 import { CRM_DEFAULT_SYSTEM_PROMPT } from "../services/crmChat/prompts";
 import type { CrmPotentialCustomer } from "@shared/schema";
 
@@ -477,6 +477,27 @@ export class AdminController {
           res.status(400).json({
             success: false,
             message: `${useCaseInfo.label} requires a Live/Realtime model. ${modelOption.displayName} does not support live sessions.`,
+          });
+          return;
+        }
+
+        // Validate http requirement — live/native-audio models 404 on the
+        // generateContent path these use cases run on.
+        if (useCaseInfo?.requiresHttp && !modelAllowedForUseCase(modelOption, useCaseInfo)) {
+          res.status(400).json({
+            success: false,
+            message: `${useCaseInfo.label} runs on the HTTP path. ${modelOption.displayName} is a Live/native-audio model and can't be used here.`,
+          });
+          return;
+        }
+
+        // The per-agent HTTP overrides are wired only for Gemini (Vertex
+        // generateContent + prompt cache). Reject other providers so the
+        // admin can't save a config the coordinator will silently ignore.
+        if (useCaseInfo?.requiresHttp && config.provider !== "gemini") {
+          res.status(400).json({
+            success: false,
+            message: `${useCaseInfo.label} supports Gemini models only.`,
           });
           return;
         }

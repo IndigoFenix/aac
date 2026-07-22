@@ -24,6 +24,12 @@ const L: Record<string, Lexeme> = {
   know: { w: "sei", v3: "sabe", v3p: "sabem" },
   understand: { w: "entendo", v3: "entende", v3p: "entendem", inf: "entender" },
   go: { w: "vou", v3: "vai", v3p: "vão", v1p: "vamos", inf: "ir" },
+  // The movement gaits + pursuit family (semantic-gaps batch).
+  walk: { w: "caminho", v3: "caminha", v3p: "caminham", inf: "caminhar" },
+  run: { w: "corro", v3: "corre", v3p: "correm", inf: "correr" },
+  chase: { w: "persigo", v3: "persegue", v3p: "perseguem", inf: "perseguir" },
+  follow: { w: "sigo", v3: "segue", v3p: "seguem", inf: "seguir" },
+  stop: { w: "paro", v3: "para", v3p: "param", inf: "parar" },
   // Nations P6: the political verb the absolute taboo ring forbids, and the
   // places a people speaks of ("our town", "that area").
   fight: { w: "luto", v3: "luta", v3p: "lutam", v1p: "lutamos", inf: "lutar" },
@@ -107,6 +113,7 @@ const L: Record<string, Lexeme> = {
   play: { w: "brinco", inf: "brincar" },
   read: { w: "leio", inf: "ler" },
   wear: { w: "me visto", inf: "me vestir" },
+  color: { w: "coloro", v3: "colore", v3p: "colorem", v1p: "colorimos", inf: "colorir" },
   throw: { w: "jogo", v3: "joga", v3p: "jogam" },
   lonely: { w: "sozinho" },
   hungry: { w: "faminto" }, // rarely surfaces — the feel() clause covers "i_me + hungry"

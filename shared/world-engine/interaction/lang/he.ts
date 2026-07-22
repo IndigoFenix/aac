@@ -51,6 +51,14 @@ const L: Record<string, Lexeme> = {
   know: { w: "יודע", f: "יודעת" },
   understand: { w: "מבין", f: "מבינה" },
   go: { w: "הולך", f: "הולכת", vmpl: "הולכים", vfpl: "הולכות", inf: "ללכת" },
+  // The movement gaits + pursuit family (semantic-gaps batch). NOTE walk IS
+  // go in Hebrew (ללכת covers both) — the cross-language signal that the
+  // pair is one primitive wearing two English words.
+  walk: { w: "הולך", f: "הולכת", vmpl: "הולכים", vfpl: "הולכות", inf: "ללכת" },
+  run: { w: "רץ", f: "רצה", vmpl: "רצים", vfpl: "רצות", inf: "לרוץ" },
+  chase: { w: "רודף", f: "רודפת", vmpl: "רודפים", vfpl: "רודפות", inf: "לרדוף" },
+  follow: { w: "עוקב", f: "עוקבת", vmpl: "עוקבים", vfpl: "עוקבות", inf: "לעקוב" },
+  stop: { w: "עוצר", f: "עוצרת", vmpl: "עוצרים", vfpl: "עוצרות", inf: "לעצור" },
   market: { w: "שוק" },
   trade: { w: "מחליף", f: "מחליפה", vmpl: "מחליפים", vfpl: "מחליפות" },
   // Nations P6: the verb the absolute taboo ring forbids (root ל.ח.מ).
@@ -153,6 +161,7 @@ const L: Record<string, Lexeme> = {
   play: { w: "משחק", f: "משחקת", inf: "לשחק" },
   read: { w: "קורא", f: "קוראת", inf: "לקרוא" },
   wear: { w: "מתלבש", f: "מתלבשת", inf: "להתלבש" },
+  color: { w: "צובע", f: "צובעת", vmpl: "צובעים", vfpl: "צובעות", inf: "לצבוע" },
   throw: { w: "זורק", f: "זורקת" },
   with: { w: "עם" },
   lonely: { w: "בודד", f: "בודדה" },

@@ -287,27 +287,13 @@ export const BASELINE_LIKE_VALUE = 1;
 /**
  * Item STATE tags (Item Transformations b) — the glyph modifiers that describe
  * a transformable condition rather than an identity (a hot apple is still the
- * apple; a big ball is a different ball). Stations swap them; needs may
- * require them. Aligned with the village-systems axes (fire = heat/cook/dry,
- * water = cool/clean/wet); only the registry-shipped pair is active today.
+ * apple; a big ball is a different ball). Stations swap them; needs may require
+ * them. THE canonical set now lives in `variations.ts` (`STATE_FACETS`, the
+ * facet-taxonomy leaf); re-exported here under the historical name so behavior
+ * consumers keep importing `STATE_TAGS`.
  */
-export const STATE_TAGS: ReadonlySet<string> = new Set([
-  "hot",
-  "cold",
-  "clean",
-  "dirty",
-  "wet",
-  "dry",
-  // SPOILAGE (motive batch): baked onto the smelly-food item ("apple.smelly");
-  // no station removes it — the remedy is the garbage, not a transform.
-  "smelly",
-  // DEVICE states (§5) — a device's toggle rides `states` the same way, so
-  // base/now symbol resolution strips them and derivation reads them back.
-  "on",
-  "off",
-  "open",
-  "closed",
-]);
+export { STATE_FACETS as STATE_TAGS } from "../../variations.js";
+import { headOf } from "../../variations.js";
 
 /** Antonym of a DEVICE state — toggling TO one removes the other. */
 export const DEVICE_ANTONYM: Record<string, string> = { on: "off", off: "on", open: "closed", closed: "open" };
@@ -477,9 +463,6 @@ export function openNeeds(creature: CreatureState): CreatureNeed[] {
 // ---------------------------------------------------------------------------
 // Preferences (likes)
 // ---------------------------------------------------------------------------
-
-/** Head symbol of a possibly-composed glyph ("apple.big" → "apple"). */
-const headOf = (glyph: string): string => glyph.split(".")[0] ?? glyph;
 
 /** Does this creature LIKE the item — by instance id, or by KIND ("apple"
  *  matches every apple)? */

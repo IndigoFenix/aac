@@ -10,6 +10,7 @@
 // the optional `QuestPresenter.city` channel — board/HUD is engine chrome.
 
 import { DEFAULT_DISTRICT, type CohortRow } from "@shared/world-engine/kernel/town/population.js";
+import { headOf } from "../../variations.js";
 
 /** One stock cell on a chip. */
 export interface CityHudStock {
@@ -96,10 +97,10 @@ export interface CityHudView {
 
 /** Units of a glyph's head in a stack (fractional pools display floored). */
 function headUnits(stack: Readonly<Record<string, number>>, glyph: string): number {
-  const head = glyph.split(".")[0] ?? glyph;
+  const head = headOf(glyph);
   let n = 0;
   for (const [g, c] of Object.entries(stack)) {
-    if ((g.split(".")[0] ?? g) === head) n += Math.max(0, c);
+    if (headOf(g) === head) n += Math.max(0, c);
   }
   return Math.floor(n);
 }

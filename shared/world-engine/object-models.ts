@@ -34,6 +34,7 @@
 
 import * as THREE from "three";
 import { propMaterial, type LitMaterial } from "./materials";
+import { appearanceOf, stateFacetsOf, headOf } from "./variations";
 
 export interface ObjectModel {
   /** Root to add to the scene, position, and YAW (carries `userData.pick`). */
@@ -600,55 +601,33 @@ const RECIPES: Record<string, Recipe> = {
 // Descriptor vocabulary (mirrors shared/glyph-registry.ts)
 // ---------------------------------------------------------------------------
 
-/** Composed-glyph size modifiers → a per-axis scale multiplier. Exaggerated so
- *  the difference reads instantly. Multiple modifiers compose. */
-const SIZE_SCALE: Record<string, [number, number, number]> = {
-  big: [1.7, 1.7, 1.7],
-  small: [0.5, 0.5, 0.5],
-  tall_high: [1, 1.8, 1],
-  short_low: [1, 0.55, 1],
-  length_long: [1.8, 1, 1],
-  length_short: [0.55, 1, 1],
-  wide: [1, 1, 1.8],
-  thin: [1, 1, 0.5],
-};
-
-/** Color-modifier key → hex (from the registry's `colorValue`). */
-const COLOR_HEX: Record<string, string> = {
-  color_red: "#DC2626", color_orange: "#EA580C", color_yellow: "#FACC15",
-  color_green: "#16A34A", color_blue: "#2563EB", color_purple: "#9333EA",
-  color_pink: "#EC4899", color_brown: "#92400E", color_black: "#111827",
-  color_white: "#F3F4F6", color_gray: "#6B7280",
-};
-
-const TEMPERATURE = new Set(["hot", "cold"]);
-
 export interface Descriptors {
   scale: [number, number, number];
   colorHex?: string;
+  /** PBR from a `material_*` facet (variations.ts material dimension). */
+  roughness?: number;
+  metalness?: number;
   temperature?: "hot" | "cold";
 }
 
 /** Read the descriptor modifiers off a composed glyph string
- *  (`head.mod1.mod2…`). Unknown modifiers are ignored. */
+ *  (`head.mod1.mod2…`). Size/colour/material come from the canonical variation
+ *  appearance (variations.ts `appearanceOf` — one palette, no local tables);
+ *  temperature is a STATE facet (hot/cold) read separately for the particle
+ *  effect. Unknown modifiers are ignored. */
 export function parseDescriptors(glyph: string | undefined): Descriptors {
-  const scale: [number, number, number] = [1, 1, 1];
-  let colorHex: string | undefined;
-  let temperature: "hot" | "cold" | undefined;
-  if (glyph) {
-    const mods = glyph.split(".").slice(1);
-    for (const m of mods) {
-      const s = SIZE_SCALE[m];
-      if (s) {
-        scale[0] *= s[0];
-        scale[1] *= s[1];
-        scale[2] *= s[2];
-      }
-      if (COLOR_HEX[m]) colorHex = COLOR_HEX[m];
-      if (TEMPERATURE.has(m)) temperature = m as "hot" | "cold";
-    }
-  }
-  return { scale, colorHex, temperature };
+  const a = appearanceOf(glyph);
+  const temp = stateFacetsOf(glyph ?? "").find((s) => s === "hot" || s === "cold") as
+    | "hot"
+    | "cold"
+    | undefined;
+  return {
+    scale: a.scale,
+    colorHex: a.hex,
+    roughness: a.roughness,
+    metalness: a.metalness,
+    temperature: temp,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -789,7 +768,7 @@ function normalizeEmoji(s: string): string {
 
 function keyFor(iconRef?: string, glyph?: string): string | undefined {
   if (glyph) {
-    const head = glyph.split(".")[0]!.trim().toLowerCase();
+    const head = headOf(glyph).trim().toLowerCase();
     if (SYMBOL_TO_KEY[head]) return SYMBOL_TO_KEY[head];
   }
   if (iconRef) {
@@ -832,10 +811,13 @@ export function buildObjectModel(opts: {
     // Size — scale the parts, then lift so the base stays on the ground.
     content.scale.set(d.scale[0], d.scale[1], d.scale[2]);
     content.position.y = r * (d.scale[1] - 1);
-    // Color — recolor body materials, or restore their natural color.
+    // Color/material — recolor body materials (a `material_*` facet also sets
+    // PBR roughness/metalness), or restore their natural color.
     ctx.tintable.forEach((m, i) => {
       if (d.colorHex) m.color.set(d.colorHex);
       else m.color.copy(ctx.tintBase[i]!);
+      if (d.roughness !== undefined && "roughness" in m) (m as THREE.MeshStandardMaterial).roughness = d.roughness;
+      if (d.metalness !== undefined && "metalness" in m) (m as THREE.MeshStandardMaterial).metalness = d.metalness;
     });
     // Temperature — (re)build the particle effect only when it changes.
     if (d.temperature !== temperature) {

@@ -29,9 +29,7 @@ import { DEFAULT_RELATION, type Relation } from "@shared/world-engine/interactio
 import type { SyntaxLevel } from "@shared/world-engine/interaction/dialogue/dialogue-gen.js";
 import type { IntentFrame, Ref } from "@shared/world-engine/interaction/intent/parse-intent.js";
 import { STATE_AXES } from "@shared/world-engine/interaction/behavior/facts.js";
-
-/** The head symbol of a glyph ("cookie.big" → "cookie"). */
-const headOf = (s: string): string => s.split(".")[0] ?? s;
+import { headOf } from "../../variations.js";
 
 /** Movement verbs that turn a "where" question into a DESTINATION query ("where are
  *  you going?") rather than an item where-is (parse-intent's MOVEMENT_GOAL_VERBS). */

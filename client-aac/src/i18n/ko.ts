@@ -543,6 +543,7 @@ export const ko: Translations = {
       swim: "수영하다",
       wash: "씻다",
       wear: "입다",
+      color: "색칠하기",
       brush_teeth: "양치하다",
       open: "열다",
       push: "밀다",

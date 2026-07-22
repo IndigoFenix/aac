@@ -27,6 +27,7 @@ import {
   type TownPlayConfig,
 } from "@shared/world-engine/interaction/town/town-play.js";
 import { certifyCreatureQuestWorld } from "@shared/world-engine/interaction/quest/creature-quests.js";
+import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan.js";
 import { validateFields, type GroupSpec } from "../../kernel/spec-schema.js";
 
 function fail(path: string, msg: string): never {
@@ -47,8 +48,10 @@ export const TOWN_WORLD_FIELDS: GroupSpec = {
     { key: "seed", kind: "int", min: 0, max: 0xffffffff, required: true,
       requiredMessage: "required — one seed reproduces the whole town",
       facet: "boundary", ui: "seed", label: "Seed" },
-    { key: "days", kind: "int", min: 1, max: 5000, facet: "interior", label: "Days grown",
-      description: "How many days the town has lived before you arrive." },
+    { key: "days", kind: "int", min: 0, max: 5000, facet: "interior", label: "Days grown",
+      description: "How many days the town has lived before you arrive. 0 = founded today — a town SITE with no buildings yet (city-founding)." },
+    { key: "population", kind: "int", min: 0, max: 10000, facet: "interior", label: "Population",
+      description: "People of the settlement. At age 0 they are settlers with nothing built yet; an older town houses them (≥1 villages keep the 6-house floor)." },
     { key: "questCount", kind: "int", min: 0, max: 3, facet: "interior", label: "Quests",
       description: "Quest-giving residents (0..3)." },
     { key: "buildUp", kind: "number", min: 0, max: 12, facet: "interior", label: "Build-up" },
@@ -67,12 +70,39 @@ export const TOWN_WORLD_FIELDS: GroupSpec = {
     // dense — validated against the compiled economy at build. Absent = barter.
     { key: "numeraire", kind: "string", invalidMessage: "must be a commodity key string",
       facet: "interior", label: "Numeraire" },
+    // ── City-founding (age-0 towns): declared supplies + open country.
+    { key: "stock", kind: "custom", validate: parseStock, facet: "interior", label: "Starting stock",
+      description: "The settlement's supply box — material glyph → count (e.g. { \"wood\": 12 }), seeded into the builder's yard." },
+    { key: "wilderness", kind: "boolean", facet: "boundary", label: "Wilderness",
+      description: "Gatherable trees/rocks scattered over the chart. Default: on at age 0, off for an established town." },
   ],
 };
 
+/** The declared supply box: glyph → positive count. */
+function parseStock(raw: unknown, path: string): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    fail(path, "expected an object of material stacks (glyph → count)");
+  }
+  const out: Record<string, number> = {};
+  for (const [glyph, v] of Object.entries(raw)) {
+    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0 || !Number.isInteger(v)) {
+      fail(`${path}.${glyph}`, "must be a positive integer count");
+    }
+    out[glyph] = v;
+  }
+  return out;
+}
+
 /** Deep gate for a town-scoped `world` object. */
 export function parseTownWorld(raw: unknown, path: string): TownScopeWorldSpec {
-  return { config: validateFields(raw, TOWN_WORLD_FIELDS, path) as unknown as TownPlayConfig };
+  const v = validateFields(raw, TOWN_WORLD_FIELDS, path) as Record<string, unknown>;
+  // The author says "population"; the config's founding seam says startPop
+  // (siteTownConfig's word) — one concept, remapped at the gate.
+  if ("population" in v) {
+    v.startPop = v.population;
+    delete v.population;
+  }
+  return { config: v as unknown as TownPlayConfig };
 }
 
 export interface BuiltTownScope {
@@ -167,13 +197,16 @@ function explicitFocusHouse(focus: GameSettings["initialFocus"]): number | undef
 function parseTownEntities(
   entities: GameSettings["entities"],
   hasHouseFocus: boolean,
+  /** FOUNDING AGE (city-founding ②): an age-0 town has no houses to focus —
+   *  its defined creatures are the SETTLERS, the player's founding group. */
+  foundingAge: boolean,
   label: string,
 ): { family?: TownFamily; items?: TownDefinedItem[] } {
   if (!entities) return {};
   const at = `${label}.entities`;
   const out: { family?: TownFamily; items?: TownDefinedItem[] } = {};
   if (entities.creatures) {
-    if (!hasHouseFocus) {
+    if (!hasHouseFocus && !foundingAge) {
       fail(`${at}.creatures`, "town creature definitions are the focused household's members — set initial_focus to a house");
     }
     const members: TownFamilyMember[] = [];
@@ -255,13 +288,20 @@ export function buildTownScope(settings: GameSettings, label = "game"): BuiltTow
     fail(`${label}.avatar`, 'a town is played embodied — set avatar to true (or "spirit")');
   }
   // DEFINED ENTITIES fold into the CONFIG (replay rebuilds from it): mode-"all"
-  // families change who is generated, so the build itself must know.
-  const defined = parseTownEntities(settings.entities, settings.initialFocus !== null, label);
+  // families change who is generated, so the build itself must know. At
+  // FOUNDING AGE the family needs no house — they are the settlers.
+  const foundingAge = (spec.config.days ?? 220) <= FOUNDING_AGE_DAYS;
+  const defined = parseTownEntities(settings.entities, settings.initialFocus !== null, foundingAge, label);
   if (defined.family) {
     const explicit = explicitFocusHouse(settings.initialFocus);
     spec.config.family = explicit !== undefined ? { ...defined.family, house: explicit } : defined.family;
   }
   if (defined.items) spec.config.items = defined.items;
+  // HOW THIS CULTURE BUILDS (game.culture.architecture) folds into the CONFIG
+  // (replay rebuilds from it, like dress drives outfits): the town furnishes
+  // its workstations from the resolved placement. The kernel already gated the
+  // culture block's shape (parseWorldCultureSpec); this is a pass-through.
+  if (settings.culture?.architecture) spec.config.architecture = settings.culture.architecture;
 
   const play = buildTownPlay(spec.config);
   // The quest bundle drawn from the town's residents/goods must PROVE itself

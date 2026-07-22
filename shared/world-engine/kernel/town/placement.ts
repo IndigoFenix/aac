@@ -29,12 +29,12 @@
 import type { TownHouse } from "./plan";
 import {
   CLUSTERS,
-  HOUSE_STATIONS,
   type CellRef,
   type StationDef,
   type StationKind,
   type WallKey,
 } from "./stations";
+import { DEFAULT_WORKSTATION_REGISTRY } from "./workstations";
 import { memberRoomOf, type HouseRoom, type HouseRoomPlan } from "./rooms";
 import { speciesBodyRadius } from "../../creatures/species";
 
@@ -644,11 +644,11 @@ export interface PlacementScore {
   gripe?: PlacementFactor;
 }
 
-/** The registry row a kind places by — the first HOUSE_STATIONS def of
- *  that kind (the registry IS the aesthetic rulebook), with a wall-scan
- *  default for kinds no house row covers. */
+/** The registry row a kind places by — the first house row of that kind
+ *  (the registry IS the aesthetic rulebook), with a wall-scan default for
+ *  kinds no house row covers. */
 export function stationDefFor(kind: StationKind): StationDef {
-  const def = HOUSE_STATIONS.find((d) => d.kind === kind);
+  const def = DEFAULT_WORKSTATION_REGISTRY.byKind(kind);
   return (
     def ?? {
       key: kind,
@@ -720,7 +720,7 @@ export function placementScore(
   } else if (rule.mode === "besideAnchor") {
     // Nearest piece of the anchor def's kind (the interactive analogue of
     // the driver's placedAt lookup).
-    const anchorDef = HOUSE_STATIONS.find((d) => d.key === rule.anchor);
+    const anchorDef = DEFAULT_WORKSTATION_REGISTRY.byKey(rule.anchor);
     const anchors = ctx.pieces.filter((p) => anchorDef && p.kind === anchorDef.kind);
     if (anchors.length) {
       const nearest = anchors.reduce((a, b) =>

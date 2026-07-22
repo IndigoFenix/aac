@@ -90,7 +90,12 @@ export type GoalSpec =
   | { kind: "goHome" }
   | { kind: "follow"; target: CreatureId }
   | { kind: "stay"; place?: PlaceRef }
-  | { kind: "fetch"; item: ItemRef }
+  // FETCH: reach the item and take it into hand. `from` = an explicit SOURCE
+  // ("take ball from box", "take from dog") — the resolver restricts matching
+  // instances to that endpoint (in the container / at the place / held by the
+  // creature), and an objectless take-from resolves to whatever the source
+  // holds. Absent ⇒ nearest match anywhere (the classic fetch).
+  | { kind: "fetch"; item: ItemRef; from?: PlaceRef }
   | { kind: "give"; item: ItemRef; to: CreatureId }
   | { kind: "putIn"; item: ItemRef; container: PlaceRef }
   // DROP (physical carrying): set the HELD item down where you stand — the
@@ -110,7 +115,9 @@ export type GoalSpec =
   // will emit once needs become self-assigned commands (S2).
   // `dwellS` = seconds the dwell holds (a need-born rest passes its motive's
   // dwell — a nap is longer than a commanded sit); absent = the command default.
-  | { kind: "rest"; place: PlaceRef; dwellS?: number }
+  // `pose` OVERRIDES the executor's fixture-derived pose (a doze in the open is
+  // a SLEEP, fun's toy-play is a PLAY — no fixture nearby to say so).
+  | { kind: "rest"; place: PlaceRef; dwellS?: number; pose?: "sleep" | "sit" | "play" }
   // OPEN / SHUT a container LID ("open the chest", "shut the box"): a first-class
   // primitive over the physical lid state (`heldOpen`), NOT a creature-world
   // device toggle. A command PINS the lid open (stays open with nobody near).
@@ -122,6 +129,13 @@ export type GoalSpec =
   // first link). Distinct from bare "wear" (the dress self-care motive): this
   // equips the NAMED garment, through the pursuit engine, for any commanded body.
   | { kind: "wear"; item: ItemRef }
+  // COLOR / recolor an item ("color the shirt red"): pick up the item, carry it
+  // to a coloring tub (a water barrel/bath doubling as the dye vat), and swap its
+  // colour facet (`shirt.color_blue` → `shirt.color_red`; a colourless `shirt` →
+  // `shirt.color_red`). GENERIC — the same verb recolours a garment now and any
+  // tintable object later (variations.withVariation is kind-agnostic). `color` is
+  // a `color_*` value from the colour dimension.
+  | { kind: "color"; item: ItemRef; color: string }
   // CONVERSE with a creature ("talk to Mara"): walk to the partner and EXCHANGE
   // (gossip spreads, relations warm, both loneliness meters ease). Distinct from
   // bare "talk" (the social self-care motive that seeks any housemate) — this
@@ -137,6 +151,32 @@ export type GoalSpec =
   // the need templates' `satisfy.at` riding the pursuit engine (S2). Absent
   // (every spoken "eat X"), the item is consumed where it lies — unchanged.
   | { kind: "consume"; item: ItemRef; at?: readonly string[] }
+  // THE STACK ECONOMY'S TWO MANIPULATION PRIMITIVES (S3 — "take N = WITHDRAW ×N,
+  // deposit N = STOW ×N"; the economy is a units count, not new machinery):
+  // walk to the source/container and move `units` of `category` between it and
+  // the ABSTRACT bag (needCarried ↔ containerStock/market/loose — the state the
+  // needs walker already mutates; the executor delegates to its effects).
+  // `affords` selects by FUNCTION instead of category (fun's toy). `tplKey`
+  // names the need row acting (kind selection, strike keys, logs) — a spoken
+  // command would omit it. Both are TERMINAL micro-goals: one leg + one act,
+  // then the SELECTOR (decideNeeds) chooses the next leg — exactly the legacy
+  // walker's bounded-step granularity, now driven by the unified pursuit.
+  | { kind: "takeUnits"; from: PlaceRef; category: string; units: number; affords?: string; tplKey?: string }
+  | { kind: "putUnits"; into: PlaceRef; category: string; units: number; tplKey?: string }
+  // The DWELLED stack-transform (S3 slice 2 — the wash at the tub, the pot at
+  // the oven): walk to the station, dwell the work out posed, and the facet
+  // edit (`drop` dirty / `add` hot) lands on every matching carried unit.
+  | { kind: "processUnits"; at: PlaceRef; category: string; drop?: string; add?: string; dwellS?: number; tplKey?: string }
+  // In-place stack acts: put the carried garment ON (the change of clothes —
+  // doffs the worn one as a `.dirty` unit in hand), or set carried units DOWN
+  // as real loose props at the feet (the unload row's "put it down" answer).
+  | { kind: "equipUnits"; category: string; tplKey?: string }
+  | { kind: "dropUnits"; category: string; units: number; tplKey?: string }
+  // EAT FROM THE BAG (S4): consume one carried unit of `category` — at the
+  // dining station when `at` resolves (the seat show), else where you stand.
+  // The single-item `consume` can't express this: the abstract bag holds no
+  // item ids to resolve.
+  | { kind: "consumeUnits"; category: string; at?: readonly string[]; tplKey?: string }
   | { kind: "socialAct"; target: CreatureId; act: string } // hug — walk to the target, warmth on arrival
   | { kind: "help"; target: CreatureId } // adopt the target's surfaced need (the general on-behalf rule)
   // PLACE furniture (construction v1): stand `item` at a spot the world's

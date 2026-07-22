@@ -42,6 +42,28 @@ export const NEED_PURSUIT_MOTIVES: ReadonlySet<string> = new Set([
   "social",
 ]);
 
+/** STACK-ECONOMY motives whose decided legs ride the pursuit as stack
+ *  micro-goals (S3): `takeUnits`/`putUnits` (slice 1), and `processUnits`/
+ *  `equipUnits`/`dropUnits` (slice 2 — the wash/cook dwell, the change of
+ *  clothes, the put-it-down). THE S3 FLAG — per-motive, same contract as
+ *  above. Fun's play-in-place (restHere with the toy) stays legacy — the pose
+ *  is the affordance's, not a rest station's. */
+export const NEED_PURSUIT_STACK_MOTIVES: ReadonlySet<string> = new Set([
+  "provision",
+  "tidy",
+  "stow",
+  "serve",
+  "dress",
+  "fun",
+  "unload",
+  "laundry",
+  "cook",
+  // Adoption rows ("adopt:<wanter>|<tpl>") are deposit-shaped supply runs into
+  // the SAME household (adoptionTemplates gates by house), so their take/
+  // deposit legs ride the stack micro-goals like any provision trip (S4).
+  "adopt",
+]);
+
 export interface NeedGoalOpts {
   /** Units in the creature's ABSTRACT bag matching the template's item — > 0
    *  keeps the eat on the legacy walker (the bag is invisible to the resolver). */
@@ -59,37 +81,102 @@ export interface NeedGoalOpts {
  */
 export function needPursuitGoals(tpl: NeedTemplate, intent: NeedIntent, opts: NeedGoalOpts): GoalSpec[] {
   const motive = tpl.key.split(":")[0]!;
-  if (!NEED_PURSUIT_MOTIVES.has(motive)) return [];
+  const stack = NEED_PURSUIT_STACK_MOTIVES.has(motive);
+  if (!NEED_PURSUIT_MOTIVES.has(motive) && !stack) return [];
+  // The decided take/deposit leg as a stack micro-goal — the walk-and-move-N
+  // the legacy walker would have run, carrying the row's key for kind
+  // selection, strike keys and the household claim's audit trail.
+  const takeLeg = (i: Extract<NeedIntent, { kind: "take" }>): GoalSpec => ({
+    kind: "takeUnits",
+    from: i.from.place,
+    category: tpl.item.category ?? "",
+    units: i.units,
+    ...(tpl.item.affords ? { affords: tpl.item.affords } : {}),
+    tplKey: tpl.key,
+  });
   switch (intent.kind) {
     case "take":
     case "consumeAt": {
-      // The acquire-and-eat family (hunger/thirst). Only CONSUME-shaped rows —
-      // an equip/transform row's `take` belongs to its own legacy chain.
-      if (tpl.satisfy.kind !== "consume") return [];
-      if (opts.carriedMatching > 0) return []; // bag eats stay legacy (see header)
+      // The acquire-and-eat family (hunger/thirst): the WHOLE chain as one
+      // consume goal (pantry pick → dining leg → eat). A take for a STACK
+      // motive (provision's buy, tidy's pickup, dress/fun's fetch) is instead
+      // one bounded takeUnits leg.
+      if (tpl.satisfy.kind !== "consume") {
+        return stack && intent.kind === "take" ? [takeLeg(intent)] : [];
+      }
       const cat = tpl.item.category;
       if (!cat) return [];
       const at = tpl.satisfy.at;
+      // A unit already in the BAG (S4): eat IT — walk to the dining station
+      // when one resolves (the seat show), else in place. The single-item
+      // consume can't see the abstract stack, so this is its own micro-goal.
+      if (opts.carriedMatching > 0) {
+        return [{ kind: "consumeUnits", category: cat, ...(at ? { at } : {}), tplKey: tpl.key }];
+      }
       const mk = (match: { category: string; state?: string }): GoalSpec => ({
         kind: "consume",
         item: { match },
         ...(at ? { at } : {}),
       });
-      // Food reaches for the served HOT meal first, raw as the fallback.
-      return cat === "food" ? [mk({ category: cat, state: "hot" }), mk({ category: cat })] : [mk({ category: cat })];
+      // Food reaches for the served HOT meal first, raw as the fallback — and a
+      // decided TAKE adds the stack leg LAST (S3): when no supply is visible to
+      // the item resolver (a market shelf, the well — derived stock), the walk-
+      // and-buy still rides the pursuit; the bag eat that follows re-decides.
+      const eats = cat === "food" ? [mk({ category: cat, state: "hot" }), mk({ category: cat })] : [mk({ category: cat })];
+      return intent.kind === "take" ? [...eats, takeLeg(intent)] : eats;
     }
+    case "deposit":
+      // Put the carried units away (provision's bank, tidy's return, serve's
+      // plating, stow's wardrobe, unload's shelf) — one bounded putUnits leg.
+      if (!stack) return [];
+      return [
+        {
+          kind: "putUnits",
+          into: intent.into.place,
+          category: tpl.item.category ?? "",
+          units: intent.units,
+          tplKey: tpl.key,
+        },
+      ];
     case "restAt":
       return [{ kind: "rest", place: { kind: "named", id: intent.station.id }, dwellS: opts.restDwellS }];
-    case "restHere":
-      // No station — doze where the body stands (a point place; the executor
-      // poses in place when no rest fixture is within reach).
-      return [{ kind: "rest", place: { kind: "point", x: opts.body.x, y: opts.body.y }, dwellS: opts.restDwellS }];
+    case "restHere": {
+      // No station — dwell where the body stands. The POSE can't be derived
+      // from a fixture out in the open, so the motive says it: fun's
+      // toy-in-hand dwell is a PLAY, an energy doze is a SLEEP, the rest sit.
+      const pose = motive === "fun" ? "play" : motive === "energy" ? "sleep" : "sit";
+      return [{ kind: "rest", place: { kind: "point", x: opts.body.x, y: opts.body.y }, dwellS: opts.restDwellS, pose }];
+    }
     case "socialize":
       // The partner IS the station candidate (the ctx lists housemates there).
       return [{ kind: "converse", target: intent.station.id }];
+    case "processAt":
+      // The wash at the tub / the pot at the oven: walk to the decided station
+      // and dwell the work out — the facet edit comes from the template's own
+      // transform spec, the dwell from the motive.
+      if (!stack || tpl.satisfy.kind !== "transform") return [];
+      return [
+        {
+          kind: "processUnits",
+          at: { kind: "named", id: intent.station.id },
+          category: tpl.item.category ?? "",
+          ...(tpl.satisfy.drop ? { drop: tpl.satisfy.drop } : {}),
+          ...(tpl.satisfy.add ? { add: tpl.satisfy.add } : {}),
+          dwellS: opts.restDwellS,
+          tplKey: tpl.key,
+        },
+      ];
+    case "equipHere":
+      // The change of clothes where the body stands (beside the wardrobe the
+      // take leg just visited).
+      if (!stack) return [];
+      return [{ kind: "equipUnits", category: tpl.item.category ?? "", tplKey: tpl.key }];
+    case "dropHere":
+      // Nowhere to put it away — set the units down as real loose props.
+      if (!stack) return [];
+      return [{ kind: "dropUnits", category: tpl.item.category ?? "", units: intent.units, tplKey: tpl.key }];
     default:
-      // consumeHere only fires while carrying (bag — legacy); deposit / drop /
-      // equip / process are the stack economy (S3).
+      // consumeHere only fires while carrying (bag — the legacy seat eat).
       return [];
   }
 }

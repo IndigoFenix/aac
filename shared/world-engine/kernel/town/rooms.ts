@@ -870,8 +870,10 @@ export function memberRoomOf(plan: HouseRoomPlan, member: number): HouseRoom {
 // id (`w_<index>` — every consumer that meant "the building" still lands
 // there); back rooms suffix it (_rs store · _r*/_rb/_rh dwelling cells).
 
-/** The fields a work interior is a pure function of. */
-export type WorkShape = Pick<TownWork, "dx" | "dy" | "w" | "h" | "door" | "species">;
+/** The fields a work interior is a pure function of. `stations` is the
+ *  building's extra-fixture override (workFurniture reads it; the room plan
+ *  ignores it). */
+export type WorkShape = Pick<TownWork, "dx" | "dy" | "w" | "h" | "door" | "species" | "stations">;
 
 const workPlanCache = new Map<string, HouseRoomPlan>();
 

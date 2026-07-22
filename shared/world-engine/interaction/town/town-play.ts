@@ -11,9 +11,11 @@
 import { compileEconomy, type CompiledEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { HOUSEHOLD } from "@shared/world-engine/kernel/town/goods.js";
 import { createTownWorld, type TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
-import { townPlanSteps, type TownHouse, type TownPlan } from "@shared/world-engine/kernel/town/plan.js";
+import { FOUNDING_AGE_DAYS, townPlanSteps, type TownHouse, type TownPlan } from "@shared/world-engine/kernel/town/plan.js";
 import { buildTownQuestGame, type TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
 import { createTownStageSteps, type TownStage } from "@shared/world-engine/interaction/town/town-stage.js";
+import { resolveWorkstationRegistry } from "@shared/world-engine/kernel/town/workstations.js";
+import type { WorldArchitectureSpec } from "@shared/world-engine/culture.js";
 import { TOWN_HOUSE_PALETTE } from "@shared/world-engine/interaction/dialogue/directions.js";
 import {
   createTownDeltas, seedFoundingWorkshops, type FoundedBuilding, type SerializedTownDeltas, type TownDeltas,
@@ -57,6 +59,17 @@ export interface TownPlayConfig {
   charter?: { farmland: number; ore_access: number; timberland?: number };
   /** Founding population (primary species). */
   startPop?: number;
+  /** DECLARED RESOURCES (city-founding): the supply box a spec hands the
+   *  settlement — glyph → count, folded into the builder's-yard stock
+   *  (deltas.stock) on a FRESH overlay. An age-0 town starts with exactly
+   *  this (townStockSeed is houses-gated); an established town gets it on
+   *  top of its usual yard seed. */
+  stock?: Record<string, number>;
+  /** WILDERNESS SURROUNDINGS (city-founding): scatter gatherable trees/rocks
+   *  (and a few wild locals) over the town chart. A HOST flag — the build is
+   *  untouched; quest-host seeds the scatter. Default: on for a founding-age
+   *  town (days ≤ FOUNDING_AGE_DAYS), off for an established one. */
+  wilderness?: boolean;
   /** A DEFINED FAMILY (the document's `entities.creatures`, town-interpreted):
    *  the focused household's hand-authored members. Mode "all" changes who is
    *  GENERATED (the other members never exist), so it lives in the config —
@@ -85,6 +98,11 @@ export interface TownPlayConfig {
    *  build). Absent = the economy doc's own `numeraire` (TOWN_PLAY's is
    *  none — villages barter). */
   numeraire?: string;
+  /** HOW THIS CULTURE BUILDS (game.culture.architecture): per-station
+   *  placement overrides, resolved into the workstation registry the town
+   *  furnishes from. Serializable (kind → { placement, room }); folded in at
+   *  buildTownScope from the world's culture. Absent = the default placement. */
+  architecture?: WorldArchitectureSpec;
 }
 
 export interface TownFamilyMember {
@@ -334,6 +352,7 @@ export function applyFoundedBuildings(
       dx: b.dx, dy: b.dy, w: b.w, h: b.h, door: b.door,
       color: spec?.color ?? "#9b8a6d",
       program: spec?.program ?? { store: true },
+      ...(spec?.stations ? { stations: spec.stations } : {}),
       // Staff only a COMPLETED building (the host writes `completed` and
       // re-decorates jobs when construction finishes live).
       jobs: b.completed ? (spec?.jobs ?? 0) : 0,
@@ -435,18 +454,21 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   const key = config.key ?? TOWN_KEY;
   const startPop = config.startPop ?? START_POP;
   const structures = config.structures ?? TOWN_PLAY_STRUCTURES;
+  // Age 0 is legal (city-founding): a `days: 0` town is founded TODAY — the
+  // fast-forward loop simply never runs and the clock starts at day 0.
+  const days = Math.max(0, Math.min(5000, Math.floor(config.days ?? 220)));
   yield "chartering";
   const town = createTownWorld({
     economy: eco,
     charter: config.charter ?? CHARTER,
     startPop,
     // The founding farm (villageSeed's shape) — but a ZERO-POP founded site
-    // starts with NO buildings at all (①b zero-building growth): its farms
-    // are the ones its settlers raise through founded deltas.
-    seedScalars: { farms: startPop > 0 ? 1 : 0 },
+    // starts with NO buildings at all (①b zero-building growth), and a
+    // FOUNDING-AGE town (city-founding) hasn't built one yet either: its
+    // farms are the ones its settlers raise through founded deltas.
+    seedScalars: { farms: startPop > 0 && days > FOUNDING_AGE_DAYS ? 1 : 0 },
     key,
   });
-  const days = Math.max(1, Math.min(5000, Math.floor(config.days ?? 220)));
   // Slicing the fast-forward is exactly equivalent to one big step (the
   // byte-identical test pins it) — 15-day slices keep each under a frame.
   const SLICE = 15;
@@ -484,10 +506,23 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     town, eco, key, config.seed, config.buildUp ?? 0, TOWN_HOUSE_PALETTE,
     deltas.founded().map((b) => b.slot),
     config.species,
+    days,
   );
   // Founded buildings materialize as work rows (geometry exactly from the
   // deltas; program/jobs from the structure catalog).
   applyFoundedBuildings(plan, deltas.founded(), structures);
+  // FOUNDED PRODUCERS JOIN THE BOOKS (city-founding): a COMPLETED founded
+  // building with an economy row raises its count scalar, exactly as live
+  // completion injects it (quest-host stepFoundedConstruction) — a reloaded
+  // farm keeps making food. AFTER the plan: the base layout must stay blind
+  // to founded counts (the founded row IS the building; a pre-plan inject
+  // doubled it with a phantom base farm).
+  for (const b of deltas.founded()) {
+    if (!b.completed) continue;
+    const spec = resolveStructure(structures, b.type);
+    const work = spec?.economy ? eco.works.find((w) => w.key === spec.economy) : null;
+    if (work) town.inject(work.countScalar, 1);
+  }
   yield "meeting residents";
   const bundle = buildTownQuestGame(town, eco, plan, key, {
     seed: config.seed,
@@ -506,6 +541,11 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   if (!config.deltas) {
     seedFoundingWorkshops({ x: plan.radius + 40, y: plan.radius + 40 }, plan, deltas, config.seed);
     Object.assign(deltas.stock, townStockSeed(plan.houses.length));
+    // DECLARED RESOURCES (city-founding): the spec's supply box, folded into
+    // the yard. An age-0 town has no houses, so this IS its whole stock.
+    for (const [glyph, n] of Object.entries(config.stock ?? {})) {
+      if (n > 0) deltas.stock[glyph] = (deltas.stock[glyph] ?? 0) + Math.floor(n);
+    }
   }
   // A DEFINED family member's own species overrides the town's for its BODY
   // (the frog_person aunt walks and plans at her own girth).
@@ -516,10 +556,14 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     if (m && Number(m[1]) === fam.house) return f.members[Number(m[2])]?.species;
     return undefined;
   };
+  // How this culture BUILDS (game.culture.architecture) — the workstation
+  // registry the town furnishes from (default placement when unset).
+  const workstations = resolveWorkstationRegistry(config.architecture?.workstations);
   const stage = yield* createTownStageSteps(town, eco, plan, bundle, {
     seed: config.seed,
     castNpcs: false,
     deltas,
+    registry: workstations,
     // Real-planet terrain ⇒ the planet is the reference frame: the town rect
     // is content, not walls (bodies/followers may leave town). Synthetic
     // ground ("flat"/"hills") has no world beyond the rect, so it stays bounded.

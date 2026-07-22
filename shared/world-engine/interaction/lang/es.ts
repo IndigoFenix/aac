@@ -23,6 +23,12 @@ const L: Record<string, Lexeme> = {
   know: { w: "sé", v2: "sabes", v3: "sabe", v3p: "saben" },
   understand: { w: "entiendo", v2: "entiendes", v3: "entiende", v3p: "entienden", inf: "entender" },
   go: { w: "voy", v2: "vas", v3: "va", v3p: "van", v1p: "vamos", inf: "ir" },
+  // The movement gaits + pursuit family (semantic-gaps batch).
+  walk: { w: "camino", v2: "caminas", v3: "camina", v3p: "caminan", inf: "caminar" },
+  run: { w: "corro", v2: "corres", v3: "corre", v3p: "corren", inf: "correr" },
+  chase: { w: "persigo", v2: "persigues", v3: "persigue", v3p: "persiguen", inf: "perseguir" },
+  follow: { w: "sigo", v2: "sigues", v3: "sigue", v3p: "siguen", inf: "seguir" },
+  stop: { w: "paro", v2: "paras", v3: "para", v3p: "paran", inf: "parar" },
   // Nations P6: the political verb the absolute taboo ring forbids, and the
   // places a people speaks of ("our town", "that area").
   fight: { w: "lucho", v2: "luchas", v3: "lucha", v3p: "luchan", v1p: "luchamos", inf: "luchar" },
@@ -106,6 +112,7 @@ const L: Record<string, Lexeme> = {
   play: { w: "juego", inf: "jugar" },
   read: { w: "leo", inf: "leer" },
   wear: { w: "me visto", inf: "vestirme" },
+  color: { w: "coloreo", v2: "coloreas", v3: "colorea", v3p: "colorean", v1p: "coloreamos", inf: "colorear" },
   throw: { w: "tiro", v2: "tiras", v3: "tira", v3p: "tiran" },
   lonely: { w: "solo" },
   hungry: { w: "hambriento" }, // rarely surfaces — the feel() clause covers "i_me + hungry"

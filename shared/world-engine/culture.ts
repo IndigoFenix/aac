@@ -16,21 +16,66 @@
  * builders own interpretation — the module law).
  */
 
+import type { ArchitectureOverrides, WorkstationOverride } from "./kernel/town/workstations.js";
+
+/** The three placement modes a culture may force a workstation into
+ *  (kernel workstations.ts `PlacementMode`). Kept as a local constant so the
+ *  gate names the allowed values without a runtime kernel dependency. */
+const PLACEMENT_MODES = ["in_room", "own_room", "own_building"] as const;
+
+/** How a culture DRESSES (`game.culture.dress`) — the garment kinds its people
+ *  wear and the colour palette they wear them in. A SELECTION from the garment
+ *  vocabulary (creatures/clothing.ts): residents wear these, stores stock these,
+ *  and only these get baked at boot, so a town reads as its own culture. Absent
+ *  fields fall back to the curated default. */
+export interface WorldDressSpec {
+  /** Garment heads the culture wears ("shirt", "dress") — omit for the default
+   *  (both). */
+  kinds?: string[];
+  /** Colour glyphs the culture wears ("color_red", …) — omit for the curated
+   *  default. */
+  palette?: string[];
+}
+
+/**
+ * How a culture BUILDS (`game.culture.architecture`) — where its dwellings put
+ * their workstations. `workstations` maps a fixture kind to a PLACEMENT-MODE
+ * override: an open-hearth culture cooks `in_room` (the oven stands in the
+ * shared hall), a formal one gives the oven its `own_room` (a separate
+ * kitchen). Resolved into the workstation registry the town furnishes from —
+ * the authored-then-resolved shape `dress` established. Absent kinds keep the
+ * default placement. (`rooms`/`buildings` sub-blocks are reserved for later —
+ * authoring them is rejected until they resolve to something.)
+ */
+export interface WorldArchitectureSpec {
+  /** Fixture kind → placement override (see kernel workstations.ts). */
+  workstations?: ArchitectureOverrides;
+}
+
 /** The `game.culture` block as authored (snake_case, kernel-gated). */
 export interface WorldCultureSpec {
   /** Verbs no member of any culture on this world can ever perform —
    *  lexicon verb words ("fight"). The universal absolute ring. */
   absolutes?: string[];
+  /** How the culture dresses — drives resident outfits + wardrobe stock. */
+  dress?: WorldDressSpec;
+  /** How the culture builds — drives where dwellings place their workstations. */
+  architecture?: WorldArchitectureSpec;
 }
 
 /** The resolved culture a session runs under. */
 export interface WorldCulture {
   /** The universal absolute taboos, as a closed set of forbidden verbs. */
   absolutes: ReadonlySet<string>;
+  /** The culture's dress declaration, or undefined for the curated default. */
+  dress?: WorldDressSpec;
+  /** The culture's architecture declaration, or undefined for the default
+   *  placement — resolve with `resolveWorkstationRegistry`. */
+  architecture?: WorldArchitectureSpec;
 }
 
-/** No declaration = no universal taboos (the realism default — restricted
- *  worlds OPT IN to the ring). */
+/** No declaration = no universal taboos, and the curated default dress (the
+ *  realism default — restricted worlds OPT IN to the ring). */
 export const OPEN_CULTURE: WorldCulture = { absolutes: new Set() };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -41,32 +86,100 @@ const fail: (path: string, msg: string) => never = (path, msg) => {
   throw new Error(`${path}: ${msg}`);
 };
 
+/** Parse a bounded array of non-empty word strings (the absolutes/palette/kinds
+ *  shape). Trims and rejects junk, per-index path. */
+function parseWords(raw: unknown, path: string, max: number): string[] {
+  if (!Array.isArray(raw)) fail(path, "expected an array of words");
+  if (raw.length > max) fail(path, `at most ${max} entries`);
+  return raw.map((v, i) => {
+    if (typeof v !== "string" || !v.trim()) fail(`${path}[${i}]`, "expected a non-empty word");
+    return v.trim();
+  });
+}
+
+/** Parse + gate the `game.culture.dress` block: unknown fields REJECTED,
+ *  kinds/palette = bounded word arrays (validated against the garment
+ *  vocabulary at resolve time by the caller — this gates SHAPE only). */
+export function parseWorldDressSpec(raw: unknown, path: string): WorldDressSpec {
+  if (!isObj(raw)) fail(path, "expected an object (the dress declaration)");
+  const allowed = ["kinds", "palette"];
+  for (const k of Object.keys(raw as object)) {
+    if (!allowed.includes(k)) fail(`${path}.${k}`, `unknown field (allowed: ${allowed.join(", ")})`);
+  }
+  const out: WorldDressSpec = {};
+  const r = raw as Record<string, unknown>;
+  if ("kinds" in r) out.kinds = parseWords(r.kinds, `${path}.kinds`, 8);
+  if ("palette" in r) out.palette = parseWords(r.palette, `${path}.palette`, 16);
+  return out;
+}
+
+/** Parse + gate the `game.culture.architecture` block: unknown fields
+ *  REJECTED. `workstations` = kind → { placement, room }, placement one of the
+ *  three modes. Gates SHAPE only (the kernel resolves an unknown kind to a
+ *  no-op, exactly as dress gates shape and clothing.ts validates values). */
+export function parseWorldArchitectureSpec(raw: unknown, path: string): WorldArchitectureSpec {
+  if (!isObj(raw)) fail(path, "expected an object (the architecture declaration)");
+  const allowed = ["workstations"];
+  for (const k of Object.keys(raw as object)) {
+    if (!allowed.includes(k)) fail(`${path}.${k}`, `unknown field (allowed: ${allowed.join(", ")})`);
+  }
+  const out: WorldArchitectureSpec = {};
+  const r = raw as Record<string, unknown>;
+  if ("workstations" in r) {
+    const ws = r.workstations;
+    if (!isObj(ws)) fail(`${path}.workstations`, "expected an object (fixture kind → placement)");
+    const entries = Object.entries(ws as Record<string, unknown>);
+    if (entries.length > 24) fail(`${path}.workstations`, "at most 24 station overrides");
+    const map: ArchitectureOverrides = {};
+    for (const [kind, v] of entries) {
+      const p = `${path}.workstations.${kind}`;
+      if (!isObj(v)) fail(p, "expected an object ({ placement, room })");
+      const vr = v as Record<string, unknown>;
+      const allowedW = ["placement", "room"];
+      for (const kk of Object.keys(vr)) {
+        if (!allowedW.includes(kk)) fail(`${p}.${kk}`, `unknown field (allowed: ${allowedW.join(", ")})`);
+      }
+      const ov: WorkstationOverride = {};
+      if ("placement" in vr) {
+        const pm = vr.placement;
+        if (typeof pm !== "string" || !(PLACEMENT_MODES as readonly string[]).includes(pm)) {
+          fail(`${p}.placement`, `expected one of ${PLACEMENT_MODES.join(" | ")}`);
+        }
+        ov.placement = pm as WorkstationOverride["placement"];
+      }
+      if ("room" in vr) {
+        if (typeof vr.room !== "string" || !vr.room.trim()) fail(`${p}.room`, "expected a non-empty cluster name");
+        ov.room = vr.room.trim();
+      }
+      map[kind] = ov;
+    }
+    out.workstations = map;
+  }
+  return out;
+}
+
 /** Parse + gate the `game.culture` block (the parseWorldScaleSpec
  *  pattern): unknown fields REJECTED, absolutes = ≤16 non-empty strings. */
 export function parseWorldCultureSpec(raw: unknown, path: string): WorldCultureSpec {
   if (!isObj(raw)) fail(path, "expected an object (the cultural-law declaration)");
-  const allowed = ["absolutes"];
+  const allowed = ["absolutes", "dress", "architecture"];
   for (const k of Object.keys(raw as object)) {
     if (!allowed.includes(k)) fail(`${path}.${k}`, `unknown field (allowed: ${allowed.join(", ")})`);
   }
   const out: WorldCultureSpec = {};
-  if ("absolutes" in (raw as object)) {
-    const a = (raw as Record<string, unknown>).absolutes;
-    if (!Array.isArray(a)) fail(`${path}.absolutes`, "expected an array of verb words");
-    if (a.length > 16) fail(`${path}.absolutes`, "at most 16 absolute taboos");
-    for (let i = 0; i < a.length; i++) {
-      const v = a[i];
-      if (typeof v !== "string" || !v.trim()) {
-        fail(`${path}.absolutes[${i}]`, "expected a non-empty verb word");
-      }
-    }
-    out.absolutes = (a as string[]).map(s => s.trim());
-  }
+  const r = raw as Record<string, unknown>;
+  if ("absolutes" in r) out.absolutes = parseWords(r.absolutes, `${path}.absolutes`, 16);
+  if ("dress" in r) out.dress = parseWorldDressSpec(r.dress, `${path}.dress`);
+  if ("architecture" in r) out.architecture = parseWorldArchitectureSpec(r.architecture, `${path}.architecture`);
   return out;
 }
 
 /** Resolve a (possibly absent) spec to the culture a session runs under. */
 export function resolveWorldCulture(spec?: WorldCultureSpec | null): WorldCulture {
-  if (!spec?.absolutes?.length) return OPEN_CULTURE;
-  return { absolutes: new Set(spec.absolutes) };
+  if (!spec?.absolutes?.length && !spec?.dress && !spec?.architecture) return OPEN_CULTURE;
+  return {
+    absolutes: new Set(spec?.absolutes ?? []),
+    ...(spec?.dress ? { dress: spec.dress } : {}),
+    ...(spec?.architecture ? { architecture: spec.architecture } : {}),
+  };
 }

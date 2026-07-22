@@ -57,6 +57,7 @@ import {
   type ItemState,
   type NeedTarget,
 } from "@shared/world-engine/interaction/behavior/creatures.js";
+import { headOf } from "../../variations.js";
 import { willingnessToGive, type GiveResponse } from "@shared/world-engine/interaction/behavior/willingness.js";
 import type { Relation } from "@shared/world-engine/interaction/behavior/relations.js";
 import type { Personality } from "@shared/world-engine/interaction/behavior/personality.js";
@@ -66,6 +67,7 @@ import {
   type Fact,
   type FactQuery,
 } from "@shared/world-engine/interaction/behavior/facts.js";
+import { canonicalVerb } from "@shared/world-engine/interaction/intent/parse-intent.js";
 
 // ---------------------------------------------------------------------------
 // Projection shapes
@@ -224,7 +226,6 @@ const at = (g: LeveledGlyphs, level: SyntaxLevel): string => g[level];
 // Variant items carry COMPOSED glyphs ("ball.big"): head = the kind, dot
 // modifiers = the descriptors. Same head + different modifiers = right kind,
 // wrong variant — the corrective-response case.
-const headOf = (symbol: string): string => symbol.split(".")[0] ?? symbol;
 
 /** State-aware views over the static entity symbols (transformations): `base`
  *  strips STATE tags (an item's INITIAL state travels in its entity glyph),
@@ -1346,7 +1347,7 @@ export function selectAct(
         // doesn't eat"); a symbol naming nothing → "there is no {X}".
         const symbol = act.about.symbol;
         const isItem = Object.values(world.items).some(
-          (it) => (it.kind ?? sym(it.id)).split(".")[0] === symbol,
+          (it) => headOf(it.kind ?? sym(it.id)) === symbol,
         );
         return {
           events: [],
@@ -1363,7 +1364,10 @@ export function selectAct(
             return verbs.length ? { verb: verbs[0]! } : null; // [] = verifiably idle
           })();
       if (activity === undefined) return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
-      if (act.verb && (activity === null || activity.verb !== act.verb)) {
+      // Synonym-family match (parse-intent VERB_FAMILY): "what dog take?" is
+      // confirmed by a creature whose live verb reads "get" — same primitive,
+      // different word. The correction still speaks the ASKED word back.
+      if (act.verb && (activity === null || canonicalVerb(activity.verb) !== canonicalVerb(act.verb))) {
         return { events: [], responseGlyph: at(notDoing(who, act.verb), level), memo };
       }
       if (activity === null) {

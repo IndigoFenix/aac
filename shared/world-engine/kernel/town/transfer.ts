@@ -35,6 +35,7 @@
 import { FOOD_DAY_SEC } from "./goods.js";
 import type { TradeRoute } from "./trade.js";
 import { IMPORT_ALLOTMENT, TRADE_IMPORT_KINDS } from "./trade.js";
+import { headOf } from "../../variations.js";
 
 // ---------------------------------------------------------------------------
 // Stock endpoints — ONE shape over every stack-map holder
@@ -65,7 +66,7 @@ export interface StockEndpoint {
  *  structures.ts / founding.ts convention: facted variants pay toward and
  *  count toward their head. */
 export function stackHead(glyph: string): string {
-  return glyph.split(".")[0] ?? glyph;
+  return headOf(glyph);
 }
 
 /** Units in a stack matching `glyph`'s head (facted variants included). */

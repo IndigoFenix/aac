@@ -194,13 +194,16 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
         k === "farm" ? { cap: { by: "farmland", rate: 1 / 60 }, sells: ["food"], district: "farm" } : null,
       capValueOf: (by) => (by === "farmland" ? 420 : 200),
       countOf: () => 0,
-      candidatesFor: (spec, zone) =>
-        foundingOptions({
+      candidatesFor: (spec, zone) => {
+        const cands = foundingOptions({
           seed: SEED, key: KEY, footprint: spec.footprint, type: spec.type,
           occupied: deltas.founded().map((b) => ({ x: b.dx, y: b.dy, w: b.w, h: b.h })),
           claimedSlots: new Set(deltas.founded().map((b) => b.slot)),
           zoning: slotZoningFn(zones(), categoriesOfSpec(spec, districtOf)),
-        }).filter((c) => candidateInZone(zones(), zone, c)),
+        });
+        // zone null = OPEN GROUND (no charter constrains this town).
+        return zone === null ? cands : cands.filter((c) => candidateInZone(zones(), zone, c));
+      },
       ...over,
     };
   }
@@ -229,7 +232,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
     expect(deltas.civic.prosperity).toBeLessThan(FOUNDING_PROSPERITY_THRESHOLD);
   });
 
-  it("an UNZONED town never auto-founds (prosperity banks harmlessly — today's behavior)", () => {
+  it("an unzoned CONTENT town never auto-founds — need is the license, open ground never sprawls at rest", () => {
     const deltas = createTownDeltas();
     deltas.stock.wood = 100;
     for (let d = 1; d <= 20; d++) {
@@ -237,6 +240,41 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
     }
     expect(deltas.founded()).toHaveLength(0);
     expect(deltas.civic.prosperity).toBeGreaterThan(0); // banked, not lost
+  });
+
+  it("URGENT need founds WITHOUT charters or a banked threshold — a homeless camp raises a house on open ground (city-founding)", () => {
+    const deltas = createTownDeltas();
+    deltas.stock.wood = 40;
+    deltas.stock.stone = 10;
+    const order = foundingGrowthStep(makeInput(deltas, {
+      gain: 0,
+      signals: { crowding: 2, shortage: () => 0 },
+    }));
+    expect(order).not.toBeNull();
+    expect(order!.spec.type).toBe("house");
+    expect(order!.zoneOrd).toBe(-1); // open ground, no charter
+    expect(deltas.founded()).toHaveLength(1);
+    // Survival is materials-paid — the (empty) bank was never charged.
+    expect(deltas.civic.prosperity).toBe(0);
+  });
+
+  it("a REAL shortage founds the producer on open ground; real-but-calm need waits for the bank", () => {
+    const hungry = createTownDeltas();
+    hungry.stock.wood = 40;
+    const order = foundingGrowthStep(makeInput(hungry, {
+      gain: 0,
+      signals: { crowding: 0, shortage: (g) => (g === "food" ? 0.9 : 0) },
+    }));
+    expect(order?.spec.type).toBe("farm");
+    // Crowding 1.0 (houses exactly full) is real need but not urgent:
+    // open-ground growth then waits for the banked threshold.
+    const calm = createTownDeltas();
+    calm.stock.wood = 100;
+    calm.stock.stone = 20;
+    const sig = { crowding: 1.0, shortage: () => 0 };
+    expect(foundingGrowthStep(makeInput(calm, { gain: 0, signals: sig }))).toBeNull();
+    calm.civic.prosperity = FOUNDING_PROSPERITY_THRESHOLD;
+    expect(foundingGrowthStep(makeInput(calm, { gain: 0, signals: sig }))?.spec.type).toBe("house");
   });
 
   it("structure choice is NEED-DRIVEN: crowding raises houses, food shortage raises farms", () => {

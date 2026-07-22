@@ -24,6 +24,7 @@
  */
 
 import type { BuildingProgram, StationKind } from "./stations.js";
+import { headOf } from "../../variations.js";
 
 /** One buildable structure — a registry row (StationDef/ClusterDef pattern). */
 export interface StructureSpec {
@@ -99,7 +100,7 @@ export function missingCosts(
 ): Record<string, number> {
   const have = new Map<string, number>();
   for (const [glyph, n] of Object.entries(stock)) {
-    const head = glyph.split(".")[0] ?? glyph;
+    const head = headOf(glyph);
     have.set(head, (have.get(head) ?? 0) + Math.max(0, n));
   }
   const missing: Record<string, number> = {};
@@ -132,7 +133,7 @@ export function spendCosts(
     let left = cost;
     // Plain stack first, then facted variants in stable key order.
     const keys = Object.keys(stock)
-      .filter((k) => (k.split(".")[0] ?? k) === glyph)
+      .filter((k) => headOf(k) === glyph)
       .sort((a, b) => (a === glyph ? -1 : b === glyph ? 1 : a < b ? -1 : 1));
     for (const k of keys) {
       if (left <= 0) break;
