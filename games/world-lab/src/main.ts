@@ -1213,6 +1213,16 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     // the avatar and the camera — the town walker hides until touchdown.
     embedTown.host.setDriveCamera(false);
     embedTown.host.setLocalAvatarHidden(true);
+    // SEAL INTERIORS AT MOUNT (view-distance-lod-tiers.md, Phase 1). A fresh
+    // host's renderer defaults interiorReveal=true, and the mount's first
+    // host-steps run inside streamGround BEFORE the ladder's per-frame clamp
+    // (setInteriorReveal below) lands. At orbit the frameless spirit reveal
+    // opens EVERY accessible room, which runs the resident economy for the
+    // whole in-window town and PROMOTES its households to live bodies — ~180
+    // skinned meshes + furniture built synchronously, then discarded a few
+    // frames later when the clamp re-seals. Start sealed; the per-frame clamp
+    // re-opens it at the structure rung / when riding.
+    embedTown.host.setInteriorReveal(false);
     // A proximity mount must not steal the board from the wilderness session
     // the walker is standing in (last-wins claim — hand it straight back).
     if (groundedIn === "wild") embedWild?.claimBoard?.();

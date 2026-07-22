@@ -1814,6 +1814,75 @@ function wantGlyphOf(session: QuestSession, need: CreatureNeed): string {
   return [...kept, ...(need.requiresState ? [need.requiresState] : [])].join(".");
 }
 
+// ── TEMP DESCENT PROBE (planet→city mount-freeze investigation) ──────────────
+// Measures the SYNCHRONOUS cost of a live-town mount: start()'s phase timings
+// plus the first frames' stream deltas — how many buildings/residents/furniture
+// materialize per frame and how much of the town the roof-reveal opened. Answers
+// whether the whole-town spirit "dollhouse" reveal floods interiors at orbit
+// (`reveal` climbs toward town size, +npc accumulates) or the cost is the
+// building SHELLS alone (b: large, +npc/reveal near zero). In the browser
+// console: `__descendProbe` (live object) or `__descendProbe.dump()`.
+// REMOVE once the mount-scope fix lands.
+interface DescendProbeFrameRec {
+  n: number; ms: number; buildings: number | null;
+  residentsIn: number; residentsOut: number; furnitureIn: number;
+  revealed: number; spirit: boolean;
+}
+interface DescendProbeRec {
+  key: string; totalStartMs: number; phases: Record<string, number>;
+  frames: DescendProbeFrameRec[]; left: number; dump(): string;
+}
+const DESCEND_PROBE_FRAMES = 300;
+let descendProbe: DescendProbeRec | null = null;
+const descendNow = (): number =>
+  typeof performance !== "undefined" ? performance.now() : 0;
+
+/** Arm a fresh probe for a town mount; returns a phase-marking handle (null off
+ *  a town session, so standalone/wilderness boots don't publish noise). */
+function descendProbeArm(key: string | null): { mark(name: string): void } | null {
+  if (!key) return null;
+  const t0 = descendNow();
+  let last = t0;
+  const rec: DescendProbeRec = {
+    key, totalStartMs: 0, phases: {}, frames: [], left: DESCEND_PROBE_FRAMES,
+    dump() {
+      const head = `descent[${this.key}] start ${this.totalStartMs}ms ` +
+        Object.entries(this.phases).map(([k, v]) => `${k}:${v}`).join(" ");
+      const rows = this.frames.map((f) =>
+        `#${f.n} ${f.ms}ms b:${f.buildings ?? "-"} +npc:${f.residentsIn} -npc:${f.residentsOut} ` +
+        `furn:${f.furnitureIn} reveal:${f.revealed}${f.spirit ? " S" : ""}`);
+      return [head, ...rows].join("\n");
+    },
+  };
+  descendProbe = rec;
+  (globalThis as unknown as Record<string, unknown>).__descendProbe = rec;
+  return {
+    mark(name: string) {
+      const now = descendNow();
+      rec.phases[name] = Math.round((now - last) * 10) / 10;
+      last = now;
+      rec.totalStartMs = Math.round((now - t0) * 10) / 10;
+    },
+  };
+}
+
+/** Record one frame()'s stream deltas into the live probe (first N frames). */
+function descendProbeFrame(
+  f: { buildings: unknown[] | null; add: unknown[]; remove: unknown[]; addObjects: unknown[] },
+  revealed: number, spirit: boolean, ms: number,
+): void {
+  const p = descendProbe;
+  if (!p || p.left <= 0) return;
+  p.left--;
+  p.frames.push({
+    n: DESCEND_PROBE_FRAMES - p.left, ms: Math.round(ms * 10) / 10,
+    buildings: f.buildings ? f.buildings.length : null,
+    residentsIn: f.add.length, residentsOut: f.remove.length,
+    furnitureIn: f.addObjects.length, revealed, spirit,
+  });
+  if (p.left === 0 && typeof console !== "undefined") console.log("[descent-probe]\n" + p.dump());
+}
+
 export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const { canvas, presenter } = deps;
   // Free client-side TTS for in-game characters. NPC dialogue is voiced even
@@ -9663,6 +9732,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // door) stay embodied regardless; the resident model exempts them.
             const occupiedId = buildingAt(state, meTown.x, meTown.y)?.id ?? null;
             const revealed = townHost.revealedBuildings();
+            const _dpT0 = descendNow(); // TEMP descent probe
             const f = session.town.stage.frame(
               { x: meTown.x, y: meTown.y },
               session.townClock,
@@ -9749,6 +9819,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               session.lastDrive.set(e.npcId, "clock");
               townHost.setNpcErrand(e.npcId, errand);
             }
+            descendProbeFrame(f, revealed.size, spiritNow(), descendNow() - _dpT0); // TEMP descent probe
           }
         }
         // DEVICES (§5) are TAP-to-toggle, not carry: a completed pick-dwell flips
@@ -10747,13 +10818,21 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cohortSweepT = 0; // ...and the cohort tier sweeps from zero too (④)
     cohortWalkerLive.clear(); // stale walker records never survive a session
     presenter.sessionStarted(sess);
-    buildHost(sess);
+    const _dp = descendProbeArm(sess.town ? (sess.town.plan.key ?? "town") : null); // TEMP descent probe
+    buildHost(sess);                       _dp?.mark("buildHost");
     seedSmallItems(sess); // grabbable resource props (world ready after buildHost)
+    _dp?.mark("seedSmallItems");
     stockContainers(sess); // stores: openable good boxes holding grabbable goods (bug #5)
+    _dp?.mark("stockContainers");
     seedTownFauna(sess); // sheep at the weaver, orchards at the farms (chain scenery)
+    _dp?.mark("seedTownFauna");
     seedWilderness(sess); // trees/rocks (material containers) + possessable locals
+    _dp?.mark("seedWilderness");
     seedSettlers(sess); // the founding group camped at an age-0 town (city-founding ②)
+    _dp?.mark("seedSettlers");
     if (opts.dollhouse !== undefined) enterDollhouse(sess, opts.dollhouse);
+    if (_dp && typeof console !== "undefined") // TEMP descent probe
+      console.log(`[descent-probe] armed ${descendProbe?.key} — start ${descendProbe?.totalStartMs}ms`, descendProbe?.phases);
   }
 
   /** The dollhouse's house: by index, else the roomiest (it fits the beds) —

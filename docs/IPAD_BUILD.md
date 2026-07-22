@@ -58,20 +58,53 @@ above, so the native project stays disposable.
 ## Releasing
 
 You do **not** need a Mac. iOS apps can only be built by Xcode, but the macOS
-GitHub runner provides it.
+GitHub runner provides it. The workflow has two targets, via the `distribution`
+input.
+
+### Sideloadly (default, no Apple secrets)
+
+The current delivery path. Run **Actions → Release AAC iPad → Run workflow**
+with `distribution = sideloadly-unsigned`. It builds and archives the app
+unsigned, packages it into `AivotaAAC-unsigned.ipa`, and uploads it as a
+workflow artifact. **No App Store Connect setup, no secrets, not even a paid
+developer account** are required on our side.
+
+Send that `.ipa` to the tester. They install it with **Sideloadly**
+(<https://sideloadly.io>) on their own Windows/Mac: it re-signs the `.ipa` with
+*their* Apple ID and installs over USB. This is why the `.ipa` can be unsigned —
+our signature would be stripped and replaced anyway.
+
+Tester-side caveats:
+
+- A **free** Apple ID works, but the app stops launching after **7 days** and
+  must be re-installed (a paid developer Apple ID lasts a year).
+- After the first install, on the iPad: **Settings → General → VPN & Device
+  Management → Trust** the developer profile, or the app won't open.
+- "Updating" = you produce a newer `.ipa` and they sideload it again.
+
+### TestFlight (signed, for later)
+
+Once the app is proven and you want managed beta distribution instead of
+per-device Sideloadly installs:
 
 1. Create the app record in App Store Connect with bundle id `com.aivota.aac`.
 2. Add the four repository secrets listed in the workflow header
    (`APPLE_TEAM_ID`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`,
    `APP_STORE_CONNECT_KEY_P8`).
-3. Run **Actions → Release AAC iPad → Run workflow**. Leave *upload* unchecked
-   for a build-only smoke test; the IPA is attached as an artifact.
-4. When it's green, re-run with *upload* checked, then add testers in
-   App Store Connect → TestFlight.
+3. Run the workflow with `distribution = testflight-signed`.
 
-Internal testers (members of your App Store Connect team) get builds
-immediately. External testers require a one-time Beta App Review, usually
-under 48 hours.
+The tester installs Apple's **TestFlight** app, then installs the build through
+it. Internal testers (your App Store Connect team) get builds immediately;
+external testers need a one-time Beta App Review, usually under 48 hours.
+
+### Gotcha: Capacitor 8 defaults to SPM, which has no `.xcworkspace`
+
+`cap add ios` in Capacitor 8 defaults to **Swift Package Manager**, whose
+template ships no `App.xcworkspace` and no Podfile — archiving with
+`-workspace App.xcworkspace` then fails with *"App.xcworkspace does not
+exist."* The workflow forces the CocoaPods template with
+`npx cap add ios --packagemanager CocoaPods` and asserts the workspace exists
+before archiving. If you ever regenerate the project by hand, use the same flag.
 
 ## Updates
 
