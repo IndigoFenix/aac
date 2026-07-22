@@ -73,13 +73,33 @@ jobs:
         run: npm run ios:build
 
       # `ios/` is gitignored; generate it fresh from the Capacitor template.
+      #
+      # --packagemanager CocoaPods is REQUIRED. Capacitor 8 defaults `cap add`
+      # to Swift Package Manager (see @capacitor/cli: the default template is
+      # ios-spm-template.tar.gz), and the SPM template ships NO standalone
+      # App.xcworkspace and NO Podfile — so the "Archive (unsigned)" step below,
+      # which builds `-workspace App.xcworkspace`, fails with "App.xcworkspace
+      # does not exist." The CocoaPods template restores the workspace.
+      # Capacitor then detects the package manager by artifact (absence of
+      # CapApp-SPM/ ⇒ CocoaPods), so `cap sync` runs `pod install`.
       - name: Generate iOS project
-        run: npx cap add ios
+        run: npx cap add ios --packagemanager CocoaPods
 
-      # Copies the web bundle in, installs CocoaPods, then applies our
+      # Copies the web bundle in, runs `pod install`, then applies our
       # Info.plist customizations. See scripts/ios-configure.mjs.
       - name: Sync + configure iOS project
         run: npm run ios:sync
+
+      # Fail here with a clear message rather than deep inside xcodebuild if the
+      # workspace is missing — the symptom of an SPM project sneaking back in.
+      - name: Verify Xcode workspace exists
+        run: |
+          if [ ! -d ios/App/App.xcworkspace ]; then
+            echo "::error::ios/App/App.xcworkspace was not generated — Capacitor produced an SPM project. Check that 'Generate iOS project' used --packagemanager CocoaPods and that pod install ran."
+            ls -la ios/App || true
+            exit 1
+          fi
+          echo "Found ios/App/App.xcworkspace."
 
       # Stamp the marketing version from package.json for traceability. The
       # build number is the run number. Neither is required for sideloading,
