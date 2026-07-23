@@ -1582,25 +1582,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // player one level deep here gives YouTube a valid origin/referrer. The
   // outer shell drives it via postMessage. Public (reflects only a videoId).
   app.get("/api/aac/youtube/embed", async (req, res) => {
-    const { renderYoutubeEmbedPage, isValidYoutubeVideoId } = await import("./services/youtube/youtube-embed-page");
+    // Log every hit with the framing context so a 502/blank-iframe can be
+    // diagnosed from the server logs (Render/Lambda stdout) instead of guessing.
+    // The origin/referer tell us WHICH shell framed us; host confirms the
+    // request reached this backend at all.
     const videoId = req.query.v;
-    if (!isValidYoutubeVideoId(videoId)) {
-      return res.status(400).type("html").send("<!DOCTYPE html><title>Invalid video</title>");
-    }
-    // Replace the global X-Frame-Options: SAMEORIGIN (helmet frameguard) with a
-    // frame-ancestors allowlist so the app:// / capacitor:// shells — and
-    // localhost dev servers — may frame this page. Mirrors games-static.ts.
-    const devAncestors =
-      process.env.NODE_ENV === "production"
-        ? ""
-        : " http://localhost:* http://127.0.0.1:*";
-    res.removeHeader("X-Frame-Options");
-    res.setHeader(
-      "Content-Security-Policy",
-      `frame-ancestors 'self' app: capacitor: https://localhost${devAncestors}`,
+    console.log(
+      "[youtube/embed] hit",
+      JSON.stringify({
+        v: typeof videoId === "string" ? videoId : typeof videoId,
+        origin: req.headers.origin ?? null,
+        referer: req.headers.referer ?? null,
+        host: req.headers.host ?? null,
+        ua: (req.headers["user-agent"] ?? "").slice(0, 80),
+      }),
     );
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    return res.type("html").send(renderYoutubeEmbedPage(videoId));
+    try {
+      const { renderYoutubeEmbedPage, isValidYoutubeVideoId } = await import(
+        "./services/youtube/youtube-embed-page"
+      );
+      if (!isValidYoutubeVideoId(videoId)) {
+        console.warn("[youtube/embed] rejected invalid videoId:", videoId);
+        return res.status(400).type("html").send("<!DOCTYPE html><title>Invalid video</title>");
+      }
+      // Replace the global X-Frame-Options: SAMEORIGIN (helmet frameguard) with
+      // a frame-ancestors allowlist so the app:// / capacitor:// shells — and
+      // localhost dev servers — may frame this page. Mirrors games-static.ts.
+      const devAncestors =
+        process.env.NODE_ENV === "production"
+          ? ""
+          : " http://localhost:* http://127.0.0.1:*";
+      res.removeHeader("X-Frame-Options");
+      res.setHeader(
+        "Content-Security-Policy",
+        `frame-ancestors 'self' app: capacitor: https://localhost${devAncestors}`,
+      );
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      const html = renderYoutubeEmbedPage(videoId);
+      console.log(`[youtube/embed] served ${videoId} (${html.length} bytes)`);
+      return res.type("html").send(html);
+    } catch (err: any) {
+      // Without this catch an async throw becomes an unhandled rejection, which
+      // the serverless-http / Render proxy surfaces as an opaque 502 with no
+      // trace. Log it in full and return a real 500 instead.
+      console.error("[youtube/embed] FAILED for", videoId, "-", err?.stack || err?.message || err);
+      return res.status(500).type("html").send("<!DOCTYPE html><title>Embed error</title>");
+    }
   });
 
   // List videos in a YouTube playlist (RSS-backed). Public data; the client

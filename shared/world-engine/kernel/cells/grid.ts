@@ -97,7 +97,7 @@ interface GridCompiled {
   /** Integer-level vars (committed as whole numbers; whole-unit transport). */
   intVars: Set<string>;
   /** Computed flow-accumulation vars (rivers) — engine-filled, never rule-written. */
-  flowVars: { name: string; potential: string; source: number; block?: string; int: boolean; outletBelow?: number; outletEdge?: boolean }[];
+  flowVars: { name: string; potential: string; source: number; sourceField?: string; block?: string; int: boolean; outletBelow?: number; outletEdge?: boolean }[];
   /** Potential vars that, when changed, require flow recomputation. */
   flowPotentials: Set<string>;
 }
@@ -129,7 +129,8 @@ function compile(spec: SystemSpec): GridCompiled {
   const sourceVars = new Set(sensors.map(s => s.of));
   const maxSensorRadius = sensors.reduce((m, s) => Math.max(m, s.radius), 0);
   const flowVars = (spec.vars ?? []).filter(v => v.flow).map(v => ({
-    name: v.name, potential: v.flow!.potential, source: v.flow!.source ?? 1, block: v.flow!.block, int: !!v.int,
+    name: v.name, potential: v.flow!.potential, source: v.flow!.source ?? 1, sourceField: v.flow!.sourceField,
+    block: v.flow!.block, int: !!v.int,
     outletBelow: v.flow!.outletBelow, outletEdge: v.flow!.outletEdge,
   }));
   const flowPotentials = new Set(flowVars.map(f => f.potential));
@@ -434,7 +435,11 @@ function computeFlow(grid: CellGrid, fv: GridCompiled['flowVars'][number]): Floa
   // Route over the FILLED surface; the terrain field itself is never touched.
   const pot = fillDepressions(grid, raw, blk, fv.outletBelow, !!fv.outletEdge) ?? raw;
   const flow = new Float64Array(n);
-  for (let i = 0; i < n; i++) flow[i] = (blk && blk[i] > 0.5) ? 0 : fv.source;
+  // Per-cell runoff (spec `flow.sourceField`): a cell contributes its share of
+  // the RAIN that falls on it, not a flat unit — see the spec doc. Grids that
+  // don't carry the field keep uniform sources.
+  const srcF = fv.sourceField ? grid.fields[fv.sourceField] : undefined;
+  for (let i = 0; i < n; i++) flow[i] = (blk && blk[i] > 0.5) ? 0 : fv.source * (srcF ? srcF[i] : 1);
   const nb = nbScratch(grid);
 
   // Flat resolution: effective potential = pot + ε × (BFS hops from the

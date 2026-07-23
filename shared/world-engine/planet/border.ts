@@ -282,6 +282,9 @@ export function borderTowns(
     occupied,
     eligible,
   };
+  // Parent runoff passes through like ore (refine.ts's rule): the band's
+  // local drainage re-solves at the parent's rainfall density.
+  const parentRunoff = built.grid.fields.runoff;
   const prep = prepareSubstrate({
     cols, rows,
     height,
@@ -289,6 +292,9 @@ export function borderTowns(
     founding,
     settle: true,
     rain: built.spec.rain,
+    runoff: parentRunoff
+      ? (x, y) => parentRunoff[cellAt(dirs[y * cols + x]!)]!
+      : undefined,
   });
 
   // ── BUDGET: density semantics, exactly the region tier's rescale ─────────

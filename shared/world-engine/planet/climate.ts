@@ -10,6 +10,14 @@
 // far too dry, and snow was elevation-only (no ice caps). Climate adds
 // rain-fed fertility and freezes the poles.
 //
+// The rain field also FEEDS THE RIVERS: planet-game.ts computes these fields
+// BEFORE the substrate settles (climate needs only heights, which the settle
+// never moves) and seeds the per-cell rain — normalized to land-mean 1 — as
+// the `runoff` field the river var reads as its flow `sourceField`. So
+// accumulation measures upstream rainfall, not bare catchment area, and the
+// carved/green/founded world downstream of it is climate-shaped. Region and
+// border charts inherit the parent's runoff like ore (refine.ts/border.ts).
+//
 // The model (v1, axis = +Y — matches the cloud system's convention in
 // space/cloud-field.ts, so ground climate and the synoptic cloud deck agree
 // on where the equator is):

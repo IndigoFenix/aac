@@ -169,8 +169,14 @@ export interface VarSpec {
    *  so water reaching the boundary flows off it. OFF by default, and the default
    *  is the honest one: an authored standalone world is not a window, and draining
    *  its rim would quietly re-plumb terrain someone designed. A closed sphere has
-   *  no edge, so this never applies there. */
-  flow?: { potential: string; source?: number; block?: string; outletBelow?: number; outletEdge?: boolean };
+   *  no edge, so this never applies there.
+   *
+   *  `sourceField` names a per-cell RUNOFF multiplier field: each cell contributes
+   *  `source × field[c]` instead of a uniform `source`, so accumulation measures
+   *  upstream RAINFALL rather than bare catchment area (dense rivers in wet
+   *  country, sparse in deserts). A grid that doesn't carry the field falls back
+   *  to uniform sources — the field is an offer, not a requirement. */
+  flow?: { potential: string; source?: number; sourceField?: string; block?: string; outletBelow?: number; outletEdge?: boolean };
 }
 
 export interface ClockSpec {

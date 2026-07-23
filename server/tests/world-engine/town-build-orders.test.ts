@@ -165,3 +165,46 @@ describe("refusals — named, never generic", () => {
     ).toEqual([]);
   });
 });
+
+describe("point-steered ordering ('build + house + here') — near ranks the slot lattice", () => {
+  const spec = resolveStructure(TOWN_PLAY_STRUCTURES, "house")!;
+  const base = {
+    seed: SEED, key: KEY, footprint: spec.footprint, type: spec.type,
+    occupied: [], claimedSlots: new Set<number>(), max: 8,
+  };
+  const centerOf = (c: { dx: number; dy: number; w: number; h: number }) =>
+    ({ x: c.dx + c.w / 2, y: c.dy + c.h / 2 });
+
+  it("a near point at a far candidate's lot makes THAT lot rank first — point-steered, not point-exact", () => {
+    const legacy = foundingOptions(base);
+    expect(legacy.length).toBeGreaterThan(1);
+    const target = legacy[legacy.length - 1]!;
+    const steered = foundingOptions({ ...base, near: centerOf(target) });
+    expect(steered[0]).toEqual(target);
+    // Same feasible SET — steering permutes, never invents or drops lots.
+    const key = (c: { slot: number }) => c.slot;
+    expect([...steered].map(key).sort((a, b) => a - b)).toEqual(
+      [...legacy].map(key).sort((a, b) => a - b),
+    );
+  });
+
+  it("is deterministic — the same near point ranks the same list", () => {
+    const target = foundingOptions(base)[1]!;
+    const a = foundingOptions({ ...base, near: centerOf(target) });
+    const b = foundingOptions({ ...base, near: centerOf(target) });
+    expect(a).toEqual(b);
+  });
+
+  it("zoning still outranks distance: matching-zone ground beats nearer open ground", () => {
+    const legacy = foundingOptions(base);
+    const far = legacy[legacy.length - 1]!;
+    const close = legacy[0]!;
+    const fc = centerOf(far);
+    const steered = foundingOptions({
+      ...base,
+      near: centerOf(close), // aim at the close open lot…
+      zoning: (x, y) => (Math.hypot(x - fc.x, y - fc.y) < 2 ? "match" : "open"),
+    });
+    expect(steered[0]).toEqual(far); // …the zoned lot still wins the ranking
+  });
+});

@@ -177,6 +177,11 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
   const detailOriginS = Math.floor((params.uMin * radius) / DETAIL_TILE_M) * DETAIL_TILE_M;
   const detailOriginT = Math.floor((params.vMin * radius) / DETAIL_TILE_M) * DETAIL_TILE_M;
 
+  // This chunk's vertex spacing in surface metres (gnomonic stretch ≤ √3 —
+  // near enough for a paint-width clamp). The river recolor widens thinner
+  // channels to this so they stay visible on coarse LODs.
+  const vertSpanM = (Math.max(params.uMax - params.uMin, params.vMax - params.vMin) / (N - 1)) * radius;
+
   const dir: [number, number, number] = [0, 0, 0];
   const rgb: [number, number, number] = [0, 0, 0];
   const mat: MaterialWeights = [0, 0, 0];
@@ -215,6 +220,11 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       abs[idx + 1] = dy * r;
       abs[idx + 2] = dz * r;
       surface.colorAt(h, dir, rgb);
+      // Rivers are PAINT on the terrain, not draped geometry — the colour
+      // moves with the mesh at every LOD (see surface.riverTintAt). Pass this
+      // chunk's vertex spacing so a channel thinner than the grid still holds
+      // a visible line at coarse LODs.
+      if (!isOcean && surface.riverTintAt) surface.riverTintAt(dir, vertSpanM * 0.75, rgb);
       colors[idx + 0] = rgb[0];
       colors[idx + 1] = rgb[1];
       colors[idx + 2] = rgb[2];

@@ -79,6 +79,10 @@ const ROAD_COLOR = "#c9b487";
 /** World-Y the road ribbons sit at — above the grid (0.01), below the border
  *  (0.03), so they read as paint on the field without fighting its depth. */
 const ROAD_Y = 0.02;
+/** CONSTRUCTION SITE marking (city-founding): packed-earth fill inside a
+ *  darker stake-line border — matte ground paint, distinct from road tan. */
+const SITE_FILL_COLOR = "#a08a66";
+const SITE_EDGE_COLOR = "#6f5a40";
 
 // Structure geometry. World units are METERS — the default avatar is a 1.8 m
 // capsule, so buildings use real-house dimensions: 3 m storeys (walls reach the
@@ -1714,6 +1718,13 @@ export class World3DRenderer {
    *  state (state.ground), which the constructor hasn't seen yet. */
   private pendingRoads?: RoadPath[];
   private pendingRoadColor?: string;
+  /** CONSTRUCTION SITES (city-founding): the marked-plot set, held until the
+   *  next render like roads (ground sampler) but REPLACEABLE — sites come
+   *  and go with orders and completions. */
+  private pendingSites?: Array<{ id: string; x: number; y: number; w: number; h: number }>;
+  private siteMeshes: { group: THREE.Group; geoms: THREE.BufferGeometry[] } | null = null;
+  private siteFillMat?: THREE.Material;
+  private siteEdgeMat?: THREE.Material;
   /** The playable field mesh + its motion grid (buildGround). On an
    *  irregular world the field CONFORMS to the terrain on the first render
    *  (same deferral as roads); flat worlds keep the y=0 plane untouched. */
@@ -1965,6 +1976,68 @@ export class World3DRenderer {
       this.scene.add(mesh);
       this.disposables.push(geom);
     }
+  }
+
+  /** Replace the CONSTRUCTION SITE markings (city-founding): flat staked-plot
+   *  paint over ordered-but-unbuilt lots — a darker border ribbon around a
+   *  packed-earth fill, draped on the ground like roads. Built on the next
+   *  render (the ground sampler rides the state). Empty array clears. */
+  setSites(sites: Array<{ id: string; x: number; y: number; w: number; h: number }>): void {
+    this.pendingSites = sites.map((s) => ({ ...s }));
+  }
+
+  /** Rebuild the site-marking meshes for the current set. Matte flat color
+   *  only (ground paint — never a specular surface). */
+  private buildSites(
+    sites: Array<{ x: number; y: number; w: number; h: number }>,
+    ground?: GroundSampler,
+  ): void {
+    if (this.siteMeshes) {
+      this.scene.remove(this.siteMeshes.group);
+      for (const g of this.siteMeshes.geoms) g.dispose();
+      this.siteMeshes = null;
+    }
+    if (!sites.length) return;
+    if (!this.siteFillMat) {
+      this.siteFillMat = roadMaterial(new THREE.Color(SITE_FILL_COLOR));
+      this.siteEdgeMat = roadMaterial(new THREE.Color(SITE_EDGE_COLOR));
+      this.disposables.push(this.siteFillMat, this.siteEdgeMat!);
+    }
+    const group = new THREE.Group();
+    const geoms: THREE.BufferGeometry[] = [];
+    const EDGE = 0.35; // stake-line border width, metres
+    const ribbon = (
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+      width: number,
+      mat: THREE.Material,
+    ): void => {
+      if (width <= 0.01) return;
+      const geom = buildRoadRibbon([a, b], width, ground);
+      if (!geom.getIndex()) {
+        geom.dispose();
+        return;
+      }
+      const mesh = new THREE.Mesh(geom, mat);
+      // A hair above the road plane so a site adjoining pavement wins the
+      // overlap; still ground paint (drawn early, under bodies).
+      mesh.position.y = 0.012;
+      mesh.renderOrder = -1;
+      group.add(mesh);
+      geoms.push(geom);
+    };
+    for (const s of sites) {
+      // Border: top/bottom span the full width; the flanks run between them.
+      ribbon({ x: s.x, y: s.y + EDGE / 2 }, { x: s.x + s.w, y: s.y + EDGE / 2 }, EDGE, this.siteEdgeMat!);
+      ribbon({ x: s.x, y: s.y + s.h - EDGE / 2 }, { x: s.x + s.w, y: s.y + s.h - EDGE / 2 }, EDGE, this.siteEdgeMat!);
+      ribbon({ x: s.x + EDGE / 2, y: s.y + EDGE }, { x: s.x + EDGE / 2, y: s.y + s.h - EDGE }, EDGE, this.siteEdgeMat!);
+      ribbon({ x: s.x + s.w - EDGE / 2, y: s.y + EDGE }, { x: s.x + s.w - EDGE / 2, y: s.y + s.h - EDGE }, EDGE, this.siteEdgeMat!);
+      // The packed-earth fill inside the stake line.
+      const cy = s.y + s.h / 2;
+      ribbon({ x: s.x + EDGE, y: cy }, { x: s.x + s.w - EDGE, y: cy }, s.h - EDGE * 2, this.siteFillMat!);
+    }
+    this.scene.add(group);
+    this.siteMeshes = { group, geoms };
   }
 
   /** A fullscreen radial vignette drawn on top of the scene. Its alpha is driven
@@ -2423,6 +2496,11 @@ export class World3DRenderer {
     if (this.pendingRoads) {
       this.buildRoads(this.pendingRoads, this.pendingRoadColor, state.ground);
       this.pendingRoads = undefined;
+    }
+    // Construction-site markings rebuild whenever the host replaced the set.
+    if (this.pendingSites) {
+      this.buildSites(this.pendingSites, state.ground);
+      this.pendingSites = undefined;
     }
     // So does the FIELD: an irregular world's ground plane conforms to the
     // terrain (a hillside reads as a hillside, not bodies floating over a
@@ -3723,6 +3801,7 @@ export function createWorld3DView(
     setTunables: (t) => renderer.setTunables({ camera: t.camera, comfort: t.comfort }),
     setDriveCamera: (on) => renderer.setDriveCamera(on),
     setSpiritFocus: (frame) => renderer.setSpiritFocus(frame),
+    setSites: (sites) => renderer.setSites(sites),
     setExternalCamera: (on) => renderer.setExternalCamera(on),
     setExternalCursor: (on) => renderer.setExternalCursor(on),
     setInteriorReveal: (on) => renderer.setInteriorReveal(on),

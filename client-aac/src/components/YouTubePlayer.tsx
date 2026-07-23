@@ -153,21 +153,45 @@ const RelayPlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(
     );
 
     useEffect(() => {
+      console.log(`[YouTubePlayer] relay loading ${src} (targetOrigin=${targetOrigin})`);
+      let gotReady = false;
       const onMessage = (ev: MessageEvent) => {
         // Only trust messages from our own relay iframe.
         if (ev.source !== iframeRef.current?.contentWindow) return;
         const d = ev.data;
         if (!d || typeof d !== "object") return;
-        if (d.type === "yt-ready") cbs.current.onReady?.();
-        else if (d.type === "yt-state") cbs.current.onPlayingChange?.(Boolean(d.playing));
-        else if (d.type === "yt-error") {
-          console.error(`[YouTubePlayer] relay playback error ${d.code} for video ${videoId}`);
+        if (d.type === "yt-diag") {
+          // Relay-page diagnostics (boot/api-ready/ready/error) with the
+          // referrer/origin context it presents to YouTube.
+          console.log(`[YouTubePlayer] relay diag:${d.tag}`, d.info);
+        } else if (d.type === "yt-ready") {
+          gotReady = true;
+          cbs.current.onReady?.();
+        } else if (d.type === "yt-state") {
+          cbs.current.onPlayingChange?.(Boolean(d.playing));
+        } else if (d.type === "yt-error") {
+          console.error(
+            `[YouTubePlayer] relay playback error ${d.code} for video ${videoId} — ctx:`,
+            d.ctx,
+          );
           cbs.current.onError?.(d.code);
         }
       };
       window.addEventListener("message", onMessage);
-      return () => window.removeEventListener("message", onMessage);
-    }, [videoId, cbs]);
+      // If the relay never even posts a diag/ready, the page itself failed to
+      // load (bad route / 5xx / CSP) — distinct from a YouTube playback error.
+      const readyTimer = window.setTimeout(() => {
+        if (!gotReady) {
+          console.warn(
+            `[YouTubePlayer] relay: no ready/diag after 8s for ${videoId}. Relay page may not have loaded (check Network tab for ${src}).`,
+          );
+        }
+      }, 8000);
+      return () => {
+        window.removeEventListener("message", onMessage);
+        window.clearTimeout(readyTimer);
+      };
+    }, [videoId, cbs, src, targetOrigin]);
 
     return (
       <iframe
@@ -178,6 +202,7 @@ const RelayPlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(
         style={{ border: 0, width: "100%", height: "100%" }}
         allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
         title="YouTube video"
+        onLoad={() => console.log(`[YouTubePlayer] relay iframe loaded: ${src}`)}
       />
     );
   },

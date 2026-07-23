@@ -132,6 +132,10 @@ export interface WorldView {
    *  a town) reveals a building's interior with the footprint, clears with null.
    *  3D-only. */
   setSpiritFocus?(frame: { x: number; y: number; w: number; h: number } | null): void;
+  /** CONSTRUCTION SITES (city-founding): replace the marked-plot set — flat
+   *  ground markings over ordered-but-unbuilt lots (staked border + packed
+   *  earth), draped like roads. Empty array clears. 3D-only. */
+  setSites?(sites: Array<{ id: string; x: number; y: number; w: number; h: number }>): void;
   /** SPIRIT LADDER: opt this view's OWNER-mode camera writes off — an external
    *  rig owns the shared camera while the view keeps rendering. 3D-only. */
   setExternalCamera?(on: boolean): void;

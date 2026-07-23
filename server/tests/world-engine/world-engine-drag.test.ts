@@ -8,6 +8,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   createWorldState,
+  dropObject,
   tickWorld,
   type WorldState,
 } from "@shared/world-engine/engine.js";
@@ -74,5 +75,42 @@ describe("DragSampler (engine)", () => {
     walk(free, 120);
     walk(turbo, 120);
     expect(turbo.avatars["me"]!.x).toBeLessThanOrEqual(free.avatars["me"]!.x + 1e-9);
+  });
+});
+
+describe("RESERVED GROUND (city-founding construction sites)", () => {
+  const siteSpec = (): WorldSpec => ({
+    ...spec(),
+    objects: [{ id: "ball", x: 8, y: 20, shape: "circle", radius: 0.4, interactions: ["carry"] }],
+  });
+
+  it("a drop aimed inside a reserved lot lands just past the nearest edge", () => {
+    const state = createWorldState(siteSpec(), "me");
+    state.reservedGround = [{ x: 20, y: 10, w: 10, h: 8 }];
+    // Deep inside, nearest to the west edge → pushed out west of x=20.
+    dropObject(state, "ball", 22, 14);
+    const o = state.objects["ball"]!;
+    expect(o.x).toBeLessThan(20);
+    expect(o.y).toBe(14); // only the crossing axis moves
+  });
+
+  it("drops OUTSIDE the lot, and every drop with nothing reserved, land exactly where aimed", () => {
+    const state = createWorldState(siteSpec(), "me");
+    state.reservedGround = [{ x: 20, y: 10, w: 10, h: 8 }];
+    dropObject(state, "ball", 40, 30);
+    expect(state.objects["ball"]).toMatchObject({ x: 40, y: 30 });
+    const bare = createWorldState(siteSpec(), "me");
+    dropObject(bare, "ball", 22, 14);
+    expect(bare.objects["ball"]).toMatchObject({ x: 22, y: 14 });
+  });
+
+  it("reserved ground never slows or blocks a body walking across it", () => {
+    const open = createWorldState(spec(), "me");
+    const reserved = createWorldState(spec(), "me");
+    reserved.reservedGround = [{ x: 15, y: 15, w: 20, h: 10 }]; // spans the walk line
+    walk(open);
+    walk(reserved);
+    expect(reserved.avatars["me"]!.x).toBe(open.avatars["me"]!.x);
+    expect(reserved.avatars["me"]!.y).toBe(open.avatars["me"]!.y);
   });
 });

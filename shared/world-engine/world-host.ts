@@ -261,6 +261,10 @@ export interface WorldHost {
    *  zones compile into the engine's DragSampler (stride scale; slope
    *  composes on top). Empty array clears — free ground everywhere. */
   setDragZones(zones: Array<{ x: number; y: number; w: number; h: number; scale: number }>): void;
+  /** Replace the RESERVED GROUND (city-founding construction sites): flat
+   *  lot rects bodies cross freely but dropped items never land on
+   *  (engine dropObject nudges out). Empty array clears. */
+  setReservedGround(rects: Array<{ x: number; y: number; w: number; h: number }>): void;
   /** Add a STREAMED world object (furniture arriving with its house —
    *  engine.addWorldObject). False if the id already exists. */
   addObject(spec: ObjectSpec): boolean;
@@ -1187,6 +1191,13 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         }
         return scale;
       };
+    },
+    setReservedGround(rects) {
+      if (!rects.length) {
+        delete state.reservedGround;
+        return;
+      }
+      state.reservedGround = rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
     },
     addObject(spec) {
       return addWorldObject(state, spec);

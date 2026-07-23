@@ -374,6 +374,10 @@ export const ANNEX_FRONTAGE_CAP = 16;
 export const ANNEX_CLEARANCE = 1.0;
 /** Annexes per building — a cottage is not a palace. */
 export const MAX_ANNEXES = 3;
+/** Materials a PLAYER-ORDERED annex spends from the builder's stock
+ *  (city-founding ③ structure board) — about one room of the house's own
+ *  6-wood build cost. Auto-expansion keeps paying in banked prosperity. */
+export const ANNEX_COSTS: Readonly<Record<string, number>> = { wood: 2 };
 
 interface Rect {
   x: number;
@@ -585,6 +589,43 @@ export function requestAnnex(
   return { ok: true };
 }
 
+/** Pure feasibility of demolishRoom — the same rules, NO mutation (the
+ *  structure board pre-filters with this so it never shows a dead button).
+ *  `into` = the base-room merge host; null = an annex spec removal. */
+export function demolishCheck(
+  deltas: TownDeltas,
+  buildingKey: string,
+  plan: HouseRoomPlan,
+  roomId: string,
+): { ok: true; into: string | null } | Exclude<ConstructionResult, { ok: true }> {
+  const room = plan.rooms.find((r) => r.id === roomId);
+  if (!room) return { ok: false, reason: "no-room" };
+  if (room === plan.rooms[0]) return { ok: false, reason: "living" };
+
+  const d = deltas.get(buildingKey);
+  const annexMatch = /_a(\d+)$/.exec(roomId);
+
+  if (annexMatch && d?.annexes.some((a) => `_a${a.ord}` === `_a${annexMatch[1]}`)) {
+    // Annex: spec removal. Its door leaves with it (applyDelta cuts annex
+    // doors from the spec, never from the base plan).
+    return { ok: true, into: null };
+  }
+  // Base room: find the merge host among door-adjacent rooms — union
+  // must tile a rectangle (same span on the shared axis). NEVER the
+  // living room: growing rooms[0] would break the living-rect
+  // invariant every goods anchor hangs off.
+  const host = plan.rooms.find((r) => {
+    if (r === room || r === plan.rooms[0]) return false;
+    if (!shareDoor(room, r)) return false;
+    return rectUnionIsRect(room.rect, r.rect);
+  });
+  if (!host) return { ok: false, reason: "not-rect" };
+  // Connectivity: every surviving room must still reach the living room
+  // over the door graph with `room` merged into `host`.
+  if (!staysConnected(plan, roomId, host.id)) return { ok: false, reason: "disconnects" };
+  return { ok: true, into: host.id };
+}
+
 /**
  * Demolish one room of the (delta-applied) plan.
  *  - The living room refuses ("living").
@@ -601,33 +642,10 @@ export function demolishRoom(
   plan: HouseRoomPlan,
   roomId: string,
 ): { ok: true; stowed: Partial<Record<StationKind, number>> } | Exclude<ConstructionResult, { ok: true }> {
-  const room = plan.rooms.find((r) => r.id === roomId);
-  if (!room) return { ok: false, reason: "no-room" };
-  if (room === plan.rooms[0]) return { ok: false, reason: "living" };
-
-  const d = deltas.get(buildingKey);
+  const check = demolishCheck(deltas, buildingKey, plan, roomId);
+  if (!check.ok) return check;
   const annexMatch = /_a(\d+)$/.exec(roomId);
-  let into: string | null = null;
-
-  if (annexMatch && d?.annexes.some((a) => `_a${a.ord}` === `_a${annexMatch[1]}`)) {
-    // Annex: spec removal. Its door leaves with it (applyDelta cuts annex
-    // doors from the spec, never from the base plan).
-  } else {
-    // Base room: find the merge host among door-adjacent rooms — union
-    // must tile a rectangle (same span on the shared axis). NEVER the
-    // living room: growing rooms[0] would break the living-rect
-    // invariant every goods anchor hangs off.
-    const host = plan.rooms.find((r) => {
-      if (r === room || r === plan.rooms[0]) return false;
-      if (!shareDoor(room, r)) return false;
-      return rectUnionIsRect(room.rect, r.rect);
-    });
-    if (!host) return { ok: false, reason: "not-rect" };
-    // Connectivity: every surviving room must still reach the living room
-    // over the door graph with `room` merged into `host`.
-    if (!staysConnected(plan, roomId, host.id)) return { ok: false, reason: "disconnects" };
-    into = host.id;
-  }
+  const into = check.into;
 
   const stowed: Partial<Record<StationKind, number>> = {};
   deltas.mutate(buildingKey, (bd) => {
@@ -786,6 +804,13 @@ export interface FoundingOptionsInput {
   bound?: number;
   /** Candidates returned, best-first (default 3). */
   max?: number;
+  /** POINT-STEERED ordering (city-founding: "build + house + here"): rank
+   *  feasible lots by distance to this TOWN-LOCAL point instead of the
+   *  sequence's own center-out order. Point-steered, not point-exact — the
+   *  lot still comes from the street tree's slot lattice, so frontage,
+   *  door and walkability guarantees hold. Zoning precedence is untouched
+   *  (match still outranks open). Absent = byte-identical legacy order. */
+  near?: { x: number; y: number };
   /** ZONING (③, zoning.ts slotZoningFn): classify a lot's CENTER —
    *  "match" (inside a zone that admits this structure), "open" (unzoned
    *  ground — always admitted), "blocked" (zoned for another category:
@@ -905,6 +930,15 @@ export function foundingOptions(input: FoundingOptionsInput): FoundingCandidate[
       type: input.type, slot: k, dx: rect.x, dy: rect.y, w: rect.w, h: rect.h, door,
     };
     (grade === "match" ? matches : opens).push(c);
+  }
+  if (input.near) {
+    const n = input.near;
+    const d2 = (c: FoundingCandidate): number =>
+      (c.dx + c.w / 2 - n.x) ** 2 + (c.dy + c.h / 2 - n.y) ** 2;
+    const steer = (a: FoundingCandidate, b: FoundingCandidate): number =>
+      d2(a) - d2(b) || a.slot - b.slot;
+    matches.sort(steer);
+    opens.sort(steer);
   }
   return [...matches, ...opens].slice(0, max);
 }

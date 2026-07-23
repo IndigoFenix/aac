@@ -206,6 +206,12 @@ const L: Record<string, Lexeme> = {
   sleep: { w: "ישן", f: "ישנה", vmpl: "ישנים", vfpl: "ישנות", inf: "לישון" },
   wash: { w: "רוחץ", f: "רוחצת", vmpl: "רוחצים", vfpl: "רוחצות", inf: "לרחוץ" },
   talk: { w: "מדבר", f: "מדברת", vmpl: "מדברים", vfpl: "מדברות", inf: "לדבר" },
+  // City-founding ③ — the structure board's room words + the demolish verb.
+  break: { w: "שובר", f: "שוברת", vmpl: "שוברים", vfpl: "שוברות", inf: "לשבור" },
+  room: { w: "חדר", g: "m" },
+  bedroom: { w: "חדר שינה", g: "m", defw: "חדר השינה" },
+  store: { w: "מחסן", g: "m" },
+  workshop: { w: "סדנה", g: "f", plw: "סדנאות" },
 };
 
 function lex(head: string): Lexeme {

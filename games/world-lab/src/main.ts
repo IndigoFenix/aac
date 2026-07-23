@@ -65,6 +65,12 @@ import { createFlashWatch } from "./flash-watch";
 import { HdrProbePass } from "./hdr-probe";
 import type { CreatureTier, QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
 
+// LAG HUNT (perf-probes.ts): the dollhouse still stutters with the attention
+// system ruled out — the lab boots with every dormant probe LIVE by default
+// ([sim-blocks]/[frame-phase]/[render-blocks]/[trip-emit]/…). Silence them at
+// runtime with `globalThis.__perfProbes = false` in the console.
+(globalThis as { __perfProbes?: boolean }).__perfProbes = true;
+
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const select = $<HTMLSelectElement>("world-select");
 const reloadBtn = $<HTMLButtonElement>("reload");
@@ -1656,6 +1662,7 @@ function ensureRiverNet(b: CelestialBody): RiverRibbons | null {
   try {
     const net = createRiverRibbons(b);
     riverNets.set(b.id, net);
+    net?.nations(nationsOn); // born into the current layer state, like roads
     return net;
   } catch (err) {
     console.warn(`rivers ${b.id} failed:`, err);
@@ -1830,6 +1837,7 @@ let nationsOn = false;
 function applyNations(): void {
   nationsBtn.setAttribute("aria-pressed", String(nationsOn));
   for (const net of roadNets.values()) net?.nations(nationsOn);
+  for (const net of riverNets.values()) net?.nations(nationsOn); // sky-ribbon river debug overlay
   if (historyNet) historyEl.style.display = nationsOn ? "block" : "none";
   retintBeacons(); // the signature carries nationsOn, so this repaints
 }

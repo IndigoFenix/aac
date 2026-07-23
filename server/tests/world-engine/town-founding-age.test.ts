@@ -121,8 +121,8 @@ describe("the town scope's spec gate (city-founding fields)", () => {
   });
 });
 
-describe("watched growth: scaffold → doored building (the completion swap)", () => {
-  it("an ordered build stands as a door-less scaffold, then swaps to doored rooms when its clock runs out", () => {
+describe("watched growth: marked site → doored building (the completion swap)", () => {
+  it("an ordered build stands as a flat SITE marking, then swaps to doored rooms when its clock runs out", () => {
     const config = {
       seed: 11, days: 0, questCount: 0, key: "frontier",
       startPop: 5, stock: { wood: 30, stone: 10 },
@@ -141,16 +141,19 @@ describe("watched growth: scaffold → doored building (the completion swap)", (
       color: spec.color, program: spec.program, jobs: 0, foundedOrd: b.ord,
     });
     const at = { x: play.stage.center.x, y: play.stage.center.y };
+    // Mid-build: NO wall shell — a marked plot (construction site), which
+    // the host paints flat and reserves against drops.
     const f0 = play.stage.frame(at, 0, () => null);
-    const scaffold = f0.buildings!.find((x) => x.id === "w_0");
-    expect(scaffold).toBeDefined();
-    expect(scaffold!.doorways).toHaveLength(0); // walls first — no door yet
-    // The build clock passes — the same frame swaps scaffold for real
+    expect((f0.buildings ?? []).find((x) => x.id === "w_0")).toBeUndefined();
+    const marked = (f0.sites ?? []).find((s) => s.id === "site_w_0");
+    expect(marked).toMatchObject({ w: b.w, h: b.h, type: "house" });
+    // The build clock passes — the same frame swaps the site for real
     // DOORED rooms (the doorless-box-forever failure this test pins).
     const f1 = play.stage.frame(at, 0.6 * FOOD_DAY_SEC, () => null);
     const front = f1.buildings!.find((x) => x.id === "w_0");
     expect(front).toBeDefined();
     expect(front!.doorways.length).toBeGreaterThan(0);
+    expect(f1.sites).toEqual([]); // the marking leaves with the swap
   });
 });
 

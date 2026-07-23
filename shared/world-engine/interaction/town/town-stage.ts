@@ -101,12 +101,30 @@ export interface TownStageOpts {
   registry?: WorkstationRegistry;
 }
 
+/** A CONSTRUCTION SITE (city-founding): an ordered-but-unbuilt lot. A
+ *  marked plot, NOT a structure — flat ground marking in the renderer,
+ *  reserved ground in the engine (walk through, never drop on), swapped
+ *  for the real doored building at completion. World coords. */
+export interface ConstructionSite {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** StructureSpec type ("house", "farm") — "annex" for a house's growth rect. */
+  type: string;
+}
+
 export interface TownStageFrame {
   /** Full replacement set for host.setBuildings — null when unchanged.
    *  BUILDINGS, not flattened walls: the volumes carry the roofs, the
    *  see-inside fade and the indoor-avatar cull; the host lowers them
    *  into wall/door structures itself. */
   buildings: BuildingSpec[] | null;
+  /** Full replacement set of CONSTRUCTION SITES — null when unchanged.
+   *  The host paints them (view setSites) and reserves their ground
+   *  (setReservedGround). */
+  sites: ConstructionSite[] | null;
   /** Residents entering the world (host.addNpc). */
   add: NpcSpec[];
   /** Residents leaving it (host.removeNpc). */
@@ -207,6 +225,11 @@ export interface TownStage {
      *  budget (STREET_NPCS). */
     crowdBudget?: number,
   ): TownStageFrame;
+  /** The ACTIVE construction sites right now (world coords) — the sim-side
+   *  query twin of the frame's `sites` push (reserved-ground checks read
+   *  this without waiting for a changed frame). Absent on composite
+   *  cluster stages. */
+  activeSites?(): ConstructionSite[];
   /** The streamer's CURRENT per-lot materialization — house lots by their
    *  plan `index`, work lots by their plan array position. THE single
    *  source of truth for the static-plan↔live handoff: a proxy hides iff
@@ -228,8 +251,6 @@ export interface TownStage {
   dropResidentBody?(id: string): void;
 }
 
-/** Construction-in-progress wall color (annex scaffolds + founded lots). */
-const SCAFFOLD_COLOR = "#b3a488";
 
 const houseBuilding = (
   center: { x: number; y: number },
@@ -404,12 +425,26 @@ export function* createTownStageSteps(
   const houseMode = new Map<number, "shell" | "full">();
   /** Construction-delta revision each house was last staged at. */
   const stagedRev = new Map<number, number>();
-  /** New annex rooms of a WATCHED house pass through a door-less
-   *  SCAFFOLD box until this townClock second — walls rise before the
-   *  door opens, so construction is visible, and no body can be inside
-   *  the rect while it materializes. */
-  const scaffoldUntil = new Map<string, number>();
+  /** New annex rooms of a WATCHED house stand as a marked SITE (flat
+   *  ground, no walls — city-founding "construction sites") until this
+   *  townClock second, then the doored room swaps in. The rect + owning
+   *  house ride along for the site emission and the furniture deferral. */
+  const scaffoldUntil = new Map<
+    string,
+    { until: number; rect: { x: number; y: number; w: number; h: number }; houseKey: string }
+  >();
   const SCAFFOLD_S = 30;
+  /** In-progress FOUNDED works' site markings, by plan work index. */
+  const workSites = new Map<number, ConstructionSite>();
+  /** Frame-over-frame site signature — sites emit on ANY change (including
+   *  the first frame of a restored in-progress build), never else. */
+  let lastSiteSig: string | null = null;
+  const annexSiteOf = (id: string, s: { rect: { x: number; y: number; w: number; h: number } }): ConstructionSite =>
+    ({ id: `site_${id}`, ...s.rect, type: "annex" });
+  const activeSites = (): ConstructionSite[] => [
+    ...workSites.values(),
+    ...[...scaffoldUntil.entries()].map(([id, s]) => annexSiteOf(id, s)),
+  ];
   const houseStagingOf = (h: TownHouse): HouseStaging => {
     const delta = opts.deltas?.get(`h_${h.index}`);
     const rooms = houseRoomPlan(center, h, delta).rooms;
@@ -486,26 +521,26 @@ export function* createTownStageSteps(
       // maps are positional) but registers nothing.
       workBuilt.set(i, true);
       workIds.set(i, []);
+      workSites.delete(i);
       return;
     }
     const done = workDoneAt(wk, tSec);
     workBuilt.set(i, done);
     workPlans[i] = buildingRoomPlan(center, i, wk, workProgramOf(wk));
     const ids: string[] = [];
+    workSites.delete(i);
     if (!done) {
-      // The scaffold: one door-less box over the lot, construction-colored.
-      const shell: BuildingSpec = {
-        id: `w_${i}`,
-        footprint: { x: center.x + wk.dx, y: center.y + wk.dy, w: wk.w, h: wk.h },
-        floors: 1,
-        stairs: false,
-        wallThickness: 0.4,
-        doorways: [],
-        color: SCAFFOLD_COLOR,
-      };
-      buildingById.set(shell.id, shell);
-      allBuildings.push({ id: shell.id, cx, cy });
-      ids.push(shell.id);
+      // The SITE (city-founding "construction sites"): a marked plot, not
+      // a structure — no walls registered, ground stays walkable; the
+      // host paints the marking and reserves the lot against drops.
+      workSites.set(i, {
+        id: `site_w_${i}`,
+        x: center.x + wk.dx,
+        y: center.y + wk.dy,
+        w: wk.w,
+        h: wk.h,
+        type: wk.type,
+      });
     } else {
       for (const room of workPlans[i]!.rooms) {
         buildingById.set(room.id, {
@@ -661,7 +696,11 @@ export function* createTownStageSteps(
         if (houseVisible(hs.house)) {
           for (const b of rebuilt.full) {
             if (!prevIds.has(b.id) && /_a\d+$/.test(b.id)) {
-              scaffoldUntil.set(b.id, tSec + SCAFFOLD_S);
+              scaffoldUntil.set(b.id, {
+                until: tSec + SCAFFOLD_S,
+                rect: { ...b.footprint },
+                houseKey: key,
+              });
             }
           }
         }
@@ -680,10 +719,17 @@ export function* createTownStageSteps(
         changed = true;
       }
     }
-    // Scaffold walls harden into real doored rooms as their time passes.
-    for (const [id, until] of scaffoldUntil) {
-      if (tSec >= until) {
+    // Annex sites harden into real doored rooms as their time passes — the
+    // room emits this frame, and the owning house REFURNISHES so the new
+    // room's deferred pieces stream in (remove-before-add, the rev-bump
+    // pattern).
+    for (const [id, s] of scaffoldUntil) {
+      if (tSec >= s.until) {
         scaffoldUntil.delete(id);
+        if (furnished.has(s.houseKey)) {
+          for (const o of furnitureOf.get(s.houseKey) ?? []) deltaRemoveObjects.push(o.id);
+          furnished.delete(s.houseKey);
+        }
         changed = true;
       }
     }
@@ -728,17 +774,26 @@ export function* createTownStageSteps(
         else houseMode.set(hs.house.index, next);
       }
     }
-    const scaffolded = (b: BuildingSpec): BuildingSpec =>
-      scaffoldUntil.has(b.id) ? { ...b, doorways: [], color: SCAFFOLD_COLOR } : b;
+    // An annex under its site window emits NO walls (the site marking is
+    // the construction's visible form — city-founding "construction sites").
     const buildings = changed
       ? [
           ...[...solid].map(id => buildingById.get(id)!),
           ...houseStagings.flatMap(hs => {
             const mode = houseMode.get(hs.house.index);
-            return mode === "full" ? hs.full.map(scaffolded) : mode === "shell" ? hs.shell : [];
+            return mode === "full"
+              ? hs.full.filter(b => !scaffoldUntil.has(b.id))
+              : mode === "shell" ? hs.shell : [];
           }),
         ]
       : null;
+    // SITES: emit the full set on ANY membership change (order landed,
+    // build completed, annex window opened/closed) — including the very
+    // first frame of a restored in-progress build.
+    const siteList = activeSites();
+    const siteSig = siteList.map(s => s.id).join("|");
+    const sites = siteSig !== lastSiteSig ? siteList : null;
+    lastSiteSig = siteSig;
 
     // FURNITURE: a house's interior fixtures follow the SAME roof-transparency
     // gate the residents use — present while the interior is ON SHOW (the player
@@ -773,7 +828,18 @@ export function* createTownStageSteps(
     }
     for (const id of wantFurnished) {
       if (furnished.has(id) || !furnitureOf.has(id)) continue;
-      addObjects.push(...furnitureOf.get(id)!);
+      // Pieces standing inside an ACTIVE annex site defer until the room's
+      // walls land (the expiry refurnish above re-adds them) — furniture
+      // never stands on the open marked ground.
+      const siteRects = [...scaffoldUntil.values()]
+        .filter(s => s.houseKey === id)
+        .map(s => s.rect);
+      const pieces = siteRects.length
+        ? furnitureOf.get(id)!.filter(
+            o => !siteRects.some(r => o.x >= r.x && o.x <= r.x + r.w && o.y >= r.y && o.y <= r.y + r.h),
+          )
+        : furnitureOf.get(id)!;
+      addObjects.push(...pieces);
       furnished.add(id);
     }
 
@@ -891,11 +957,11 @@ export function* createTownStageSteps(
           `ids=${errands.slice(0, 3).map(e => e.npcId).join(",")}`,
       );
     }
-    return { buildings, add, remove, errands, addObjects, removeObjects };
+    return { buildings, sites, add, remove, errands, addObjects, removeObjects };
   };
 
   return {
-    spec: cert.spec, center, roads, castSpawns, goods, trade, frame,
+    spec: cert.spec, center, roads, castSpawns, goods, trade, frame, activeSites,
     loadedLots: () => ({
       houses: new Set(houseMode.keys()),
       works: new Set(plan.works.map((_, i) => i).filter((i) => solid.has(`w_${i}`))),

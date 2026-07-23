@@ -64,6 +64,14 @@ export interface PlanetSurface {
   /** Unit planet-local direction the current runs at a direction, written into
    *  `out`; (0,0,0) where the water is still or dry. Tangent to the surface. */
   flowAt?(dir: Vec3, out: [number, number, number]): void;
+  /** RIVER RECOLOR (planet/rivers.ts attachRiverRelief installs this): blends
+   *  water colour into a vertex colour where `dir` lies within a channel of
+   *  the extracted river polylines. Painted into the TERRAIN mesh's own
+   *  colours, so it tracks the ground at every LOD by construction — the fix
+   *  for draped water burying/floating as the quadtree re-chords valleys.
+   *  `minHalfWidthM` is the mesh builder's vertex spacing: thin channels
+   *  widen to it (capped) so rivers survive coarse chunks. Absent = none. */
+  riverTintAt?(dir: Vec3, minHalfWidthM: number, rgb: [number, number, number]): void;
   /** Vertex color for an elevation at a direction (dir enables field-driven
    *  tinting — fertility greens, ore dust). Writes into `out`. */
   colorAt(h: number, dir: Vec3, out: [number, number, number]): void;

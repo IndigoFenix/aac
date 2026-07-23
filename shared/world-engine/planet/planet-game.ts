@@ -23,9 +23,10 @@ import { runSphereTectonics, type SphereTectonicWorld, type TectonicFrame } from
 import { bakeCellAuthors } from "../kernel/geology/sphere-tectonics";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics";
 import { prepareSubstrateOn } from "../kernel/civ/tri";
-import { climateFields, applyClimate } from "./climate";
+import { climateFields, applyClimate, type ClimateFields } from "./climate";
 import { applyEcology, biomePalette, DEFAULT_BIOSPHERE } from "./ecology";
 import { substrateSurface, type PlanetSurface, type PlanetPalette, type RGB } from "./surface";
+import { attachRiverRelief } from "./rivers";
 import { EARTHLIKE_BLUE, hexToLinear } from "./palettes";
 import { validateFields, type FieldSpec, type GroupSpec } from "../kernel/spec-schema";
 import { GEOLOGY_FIELDS } from "../kernel/civ/region-game";
@@ -215,7 +216,9 @@ export function rebuiltPlanetWorld(
 ): BuiltPlanet {
   const grid = deserializeGrid(gridJson);
   if (!grid) throw new Error("rebuiltPlanetWorld: the baked grid failed to deserialize");
-  return { spec, topo: grid.topo, grid, sites, surface: surfaceFor(spec, grid) };
+  const built: BuiltPlanet = { spec, topo: grid.topo, grid, sites, surface: surfaceFor(spec, grid) };
+  attachRiverRelief(built); // same fold as buildPlanetWorld — a rebuilt planet renders identically
+  return built;
 }
 
 /** Build the planet a `scope: "planet"` game plays in. */
@@ -236,6 +239,43 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
   });
   const authors = bakeCellAuthors(geology.world);
 
+  // LARGE-SCALE CLIMATE (climate.ts) — computed BEFORE the substrate settles,
+  // because the rivers drink it: the per-cell rain, normalized to land-mean 1,
+  // seeds the `runoff` field the river var reads as its flow `sourceField`.
+  // Accumulation then measures upstream RAINFALL, not bare catchment area —
+  // dense networks in wet country, sparse in deserts. The normalization makes
+  // it a pure REDISTRIBUTION (the planet's total water budget, and with it the
+  // shared watercourse thresholds, keep their calibration; `spec.rain` stays
+  // the global multiplier, and `wetness` — a constant factor — cancels here,
+  // acting on fertility as before). Climate needs only the pre-settle heights,
+  // and heights are static through the settle, so the SAME fields fold into
+  // fertility/ice afterwards.
+  let climate: ClimateFields | null = null;
+  let runoffAt: ((c: number) => number) | undefined;
+  if (spec.settle) {
+    const preHeight = new Float64Array(topo.n);
+    for (let c = 0; c < topo.n; c++) preHeight[c] = Math.max(0, Math.min(63, Math.round(authors.height(c))));
+    climate = climateFields({
+      topo,
+      height: preHeight,
+      seaHeight: SEA_HEIGHT,
+      metresPerUnit: (spec.relief * spec.radius) / (63 - SEA_HEIGHT),
+      radiusM: spec.radius,
+      meanTempC: spec.climate?.meanTempC,
+      wetness: spec.climate?.wetness,
+    });
+    let sum = 0, land = 0;
+    for (let c = 0; c < topo.n; c++) {
+      if (preHeight[c] >= SEA_HEIGHT) { sum += climate.rain[c]; land++; }
+    }
+    const mean = land > 0 ? sum / land : 0;
+    if (mean > 1e-9) {
+      const rain = climate.rain;
+      const inv = 1 / mean;
+      runoffAt = (c: number): number => rain[c] * inv;
+    }
+  }
+
   const prep = prepareSubstrateOn({
     topology: { kind: "cube-sphere", faceN: spec.topology.faceN },
     height: authors.height,
@@ -243,23 +283,14 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
     founding: spec.founding ?? PLANET_FOUNDING,
     settle: spec.settle,
     rain: spec.rain,
+    runoff: runoffAt,
   });
 
-  // LARGE-SCALE CLIMATE (climate.ts): rain/temperature fields fold into the
-  // settled substrate — rain-fed fertility, ice caps — then the founding
-  // scan re-runs so sites see the climate-adjusted crowds. A candidate
-  // whose center froze is no site at all.
-  if (spec.settle) {
-    const fields = climateFields({
-      topo,
-      height: prep.grid.fields.height,
-      seaHeight: SEA_HEIGHT,
-      metresPerUnit: (spec.relief * spec.radius) / (63 - SEA_HEIGHT),
-      radiusM: spec.radius,
-      meanTempC: spec.climate?.meanTempC,
-      wetness: spec.climate?.wetness,
-    });
-    applyClimate(prep.grid, fields, { seaHeight: SEA_HEIGHT });
+  // Fold the climate into the settled substrate — rain-fed fertility, ice
+  // caps — then the founding scan re-runs so sites see the climate-adjusted
+  // crowds. A candidate whose center froze is no site at all.
+  if (spec.settle && climate) {
+    applyClimate(prep.grid, climate, { seaHeight: SEA_HEIGHT });
     // BIOMES from the climate: forest / steppe / etc. compete for each cell
     // (ecology.ts). Writes grid.fields.biome; founding then reads a settled,
     // climated AND biomed substrate.
@@ -271,7 +302,11 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
 
   const surface = surfaceFor(spec, prep.grid);
 
-  return { spec, topo, grid: prep.grid, sites: spec.settle ? prep.sites : [], geology, surface };
+  const built: BuiltPlanet = { spec, topo, grid: prep.grid, sites: spec.settle ? prep.sites : [], geology, surface };
+  // Fold the river network back into the terrain: recolor + valley notch
+  // (rivers.ts). After surfaceFor so it wraps the finished surface.
+  attachRiverRelief(built);
+  return built;
 }
 
 // --- initial_focus -------------------------------------------------------------

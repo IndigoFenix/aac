@@ -95,7 +95,7 @@ describe("building-by-building growth through founded deltas", () => {
 });
 
 describe("visible construction on the stage (board words change the world)", () => {
-  it("an ordered building stands as a door-less scaffold, then completes into doored rooms + furniture on the clock", () => {
+  it("an ordered building stands as a marked SITE (no walls), then completes into doored rooms + furniture on the clock", () => {
     const site = foundSite({ seed: 77, at: { x: 100, y: 100 }, key: "outpost" });
     site.stock.wood = 40;
     site.stock.stone = 10;
@@ -112,20 +112,32 @@ describe("visible construction on the stage (board words change the world)", () 
       y: play.stage.center.y + c.dy + c.h / 2,
     };
 
-    // Mid-build: ONE door-less scaffold box on the lot; no furniture.
+    // Mid-build: a flat construction-site marking over the lot — NO walls
+    // registered (a marked plot, not a structure), no furniture.
     const f0 = play.stage.frame(at, 1);
-    const scaffold = (f0.buildings ?? []).find((b) => b.id === "w_0");
-    expect(scaffold).toBeDefined();
-    expect(scaffold!.doorways).toEqual([]);
+    expect((f0.buildings ?? []).find((b) => b.id === "w_0")).toBeUndefined();
+    const marked = (f0.sites ?? []).find((s) => s.id === "site_w_0");
+    expect(marked).toBeDefined();
+    expect(marked).toMatchObject({
+      x: play.stage.center.x + c.dx,
+      y: play.stage.center.y + c.dy,
+      w: c.w,
+      h: c.h,
+      type: "workshop",
+    });
+    expect(play.stage.activeSites!().map((s) => s.id)).toEqual(["site_w_0"]);
     expect(f0.addObjects).toEqual([]);
 
     // The build clock runs out: the SAME session swaps in the doored
-    // building and its furniture the frame the day passes.
+    // building and its furniture the frame the day passes — the site
+    // marking leaves with the swap.
     const done = play.stage.frame(at, spec.buildDays * FOOD_DAY_SEC + 1);
     const front = (done.buildings ?? []).find((b) => b.id === "w_0");
     expect(front).toBeDefined();
     expect(front!.doorways.length).toBeGreaterThan(0);
     expect(front!.color).toBe(spec.color);
+    expect(done.sites).toEqual([]); // membership changed — the empty set emits
+    expect(play.stage.activeSites!()).toEqual([]);
     expect(done.addObjects.length).toBeGreaterThan(0); // the counter/stock arrive
   });
 
@@ -151,9 +163,9 @@ describe("visible construction on the stage (board words change the world)", () 
     });
 
     const f = play.stage.frame({ x: center.x + b.dx + b.w / 2, y: center.y + b.dy + b.h / 2 }, 2);
-    const scaffold = (f.buildings ?? []).find((x) => x.id === "w_0");
-    expect(scaffold).toBeDefined();
-    expect(scaffold!.doorways).toEqual([]); // walls first — doors when done
+    // The site marking stands the frame the order lands — no wall shell.
+    expect((f.buildings ?? []).find((x) => x.id === "w_0")).toBeUndefined();
+    expect((f.sites ?? []).find((s) => s.id === "site_w_0")).toBeDefined();
   });
 });
 

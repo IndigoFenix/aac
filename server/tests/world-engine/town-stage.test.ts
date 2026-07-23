@@ -700,7 +700,7 @@ describe("trade v1.5 — a REAL partner, distance-priced rarity (trade.ts bindPa
 });
 
 describe("construction deltas: the stage re-plans a bumped house mid-session", () => {
-  it("annex → scaffold while watched → real doored room → refurnished, one frame each", () => {
+  it("annex → marked site while watched → real doored room → refurnished, one frame each", () => {
     const town = createTownWorld({
       economy: ECO,
       charter: { farmland: 420, ore_access: 0 },
@@ -729,22 +729,31 @@ describe("construction deltas: the stage re-plans a bumped house mid-session", (
     expect(opts.length).toBeGreaterThan(0);
     expect(requestAnnex(deltas, key, opts[0]!)).toEqual({ ok: true });
 
-    // The NEXT frame re-stages: the annex arrives as a door-less SCAFFOLD
-    // (the house is watched), and the furniture set is replaced in one
-    // frame — old ids out, the regenerated set in.
+    // The NEXT frame re-stages: the annex arrives as a marked SITE (the
+    // house is watched) — no walls yet, a flat construction plot on the
+    // growth rect — and the furniture set is replaced in one frame; pieces
+    // standing INSIDE the site rect defer until its walls land.
     const f1 = stage.frame(p, 1);
     expect(f1.buildings).not.toBeNull();
-    const scaffold = f1.buildings!.find(b => b.id === `${key}_a0`);
-    expect(scaffold).toBeDefined();
-    expect(scaffold!.doorways).toHaveLength(0);
+    expect(f1.buildings!.find(b => b.id === `${key}_a0`)).toBeUndefined();
+    const annexSite = (f1.sites ?? []).find(s => s.id === `site_${key}_a0`);
+    expect(annexSite).toBeDefined();
+    expect(annexSite).toMatchObject({ type: "annex" });
     for (const id of oldIds) expect(f1.removeObjects).toContain(id);
     expect(f1.addObjects.length).toBeGreaterThan(0);
+    const inSite = (o: { x: number; y: number }) =>
+      o.x >= annexSite!.x && o.x <= annexSite!.x + annexSite!.w &&
+      o.y >= annexSite!.y && o.y <= annexSite!.y + annexSite!.h;
+    expect(f1.addObjects.some(inSite)).toBe(false);
 
-    // After the scaffold time passes, the real DOORED room swaps in.
+    // After the site time passes, the real DOORED room swaps in, the site
+    // marking leaves, and the deferred pieces refurnish (remove → re-add).
     const f2 = stage.frame(p, 40);
     expect(f2.buildings).not.toBeNull();
     const real = f2.buildings!.find(b => b.id === `${key}_a0`);
     expect(real).toBeDefined();
     expect(real!.doorways.length).toBeGreaterThan(0);
+    expect((f2.sites ?? [])).toEqual([]);
+    expect(f2.addObjects.length).toBeGreaterThan(0); // the full set re-lands
   });
 });

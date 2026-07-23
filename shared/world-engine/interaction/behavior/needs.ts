@@ -447,6 +447,32 @@ export function decideNeeds(
   return best;
 }
 
+/**
+ * ON-THE-CLOCK DORMANCY (view-distance-lod-tiers.md step 2): how long a body whose
+ * decide just found nothing may sleep before anything could change the answer.
+ * The earliest meter crossing is an exact timer; a non-meter drive in the set
+ * (stock/mess — no closed-form timer) bounds the sleep at `capS`. `homeGraceLeftS`
+ * bounds it again while a walk-home grace is still pending: that check lives in
+ * the same decide slot, so a sleep armed past it left a commanded creature
+ * standing at its errand's endpoint until its next need fired ("went out and
+ * never came back") instead of walking home when the grace expired.
+ */
+export function needDormDueIn(
+  templates: readonly NeedTemplate[],
+  meterOf: (tplKey: string) => number,
+  capS: number,
+  homeGraceLeftS = Infinity,
+): number {
+  let dueIn = templates.some((t) => t.drive.kind !== "meter") ? capS : Infinity;
+  for (const tpl of templates) {
+    if (tpl.drive.kind !== "meter" || tpl.drive.rate <= 0) continue;
+    const left = (tpl.drive.threshold - meterOf(tpl.key)) / tpl.drive.rate;
+    if (left < dueIn) dueIn = Math.max(0, left);
+  }
+  if (!Number.isFinite(dueIn)) dueIn = capS;
+  return Math.min(dueIn, homeGraceLeftS);
+}
+
 // ---------------------------------------------------------------------------
 // Founding templates — FOOD (parameterized by good key; cloth etc. reuse the shapes)
 // ---------------------------------------------------------------------------

@@ -54,6 +54,29 @@ export function renderYoutubeEmbedPage(videoId: string): string {
       (function () {
         var VIDEO_ID = "${videoId}";
 
+        // ── Diagnostics ──────────────────────────────────────────────────
+        // Error 152/153 = YouTube didn't get a usable Referer. The values it
+        // keys off (document.referrer / location.origin) are visible only from
+        // inside THIS frame, so surface them: console (shows in the app's
+        // DevTools, subframe context) + posted to the parent so the client
+        // logs them too. If document.referrer here is empty or "app://aac",
+        // the referrer is being stripped before it reaches us.
+        var CTX = {
+          videoId: VIDEO_ID,
+          referrer: document.referrer,
+          href: location.href,
+          origin: location.origin,
+          ua: navigator.userAgent,
+        };
+        function diag(tag, extra) {
+          var payload = { tag: tag };
+          for (var k in CTX) payload[k] = CTX[k];
+          if (extra) for (var j in extra) payload[j] = extra[j];
+          try { console.log("[yt-embed] " + tag, JSON.stringify(payload)); } catch (e) {}
+          try { parent.postMessage({ type: "yt-diag", tag: tag, info: payload }, "*"); } catch (e) {}
+        }
+        diag("boot");
+
         // Origins allowed to command this player. The packaged shells plus any
         // localhost dev server and our own origin (web build frames same-origin).
         function parentAllowed(origin) {
@@ -100,6 +123,7 @@ export function renderYoutubeEmbedPage(videoId: string): string {
         });
 
         window.onYouTubeIframeAPIReady = function () {
+          diag("api-ready");
           player = new YT.Player("player", {
             videoId: VIDEO_ID,
             width: "100%",
@@ -116,13 +140,21 @@ export function renderYoutubeEmbedPage(videoId: string): string {
               fs: 0,
             },
             events: {
-              onReady: function () { toParent({ type: "yt-ready" }); },
+              onReady: function () { diag("ready"); toParent({ type: "yt-ready" }); },
               onStateChange: function (e) {
                 // PLAYING=1, PAUSED=2, ENDED=0
                 if (e.data === 1) toParent({ type: "yt-state", playing: true });
                 else if (e.data === 2 || e.data === 0) toParent({ type: "yt-state", playing: false });
               },
-              onError: function (e) { toParent({ type: "yt-error", code: e && e.data }); },
+              onError: function (e) {
+                var code = e && e.data;
+                // Include the referrer/origin context WITH the error so the one
+                // log line tells us whether it's a referrer problem (152/153) vs
+                // an embedding/removed problem (100/101/150), and what referrer
+                // we actually presented.
+                diag("error", { code: code });
+                toParent({ type: "yt-error", code: code, ctx: CTX });
+              },
             },
           });
         };

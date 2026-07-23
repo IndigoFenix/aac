@@ -15,7 +15,7 @@
 //
 // Determinism holds: the cluster is a pure function of its towns + offsets.
 
-import type { ClusterHouseCtx, ClusterPartner, TownStage, TownStageFrame } from "./town-stage.js";
+import type { ClusterHouseCtx, ClusterPartner, ConstructionSite, TownStage, TownStageFrame } from "./town-stage.js";
 import type { TownPlay } from "./town-play.js";
 import type { WorldSpec, RoadPath, BuildingSpec } from "../../types.js";
 
@@ -57,6 +57,14 @@ function offsetFrame(f: TownStageFrame, dx: number, dy: number, tag: string, hou
           ...b,
           id: houseBase ? `${tag}:${b.id}` : b.id,
           footprint: { ...b.footprint, x: b.footprint.x + dx, y: b.footprint.y + dy },
+        }))
+      : null,
+    sites: f.sites
+      ? f.sites.map(s => ({
+          ...s,
+          id: houseBase ? `${tag}:${s.id}` : s.id,
+          x: s.x + dx,
+          y: s.y + dy,
         }))
       : null,
     add: f.add.map(n => ({ ...n, id: mapId(n.id, tag, houseBase), x: n.x + dx, y: n.y + dy })),
@@ -107,6 +115,8 @@ export function clusterStages(
   // the union must come from each member's LAST set, or one member's
   // update would evict every other member's standing buildings.
   const lastBuildings = new Map<string, BuildingSpec[]>();
+  // Sites follow the same full-replacement-per-member contract.
+  const lastSites = new Map<string, ConstructionSite[]>();
 
   return {
     spec: windowSpec,
@@ -157,6 +167,7 @@ export function clusterStages(
       const addObjects: TownStageFrame["addObjects"] = [];
       const removeObjects: string[] = [];
       let buildingsChanged = false;
+      let sitesChanged = false;
       for (const m of members) {
         const dx = m.at.x - m.stage.center.x;
         const dy = m.at.y - m.stage.center.y;
@@ -187,6 +198,10 @@ export function clusterStages(
           lastBuildings.set(m.tag, f.buildings);
           buildingsChanged = true;
         }
+        if (f.sites) {
+          lastSites.set(m.tag, f.sites);
+          sitesChanged = true;
+        }
         add.push(...f.add);
         remove.push(...f.remove);
         errands.push(...f.errands);
@@ -195,6 +210,7 @@ export function clusterStages(
       }
       return {
         buildings: buildingsChanged ? [...lastBuildings.values()].flat() : null,
+        sites: sitesChanged ? [...lastSites.values()].flat() : null,
         add, remove, errands, addObjects, removeObjects,
       };
     },

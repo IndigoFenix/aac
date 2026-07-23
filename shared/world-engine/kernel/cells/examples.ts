@@ -585,7 +585,10 @@ export const worldgenSubstrate: SystemSpec = {
     // outletBelow 3 = the sea line the fertility guards below already use for
     // "submarine". It is what gives the fill a spill level to work toward, so
     // integer-quantization pits route THROUGH instead of swallowing the river.
-    { name: 'river', min: 0, max: 4000, initial: 0, int: true, flow: { potential: 'height', source: 1, block: 'solid', outletBelow: 3 } },
+    // sourceField 'runoff': cells contribute their LOCAL RAIN, not a flat unit,
+    // when the builder seeds a runoff field (planet climate → prepareSubstrate*'s
+    // `runoff` author). Grids without the field keep uniform sources.
+    { name: 'river', min: 0, max: 4000, initial: 0, int: true, flow: { potential: 'height', source: 1, sourceField: 'runoff', block: 'solid', outletBelow: 3 } },
     // The CUT a river has worn here, and the carved surface it leaves:
     // ground = height − valley (worldgen.carveValleys, after settle). No
     // rule reads or writes either — they are a one-way derivative of

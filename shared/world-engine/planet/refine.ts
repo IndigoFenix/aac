@@ -302,6 +302,11 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     occupied: [...occupied, ...(opts.founding?.occupied ?? [])],
     eligible,
   };
+  // The parent's normalized runoff (planet climate rain, land-mean 1) passes
+  // through like ore: a region in wet country re-solves DENSE local drainage,
+  // a desert region sparse — deliberately NOT re-normalized per region, that
+  // contrast is the point. Old bakes without the field fall back to uniform.
+  const parentRunoff = built.grid.fields.runoff;
   const prep = prepareSubstrate({
     cols, rows,
     height,
@@ -309,6 +314,9 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     founding,
     settle: true,
     rain: built.spec.rain,
+    runoff: parentRunoff
+      ? (x, y) => parentRunoff[topo.cellAt!(dirs[y * cols + x])]
+      : undefined,
     // A region IS a window on the planet: its water leaves across the boundary
     // into the neighbouring land. Without this an inland region has no outlet
     // at all — no sea inside it, no edge to leave by — and its drainage settles

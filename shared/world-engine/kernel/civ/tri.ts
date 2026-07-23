@@ -64,6 +64,13 @@ export interface PrepareOpts {
    *  seam as the height/ore authors, leaving the shared substrate's
    *  "what counts as a watercourse" thresholds alone. */
   rain?: number;
+  /** PER-CELL runoff author (planet climate rain, sampled at this grid's
+   *  cells): seeds the `runoff` field the substrate's river var reads as
+   *  its `sourceField`, so accumulation measures upstream RAINFALL, not
+   *  bare catchment area. Normalize to ~1 at the mean so the shared
+   *  watercourse thresholds keep their meaning; multiplies with `rain`.
+   *  Omitted = uniform sources (unchanged behaviour). */
+  runoff?: (x: number, y: number) => number;
   /** Valley-carving profile (worldgen.carveValleys). Defaults are fine;
    *  a world with no `ground` var carves nothing. */
   carve?: CarveOpts;
@@ -105,6 +112,15 @@ export function prepareSubstrate(opts: PrepareOpts): TriPrep {
     for (let x = 0; x < opts.cols; x++) {
       grid.fields.height[y * opts.cols + x] = Math.max(0, Math.min(63, Math.round(opts.height(x, y))));
     }
+  }
+  // Seed BEFORE the settle: the river var's `sourceField: 'runoff'` reads this
+  // on every flow recompute, so the network that carves/greens is rain-shaped.
+  if (opts.runoff) {
+    const runoff = new Float64Array(opts.cols * opts.rows);
+    for (let y = 0; y < opts.rows; y++) {
+      for (let x = 0; x < opts.cols; x++) runoff[y * opts.cols + x] = Math.max(0, opts.runoff(x, y));
+    }
+    grid.fields.runoff = runoff;
   }
   grid.flowDirty = true;
   if (opts.ore) {
@@ -150,6 +166,8 @@ export interface PrepareOnOpts {
   settle?: boolean;
   spec?: SystemSpec;
   rain?: number;
+  /** PER-CELL runoff author — see PrepareOpts.runoff (cell-indexed here). */
+  runoff?: (cell: number) => number;
   /** Valley-carving profile (worldgen.carveValleys). */
   carve?: CarveOpts;
 }
@@ -165,6 +183,12 @@ export function prepareSubstrateOn(opts: PrepareOnOpts): TriPrep {
   const n = grid.topo.n;
   for (let c = 0; c < n; c++) {
     grid.fields.height[c] = Math.max(0, Math.min(63, Math.round(opts.height(c))));
+  }
+  // Seed BEFORE the settle — see the note in prepareSubstrate.
+  if (opts.runoff) {
+    const runoff = new Float64Array(n);
+    for (let c = 0; c < n; c++) runoff[c] = Math.max(0, opts.runoff(c));
+    grid.fields.runoff = runoff;
   }
   grid.flowDirty = true;
   if (opts.ore) {

@@ -1,62 +1,47 @@
 /**
- * RIVERS AS DRAPED RIBBONS — the flow network drawn as the thin water lines it
- * actually is, instead of tinted cell-blobs.
+ * RIVER DEBUG OVERLAY — the extracted river network drawn as SKY RIBBONS,
+ * lifted far above the terrain and shown only with the nations viewer.
  *
- * The DATA is shared and deterministic: `extractRiverNetwork` (planet/rivers.ts)
- * traces the flow-accumulation field into source→mouth polylines, the same way
- * planet/routes.ts traces roads. This module RENDERS that into the flight scene,
- * mirroring trade-roads.ts's FAR layer: each river is one terrain-draped ribbon,
- * conformed to the carved valley floor (surface.heightAt), its width TAPERING
- * from a thread at the source to a band at the mouth (√accumulation — a
- * watercourse's section grows with the root of its discharge).
+ * This is deliberately NOT the water render any more. Draped ribbons cannot
+ * track the terrain mesh: the quadtree's height at a point changes with LOD
+ * (a coarse triangle chords across a concave valley), so a draped ribbon
+ * floats where the mesh is low and buries where it is high — no lift constant
+ * fixes both. The VISIBLE river is now painted into the terrain itself
+ * (surface.riverTintAt + the heightAt valley notch, planet/rivers.ts), which
+ * tracks every LOD by construction. What remains here is a diagnostic: with
+ * the nations layer lit, the whole network hangs unmissably in the sky so you
+ * can fly to where the rivers are and check the ground work under them.
  *
- * Reads the BASE substrate surface, because that is the only terrain the flight
- * renderer draws (refined regions never build a mesh). Render-only, no
- * simulation — the sibling of trade-roads, pointed at water instead of roads.
- *
- * SEIZURE SAFETY: the water is DULL and STATIC — high roughness, zero metalness,
- * no envMap, no animation. A static blue ribbon has no moving specular to
- * strobe (the hazard the terrain water shader guards against with WATER_SAFETY);
- * if a flowing look is wanted later it must go through that same clamped path.
+ * SEIZURE SAFETY: static geometry, constant emissive, no specular motion.
  */
 import * as THREE from "three";
 import type { CelestialBody } from "@shared/world-engine/space/body";
-import { extractRiverNetwork, type RiverPolyline } from "@shared/world-engine/planet/rivers";
+import {
+  extractRiverNetwork, riverHalfWidthM, RIVER_MIN_ACCUM, type RiverPolyline,
+} from "@shared/world-engine/planet/rivers";
 import { roadMaterial } from "@shared/world-engine/materials";
 
-// ── Tunables (life-size metres; glyph-exaggerated for orbit legibility, the
-//    way roads' FAR ribbons are — tune against a real fly-over). ─────────────
-const RIVER_MIN_ACCUM = 16; // draw watercourses above this (travel.ts's line)
-/** Half-width at the minimum accumulation, in metres. */
-const RIVER_W_BASE = 120;
-const RIVER_W_MIN = 80;
-const RIVER_W_MAX = 1200;
-/** Centerline resample step. Rivers follow valley floors (monotone descent),
- *  so a straight segment rides just ABOVE the floor mid-span, never clipping —
- *  a coarse step is safe and cheap. */
+/** Centerline resample step. */
 const RIVER_SEG_M = 1500;
-/** Small lift off the valley floor to beat z-fighting; rivers sit at the LOW
- *  point, so unlike roads they need no ridge-clearance margin. */
-const RIVER_LIFT_M = 8;
-/** Water blue. Saturated so it reads as water over green land from orbit. */
-const RIVER_COLOR = 0x2f6fa8;
-
-const halfWidthOf = (accum: number): number =>
-  Math.max(RIVER_W_MIN, Math.min(RIVER_W_MAX, RIVER_W_BASE * Math.sqrt(accum / RIVER_MIN_ACCUM)));
+/** Sky lift as a fraction of the radius — unmistakably OFF the ground. */
+const SKY_LIFT_FRAC = 0.015;
+const RIVER_COLOR = 0x3f8fd8;
 
 export interface RiverRibbons {
-  /** Kept for parity with the road net's drive signature; rivers are static
-   *  and visible at every altitude, so this is a no-op today. */
+  /** Parity with the road net's drive signature; the overlay is static. */
   update(playerWorld: THREE.Vector3): void;
+  /** Mirror of the road net's `nations(on)` — the overlay shows only while
+   *  the nations layer is lit. */
+  nations(on: boolean): void;
   dispose(): void;
   stats(): { rivers: number; verts: number };
 }
 
-/** Arc position → planet-local surface point, draped onto the terrain. Doubles
- *  throughout; the caller subtracts its own center before Float32 storage. */
+/** Arc position → planet-local point on the SKY SHELL (radius + macro height
+ *  + lift). Doubles; callers subtract their center before Float32 storage. */
 function samplePos(
   river: RiverPolyline, s: number, radius: number,
-  heightAt: (dir: [number, number, number]) => number, out: THREE.Vector3,
+  heightAt: (dir: [number, number, number]) => number, liftM: number, out: THREE.Vector3,
 ): THREE.Vector3 {
   const { cum, dirs, lengthM } = river.route;
   const ss = Math.max(0, Math.min(lengthM, s));
@@ -71,45 +56,7 @@ function samplePos(
   const f = seg > 1e-9 ? (ss - cum[lo]!) / seg : 0;
   out.set(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f).normalize();
   const h = Math.max(0, heightAt([out.x, out.y, out.z]));
-  return out.multiplyScalar(radius + h + RIVER_LIFT_M);
-}
-
-/** One tapered, terrain-draped ribbon for a river, vertices relative to
- *  `center`. Half-width ramps from the source accumulation to the mouth's. */
-function buildRiverRibbon(
-  river: RiverPolyline, radius: number,
-  heightAt: (dir: [number, number, number]) => number,
-  center: THREE.Vector3, pos: number[], nrm: number[], idx: number[],
-): void {
-  const len = river.route.lengthM;
-  const steps = Math.max(1, Math.ceil(len / RIVER_SEG_M));
-  const w0 = halfWidthOf(river.accumSource);
-  const w1 = halfWidthOf(river.accumMouth);
-  const pts: THREE.Vector3[] = [];
-  for (let i = 0; i <= steps; i++) pts.push(samplePos(river, (len * i) / steps, radius, heightAt, new THREE.Vector3()));
-
-  const base = pos.length / 3;
-  const tan = new THREE.Vector3();
-  const up = new THREE.Vector3();
-  const side = new THREE.Vector3();
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i]!;
-    const halfW = w0 + (w1 - w0) * (i / steps); // narrow source → wide mouth
-    tan.copy(pts[Math.min(i + 1, pts.length - 1)]!).sub(pts[Math.max(i - 1, 0)]!);
-    up.copy(p).normalize();
-    side.crossVectors(up, tan);
-    const l = side.length();
-    if (l < 1e-9) side.set(1, 0, 0); else side.divideScalar(l);
-    pos.push(
-      p.x + side.x * halfW - center.x, p.y + side.y * halfW - center.y, p.z + side.z * halfW - center.z,
-      p.x - side.x * halfW - center.x, p.y - side.y * halfW - center.y, p.z - side.z * halfW - center.z,
-    );
-    nrm.push(up.x, up.y, up.z, up.x, up.y, up.z);
-    if (i + 1 < pts.length) {
-      const v = base + i * 2;
-      idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
-    }
-  }
+  return out.multiplyScalar(radius + h + liftM);
 }
 
 export function createRiverRibbons(body: CelestialBody): RiverRibbons | null {
@@ -119,28 +66,62 @@ export function createRiverRibbons(body: CelestialBody): RiverRibbons | null {
   if (!rivers.length) return null;
 
   const radius = body.radius;
-  const heightAt = (dir: [number, number, number]): number => built.surface.heightAt(dir);
-  // Same recipe as the FAR trade-road ribbons: a lit-only dark colour crushes
-  // to near-black under the toon ramp at distance, so a STATIC emissive floor
-  // keeps the line readable from orbit. Constant emission has no motion and no
-  // specular lobe — it is not the seizure hazard, and roughness stays high.
+  const surface = built.surface;
+  // Macro height: the sky shell should follow the broad terrain, and macro is
+  // cheap and notch-free.
+  const macroAt = surface.macroHeightAt
+    ? (dir: [number, number, number]): number => surface.macroHeightAt!(dir)
+    : (dir: [number, number, number]): number => surface.heightAt(dir);
+  const liftM = radius * SKY_LIFT_FRAC;
+  // Sky glyph: width scales up with the lift so the lines stay legible from
+  // the altitudes the nations layer is read at.
+  const widthScale = Math.max(2, liftM / 400);
+
   const material = roadMaterial(RIVER_COLOR, {
-    emissive: 0x2a5f9e, emissiveIntensity: 0.5, roughness: 0.8,
+    emissive: 0x3f8fd8, emissiveIntensity: 0.9, roughness: 1,
   });
 
   const root = new THREE.Group();
-  root.name = "rivers";
+  root.name = "rivers-debug";
+  root.visible = false; // nations viewer reveals it
   body.group.add(root);
 
   const mid = new THREE.Vector3();
+  const tan = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  const side = new THREE.Vector3();
   let verts = 0;
   for (const river of rivers) {
-    // Per-river mesh, centered on the river's midpoint: planet-local Float32 at
-    // a real radius quantizes to ~0.5 m, so a globe-spanning single mesh would
-    // ripple. Center-relative vertices keep the river crisp (the roads lesson).
-    samplePos(river, river.route.lengthM / 2, radius, heightAt, mid);
+    const len = river.route.lengthM;
+    const steps = Math.max(1, Math.ceil(len / RIVER_SEG_M));
+    const w0 = riverHalfWidthM(river.accumSource) * widthScale;
+    const w1 = riverHalfWidthM(river.accumMouth) * widthScale;
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= steps; i++) {
+      pts.push(samplePos(river, (len * i) / steps, radius, macroAt, liftM, new THREE.Vector3()));
+    }
+    // Per-river mesh centered on its midpoint (float32 precision, the roads
+    // lesson).
+    samplePos(river, len / 2, radius, macroAt, liftM, mid);
     const pos: number[] = [], nrm: number[] = [], idx: number[] = [];
-    buildRiverRibbon(river, radius, heightAt, mid, pos, nrm, idx);
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i]!;
+      const halfW = w0 + (w1 - w0) * (i / steps);
+      tan.copy(pts[Math.min(i + 1, pts.length - 1)]!).sub(pts[Math.max(i - 1, 0)]!);
+      up.copy(p).normalize();
+      side.crossVectors(up, tan);
+      const l = side.length();
+      if (l < 1e-9) side.set(1, 0, 0); else side.divideScalar(l);
+      pos.push(
+        p.x + side.x * halfW - mid.x, p.y + side.y * halfW - mid.y, p.z + side.z * halfW - mid.z,
+        p.x - side.x * halfW - mid.x, p.y - side.y * halfW - mid.y, p.z - side.z * halfW - mid.z,
+      );
+      nrm.push(up.x, up.y, up.z, up.x, up.y, up.z);
+      if (i + 1 < pts.length) {
+        const v = i * 2;
+        idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+      }
+    }
     if (!idx.length) continue;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -148,15 +129,14 @@ export function createRiverRibbons(body: CelestialBody): RiverRibbons | null {
     geo.setIndex(idx);
     const mesh = new THREE.Mesh(geo, material);
     mesh.position.copy(mid);
-    // A river's span defeats sphere frustum culling (its bounding sphere can
-    // dwarf the view), the same reason the FAR road ribbons opt out.
-    mesh.frustumCulled = false;
+    mesh.frustumCulled = false; // a river's span defeats sphere culling
     root.add(mesh);
     verts += pos.length / 3;
   }
 
   return {
-    update() { /* static + always visible; parity with the road net's drive */ },
+    update() { /* static overlay */ },
+    nations(on: boolean) { root.visible = on; },
     dispose() {
       for (const child of root.children) {
         (child as THREE.Mesh).geometry?.dispose();

@@ -287,6 +287,10 @@ export interface WorldState {
   /** Movement-drag sampler (see DragSampler) — stride scale for heavy
    *  going (storage clutter). Absent ⇒ free ground everywhere. */
   drag?: DragSampler;
+  /** RESERVED GROUND (city-founding construction sites): flat lot rects
+   *  bodies may cross freely but items never land on — dropObject nudges
+   *  its point out through the nearest edge. Absent ⇒ nothing reserved. */
+  reservedGround?: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
   time: number;
 }
 
@@ -977,10 +981,26 @@ export function carryObject(state: WorldState, objectId: string, by: string): bo
   return true;
 }
 
-/** Put a carried object down at a world point (free on the ground). */
+/** Put a carried object down at a world point (free on the ground). A point
+ *  inside RESERVED GROUND (a construction site) lands just past the lot's
+ *  nearest edge instead — the site stays clear without refusing the drop. */
 export function dropObject(state: WorldState, objectId: string, x: number, y: number): void {
   const obj = state.objects[objectId];
   if (!obj) return;
+  const pad = 0.5;
+  for (const r of state.reservedGround ?? []) {
+    if (x > r.x - pad && x < r.x + r.w + pad && y > r.y - pad && y < r.y + r.h + pad) {
+      const toWest = x - (r.x - pad);
+      const toEast = r.x + r.w + pad - x;
+      const toNorth = y - (r.y - pad);
+      const toSouth = r.y + r.h + pad - y;
+      const m = Math.min(toWest, toEast, toNorth, toSouth);
+      if (m === toWest) x = r.x - pad;
+      else if (m === toEast) x = r.x + r.w + pad;
+      else if (m === toNorth) y = r.y - pad;
+      else y = r.y + r.h + pad;
+    }
+  }
   obj.carriedBy = null;
   obj.containedIn = null;
   obj.x = x;
