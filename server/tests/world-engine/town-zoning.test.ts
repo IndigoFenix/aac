@@ -24,6 +24,7 @@ import {
   resolveZoneCategory,
   slotZoningFn,
   structureNeedScore,
+  townPreferredCategories,
   zoneAt,
   type FoundingGrowthInput,
   type ZoneCharter,
@@ -357,5 +358,110 @@ describe("need scoring stays data-driven off the catalog + economy rows", () => 
     expect(structureNeedScore(FARM, farmEco, signals)).toBeCloseTo(0.7);
     const market = resolveStructure(TOWN_PLAY_STRUCTURES, "market")!;
     expect(structureNeedScore(market, null, signals)).toBeCloseTo(0.2);
+  });
+});
+
+describe("area shape backends (nations §3c — selection, not drawing)", () => {
+  const TOWN_ROW = { x: 0, y: 0, r: 0, issuer: "p" };
+
+  it("a 'town' row never binds ground — zoneAt skips it; preferences accumulate and clear", () => {
+    const deltas = createTownDeltas();
+    deltas.addZone({ ...TOWN_ROW, shape: "town", category: "farm" });
+    deltas.addZone({ ...TOWN_ROW, shape: "town", category: "market" });
+    expect(zoneAt(deltas.zones(), 0, 0)).toBeNull(); // steering, never containment
+    expect([...townPreferredCategories(deltas.zones())].sort()).toEqual(["farm", "market"]);
+    deltas.addZone({ ...TOWN_ROW, shape: "town", category: null }); // "area none" at town scope
+    expect(townPreferredCategories(deltas.zones()).size).toBe(0);
+    deltas.addZone({ ...TOWN_ROW, shape: "town", category: "house" });
+    expect([...townPreferredCategories(deltas.zones())]).toEqual(["house"]);
+  });
+
+  it("'over' repaints EXACTLY the referenced district's ground — chains, then clears", () => {
+    const deltas = createTownDeltas();
+    const disc = deltas.addZone({ x: 0, y: 0, r: 20, category: "farm", issuer: "p" });
+    // Repaint BY REFERENCE — the row carries no geometry of its own.
+    const over = deltas.addZone({ ...TOWN_ROW, shape: "over", of: disc.ord, category: "craft" });
+    expect(zoneAt(deltas.zones(), 0, 0)?.ord).toBe(over.ord);
+    expect(zoneAt(deltas.zones(), 0, 0)?.category).toBe("craft");
+    expect(zoneAt(deltas.zones(), 50, 0)).toBeNull(); // extent untouched
+    // Chains: repainting the repaint governs the same ground.
+    const over2 = deltas.addZone({ ...TOWN_ROW, shape: "over", of: over.ord, category: "market" });
+    expect(zoneAt(deltas.zones(), 0, 0)?.ord).toBe(over2.ord);
+    // Clearing by reference: the district's ground reads unzoned again.
+    deltas.addZone({ ...TOWN_ROW, shape: "over", of: over2.ord, category: null });
+    expect(zoneAt(deltas.zones(), 0, 0)).toBeNull();
+  });
+
+  it("shape rows survive the toJSON round-trip", () => {
+    const deltas = createTownDeltas();
+    deltas.addZone({ ...TOWN_ROW, shape: "town", category: "farm" });
+    const disc = deltas.addZone({ x: 3, y: 4, r: 9, category: "farm", issuer: "p" });
+    deltas.addZone({ ...TOWN_ROW, shape: "over", of: disc.ord, category: "craft" });
+    const restored = createTownDeltas(deltas.toJSON());
+    expect(restored.zones()).toEqual(deltas.zones());
+    expect(zoneAt(restored.zones(), 3, 4)?.category).toBe("craft");
+    expect([...townPreferredCategories(restored.zones())]).toEqual(["farm"]);
+  });
+
+  it("legacy stores (discs only) behave byte-identically", () => {
+    const deltas = createTownDeltas();
+    const z = deltas.addZone({ x: 0, y: 0, r: 15, category: "farm", issuer: "p" });
+    expect(zoneAt(deltas.zones(), 3, 3)?.ord).toBe(z.ord);
+    expect(townPreferredCategories(deltas.zones()).size).toBe(0);
+  });
+});
+
+describe("town preference steers growth (laws steer, need builds)", () => {
+  function growthInput(deltas: TownDeltas, over: Partial<FoundingGrowthInput> = {}): FoundingGrowthInput {
+    const zones = () => deltas.zones();
+    return {
+      deltas,
+      catalog: TOWN_PLAY_STRUCTURES,
+      gain: FOUNDING_PROSPERITY_DAILY_CAP,
+      day: 1,
+      signals: { crowding: 0, shortage: () => 0 },
+      economyOf: (k) =>
+        k === "farm" ? { cap: { by: "farmland", rate: 1 / 60 }, sells: ["food"], district: "farm" } : null,
+      capValueOf: (by) => (by === "farmland" ? 420 : 200),
+      countOf: () => 0,
+      candidatesFor: (spec, zone) => {
+        const cands = foundingOptions({
+          seed: SEED, key: KEY, footprint: spec.footprint, type: spec.type,
+          occupied: deltas.founded().map((b) => ({ x: b.dx, y: b.dy, w: b.w, h: b.h })),
+          claimedSlots: new Set(deltas.founded().map((b) => b.slot)),
+          zoning: slotZoningFn(zones(), categoriesOfSpec(spec, districtOf)),
+        });
+        return zone === null ? cands : cands.filter((c) => candidateInZone(zones(), zone, c));
+      },
+      ...over,
+    };
+  }
+
+  it("a preferred category rises at rest on OPEN ground once banked — a license, not a ground charter", () => {
+    const deltas = createTownDeltas();
+    deltas.stock.wood = 40;
+    deltas.stock.stone = 10;
+    deltas.addZone({ x: 0, y: 0, r: 0, shape: "town", category: "market", issuer: "p" });
+    const days = Math.ceil(FOUNDING_PROSPERITY_THRESHOLD / FOUNDING_PROSPERITY_DAILY_CAP);
+    let order = null;
+    for (let d = 1; d <= days + 1 && !order; d++) {
+      order = foundingGrowthStep(growthInput(deltas, { day: d }));
+    }
+    expect(order).not.toBeNull();
+    expect(order!.spec.type).toBe("market");
+    expect(order!.zoneOrd).toBe(-1); // open ground — steering, never exclusion
+    expect(deltas.founded()).toHaveLength(1);
+  });
+
+  it("clearing the preference returns the content town to rest (never sprawls)", () => {
+    const deltas = createTownDeltas();
+    deltas.stock.wood = 100;
+    deltas.stock.stone = 20;
+    deltas.addZone({ x: 0, y: 0, r: 0, shape: "town", category: "market", issuer: "p" });
+    deltas.addZone({ x: 0, y: 0, r: 0, shape: "town", category: null, issuer: "p" });
+    for (let d = 1; d <= 20; d++) {
+      expect(foundingGrowthStep(growthInput(deltas, { day: d }))).toBeNull();
+    }
+    expect(deltas.founded()).toHaveLength(0);
   });
 });

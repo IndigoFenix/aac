@@ -19,6 +19,7 @@ import type { Blueprint } from "./blueprint";
 import { clampBlueprint } from "./blueprint";
 import { CREATURE_EXAMPLES } from "./examples";
 import { ANIMAL_PEOPLE_BLUEPRINTS } from "./animals-people";
+import { orchardPlants } from "../products";
 
 /** "spark" is the PLAYER, and is deliberately not a body plan — see SPARK_SPECIES_ID. */
 export type SpeciesKind = "creature" | "plant" | "fruit" | "spark";
@@ -163,14 +164,13 @@ for (const bp of ANIMAL_PEOPLE_BLUEPRINTS) {
  *  market/ground items use, so `requireSpecies(entry.fruit)` always works. */
 export type OrchardFruit = "apple" | "banana" | "grape";
 
-/** Which plant species yields each orchard fruit kind. The town layer places
- *  orchards from this: `species` is the plant to plant (kind "plant", bears
- *  visible fruit via its growth), `fruit` is the kind it yields. */
-export const FRUIT_TREES: ReadonlyArray<{ fruit: OrchardFruit; species: string }> = [
-  { fruit: "apple", species: "apple_tree" },
-  { fruit: "banana", species: "banana_plant" },
-  { fruit: "grape", species: "grape_vine" },
-];
+/** Which plant species yields each orchard fruit kind. DERIVED from the
+ *  natural-sources registry (products.ts) — the plant's harvest food product
+ *  IS this mapping, so the town layer and the registry can never disagree.
+ *  `species` is the plant to plant (kind "plant", bears visible fruit via
+ *  its growth), `fruit` is the kind it yields. */
+export const FRUIT_TREES: ReadonlyArray<{ fruit: OrchardFruit; species: string }> =
+  orchardPlants().map((r) => ({ fruit: r.fruit as OrchardFruit, species: r.species }));
 
 /** Look up a species by id, or undefined if unknown. */
 export function getSpecies(id: string): Species | undefined {

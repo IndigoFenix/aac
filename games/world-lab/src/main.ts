@@ -46,7 +46,7 @@ import {
 } from "@shared/world-engine/kernel/town/approach";
 import { TOWN_DIMS } from "@shared/world-engine/kernel/town/dimensions";
 import type { PlanetRoute } from "@shared/world-engine/planet/routes";
-import type { HighwayRefinement } from "@shared/world-engine/planet/refine";
+import { regionFrame, type HighwayRefinement } from "@shared/world-engine/planet/refine";
 import {
   WORLD_EPOCH_MS, worldGrowthDays, conurbations, conurbationName,
 } from "@shared/world-engine/planet/growth";
@@ -1194,6 +1194,39 @@ const TIER_SIMPLE_M = 180;  // full ↔ simple boundary
 const TIER_CAPSULE_M = 450; // simple ↔ capsule boundary
 const TIER_HYST_M = 40;
 let appliedTier: CreatureTier = "full";
+// DEBOUNCE on the PUSHED values (dollhouse crawl-cycle fix, 2026-07-23): the
+// `walking` flag the push derives from composes frame-order-sensitive state
+// (`spiritTownDriven` is re-derived each frame and set true inside the
+// structure rung's own step), so a transition hiccup can flap it for a frame
+// — and a town-tier flap FLOODS a staggered whole-crowd rebuild EACH WAY
+// (seconds of 4-rebuilds-a-frame crawl, drain, smooth, repeat). A changed
+// tier/budget must HOLD for TIER_DEBOUNCE_MS (`now` is performance.now())
+// before it lands; real transitions (descent, focus) hold far longer.
+const TIER_DEBOUNCE_MS = 700;
+let pushedTier: CreatureTier = "full";
+let tierCandidate: CreatureTier = "full";
+let tierCandidateAt = 0;
+function debouncedTier(t: CreatureTier, now: number): CreatureTier {
+  if (t !== tierCandidate) {
+    tierCandidate = t;
+    tierCandidateAt = now;
+  }
+  if (t !== pushedTier && now - tierCandidateAt >= TIER_DEBOUNCE_MS) pushedTier = t;
+  return pushedTier;
+}
+let pushedBudget: number | null | undefined; // undefined = never pushed
+let budgetCandidate: number | null = null;
+let budgetCandidateAt = 0;
+function debouncedBudget(b: number | null, now: number): number | null {
+  if (b !== budgetCandidate) {
+    budgetCandidate = b;
+    budgetCandidateAt = now;
+  }
+  if (pushedBudget === undefined || (b !== pushedBudget && now - budgetCandidateAt >= TIER_DEBOUNCE_MS)) {
+    pushedBudget = b;
+  }
+  return pushedBudget;
+}
 function hystereticCreatureTier(distM: number): CreatureTier {
   switch (appliedTier) {
     case "full":
@@ -1297,6 +1330,10 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     embedTown.host.setInteriorReveal(false);
     appliedCrowdAtM = Infinity; // a fresh town re-evaluates its crowd budget
     appliedTier = "full"; // …and its creature tier (the first push re-tiers)
+    pushedTier = "full"; // fresh debounce state — a stale hold must not gate the new town
+    tierCandidate = "full";
+    pushedBudget = undefined;
+    budgetCandidate = null;
     // A proximity mount must not steal the board from the wilderness session
     // the walker is standing in (last-wins claim — hand it straight back).
     if (groundedIn === "wild") embedWild?.claimBoard?.();
@@ -2052,15 +2089,27 @@ function stitchNeighbours(body: FlightCity["body"], regionCell: number): void {
     if (stitchKicked.has(pairKey)) continue;
     stitchKicked.add(pairKey);
     geoBaker.stitch(body.id, lo, hi)
-      .then(routes => {
-        if (!routes.length) return; // a sea border — deterministically empty
+      .then(({ routes, streams }) => {
+        if (!routes.length && !streams.length) return; // a sea border — deterministically empty
         const aKey = `${body.id}:${lo}`;
         const bKey = `${body.id}:${hi}`;
         if (regions.get(aKey)?.state !== "ready" || regions.get(bKey)?.state !== "ready") {
           stitchKicked.delete(pairKey); // a side evicted mid-flight — re-kick on next meet
           return;
         }
-        roadNets.get(body.id)?.addRegion(pairKey, { roads: routes, highways: [] });
+        if (routes.length) roadNets.get(body.id)?.addRegion(pairKey, { roads: routes, highways: [] });
+        // Stream JOINS fold into the terrain like the regions' own streams
+        // (idempotent by pair key, persist after evict), then the border band
+        // re-samples so the seam closes on standing chunks.
+        const relief = body.geography?.riverRelief;
+        if (relief && streams.length && relief.addRivers(pairKey, streams)) {
+          const pa = body.geography!.grid.topo.pos3!(lo);
+          const pb = body.geography!.grid.topo.pos3!(hi);
+          const mid: [number, number, number] = [pa[0] + pb[0], pa[1] + pb[1], pa[2] + pb[2]];
+          const m = Math.hypot(mid[0], mid[1], mid[2]) || 1;
+          mid[0] /= m; mid[1] /= m; mid[2] /= m;
+          body.refreshTerrain?.(mid, regionFrame(body.geography!, lo).widthM * 0.7);
+        }
         for (const rk of [aKey, bKey]) {
           const list = regionPairs.get(rk) ?? [];
           list.push(pairKey);
@@ -2087,7 +2136,7 @@ function ensureRegionUnder(body: FlightCity["body"], pos: THREE.Vector3): Region
     regions.set(key, entry);
     const bodyId = body.id;
     geoBaker.refine(bodyId, regionCell)
-      .then(({ villages, roads, highways }) => {
+      .then(({ villages, roads, highways, rivers }) => {
         entry!.state = "ready";
         entry!.cells = villages.map(v => v.cell);
         entry!.roads = roads;
@@ -2095,6 +2144,17 @@ function ensureRegionUnder(body: FlightCity["body"], pos: THREE.Vector3): Region
         flight?.addCities(bodyId, villages);
         // The village net + refined interstates join the body's road layers.
         roadNets.get(bodyId)?.addRegion(key, { roads, highways });
+        // The region's own STREAMS fold into the terrain itself (river paint
+        // + valley notch — rivers.ts addRivers), then the standing chunks
+        // nearby re-sample so they show up without waiting for LOD churn.
+        // Streams stay painted after the region evicts: they are the world's
+        // deterministic truth, not region chrome, and addRivers dedupes by
+        // key on re-entry.
+        const relief = body.geography?.riverRelief;
+        if (relief && rivers.length && relief.addRivers(key, rivers)) {
+          const frame = regionFrame(body.geography!, regionCell);
+          body.refreshTerrain?.(frame.dir0, frame.widthM * 0.85);
+        }
         // And any already-refined neighbour joins hands across the border.
         stitchNeighbours(body, regionCell);
       })
@@ -2470,11 +2530,13 @@ function streamGround(
   if (embedTown && liveViz) {
     const walking = groundedIn === "town" || spiritTownDriven;
     const townDistM = anchorPos.distanceTo(liveViz.fc.worldPos);
-    embedTown.host.setCrowdBudget(walking ? null : hystereticCrowdBudget(townDistM));
+    // Both pushes are DEBOUNCED (see debouncedTier) — a one-frame `walking`
+    // flap must not flood a whole-crowd rebuild or flap the street budget.
+    embedTown.host.setCrowdBudget(debouncedBudget(walking ? null : hystereticCrowdBudget(townDistM), now));
     // Phase 3 creature tier rides the same push: full whenever walking (bodies
     // at arm's length), else the hysteretic distance band. Per-CAMERA, render-
     // only — see hystereticCreatureTier.
-    embedTown.host.setCreatureTier(walking ? "full" : hystereticCreatureTier(townDistM));
+    embedTown.host.setCreatureTier(debouncedTier(walking ? "full" : hystereticCreatureTier(townDistM), now));
   }
   // The layer that OWNS the walker is stepped at full frame rate by the
   // grounded loop; every other mounted ground layer keeps living at the

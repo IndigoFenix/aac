@@ -1,8 +1,8 @@
 // shared/world-engine/interaction/quest/wilderness.ts
 //
 // WILDERNESS CONTENT (city-expansion step 0): the deterministic scatter a
-// quest-host session lays over open ground — resource FEATURES (trees that
-// hold wood, rocks that hold stone) and free-roaming CREATURES the spirit can
+// quest-host session lays over open ground — resource FEATURES (natural
+// sources: trees, rock outcrops) and free-roaming CREATURES the spirit can
 // possess. Everything reuses existing machinery:
 //   • a feature is an ordinary openable CONTAINER (the one container
 //     abstraction) whose stack map holds material glyphs — gathering IS the
@@ -10,16 +10,23 @@
 //   • a creature is an ordinary quest-host creature (a needless "resident
 //     with no house") whose body wanders — talking/possessing rides the
 //     one conversation system.
-// Pure data — the quest host embodies it (seedWilderness); headless-tested
-// in server/tests/symbol-game-wilderness.test.ts.
+// A feature names its SPECIES; what it holds comes from the natural-sources
+// registry (products.ts killStockOf) — the same definition the abstract
+// economy reads, never a name-keyed table here. Pure data — the quest host
+// embodies it (seedWilderness); headless-tested in
+// server/tests/symbol-game-wilderness.test.ts.
+
+import { killStockOf } from "../../products.js";
 
 export interface WildernessFeature {
   id: string;
-  kind: "tree" | "rock";
+  /** Natural-source species (products.ts) — "oak", "rock". Decides both the
+   *  feature's presentation and its yield. */
+  species: string;
   x: number;
   y: number;
-  /** The feature's material stack (glyph → count) — wood for trees, stone
-   *  for rocks. */
+  /** The feature's material stack (glyph → count) — the source's rolled
+   *  kill products (the tree IS its wood). */
   stock: Record<string, number>;
 }
 
@@ -95,24 +102,27 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
   const features: WildernessFeature[] = [];
   const nTrees = Math.max(0, params.trees ?? 10);
   const nRocks = Math.max(0, params.rocks ?? 6);
+  // Biome-driven species selection is the harvesting rework's job (step ④);
+  // today's wilderness is oak forest over rocky ground. Stocks come from the
+  // registry's kill products (one roll per product — deterministic).
   for (let i = 0; i < nTrees; i++) {
     const p = place();
     features.push({
-      id: `wild:tree_${i}`,
-      kind: "tree",
+      id: `wild:oak_${i}`,
+      species: "oak",
       x: p.x,
       y: p.y,
-      stock: { wood: 2 + Math.floor(rng() * 3) },
+      stock: killStockOf("oak", rng),
     });
   }
   for (let i = 0; i < nRocks; i++) {
     const p = place();
     features.push({
       id: `wild:rock_${i}`,
-      kind: "rock",
+      species: "rock",
       x: p.x,
       y: p.y,
-      stock: { stone: 1 + Math.floor(rng() * 2) },
+      stock: killStockOf("rock", rng),
     });
   }
 

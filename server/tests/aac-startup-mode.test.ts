@@ -11,7 +11,6 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   resolveStartupMode,
-  resolveStudentIsActiveUser,
   decideStartupAction,
   buildStartupGreetingTurn,
 } from "../services/dual-agent/startup-mode.js";
@@ -28,39 +27,21 @@ describe("resolveStartupMode", () => {
   });
 });
 
-describe("resolveStudentIsActiveUser", () => {
-  it("is true when the student's face is positively matched", () => {
-    expect(resolveStudentIsActiveUser({ sawStudentFace: true, haveFreshFaces: true, isSharedDevice: false })).toBe(true);
-  });
-
-  it("is false when faces are seen but none is the student (a visitor)", () => {
-    expect(resolveStudentIsActiveUser({ sawStudentFace: false, haveFreshFaces: true, isSharedDevice: false })).toBe(false);
-  });
-
-  it("assumes the student when no recognition is available on a personal device", () => {
-    expect(resolveStudentIsActiveUser({ sawStudentFace: false, haveFreshFaces: false, isSharedDevice: false })).toBe(true);
-  });
-
-  it("never assumes the student on a shared device without a match", () => {
-    expect(resolveStudentIsActiveUser({ sawStudentFace: false, haveFreshFaces: false, isSharedDevice: true })).toBe(false);
-  });
-});
-
 describe("decideStartupAction", () => {
-  it("greets in CONTEXTUAL mode when the student is the active user", () => {
-    expect(decideStartupAction({ startupBehavior: "contextual", studentIsActiveUser: true, socialPeerActive: false })).toBe("greet");
+  it("greets in CONTEXTUAL mode when the active user is identified", () => {
+    expect(decideStartupAction({ startupBehavior: "contextual", activeUserIdentified: true, socialPeerActive: false })).toBe("greet");
   });
 
-  it("waits in CONTEXTUAL mode when the student is not the active user", () => {
-    expect(decideStartupAction({ startupBehavior: "contextual", studentIsActiveUser: false, socialPeerActive: false })).toBe("wait");
+  it("waits in CONTEXTUAL mode when no one has been identified (never greet the unseen)", () => {
+    expect(decideStartupAction({ startupBehavior: "contextual", activeUserIdentified: false, socialPeerActive: false })).toBe("wait");
   });
 
-  it("always waits in MENU mode, even with the student present", () => {
-    expect(decideStartupAction({ startupBehavior: "menu", studentIsActiveUser: true, socialPeerActive: false })).toBe("wait");
+  it("always waits in MENU mode, even with an identified user", () => {
+    expect(decideStartupAction({ startupBehavior: "menu", activeUserIdentified: true, socialPeerActive: false })).toBe("wait");
   });
 
   it("waits when a social-training peer owns the session", () => {
-    expect(decideStartupAction({ startupBehavior: "contextual", studentIsActiveUser: true, socialPeerActive: true })).toBe("wait");
+    expect(decideStartupAction({ startupBehavior: "contextual", activeUserIdentified: true, socialPeerActive: true })).toBe("wait");
   });
 });
 

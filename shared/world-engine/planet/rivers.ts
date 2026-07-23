@@ -44,80 +44,147 @@ export interface RiverNetworkOpts {
   heightField?: string;
 }
 
+/** The lattice-agnostic tracer inputs — any grid whose flow solver recorded
+ *  its drainage tree can trace, whatever its cells are placed on (the planet's
+ *  cube-sphere, or a refined region's chart tiles — refine.ts). */
+export interface TraceRiversOpts {
+  n: number;
+  river: ArrayLike<number>;
+  height: ArrayLike<number>;
+  /** The solver's own downstream pointer per cell (`<field>Down`); −1 = sink. */
+  downstream: ArrayLike<number>;
+  /** Cell → unit sphere direction. */
+  posOf: (cell: number) => V3;
+  radius: number;
+  minAccum: number;
+  /** Multiply accumulations on OUTPUT — a child chart converts its cell-units
+   *  into the parent's (refine.ts: 1 / child-cells-per-parent). Default 1. */
+  accumScale?: number;
+  /** Emit only spans of cells this accepts (chart OWNERSHIP: the neighbour
+   *  region emits its own spans of a shared stream, so nothing draws twice).
+   *  The walk still traces whole chains, so junction claiming stays correct. */
+  include?: (cell: number) => boolean;
+  /** Route endpoint identity per cell (default the cell index; refine.ts
+   *  passes composite village-style keys so tiers never collide). */
+  keyOf?: (cell: number) => number;
+}
+
 /**
- * Trace the river field into source→mouth polylines.
+ * Trace a flow field into source→mouth polylines.
  *
  * The drainage forms an in-tree: every wet cell flows to exactly one
- * downstream neighbour (steepest macro-height descent — the same edge
- * computeFlow routed the catchment down), rooted at the sea or at inland
- * sinks. To cover each reach once, we walk downstream from every SOURCE (a wet
- * cell nothing wet drains into) and stop when the path joins a reach another
- * source already claimed — so a tributary ends exactly where it meets its
- * trunk, and the trunk is drawn once, by whichever headwater reached it first.
+ * downstream neighbour (the edge computeFlow routed the catchment down),
+ * rooted at the sea or at inland sinks. To cover each reach once, we walk
+ * downstream from every SOURCE (a wet cell nothing wet drains into) and stop
+ * when the path joins a reach another source already claimed — a tributary
+ * ends exactly where it meets its trunk. Sources walk in DESCENDING
+ * accumulation order (ties by cell — deterministic), so the mainstem claims
+ * its whole course first and no small tributary "inherits" a trunk's tail.
  */
-export function extractRiverNetwork(built: BuiltPlanet, opts: RiverNetworkOpts = {}): RiverPolyline[] {
-  const minAccum = opts.minAccum ?? 16;
-  const grid = built.grid;
-  const topo = built.topo;
-  const river = grid.fields[opts.riverField ?? "river"];
-  const height = grid.fields[opts.heightField ?? "height"];
-  if (!river || !height || !topo.pos3) return [];
-  const n = topo.n;
-  const radius = built.spec.radius;
-
+export function traceRiverPolylines(o: TraceRiversOpts): RiverPolyline[] {
+  const { n, river, height, downstream, posOf, radius, minAccum } = o;
+  const accumScale = o.accumScale ?? 1;
+  const keyOf = o.keyOf ?? ((c: number) => c);
   const wet = (c: number): boolean => height[c] >= SEA_HEIGHT && river[c] > minAccum;
 
-  // downstream[c]: the lowest macro-height neighbour of a wet cell (ties to the
-  // lowest cell index for determinism), or -1 for a sink. May point at a
-  // BELOW-SEA cell — that neighbour is the river's MOUTH at the coast.
-  const nb: number[] = new Array(topo.maxDegree).fill(0);
-  const downstream = new Int32Array(n).fill(-1);
   const inWetDegree = new Uint16Array(n);
   for (let c = 0; c < n; c++) {
     if (!wet(c)) continue;
-    const k = topo.neighbours(c, nb);
-    let low = -1;
-    let lowH = height[c];
-    for (let j = 0; j < k; j++) {
-      const ni = nb[j];
-      if (height[ni] < lowH || (height[ni] === lowH && low >= 0 && ni < low)) { lowH = height[ni]; low = ni; }
-    }
-    downstream[c] = low;
-    if (low >= 0 && wet(low)) inWetDegree[low]++;
+    const d = downstream[c];
+    if (d >= 0 && wet(d)) inWetDegree[d]++;
   }
+  const sources: number[] = [];
+  for (let c = 0; c < n; c++) if (wet(c) && inWetDegree[c] === 0) sources.push(c);
+  sources.sort((a, b) => river[b] - river[a] || a - b);
 
   const claimed = new Uint8Array(n);
   const out: RiverPolyline[] = [];
+  const emit = (chain: number[]): void => {
+    if (chain.length < 2) return;
+    // Cell chain → smoothed unit-dir polyline (the road recipe, unchanged).
+    const dirs = chaikinSphere(chaikinSphere(chain.map(cell => posOf(cell))));
+    const route = routeFromDirs(dirs, radius, keyOf(chain[0]!), keyOf(chain[chain.length - 1]!));
+    if (!route) return;
+    // Accumulation at the ends. A mouth in the sea carries no accumulation of
+    // its own, so use the last IN-river cell as the widest point.
+    const last = chain[chain.length - 1]!;
+    const mouthCell = height[last] < SEA_HEIGHT ? chain[chain.length - 2]! : last;
+    out.push({ route, accumSource: river[chain[0]!] * accumScale, accumMouth: river[mouthCell] * accumScale });
+  };
 
-  // Sources first, in cell order → deterministic claiming of shared trunks.
-  for (let s = 0; s < n; s++) {
-    if (!wet(s) || inWetDegree[s] > 0 || claimed[s]) continue;
+  for (const s of sources) {
+    if (claimed[s]) continue;
     const chain: number[] = [s];
     claimed[s] = 1;
     let c = s;
     for (;;) {
       const next = downstream[c];
-      if (next < 0) break; // inland sink — the reach ends in a lake
+      if (next < 0) break; // inland sink — the reach ends in a lake (or off a chart edge)
       chain.push(next);
       if (height[next] < SEA_HEIGHT) break; // reached the sea — `next` is the mouth
       if (claimed[next]) break; // joined a trunk another source already drew
       claimed[next] = 1;
       c = next;
     }
-    if (chain.length < 2) continue;
+    if (!o.include) { emit(chain); continue; }
+    // Ownership windows: each maximal included run is its own polyline.
+    let run: number[] = [];
+    for (const cell of chain) {
+      if (o.include(cell)) run.push(cell);
+      else { emit(run); run = []; }
+    }
+    emit(run);
+  }
+  return out;
+}
 
-    // Cell chain → smoothed unit-dir polyline (the road recipe, unchanged).
-    const dirs = chaikinSphere(chaikinSphere(chain.map(cell => topo.pos3!(cell))));
-    const route = routeFromDirs(dirs, radius, chain[0], chain[chain.length - 1]);
-    if (!route) continue;
+/**
+ * Trace the planet's river field into source→mouth polylines.
+ *
+ * downstream[c]: THE SOLVER'S OWN drainage edge (`<field>Down`, recorded by
+ * computeFlow over the depression-filled, flat-resolved potential). This
+ * must NOT be re-derived from raw height: integer terrain is flats and
+ * filled basins everywhere, and raw descent disagrees with the routed flow
+ * on every one of them — the extracted chains then break mid-river and the
+ * network shreds into short orphan stubs (the bug this replaced). The raw
+ * fallback below only serves grids serialized before the pointer existed.
+ */
+export function extractRiverNetwork(built: BuiltPlanet, opts: RiverNetworkOpts = {}): RiverPolyline[] {
+  const minAccum = opts.minAccum ?? 16;
+  const grid = built.grid;
+  const topo = built.topo;
+  const riverField = opts.riverField ?? "river";
+  const river = grid.fields[riverField];
+  const height = grid.fields[opts.heightField ?? "height"];
+  if (!river || !height || !topo.pos3) return [];
+  const n = topo.n;
 
-    // Accumulation at the ends. A mouth in the sea carries no accumulation of
-    // its own, so use the last IN-river cell as the widest point.
-    const mouthCell = height[chain[chain.length - 1]] < SEA_HEIGHT ? chain[chain.length - 2] : chain[chain.length - 1];
-    out.push({ route, accumSource: river[chain[0]], accumMouth: river[mouthCell] });
+  const wet = (c: number): boolean => height[c] >= SEA_HEIGHT && river[c] > minAccum;
+  const nb: number[] = new Array(topo.maxDegree).fill(0);
+  const downField = grid.fields[riverField + "Down"];
+  const downstream = new Int32Array(n).fill(-1);
+  for (let c = 0; c < n; c++) {
+    if (!wet(c)) continue;
+    if (downField) {
+      downstream[c] = downField[c];
+    } else {
+      const k = topo.neighbours(c, nb);
+      let low = -1;
+      let lowH = height[c];
+      for (let j = 0; j < k; j++) {
+        const ni = nb[j];
+        if (height[ni] < lowH || (height[ni] === lowH && low >= 0 && ni < low)) { lowH = height[ni]; low = ni; }
+      }
+      downstream[c] = low;
+    }
   }
 
-  return out;
+  return traceRiverPolylines({
+    n, river, height, downstream,
+    posOf: cell => topo.pos3!(cell),
+    radius: built.spec.radius,
+    minAccum,
+  });
 }
 
 // ── RIVER RELIEF — the network folded back into the TERRAIN ─────────────────
@@ -147,10 +214,14 @@ export function extractRiverNetwork(built: BuiltPlanet, opts: RiverNetworkOpts =
 
 /** Half-width of a watercourse at an accumulation, in metres — a channel's
  *  section grows with the root of its discharge. Shared by the paint, the
- *  notch, and the debug ribbons so they always agree on "how wide". */
+ *  notch, and the debug ribbons so they always agree on "how wide". The FLOOR
+ *  is tier-specific: base-tier reaches are ≥16 whole cells of catchment and
+ *  draw at ≥80 m so a planet-scale line survives; a refined region's creeks
+ *  (refine.ts, parent-equivalent accum ≪ 1) pass ~1 m and stay creek-sized —
+ *  the paint's LOD glyph, not the width, keeps them visible from afar. */
 export const RIVER_MIN_ACCUM = 16;
-export function riverHalfWidthM(accum: number): number {
-  return Math.max(80, Math.min(1200, 120 * Math.sqrt(accum / RIVER_MIN_ACCUM)));
+export function riverHalfWidthM(accum: number, floorM = 80): number {
+  return Math.max(floorM, Math.min(1200, 120 * Math.sqrt(accum / RIVER_MIN_ACCUM)));
 }
 
 /** Notch depth for a channel half-width, metres. Sub-cell render relief only
@@ -160,6 +231,12 @@ const notchDepthM = (halfW: number): number => Math.min(NOTCH_DEPTH_MAX_M, halfW
 /** The valley shoulder: the notch profile reaches zero at this multiple of
  *  the water's half-width — banks, not a slot canyon. */
 const SHOULDER = 2.5;
+/** How much of its notch a river FILLS with standing water (0..1 of the
+ *  centerline depth). The water surface sits at one level across the channel
+ *  — the top slice of the notch profile — so it reads as a flat run of water
+ *  between dry banks, and its lateral reach (~1.25 × half-width at 0.5) stays
+ *  channel-scale, never valley-scale. */
+const RIVER_FILL = 0.5;
 
 /** How much a coarse mesh may widen the PAINT (never the notch), as the cap
  *  on the vertex-spacing clamp — glyph width, radius-scaled. */
@@ -193,11 +270,28 @@ function dirAtArc(route: PlanetRoute, s: number, out: [number, number, number]):
 
 export interface RiverRelief {
   rivers: RiverPolyline[];
+  /** Merge MORE polylines into the index under an idempotency key — a refined
+   *  region's streams (refine.ts) joining the paint/notch when the region
+   *  loads. Returns false (no-op) when the key was already added. Chunks
+   *  built AFTER the add see the streams; the host repaints nearby chunks
+   *  (lod.refresh) for the ones already standing. `halfWidthFloorM`: pass
+   *  ~1 m for child-tier creeks (see riverHalfWidthM). */
+  addRivers(key: string, rivers: RiverPolyline[], halfWidthFloorM?: number): boolean;
   /** Blend water colour into `rgb` where `dir` lies within a channel.
    *  `minHalfWidthM` is the caller's vertex spacing clamp (capped). */
   tintAt(dir: V3, minHalfWidthM: number, rgb: [number, number, number]): void;
   /** Valley-notch depth at `dir`, metres (0 away from rivers). */
   depthAt(dir: V3): number;
+  /** THE WATER LAYER: depth of standing water above the notched ground at
+   *  `dir` (0 = dry), filling `outFlow` with the unit DOWNSTREAM direction
+   *  (planet-local, tangent-ish to the sphere) when wet. The river fills the
+   *  top RIVER_FILL of its notch, so the water surface is level across the
+   *  channel and the banks stay dry. TRUE width only — never the LOD glyph
+   *  (glyphed water was the region-sized animated "sea" bug). */
+  waterAt(dir: V3, outFlow: [number, number, number]): number;
+  /** ONE query for the mesh builder's hot path: paint (tintAt) + water depth
+   *  + flow direction (waterAt) from a single spatial lookup. */
+  sampleAt(dir: V3, minHalfWidthM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
 }
 
 /**
@@ -221,6 +315,10 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
   // scans see every segment that could matter.
   const binU = (1.15 * (maxReachM + stepM / 2)) / radius;
 
+  // GROWABLE: refined regions merge their streams in later (addRivers), so
+  // the index is a plain array + bins that accept appends. A segment is never
+  // longer than stepM, so the binU sizing above stays valid for every add
+  // (children are strictly narrower and sampled at least as finely).
   const segs: number[] = []; // stride 7: ax ay az bx by bz halfW
   const bins = new Map<number, number[]>();
   const key = (x: number, y: number, z: number): number =>
@@ -232,30 +330,41 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
 
   const a: [number, number, number] = [0, 0, 0];
   const b: [number, number, number] = [0, 0, 0];
-  for (const river of rivers) {
-    const L = river.route.lengthM;
-    const steps = Math.max(1, Math.ceil(L / stepM));
-    const w0 = riverHalfWidthM(river.accumSource);
-    const w1 = riverHalfWidthM(river.accumMouth);
-    dirAtArc(river.route, 0, a);
-    for (let i = 0; i < steps; i++) {
-      dirAtArc(river.route, (L * (i + 1)) / steps, b);
-      const si = segs.length;
-      const halfW = w0 + (w1 - w0) * ((i + 0.5) / steps);
-      segs.push(a[0], a[1], a[2], b[0], b[1], b[2], halfW);
-      register(key(a[0], a[1], a[2]), si);
-      register(key(b[0], b[1], b[2]), si);
-      a[0] = b[0]; a[1] = b[1]; a[2] = b[2];
+  const addPolylines = (add: RiverPolyline[], floorM: number): void => {
+    for (const river of add) {
+      const L = river.route.lengthM;
+      // Follow the curve at least as finely as its own vertices (a child
+      // chart's wiggles are child-cell-sized, far under the base stepM).
+      const vertexSpacing = L / Math.max(1, river.route.dirs.length - 1);
+      const step = Math.max(25, Math.min(stepM, vertexSpacing * 2));
+      const steps = Math.max(1, Math.ceil(L / step));
+      const w0 = riverHalfWidthM(river.accumSource, floorM);
+      const w1 = riverHalfWidthM(river.accumMouth, floorM);
+      dirAtArc(river.route, 0, a);
+      for (let i = 0; i < steps; i++) {
+        dirAtArc(river.route, (L * (i + 1)) / steps, b);
+        const si = segs.length;
+        const halfW = w0 + (w1 - w0) * ((i + 0.5) / steps);
+        segs.push(a[0], a[1], a[2], b[0], b[1], b[2], halfW);
+        register(key(a[0], a[1], a[2]), si);
+        register(key(b[0], b[1], b[2]), si);
+        a[0] = b[0]; a[1] = b[1]; a[2] = b[2];
+      }
     }
-  }
-  const segArr = Float64Array.from(segs);
+  };
+  addPolylines(rivers, 80);
+  const addedKeys = new Set<string>();
 
-  // Nearest-segment scan. Returns channel-relative results through the two
+  // Nearest-segment scan. Returns channel-relative results through the
   // out-params style below (kept allocation-free — this runs per mesh vertex).
+  // qTx/qTy/qTz: the nearest segment's RAW downstream chord (segments are laid
+  // source→mouth, so a→b IS the direction the water goes) — normalized by the
+  // consumer that needs it, not per candidate.
   let qDist = Infinity;
   let qHalfW = 0;
+  let qTx = 0, qTy = 0, qTz = 0;
   const query = (dx: number, dy: number, dz: number): void => {
-    qDist = Infinity; qHalfW = 0;
+    qDist = Infinity; qHalfW = 0; qTx = 0; qTy = 0; qTz = 0;
     const bx = Math.floor((dx + 1) / binU);
     const by = Math.floor((dy + 1) / binU);
     const bz = Math.floor((dz + 1) / binU);
@@ -265,15 +374,15 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
           const cell = bins.get((ix * 2053 + iy) * 2053 + iz);
           if (!cell) continue;
           for (const si of cell) {
-            const ax = segArr[si], ay = segArr[si + 1], az = segArr[si + 2];
-            const vx = segArr[si + 3] - ax, vy = segArr[si + 4] - ay, vz = segArr[si + 5] - az;
+            const ax = segs[si]!, ay = segs[si + 1]!, az = segs[si + 2]!;
+            const vx = segs[si + 3]! - ax, vy = segs[si + 4]! - ay, vz = segs[si + 5]! - az;
             const wx = dx - ax, wy = dy - ay, wz = dz - az;
             const vv = vx * vx + vy * vy + vz * vz;
             let t = vv > 1e-18 ? (wx * vx + wy * vy + wz * vz) / vv : 0;
             if (t < 0) t = 0; else if (t > 1) t = 1;
             const ex = wx - vx * t, ey = wy - vy * t, ez = wz - vz * t;
             const d = Math.sqrt(ex * ex + ey * ey + ez * ez) * radius; // chord ≈ arc at these scales
-            if (d < qDist) { qDist = d; qHalfW = segArr[si + 6]; }
+            if (d < qDist) { qDist = d; qHalfW = segs[si + 6]!; qTx = vx; qTy = vy; qTz = vz; }
           }
         }
       }
@@ -281,29 +390,68 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
   };
 
   const hwCap = paintHalfWidthCapM(radius);
+
+  // The three reads off ONE query's state (qDist/qHalfW/qTx..) — so the mesh
+  // builder's combined sampleAt pays a single spatial lookup per vertex.
+  const paintFromQuery = (minHalfWidthM: number, rgb: [number, number, number]): void => {
+    if (qDist === Infinity) return;
+    // Paint width: the channel's own, widened to the caller's vertex
+    // spacing (capped) so coarse LODs keep a visible line.
+    const hw = Math.max(qHalfW, Math.min(minHalfWidthM, hwCap));
+    // Full water inside 0.8×hw, feathered to zero at 1.3×hw.
+    const t = (1.3 * hw - qDist) / (0.5 * hw);
+    if (t <= 0) return;
+    const s = (t >= 1 ? 1 : t * t * (3 - 2 * t)) * PAINT_MAX;
+    rgb[0] += (WATER_R - rgb[0]) * s;
+    rgb[1] += (WATER_G - rgb[1]) * s;
+    rgb[2] += (WATER_B - rgb[2]) * s;
+  };
+  const notchFromQuery = (): number => {
+    if (qDist === Infinity) return 0;
+    const shoulder = SHOULDER * qHalfW; // TRUE width only — geometry never glyphs
+    if (qDist >= shoulder) return 0;
+    const f = 1 - qDist / shoulder;
+    return notchDepthM(qHalfW) * f * f * (3 - 2 * f); // smooth banks, flat-ish floor
+  };
+  const waterFromQuery = (outFlow: [number, number, number]): number => {
+    // Water fills the TOP slice of the notch: its own surface sits at a
+    // constant cut of (1−RIVER_FILL)×centerDepth, so depth here = how far the
+    // local notch dips below that surface. Zero on the banks by construction.
+    const cut = notchFromQuery();
+    if (cut <= 0) return 0;
+    const depth = cut - notchDepthM(qHalfW) * (1 - RIVER_FILL);
+    if (depth <= 0) return 0;
+    const m = Math.hypot(qTx, qTy, qTz);
+    if (m > 1e-12) { outFlow[0] = qTx / m; outFlow[1] = qTy / m; outFlow[2] = qTz / m; }
+    else { outFlow[0] = 0; outFlow[1] = 0; outFlow[2] = 0; }
+    return depth;
+  };
+
   return {
     rivers,
+    addRivers(addKey, add, halfWidthFloorM = 1) {
+      if (addedKeys.has(addKey)) return false;
+      addedKeys.add(addKey);
+      addPolylines(add, halfWidthFloorM);
+      rivers.push(...add);
+      return true;
+    },
     tintAt(dir, minHalfWidthM, rgb) {
       query(dir[0], dir[1], dir[2]);
-      if (qDist === Infinity) return;
-      // Paint width: the channel's own, widened to the caller's vertex
-      // spacing (capped) so coarse LODs keep a visible line.
-      const hw = Math.max(qHalfW, Math.min(minHalfWidthM, hwCap));
-      // Full water inside 0.8×hw, feathered to zero at 1.3×hw.
-      const t = (1.3 * hw - qDist) / (0.5 * hw);
-      if (t <= 0) return;
-      const s = (t >= 1 ? 1 : t * t * (3 - 2 * t)) * PAINT_MAX;
-      rgb[0] += (WATER_R - rgb[0]) * s;
-      rgb[1] += (WATER_G - rgb[1]) * s;
-      rgb[2] += (WATER_B - rgb[2]) * s;
+      paintFromQuery(minHalfWidthM, rgb);
     },
     depthAt(dir) {
       query(dir[0], dir[1], dir[2]);
-      if (qDist === Infinity) return 0;
-      const shoulder = SHOULDER * qHalfW; // TRUE width only — geometry never glyphs
-      if (qDist >= shoulder) return 0;
-      const f = 1 - qDist / shoulder;
-      return notchDepthM(qHalfW) * f * f * (3 - 2 * f); // smooth banks, flat-ish floor
+      return notchFromQuery();
+    },
+    waterAt(dir, outFlow) {
+      query(dir[0], dir[1], dir[2]);
+      return waterFromQuery(outFlow);
+    },
+    sampleAt(dir, minHalfWidthM, rgb, outFlow) {
+      query(dir[0], dir[1], dir[2]);
+      paintFromQuery(minHalfWidthM, rgb);
+      return waterFromQuery(outFlow);
     },
   };
 }
@@ -317,8 +465,10 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
 export function attachRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}): RiverRelief | null {
   const relief = buildRiverRelief(built, opts);
   if (!relief) return null;
+  built.riverRelief = relief; // the host's handle for merging refined-region streams (addRivers)
   const surface = built.surface;
   surface.riverTintAt = relief.tintAt;
+  surface.riverSampleAt = relief.sampleAt;
   const base = surface.heightAt.bind(surface);
   surface.heightAt = (dir) => {
     const h = base(dir);

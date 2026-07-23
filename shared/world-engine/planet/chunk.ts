@@ -186,6 +186,7 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
   const rgb: [number, number, number] = [0, 0, 0];
   const mat: MaterialWeights = [0, 0, 0];
   const reg: MaterialRegime = [0, 0, 0];
+  const flowT: [number, number, number] = [0, 0, 0];
 
   let cx = 0;
   let cy = 0;
@@ -207,33 +208,59 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       // the real height below, so oceans are depth-shaded without a z-fighting
       // shell.
       const isOcean = !!params.seaClamp && h < 0;
-      // OCEAN ONLY. Rivers are NOT painted onto the terrain mesh: a substrate
-      // cell is ~15 km wide at the flight tier, so marking riverine vertices
-      // wet turned every watercourse into a region-sized sheet of animated
-      // "sea" with trees standing in it. A river is a CURVE, and it is drawn
-      // as one — the draped ribbon (planet/rivers.ts + the game's river-ribbons
-      // renderer). The mesh under it keeps its carved bed and damp tint.
-      const wet = isOcean ? 1 : 0;
-      const r = radius + (isOcean ? 0 : h);
+      surface.colorAt(h, dir, rgb);
+      // RIVERS: paint + the actual water layer, one relief lookup. The paint
+      // widens to this chunk's vertex spacing (capped) so thin channels hold a
+      // visible line at coarse LODs; the WATER is the channel's TRUE width
+      // only — never glyphed. (Cell-field wetness was tried and pulled: a
+      // substrate cell is ~15 km at the flight tier, and marking riverine
+      // CELLS wet turned every watercourse into a region-sized sheet of
+      // animated "sea" with trees standing in it. The relief index knows the
+      // channel as a curve, so this water is a river-shaped band.) A wet
+      // vertex clamps UP to the water surface — the river analogue of
+      // seaClamp — and its downstream direction feeds the water shader's
+      // clamped current path (terrain-shading.ts), so the flow logic is
+      // VISIBLE: the wave pattern drifts the way the solver routed the water.
+      let riverDepth = 0;
+      flowT[0] = 0; flowT[1] = 0; flowT[2] = 0;
+      if (!isOcean) {
+        if (surface.riverSampleAt) {
+          riverDepth = surface.riverSampleAt(dir, vertSpanM * 0.75, rgb, flowT);
+        } else if (surface.riverTintAt) {
+          surface.riverTintAt(dir, vertSpanM * 0.75, rgb);
+        }
+      }
+      const isRiver = riverDepth > 0.05; // ankle-deep floor keeps damp banks dry
+      const wet = isOcean || isRiver ? 1 : 0;
+      const r = radius + (isOcean ? 0 : h + (isRiver ? riverDepth : 0));
       const idx = (j * N + i) * 3;
       abs[idx + 0] = dx * r;
       abs[idx + 1] = dy * r;
       abs[idx + 2] = dz * r;
-      surface.colorAt(h, dir, rgb);
-      // Rivers are PAINT on the terrain, not draped geometry — the colour
-      // moves with the mesh at every LOD (see surface.riverTintAt). Pass this
-      // chunk's vertex spacing so a channel thinner than the grid still holds
-      // a visible line at coarse LODs.
-      if (!isOcean && surface.riverTintAt) surface.riverTintAt(dir, vertSpanM * 0.75, rgb);
       colors[idx + 0] = rgb[0];
       colors[idx + 1] = rgb[1];
       colors[idx + 2] = rgb[2];
       water[j * N + i] = wet;
-      // `flow` stays all-zero: with rivers off the mesh, no terrain vertex has
-      // a current, and zero is the shader's "still water — use the ocean's own
-      // drift" value. The attribute (and the shader's clamped flow path) is
-      // kept for the river ribbon renderer to feed when it adopts this
-      // material.
+      if (isRiver) {
+        // The flow attribute is 2D in detailUv's own axes (the face's u/v
+        // projected into the tangent plane at this vertex — the same frame the
+        // triplanar pass derives). Unit length: the shader scales by speed.
+        const du = F.u[0] * dx + F.u[1] * dy + F.u[2] * dz;
+        let ux = F.u[0] - dx * du, uy = F.u[1] - dy * du, uz = F.u[2] - dz * du;
+        const ul = Math.hypot(ux, uy, uz) || 1;
+        ux /= ul; uy /= ul; uz /= ul;
+        const dv = F.v[0] * dx + F.v[1] * dy + F.v[2] * dz;
+        let vx = F.v[0] - dx * dv, vy = F.v[1] - dy * dv, vz = F.v[2] - dz * dv;
+        const vl = Math.hypot(vx, vy, vz) || 1;
+        vx /= vl; vy /= vl; vz /= vl;
+        const fu = flowT[0] * ux + flowT[1] * uy + flowT[2] * uz;
+        const fv = flowT[0] * vx + flowT[1] * vy + flowT[2] * vz;
+        const fl = Math.hypot(fu, fv);
+        if (fl > 1e-9) {
+          flow[(j * N + i) * 2] = fu / fl;
+          flow[(j * N + i) * 2 + 1] = fv / fl;
+        }
+      }
       if (surface.materialAt) {
         surface.materialAt(h, dir, mat);
         terrain[idx + 0] = mat[0];

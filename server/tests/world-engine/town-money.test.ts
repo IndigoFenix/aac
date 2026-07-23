@@ -102,11 +102,11 @@ describe("money as CONTENT — the economy doc + town config gates", () => {
   });
 
   it("the town-play override rides the world doc and validates against street goods", () => {
-    const { config } = parseTownWorld({ seed: 7, numeraire: "cloth" }, "w");
-    expect(config.numeraire).toBe("cloth");
+    const { config } = parseTownWorld({ seed: 7, numeraire: "clothing" }, "w");
+    expect(config.numeraire).toBe("clothing");
     expect(() => parseTownWorld({ seed: 7, numeraire: 9 }, "w")).toThrow(/w\.numeraire/);
-    const play = buildTownPlay({ seed: 7, days: 40, questCount: 0, numeraire: "cloth" });
-    expect(play.eco.numeraire).toBe("cloth");
+    const play = buildTownPlay({ seed: 7, days: 40, questCount: 0, numeraire: "clothing" });
+    expect(play.eco.numeraire).toBe("clothing");
     expect(() => buildTownPlay({ seed: 7, days: 40, questCount: 0, numeraire: "gold" }))
       .toThrow(/not a street good/);
     // A numeraire-less village compiles to pure barter, byte-identically.

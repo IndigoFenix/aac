@@ -428,7 +428,7 @@ function fillDepressions(
  *  tilt, so water crosses the flat toward wherever it drains instead of dying on
  *  it. Flats with no outlet stay sinks → lakes, as before. O(N log N), recomputed
  *  only when the terrain changes. Stone carries no flow. */
-function computeFlow(grid: CellGrid, fv: GridCompiled['flowVars'][number]): Float64Array {
+function computeFlow(grid: CellGrid, fv: GridCompiled['flowVars'][number]): { flow: Float64Array; down: Float64Array } {
   const n = grid.cols * grid.rows;
   const raw = grid.fields[fv.potential];
   const blk = fv.block ? grid.fields[fv.block] : null;
@@ -471,28 +471,45 @@ function computeFlow(grid: CellGrid, fv: GridCompiled['flowVars'][number]): Floa
     }
   }
 
+  // The DOWNSTREAM POINTER per cell — the edge the catchment was actually
+  // routed along, over the SAME filled/tilted potential. Recorded because any
+  // consumer re-deriving descent from raw height gets a DIFFERENT answer on
+  // every flat and filled basin, and its idea of the network fragments there
+  // (the bug that shredded river extraction into stubs). -1 = sink or stone.
+  const down = new Float64Array(n).fill(-1);
   const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => eff[b] - eff[a] || a - b);
   for (const c of order) {
     if (blk && blk[c] > 0.5) { flow[c] = 0; continue; }
     const k = neighbours(grid, c, nb);
     let low = -1, lowP = eff[c];
     for (let j = 0; j < k; j++) { const ni = nb[j]; if (blk && blk[ni] > 0.5) continue; if (eff[ni] < lowP) { lowP = eff[ni]; low = ni; } }
-    if (low >= 0) flow[low] += flow[c]; // route catchment downstream; else a sink (lake)
+    if (low >= 0) { flow[low] += flow[c]; down[c] = low; } // route catchment downstream; else a sink (lake)
   }
   if (fv.int) for (let i = 0; i < n; i++) flow[i] = Math.round(flow[i]);
-  return flow;
+  return { flow, down };
 }
 
 /** Recompute every flow var and wake the tiles whose flow changed (so rules that
  *  read it — e.g. greenery along rivers — re-evaluate). */
 function recomputeFlows(grid: CellGrid, comp: GridCompiled): void {
   for (const fv of comp.flowVars) {
-    const out = computeFlow(grid, fv);
+    const { flow, down } = computeFlow(grid, fv);
     const cur = grid.fields[fv.name];
-    if (cur) for (let i = 0; i < out.length; i++) if (cur[i] !== out[i]) schedule(grid, i, grid.clock + 1);
-    grid.fields[fv.name] = out;
+    if (cur) for (let i = 0; i < flow.length; i++) if (cur[i] !== flow[i]) schedule(grid, i, grid.clock + 1);
+    grid.fields[fv.name] = flow;
+    // `<name>Down`: the solver's own drainage tree (see computeFlow). A field
+    // like rain/tempC/ice — engine-filled, serialized with the grid.
+    grid.fields[fv.name + 'Down'] = down;
   }
   grid.flowDirty = false;
+}
+
+/** Recompute a grid's flow vars in place — for DESERIALIZED grids whose bake
+ *  predates an engine-filled flow field (e.g. `<name>Down`). Pure and
+ *  deterministic: identical inputs re-derive identical accumulation, so on a
+ *  healthy grid this is a no-op that only fills the missing fields. */
+export function recomputeGridFlows(grid: CellGrid): void {
+  recomputeFlows(grid, compile(grid.spec));
 }
 
 // --- Sensors (derived neighbourhood fields) -----------------------------------

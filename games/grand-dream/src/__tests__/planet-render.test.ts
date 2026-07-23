@@ -352,6 +352,47 @@ describe("chunk geometry", () => {
       }
     });
 
+    it("river water: wet vertices clamp UP to the water surface and carry a unit current", () => {
+      // The actual water layer (surface.riverSampleAt, planet/rivers.ts): a
+      // wet river vertex renders AT its water level — the river analogue of
+      // seaClamp — and its `flow` attribute is the unit downstream direction
+      // in detailUv axes, which the water shader's clamped current path
+      // scrolls the wave field along (the visible flow-logic debug view).
+      const base: PlanetSurface = {
+        radius: RADIUS,
+        heightAt: () => 10,
+        colorAt: (_h, _d, out) => { out[0] = 0.5; out[1] = 0.5; out[2] = 0.5; },
+      };
+      const river: PlanetSurface = {
+        ...base,
+        // Everything in this little chunk is river, 5 m deep, flowing along
+        // the face's v axis (tangent at the +z face center).
+        riverSampleAt: (_dir, _min, rgb, outFlow) => {
+          rgb[2] += 0.2;
+          outFlow[0] = 0; outFlow[1] = 1; outFlow[2] = 0;
+          return 5;
+        },
+      };
+      const p = { face: 4, uMin: -0.05, uMax: 0.05, vMin: -0.05, vMax: 0.05, resolution: 5, skirtDepth: 10 };
+      const dry = buildChunkGeometry({ ...p, surface: base });
+      const riv = buildChunkGeometry({ ...p, surface: river });
+      for (let v = 0; v < 5 * 5; v++) {
+        expect(riv.water[v]).toBe(1);
+        // Unit 2D current, and along +v for a flow along the face's v axis.
+        const fu = riv.flow[v * 2];
+        const fv = riv.flow[v * 2 + 1];
+        expect(Math.hypot(fu, fv)).toBeCloseTo(1, 3);
+        expect(fv).toBeGreaterThan(0.9);
+        // Rendered radius = ground + water depth (the clamp-up).
+        const rDry = Math.hypot(...absAt(dry, v));
+        const rRiv = Math.hypot(...absAt(riv, v));
+        expect(rRiv - rDry).toBeCloseTo(5, 2);
+      }
+      // Without a river sampler, land stays dry and still — the ocean drift.
+      expect(dry.water.some((w) => w !== 0)).toBe(false);
+      expect(dry.flow.some((f) => f !== 0)).toBe(false);
+    });
+
     it("carries water and detailUv onto the skirt ring, like colors and normals", () => {
       const geo = buildChunkGeometry({ face: 2, uMin: -0.5, uMax: 0.5, vMin: -0.5, vMax: 0.5, resolution: 7, surface: surf, skirtDepth: 25, seaClamp: true });
       const mainVerts = 7 * 7;
@@ -1210,6 +1251,38 @@ describe("planet LOD", () => {
     // A wobble well inside the merge/subdivide dead zone changes nothing.
     lod.update([0, RADIUS * 0.001, RADIUS * 1.051]);
     expect(lod.chunkCount()).toBe(settled);
+    lod.dispose();
+  });
+
+  it("refresh rebuilds only the chunks near a changed point, preserving ids and visibility", () => {
+    // The seam a refined region's streams repaint through: the surface
+    // changed locally (river relief gained polylines), standing meshes must
+    // re-sample it — without churning ids, visibility, or far terrain.
+    const { host, existing, visible } = makeHost();
+    const rebuilt: number[] = [];
+    const baseRemove = host.removeChunk.bind(host);
+    host.removeChunk = id => { rebuilt.push(id); baseRemove(id); };
+    const lod = createPlanetLod(flat, host, { resolution: 5, maxDepth: 8 });
+    lod.update([0, 0, RADIUS * 1.02]); // deepen under +Z
+    const count = lod.chunkCount();
+    const visibleBefore = [...visible].sort();
+
+    rebuilt.length = 0;
+    lod.refresh([0, 0, RADIUS], RADIUS * 0.05);
+    // Something near the point rebuilt; the far side did not (six roots all
+    // intersect a planet-scale sphere, so use a small radius and expect far
+    // fewer rebuilds than live chunks).
+    expect(rebuilt.length).toBeGreaterThan(0);
+    expect(rebuilt.length).toBeLessThan(count);
+    // Rebuild ≠ churn: same live set, same ids, same visibility.
+    expect(lod.chunkCount()).toBe(count);
+    expect(existing.size).toBe(count);
+    expect([...visible].sort()).toEqual(visibleBefore);
+
+    // A refresh far from any chunk's neighbourhood touches nothing.
+    rebuilt.length = 0;
+    lod.refresh([0, 0, -RADIUS * 400], RADIUS * 0.01);
+    expect(rebuilt.length).toBe(0);
     lod.dispose();
   });
 });

@@ -206,6 +206,8 @@ const L: Record<string, Lexeme> = {
   sleep: { w: "ישן", f: "ישנה", vmpl: "ישנים", vfpl: "ישנות", inf: "לישון" },
   wash: { w: "רוחץ", f: "רוחצת", vmpl: "רוחצים", vfpl: "רוחצות", inf: "לרחוץ" },
   talk: { w: "מדבר", f: "מדברת", vmpl: "מדברים", vfpl: "מדברות", inf: "לדבר" },
+  // City-founding areas — the map-reading overlay verb.
+  show: { w: "מראה", f: "מראה", vmpl: "מראים", vfpl: "מראות", inf: "להראות" },
   // City-founding ③ — the structure board's room words + the demolish verb.
   break: { w: "שובר", f: "שוברת", vmpl: "שוברים", vfpl: "שוברות", inf: "לשבור" },
   room: { w: "חדר", g: "m" },

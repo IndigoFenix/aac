@@ -17,7 +17,7 @@
  */
 import type { GameSettings } from "../kernel/manifest";
 import { makeCubeSphereTopology, type GridTopology } from "../kernel/cells/topology";
-import { deserializeGrid, findFoundingSites, type CellGrid, type FoundingSite } from "../kernel/cells/index";
+import { deserializeGrid, findFoundingSites, recomputeGridFlows, type CellGrid, type FoundingSite } from "../kernel/cells/index";
 import { resolveSiteFocus, type SiteFocus } from "../kernel/cells/site-focus";
 import { runSphereTectonics, type SphereTectonicWorld, type TectonicFrame } from "../kernel/geology/sphere-tectonics";
 import { bakeCellAuthors } from "../kernel/geology/sphere-tectonics";
@@ -26,7 +26,7 @@ import { prepareSubstrateOn } from "../kernel/civ/tri";
 import { climateFields, applyClimate, type ClimateFields } from "./climate";
 import { applyEcology, biomePalette, DEFAULT_BIOSPHERE } from "./ecology";
 import { substrateSurface, type PlanetSurface, type PlanetPalette, type RGB } from "./surface";
-import { attachRiverRelief } from "./rivers";
+import { attachRiverRelief, type RiverRelief } from "./rivers";
 import { EARTHLIKE_BLUE, hexToLinear } from "./palettes";
 import { validateFields, type FieldSpec, type GroupSpec } from "../kernel/spec-schema";
 import { GEOLOGY_FIELDS } from "../kernel/civ/region-game";
@@ -177,6 +177,11 @@ export interface BuiltPlanet {
    *  read the SUBSTRATE, not the history. */
   geology?: { world: SphereTectonicWorld; frames: TectonicFrame[] };
   surface: PlanetSurface;
+  /** The river paint/notch index (attachRiverRelief fills this in both build
+   *  paths) — the host's handle for merging a refined region's streams into
+   *  the terrain when the region loads (`addRivers`). Absent on riverless
+   *  worlds. */
+  riverRelief?: RiverRelief;
 }
 
 /** The surface both build paths share — one construction, one look. */
@@ -216,6 +221,11 @@ export function rebuiltPlanetWorld(
 ): BuiltPlanet {
   const grid = deserializeGrid(gridJson);
   if (!grid) throw new Error("rebuiltPlanetWorld: the baked grid failed to deserialize");
+  // Heal bakes serialized before the drainage pointer existed: without
+  // `riverDown`, river extraction falls back to raw-height descent and
+  // SHREDS the network on every flat. Recomputing is pure — a healthy grid
+  // re-derives its identical accumulation and just gains the pointers.
+  if (grid.fields.river && !grid.fields.riverDown) recomputeGridFlows(grid);
   const built: BuiltPlanet = { spec, topo: grid.topo, grid, sites, surface: surfaceFor(spec, grid) };
   attachRiverRelief(built); // same fold as buildPlanetWorld — a rebuilt planet renders identically
   return built;

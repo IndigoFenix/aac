@@ -42,10 +42,11 @@ export interface ZoneCharter {
    *  id phase-④ districts reference). Monotone, never reused. */
   ord: number;
   /** Disc center, TOWN-LOCAL (relative the town center — the same frame
-   *  FoundedBuilding lots use). */
+   *  FoundedBuilding lots use). Unused (0) on non-disc shapes. */
   x: number;
   y: number;
-  /** Disc radius (the issuer's focus-brush radius at charter time). */
+  /** Disc radius (the issuer's focus-brush radius at charter time).
+   *  Unused (0) on non-disc shapes. */
   r: number;
   /** The admitted structure category: a StructureSpec.type or an economy
    *  district class (free strings). NULL = a CLEARING charter — ground it
@@ -53,6 +54,19 @@ export interface ZoneCharter {
   category: string | null;
   /** WHO chartered it — a creature id (the player is one, never special). */
   issuer: string;
+  /** SHAPE BACKEND (nations §3c — areas snap to NAMEABLE UNITS; the disc
+   *  brush is legacy, readable forever, never authored again):
+   *   • absent/"disc" — the legacy disc (x/y/r).
+   *   • "town" — the WHOLE TOWN: a STEERING PREFERENCE row. Never
+   *     ground-exclusive: containment (zoneAt) skips it entirely; the
+   *     growth step WEIGHS it (laws steer, need builds).
+   *   • "over" — the ground governed by charter `of` at this row's turn:
+   *     re-designating an EXISTING district by reference — extent comes
+   *     from the charter tree itself, selection over drawing. */
+  shape?: "disc" | "town" | "over";
+  /** "over" rows: the charter ord whose governed ground this row repaints
+   *  (chains — repainting a repaint follows the same rule). */
+  of?: number;
 }
 
 /**
@@ -69,11 +83,34 @@ export function zoneAt(
   let hit: ZoneCharter | null = null;
   for (const z of zones) {
     // zones() is ord order — the last containing charter is the latest.
+    const shape = z.shape ?? "disc";
+    if (shape === "town") continue; // a steering preference, never ground
+    if (shape === "over") {
+      // Repaints the CURRENT winner's ground when that winner is its
+      // referent — chains naturally (over-of-over follows the same rule).
+      if (hit && hit.ord === z.of) hit = z;
+      continue;
+    }
     const dx = x - z.x;
     const dy = y - z.y;
     if (dx * dx + dy * dy <= z.r * z.r) hit = z;
   }
   return hit && hit.category !== null ? hit : null;
+}
+
+/** The TOWN-WIDE steering preferences in force: "town"-shaped charters in
+ *  ord order — a category row ADDS, a clearing row (category null) WIPES.
+ *  These never bind ground (zoneAt skips them); the growth step weighs
+ *  them — a preferred category is licensed to rise at rest on open ground
+ *  and outranks equal-need rivals. */
+export function townPreferredCategories(zones: readonly ZoneCharter[]): Set<string> {
+  const out = new Set<string>();
+  for (const z of zones) {
+    if ((z.shape ?? "disc") !== "town") continue;
+    if (z.category === null) out.clear();
+    else out.add(z.category);
+  }
+  return out;
 }
 
 /** The categories a structure ANSWERS to: its own type plus its economy
@@ -179,6 +216,9 @@ export const URGENT_SHORTAGE = 0.6;
  *  the player saying "build here eventually"); open ground never sprawls
  *  content towns. */
 export const OPEN_GROWTH_MIN = 0.9;
+/** A town-preference's need-score bump (city-founding areas): enough to
+ *  outrank equal-need rivals, never enough to drown a real shortage. */
+export const TOWN_PREFERENCE_BOOST = 0.25;
 
 /** Deterministic town-need signals (the host reads them off the live
  *  books — town.scalar / eco.fills — all replay-stable). */
@@ -279,7 +319,10 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     Math.max(0, input.gain),
   );
   const banked = d.civic.prosperity >= FOUNDING_PROSPERITY_THRESHOLD;
-  const zones = d.zones().filter((z) => z.category !== null);
+  // Ground-binding charters only — "town" rows are steering preferences,
+  // weighed below, never iterated as zones.
+  const zones = d.zones().filter((z) => z.category !== null && (z.shape ?? "disc") !== "town");
+  const townPref = townPreferredCategories(d.zones());
 
   const districtOf = (k: string): string | null => input.economyOf(k)?.district ?? null;
   interface RankRow {
@@ -301,14 +344,23 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
       spec.role === "house"
         ? input.signals.crowding >= URGENT_CROWDING
         : worst >= URGENT_SHORTAGE;
-    const score = structureNeedScore(spec, eco, input.signals);
+    let score = structureNeedScore(spec, eco, input.signals);
     if (!zone) {
-      // OPEN GROUND (no charter constrains this town — nations §3c: laws
-      // constrain when present, absence is not a freeze): only REAL need
-      // builds here — a house for a crowded town, a producer for a real
-      // shortage. Zoned fill-at-rest (markets, workshops) needs a charter.
-      if (spec.role !== "house" && !(eco?.sells ?? []).length) return;
-      if (!urgent && score < OPEN_GROWTH_MIN) return;
+      // TOWN PREFERENCE (city-founding areas): a "town"-shaped charter
+      // names a category the whole town favors — LICENSED to rise at rest
+      // on open ground (the fill-at-rest license a ground charter grants),
+      // and boosted past equal-need rivals. Steering, never exclusion.
+      const preferred = [...categoriesOfSpec(spec, districtOf)].some((c) => townPref.has(c));
+      if (preferred) {
+        score += TOWN_PREFERENCE_BOOST;
+      } else {
+        // OPEN GROUND (no charter constrains this town — nations §3c: laws
+        // constrain when present, absence is not a freeze): only REAL need
+        // builds here — a house for a crowded town, a producer for a real
+        // shortage. Zoned fill-at-rest (markets, workshops) needs a charter.
+        if (spec.role !== "house" && !(eco?.sells ?? []).length) return;
+        if (!urgent && score < OPEN_GROWTH_MIN) return;
+      }
     }
     ranked.push({ zone, spec, idx, score, urgent });
   };
@@ -319,6 +371,9 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
         consider(zone, spec, idx);
       });
     }
+    // Open ground stays STEERED even in a chartered town — the town
+    // preference licenses its category beside the district zones.
+    if (townPref.size) input.catalog.forEach((spec, idx) => consider(null, spec, idx));
   } else {
     input.catalog.forEach((spec, idx) => consider(null, spec, idx));
   }

@@ -11,6 +11,7 @@ import type { FoundingSite } from "@shared/world-engine/kernel/cells/index";
 import type { PlanetCity } from "@shared/world-engine/planet/cities";
 import type { PlanetRoute } from "@shared/world-engine/planet/routes";
 import type { HighwayRefinement } from "@shared/world-engine/planet/refine";
+import type { RiverPolyline } from "@shared/world-engine/planet/rivers";
 import type { ResolvedBody } from "@shared/world-engine/space/physics/index";
 import type { CreatureCertification } from "@shared/world-engine/interaction/quest/creature-quests";
 import type { GeologyBakeResponse } from "./geology-worker";
@@ -22,12 +23,14 @@ export type BakeGeographyFn = (
 ) => Promise<PlanetGeography>;
 
 /** What a region refine hands the flight: the villages, their local road
- *  net as draped sphere polylines, and the interstates' crossings of this
- *  region re-solved on the child grid (render-only overrides). */
+ *  net as draped sphere polylines, the interstates' crossings of this
+ *  region re-solved on the child grid (render-only overrides), and the
+ *  region's own streams (merged into the terrain's river relief). */
 export interface RegionRefinement {
   villages: PlanetCity[];
   roads: PlanetRoute[];
   highways: HighwayRefinement[];
+  rivers: RiverPolyline[];
 }
 
 export interface GeologyBaker {
@@ -37,10 +40,12 @@ export interface GeologyBaker {
    *  like the bake). Requires that body's bake to have completed. */
   refine(bodyId: string, regionCell: number): Promise<RegionRefinement>;
   /** CROSS-REGION STITCHING: the roads joining two adjacent regions'
-   *  villages across their border (planet/refine.ts stitchRegions —
-   *  deterministic in the pair, so call once per unordered pair when both
-   *  regions are loaded; IndexedDB-cached per pair). */
-  stitch(bodyId: string, cellA: number, cellB: number): Promise<PlanetRoute[]>;
+   *  villages across their border, and the stream JOINS connecting the two
+   *  sides' rivers at the seam (planet/refine.ts stitchRegions +
+   *  stitchRegionStreams — deterministic in the pair, so call once per
+   *  unordered pair when both regions are loaded; IndexedDB-cached per
+   *  pair). */
+  stitch(bodyId: string, cellA: number, cellB: number): Promise<{ routes: PlanetRoute[]; streams: RiverPolyline[] }>;
   /** Prove a founded town's quest bundle winnable OFF the main thread (the
    *  game spec is pure JSON) — the founding pipeline's last frame-lump. */
   certifyTown(game: unknown): Promise<CreatureCertification>;
@@ -59,6 +64,7 @@ interface CachedBake {
   sites: unknown[];
   roads?: unknown[];
   highways?: unknown[];
+  rivers?: unknown[];
 }
 
 function openCache(): Promise<IDBDatabase | null> {
@@ -116,8 +122,12 @@ export function createGeologyBaker(): GeologyBaker {
       // params (including the compressed radius) fully determine the bake,
       // so a miniature world caches separately from its real-scale twin.
       const { world, radiusM, hasOcean } = geographyParamsFromFeatures(resolved, systemSeed, { faceN, compression });
-      // The params fully determine the bake — they ARE the cache key.
-      const key = JSON.stringify(world);
+      // The params determine the bake ONLY AT A FIXED ALGORITHM — bump the
+      // version whenever worldgen changes shape (the refine keys always did
+      // this; the bake key silently didn't, and every algorithm improvement
+      // was invisibly masked by year-old cached bakes). bake6: depression
+      // fill + rain-fed flow sources + riverDown drainage pointers.
+      const key = `bake6:${JSON.stringify(world)}`;
       const db = await dbPromise;
       const hit = await cacheGet(db, key);
       console.info(`geology cache ${hit ? "HIT" : "miss"} for ${resolved.body.id} (db ${db ? "open" : "unavailable"})`);
@@ -141,16 +151,18 @@ export function createGeologyBaker(): GeologyBaker {
       if (!baked) throw new Error(`refine: ${bodyId} has no completed bake`);
       const db = await dbPromise;
       // Version the key with the refine ALGORITHM, not just the payload
-      // shape: "refine5" = highway crossings ride along (cross-region
-      // stitching lives in its own pair-keyed entries, not here).
-      const cacheKey = `refine5:${baked.key}:${regionCell}`;
+      // shape: "refine6" = trunk inflow feeds the child solve + the region's
+      // streams ride along (cross-region stitching lives in its own
+      // pair-keyed entries, not here).
+      const cacheKey = `refine6:${baked.key}:${regionCell}`;
       const hit = await cacheGet(db, cacheKey);
       if (hit) {
-        // Villages ride the sites slot; roads/highways ride their own.
+        // Villages ride the sites slot; roads/highways/rivers ride their own.
         return {
           villages: hit.sites as PlanetCity[],
           roads: (hit.roads ?? []) as PlanetRoute[],
           highways: (hit.highways ?? []) as HighwayRefinement[],
+          rivers: (hit.rivers ?? []) as RiverPolyline[],
         };
       }
       const res = await ask({
@@ -163,15 +175,16 @@ export function createGeologyBaker(): GeologyBaker {
       });
       if (!res.ok) throw new Error(`region refine for ${bodyId}:${regionCell} failed: ${res.error}`);
       if (res.op !== "refine") throw new Error("geology worker answered the wrong op");
-      console.info(`region ${bodyId}:${regionCell} refined — ${res.villages.length} villages, ${res.roads.length} roads, ${res.highways.length} highway spans (${res.ms}ms)`);
+      console.info(`region ${bodyId}:${regionCell} refined — ${res.villages.length} villages, ${res.roads.length} roads, ${res.highways.length} highway spans, ${res.rivers.length} streams (${res.ms}ms)`);
       cachePut(db, cacheKey, {
         spec: null, gridJson: "", sites: res.villages,
-        roads: res.roads, highways: res.highways,
+        roads: res.roads, highways: res.highways, rivers: res.rivers,
       });
       return {
         villages: res.villages as PlanetCity[],
         roads: res.roads as PlanetRoute[],
         highways: res.highways as HighwayRefinement[],
+        rivers: res.rivers as RiverPolyline[],
       };
     },
     async stitch(bodyId, cellA, cellB) {
@@ -182,9 +195,17 @@ export function createGeologyBaker(): GeologyBaker {
       const hi = Math.max(cellA, cellB);
       // Pair-keyed: a stitch is a pure function of the pair, so it caches
       // independently of either region's entry (and of load order).
-      const cacheKey = `stitch5:${baked.key}:${lo}:${hi}`;
+      // "stitch8": stream joins anchor on the downstream side's run STARTS
+      // (crossing↔crossing matching paired almost nothing — the wet-threshold
+      // asymmetry; see refine.ts stitchRegionStreams).
+      const cacheKey = `stitch8:${baked.key}:${lo}:${hi}`;
       const hit = await cacheGet(db, cacheKey);
-      if (hit) return (hit.roads ?? []) as PlanetRoute[];
+      if (hit) {
+        return {
+          routes: (hit.roads ?? []) as PlanetRoute[],
+          streams: (hit.rivers ?? []) as RiverPolyline[],
+        };
+      }
       const res = await ask({
         op: "stitch",
         spec: baked.payload.spec,
@@ -196,9 +217,12 @@ export function createGeologyBaker(): GeologyBaker {
       });
       if (!res.ok) throw new Error(`stitch for ${bodyId}:${lo}:${hi} failed: ${res.error}`);
       if (res.op !== "stitch") throw new Error("geology worker answered the wrong op");
-      console.info(`stitch ${bodyId}:${lo}:${hi} — ${res.routes.length} border roads (${res.ms}ms)`);
-      cachePut(db, cacheKey, { spec: null, gridJson: "", sites: [], roads: res.routes });
-      return res.routes as PlanetRoute[];
+      console.info(`stitch ${bodyId}:${lo}:${hi} — ${res.routes.length} border roads, ${res.streams.length} stream joins (${res.ms}ms)`);
+      cachePut(db, cacheKey, { spec: null, gridJson: "", sites: [], roads: res.routes, rivers: res.streams });
+      return {
+        routes: res.routes as PlanetRoute[],
+        streams: res.streams as RiverPolyline[],
+      };
     },
     async certifyTown(game) {
       const res = await ask({ op: "certifyTown", game });

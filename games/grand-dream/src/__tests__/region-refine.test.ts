@@ -8,12 +8,13 @@
 import { describe, it, expect } from "vitest";
 import { buildPlanetWorld } from "@shared/world-engine/planet/planet-game";
 import {
-  refineRegion, refineHighways, stitchRegions, regionFrame, regionDir, villageKey,
+  refineRegion, refineHighways, stitchRegions, stitchRegionStreams, regionFrame, regionDir, villageKey,
   type RefinedRegion,
 } from "@shared/world-engine/planet/refine";
 import { planetCities } from "@shared/world-engine/planet/cities";
 import { planetStates, statePairs } from "@shared/world-engine/planet/states";
 import { planetRoutes, routePointAt } from "@shared/world-engine/planet/routes";
+import { RIVER_MIN_ACCUM } from "@shared/world-engine/planet/rivers";
 import type { GameSettings } from "@shared/world-engine/kernel/manifest";
 import { SEA_HEIGHT } from "@shared/world-engine/kernel/geology/tectonics";
 
@@ -44,6 +45,7 @@ describe("region refinement — tier 1 of the hierarchical substrate", () => {
     expect(Array.from(again.prep.grid.fields.traffic)).toEqual(Array.from(refined.prep.grid.fields.traffic));
     expect(again.roads).toEqual(refined.roads);
     expect(JSON.stringify(again.roadRoutes)).toBe(JSON.stringify(refined.roadRoutes));
+    expect(JSON.stringify(again.rivers)).toBe(JSON.stringify(refined.rivers));
   });
 
   // NOTE: traffic reweights the founding ranking (score = density +
@@ -359,6 +361,121 @@ describe("region refinement — tier 1 of the hierarchical substrate", () => {
           expect(list[i]![0]).toBeGreaterThanOrEqual(list[i - 1]![1]);
         }
       }
+    });
+  });
+
+  describe("the region's own streams — the fractal river tier", () => {
+    it("ships pure-JSON capillaries: owned, in parent units, never a trunk re-draw", () => {
+      // A fertile capital region founds beside water — its child solve must
+      // find streams the planet tier cannot represent.
+      expect(refined.rivers.length).toBeGreaterThan(0);
+      expect(JSON.parse(JSON.stringify(refined.rivers))).toEqual(refined.rivers);
+      for (const r of refined.rivers) {
+        // A reach that STARTS at parent-scale flow is a tier-0 trunk the
+        // base tier already paints — refine must not ship it twice.
+        expect(r.accumSource).toBeLessThanOrEqual(RIVER_MIN_ACCUM);
+        expect(r.accumMouth).toBeGreaterThanOrEqual(r.accumSource);
+        // Well-formed drape shape, inside the chart.
+        expect(r.route.dirs.length).toBeGreaterThanOrEqual(2);
+        expect(r.route.cum.length).toBe(r.route.dirs.length);
+        for (let i = 1; i < r.route.cum.length; i++) {
+          expect(r.route.cum[i]).toBeGreaterThanOrEqual(r.route.cum[i - 1]!);
+        }
+        expect(r.route.lengthM).toBeGreaterThan(0);
+        expect(r.route.lengthM).toBeLessThan(refined.frame.widthM * 3);
+        // OWNERSHIP: emission clips to owned cells (the neighbour emits its
+        // own spans of a shared stream). Chaikin can shave endpoints across
+        // the line, so assert the bulk, not every vertex.
+        let owned = 0;
+        for (const d of r.route.dirs) {
+          expect(Math.abs(Math.hypot(d[0], d[1], d[2]) - 1)).toBeLessThan(1e-6);
+          if (built.topo.cellAt!(d) === capital.cell) owned++;
+        }
+        expect(owned).toBeGreaterThanOrEqual(Math.ceil(r.route.dirs.length / 2));
+      }
+    });
+
+    it("a tier-0 trunk crossing a region keeps its discharge (inlet boundary condition)", { timeout: 240000 }, () => {
+      // Refine the region under the planet's BIGGEST land river cell: its
+      // catchment dwarfs the chart, so the trunk must ENTER from outside.
+      const river = built.grid.fields.river;
+      const height = built.grid.fields.height;
+      let trunkCell = -1;
+      for (let c = 0; c < built.topo.n; c++) {
+        if (height[c] >= SEA_HEIGHT && (trunkCell < 0 || river[c] > river[trunkCell])) trunkCell = c;
+      }
+      expect(river[trunkCell]).toBeGreaterThan(RIVER_MIN_ACCUM * 4);
+
+      const reg = refineRegion(built, trunkCell);
+      const { cols, rows } = reg.frame;
+      const childPerParent = cols * rows;
+      const childRiver = reg.prep.grid.fields.river;
+      let maxChild = 0;
+      for (let i = 0; i < childRiver.length; i++) maxChild = Math.max(maxChild, childRiver[i]);
+
+      // The window's OWN rain bounds any locally-grown accumulation — an
+      // accumulation beyond it can only come from the injected inflow.
+      const parentRunoff = built.grid.fields.runoff;
+      const R = built.spec.radius;
+      let localRain = 0;
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const parent = built.topo.cellAt!(regionDir(reg.frame, R, x, y));
+          localRain += (parentRunoff ? Math.max(0, parentRunoff[parent]) : 1) * built.spec.rain;
+        }
+      }
+      expect(maxChild).toBeGreaterThan(localRain);
+      // And it is genuinely trunk-sized in the shared unit system: the
+      // parent-equivalent accumulation clears the watercourse line.
+      expect(maxChild / childPerParent).toBeGreaterThan(RIVER_MIN_ACCUM);
+      // The re-solved trunk course itself never ships as a capillary.
+      for (const r of reg.rivers) {
+        expect(r.accumSource).toBeLessThanOrEqual(RIVER_MIN_ACCUM);
+      }
+    });
+
+    it("crossings are recorded at the ownership line, sub-trunk, correctly owned", () => {
+      // Streams drain off the chart, so a wet region always has crossings.
+      expect(refined.riverCrossings.length).toBeGreaterThan(0);
+      for (const c of refined.riverCrossings) {
+        expect(c.accum).toBeGreaterThan(0);
+        expect(c.accum).toBeLessThanOrEqual(RIVER_MIN_ACCUM); // trunks are the base tier's
+        expect(built.topo.cellAt!(c.ownDir)).toBe(capital.cell);
+        expect(c.borderWith).not.toBe(capital.cell);
+      }
+    });
+
+    it("stream joins connect the two sides' runs EXACTLY — pairwise, symmetric, short", { timeout: 240000 }, () => {
+      const nbs: number[] = new Array(built.topo.maxDegree).fill(0);
+      const kNbs = built.topo.neighbours(capital.cell, nbs);
+      let total = 0;
+      for (let j = 0; j < kNbs; j++) {
+        const other = refineRegion(built, nbs[j]!);
+        const joins = stitchRegionStreams(built, refined, other);
+        // Symmetric in the pair — load order is render timing, not data.
+        expect(JSON.stringify(stitchRegionStreams(built, other, refined))).toBe(JSON.stringify(joins));
+        expect(JSON.parse(JSON.stringify(joins))).toEqual(joins); // worker-safe
+        const rivers = [...refined.rivers, ...other.rivers];
+        for (const join of joins) {
+          // The join's endpoints ARE two painted runs' endpoints: same
+          // composite key, same exact dir — the seam closes with zero slop.
+          const from = rivers.find(r => r.route.b === join.route.a);
+          const to = rivers.find(r => r.route.a === join.route.b);
+          expect(from).toBeDefined();
+          expect(to).toBeDefined();
+          expect(join.route.dirs[0]).toEqual(from!.route.dirs[from!.route.dirs.length - 1]);
+          expect(join.route.dirs[join.route.dirs.length - 1]).toEqual(to!.route.dirs[0]);
+          // A join bridges a border band, not a continent.
+          expect(join.route.lengthM).toBeGreaterThan(0);
+          expect(join.route.lengthM).toBeLessThan(refined.frame.cellSizeM * 20);
+          // Creek-sized on both ends — trunk seams are the base tier's.
+          expect(join.accumSource).toBeLessThanOrEqual(RIVER_MIN_ACCUM);
+          expect(join.accumMouth).toBeLessThanOrEqual(RIVER_MIN_ACCUM);
+        }
+        total += joins.length;
+      }
+      // Across all of a fertile capital's borders, SOME stream pairs up.
+      expect(total).toBeGreaterThan(0);
     });
   });
 

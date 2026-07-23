@@ -375,6 +375,16 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     // signal supplied ⇒ fall back to the raw footprint test.
     const isHouseVisible = (h: TownHouse): boolean =>
       isVisible ? isVisible(h.index) : inHouseRect(p, h);
+    // CANDIDACY MUST COVER THE SPAWN RING (spirit-view churn, 2026-07-23): the
+    // view guard relocates open-ground spawns to `visibleR + 8`, and a spirit
+    // camera's whole-town visibleR exceeds street-level PEOPLE_R — a body
+    // flung to that ring held no candidacy, was culled at dwell expiry,
+    // re-desired, re-flung: a ~6 s spawn/despawn loop per body, each cycle
+    // re-routing its long walk and rebuilding its model (the measured 7 fps
+    // dollhouse collapse). Same rule the haulers already use (town-stage
+    // embodyR): the band people may EXIST in must contain the band they
+    // ENTER through.
+    const peopleR = Math.max(PEOPLE_R, (visibleR ?? 0) + 16);
     const firstFrame = !primed;
     primed = true;
     lastNow = now; // dwell anchor for dropBody (called outside update's frame)
@@ -462,7 +472,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
           // what made returns read as teleports).
           const at = bodyPos(id) ?? door;
           const d = Math.hypot(at.x - p.x, at.y - p.y);
-          if (d > PEOPLE_R && !houseVisible) continue;
+          if (d > peopleR && !houseVisible) continue;
           // `idle` = no schedule holds the body: a homebody off-shift, or a
           // runner whose trip window is closed (phase "home"). A shopper
           // still walking back is phase "to_home" — NOT idle — so it's never
@@ -515,10 +525,22 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
           // the indoor tether around its stand. A watched house's member
           // embodies at work at ANY distance (the family stays loaded).
           const d = Math.hypot(activity.pos.x - p.x, activity.pos.y - p.y);
-          if (d > PEOPLE_R && !houseVisible) continue;
+          if (d > peopleR && !houseVisible) continue;
+          // The stand is on the workplace DOORSTEP — open ground. In view,
+          // enter THROUGH the building instead: the generic relocation would
+          // fling the body to the visibleR ring (the spirit-camera churn).
+          let at = activity.pos;
+          let walkTo: TripPoint[] | undefined;
+          const wk2 = jd ? plan.works[jd.work] : undefined;
+          if (!firstFrame && visibleR !== undefined && d < visibleR && wk2) {
+            at = { x: center.x + wk2.dx + wk2.w / 2, y: center.y + wk2.dy + wk2.h / 2 };
+            const t2 = doorTransit(center, wk2);
+            walkTo = [t2.inside, t2.outside, { x: activity.pos.x, y: activity.pos.y }];
+          }
           candidates.push({
-            id, d, rank: despawnPriority({ d }), x: activity.pos.x, y: activity.pos.y, home: activity.pos,
-            wanderRadius: INDOOR_WANDER_R, indoor: false, house: house.index, member: m, run,
+            id, d, rank: despawnPriority({ d }), x: at.x, y: at.y, home: activity.pos,
+            wanderRadius: INDOOR_WANDER_R, ...(walkTo ? { walkTo } : {}),
+            indoor: false, house: house.index, member: m, run,
           });
           continue;
         }
@@ -529,7 +551,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
           if (!homeNear) continue;
           const spot = activity.pos;
           const d = Math.hypot(spot.x - p.x, spot.y - p.y);
-          if (d > PEOPLE_R) continue;
+          if (d > peopleR) continue;
           const rank = despawnPriority({ d, idleHidden: !houseVisible });
           if (houseVisible && lastVisible.has(house.index)) {
             // The player WATCHED this interior while the member was away
@@ -557,9 +579,9 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
         // OUT ON A SHOPPING TRIP (mid-trip) — the shared function handed back the errand.
         const est = activity.errand!;
         const src = run!.goods.sourceOf(house);
-        if (segDist(door, src, p) > PEOPLE_R + 120) continue;
+        if (segDist(door, src, p) > peopleR + 120) continue;
         const d = Math.hypot(est.pos.x - p.x, est.pos.y - p.y);
-        if (d > PEOPLE_R) continue;
+        if (d > peopleR) continue;
         const rank = despawnPriority({ d });
 
         // POP-IN: people enter the world through buildings — except on the
@@ -591,6 +613,19 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
               at = { x: center.x + wk.dx + wk.w / 2, y: center.y + wk.dy + wk.h / 2 };
               const t = doorTransit(center, wk);
               walkTo = [t.inside, t.outside, ...(walkTo ?? [])];
+            } else if (!houseVisible) {
+              // OPEN-AIR source (a stall, a well): no building to enter the
+              // world through, and the stall stands on visible ground — the
+              // generic relocation below would fling the body to the visibleR
+              // ring, which under a spirit camera lies past candidacy and off
+              // the walkable town (girth-rejected or churned; the dollhouse
+              // 7 fps collapse). The concealed HOME is the honest entry: step
+              // out of the house and walk the trip. A return leg has no such
+              // cover — it finishes abstract (the box gets its goods; the
+              // next appearance is from home).
+              if (est.phase === "to_home") continue;
+              at = houseCenter(house);
+              exitFirst = true;
             }
           }
         }

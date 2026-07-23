@@ -302,6 +302,14 @@ export function createCelestialBody(opts: CreateBodyOpts): CreatedBody {
     body.geography = geo.built;
     surface = geo.built.surface;
     installTerrainSamplers(surface);
+    // Local terrain re-sample (a refined region's streams joined the river
+    // relief): chunk centers sit at ~radius from the body center, so the
+    // query point is the surface point under the given direction.
+    body.refreshTerrain = (localDir, withinM) => {
+      planetObj?.lod.refresh(
+        [localDir[0] * radiusM, localDir[1] * radiusM, localDir[2] * radiusM], withinM,
+      );
+    };
     if (materialized) buildTerrainMesh();
   };
 

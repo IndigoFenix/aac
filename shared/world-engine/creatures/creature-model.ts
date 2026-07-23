@@ -519,11 +519,12 @@ export interface CreatureAvatarFactoryOptions {
    *  stable resident hash) to dress them, undefined for bare. Baked avatars
    *  sharing a preset share one bake. */
   outfitFor?: (avatarId: string) => OutfitBlueprint | undefined;
-  /** Loft fidelity for NEW models, read at model-creation time (Phase 3 view
-   *  tiers): return "simple" for the mid-distance band. A LOCAL client-camera
-   *  choice — re-tier an existing body via render3d's `resetAvatarModel`, which
-   *  rebuilds it through this factory at the then-current answer. */
-  detailFor?: () => CreatureDetail;
+  /** Loft fidelity for NEW models, read PER BODY at model-creation time
+   *  (Phase 3 view tiers): return "simple" for the mid-distance band. A LOCAL
+   *  client-camera choice — re-tier an existing body via render3d's
+   *  `resetAvatarModel`, which rebuilds it through this factory at the
+   *  then-current answer. */
+  detailFor?: (avatarId: string) => CreatureDetail;
 }
 
 /** A gesture's WORLD target, rotated into the body-local frame (+Z forward, +X
@@ -591,7 +592,7 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
     const speciesId = opts.speciesFor(id, isLocal);
     // Detail is sampled ONCE per model build (the local player is always full);
     // a tier change re-enters here through resetAvatarModel.
-    const detail = isLocal ? "full" : (opts.detailFor?.() ?? "full");
+    const detail = isLocal ? "full" : (opts.detailFor?.(id) ?? "full");
     const mopts = { look: opts.look, heightM, outfit: opts.outfitFor?.(id), detail };
     const container = new THREE.Group();
     // The local player is always dynamic; NPCs are baked until they gesture.

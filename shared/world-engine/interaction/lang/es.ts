@@ -153,6 +153,8 @@ const L: Record<string, Lexeme> = {
   sleep: { w: "duermo", v2: "duermes", v3: "duerme", v3p: "duermen", inf: "dormir" },
   wash: { w: "lavo", v2: "lavas", v3: "lava", v3p: "lavan", inf: "lavar" },
   talk: { w: "hablo", v2: "hablas", v3: "habla", v3p: "hablan", inf: "hablar" },
+  // City-founding areas — the map-reading overlay verb.
+  show: { w: "muestro", v2: "muestras", v3: "muestra", v3p: "muestran", inf: "mostrar" },
   // City-founding ③ — the structure board's room words + the demolish verb.
   break: { w: "rompo", v2: "rompes", v3: "rompe", v3p: "rompen", inf: "romper" },
   room: { w: "habitación", g: "f", plw: "habitaciones" },

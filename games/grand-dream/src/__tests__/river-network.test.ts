@@ -61,15 +61,23 @@ describe("river network extraction", () => {
     expect(widening / rivers.length).toBeGreaterThan(0.9);
   });
 
-  it("the biggest rivers reach the sea", () => {
-    // A trunk (high mouth accumulation) should end at or below the coast, not
-    // dead-end on dry land — its final point drains into the ocean.
-    const trunks = [...rivers].sort((a, b) => b.accumMouth - a.accumMouth).slice(0, 10);
-    const reachSea = trunks.filter(r => {
+  it("the biggest rivers end at the sea or at a bigger river — never dry land", () => {
+    // A reach with a big mouth accumulation is either a trunk (ends in the
+    // ocean) or a MAJOR TRIBUTARY (ends where it joins the trunk that claimed
+    // the shared course first — a junction on land, in water). What it must
+    // never do is dead-end on dry ground.
+    const river = built.grid.fields.river as Float64Array;
+    const big = [...rivers].sort((a, b) => b.accumMouth - a.accumMouth).slice(0, 10);
+    for (const r of big) {
       const end = r.route.dirs[r.route.dirs.length - 1];
-      return heightAtDir(end) < SEA_HEIGHT + 2;
-    }).length;
-    expect(reachSea).toBeGreaterThan(4);
+      const cell = topo.cellAt!(end);
+      const sea = height[cell] < SEA_HEIGHT + 2;
+      const junction = river[cell] > 16;
+      expect(sea || junction).toBe(true);
+    }
+    // And the network as a whole does drain: SOME of the big ten are trunks.
+    const seaCount = big.filter(r => heightAtDir(r.route.dirs[r.route.dirs.length - 1]) < SEA_HEIGHT + 2).length;
+    expect(seaCount).toBeGreaterThan(2);
   });
 
   it("does not draw the same reach twice — total length is bounded", () => {
@@ -88,6 +96,30 @@ describe("river network extraction", () => {
     expect(trunksOnly.length).toBeGreaterThan(0);
   });
 
+  it("walks the SOLVER'S drainage tree — one reach per true source, no stubs", () => {
+    // The fragmentation regression: extraction once re-derived descent from
+    // raw height, which disagrees with the routed flow on every flat and
+    // filled basin — chains broke mid-river and the network shredded into
+    // short orphan stubs. Now it must read computeFlow's own `riverDown`
+    // pointers, so the number of reaches equals the number of TRUE sources
+    // of that tree (wet cells nothing wet drains into), minus only the
+    // degenerate single-cell chains the extractor legally skips.
+    const down = built.grid.fields.riverDown as Float64Array;
+    expect(down).toBeDefined();
+    const river = built.grid.fields.river as Float64Array;
+    const wet = (c: number): boolean => height[c] >= SEA_HEIGHT && river[c] > 16;
+    const inWet = new Uint16Array(topo.n);
+    for (let c = 0; c < topo.n; c++) {
+      if (!wet(c)) continue;
+      const d = down[c];
+      if (d >= 0 && wet(d)) inWet[d]++;
+    }
+    let sources = 0;
+    for (let c = 0; c < topo.n; c++) if (wet(c) && inWet[c] === 0) sources++;
+    expect(rivers.length).toBeLessThanOrEqual(sources);
+    expect(rivers.length).toBeGreaterThanOrEqual(Math.floor(sources * 0.85));
+  });
+
   // ── RIVER RELIEF: the network folded back into the TERRAIN ──────────────
   // Draped ribbons float/bury as the quadtree re-chords valleys per LOD, so
   // the visible river is now terrain paint (riverTintAt) + a sub-cell valley
@@ -97,12 +129,18 @@ describe("river network extraction", () => {
     // A test point in the middle of the widest trunk — deep in a channel.
     const trunk = [...rivers].sort((a, b) => b.accumMouth - a.accumMouth)[0];
     const mid: [number, number, number] = [0, 0, 0];
+    const midChord: [number, number, number] = [0, 0, 0]; // local downstream direction
     {
       const { cum, dirs } = trunk.route;
       let lo = 0;
       const target = trunk.route.lengthM / 2;
       while (lo + 1 < cum.length && cum[lo + 1] <= target) lo++;
       mid[0] = dirs[lo][0]; mid[1] = dirs[lo][1]; mid[2] = dirs[lo][2];
+      const nx = dirs[lo + 1][0] - dirs[lo][0];
+      const ny = dirs[lo + 1][1] - dirs[lo][1];
+      const nz = dirs[lo + 1][2] - dirs[lo][2];
+      const m = Math.hypot(nx, ny, nz) || 1;
+      midChord[0] = nx / m; midChord[1] = ny / m; midChord[2] = nz / m;
     }
     const far: [number, number, number] = [-mid[0], -mid[1], -mid[2]]; // antipode
 
@@ -138,6 +176,33 @@ describe("river network extraction", () => {
       const coarse: [number, number, number] = [0.2, 0.5, 0.1];
       relief.tintAt(off, 50_000, coarse); // clamped internally to the glyph cap
       expect(coarse[2]).toBeGreaterThanOrEqual(fine[2]);
+    });
+
+    it("waterAt: standing water in the channel, flowing DOWNSTREAM, dry far land", () => {
+      const flow: [number, number, number] = [0, 0, 0];
+      const depth = relief.waterAt(mid, flow);
+      // The trunk's channel holds real water, shallower than its notch.
+      expect(depth).toBeGreaterThan(0);
+      expect(depth).toBeLessThanOrEqual(relief.depthAt(mid) + 1e-9);
+      // The flow is a unit direction pointing the way the route walks — the
+      // solver's own downstream, which is what makes the motion debuggable.
+      expect(Math.hypot(flow[0], flow[1], flow[2])).toBeCloseTo(1, 6);
+      const along = flow[0] * midChord[0] + flow[1] * midChord[1] + flow[2] * midChord[2];
+      expect(along).toBeGreaterThan(0.5);
+      // Far land is dry and the out-param is untouched by a miss.
+      expect(relief.waterAt(far, flow)).toBe(0);
+    });
+
+    it("sampleAt = tintAt + waterAt from ONE lookup (the mesh hot path)", () => {
+      const rgbSample: [number, number, number] = [0.2, 0.5, 0.1];
+      const rgbTint: [number, number, number] = [0.2, 0.5, 0.1];
+      const flow: [number, number, number] = [0, 0, 0];
+      const depth = relief.sampleAt(mid, 100, rgbSample, flow);
+      relief.tintAt(mid, 100, rgbTint);
+      expect(rgbSample).toEqual(rgbTint);
+      const flow2: [number, number, number] = [0, 0, 0];
+      expect(depth).toBeCloseTo(relief.waterAt(mid, flow2), 9);
+      expect(flow).toEqual(flow2);
     });
 
     it("attachRiverRelief folded into the built surface (and kept the LAW)", () => {

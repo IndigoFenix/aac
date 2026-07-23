@@ -63,6 +63,13 @@ interface Node {
 export interface PlanetLod {
   /** Re-evaluate the tree for a PLANET-LOCAL camera position. */
   update(cameraLocal: Vec3): void;
+  /** REBUILD every live chunk within `withinM` of a PLANET-LOCAL point —
+   *  the surface changed locally (a refined region merged its streams into
+   *  the river relief) and standing meshes must re-sample it. Ids and
+   *  visibility are preserved; chunks outside the radius are untouched.
+   *  Synchronous (a chunk build is ~1k heightAt samples), so keep the
+   *  radius region-sized. */
+  refresh(centerLocal: Vec3, withinM: number): void;
   /** Live chunk count (built meshes, visible or hidden). */
   chunkCount(): number;
   /** Visible chunk ids (for hosts/tests that audit coverage). */
@@ -174,10 +181,31 @@ export function createPlanetLod(surface: PlanetSurface, host: PlanetLodHost, opt
     if (node.children) for (const c of node.children) collectVisible(c, out);
   };
 
+  const refreshNode = (node: Node, center: Vec3, withinM: number): void => {
+    const dist = Math.hypot(
+      center[0] - node.center[0], center[1] - node.center[1], center[2] - node.center[2],
+    );
+    // Children live inside the parent's uv-rect, so a miss prunes the subtree.
+    if (dist - node.size > withinM) return;
+    const geo = buildChunkGeometry({
+      face: node.face, uMin: node.uMin, uMax: node.uMax, vMin: node.vMin, vMax: node.vMax,
+      resolution, surface, skirtDepth, seaClamp,
+    });
+    host.removeChunk(node.id);
+    host.addChunk(node.id, geo); // addChunk mounts visible — restore the node's state
+    if (!node.visible) host.setChunkVisible(node.id, false);
+    node.center = geo.center;
+    node.size = geo.size;
+    if (node.children) for (const c of node.children) refreshNode(c, center, withinM);
+  };
+
   return {
     update(cameraLocal) {
       subdivideBudget = opts.buildBudget ?? Infinity;
       for (const r of roots) updateNode(r, cameraLocal);
+    },
+    refresh(centerLocal, withinM) {
+      for (const r of roots) refreshNode(r, centerLocal, withinM);
     },
     chunkCount: () => live,
     visibleIds() {

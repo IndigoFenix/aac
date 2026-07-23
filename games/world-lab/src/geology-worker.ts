@@ -12,7 +12,7 @@
 import {
   buildPlanetWorld, rebuiltPlanetWorld, type PlanetWorldSpec,
 } from "@shared/world-engine/planet/planet-game";
-import { refineRegion, refineHighways, stitchRegions } from "@shared/world-engine/planet/refine";
+import { refineRegion, refineHighways, stitchRegions, stitchRegionStreams } from "@shared/world-engine/planet/refine";
 import { planetCities } from "@shared/world-engine/planet/cities";
 import { planetStates, statePairs } from "@shared/world-engine/planet/states";
 import { planetRoutes } from "@shared/world-engine/planet/routes";
@@ -43,9 +43,19 @@ export type GeologyBakeResponse =
   | { id: number; ok: true; op: "bake"; spec: unknown; gridJson: string; sites: unknown[]; ms: number }
   | {
       id: number; ok: true; op: "refine";
-      villages: unknown[]; roads: unknown[]; highways: unknown[]; ms: number;
+      villages: unknown[]; roads: unknown[]; highways: unknown[];
+      /** The region's own streams (refine.ts `rivers`) — pure-JSON river
+       *  polylines the main thread merges into the terrain's river relief. */
+      rivers: unknown[];
+      ms: number;
     }
-  | { id: number; ok: true; op: "stitch"; routes: unknown[]; ms: number }
+  | {
+      id: number; ok: true; op: "stitch"; routes: unknown[];
+      /** Cross-border stream JOINS (refine.ts stitchRegionStreams) — river
+       *  polylines the main thread merges into the terrain's river relief. */
+      streams: unknown[];
+      ms: number;
+    }
   | { id: number; ok: true; op: "certifyTown"; cert: CreatureCertification; ms: number }
   | { id: number; ok: false; error: string };
 
@@ -102,6 +112,7 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
       const res: GeologyBakeResponse = {
         id: req.id, ok: true, op: "stitch",
         routes: stitchRegions(built, a, b),
+        streams: stitchRegionStreams(built, a, b),
         ms: Math.round(performance.now() - t0),
       };
       (self as unknown as Worker).postMessage(res);
@@ -128,6 +139,7 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
         villages: refined.villages,
         roads: refined.roadRoutes,
         highways,
+        rivers: refined.rivers,
         ms: Math.round(performance.now() - t0),
       };
       (self as unknown as Worker).postMessage(res);

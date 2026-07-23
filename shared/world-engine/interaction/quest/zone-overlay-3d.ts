@@ -1,18 +1,21 @@
 // shared/world-engine/interaction/quest/zone-overlay-3d.ts
 //
-// AREA CHARTERS ON THE GROUND (city-expansion ③): the render half of the
-// zoning surface — board words must VISIBLY change the world, so a spoken
-// "area farms here" tints the chartered ground the moment the charter
-// lands. A SceneOverlay (render3d) riding the quest host's composed
-// overlay slot, exactly like the goal-tree layer and the path debugger.
+// "SHOW AREAS" (city-founding areas): the TOGGLEABLE map-reading overlay —
+// never persistent world texture (areas otherwise show only through their
+// consequences). The host's getView returns null while the toggle is off;
+// on, the named units tint: district ground (legacy discs, with "over"
+// repaints resolved through the charter chain) as translucent washes, and
+// town-wide preferences as boundary rings at the town's radius. A
+// SceneOverlay (render3d) riding the quest host's composed overlay slot,
+// exactly like the goal-tree layer and the path debugger.
 //
-// Kept deliberately simple: ONE flat translucent plane over the charters'
-// bounding box, textured from a canvas where each charter disc is painted
-// in ord order — so the LATEST charter visibly wins where discs overlap
-// and a CLEARING charter (category null) honestly ERASES the tint under
-// it (destination-out), the exact semantics of zoning.ts zoneAt. Colors
-// are a deterministic hash of the category string, so the same category
-// wears the same tint in every session and every peer.
+// Kept deliberately simple: ONE flat translucent plane over the shapes'
+// bounding box, textured from a canvas where each disc is painted in ord
+// order — so the LATEST designation visibly wins where discs overlap and
+// a CLEARING row honestly ERASES the tint under it (destination-out), the
+// exact semantics of zoning.ts zoneAt. Colors are a deterministic hash of
+// the category string, so the same category wears the same tint in every
+// session and every peer. Static matte paint — never bright or moving.
 //
 // Render-only by design: the overlay READS the charter list through a
 // getter each frame and re-paints only when the deltas version moves —
@@ -20,10 +23,10 @@
 
 import * as THREE from "three";
 import type { SceneOverlay } from "../../render3d.js";
-import type { ZoneCharter } from "../../kernel/town/zoning.js";
+import { townPreferredCategories, type ZoneCharter } from "../../kernel/town/zoning.js";
 
-/** What the overlay draws — pulled once per frame. Null = no zone surface
- *  in this session (no town, no founded site): the overlay idles empty. */
+/** What the overlay draws — pulled once per frame. Null = the toggle is
+ *  off, or no zone surface in this session: the overlay idles empty. */
 export interface ZoneOverlayView {
   /** Charters in ord order (TownDeltas.zones()). */
   zones: readonly ZoneCharter[];
@@ -31,6 +34,8 @@ export interface ZoneOverlayView {
   center: { x: number; y: number };
   /** The deltas store version — the repaint key (bumped by addZone). */
   version: number;
+  /** The town's radius — town-wide preference rings draw just past it. */
+  radius: number;
 }
 
 export interface ZoneOverlayDeps {
@@ -113,13 +118,47 @@ export class ZoneOverlay3D implements SceneOverlay {
   }
 
   private repaint(view: ZoneOverlayView): void {
-    // Bounding box of every charter disc (town-local), padded a touch.
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    // "over" rows repaint an EXISTING district by reference (nations §3c —
+    // no geometry of their own): resolve each disc's EFFECTIVE category
+    // through the chain, then paint discs only.
+    const eff = new Map<number, string | null>(); // root disc ord → live category
+    const rootOf = new Map<number, number>(); // any row ord → its root disc
     for (const z of view.zones) {
+      const shape = z.shape ?? "disc";
+      if (shape === "disc") {
+        eff.set(z.ord, z.category);
+        rootOf.set(z.ord, z.ord);
+      } else if (shape === "over" && z.of !== undefined) {
+        const r = rootOf.get(z.of);
+        if (r !== undefined) {
+          eff.set(r, z.category);
+          rootOf.set(z.ord, r);
+        }
+      }
+    }
+    const discs = view.zones.filter((z) => (z.shape ?? "disc") === "disc");
+    // Town-wide preferences draw as boundary rings just past the radius.
+    const prefs = [...townPreferredCategories(view.zones)];
+    const RING_GAP = 4;
+    const maxRingR = prefs.length ? view.radius + 6 + RING_GAP * (prefs.length - 1) + 2 : 0;
+
+    // Bounding box of every drawn shape (town-local), padded a touch.
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const z of discs) {
       x0 = Math.min(x0, z.x - z.r);
       y0 = Math.min(y0, z.y - z.r);
       x1 = Math.max(x1, z.x + z.r);
       y1 = Math.max(y1, z.y + z.r);
+    }
+    if (prefs.length) {
+      x0 = Math.min(x0, -maxRingR);
+      y0 = Math.min(y0, -maxRingR);
+      x1 = Math.max(x1, maxRingR);
+      y1 = Math.max(y1, maxRingR);
+    }
+    if (x0 === Infinity) {
+      this.clearMesh();
+      return; // only shape rows with nothing to draw (e.g. cleared prefs)
     }
     const pad = 2;
     x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
@@ -134,13 +173,14 @@ export class ZoneOverlay3D implements SceneOverlay {
     canvas.height = ph;
     const g = canvas.getContext("2d");
     if (!g) return;
-    // Paint charters in ORD ORDER — the later disc covers the earlier one
-    // (the zoneAt overlap rule, visibly). A clearing charter erases.
-    for (const z of view.zones) {
+    // Paint discs in ORD ORDER — the later disc covers the earlier one
+    // (the zoneAt overlap rule, visibly). An erased/cleared disc erases.
+    for (const z of discs) {
       const cx = (z.x - x0) * scale;
       const cy = (z.y - y0) * scale;
       const cr = z.r * scale;
-      if (z.category === null) {
+      const category = eff.get(z.ord) ?? null;
+      if (category === null) {
         g.globalCompositeOperation = "destination-out";
         g.fillStyle = "rgba(0,0,0,1)";
         g.beginPath();
@@ -149,7 +189,7 @@ export class ZoneOverlay3D implements SceneOverlay {
         g.globalCompositeOperation = "source-over";
         continue;
       }
-      const color = zoneCategoryColor(z.category);
+      const color = zoneCategoryColor(category);
       // Later wins: clear this disc's ground first so an overlapping older
       // tint never blends through, then lay the fill + rim.
       g.globalCompositeOperation = "destination-out";
@@ -168,6 +208,17 @@ export class ZoneOverlay3D implements SceneOverlay {
       g.arc(cx, cy, Math.max(1, cr - g.lineWidth / 2), 0, Math.PI * 2);
       g.stroke();
     }
+    // Preference rings: one per category, staggered outward from the town
+    // radius (the town's own extent is the unit — a boundary, not a fill).
+    prefs.forEach((cat, i) => {
+      const color = zoneCategoryColor(cat);
+      const rr = (view.radius + 6 + RING_GAP * i) * scale;
+      g.strokeStyle = cssColor(color, RIM_ALPHA);
+      g.lineWidth = Math.max(1, 1.6 * scale);
+      g.beginPath();
+      g.arc((0 - x0) * scale, (0 - y0) * scale, Math.max(1, rr), 0, Math.PI * 2);
+      g.stroke();
+    });
 
     this.clearMesh();
     this.texture = new THREE.CanvasTexture(canvas);

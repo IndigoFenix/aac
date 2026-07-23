@@ -175,7 +175,7 @@ import { OBSERVER_SCENE_UPDATE_PROMPT, OBSERVER_STARTUP_PROMPT } from "./prompts
 import { findMatchingFace, recordContactSighting, growFaceGalleryForEntity, penalizeFaceMatch, findMatchingVoice, growVoiceGalleryForEntity, penalizeVoiceMatch, getKnownPeopleForStudent, getVoicePitchProfiles, type FaceMatchResult, type VoiceMatchResult, type KnownPerson, type EntityType, type VoicePitchProfile } from "../biometric/recognition-service";
 import {
   resolveStartupMode,
-  resolveStudentIsActiveUser,
+  decideStartupAction,
   buildStartupGreetingTurn,
   type StartupBehavior,
 } from "./startup-mode";
@@ -1242,9 +1242,15 @@ export class AgentCoordinator {
    *  the greeting on reconnect so a transient network drop doesn't re-greet the
    *  student and feel like the AAC "reset". */
   private sessionWasResumed = false;
-  /** One-shot: true until the startup greeting fires, the user presses a
-   *  button first, or the fallback timer resolves it. */
+  /** One-shot: the startup greeting is still armed. Stays true until the
+   *  greeting fires or the user presses a button first. NOT cleared by the
+   *  fallback timer — a late identification (slow Observer set_person_as_user)
+   *  must still be able to greet once. */
   private startupPending = true;
+  /** While true, the startup path owns the board (no rebuilds from
+   *  observations). Cleared when the greeting fires OR when the fallback timer
+   *  unblocks the board so it doesn't hang waiting on a slow identification. */
+  private startupBoardGated = true;
   /** Set once the Observer explicitly confirms who the active user is via
    *  set_person_as_user — a strong "the user is identified" signal. */
   private startupUserConfirmed = false;
@@ -5003,20 +5009,21 @@ export class AgentCoordinator {
     // just the spoken turns.
     this.appendToConversationLog("system", joined);
 
-    // While startup is pending, the startup path owns the board: the greeting
-    // settle timer waits for BOTH identification AND scene context, then fires
-    // (and rebuilds the board with openers) — so the [SESSION START] command
-    // lands AFTER the Observer's update_context. We record that context arrived
-    // and (re)arm the settle timer; re-arming batches a burst of updates so the
-    // greeting follows the LAST one. MENU keeps the home menu (greeting never
-    // fires; the fallback clears startup). Either way, no board rebuild here —
-    // it would either be redundant with the greeting's rebuild or clobber the
-    // home menu.
+    // While the startup greeting is still armed, record that context arrived,
+    // note any set_person_as_user confirmation, and (re)arm the settle timer —
+    // re-arming batches a burst of updates so the greeting follows the LAST one.
+    // The greeting waits for BOTH identification AND scene context, then fires
+    // (and rebuilds the board with openers), so [SESSION START] lands AFTER the
+    // Observer's update_context. While the startup path still OWNS the board
+    // (startupBoardGated) we skip the rebuild here — it would be redundant with
+    // the greeting's rebuild or clobber the home menu. Once the fallback has
+    // unblocked the board (identification running slow), we fall through and
+    // keep the board fresh while the greeting stays armed for a late ID.
     if (this.startupPending) {
       this.startupContextReceived = true;
       if (batch.some(e => e.updateType === "set_person_as_user")) this.startupUserConfirmed = true;
       this.maybeArmStartupGreet();
-      return;
+      if (this.startupBoardGated) return;
     }
 
     this.invokeBoardManager(batch);
@@ -5056,17 +5063,20 @@ export class AgentCoordinator {
   }
 
   /**
-   * Fire (or resolve) the one-shot startup greeting. CONTEXTUAL + active user
-   * identified → Speaker greets and the board follows with openers. `force`
-   * (the fallback timer) resolves startup regardless: greet on a personal
-   * device with no contradicting visitor, otherwise just stop waiting. MENU /
-   * social-peer sessions never greet.
+   * Fire the one-shot startup greeting. CONTEXTUAL + active user POSITIVELY
+   * IDENTIFIED → Speaker greets and the board follows with openers. Only ever
+   * called once the user is identified — from the settle timer (identification +
+   * context) or from the fallback's identified-without-context branch (`force`).
+   * The fallback NEVER calls this while the user is unidentified, so the AI can
+   * never greet someone it hasn't seen. MENU / social-peer / resumed sessions
+   * never greet.
    */
   private fireStartupGreeting(opts: { force?: boolean } = {}): void {
     if (!this.startupPending || this.state !== "ready") return;
     const identified = this.activeUserIdentified();
     if (!identified && !opts.force) return; // nothing to fire yet
     this.startupPending = false;
+    this.startupBoardGated = false;
     this.clearStartupTimers();
 
     // No Speaker (budget board-only floor, <10%) → no voiced greeting / wake
@@ -5076,11 +5086,18 @@ export class AgentCoordinator {
       return;
     }
 
-    // Resumed sessions (reconnect) never greet: the conversation is already
-    // ongoing, so a fresh "Hi Shachaf!" on every network blip is exactly the
-    // "keeps resetting" symptom. Come up quietly on the already-pushed board.
-    const canGreet = this.startupBehavior === "contextual" && !this.socialPeer && !this.sessionWasResumed;
-    const greet = canGreet && (identified || this.studentIsActiveUser());
+    // Greet ONLY when the active user was positively identified. When the
+    // fallback fires without an identification (force + !identified) we resolve
+    // startup but stay silent — greeting someone the AI can't see is exactly the
+    // behavior we're preventing. Resumed sessions (reconnect) never greet either:
+    // the conversation is already ongoing, so a fresh "Hi Shachaf!" on every
+    // network blip is the "keeps resetting" symptom.
+    const action = decideStartupAction({
+      startupBehavior: this.startupBehavior,
+      activeUserIdentified: identified,
+      socialPeerActive: !!this.socialPeer,
+    });
+    const greet = action === "greet" && !this.sessionWasResumed;
     if (greet) {
       flowNote("COORDINATOR", `Startup greeting — identified=${identified} force=${!!opts.force} mode=${this.startupBehavior}`);
       // sendUserTurn (not a context injection) so the Speaker actually voices
@@ -5098,6 +5115,7 @@ export class AgentCoordinator {
   private cancelStartupGreeting(reason: string): void {
     if (!this.startupPending) return;
     this.startupPending = false;
+    this.startupBoardGated = false;
     this.clearStartupTimers();
     flowNote("COORDINATOR", `Startup greeting canceled — ${reason}`);
   }
@@ -5118,23 +5136,6 @@ export class AgentCoordinator {
     if (!this.currentIdentifiedFaces.length) return false;
     if (Date.now() - this.currentIdentifiedFacesAt > AgentCoordinator.IDENTIFIED_FACES_TTL_MS) return false;
     return this.currentIdentifiedFaces.some(f => f.matched && (f.entityType === "student" || f.entityType === "user"));
-  }
-
-  /**
-   * Whether the bound student is the person actually at the device. Prefers a
-   * positive biometric match; if faces are seen but none is the student, a
-   * visitor is at the device (don't greet as the student); if no recognition
-   * is available, assume the student on a personal device but never on a
-   * shared / classroom one.
-   */
-  private studentIsActiveUser(): boolean {
-    const haveFreshFaces = this.currentIdentifiedFaces.length > 0
-      && Date.now() - this.currentIdentifiedFacesAt <= AgentCoordinator.IDENTIFIED_FACES_TTL_MS;
-    return resolveStudentIsActiveUser({
-      sawStudentFace: this.sawStudentFace(),
-      haveFreshFaces,
-      isSharedDevice: !!this.classroomId,
-    });
   }
 
   /**
@@ -5239,15 +5240,27 @@ export class AgentCoordinator {
     ]);
   }
 
-  /** Arm the one-shot backstop that resolves startup if no user identification
-   *  arrives after the first frame. */
+  /**
+   * Arm the one-shot backstop for a slow startup. If the active user IS already
+   * identified but scene context never arrived, greet anyway (context-less).
+   * Otherwise, DON'T greet — but unblock the board so it doesn't hang, and leave
+   * the greeting ARMED: identification often arrives late (the Observer's
+   * set_person_as_user is an LLM round-trip, routinely >6s after connect), and
+   * when it does the greeting still fires exactly once. If identification never
+   * comes, no greeting ever — we never greet a user the AI hasn't seen.
+   */
   private armStartupFallback(): void {
     if (this.startupFallbackTimer || !this.startupPending) return;
     this.startupFallbackTimer = setTimeout(() => {
       this.startupFallbackTimer = null;
-      if (this.startupPending) {
-        flowNote("COORDINATOR", "Startup fallback timer fired — no user identification arrived.");
+      if (!this.startupPending) return;
+      if (this.activeUserIdentified()) {
+        flowNote("COORDINATOR", "Startup fallback — identified without scene context; greeting now.");
         this.fireStartupGreeting({ force: true });
+      } else if (this.startupBoardGated) {
+        this.startupBoardGated = false;
+        flowNote("COORDINATOR", "Startup fallback — board unblocked; greeting still armed pending identification.");
+        this.invokeBoardManager([]);
       }
     }, STARTUP_FALLBACK_MS);
   }

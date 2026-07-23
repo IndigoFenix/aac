@@ -161,6 +161,11 @@ export interface CelestialBody {
   surfaceAt?(worldPos: THREE.Vector3, out?: THREE.Vector3): THREE.Vector3;
   groundNormalAt?(worldPos: THREE.Vector3, epsilon: number, out?: THREE.Vector3): THREE.Vector3;
   heightAt?(localDir: THREE.Vector3): number;
+  /** Rebuild the terrain chunks within `withinM` of a BODY-LOCAL unit
+   *  direction — the surface changed there (a refined region merged its
+   *  streams into the river relief) and standing meshes must re-sample it.
+   *  No-op until the terrain mesh exists. */
+  refreshTerrain?(localDir: readonly [number, number, number], withinM: number): void;
 
   /** Per-body internal update (e.g. LOD walk for rocky planets). Called by
    *  world.update AFTER the body's transform has been advanced for the frame.

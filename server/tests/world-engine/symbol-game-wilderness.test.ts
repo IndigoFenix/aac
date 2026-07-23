@@ -17,8 +17,8 @@ describe("buildWilderness", () => {
 
   it("lays the requested counts with the right material stacks", () => {
     const w = buildWilderness({ seed: 3, trees: 5, rocks: 4, creatures: 2 });
-    const trees = w.features.filter((f) => f.kind === "tree");
-    const rocks = w.features.filter((f) => f.kind === "rock");
+    const trees = w.features.filter((f) => f.species === "oak");
+    const rocks = w.features.filter((f) => f.species === "rock");
     expect(trees).toHaveLength(5);
     expect(rocks).toHaveLength(4);
     expect(w.creatures).toHaveLength(2);
@@ -46,9 +46,9 @@ describe("buildWilderness", () => {
     }
   });
 
-  it("ids follow the session protocols (features wild:*, creatures wild_<n>)", () => {
+  it("ids follow the session protocols (features wild:<species>_<n>, creatures wild_<n>)", () => {
     const w = buildWilderness({ seed: 5, trees: 2, rocks: 1, creatures: 2 });
-    expect(w.features.map((f) => f.id)).toEqual(["wild:tree_0", "wild:tree_1", "wild:rock_0"]);
+    expect(w.features.map((f) => f.id)).toEqual(["wild:oak_0", "wild:oak_1", "wild:rock_0"]);
     expect(w.creatures.map((c) => c.id)).toEqual(["wild_0", "wild_1"]);
   });
 

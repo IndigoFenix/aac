@@ -72,6 +72,15 @@ export interface PlanetSurface {
    *  `minHalfWidthM` is the mesh builder's vertex spacing: thin channels
    *  widen to it (capped) so rivers survive coarse chunks. Absent = none. */
   riverTintAt?(dir: Vec3, minHalfWidthM: number, rgb: [number, number, number]): void;
+  /** RIVER WATER + PAINT in one lookup (planet/rivers.ts attachRiverRelief
+   *  installs this): does riverTintAt's recolor AND returns the depth of
+   *  standing water above the carved ground at `dir` (0 = dry), filling
+   *  `outFlow` with the unit DOWNSTREAM direction when wet. The mesh builder
+   *  clamps wet vertices up to the water surface and feeds the flow to the
+   *  water shader's clamped current path — the actual water layer, at the
+   *  channel's TRUE width only (the LOD glyph applies to paint, never to
+   *  water: glyphed water was the region-sized animated "sea" bug). */
+  riverSampleAt?(dir: Vec3, minHalfWidthM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
   /** Vertex color for an elevation at a direction (dir enables field-driven
    *  tinting — fertility greens, ore dust). Writes into `out`. */
   colorAt(h: number, dir: Vec3, out: [number, number, number]): void;

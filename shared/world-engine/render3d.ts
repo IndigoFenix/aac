@@ -348,6 +348,27 @@ function segmentsCross(
 // burst suspect). Remove with the quest-host probes.
 const rbNow = (): number => (typeof performance !== "undefined" ? performance.now() : 0);
 const rbAcc = { last: 0, frames: 0, blocks: new Map<string, { total: number; max: number }>() };
+// TEMP GC-wave probe (5th dollhouse readout): every block — GL submit, avatar
+// pose math, sim — ran UNIFORMLY ~4× slower in the crawl windows with FLAT
+// draw counts, i.e. the machine itself slows in waves. Candidate 1 is V8 GC
+// (incremental marking taxes all JS while active): sample the Chrome-only
+// heap gauge per frame and report end-size, window growth (allocation rate)
+// and how many frames the heap SHRANK (collections). A crawl window with big
+// growth + collections = GC waves — fix by cutting per-frame allocation.
+// Flat heap through a crawl = candidate 2, CPU boost/thermal throttling —
+// not a code fix at all.
+const rbHeap = { last: 0, grow: 0, drops: 0 };
+function rbHeapSample(): void {
+  const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+  if (!mem) return;
+  const mb = mem.usedJSHeapSize / 1048576;
+  if (rbHeap.last > 0) {
+    const d = mb - rbHeap.last;
+    if (d > 0) rbHeap.grow += d;
+    else if (d < -1) rbHeap.drops++; // >1 MB shrink in one frame = a collection
+  }
+  rbHeap.last = mb;
+}
 function rbMark(name: string, ms: number): void {
   if (!probesOn()) return;
   const b = rbAcc.blocks.get(name) ?? { total: 0, max: 0 };
@@ -358,6 +379,7 @@ function rbMark(name: string, ms: number): void {
 function rbFlush(): void {
   if (!probesOn()) return;
   rbAcc.frames++;
+  rbHeapSample();
   const now = rbNow();
   if (rbAcc.last === 0) rbAcc.last = now;
   if (now - rbAcc.last < 2000) return;
@@ -365,12 +387,18 @@ function rbFlush(): void {
     .sort((a, b) => b[1].total - a[1].total)
     .map(([k, v]) => `${k}:${v.total.toFixed(0)}(${v.max.toFixed(0)})`)
     .join(" ");
+  const heap =
+    rbHeap.last > 0
+      ? ` heapMB:${rbHeap.last.toFixed(0)}(+${rbHeap.grow.toFixed(0)} gc:${rbHeap.drops})`
+      : "";
   if (typeof console !== "undefined") {
-    console.log(`[render-blocks] ${(now - rbAcc.last).toFixed(0)}ms window / ${rbAcc.frames} frames — ${rows}`);
+    console.log(`[render-blocks] ${(now - rbAcc.last).toFixed(0)}ms window / ${rbAcc.frames} frames — ${rows}${heap}`);
   }
   rbAcc.blocks.clear();
   rbAcc.frames = 0;
   rbAcc.last = now;
+  rbHeap.grow = 0;
+  rbHeap.drops = 0;
 }
 
 /** Does the horizontal segment (ax,az)→(bx,bz) enter the axis-aligned rect —
@@ -2668,6 +2696,17 @@ export class World3DRenderer {
     if (!this.host) {
       this.renderer!.clear();
       this.renderer!.render(this.scene, this.camera);
+      // TEMP gl-load probe (view-distance-lod-tiers.md): what the MAIN scene
+      // draw just submitted. The dollhouse crawl windows are pure-GL now, so
+      // the readout must say WHICH kind: draws/triangles jumping in the crawl
+      // windows = the camera sweep pulls the whole city into frustum (fix by
+      // drawing less: street-scope culling); flat counts with spiking time =
+      // per-draw stalls (first-use shader compiles / texture uploads).
+      if (probesOn()) {
+        const inf = this.renderer!.info.render;
+        rbMark("glCalls", inf.calls); // counts, not ms (structsBuilt precedent)
+        rbMark("glTrisK", inf.triangles / 1000);
+      }
       this.renderer!.clearDepth();
       this.renderer!.render(this.overlayScene, this.overlayCamera);
     }

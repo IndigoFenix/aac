@@ -14,6 +14,7 @@
 import { RARE_IMPORT_KIND } from "./trade.js";
 import { GARMENT_WEARABLE_HEADS, GARMENT_COLORS } from "../../creatures/clothing.js";
 import { headOf, variantKindsOf } from "../../variations.js";
+import { foodGlyphs } from "../../products.js";
 
 /** WHICH GOOD VARIES IN WHICH variation dimension(s) — the generic replacement
  *  for hand-writing each good's `head × values` product. Clothing varies in
@@ -26,8 +27,11 @@ export const GOOD_DIMENSIONS: Record<string, readonly string[]> = {
 
 // FOOD comes in KINDS (fruit): stacks hold kind glyphs under the "food" category,
 // and residents' LIKES pick among them (creatures.ts preferredOf). Other goods
-// are their own single kind. The kind names are translated glyphs.
-export const FOOD_KINDS: readonly string[] = ["apple", "banana", "grape"];
+// are their own single kind. The kind names are translated glyphs — DERIVED
+// from the natural-sources registry (products.ts): the orchard plants' harvest
+// yields ARE the food kinds, so the vocabulary and the living sources can
+// never disagree. Registry order is pinned (likes hash by index).
+export const FOOD_KINDS: readonly string[] = foodGlyphs();
 // CLOTHING comes in GARMENT kinds the same way, and each garment now carries a
 // COLOUR as a facet (`shirt.color_red`) — so a clothing KIND is a (head × colour)
 // pair, exactly like fruit is a kind of food. `CLOTHING_HEADS` names the bare

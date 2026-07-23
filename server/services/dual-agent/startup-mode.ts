@@ -25,36 +25,21 @@ export function resolveStartupMode(ctx: { classroomId: string | null }): Startup
 }
 
 /**
- * Whether the bound student is the person actually at the device. Prefers a
- * positive biometric match; if faces are seen but none is the student, a
- * visitor is at the device (don't greet as the student); if no recognition is
- * available at all, assume the student on a personal device but never on a
- * shared / classroom one.
- */
-export function resolveStudentIsActiveUser(args: {
-  sawStudentFace: boolean;
-  haveFreshFaces: boolean;
-  isSharedDevice: boolean;
-}): boolean {
-  if (args.sawStudentFace) return true;
-  if (args.haveFreshFaces) return false;
-  return !args.isSharedDevice;
-}
-
-/**
  * The one-shot startup decision: should the Speaker greet, or should the AI
  * stay passive (home menu / board-first)? Greeting requires CONTEXTUAL mode,
- * the student being the active user, and no social-training peer (which owns
- * its own greeting lifecycle).
+ * the active user being POSITIVELY IDENTIFIED (a real face match / Observer
+ * confirmation — never a mere "probably the student on a personal device"
+ * assumption), and no social-training peer (which owns its own greeting
+ * lifecycle). We never greet someone the AI hasn't actually seen.
  */
 export function decideStartupAction(args: {
   startupBehavior: StartupBehavior;
-  studentIsActiveUser: boolean;
+  activeUserIdentified: boolean;
   socialPeerActive: boolean;
 }): "greet" | "wait" {
   if (args.socialPeerActive) return "wait";
   if (args.startupBehavior !== "contextual") return "wait";
-  return args.studentIsActiveUser ? "greet" : "wait";
+  return args.activeUserIdentified ? "greet" : "wait";
 }
 
 /**

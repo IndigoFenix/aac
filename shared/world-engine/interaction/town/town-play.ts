@@ -186,12 +186,17 @@ export const TOWN_PLAY_ECONOMY: EconomyDoc = {
       },
     },
     {
-      key: "cloth", scalarMax: 50, perPersonDaily: 0.0003,
+      // PURE INTERMEDIATE: cloth is the TAILOR's raw material (the weaver's
+      // cloth_out → tailor's clothing_out chain below), NOT something a
+      // household consumes — only CLOTHING is worn. So it carries no
+      // `perPersonDaily` demand and no `street` box, the documented
+      // convention for intermediates (ore, planks, wool). `transport` stays
+      // ONLY to declare its cloth_out/_need/_got convention scalars, which
+      // the sew process reads. Previously the household `street` box made
+      // every resident run a spurious provision:cloth errand ("I'm going to
+      // get cloth") for a material nothing in the home ever uses.
+      key: "cloth", scalarMax: 50,
       transport: {},
-      street: {
-        capDays: 12, shopSec: 20, cartRations: 12, unit: "bolts", producers: ["weaver"],
-        stockColor: "#b8c4de", boxLabel: "Linen chest", errandName: "linens",
-      },
     },
     {
       // The wool chain's last link: the TAILOR sews the weaver's cloth into

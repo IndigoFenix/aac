@@ -237,7 +237,8 @@ import {
   DEFAULT_DRESS_PALETTE,
   type DressPalette,
 } from "../../creatures/clothing.js";
-import { FRUIT_TREES, SPARK_SPECIES_ID, requireSpecies, speciesBodyRadius } from "../../creatures/species.js";
+import { SPARK_SPECIES_ID, requireSpecies, speciesBodyRadius } from "../../creatures/species.js";
+import { drinkGlyphs, naturalSourceOf, sourceIsConsumable, sourcesForGood } from "../../products.js";
 import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
 import { buildConcepts } from "@shared/world-engine/interaction/content/concepts.js";
 import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
@@ -520,7 +521,8 @@ const WASTE_MEAL_BUMP = 0.3; // eating pushes the waste meter this much
 const WASTE_DRINK_BUMP = 0.45; // drinking pushes harder
 // Ingest glyphs that satisfy THIRST rather than hunger — so "drink the water"
 // empties the thirst row (and digests as a drink). Food is everything else.
-const DRINK_GLYPHS = new Set(["water", "juice", "milk", "tea", "drink"]);
+// The natural sources' drink yields (milk) join the crafted/served set.
+const DRINK_GLYPHS = new Set(["water", "juice", "tea", "drink", ...drinkGlyphs()]);
 const FUN_DWELL_S = 7; // seconds playing at the box before the meter clears
 const WASH_DWELL_S = 6; // seconds scrubbing in the bath
 const PRIVY_DWELL_S = 4; // seconds at the privy
@@ -1541,8 +1543,10 @@ function makeTownModelFactory(
   // The town's ACTIVE dress (culture palette) — bounds which outfits residents
   // wear and which bakes warm at boot.
   dress: DressPalette = DEFAULT_DRESS_PALETTE,
-  // The CURRENT view tier, read at every model build (Phase 3). Absent = full.
-  tierFor?: () => CreatureTier,
+  // The body's CURRENT view tier, read PER ID at every model build (Phase 3;
+  // per-body since the dollhouse fix — a camera inside its town needs its
+  // far bodies cheap while its near ones stay full). Absent = full.
+  tierFor?: (id: string) => CreatureTier,
 ): AvatarModelFactory {
   // Warm the shared bakes once so no hitch lands mid-play: the bare species and
   // the ACTIVE-dress wardrobe the town wears (one bake per head × palette colour,
@@ -1553,10 +1557,30 @@ function makeTownModelFactory(
       getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color)));
     }
   }
+  // The SIMPLE-loft wardrobe warms too, but STAGGERED off the critical path
+  // (one bake per macrotask): a body's first drop into the simple band must
+  // not pay its 55-70 ms main-thread bake mid-play (the readouts' recurring
+  // `[bake-probe] …|lod:s` hitches), and warming them synchronously would
+  // double the mount hitch instead.
+  if (typeof setTimeout !== "undefined") {
+    const warm: Array<() => void> = [() => getSpeciesAssets(species, {}, undefined, "simple")];
+    for (const head of dress.heads) {
+      for (const color of dress.colors) {
+        warm.push(() => getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color)), "simple"));
+      }
+    }
+    const next = () => {
+      const w = warm.shift();
+      if (!w) return;
+      w();
+      setTimeout(next, 100);
+    };
+    setTimeout(next, 1000);
+  }
   // Skinned bodies drop to the SIMPLE loft whenever the tier is not full — the
   // capsule tier only ever REPLACES a body wholesale (dispatch below), so any
   // skinned body it still builds (fresh spawns mid-cross) lofts cheap too.
-  const detailFor = (): CreatureDetail => (tierFor?.() === "full" || !tierFor ? "full" : "simple");
+  const detailFor = (id: string): CreatureDetail => (!tierFor || tierFor(id) === "full" ? "full" : "simple");
   const people = createCreatureAvatarFactory({
     speciesFor: (id) => overrides?.get(id)?.species ?? species,
     heightM: 1.7,
@@ -1569,9 +1593,26 @@ function makeTownModelFactory(
     },
     detailFor,
   });
-  // Town FAUNA + FLORA (the chains' living ends): sheep by the weaver, fruit
-  // trees by the farms — separate factories so each stands its natural height.
-  const sheep = createCreatureAvatarFactory({ speciesFor: () => "sheep", heightM: 0.95, detailFor });
+  // Town FAUNA + FLORA (the chains' living ends): the natural sources the
+  // goods chains name — grazing herds by their producer, orchard plants by
+  // the farms. One lazy factory per SPECIES (ids carry it: `fauna:<species>:…`
+  // / `flora:<species>:…`), each standing its registry height — never a
+  // species-name special case here.
+  const naturalBodies = new Map<string, ReturnType<typeof createCreatureAvatarFactory>>();
+  const naturalBody = (species: string) => {
+    let f = naturalBodies.get(species);
+    if (!f) {
+      const src = naturalSourceOf(species);
+      f = createCreatureAvatarFactory({
+        speciesFor: () => species,
+        heightM: src?.bodyHeightM ?? 0.95,
+        ...(src?.kind === "animal" ? { detailFor } : {}),
+      });
+      naturalBodies.set(species, f);
+    }
+    return f;
+  };
+  const idSpecies = (id: string) => id.split(":")[1] ?? "";
   // Household PETS: family members of a non-person species (world-doc authored;
   // species rides the same overrides map, keyed by pet cid). No outfit.
   const petBody = createCreatureAvatarFactory({
@@ -1579,12 +1620,6 @@ function makeTownModelFactory(
     heightM: 0.75,
     detailFor,
   });
-  const trees = new Map(
-    FRUIT_TREES.map((ft) => [
-      ft.fruit as string,
-      createCreatureAvatarFactory({ speciesFor: () => ft.species, heightM: 3.4 }),
-    ]),
-  );
   const puzzle = makePuzzleCharacterFactory(npcIcons);
   return (id, isLocal) => {
     // SETTLERS (city-founding ②) are the town's founding PEOPLE — real
@@ -1597,14 +1632,13 @@ function makeTownModelFactory(
     // the placeholder capsule — never the local walker, never trees (landscape).
     if (
       !isLocal &&
-      tierFor?.() === "capsule" &&
-      (id.startsWith("resident_") || id.startsWith("sheep_") || id.startsWith("pet_"))
+      (id.startsWith("resident_") || id.startsWith("fauna:") || id.startsWith("pet_")) &&
+      tierFor?.(id) === "capsule"
     ) {
       return defaultAvatarModelFactory(id, isLocal);
     }
-    if (id.startsWith("sheep_")) return sheep(id, isLocal);
+    if (id.startsWith("fauna:") || id.startsWith("flora:")) return naturalBody(idSpecies(id))(id, isLocal);
     if (id.startsWith("pet_")) return petBody(id, isLocal);
-    if (id.startsWith("tree_")) return (trees.get(id.split("_")[1] ?? "") ?? people)(id, isLocal);
     return people(id, isLocal);
   };
 }
@@ -2054,7 +2088,65 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  crowd, plus its first-use bakes, in one frame). */
   let creatureTier: CreatureTier = "full";
   let retierQueue: string[] = [];
-  const RETIER_STREAM = 4;
+  // 2, not 4: one skinned rebuild costs ~15-25 ms — two per frame is already
+  // a heavy frame, four was half the dollhouse's crawl (avatars 40-90 ms).
+  const RETIER_STREAM = 2;
+  let _retierCross = 0; // TEMP retier probe — band crossings this window
+  let _retierLogT = 0;
+  /** PER-BODY VIEW TIER (dollhouse fix, 2026-07-23): the town-level tier above
+   *  is a coarse clamp for orbit/approach — it can't help a camera INSIDE its
+   *  town, which dressed all ~64 live bodies FULL (the readout's 110–190 ms
+   *  render frames). Each body additionally tiers by its OWN distance from the
+   *  local camera focus (the player walker) — render chrome, never sim (the
+   *  per-camera law) — with hysteresis, and crossings drain through the same
+   *  staggered queue. The EFFECTIVE tier is the coarser of the two. */
+  const bodyTiers = new Map<string, CreatureTier>();
+  const BODY_SIMPLE_M = 45;
+  const BODY_CAPSULE_M = 110;
+  const BODY_TIER_HYST_M = 10;
+  const TIER_RANK: Record<CreatureTier, number> = { full: 0, simple: 1, capsule: 2 };
+  const seedBodyTier = (d: number): CreatureTier =>
+    d > BODY_CAPSULE_M ? "capsule" : d > BODY_SIMPLE_M ? "simple" : "full";
+  const bandedBodyTier = (prev: CreatureTier, d: number): CreatureTier => {
+    switch (prev) {
+      case "full":
+        return d > BODY_SIMPLE_M + BODY_TIER_HYST_M
+          ? d > BODY_CAPSULE_M + BODY_TIER_HYST_M ? "capsule" : "simple"
+          : "full";
+      case "simple":
+        if (d > BODY_CAPSULE_M + BODY_TIER_HYST_M) return "capsule";
+        return d < BODY_SIMPLE_M - BODY_TIER_HYST_M ? "full" : "simple";
+      case "capsule":
+        return d < BODY_CAPSULE_M - BODY_TIER_HYST_M
+          ? d < BODY_SIMPLE_M - BODY_TIER_HYST_M ? "full" : "simple"
+          : "capsule";
+    }
+  };
+  /** The LOCAL CAMERA focus the per-body LOD measures from ([LOD per-camera]
+   *  LAW: render chrome from the camera, NEVER a sim body). In spirit /
+   *  dollhouse mode the camera frames `spiritFrame` — the observed house, which
+   *  can sit far from the formless spark's PLAYER_ID body — so tier by distance
+   *  from THAT rect's centre. Keying off PLAYER_ID instead demoted the very
+   *  residents the camera watches to the capsule tier (no animator, no activity
+   *  anchor), so they posed on the floor in front of their beds/chairs instead
+   *  of sitting/sleeping on them. Off the dollhouse the walker IS the focus. */
+  const cameraFocus = (): { x: number; y: number } | null => {
+    if (spiritFrame) return { x: spiritFrame.x + spiritFrame.w / 2, y: spiritFrame.y + spiritFrame.h / 2 };
+    return world?.state.avatars[PLAYER_ID] ?? null;
+  };
+  /** The tier a body BUILDS at — read by the model factory per id. A first
+   *  query seeds from live distance (no hysteresis) so a far spawn builds
+   *  cheap immediately instead of full-then-rebuilt. */
+  const tierOf = (id: string): CreatureTier => {
+    let b = bodyTiers.get(id);
+    if (b === undefined) {
+      const focus = cameraFocus();
+      const bd = world?.state.avatars[id];
+      b = focus && bd ? seedBodyTier(Math.hypot(bd.x - focus.x, bd.y - focus.y)) : "full";
+      bodyTiers.set(id, b);
+    }
+    return TIER_RANK[b] > TIER_RANK[creatureTier] ? b : creatureTier;
+  };
   /** CLOCK-ERRAND ROUTE QUEUE (view-distance-lod-tiers.md): trips emitted by
    *  the stage streamer wait here (per body — a fresh trip replaces a stale
    *  queued one) and door-route at most ERRAND_ROUTE_BUDGET per frame. Routing
@@ -2145,6 +2237,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // nulled at town/district/ground. Sim-coords lot rect —
   // resolveStructureFocus matches it back to the plan lot it came from.
   let spiritFocus: { x: number; y: number; w: number; h: number } | null = null;
+  // "SHOW AREAS" (city-founding areas): a TOGGLEABLE map-reading tint over
+  // the named units (ZoneOverlay3D reads this gate) — never persistent
+  // world texture. Areas otherwise show only through their consequences.
+  let areaOverlayOn = false;
   let isWon = false;
   let paused = false;
 
@@ -6377,6 +6473,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const newObj = [...session.smallProps.keys()].pop();
         if (newObj) carryObject(world.state, newObj, npcId);
         fireCarryGesture(npcId, "pickup", world.state.objects[boxId]);
+        fellIfConsumed(session, boxId); // an emptied kill-source is felled
         return;
       }
       const o = objIdOfEntity(session, step.itemId);
@@ -8375,25 +8472,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
-  /** The chains' LIVING ends: SHEEP grazing beside the cloth producer (wool on
-   *  the hoof) and FRUIT TREES standing by the farms (the orchard the food
-   *  comes from). Ambient scenery bodies — tiny tethers, no schedule; they ride
-   *  the fauna headroom above the crowd budget. No-op off a town session. */
+  /** The chains' LIVING ends: each good's HARVESTED natural sources standing
+   *  beside its producer — the grazing herd whose live yield feeds the good
+   *  (wool on the hoof by the weaver) and the orchard plants whose fruit the
+   *  farms sell. Resolved from the natural-sources registry (products.ts),
+   *  never a good-key special case: kill products (wood, meat, stone) come
+   *  from wilderness features, not a herd. Ambient scenery bodies — tiny
+   *  tethers, no schedule; they ride the fauna headroom above the crowd
+   *  budget. No-op off a town session. */
   function seedTownFauna(session: QuestSession) {
     const town = session.town;
     if (!town || !world) return;
     const c = town.stage.center;
     let treeCount = 0;
     town.stage.goods.forEach((g) => {
+      const herds = sourcesForGood(g.good.key, { kind: "animal", method: "harvest" });
+      const orchard = sourcesForGood(g.good.key, { kind: "plant", method: "harvest" });
       for (const w of g.producerWorks()) {
         const wk = town.plan.works[w];
         if (!wk) continue;
         const d = workDoorstep(c, wk);
-        if (g.good.key === "cloth") {
+        const herd = herds[0];
+        if (herd) {
           for (let i = 0; i < 3; i++) {
             const a = (i / 3) * Math.PI * 2 + 0.7;
             world!.addNpc({
-              id: `sheep_${w}_${i}`,
+              id: `fauna:${herd.species}:${w}_${i}`,
               x: d.x + Math.cos(a) * 4.5,
               y: d.y + Math.sin(a) * 4.5,
               behavior: {
@@ -8406,15 +8510,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             });
           }
         }
-        if (g.good.key === "food" && treeCount < 9) {
-          // A short orchard row along the building's north edge, one tree per
-          // fruit kind — clear of the doorstep (doors face the road).
-          FRUIT_TREES.forEach((ft, fi) => {
+        if (orchard.length && treeCount < 9) {
+          // A short orchard row along the building's north edge, one plant per
+          // bearing species — clear of the doorstep (doors face the road).
+          orchard.forEach((src, fi) => {
             if (treeCount >= 9) return;
             const tx = c.x + wk.dx + 2 + fi * 4.5;
             const ty = c.y + wk.dy - 2.5;
             world!.addNpc({
-              id: `tree_${ft.fruit}_${w}_${fi}`,
+              id: `flora:${src.species}:${w}_${fi}`,
               x: tx,
               y: ty,
               // Rooted: zero tether AT its own spot, zero speed — a tree.
@@ -9502,6 +9606,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     stackAdd(session.pocket, glyph);
     pushPocket(session);
     presentContainer(session); // refresh remaining contents (closes when empty)
+    fellIfConsumed(session, objId); // an emptied kill-source is felled
   }
 
   function closeContainer() {
@@ -9509,6 +9614,28 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     presenter.clearBoard();
     world?.setConversation(null);
     leaveDwell.reset();
+  }
+
+  /** KILL-METHOD ACQUISITION MADE REAL (products.ts): a wilderness feature
+   *  whose source is consumable (its yield is kill products — the tree IS its
+   *  wood, the rock its stone) disappears the moment its stock empties: the
+   *  last unit taken IS the felling/quarrying-out. Pure-harvest sources
+   *  persist. No-op for any container that isn't a wild feature. */
+  function fellIfConsumed(session: QuestSession, objId: string) {
+    const w = session.wilderness;
+    if (!w || !world) return;
+    const idx = w.features.findIndex((f) => f.id === objId);
+    if (idx < 0) return;
+    const src = naturalSourceOf(w.features[idx]!.species);
+    if (!src || !sourceIsConsumable(src)) return;
+    const stock = session.containerStock.get(objId);
+    if (stock && Object.values(stock).some((n) => n > 0)) return;
+    if (container?.objId === objId) closeContainer();
+    world.removeObject(objId);
+    session.containers.delete(objId);
+    session.containerStock.delete(objId);
+    session.containerOwner.delete(objId);
+    w.features.splice(idx, 1);
   }
 
   // ── Ambient NPC↔NPC conversation ──────────────────────────────────────────
@@ -10175,15 +10302,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // trigger-proximity lines make the soft-control field visible (below).
     attentionDebug = new AttentionDebugOverlay3D({ getLinks: () => attentionDebugLinks(session) });
     attentionDebug.setEnabled(pathDebugOn);
-    // ZONE CHARTERS on the ground (③): the chartered discs tint the ground
-    // (category-colored, later charters visibly win, clearing erases) — a
-    // spoken "area farms here" changes the world the same frame.
+    // "SHOW AREAS" (city-founding areas): the charter tint is a TOGGLEABLE
+    // map-reading overlay now — never persistent world texture. Areas
+    // otherwise show only through their consequences (fields, pavement);
+    // the board's "show areas" word flips the toggle.
     const zoneOverlay = new ZoneOverlay3D({
       getView: () => {
+        if (!areaOverlayOn) return null;
         const t = session.town;
-        if (t) return { zones: t.deltas.zones(), center: t.stage.center, version: t.deltas.version };
+        if (t) {
+          return {
+            zones: t.deltas.zones(),
+            center: t.stage.center,
+            version: t.deltas.version,
+            radius: t.plan.radius,
+          };
+        }
         const site = session.foundedSite;
-        if (site) return { zones: site.deltas.zones(), center: site.at, version: site.deltas.version };
+        if (site) {
+          return { zones: site.deltas.zones(), center: site.at, version: site.deltas.version, radius: 40 };
+        }
         return null;
       },
       ...(deps.groundAt ? { groundAt: deps.groundAt } : {}),
@@ -10239,7 +10377,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                 session.town.plan.species ?? "human_cute", // the town's constructing species
                 familyOverrides(session),
                 session.dress, // the town's culture palette
-                () => creatureTier, // Phase 3 view tier, read at every model build
+                tierOf, // Phase 3 view tier — PER BODY, read at every model build
               )
             : makePuzzleCharacterFactory(session.npcIcons),
         ),
@@ -10529,8 +10667,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               console.log(`[errand-sample] ${f.errands.slice(0, 5).map((e) => e.npcId).join(", ")}${f.errands.length > 5 ? ` (+${f.errands.length - 5})` : ""}`);
             }
             let _routed = 0;
+            const _rt0 = descendNow();
             for (const [npcId, pts] of clockErrandQueue) {
-              if (_routed >= ERRAND_ROUTE_BUDGET) break;
+              // TIME-budgeted as well as count-budgeted: one cross-town door
+              // route can cost ~20 ms alone (the readout's 14 k-probe frames),
+              // so four of them in a frame is a visible hitch — stop routing
+              // once this frame has spent its slice; the rest wait their turn.
+              if (_routed >= ERRAND_ROUTE_BUDGET || descendNow() - _rt0 > 5) break;
               clockErrandQueue.delete(npcId);
               // A LIVE-driven body ignores the clock's feed until demote (§13 — the
               // need loop owns it; no double-drive); a RECRUITED one follows the
@@ -11441,9 +11584,50 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // spark via the host's `cursorProgress` dep. (Old 2D dwell ring removed.)
         convoProgress = progress;
         simMark("convo", descendNow() - _bm); // TEMP
-        // CREATURE LOD (Phase 3): drain the re-tier queue a few bodies per
-        // frame — a tier cross (even a hysteretic one) must never rebuild the
-        // whole crowd, plus any first-use simple bakes, in a single frame.
+        // CREATURE LOD (Phase 3, per-body since the dollhouse fix): re-band
+        // every town body by its OWN distance from the local camera focus —
+        // hysteretic, so a pacing body on a band edge never flaps — and queue
+        // crossings for the staggered rebuild below. Entries for despawned
+        // bodies are pruned so a later respawn re-seeds from live distance.
+        {
+          const focus = cameraFocus(); // the LOCAL camera, never PLAYER_ID ([LOD per-camera])
+          if (focus) {
+            for (const id in state.avatars) {
+              if (!id.startsWith("resident_") && !id.startsWith("fauna:") && !id.startsWith("pet_")) continue;
+              const bd = state.avatars[id];
+              const prev = bodyTiers.get(id);
+              const d = Math.hypot(bd.x - focus.x, bd.y - focus.y);
+              if (prev === undefined) {
+                bodyTiers.set(id, seedBodyTier(d)); // first sight — builds right, no rebuild
+                continue;
+              }
+              const t = bandedBodyTier(prev, d);
+              if (t !== prev) {
+                bodyTiers.set(id, t);
+                if (!retierQueue.includes(id)) {
+                  retierQueue.push(id);
+                  _retierCross++;
+                }
+              }
+            }
+            for (const id of bodyTiers.keys()) {
+              if (!state.avatars[id]) bodyTiers.delete(id);
+            }
+          }
+          // TEMP retier probe: ≤1 line/2s, only when bodies crossed bands —
+          // a steady high count means the camera focus (the walker) is
+          // sweeping band edges and rebuild pressure is per-body, not the
+          // town flood the [retier] line above reports.
+          _retierLogT += dt;
+          if (probesOn() && _retierLogT >= 2) {
+            if (_retierCross > 0) console.log(`[retier] body crossings=${_retierCross}/2s queue=${retierQueue.length}`);
+            _retierCross = 0;
+            _retierLogT = 0;
+          }
+        }
+        // Drain the re-tier queue a few bodies per frame — a tier cross (even
+        // a hysteretic one) must never rebuild the whole crowd, plus any
+        // first-use simple bakes, in a single frame.
         if (retierQueue.length && questView) {
           for (const id of retierQueue.splice(0, RETIER_STREAM)) questView.resetAvatarModel?.(id);
         }
@@ -11593,7 +11777,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     _dp?.mark("seedSmallItems");
     stockContainers(sess); // stores: openable good boxes holding grabbable goods (bug #5)
     _dp?.mark("stockContainers");
-    seedTownFauna(sess); // sheep at the weaver, orchards at the farms (chain scenery)
+    seedTownFauna(sess); // each good's harvested sources at its producers (chain scenery)
     _dp?.mark("seedTownFauna");
     seedWilderness(sess); // trees/rocks (material containers) + possessable locals
     _dp?.mark("seedWilderness");
@@ -11699,23 +11883,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** Lay the wilderness scatter over the ground: every FEATURE is an ordinary
    *  openable container (a tree holds wood, a rock holds stone — gathering IS
    *  the container-take path), every creature an ordinary wandering body with
-   *  a real mind. The player walker starts at the centre clearing. */
+   *  a real mind. The feature's face and girth come from its natural source
+   *  (products.ts), never a kind switch. The player walker starts at the
+   *  centre clearing. */
   function seedWilderness(session: QuestSession) {
     const w = session.wilderness;
     if (!w || !world) return;
     for (const f of w.features) {
+      const src = naturalSourceOf(f.species);
       world.addObject({
         id: f.id,
         x: f.x,
         y: f.y,
         shape: "box",
-        radius: f.kind === "tree" ? 0.7 : 0.55,
+        radius: src?.feature?.radiusM ?? 0.6,
         fixture: "chest",
         openable: true,
         facing: 0,
         interactions: [],
         contains: [{ relation: "in", capacity: 12 }],
-        iconRef: f.kind === "tree" ? "🌳" : "🪨",
+        iconRef: src?.feature?.icon ?? "🌳",
         glyph: Object.keys(f.stock)[0],
       });
       session.containers.set(f.id, "in");
@@ -13110,41 +13297,47 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   }
 
-  // ── AREA CHARTERS (city-expansion ③): "area <category> here" ──────────────
-  // The player's focus circle is the BRUSH: a spoken area order charters
-  // exactly the ground the task pool would scope an order to (TaskFocus),
-  // written town-local into the deltas (TownDeltas.addZone — serialized,
-  // replayed, LATER CHARTERS WIN where discs overlap). "area none" clears.
-  // (The KERNEL side keeps its `zone` geometry names — this is vocabulary.)
+  // ── AREA DESIGNATION (nations §3c — SELECTION, NOT DRAWING) ──────────────
+  // An area order binds to a NAMEABLE UNIT, never a brush. Ground under
+  // the player's gaze governed by an existing district charter → THAT
+  // DISTRICT re-designates (an "over" row — extent from the charter tree
+  // itself). Anywhere else → the WHOLE TOWN takes a steering preference
+  // (a young town has no finer grain yet; laws steer, need builds).
+  // "area none" clears the same unit. Legacy discs remain readable
+  // forever; none are ever authored again.
 
   /**
-   * ONE spoken/board zone order, end to end. Returns false when zoning
-   * doesn't apply here at all (no town, no founded site — the caller
-   * phrases "can't do that here"); true when HANDLED — chartered with the
-   * reserved-ok confirmation, or refused aloud with the word NAMED.
+   * ONE spoken/board area order, end to end. Returns false when areas
+   * don't apply here at all (no town, no founded site — the caller
+   * phrases "can't do that here"); true when HANDLED — designated with
+   * the reserved-ok confirmation, or refused aloud with the word NAMED.
    */
   function orderZone(session: QuestSession, categoryWord: string | null, sentence: string): boolean {
     const ctx = buildContext(session);
     if (!ctx) return false;
     const focus = playerFocusArea(session);
     if (!focus) return false;
-    const syntax = session.game.meta.syntax ?? "b";
     // The addressed "clerk" — whoever the order was aimed at confirms it
     // (the reserved okay); a bare order into the town confirms by toast +
-    // the tint appearing (board words visibly change the world).
+    // the overlay tint (board words visibly change the world).
     const clerk = session.addressedFamily ?? gazeCreature(session) ?? convo?.nodeId ?? null;
-    const brush = {
-      x: focus.x - ctx.center.x,
-      y: focus.y - ctx.center.y,
-      r: focus.radius,
-      issuer: PLAYER_CREATURE_ID,
-    };
-    if (categoryWord === null) {
-      // UNZONE: a CLEARING charter — the ground under the brush reads
-      // unzoned again (later-wins; nothing is deleted, replay holds).
-      ctx.deltas.addZone({ ...brush, category: null });
+    const confirm = (): void => {
       if (clerk && session.creatures?.nodeByCreature.has(clerk)) npcChatBubble(session, clerk, "ok");
-      presenter.toast(`🗺️ cleared the zoning here`, "feedback");
+    };
+    // The UNIT under the gaze: an existing governed district, else the town.
+    const governed = charterZoneAt(ctx.zones, focus.x - ctx.center.x, focus.y - ctx.center.y);
+    const rowBase = governed
+      ? { shape: "over" as const, of: governed.ord, x: 0, y: 0, r: 0, issuer: PLAYER_CREATURE_ID }
+      : { shape: "town" as const, x: 0, y: 0, r: 0, issuer: PLAYER_CREATURE_ID };
+    if (categoryWord === null) {
+      // CLEAR the unit — the district's ground reads unzoned again, or the
+      // town's preferences wipe (later-wins; nothing deleted, replay holds).
+      ctx.deltas.addZone({ ...rowBase, category: null });
+      confirm();
+      presenter.toast(
+        governed ? `🗺️ this district is open ground again` : `🗺️ cleared the town's area preferences`,
+        "feedback",
+      );
       return true;
     }
     const category = resolveZoneCategory(ctx.catalog, ctx.districtOf, categoryWord);
@@ -13152,14 +13345,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // UNKNOWN CATEGORY — a NAMED conversational can't (the workProgram()
       // lesson: never a silent generic fallback).
       if (clerk && session.creatures?.nodeByCreature.has(clerk)) npcChatBubble(session, clerk, "no");
-      presenter.toast(`💬 can't zone "${categoryWord}" — not a structure we know`, "feedback");
+      presenter.toast(`💬 can't designate "${categoryWord}" — not a structure we know`, "feedback");
       return true;
     }
-    ctx.deltas.addZone({ ...brush, category });
-    if (clerk && session.creatures?.nodeByCreature.has(clerk)) {
-      npcChatBubble(session, clerk, "ok"); // the RESERVED okay — an accepted order
-    }
-    presenter.toast(`🗺️ zoned for ${category} here`, "feedback");
+    ctx.deltas.addZone({ ...rowBase, category });
+    confirm();
+    presenter.toast(
+      governed
+        ? `🗺️ this district is ${category} ground now`
+        : `🗺️ the town will favor ${category}`,
+      "feedback",
+    );
     return true;
   }
 
@@ -13868,7 +14064,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
     const sig = ctx && (affordable.length || zonable.length || tradeable.length)
-      ? `${affordable.map((s) => s.type).join("|")}//${zonable.map((s) => s.type).join("|")}//${tradeable.join("|")}`
+      ? `${affordable.map((s) => s.type).join("|")}//${zonable.map((s) => s.type).join("|")}//${tradeable.join("|")}//A${areaOverlayOn ? 1 : 0}`
       : "";
     if (sig === session.civicSig) return;
     const hadCivic = session.civicSig !== "";
@@ -13906,6 +14102,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               label: "clear area",
               glyph: "area + none",
               spokenText: translateGlyph("area + none", locale),
+            },
+            // "SHOW AREAS" (city-founding areas): the toggleable map-reading
+            // overlay — designations are otherwise visible only through
+            // their consequences.
+            {
+              id: "areas:show",
+              label: areaOverlayOn ? "hide areas" : "show areas",
+              glyph: "show + area",
+              spokenText: translateGlyph("show + area", locale),
             }]
           : []),
         ...tradeable.map((g) => ({
@@ -14360,9 +14565,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
         return;
       }
+      // "SHOW AREAS" (city-founding areas): toggle the map-reading overlay.
+      // A view act, not a designation — nothing lands in the deltas.
+      if (id === "areas:show" && sess) {
+        const said = playerStatement("show + area");
+        if (opts.spokenExternally) yieldToStatement(said);
+        else speakPlayerStatement(said);
+        areaOverlayOn = !areaOverlayOn; // ZoneOverlay3D reads the gate next frame
+        sess.civicSig = ""; // the button label flips show ↔ hide
+        return;
+      }
       // CIVIC AREA option (③): pressing "area <category>" (or "area none")
-      // speaks the sentence and charters the focus circle, exactly as the
-      // spoken order would.
+      // speaks the sentence and binds the named unit (the district under
+      // the gaze, else the whole town), exactly as the spoken order would.
       if (id.startsWith("area:") && sess) {
         const s = sess;
         const word = id.slice(5);
@@ -14943,13 +15158,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
     setCreatureTier(t) {
       if (t === creatureTier) return;
+      const prevTown = creatureTier;
       creatureTier = t;
-      // Queue every existing town body for a staggered factory rebuild (the
-      // factory reads the tier at build time); drained a few per frame in the
-      // town frame block. New spawns pick the tier up automatically.
-      retierQueue = Object.keys(world?.state.avatars ?? {}).filter(
-        (id) => id.startsWith("resident_") || id.startsWith("sheep_") || id.startsWith("pet_"),
-      );
+      // Queue ONLY bodies whose EFFECTIVE tier (coarser of the town clamp and
+      // the body's own band) actually changes — a town-level flip must never
+      // rebuild bodies already governed by their per-body band. (An
+      // unfiltered flood was the dollhouse crawl cycle: a flap rebuilt the
+      // whole crowd both ways, seconds of staggered builds each time.)
+      let queued = 0;
+      for (const id of Object.keys(world?.state.avatars ?? {})) {
+        if (!id.startsWith("resident_") && !id.startsWith("fauna:") && !id.startsWith("pet_")) continue;
+        const b = bodyTiers.get(id) ?? "full";
+        const oldEff = TIER_RANK[b] > TIER_RANK[prevTown] ? b : prevTown;
+        const newEff = TIER_RANK[b] > TIER_RANK[t] ? b : t;
+        if (oldEff === newEff) continue;
+        if (!retierQueue.includes(id)) {
+          retierQueue.push(id);
+          queued++;
+        }
+      }
+      // TEMP retier probe (perf-probes.ts): a town-tier change should be RARE
+      // (a real descent/focus transition) — a steady stream of these lines is
+      // the flap this filter and the driver debounce exist to kill.
+      if (probesOn()) console.log(`[retier] town ${prevTown}→${t} queued=${queued}`);
     },
     setExternalCursor(on) {
       questView?.setExternalCursor?.(on);

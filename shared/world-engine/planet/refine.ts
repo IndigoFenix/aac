@@ -41,6 +41,7 @@ import {
 import { findFoundingSites, type FoundingOpts } from "../kernel/cells/index.js";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
 import { foundCitiesFromSites, type PlanetCity } from "./cities.js";
+import { RIVER_MIN_ACCUM, traceRiverPolylines, type RiverPolyline } from "./rivers.js";
 import { chaikinSphere, routeFromDirs, routePointAt, type PlanetRoute } from "./routes.js";
 import { borderTowns, chebyshevDistance, type BorderTown } from "./border.js";
 import { REAL_TOWN_SPACING_M } from "../scale.js";
@@ -94,6 +95,38 @@ export interface RefinedRegion {
    *  carry composite village keys, so caravan phase hashes never collide
    *  across regions or tiers. */
   roadRoutes: PlanetRoute[];
+  /** The region's OWN streams — the child river solve traced into sphere
+   *  polylines (pure JSON, worker-safe), with accumulations converted to
+   *  PARENT units and clipped to owned cells. Deliberately EXCLUDES the
+   *  re-solved courses of tier-0 trunks (reaches sourced at a parent-scale
+   *  inflow): the base tier already paints those, and drawing both would put
+   *  the same river down twice on slightly different courses. These are the
+   *  capillaries BETWEEN the trunks — the fractal tier the planet solve
+   *  cannot represent. */
+  rivers: RiverPolyline[];
+  /** Where this region's streams cross its ownership line (both ways) — the
+   *  seam anchors stream stitching joins on (stitchRegionStreams). Worker-
+   *  side data; never crosses the wire itself. */
+  riverCrossings: RiverCrossing[];
+}
+
+/** A stream crossing the region's ownership line, as THIS region's solve saw
+ *  it. The emitted run ends (out) or starts (in) EXACTLY at `ownCell`'s dir,
+ *  so a join built from these touches the painted seam with zero slop. */
+export interface RiverCrossing {
+  /** true: the stream leaves this region (owned → foreign); false: enters. */
+  out: boolean;
+  /** The OWNED cell at the crossing. */
+  ownCell: number;
+  ownDir: readonly [number, number, number];
+  /** The first foreign cell's dir — this solve's estimate of the course just
+   *  across the line. */
+  foreignDir: readonly [number, number, number];
+  /** The tier-0 cell owning the far side. */
+  borderWith: number;
+  /** Accumulation at the crossing, PARENT units (sub-trunk by construction —
+   *  trunk crossings are the base tier's rivers, not stitch material). */
+  accum: number;
 }
 
 /** The composite identity of a village: unique across regions AND across
@@ -302,6 +335,56 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     occupied: [...occupied, ...(opts.founding?.occupied ?? [])],
     eligible,
   };
+
+  // ── TRUNK INFLOW: tier-0 rivers crossing INTO this chart ────────────────
+  // The chart is a window: a parent trunk entering it carries catchment from
+  // OUTSIDE, which the child solve cannot see — without this the Volga
+  // re-enters its own valley as a nameless creek. Inject each entering
+  // trunk's discharge as a point source (extra runoff) at its entry tile —
+  // the classic inlet boundary condition — so the trunk holds its true width
+  // across the window and the local capillaries drain into something real.
+  //
+  // UNITS. Parent accumulation counts parent-cell rain-shares; the child's
+  // counts child-cell shares. One parent cell ≈ this whole chart, so a
+  // parent unit is worth cols×rows child units. Only CHANNELIZED flow
+  // (accum > the shared watercourse line) injects: a sub-threshold parent
+  // cell's accumulation is diffuse drainage, not a point river — landing it
+  // on one tile would mint max-width trunks out of every damp border cell.
+  // Routing is potential-only, so injection changes WIDTHS (and the accum
+  // classification the extraction filters on), never courses.
+  const parentRiver = built.grid.fields.river;
+  const parentDown = built.grid.fields.riverDown; // absent on pre-pointer bakes → no inflow (heals on rebuild)
+  const rainScale = built.spec.rain > 0 ? built.spec.rain : 1;
+  const childPerParent = cols * rows;
+  const inflow = new Map<number, number>(); // child tile → extra runoff (child units)
+  if (parentRiver && parentDown) {
+    for (let c = 0; c < topo.n; c++) {
+      if (!(parentRiver[c] > RIVER_MIN_ACCUM)) continue;
+      const d = parentDown[c];
+      if (d < 0) continue;
+      const cd = topo.pos3!(c);
+      if (chartTile(frame, R, cd) >= 0) continue; // upstream end must be OUTSIDE the chart
+      const dd = topo.pos3!(d);
+      if (chartTile(frame, R, dd) < 0) continue; // downstream end must be INSIDE
+      // Bisect the drainage edge's arc for the entry point just inside.
+      const mix = (t: number): [number, number, number] => norm([
+        cd[0] + (dd[0] - cd[0]) * t, cd[1] + (dd[1] - cd[1]) * t, cd[2] + (dd[2] - cd[2]) * t,
+      ]);
+      let lo = 0;
+      let hi = 1;
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (chartTile(frame, R, mix(mid)) < 0) lo = mid; else hi = mid;
+      }
+      const tile = chartTile(frame, R, mix(hi));
+      if (tile < 0) continue;
+      // The child's flow source multiplies runoff by spec.rain, and the
+      // parent's accumulation already carries that factor — divide it out
+      // so the trunk isn't rained on twice.
+      inflow.set(tile, (inflow.get(tile) ?? 0) + (parentRiver[c] * childPerParent) / rainScale);
+    }
+  }
+
   // The parent's normalized runoff (planet climate rain, land-mean 1) passes
   // through like ore: a region in wet country re-solves DENSE local drainage,
   // a desert region sparse — deliberately NOT re-normalized per region, that
@@ -314,8 +397,12 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     founding,
     settle: true,
     rain: built.spec.rain,
-    runoff: parentRunoff
-      ? (x, y) => parentRunoff[topo.cellAt!(dirs[y * cols + x])]
+    runoff: (parentRunoff || inflow.size)
+      ? (x, y) => {
+          const i = y * cols + x;
+          const base = parentRunoff ? parentRunoff[topo.cellAt!(dirs[i])] : 1;
+          return base + (inflow.get(i) ?? 0);
+        }
       : undefined,
     // A region IS a window on the planet: its water leaves across the boundary
     // into the neighbouring land. Without this an inland region has no outlet
@@ -454,7 +541,56 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     if (route) roadRoutes.push(route);
   }
 
-  return { frame, prep, villages, borderTowns: edgeTowns, capitalCells, roads, roadRoutes };
+  // ── THE REGION'S OWN STREAMS: the child solve, traced (rivers.ts) ───────
+  // Same watercourse rule one tier down: 16 CHILD cells of catchment draw.
+  // Accumulations convert to parent units (÷ childPerParent) so every
+  // consumer shares one width calibration; OWNERSHIP clips emission to owned
+  // cells (the neighbour emits its own spans of a shared stream); the
+  // accumSource filter drops the re-solved TRUNKS — a reach that STARTS at
+  // parent-scale flow is a tier-0 river the base tier already draws.
+  const childRiver = prep.grid.fields.river;
+  const childDown = prep.grid.fields.riverDown;
+  const childHeight = prep.grid.fields.height;
+  let rivers: RiverPolyline[] = [];
+  const riverCrossings: RiverCrossing[] = [];
+  if (childRiver && childDown) {
+    rivers = traceRiverPolylines({
+      n: cols * rows,
+      river: childRiver,
+      height: childHeight,
+      downstream: childDown,
+      posOf: cell => dirs[cell]!,
+      radius: R,
+      minAccum: RIVER_MIN_ACCUM,
+      accumScale: 1 / childPerParent,
+      include: cell => owned[cell] === 1,
+      keyOf: cell => villageKey(regionCell, cell),
+    }).filter(r => r.accumSource <= RIVER_MIN_ACCUM);
+
+    // Ownership-line crossings — one O(n) pass over the drainage tree.
+    // Deterministic (cell order); sea mouths are not crossings.
+    for (let u = 0; u < cols * rows; u++) {
+      if (!(childHeight[u] >= SEA_HEIGHT && childRiver[u] > RIVER_MIN_ACCUM)) continue;
+      const v = childDown[u];
+      if (v < 0) continue;
+      if (!(childHeight[v] >= SEA_HEIGHT && childRiver[v] > RIVER_MIN_ACCUM)) continue;
+      if (owned[u] === owned[v]) continue;
+      const accum = childRiver[u] / childPerParent;
+      if (accum > RIVER_MIN_ACCUM) continue; // a trunk — the base tier's river
+      const out = owned[u] === 1;
+      const foreignDir = out ? dirs[v]! : dirs[u]!;
+      riverCrossings.push({
+        out,
+        ownCell: out ? u : v,
+        ownDir: out ? dirs[u]! : dirs[v]!,
+        foreignDir,
+        borderWith: topo.cellAt!(foreignDir),
+        accum,
+      });
+    }
+  }
+
+  return { frame, prep, villages, borderTowns: edgeTowns, capitalCells, roads, roadRoutes, rivers, riverCrossings };
 }
 
 // ── TIER-1 HIGHWAY REFINEMENT (the interstates get physical) ───────────────
@@ -678,4 +814,101 @@ export function stitchRegions(
     out.push(route);
   }
   return out;
+}
+
+// ── STREAM STITCHING (the rivers join hands across the border) ─────────────
+
+export interface StreamStitchOpts {
+  /** An exiting stream joins the neighbour's nearest stream START within this
+   *  arc distance (default 12 child cells). It has to reach INSIDE the
+   *  neighbour — see the asymmetry note below. Beyond the cap they are
+   *  different streams, not two views of one. */
+  maxJoinM?: number;
+}
+
+/**
+ * The JOINS between two adjacent regions' streams: each region's solve traced
+ * its own capillaries and stopped at its ownership line (refineRegion), so a
+ * stream crossing the border exists as two runs from two DIFFERENT solves —
+ * near each other (both follow the same macro valley) but not touching.
+ *
+ * THE ASYMMETRY THAT SHAPES THIS (measured, faceN 48: 20–34 out-crossings
+ * per border, 0–3 in-crossings): the UPSTREAM side sees the stream at the
+ * border with its full interior catchment, but the DOWNSTREAM side's window
+ * has only the thin foreign sliver upstream of that point, so its
+ * accumulation sits below the wet threshold AT the line — its version of the
+ * stream only SURFACES a few cells inside. Matching crossings to crossings
+ * therefore pairs almost nothing. Instead a join anchors on the upstream
+ * side's crossing (exact: that run ENDS at the crossing cell) and reaches to
+ * the downstream side's nearest emitted run START, threaded through the
+ * upstream solve's estimate of the course across the line. Chaikin preserves
+ * endpoints, so the join touches both painted runs with zero slop.
+ *
+ * PURE and symmetric, the stitchRegions contract: deterministic in
+ * (built, a, b) with argument order canonicalized — "both loaded" gates only
+ * WHEN a join appears, never WHAT it is. An exiting stream with no start in
+ * reach (the other solve routed that water elsewhere) stays unmatched: the
+ * run keeps ending at the border, today's look.
+ */
+export function stitchRegionStreams(
+  built: BuiltPlanet,
+  a: RefinedRegion,
+  b: RefinedRegion,
+  opts: StreamStitchOpts = {},
+): RiverPolyline[] {
+  if (b.frame.regionCell < a.frame.regionCell) [a, b] = [b, a]; // canonical
+  const R = built.spec.radius;
+  const maxJoinM = opts.maxJoinM ?? 12 * Math.max(a.frame.cellSizeM, b.frame.cellSizeM);
+
+  // Run ends by owned cell (route keys are villageKey composites, so the
+  // child cell decodes exactly — no geometric tolerance at the seam).
+  const endsOf = (r: RefinedRegion): Map<number, RiverPolyline> => {
+    const byEnd = new Map<number, RiverPolyline>();
+    for (const p of r.rivers) byEnd.set(p.route.b % 16384, p);
+    return byEnd;
+  };
+  const endsA = endsOf(a);
+  const endsB = endsOf(b);
+
+  const joins: RiverPolyline[] = [];
+  /** One direction: streams flowing OUT of `x` INTO `y`. */
+  const pass = (
+    x: RefinedRegion, ex: Map<number, RiverPolyline>,
+    y: RefinedRegion,
+  ): void => {
+    interface Cand { xc: RiverCrossing; to: RiverPolyline; dM: number }
+    const cands: Cand[] = [];
+    for (const xc of x.riverCrossings) {
+      if (!xc.out || xc.borderWith !== y.frame.regionCell) continue;
+      if (!ex.has(xc.ownCell)) continue; // run too short to emit — nothing to join
+      for (const to of y.rivers) {
+        const s = to.route.dirs[0]!;
+        const dp = Math.max(-1, Math.min(1,
+          xc.foreignDir[0] * s[0] + xc.foreignDir[1] * s[1] + xc.foreignDir[2] * s[2]));
+        const dM = Math.acos(dp) * R;
+        if (dM <= maxJoinM) cands.push({ xc, to, dM });
+      }
+    }
+    cands.sort((p, q) => p.dM - q.dM || p.xc.ownCell - q.xc.ownCell || p.to.route.a - q.to.route.a);
+    const usedX = new Set<number>();
+    const usedTo = new Set<number>();
+    for (const { xc, to } of cands) {
+      if (usedX.has(xc.ownCell) || usedTo.has(to.route.a)) continue;
+      const from = ex.get(xc.ownCell)!;
+      // Run end → the upstream solve's estimate across the line → run start.
+      const raw: Array<readonly [number, number, number]> = [
+        from.route.dirs[from.route.dirs.length - 1]!,
+        xc.foreignDir,
+        to.route.dirs[0]!,
+      ];
+      const route = routeFromDirs(chaikinSphere(chaikinSphere(raw)), R, from.route.b, to.route.a);
+      if (!route) continue;
+      usedX.add(xc.ownCell);
+      usedTo.add(to.route.a);
+      joins.push({ route, accumSource: xc.accum, accumMouth: Math.max(xc.accum, to.accumSource) });
+    }
+  };
+  pass(a, endsA, b);
+  pass(b, endsB, a);
+  return joins;
 }
