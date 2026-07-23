@@ -19,6 +19,7 @@
 // so richer criteria later need no new plumbing.
 
 import { phrase, type LeveledGlyphs } from "./dialogue-gen.js";
+import { classify, INTENT_MOD, parseSentence, posOf } from "../lang/core.js";
 import type { CreatureId } from "../behavior/creatures.js";
 import type { GoalSpec, ItemRef, PlaceRef } from "../behavior/rules.js";
 import { headOf } from "../../variations.js";
@@ -30,6 +31,41 @@ export interface IntentLineSyms {
   item(ref: ItemRef): string;
   place(place: PlaceRef): string;
   creature(id: CreatureId): string;
+}
+
+// ---------------------------------------------------------------------------
+// The INTENT SYNTAX — "I will …"
+// ---------------------------------------------------------------------------
+
+/** Mark one glyph level's first verb with the `.will` intent modifier — the
+ *  special syntax for STATEMENTS OF INTENT ("eat + food" is a command shape;
+ *  "eat.will + food" reads "I will eat the food", never an imperative). Null
+ *  when the level has no verb, or the marked shape would fall back to the
+ *  telegraphic gloss (the marker must never degrade a line — better an
+ *  unmarked line than "eat will food"). */
+function markIntent(level: string): string | null {
+  const toks = level.split("+").map((s) => s.trim()).filter(Boolean);
+  let marked = false;
+  const out = toks.map((t) => {
+    if (marked) return t;
+    const head = (t.split("#")[0] ?? t).split(".")[0] ?? t;
+    if (posOf(head) !== "verb") return t;
+    marked = true;
+    const hash = t.indexOf("#");
+    return hash >= 0 ? `${t.slice(0, hash)}.${INTENT_MOD}${t.slice(hash)}` : `${t}.${INTENT_MOD}`;
+  });
+  if (!marked) return null;
+  const glyph = out.join(" + ");
+  if (classify(parseSentence(glyph)).kind === "gloss") return null;
+  return glyph;
+}
+
+/** A goal line as a STATEMENT OF INTENT: levels b/c carry the `.will` marker
+ *  where it renders as grammar (level a stays the bare teaching slot). Used by
+ *  every path where a creature states what it is ABOUT to do — announcing a
+ *  claimed task, echoing a spoken order back, or a spark-directed act. */
+export function asIntent(line: LeveledGlyphs): LeveledGlyphs {
+  return { a: line.a, b: markIntent(line.b) ?? line.b, c: markIntent(line.c) ?? line.c };
 }
 
 /** The "{I'll} {do the thing}" line for a goal, or null when the goal has no
@@ -93,8 +129,18 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       return { a: act.verb, b: `i_me + ${act.verb}`, c: `i_me + ${act.verb}` };
     }
     case "rest": {
-      // "I'll rest at the bed" — the station is the teaching point (level a).
+      // The station is the teaching point (level a); the sentence speaks the
+      // ACT the station serves (the attention-action vocabulary): a sleep pose
+      // or a bed = "I'll sleep", a bath = "I'll wash", a privy = the bathroom
+      // trip ("I'll go to the bathroom"); anything else stays the plain rest.
       const where = syms.place(goal.place);
+      if (goal.pose === "sleep" || where === "bed") {
+        return { a: where, b: "i_me + sleep", c: "i_me + sleep" };
+      }
+      if (where === "bath") return { a: where, b: "i_me + wash", c: "i_me + wash" };
+      if (where === "privy" || where === "bathroom") {
+        return { a: where, b: "go + to + bathroom", c: "i_me + go + to + bathroom" };
+      }
       return { a: where, b: `rest + ${where}`, c: `i_me + rest + ${where}` };
     }
     case "setOpen": {
@@ -115,8 +161,9 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
     }
     case "converse": {
       // "I'll talk to Mara" — the partner is the teaching point (level a).
+      // Verb + partner; each ruleset supplies the joint ("to"/"עם"/"con").
       const who = syms.creature(goal.target);
-      return { a: who, b: `talk + ${who}`, c: `i_me + talk + to + ${who}` };
+      return { a: who, b: `talk + ${who}`, c: `i_me + talk + ${who}` };
     }
     case "takeUnits": {
       // "I'll get food" — the good is the teaching point; the count stays

@@ -210,9 +210,11 @@ import {
   type SceneOverlay,
 } from "../../render3d.js";
 import { PathDebugOverlay3D } from "../../path-debug-3d.js";
+import { AttentionDebugOverlay3D, type AttentionDebugLink } from "../../attention-debug-3d.js";
 import {
   createCreatureAvatarFactory,
   getSpeciesAssets,
+  type CreatureDetail,
 } from "../../creatures/creature-model.js";
 import {
   outfitPresetFor,
@@ -294,6 +296,7 @@ import {
   VOLUNTEER_COMPLIANCE,
   goalIntentLine,
   goalActivity,
+  asIntent,
   commandEcho,
   defaultAnnounceCriteria,
   type TaskPool,
@@ -358,13 +361,16 @@ import {
 } from "@shared/world-engine/interaction/index.js";
 import { planGoal, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
 import { needPursuitGoals } from "@shared/world-engine/interaction/behavior/need-goals.js";
+import { probesOn } from "@shared/world-engine/perf-probes.js";
 import {
   objectMotive,
+  attentionActions,
   attentionBonus,
   ramp,
   decayStrength,
   SPARK,
   type AttentionMotive,
+  type AttentionTargetInfo,
   type SparkDraw,
   type SparkFocus,
 } from "@shared/world-engine/interaction/behavior/spark-attention.js";
@@ -542,6 +548,13 @@ const COOK_DWELL_S = 5;
 /** Seconds an idle, un-owned resident may linger AWAY from home (a finished
  *  spoken command left it there) before it walks back on its own. */
 const HOME_IDLE_GRACE_S = 10;
+/** ON-THE-CLOCK DORMANCY safety net (view-distance-lod-tiers.md step 2): the
+ *  longest a contented body may sleep between decides when a NON-METER drive
+ *  (stock/mess — pantry drain, clutter) is in its template set. Meter drives
+ *  wake EXACTLY at their crossing; these have no closed-form timer, so the cap
+ *  bounds how stale their answer can go. townClock seconds — deterministic
+ *  over the shared clock, so a multiplayer owner handoff just recomputes. */
+const NEED_DECIDE_CAP_S = 1.5;
 /** After a market take yields NOTHING (the abstract shelf emptied during the
  *  walk over), that member doesn't retry the same good for this long — the
  *  decide-time/arrival-time stock race was marching shoppers out and back
@@ -762,6 +775,18 @@ export interface QuestSession {
    *  route (a pursuit for it just failed — the legacy walker takes the motive
    *  meanwhile; see NEED_PURSUIT_RETRY_S). */
   needPursuitCooldown: Map<string, number>;
+  /** ON-THE-CLOCK DORMANCY (view-distance-lod-tiers.md step 2): cid → the
+   *  sleep a NULL decide armed. `due` = townClock of the earliest possible new
+   *  fire — the exact meter crossing, capped by NEED_DECIDE_CAP_S when a
+   *  non-meter drive (stock/mess) is in play. `epoch` = `needsPropsEpoch` at
+   *  arm time, so a dropped/created prop wakes tidy/fun immediately. `at` =
+   *  arm time — idle-away accumulates across the whole gap, not per decide.
+   *  Every decide RUN clears the entry, which makes junction decides
+   *  (step/pursuit/crouch endings) immediate for free. */
+  needDecideDorm: Map<string, { due: number; epoch: number; at: number }>;
+  /** Loose-prop world version — bumped when a small prop is REGISTERED
+   *  (dropped/created); the dormancy gate's event-wake signal. */
+  needsPropsEpoch: number;
   /** SOFT CONTROL — the spark's attention field (spark-attention.ts). `sparkDraw`
    *  = attention aimed at a hovered object's MOTIVE; `sparkFocus` = the ENGAGED
    *  creature — the ONE the player has drawn into attention (by conversing,
@@ -785,6 +810,14 @@ export interface QuestSession {
   /** townClock until which a directed DRAW holds — the gaze doesn't override a
    *  deliberate board press / oscillation target until it lapses. */
   sparkExplicitUntil: number;
+  /** The LAST creature the player STARTED A CONVERSATION with — the standing
+   *  addressee of a board selection (a pressed container item is a command to
+   *  this creature while its body is still on screen). Never decays; replaced
+   *  by the next conversation. */
+  lastConvoCid: string | null;
+  /** Refusal latch — "cid|objId" keys already refused aloud this draw episode,
+   *  so an unwilling creature says "I'm not hungry" once, not every frame. */
+  sparkRefused: Set<string>;
   /** OSCILLATION detector — the "look at a creature, then a point, back and
    *  forth" gesture that clearly means "you, go/use there". `cid` = the creature
    *  side; `x`/`y`/`objId` = the point side; `flips` = creature↔point transitions;
@@ -1196,6 +1229,18 @@ export interface QuestHost3D {
    *  Off on the ground rung — the parked gaze avatar is not an occupant, so
    *  walking the street past a house must not strip its walls. */
   setInteriorReveal(on: boolean): void;
+  /** VIEW-DISTANCE LOD (view-distance-lod-tiers.md): cap the ambient street
+   *  crowd the town streamer embodies — 0 = none (orbit / >~1km), null = the
+   *  stage default. Ramped by the driver from camera→town distance so bodies
+   *  stream in gradually on descent instead of flooding at the mount. */
+  setCrowdBudget(n: number | null): void;
+  /** VIEW-DISTANCE LOD (Phase 3): the fidelity town bodies render at — "full"
+   *  on the ground, "simple" (cheap loft) on approach, "capsule" at far
+   *  district range. Per-client and render-only: computed from the LOCAL
+   *  camera (with hysteresis in the driver), so in multiplayer each peer
+   *  dresses the same replicated bodies at its own fidelity. Existing bodies
+   *  rebuild a few per frame on change. */
+  setCreatureTier(t: CreatureTier): void;
   /** SPIRIT LADDER: the cursor target the view computed on its last render
    *  while the external-cursor opt-out is on — WORLD coords into `out`, null
    *  when there is none (no gaze, opt-out off, or no 3D view yet). */
@@ -1467,6 +1512,13 @@ function dealGood(dress: DressPalette, goodKey: string, n: number, salt: number)
   return out;
 }
 
+/** CREATURE VIEW TIER (view-distance-lod-tiers.md Phase 3): the fidelity every
+ *  town body is BUILT at — full skinned bake, the simple (fewer-sides) bake, or
+ *  the placeholder capsule at far district range. A RENDER-ONLY, per-client
+ *  choice computed from the LOCAL camera (each multiplayer peer dresses the
+ *  same replicated bodies at its own fidelity) — never sim state. */
+export type CreatureTier = CreatureDetail | "capsule";
+
 function makeTownModelFactory(
   npcIcons: Map<string, string>,
   species: string,
@@ -1476,6 +1528,8 @@ function makeTownModelFactory(
   // The town's ACTIVE dress (culture palette) — bounds which outfits residents
   // wear and which bakes warm at boot.
   dress: DressPalette = DEFAULT_DRESS_PALETTE,
+  // The CURRENT view tier, read at every model build (Phase 3). Absent = full.
+  tierFor?: () => CreatureTier,
 ): AvatarModelFactory {
   // Warm the shared bakes once so no hitch lands mid-play: the bare species and
   // the ACTIVE-dress wardrobe the town wears (one bake per head × palette colour,
@@ -1486,6 +1540,10 @@ function makeTownModelFactory(
       getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color)));
     }
   }
+  // Skinned bodies drop to the SIMPLE loft whenever the tier is not full — the
+  // capsule tier only ever REPLACES a body wholesale (dispatch below), so any
+  // skinned body it still builds (fresh spawns mid-cross) lofts cheap too.
+  const detailFor = (): CreatureDetail => (tierFor?.() === "full" || !tierFor ? "full" : "simple");
   const people = createCreatureAvatarFactory({
     speciesFor: (id) => overrides?.get(id)?.species ?? species,
     heightM: 1.7,
@@ -1496,15 +1554,17 @@ function makeTownModelFactory(
       const o = overrides?.get(id)?.outfit;
       return outfitPresetFor(o !== undefined ? o : outfitIndexForDress(fnv1a(id), dress));
     },
+    detailFor,
   });
   // Town FAUNA + FLORA (the chains' living ends): sheep by the weaver, fruit
   // trees by the farms — separate factories so each stands its natural height.
-  const sheep = createCreatureAvatarFactory({ speciesFor: () => "sheep", heightM: 0.95 });
+  const sheep = createCreatureAvatarFactory({ speciesFor: () => "sheep", heightM: 0.95, detailFor });
   // Household PETS: family members of a non-person species (world-doc authored;
   // species rides the same overrides map, keyed by pet cid). No outfit.
   const petBody = createCreatureAvatarFactory({
     speciesFor: (id) => overrides?.get(id)?.species ?? "quadruped",
     heightM: 0.75,
+    detailFor,
   });
   const trees = new Map(
     FRUIT_TREES.map((ft) => [
@@ -1515,6 +1575,15 @@ function makeTownModelFactory(
   const puzzle = makePuzzleCharacterFactory(npcIcons);
   return (id, isLocal) => {
     if (id.startsWith("npc_")) return puzzle(id, isLocal);
+    // CAPSULE TIER (Phase 3): at far district range every town BODY renders as
+    // the placeholder capsule — never the local walker, never trees (landscape).
+    if (
+      !isLocal &&
+      tierFor?.() === "capsule" &&
+      (id.startsWith("resident_") || id.startsWith("sheep_") || id.startsWith("pet_"))
+    ) {
+      return defaultAvatarModelFactory(id, isLocal);
+    }
     if (id.startsWith("sheep_")) return sheep(id, isLocal);
     if (id.startsWith("pet_")) return petBody(id, isLocal);
     if (id.startsWith("tree_")) return (trees.get(id.split("_")[1] ?? "") ?? people)(id, isLocal);
@@ -1638,12 +1707,16 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     liveNeedBodies: new Set(),
     pursuits: new Map(),
     needPursuitCooldown: new Map(),
+    needDecideDorm: new Map(),
+    needsPropsEpoch: 0,
     sparkDraw: null,
     sparkFocus: null,
     sparkEngageHold: 0,
     sparkChore: null,
     sparkActing: new Set(),
     sparkExplicitUntil: 0,
+    lastConvoCid: null,
+    sparkRefused: new Set(),
     sparkOsc: null,
     walk: new Map(),
     needEatShow: new Map(),
@@ -1840,7 +1913,7 @@ const descendNow = (): number =>
 /** Arm a fresh probe for a town mount; returns a phase-marking handle (null off
  *  a town session, so standalone/wilderness boots don't publish noise). */
 function descendProbeArm(key: string | null): { mark(name: string): void } | null {
-  if (!key) return null;
+  if (!key || !probesOn()) return null;
   const t0 = descendNow();
   let last = t0;
   const rec: DescendProbeRec = {
@@ -1883,6 +1956,42 @@ function descendProbeFrame(
   if (p.left === 0 && typeof console !== "undefined") console.log("[descent-probe]\n" + p.dump());
 }
 
+// TEMP sim-block reporter (view-distance-lod-tiers.md): rolling per-block cost
+// across the WHOLE of onFrame, printed every ~2s UNCONDITIONALLY. The earlier
+// threshold probes under-reported — a steady 100ms/frame block never crossed a
+// per-frame gate, so the recurring hog stayed invisible. total(max) per block,
+// sorted worst-first; sub-keys of the needs cluster print as `n.<step>`.
+// Remove with the other probes.
+const simAcc = {
+  last: 0,
+  frames: 0,
+  blocks: new Map<string, { total: number; max: number }>(),
+};
+function simMark(name: string, ms: number): void {
+  if (!probesOn()) return;
+  const b = simAcc.blocks.get(name) ?? { total: 0, max: 0 };
+  b.total += ms;
+  if (ms > b.max) b.max = ms;
+  simAcc.blocks.set(name, b);
+}
+function simFlush(): void {
+  if (!probesOn()) return;
+  simAcc.frames++;
+  const now = descendNow();
+  if (simAcc.last === 0) simAcc.last = now;
+  if (now - simAcc.last < 2000) return;
+  const rows = [...simAcc.blocks]
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([k, v]) => `${k}:${v.total.toFixed(0)}(${v.max.toFixed(0)})`)
+    .join(" ");
+  if (typeof console !== "undefined") {
+    console.log(`[sim-blocks] ${(now - simAcc.last).toFixed(0)}ms window / ${simAcc.frames} frames — ${rows}`);
+  }
+  simAcc.blocks.clear();
+  simAcc.frames = 0;
+  simAcc.last = now;
+}
+
 export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const { canvas, presenter } = deps;
   // Free client-side TTS for in-game characters. NPC dialogue is voiced even
@@ -1903,6 +2012,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  ON/OFF choice is the LAB's and outlives a world reload — so the flag lives
    *  out here and every new overlay adopts it. */
   let pathDebug: PathDebugOverlay3D | null = null;
+  let attentionDebug: AttentionDebugOverlay3D | null = null;
   let pathDebugOn = false;
   /** SPIRIT mode (AvatarKind "spirit"): the player is a stationary, formless
    *  first-person presence. No walking — dwell on anything in view to pick it
@@ -1913,6 +2023,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   let spiritFrame: { x: number; y: number; w: number; h: number } | null = null;
   /** Dollhouse diagnostic heartbeat accumulator (5s household state log). */
   let dollLogT = 0;
+  /** AMBIENT CROWD BUDGET (view-distance-lod-tiers.md Phase 2): the max street
+   *  bodies the town-stage streamer may embody this frame, pushed per-frame by
+   *  the driver (main.ts) from camera→town distance — 0 at orbit (>~1km: no
+   *  individual creatures), ramping up on descent. null = the stage default. */
+  let crowdBudget: number | null = null;
+  /** CREATURE VIEW TIER (view-distance-lod-tiers.md Phase 3): the fidelity the
+   *  town model factory builds bodies at, pushed per-frame by the driver from
+   *  the LOCAL camera (render-only, per-client — see CreatureTier). A change
+   *  queues every existing town body for a STAGGERED rebuild through the
+   *  factory (a few per frame — a tier cross must never rebuild the whole
+   *  crowd, plus its first-use bakes, in one frame). */
+  let creatureTier: CreatureTier = "full";
+  let retierQueue: string[] = [];
+  const RETIER_STREAM = 4;
+  /** CLOCK-ERRAND ROUTE QUEUE (view-distance-lod-tiers.md): trips emitted by
+   *  the stage streamer wait here (per body — a fresh trip replaces a stale
+   *  queued one) and door-route at most ERRAND_ROUTE_BUDGET per frame. Routing
+   *  is the streamer's per-item lump; an approach frame can emit dozens of
+   *  trips at once, and routing them all in one frame is a visible stutter. */
+  const clockErrandQueue = new Map<string, Array<{ x: number; y: number; dwell?: number }>>();
+  const ERRAND_ROUTE_BUDGET = 4;
+  let _errSampleT = 0; // TEMP errand-sample pacing
+  let _ghostLogT = 0; // TEMP ghost-spawn pacing
 
   // ── POSSESSION (spirit ↔ avatar; possession.ts is the guarded state
   //    machine, this host executes the swap). While possessed the session
@@ -3718,6 +3851,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // needStep is dropped) — a command-born one survives, it IS the order.
         if (session.pursuits.get(cid)?.source === "need") session.pursuits.delete(cid);
         session.needStep.delete(cid);
+        session.needDecideDorm.delete(cid); // command's end is a junction — decide fresh
         releaseErrands(session, cid); // following/obeying — not shopping
         continue;
       }
@@ -3774,6 +3908,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (session.creatures) delete session.creatures.world.items[heldRec.entityId];
           session.liveNeedBodies.add(cid); // the walker owns this body now
           session.needStep.delete(cid); // re-decide with the item in hand
+          session.needDecideDorm.delete(cid); // wake — the hands changed
           console.log(`[needs] ${cid} RECLAIMED a physically-carried ${heldRec.glyph} into its hands`);
         }
       }
@@ -3793,6 +3928,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // SCHEDULED: un-ticked. Meters drop so a later load re-seeds from the schedule.
         for (const tpl of templates) session.needMeters.delete(`${cid}|${tpl.key}`);
         session.needStep.delete(cid);
+        session.needDecideDorm.delete(cid); // a re-shown house decides fresh
         continue;
       }
       const body = state.avatars[cid];
@@ -3803,6 +3939,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // dropped, and the clock re-anchors to the result. No zombie live state.
         if (live) {
           session.needStep.delete(cid);
+          session.needDecideDorm.delete(cid);
           session.pursuits.delete(cid); // an evicted body's pursuit dies with it
           session.liveNeedBodies.delete(cid);
           releaseErrands(session, cid); // an evicted body can't finish the errand
@@ -3966,8 +4103,58 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the show ends. (Both show maps tick down in syncNeedActivities, called
       // in the same frame block as this walker — no stall risk.)
       if (session.needEatShow.has(cid) || session.needPoseShow.has(cid)) continue;
+      // ── ON-THE-CLOCK DORMANCY (view-distance-lod-tiers.md step 2) ─────────
+      // A body whose LAST decide found nothing sleeps until something could
+      // change the answer: the earliest meter crossing (exact timer, armed
+      // below), a loose-prop event (epoch), the spark demanding attention (an
+      // active draw lowers effective thresholds; an engaged creature is the
+      // "requires attention" tier and stays per-frame responsive), or the
+      // safety-net cap for drives with no closed-form timer. Junctions are
+      // implicit: only a null decide arms this, and every decide run clears
+      // it — a finished step/pursuit/crouch re-decides on the very next tick.
+      const dorm = session.needDecideDorm.get(cid);
+      if (
+        dorm &&
+        session.townClock < dorm.due &&
+        dorm.epoch === session.needsPropsEpoch &&
+        !wasSparkActing &&
+        !session.sparkDraw &&
+        session.sparkFocus?.cid !== cid
+      ) {
+        continue;
+      }
+      // Idle-away time spans the whole slept gap, not just decide frames.
+      const sinceDecide = dorm ? Math.max(dt, session.townClock - dorm.at) : dt;
+      session.needDecideDorm.delete(cid);
       // DECIDE from live state (the shared template walker), then drive the body.
       const decided = decideNeeds(templates, (tpl) => residentNeedCtx(session, state, cid, houseIndex, tpl, templates));
+      // PROVISIONING STAYS ON THE CLOCK while the house is UNWATCHED
+      // (view-distance-lod-tiers.md): an unwatched household's restocking is the
+      // BUILDING's need — the goods clock already walks a real shopper down the
+      // street as a baked errand, with no per-frame rechecking. Starting the
+      // same trip through the live loop instead PROMOTED the body into
+      // `liveNeedBodies` — and since stock always trends below its buffer, the
+      // need never stopped firing, so the body never demoted: it re-ran the
+      // full decide/ctx resolution every frame forever (the sim-phase storm).
+      // Only the TRIP START is gated (`take` implies empty hands): a body
+      // already carrying units falls through and banks them — hands must
+      // empty on every exit (§4).
+      if (decided?.tpl.drive.kind === "stock" && !shown && decided.intent.kind === "take") {
+        if (decided.tpl.exclusive) releaseErrands(session, cid); // back in the pool
+        if (live) {
+          // DEMOTE — the same hand-back as "nothing fires": the clock owns
+          // this household's shopping again.
+          const banked = bankCarried(session, cid, houseIndex);
+          session.liveNeedBodies.delete(cid);
+          releaseErrands(session, cid);
+          reanchorHouseGoods(session, houseIndex);
+          walkResidentHome(session, state, cid);
+          console.log(
+            `[needs] ${cid} DEMOTED (unwatched provisioning → clock${banked ? `; banked ${banked} carried` : ""})`,
+          );
+        }
+        continue;
+      }
       // THE CLAIM: acting on a household-exclusive errand (a restock trip)
       // takes it, so the housemates deciding after this one in the same tick
       // read `claimed: "other"` and stay home. Anything else this body decides
@@ -4025,13 +4212,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // ("go to the market", a fetch) parked it there and no meter fires to
           // reclaim it. After a short grace it walks back on its own (the walk
           // is a no-op when already home).
-          const t = (session.idleAway.get(cid) ?? 0) + dt;
+          const t = (session.idleAway.get(cid) ?? 0) + sinceDecide;
           if (t >= HOME_IDLE_GRACE_S) {
             session.idleAway.delete(cid);
             walkResidentHome(session, state, cid);
           } else {
             session.idleAway.set(cid, t);
           }
+          // ARM the sleep: wake exactly when the earliest meter can newly
+          // fire; a non-meter drive in the set (stock/mess) bounds it at the
+          // safety-net cap. (A LIVE null decide demoted above instead — it
+          // re-decides once un-live before it can sleep.)
+          let dueIn = templates.some((t2) => t2.drive.kind !== "meter") ? NEED_DECIDE_CAP_S : Infinity;
+          for (const tpl of templates) {
+            if (tpl.drive.kind !== "meter" || tpl.drive.rate <= 0) continue;
+            const left = (tpl.drive.threshold - (session.needMeters.get(`${cid}|${tpl.key}`) ?? 0)) / tpl.drive.rate;
+            if (left < dueIn) dueIn = Math.max(0, left);
+          }
+          if (!Number.isFinite(dueIn)) dueIn = NEED_DECIDE_CAP_S;
+          session.needDecideDorm.set(cid, {
+            due: session.townClock + dueIn,
+            epoch: session.needsPropsEpoch,
+            at: session.townClock,
+          });
         }
         continue;
       }
@@ -4070,15 +4273,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         continue;
       }
       session.dlogged.delete(blockKey);
-      // SOFT CONTROL (attention-spark.md): this need fired only because the
-      // spark's attention pushed a still-climbing meter over — the player
-      // nudged it, so the creature ANNOUNCES its intent before acting (routine
-      // self-directed needs stay quiet). Detected here so any downstream action
-      // path (pursuit or legacy) can flag it.
-      const sparkTriggered =
-        tpl.drive.kind === "meter" &&
-        (session.needMeters.get(`${cid}|${tpl.key}`) ?? 0) < tpl.drive.threshold &&
-        attentionBonus(session.sparkDraw, session.sparkFocus, cid, tpl.key) > 0;
+      // SOFT CONTROL (attention-spark.md): a spark-PROMOTED chore (sparkActing,
+      // consumed at the loop top) announces its intent before acting; routine
+      // self-directed needs stay quiet. Meter-driven attention acts no longer
+      // fire through this loop — performAttentionAction targets the specific
+      // indicated instance and announces on its own.
       // ── S2: THE SELF-ASSIGNED COMMAND ─────────────────────────────────────
       // The clean motives ride the unified pursuit engine: map the decided
       // (template, intent) to GoalSpec candidates (need-goals.ts) and install
@@ -4105,13 +4304,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const nr = makeGoalResolver(session, cid); // NEED-scoped: own household + arm's reach
           const goal = candidates.find((g) => compileGoal(g, cid, nr));
           if (goal) {
-            if (!session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key} → pursuit)`);
+            if (probesOn() && !session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key} → pursuit)`);
             session.liveNeedBodies.add(cid);
             session.needStep.delete(cid);
             session.walk.delete(cid); // the pursuit starts its walk fresh
             session.pursuits.set(cid, { source: "need", tplKey: tpl.key, goal, glyph: tpl.key });
-            if (sparkTriggered || wasSparkActing) announceSparkIntent(session, cid, goal);
-            console.log(`[needs] ${cid} pursuit: ${goal.kind} (${tpl.key})`);
+            if (wasSparkActing) announceSparkIntent(session, cid, goal);
+            if (probesOn()) console.log(`[needs] ${cid} pursuit: ${goal.kind} (${tpl.key})`);
             continue;
           }
         }
@@ -4183,8 +4382,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               return raw ? standPointFor(state, target.id, raw, { x: body.x, y: body.y }, world.npcRadiusOf(avatarIdOf(cid))) : null;
             })();
       if (!pos) continue;
-      if (!session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key})`);
-      console.log(`[needs] ${cid} step: ${intent.kind} ${goodKey || tpl.key} @ ${target.id}`);
+      if (probesOn() && !session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key})`);
+      if (probesOn()) console.log(`[needs] ${cid} step: ${intent.kind} ${goodKey || tpl.key} @ ${target.id}`);
       session.liveNeedBodies.add(cid);
       session.needStep.set(cid, {
         tplKey: tpl.key,
@@ -4805,6 +5004,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  the satisfy stations by kind. All counts read the SAME container/stack model
    *  the player's takes and puts mutate — that is what makes stealing/gifting
    *  land. Candidates are CAPABILITY-GATED (grasp). */
+  /** PER-HOUSE CONTAINER INDEX (view-distance-lod-tiers.md step 3): the hot
+   *  paths — need decides, the per-frame housekeeping loops — must never sweep
+   *  the CITY's containerStock to find ONE household's boxes. `furn_<hi>_*`
+   *  keys are effectively append-only (the map's only delete is the
+   *  construction site's non-furn key), so the index rebuilds lazily when the
+   *  key COUNT changes, with a 1 s townClock staleness cap as belt-and-braces.
+   *  Built in the map's own insertion order, so per-house iteration — and
+   *  every first-match pick over it — is identical to the full sweep it
+   *  replaces. Values are read live from containerStock at use time. */
+  const houseContainerIdx = new WeakMap<QuestSession, { n: number; at: number; byHouse: Map<number, string[]> }>();
+  function houseContainerKeys(session: QuestSession, houseIndex: number): readonly string[] {
+    const c = houseContainerIdx.get(session);
+    if (c && c.n === session.containerStock.size && session.townClock - c.at < 1) {
+      return c.byHouse.get(houseIndex) ?? [];
+    }
+    const byHouse = new Map<number, string[]>();
+    for (const id of session.containerStock.keys()) {
+      const m = /^furn_(\d+)_/.exec(id);
+      if (!m) continue;
+      const hi = Number(m[1]);
+      const list = byHouse.get(hi);
+      if (list) list.push(id);
+      else byHouse.set(hi, [id]);
+    }
+    houseContainerIdx.set(session, { n: session.containerStock.size, at: session.townClock, byHouse });
+    return byHouse.get(houseIndex) ?? [];
+  }
+
   function residentNeedCtx(
     session: QuestSession,
     state: WorldState,
@@ -4854,8 +5081,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         containers.storage = { id: tid, place: P(tid), units: 0 };
       }
     } else if (tpl.acquire.some((a) => a.kind === "container" && a.role === "storage")) {
-      for (const [id, stock] of session.containerStock) {
-        if (!id.startsWith(`furn_${houseIndex}_`)) continue;
+      for (const id of houseContainerKeys(session, houseIndex)) {
+        const stock = session.containerStock.get(id);
+        if (!stock) continue;
         if (!mayUse(cid, houseIndex, session.containerOwner.get(id))) continue;
         const units = Object.entries(stock)
           .filter(([g, n]) => n > 0 && matchesNeedItem(g, tpl.item))
@@ -5020,8 +5248,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           });
         }
         if (tpl.satisfy.kind === "transform") {
-          for (const [boxId, stock] of session.containerStock) {
-            if (!boxId.startsWith(`furn_${houseIndex}_`)) continue;
+          for (const boxId of houseContainerKeys(session, houseIndex)) {
+            const stock = session.containerStock.get(boxId);
+            if (!stock) continue;
             if (!containerAccessible(session, boxId, grasp)) continue;
             // Never raid a housemate's PRIVATE box (ownership.ts) — the
             // laundry chore reaches the wardrobe, not Mara's treasures.
@@ -5060,13 +5289,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       loose = cands.map((x) => x.c);
     }
     return {
-      // SOFT CONTROL (spark-attention.ts): if the spark is drawing attention to a
-      // matching object AND this creature is ENGAGED, add a strong effective-meter
-      // bonus so it goes to use the thing. Never persisted (the meter itself is
-      // untouched); an unengaged creature gets nothing, so nobody is pulled in.
-      meter:
-        (session.needMeters.get(`${cid}|${tpl.key}`) ?? 0) +
-        attentionBonus(session.sparkDraw, session.sparkFocus, cid, tpl.key),
+      // SOFT CONTROL note: the spark's attention no longer rides this meter —
+      // a directed act targets the SPECIFIC indicated instance through
+      // performAttentionAction (a category-matched need here would send the
+      // body to the nearest "food", not the pointed apple). Raw meter only.
+      meter: session.needMeters.get(`${cid}|${tpl.key}`) ?? 0,
       // The CARRY projection (carryTotalOf, not stackTotalOf): a food row must
       // see a carried TREAT, or a gifted cookie projects to 0 for every row
       // the creature owns and rides the hands forever (§4).
@@ -5559,6 +5786,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const pid = `small:${entityId}`;
     world.addObject({ id: pid, x: c.x, y: c.y, shape: "sphere", radius: 0.3, interactions: [], glyph });
     session.smallProps.set(pid, { entityId, glyph, at: session.townClock });
+    session.needsPropsEpoch++; // a new loose prop wakes dormant tidy/fun decides
     placeInContainer(world.state, pid, objId, "on");
   }
 
@@ -7562,9 +7790,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // abstraction). Nothing stored ⇒ "I don't have a chair."
     const glyph = furnitureGlyph(kind);
     let sourceBox: string | null = null;
-    for (const [objId, stock] of session.containerStock) {
-      if (!objId.startsWith(`furn_${house.index}_`)) continue;
-      if ((stock[glyph] ?? 0) > 0) {
+    for (const objId of houseContainerKeys(session, house.index)) {
+      const stock = session.containerStock.get(objId);
+      if (stock && (stock[glyph] ?? 0) > 0) {
         sourceBox = objId;
         break;
       }
@@ -7671,9 +7899,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     if (goodsN) signals.push({ key: "pantry", value: (fill / goodsN) * 0.8 });
     let stacks = 0;
-    for (const [objId, stock] of session.containerStock) {
-      if (!objId.startsWith(`furn_${houseIndex}_`)) continue;
-      stacks += Object.values(stock).filter((n) => n > 0).length;
+    for (const objId of houseContainerKeys(session, houseIndex)) {
+      const stock = session.containerStock.get(objId);
+      if (stock) stacks += Object.values(stock).filter((n) => n > 0).length;
     }
     signals.push({ key: "breadth", value: Math.min(1, stacks / 6) * 0.4 });
     return signals;
@@ -7725,8 +7953,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!shown(hi)) continue;
       if ((autoPlaceAfter.get(hi) ?? 0) > session.townClock) continue;
       let kind: (typeof FURNITURE_ITEMS)[number]["kind"] | null = null;
-      for (const [objId, stock] of session.containerStock) {
-        if (!objId.startsWith(`furn_${hi}_`)) continue;
+      for (const objId of houseContainerKeys(session, hi)) {
+        const stock = session.containerStock.get(objId);
+        if (!stock) continue;
         for (const g of Object.keys(stock)) {
           const k = furnitureKindOfGlyph(g);
           if (k && k !== "workbench" && (stock[g] ?? 0) > 0) {
@@ -7753,8 +7982,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const house = t.plan.houses.find((h) => h.index === hi);
       if (!house) continue;
       let stacks = 0;
-      for (const [objId, stock] of session.containerStock) {
-        if (!objId.startsWith(`furn_${hi}_`)) continue;
+      for (const objId of houseContainerKeys(session, hi)) {
+        const stock = session.containerStock.get(objId);
+        if (!stock) continue;
         for (const g of Object.keys(stock)) {
           if (furnitureKindOfGlyph(g)) stacks += stock[g] ?? 0;
         }
@@ -7793,6 +8023,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const objId = `small:${entityId}`;
     world.addObject({ id: objId, x, y, shape: "sphere", radius: 0.35, interactions: ["carry"], glyph });
     session.smallProps.set(objId, { entityId, glyph, at: session.townClock }); // `at` paces the tidy grace
+    session.needsPropsEpoch++; // a new loose prop wakes dormant tidy/fun decides
   }
 
   /** Drop one of the selected stack onto the ground (loose again, re-grabbable). */
@@ -8300,14 +8531,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     const gz = host.getGaze();
     const hover = gz.hover;
-    let target: { motive: AttentionMotive; x: number; y: number } | null = null;
+    let target: { motive: AttentionMotive; x: number; y: number; objId: string } | null = null;
     let choreTarget: { chore: "tidy" | "provision"; x: number; y: number } | null = null;
     let engageCid: string | null = null;
     if (!blocked) {
       if (hover?.kind === "object") {
         const o = host.state.objects[hover.id];
         const motive = hoverObjectMotive(session, hover.id);
-        if (motive && o) target = { motive, x: o.x, y: o.y };
+        if (motive && o) target = { motive, x: o.x, y: o.y, objId: hover.id };
         else if (o) {
           const chore = hoverObjectChore(session, hover.id);
           if (chore) choreTarget = { chore, x: o.x, y: o.y };
@@ -8318,14 +8549,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // A bare-ground gaze draws nothing on its own (movement needs the explicit
       // oscillation gesture — stepSparkOsc — not a passive area hold).
     }
-    // DRAW — ramp the hovered object's motive (fresh strength on a motive switch), else fade.
+    // DRAW — ramp the hovered object's motive (fresh strength on an object
+    // switch — a new target starts its own ramp), else fade.
     if (target) {
       const d = session.sparkDraw;
-      const prev = d && d.motive === target.motive ? d.strength : 0;
-      session.sparkDraw = { motive: target.motive, x: target.x, y: target.y, strength: ramp(prev, dt) };
+      const prev = d && d.motive === target.motive && d.objId === target.objId ? d.strength : 0;
+      session.sparkDraw = {
+        motive: target.motive,
+        x: target.x,
+        y: target.y,
+        objId: target.objId,
+        strength: ramp(prev, dt),
+      };
     } else if (session.sparkDraw) {
       const s = decayStrength(session.sparkDraw.strength, dt, SPARK.drawDecayS);
       session.sparkDraw = s > 0 ? { ...session.sparkDraw, strength: s } : null;
+      // Draw episode over — the refusal latch resets (a fresh point at the
+      // same thing may refuse aloud again).
+      if (!session.sparkDraw) session.sparkRefused.clear();
     }
     // CHORE — same ramp/fade for a hovered storage/clutter object.
     if (choreTarget) {
@@ -8386,9 +8627,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** Promote an ENGAGED idle creature to run a household CHORE — but only if it
-   *  actually FIRES right now (a box below its buffer, real clutter), so pointing
-   *  at a full box is a no-op. The need loop then drives + announces it. */
-  function promoteChore(session: QuestSession, state: WorldState, cid: string, chore: "tidy" | "provision"): boolean {
+   *  actually FIRES right now (a box below its buffer, real clutter, a dirty
+   *  wash), so pointing at a full box is a no-op. The need loop then drives +
+   *  announces it. */
+  function promoteChore(
+    session: QuestSession,
+    state: WorldState,
+    cid: string,
+    chore: "tidy" | "provision" | "laundry" | "adopt",
+  ): boolean {
     const houseIndex = houseIndexOfCid(cid);
     const member = Number(cid.split("_")[2]);
     const house = residentTownCtx(session, houseIndex)?.house;
@@ -8410,15 +8657,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   }
 
-  /** Engage `cid` and set a held DRAW of `motive` at `pt` — the engaged body's
-   *  matching need fires and it goes to use the thing. Idle-gated. */
-  function useItemMotive(session: QuestSession, cid: string, pt: { x: number; y: number }, motive: AttentionMotive) {
-    if (!idleForDirect(session, cid)) return;
-    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S);
-    session.sparkDraw = { motive, x: pt.x, y: pt.y, strength: 1 };
-    session.sparkExplicitUntil = session.townClock + ENGAGE_DIRECT_HOLD_S;
-  }
-
   /** The motive a bare GLYPH implies (a box's item word — food→hunger, a toy→fun),
    *  read from the spec side like hoverObjectMotive but off the glyph directly. */
   function glyphMotive(glyph: string): AttentionMotive | null {
@@ -8431,26 +8669,259 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
   }
 
+  // ── THE ATTENTION-ACTION EXECUTOR ──────────────────────────────────────────
+  // Item types × creature state → the DEFAULT act (attentionActions, the pure
+  // table): food while hungry = eat, a bed while tired = sleep, clean clothing
+  // any time = wear, loose things = tidy… The act targets the SPECIFIC
+  // indicated instance (consume/wear/fetch by entity id; rest at the named
+  // fixture), states its intent first ("I will eat this apple"), and REFUSES
+  // ALOUD when the gating meter is too low ("I'm not hungry").
+
+  /** Vocal refusals for the meter-gated acts (mirrors SATISFY_REFUSAL). */
+  const ATTENTION_REFUSAL: Record<string, string> = {
+    eat: "i_me + hungry.not",
+    drink: "i_me + thirsty.not",
+    sleep: "i_me + tired.not",
+    play: "i_me + bored.not",
+    use: "i_me + need.not + bathroom",
+    wash: "i_me + dirty.not",
+    interact: "i_me + lonely.not",
+  };
+
+  /** The creature's meter-driven template for a motive prefix ("hunger",
+   *  "social"…), or null. */
+  function motiveTemplate(session: QuestSession, cid: string, motive: string): NeedTemplate | null {
+    const houseIndex = houseIndexOfCid(cid);
+    const member = Number(cid.split("_")[2]);
+    const house = residentTownCtx(session, houseIndex)?.house;
+    const templates = isPetCid(cid)
+      ? petNeedTemplates(session)
+      : house
+        ? residentNeedTemplates(session, houseIndex, house, member)
+        : null;
+    return templates?.find((t) => t.key.startsWith(motive) && t.drive.kind === "meter") ?? null;
+  }
+
+  /** Everything the attention-action table wants to know about an object. */
+  function attentionTargetInfo(session: QuestSession, objId: string): AttentionTargetInfo | null {
+    const prop = session.smallProps.get(objId);
+    if (prop) {
+      const head = headOf(prop.glyph);
+      const it = session.creatures?.world.items[prop.entityId];
+      const f = glyphFacets(prop.glyph);
+      const o = world?.state.objects[objId];
+      return {
+        affords: CONCEPT_LIBRARY.get(head)?.affords ?? [],
+        properties: propertiesOf(prop.glyph),
+        stationKind: null,
+        isWater: isKindOf(prop.glyph, "water"),
+        states: it?.states ?? f.states ?? [],
+        isClothing: goodKeyOfGlyph(head) === "clothing",
+        unclaimed: !it?.ownerId && !it?.bound,
+        loose: !!o && !o.carriedBy && !o.containedIn,
+        stockLow: false,
+      };
+    }
+    if (objId === "well") {
+      return {
+        affords: [], properties: [], stationKind: "well", isWater: true,
+        states: [], isClothing: false, unclaimed: false, loose: false, stockLow: false,
+      };
+    }
+    const fm = objId.match(/^furn_\d+_(.+)$/);
+    if (fm) {
+      const kind = (fm[1] ?? "").replace(/_\d+$/, "");
+      return {
+        affords: [], properties: [], stationKind: kind, isWater: false,
+        states: [], isClothing: false, unclaimed: false, loose: false,
+        // A container's "low" is probed for real by promoteChore's fires-check.
+        stockLow: session.containers.has(objId),
+      };
+    }
+    return null;
+  }
+
+  /** Refuse an act aloud, once per draw episode ("I'm not hungry"). */
+  function refuseAttention(session: QuestSession, cid: string, actKind: string, latchKey: string) {
+    const line = ATTENTION_REFUSAL[actKind];
+    if (!line || session.sparkRefused.has(latchKey)) return;
+    session.sparkRefused.add(latchKey);
+    if (isPetCid(cid)) ensurePetCreature(session, cid);
+    else ensureResidentCreature(session, cid);
+    npcChatBubble(session, cid, line);
+  }
+
+  /** Install a directed pursuit (rides stepPursuit; a tplKey makes it
+   *  need-shaped so completion credits the meter) and announce the intent
+   *  ("I will eat this apple"). Compile-checked first — an unplannable goal
+   *  installs nothing and announces nothing (returns false). */
+  function installAttentionPursuit(
+    session: QuestSession,
+    cid: string,
+    goal: GoalSpec,
+    tplKey: string | null,
+  ): boolean {
+    if (!compileGoal(goal, cid, makeGoalResolver(session))) return false;
+    session.liveNeedBodies.add(cid);
+    session.needStep.delete(cid);
+    session.walk.delete(cid);
+    if (tplKey) session.pursuits.set(cid, { source: "need", tplKey, goal, glyph: tplKey });
+    else session.pursuits.set(cid, { source: "command", goal, glyph: goal.kind });
+    announceSparkIntent(session, cid, goal);
+    return true;
+  }
+
+  /** No usable instance (a dining table, a barrel) — fire the creature's OWN
+   *  need machinery like a spoken self-care order (commandSatisfy's core). */
+  function fireNeedFallback(session: QuestSession, cid: string, tpl: NeedTemplate) {
+    if (tpl.drive.kind !== "meter") return;
+    const key = `${cid}|${tpl.key}`;
+    session.needMeters.set(key, Math.max(session.needMeters.get(key) ?? 0, tpl.drive.threshold));
+    session.needStep.delete(cid);
+    session.liveNeedBodies.add(cid);
+    session.sparkActing.add(cid); // the need loop announces the chosen act
+  }
+
+  /**
+   * Perform the indicated object's DEFAULT act with creature `cid` (the
+   * attention-action table): meter-gated acts check the creature's own meter
+   * (WILLING fraction — an unwilling creature refuses aloud), anytime acts
+   * (wear/get/tidy/get-more) run regardless. `command` = a deliberate order (a
+   * board press) — it may interrupt errands; a soft gesture never does.
+   * Returns true when something happened (acted or refused aloud).
+   */
+  function performAttentionAction(
+    session: QuestSession,
+    cid: string,
+    objId: string,
+    opts: { command?: boolean } = {},
+  ): boolean {
+    if (!world) return false;
+    const state = world.state;
+    const o = state.objects[objId];
+    const info = attentionTargetInfo(session, objId);
+    if (!o || !info) return false;
+    const acts = attentionActions(info);
+    if (!acts.length) return false;
+    const entityId = session.smallProps.get(objId)?.entityId ?? null;
+    const latchKey = `${cid}|${objId}`;
+    let refusable: string | null = null; // the first unwilling meter act
+    for (const act of acts) {
+      if (act.motive) {
+        const tpl = motiveTemplate(session, cid, act.motive);
+        if (!tpl || tpl.drive.kind !== "meter") continue;
+        const meter = session.needMeters.get(`${cid}|${tpl.key}`) ?? 0;
+        if (meter < tpl.drive.threshold * SATISFY_WILLING_FRACTION) {
+          refusable = refusable ?? act.kind;
+          continue; // not hungry/tired enough to mean it — try an anytime act
+        }
+        if (opts.command) {
+          session.npcTasks.delete(avatarIdOf(cid));
+          session.pursuits.delete(cid);
+        }
+        const at = tpl.satisfy.kind === "consume" ? tpl.satisfy.at : undefined;
+        let acted = false;
+        switch (act.kind) {
+          case "eat":
+          case "drink":
+            if (entityId) {
+              acted = installAttentionPursuit(
+                session,
+                cid,
+                { kind: "consume", item: { id: entityId }, ...(at ? { at } : {}) },
+                tpl.key,
+              );
+            } else {
+              fireNeedFallback(session, cid, tpl); // a dining table / the well
+              acted = true;
+            }
+            break;
+          case "play":
+            acted = installAttentionPursuit(
+              session,
+              cid,
+              { kind: "rest", place: { kind: "named", id: objId }, pose: "play", dwellS: restDwellFor(tpl.key, session.scale) },
+              tpl.key,
+            );
+            break;
+          case "sleep":
+          case "use":
+          case "wash":
+            acted = installAttentionPursuit(
+              session,
+              cid,
+              {
+                kind: "rest",
+                place: { kind: "named", id: objId },
+                ...(act.kind === "sleep" ? { pose: "sleep" as const } : {}),
+                dwellS: restDwellFor(tpl.key, session.scale),
+              },
+              tpl.key,
+            );
+            break;
+        }
+        if (!acted) continue;
+        console.log(`[spark] ${cid} → ${act.kind} ${objId}`);
+        return true;
+      }
+      // Anytime acts — no meter gate.
+      switch (act.kind) {
+        case "washItem":
+          if (promoteChore(session, state, cid, "laundry")) {
+            console.log(`[spark] ${cid} → wash ${objId}`);
+            return true;
+          }
+          continue;
+        case "wear":
+          if (!entityId) continue;
+          if (opts.command) session.npcTasks.delete(avatarIdOf(cid));
+          if (!installAttentionPursuit(session, cid, { kind: "wear", item: { id: entityId } }, null)) continue;
+          console.log(`[spark] ${cid} → wear ${objId}`);
+          return true;
+        case "getMore":
+          if (promoteChore(session, state, cid, "provision")) {
+            console.log(`[spark] ${cid} → get more @${objId}`);
+            return true;
+          }
+          continue;
+        case "get":
+          if (!entityId) continue;
+          if (opts.command) session.npcTasks.delete(avatarIdOf(cid));
+          if (!installAttentionPursuit(session, cid, { kind: "fetch", item: { id: entityId } }, null)) continue;
+          console.log(`[spark] ${cid} → get ${objId}`);
+          return true;
+        case "tidy":
+          if (promoteChore(session, state, cid, "tidy")) {
+            console.log(`[spark] ${cid} → tidy ${objId}`);
+            return true;
+          }
+          continue;
+      }
+    }
+    // Nothing ran — if a meter act was declined, say so ("I'm not hungry").
+    if (refusable) {
+      refuseAttention(session, cid, refusable, latchKey);
+      return true;
+    }
+    return false;
+  }
+
   /** DIRECT the engaged creature `cid` at a specific point/object (an oscillation
-   *  or a board press): engage it fully, then — an object with a motive → USE it
-   *  (a held draw the engaged body responds to); a chore object → do the chore; a
-   *  bare point → go there. Idle-gated (never interrupts). */
-  function directCreatureTo(session: QuestSession, cid: string, pt: { x: number; y: number }, objId: string | null) {
-    if (!world || !idleForDirect(session, cid)) return;
-    const motive = objId ? hoverObjectMotive(session, objId) : null;
-    if (motive) {
-      useItemMotive(session, cid, pt, motive);
-      console.log(`[spark] direct ${cid} → use ${objId} (${motive})`);
-      return;
-    }
+   *  or a board press): engage it fully, then — an object → its table act
+   *  (performAttentionAction, exact instance); a bare point → go there.
+   *  Idle-gated (never interrupts) unless `command`. */
+  function directCreatureTo(
+    session: QuestSession,
+    cid: string,
+    pt: { x: number; y: number },
+    objId: string | null,
+    opts: { command?: boolean } = {},
+  ) {
+    if (!world) return;
+    if (!opts.command && !idleForDirect(session, cid)) return;
     engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S);
-    const chore = objId ? hoverObjectChore(session, objId) : null;
-    if (chore) {
-      promoteChore(session, world.state, cid, chore);
-      console.log(`[spark] direct ${cid} → chore ${chore} @${objId}`);
-      return;
-    }
-    // A bare point (or a plain object) — go there, if it's a real move.
+    if (objId && performAttentionAction(session, cid, objId, opts)) return;
+    // A bare point (or an object asking nothing) — go there, if it's a real move.
     const body = world.state.avatars[cid];
     const dist = body ? Math.hypot(body.x - pt.x, body.y - pt.y) : 0;
     if (dist < DIRECT_MIN_M || dist > DIRECT_MAX_M) return;
@@ -8460,13 +8931,132 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     console.log(`[spark] direct ${cid} → goTo @${pt.x.toFixed(1)},${pt.y.toFixed(1)}`);
   }
 
-  /** CHORE-hover: the engaged idle creature does the chore the hovered
-   *  storage/clutter object implies (the meter-object case is handled by the draw
-   *  bonus in residentNeedCtx; chores have no meter, so they route here). */
+  /** Direct creature `cid` at ANOTHER CREATURE (the oscillation with a body on
+   *  the point side): a target with a BLOCKED, stated need → help it (the
+   *  adoption rows); else, social — talk to it (willing-gated, refuses aloud). */
+  function performAttentionInteract(session: QuestSession, cid: string, targetCid: string) {
+    if (!world || cid === targetCid) return;
+    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S);
+    // HELP: the target has announced an unmet need (its blocked beg) and this
+    // creature's adoption rows can actually supply it.
+    const targetBlocked = [...session.dlogged].some((k) => k.startsWith(`needs:blocked:${targetCid}|`));
+    if (targetBlocked && promoteChore(session, world.state, cid, "adopt")) {
+      const goal: GoalSpec = { kind: "help", target: targetCid };
+      announceSparkIntent(session, cid, goal);
+      console.log(`[spark] ${cid} → help ${targetCid}`);
+      return;
+    }
+    // INTERACT: social, willing-gated.
+    const tpl = motiveTemplate(session, cid, "social");
+    if (tpl && tpl.drive.kind === "meter") {
+      const meter = session.needMeters.get(`${cid}|${tpl.key}`) ?? 0;
+      if (meter < tpl.drive.threshold * SATISFY_WILLING_FRACTION) {
+        refuseAttention(session, cid, "interact", `${cid}|${targetCid}`);
+        return;
+      }
+    }
+    const goal: GoalSpec = { kind: "converse", target: targetCid };
+    session.pursuits.set(cid, { source: "command", goal, glyph: "talk" });
+    announceSparkIntent(session, cid, goal);
+    console.log(`[spark] ${cid} → interact ${targetCid}`);
+  }
+
+  /** WHO a board selection addresses: the LAST creature the player started a
+   *  conversation with — while its body is still on screen (streamed in) —
+   *  else the engaged creature, else the nearest idle body present. */
+  function attentionAddressee(session: QuestSession, pt: { x: number; y: number }): string | null {
+    if (!world) return null;
+    const last = session.lastConvoCid;
+    if (
+      last &&
+      last !== PLAYER_ID &&
+      (isPetCid(last) || /^resident_\d+_\d+$/.test(last)) &&
+      world.state.avatars[avatarIdOf(last)]
+    ) {
+      return last;
+    }
+    const engaged = session.sparkFocus;
+    if (engaged && engaged.strength >= ENGAGE_MIN && idleForDirect(session, engaged.cid)) return engaged.cid;
+    return nearestIdleGroupCreature(session, world.state, pt, ATTEND_REACH_M);
+  }
+
+  /** A pressed CONTAINER ITEM (a glyph stack) is a COMMAND-LEVEL instruction to
+   *  the addressee (attentionAddressee — the last conversation partner first):
+   *  a motive glyph runs its table act on a matching unit ("I will eat the
+   *  apple"), clean clothing is worn, anything else fetched. Willing-gated —
+   *  a too-low meter refuses aloud ("I'm not hungry"). */
+  function attendContainerGlyph(session: QuestSession, boxId: string, glyph: string) {
+    if (!world) return;
+    const box = world.state.objects[boxId];
+    if (!box) return;
+    const cid = attentionAddressee(session, { x: box.x, y: box.y });
+    if (!cid) return;
+    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S);
+    const head = headOf(glyph);
+    const f = glyphFacets(glyph);
+    const match: NeedTarget = {
+      kind: head,
+      ...(f.descriptors.length ? { descriptors: f.descriptors } : {}),
+    };
+    const motive = glyphMotive(glyph);
+    const MOTIVE_ACT: Record<AttentionMotive, string> = {
+      hunger: "eat", thirst: "drink", fun: "play", energy: "sleep", waste: "use", hygiene: "wash",
+    };
+    if (motive) {
+      const tpl = motiveTemplate(session, cid, motive);
+      if (tpl && tpl.drive.kind === "meter") {
+        const meter = session.needMeters.get(`${cid}|${tpl.key}`) ?? 0;
+        if (meter < tpl.drive.threshold * SATISFY_WILLING_FRACTION) {
+          refuseAttention(session, cid, MOTIVE_ACT[motive], `${cid}|${boxId}|${glyph}`);
+          return;
+        }
+        // Command-level: the new order overrides an old errand.
+        session.npcTasks.delete(avatarIdOf(cid));
+        session.pursuits.delete(cid);
+        if (motive === "hunger" || motive === "thirst") {
+          const at = tpl.satisfy.kind === "consume" ? tpl.satisfy.at : undefined;
+          installAttentionPursuit(session, cid, { kind: "consume", item: { match }, ...(at ? { at } : {}) }, tpl.key);
+          return;
+        }
+        if (motive === "fun") {
+          installAttentionPursuit(session, cid, { kind: "fetch", item: { match } }, null);
+          return;
+        }
+        fireNeedFallback(session, cid, tpl);
+        return;
+      }
+    }
+    session.npcTasks.delete(avatarIdOf(cid));
+    session.pursuits.delete(cid);
+    if (goodKeyOfGlyph(head) === "clothing" && !f.states.includes("dirty")) {
+      installAttentionPursuit(session, cid, { kind: "wear", item: { match } }, null);
+      return;
+    }
+    installAttentionPursuit(session, cid, { kind: "fetch", item: { match } }, null);
+  }
+
+  /** The HOVER-FIRE + CHORE-hover step: when the engaged idle creature's drawn
+   *  object crosses the trigger (its own meter + the attention bonus over the
+   *  fire threshold), it performs the object's table act on THAT instance;
+   *  a hovered storage/clutter object promotes its chore. */
   function stepSparkDirect(session: QuestSession, state: WorldState) {
     const f = session.sparkFocus;
     if (!f || f.strength < ENGAGE_MIN) return; // no engaged creature → nobody acts
     if (!idleForDirect(session, f.cid)) return;
+    const d = session.sparkDraw;
+    if (d && d.motive && d.objId) {
+      const tpl = motiveTemplate(session, f.cid, d.motive);
+      if (tpl && tpl.drive.kind === "meter") {
+        const raw = session.needMeters.get(`${f.cid}|${tpl.key}`) ?? 0;
+        const bonus = attentionBonus(d, f, f.cid, tpl.key);
+        if (raw + bonus >= tpl.drive.threshold) {
+          if (performAttentionAction(session, f.cid, d.objId)) {
+            session.sparkDraw = null; // consumed
+            session.sparkExplicitUntil = 0;
+          }
+        }
+      }
+    }
     const ch = session.sparkChore;
     if (ch && ch.strength >= CHORE_STRENGTH) {
       if (promoteChore(session, state, f.cid, ch.chore)) {
@@ -8492,6 +9082,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (osc.lastSide === "pt") osc.flips++;
         osc.sinceFlip = 0;
         osc.lastSide = "cre";
+      } else if (osc) {
+        // ANOTHER creature while a gesture is anchored: it is the POINT side —
+        // "you two" (oscillating A↔B directs A at B: help / talk). The anchor
+        // only changes when the gesture times out.
+        const b = host.state.avatars[cid];
+        if (b) {
+          if (osc.lastSide === "cre") osc.flips++;
+          osc.sinceFlip = 0;
+          osc.lastSide = "pt";
+          osc.x = b.x;
+          osc.y = b.y;
+          osc.objId = `cre:${cid}`;
+        }
       } else {
         session.sparkOsc = osc = { cid, x: NaN, y: NaN, objId: null, flips: 0, sinceFlip: 0, lastSide: "cre" };
       }
@@ -8527,7 +9130,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return;
       }
       if (osc.flips >= OSC_TRIGGER && Number.isFinite(osc.x)) {
-        directCreatureTo(session, osc.cid, { x: osc.x, y: osc.y }, osc.objId);
+        if (osc.objId?.startsWith("cre:")) {
+          performAttentionInteract(session, osc.cid, osc.objId.slice(4));
+        } else {
+          directCreatureTo(session, osc.cid, { x: osc.x, y: osc.y }, osc.objId);
+        }
         session.sparkOsc = null; // consumed
       }
     }
@@ -8607,6 +9214,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return best;
   }
 
+  /** The soft-control ATTENTION READOUT (attention-debug-3d.ts): the engaged
+   *  creature, how much of the player's attention is ON it (engagement → the
+   *  ring), and how close the drawn/chore thing is to TRIGGERING its need (→ the
+   *  dash density). Empty when nothing is engaged. Debug-only; read each frame
+   *  while path debug is on. */
+  function attentionDebugLinks(session: QuestSession): AttentionDebugLink[] {
+    const engage = session.sparkFocus;
+    if (!world || !engage || engage.strength <= 0) return [];
+    const av = world.state.avatars[engage.cid];
+    if (!av) return [];
+    const from = { x: av.x, y: av.y, floor: av.floor };
+    let to: { x: number; y: number } | null = null;
+    let trigger = 0;
+    const draw = session.sparkDraw;
+    const chore = session.sparkChore;
+    if (draw && draw.motive && draw.strength > 0) {
+      to = { x: draw.x, y: draw.y };
+      // (raw meter for the drawn motive + the attention bonus) / threshold(=1).
+      const meterKey = [...session.needMeters.keys()].find((k) => k.startsWith(`${engage.cid}|${draw.motive}`));
+      const rawMeter = meterKey ? (session.needMeters.get(meterKey) ?? 0) : 0;
+      trigger = Math.min(1, rawMeter + SPARK.bonus * draw.strength * engage.strength);
+    } else if (chore && chore.strength > 0) {
+      to = { x: chore.x, y: chore.y };
+      trigger = chore.strength; // a chore has no meter — show how deliberate the hover is
+    }
+    return [{ from, to, engagement: engage.strength, trigger }];
+  }
+
   /** The word a world object is named by on the board (AAC — pressing it says
    *  it). A loose prop speaks its glyph; a fixture its station kind. */
   function objectWord(session: QuestSession, objId: string): string {
@@ -8619,22 +9254,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** Draw a creature's attention to a SPECIFIC object (a pressed board word) —
-   *  the ENGAGED creature if there is one (e.g. the one you just conversed with),
-   *  else the nearest idle body already present. A deliberate selection, so it
-   *  directs strongly; never pulls a distant body in. */
+   *  the last conversation partner (attentionAddressee), else the engaged /
+   *  nearest idle body present. A deliberate selection = COMMAND-LEVEL: it may
+   *  override an errand; it never pulls a distant body in. */
   function attendObject(session: QuestSession, objId: string) {
     if (!world) return;
-    const state = world.state;
-    const o = state.objects[objId];
+    const o = world.state.objects[objId];
     if (!o) return;
     const pt = { x: o.x, y: o.y };
-    const engaged = session.sparkFocus;
-    const cid =
-      engaged && engaged.strength >= ENGAGE_MIN && idleForDirect(session, engaged.cid)
-        ? engaged.cid
-        : nearestIdleGroupCreature(session, state, pt, ATTEND_REACH_M);
+    const cid = attentionAddressee(session, pt);
     if (!cid) return;
-    directCreatureTo(session, cid, pt, objId);
+    directCreatureTo(session, cid, pt, objId, { command: true });
   }
 
   function nearestContainer(
@@ -9498,6 +10128,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // `world` is captured lazily — it doesn't exist until runWorldHost, further down.
     pathDebug = new PathDebugOverlay3D({ getPaths: () => world?.npcPaths() ?? [] });
     pathDebug.setEnabled(pathDebugOn);
+    // ATTENTION READOUT: rides the SAME toggle — engagement rings + dotted
+    // trigger-proximity lines make the soft-control field visible (below).
+    attentionDebug = new AttentionDebugOverlay3D({ getLinks: () => attentionDebugLinks(session) });
+    attentionDebug.setEnabled(pathDebugOn);
     // ZONE CHARTERS on the ground (③): the chartered discs tint the ground
     // (category-colored, later charters visibly win, clearing erases) — a
     // spoken "area farms here" changes the world the same frame.
@@ -9512,7 +10146,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       ...(deps.groundAt ? { groundAt: deps.groundAt } : {}),
     });
     const goalTreeOverlay = overlay;
-    const overlays: SceneOverlay[] = [goalTreeOverlay, pathDebug, zoneOverlay];
+    const overlays: SceneOverlay[] = [goalTreeOverlay, pathDebug, attentionDebug, zoneOverlay];
     const composedOverlay: SceneOverlay = {
       mount: (scene) => { for (const o of overlays) o.mount(scene); },
       update: (dt) => { for (const o of overlays) o.update(dt); },
@@ -9562,6 +10196,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                 session.town.plan.species ?? "human_cute", // the town's constructing species
                 familyOverrides(session),
                 session.dress, // the town's culture palette
+                () => creatureTier, // Phase 3 view tier, read at every model build
               )
             : makePuzzleCharacterFactory(session.npcIcons),
         ),
@@ -9674,6 +10309,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         },
       },
       onFrame: (state, dt) => {
+        let _bm = descendNow(); // TEMP sim-block reporter
         // Host-side per-frame passthrough (HUD gaze refresh etc).
         deps.onFrame?.(dt);
         // FOUNDING: clear a still-empty site once the player leaves it.
@@ -9682,6 +10318,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // and the contextual buildable-structure board stays current.
         stepFoundedConstruction(session, dt);
         pushCivicBuildBoard(session);
+        simMark("s.founded", descendNow() - _bm); _bm = descendNow(); // TEMP
         // LIVING TOWN: stream the stage around the player — walls of the
         // nearby houses, residents embodying mid-errand, fresh shopping
         // trips on the street clock. The stage is cheap when nothing moves.
@@ -9773,8 +10410,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               },
               // COHORT TIER (④): pooled households stream no bodies.
               (houseIndex) => session.pooledHouses.has(houseIndex),
+              // VIEW-DISTANCE LOD (Phase 2): cap the ambient crowd this frame
+              // (0 at orbit) so street bodies never flood in one frame.
+              crowdBudget ?? undefined,
             );
+            let _sbT = descendNow(); simMark("s.frame", _sbT - _dpT0); // TEMP
             if (f.buildings) townHost.setBuildings(f.buildings);
+            simMark("s.setB", descendNow() - _sbT); // TEMP — s.bCount total=Σ, max=biggest set
+            if (f.buildings) simMark("s.bCount", f.buildings.length); // TEMP
+            _sbT = descendNow(); // TEMP
             // REMOVE before ADD: a construction-delta refurnish replaces a
             // house's set in one frame, and a surviving id must clear its
             // old body before the new spec lands (add rejects duplicates).
@@ -9788,7 +10432,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // placed at its room spot / the table must not land inside furniture.
               const n = girthSafeSpawn(townHost, raw);
               session.npcIcons.set(n.id, "🙂");
-              townHost.addNpc(n);
+              const _added = townHost.addNpc(n);
+              if (!_added) {
+                // TRANSACTIONAL EMBODIMENT (view-distance-lod-tiers.md rework):
+                // the model recorded this body embodied at emission; the world
+                // refused. If the avatar EXISTS (duplicate — e.g. a possessed
+                // body), the record is truthful — keep it. If it doesn't (cap,
+                // any true failure), DROP the record so the model isn't left
+                // holding a phantom it ghost-culls and re-emits forever; the
+                // retry rides the model's abstract dwell, never the next frame.
+                if (!townHost.state.avatars[n.id]) session.town.stage.dropResidentBody?.(n.id);
+                clockErrandQueue.delete(n.id); // its walkTo must not route either way
+                // TEMP ghost-spawn probe (diagnostic only — remove with probes).
+                if (probesOn() && typeof console !== "undefined" && ++_ghostLogT >= 30) {
+                  _ghostLogT = 0;
+                  console.log(
+                    `[ghost-spawn] addNpc REJECTED ${n.id} avatar=${townHost.state.avatars[n.id] ? "YES" : "no"}`,
+                  );
+                }
+                continue;
+              }
               // A fresh resident body paces only inside its house's IDLE PAD
               // (may be null this frame if the furniture stages later — the
               // next homecoming refreshes it).
@@ -9797,14 +10460,36 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               }
             }
             for (const id of f.remove) townHost.removeNpc(id);
-            for (const e of f.errands) {
+            simMark("s.bodies", descendNow() - _sbT); _sbT = descendNow(); // TEMP
+            // CLOCK ERRANDS ARE ROUTE-BUDGETED (view-distance-lod-tiers.md): door-
+            // routing a trip is the streamer's one remaining per-item lump (~3 ms
+            // × 50-90 waypoints even with the probe grid), and an approach frame
+            // can emit DOZENS of trips at once (fresh bodies, cycle boundaries) —
+            // routed in one frame that's a visible stutter. Emissions land in a
+            // per-body queue (a newer trip for the same body replaces its queued
+            // one) and at most ERRAND_ROUTE_BUDGET route per frame — a trip
+            // starting a few frames late is invisible; the burst is not. The
+            // ownership guards (live/party/commanded) re-check at DRAIN time —
+            // ownership may have changed while queued.
+            for (const e of f.errands) clockErrandQueue.set(e.npcId, e.points);
+            if (clockErrandQueue.size) simMark("s.errQ", clockErrandQueue.size); // TEMP
+            // TEMP: WHO keeps emitting? Trips are cycle-edge-gated (tripSent) so a
+            // steady per-frame stream means some body re-emits — sample its ids.
+            if (probesOn() && f.errands.length && ++_errSampleT >= 60) {
+              _errSampleT = 0;
+              console.log(`[errand-sample] ${f.errands.slice(0, 5).map((e) => e.npcId).join(", ")}${f.errands.length > 5 ? ` (+${f.errands.length - 5})` : ""}`);
+            }
+            let _routed = 0;
+            for (const [npcId, pts] of clockErrandQueue) {
+              if (_routed >= ERRAND_ROUTE_BUDGET) break;
+              clockErrandQueue.delete(npcId);
               // A LIVE-driven body ignores the clock's feed until demote (§13 — the
               // need loop owns it; no double-drive); a RECRUITED one follows the
               // player; a COMMANDED one (queued goal errands) finishes its order.
               if (
-                session.liveNeedBodies.has(e.npcId) ||
-                session.party.has(e.npcId) ||
-                (session.npcTasks.get(e.npcId)?.length ?? 0) > 0
+                session.liveNeedBodies.has(npcId) ||
+                session.party.has(npcId) ||
+                (session.npcTasks.get(npcId)?.length ?? 0) > 0
               ) continue;
               // DOOR-ROUTE resident trips like the cast's (enqueueNpcErrand): any leg
               // that crosses a building boundary is threaded through the real doorway
@@ -9812,16 +10497,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // spot (a mid-trip spawn walks the remainder). Between two open-ground
               // points routeThroughDoors is a no-op — the per-leg timeout still copes
               // with an intervening building; this only fixes the walled-room legs.
-              const at = state.avatars[e.npcId];
+              const at = state.avatars[npcId];
               const errand = at
-                ? doorRouteErrand(state, { x: at.x, y: at.y }, { points: e.points }, townHost.npcRadiusOf(e.npcId))
-                : { points: e.points };
-              session.lastDrive.set(e.npcId, "clock");
-              townHost.setNpcErrand(e.npcId, errand);
+                ? doorRouteErrand(state, { x: at.x, y: at.y }, { points: pts }, townHost.npcRadiusOf(npcId))
+                : { points: pts };
+              session.lastDrive.set(npcId, "clock");
+              townHost.setNpcErrand(npcId, errand);
+              _routed++;
             }
             descendProbeFrame(f, revealed.size, spiritNow(), descendNow() - _dpT0); // TEMP descent probe
+            simMark("s.errands", descendNow() - _sbT); // TEMP
+            if (f.errands.length) simMark("s.errCount", f.errands.length); // TEMP — emissions/frame
           }
         }
+        simMark("stream", descendNow() - _bm); _bm = descendNow(); // TEMP
         // DEVICES (§5) are TAP-to-toggle, not carry: a completed pick-dwell flips
         // the device IN PLACE (drop it straight back). Powering is MANUAL — tap
         // the generator first; an unpowered toggle no-ops with a hint at the
@@ -10275,6 +10964,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
           }
         }
+        simMark("puzzles", descendNow() - _bm); _bm = descendNow(); // TEMP
         // ── SOCIETY RULES (society-rules.md): advance the day/night clock and let
         // each creature pick its goal; on a goal CHANGE, issue an errand. Riverside's
         // default is the "when night, go home" curfew, authored end-to-end through the
@@ -10337,6 +11027,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             },
           });
         }
+        simMark("goals", descendNow() - _bm); _bm = descendNow(); // TEMP
         // LIVE NEEDS (doc §13): residents of an ON-SHOW house run their need templates
         // (eat from the pantry, restock it when it runs low), gated on the roof-reveal
         // state — the same "interior on show" signal the crowd streaming uses. The
@@ -10357,9 +11048,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // true only while out for the good) — an ON-SHOW house's clock is
           // suppressed fiction, so its members' dialogue never reads it. Runs
           // before chatter so idle townsfolk talk with fresh state.
+          // TEMP sim-phase probe (view-distance-lod-tiers.md): time each sub-step
+          // group so a slow quest-sim frame names its culprit. Logged over 120ms;
+          // `__simPhase` in the console. Remove with the other probes.
+          const _sp: Record<string, number> = {};
+          let _sm = descendNow();
           stepResidentEconomyNeeds(session, shownE);
           stepHouseholdEdges(session, shownE);
           stepConstructionHousekeeping(session, shownE); // craft / auto-place / clutter (construction v1)
+          _sp.economy = descendNow() - _sm; _sm = descendNow();
           // SOFT CONTROL (attention-spark.md): refresh the spark's attention
           // field (engagement + object draw) from the gaze BEFORE needs decide,
           // so an engaged creature's draw bonus is live this tick. Fades while a
@@ -10369,7 +11066,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           {
             // Conversing with a creature ENGAGES it strongly — held ~8s past the
             // conversation, so "leave the chat, then select an object" still lands.
-            if (convo) engageCreature(session, convo.nodeId, ENGAGE_CONVO_HOLD_S);
+            // It also becomes the STANDING ADDRESSEE (lastConvoCid): a later
+            // board selection is a command to this creature while it's on screen.
+            if (convo) {
+              engageCreature(session, convo.nodeId, ENGAGE_CONVO_HOLD_S);
+              session.lastConvoCid = convo.nodeId;
+            }
             const sparkBlocked = !!convo || !!container || !!choice || !!session.selectedPocketGlyph;
             stepSparkAttention(session, world, dt, sparkBlocked);
             if (!sparkBlocked) {
@@ -10378,17 +11080,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               stepSparkPairChat(session, state, world, dt);
             }
           }
+          _sp.spark = descendNow() - _sm; _sm = descendNow();
           stepActionHolds(session, dt); // advance discrete-action crouches; land effects at mid-beat
           stepPursuit(session, state, dt); // per-tick goal pursuits (owns its bodies before needs sweep)
           stepContainerLids(session, state); // auto-close access-opened lids once the taker has left
+          _sp.pursuit = descendNow() - _sm; _sm = descendNow();
           stepNeeds(session, state, dt, shownE);
+          _sp.needs = descendNow() - _sm; _sm = descendNow();
           syncNeedActivities(session, state, dt); // body-activity visuals track the steps
           syncNeedCarryProps(session, state); // carried stacks show as held props + reach rigs
+          _sp.sync = descendNow() - _sm; _sm = descendNow();
           stepWorkAttendance(session, dt); // jobs→economy: absence during shifts
           pushFamilyHud(session); // dollhouse chips track the states just stepped
+          _sp.work = descendNow() - _sm; _sm = descendNow();
           stepCohortTier(session, dt, shownE); // ④ tracked↔cohort turnover + city chips (hysteretic sweep)
           stepCohortWalkers(session); // ④ sampled district street life (cosmetic-only)
+          _sp.cohort = descendNow() - _sm;
           pushKnownNouns(session); // the Speak menu tracks the house (diff-gated)
+          for (const [k, v] of Object.entries(_sp)) simMark(`n.${k}`, v); // TEMP → sim-blocks
           // DOLLHOUSE HEARTBEAT: a 5-second household state line per member, so
           // a playtest can SEE why someone isn't home — embodied? which clock
           // phase owns them? live step? meters. Diagnostic; remove once the
@@ -10451,11 +11160,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
           }
         }
+        simMark("needsBlock", descendNow() - _bm); _bm = descendNow(); // TEMP (n.* are its sub-steps)
         // Idle townsfolk chat among themselves (ambient, personality-driven). Runs
         // unconditionally — it registers nearby residents into the dialogue world.
         stepNpcChatter(session, state, dt);
         // UNTARGETED-ORDER TASK POOL (phase ①a §2): expiry, claims, completion.
         stepTaskPool(session, dt);
+        simMark("chatter", descendNow() - _bm); _bm = descendNow(); // TEMP
         // INVENTORY placement: a SELECTED stack (outside conversation) is placed by the
         // gaze — dwell on the nearest CONTAINER (by position) puts one in, dwell on nearby
         // GROUND drops one. (Selecting a stack WHILE in conversation presents it instead.)
@@ -10680,6 +11391,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // it hovers over the very item being chosen. `progress` reaches the
         // spark via the host's `cursorProgress` dep. (Old 2D dwell ring removed.)
         convoProgress = progress;
+        simMark("convo", descendNow() - _bm); // TEMP
+        // CREATURE LOD (Phase 3): drain the re-tier queue a few bodies per
+        // frame — a tier cross (even a hysteretic one) must never rebuild the
+        // whole crowd, plus any first-use simple bakes, in a single frame.
+        if (retierQueue.length && questView) {
+          for (const id of retierQueue.splice(0, RETIER_STREAM)) questView.resetAvatarModel?.(id);
+        }
+        simFlush(); // TEMP (space3d tail below is unmeasured — figure-count scale, cheap)
 
         if (!steering()) return;
         const me = state.avatars[PLAYER_ID];
@@ -10817,6 +11536,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     taskSweepT = 0; // a fresh session's pool sweeps from zero
     cohortSweepT = 0; // ...and the cohort tier sweeps from zero too (④)
     cohortWalkerLive.clear(); // stale walker records never survive a session
+    clockErrandQueue.clear(); // queued trips belong to the previous session's town
     presenter.sessionStarted(sess);
     const _dp = descendProbeArm(sess.town ? (sess.town.plan.key ?? "town") : null); // TEMP descent probe
     buildHost(sess);                       _dp?.mark("buildHost");
@@ -11122,21 +11842,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return session.taskPool.post({ goal, issuer, focus, now: session.taskClock, sourceGlyph });
   }
 
-  /** The world's symbol resolvers for the intent-announcement line. */
-  function intentLineSyms(session: QuestSession): IntentLineSyms {
+  /** The world's symbol resolvers for the intent-announcement line. `deixis`
+   *  marks EXACT-instance item refs with `.this` ("I will eat this apple") —
+   *  the reserved way of naming a particular target. */
+  function intentLineSyms(session: QuestSession, opts: { deixis?: boolean } = {}): IntentLineSyms {
     return {
       item: (ref) =>
         "id" in ref
-          ? liveItemGlyph(session, ref.id)
+          ? `${liveItemGlyph(session, ref.id)}${opts.deixis ? ".this" : ""}`
           : [ref.match.kind ?? ref.match.category ?? "thing", ...(ref.match.descriptors ?? [])].join("."),
-      place: (p) =>
-        p.kind === "named"
-          ? p.id
-          : p.kind === "home"
-            ? "home"
-            : p.kind === "creature"
-              ? (p.id === PLAYER_CREATURE_ID ? "you" : (creatureGlyph(session, p.id) ?? "there"))
-              : "there",
+      place: (p) => {
+        if (p.kind === "named") {
+          // A world-object id speaks its WORD ("furn_3_bed_0" → "bed", a prop
+          // its glyph) — never the raw id.
+          if (session.smallProps.has(p.id) || /^furn_\d+_/.test(p.id) || p.id === "well") {
+            return objectWord(session, p.id);
+          }
+          return p.id;
+        }
+        return p.kind === "home"
+          ? "home"
+          : p.kind === "creature"
+            ? (p.id === PLAYER_CREATURE_ID ? "you" : (creatureGlyph(session, p.id) ?? "there"))
+            : "there";
+      },
       creature: (cid) =>
         cid === PLAYER_CREATURE_ID ? "you" : (creatureGlyph(session, cid) ?? "there"),
     };
@@ -11149,31 +11878,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  form. Teaching and debugging in one line — a wrong echo is a parser bug;
    *  a right echo not acted on is an action bug. */
   function commandEchoLine(session: QuestSession, frame: IntentFrame, goal: GoalSpec): string {
-    const { line, perfect } = commandEcho(frame, goal, intentLineSyms(session));
+    const { line, perfect } = commandEcho(frame, goal, intentLineSyms(session, { deixis: true }));
     if (!line || perfect) return "ok";
-    return line[session.game.meta.syntax ?? "b"];
+    // The echo is a STATEMENT OF INTENT — the will-marked syntax ("I will
+    // wash the clothes"), never the order's own imperative shape.
+    return asIntent(line)[session.game.meta.syntax ?? "b"];
   }
 
   /** INTENT ANNOUNCEMENT (phase ①a §3): speak what the creature is ABOUT to do
    *  before it does it — gated by the ONE criteria hook (default: announce on
-   *  a pooled-task claim; routine self-directed behavior stays quiet). */
+   *  a pooled-task claim; routine self-directed behavior stays quiet). Spoken
+   *  in the intent syntax ("I will get the wood"). */
   function announceIntent(session: QuestSession, ctx: AnnounceContext) {
     if (!announceCriteria(ctx)) return;
-    const line = goalIntentLine(ctx.goal, intentLineSyms(session));
+    const line = goalIntentLine(ctx.goal, intentLineSyms(session, { deixis: true }));
     if (!line) return;
-    npcChatBubble(session, ctx.creatureId, line[session.game.meta.syntax ?? "b"]);
+    npcChatBubble(session, ctx.creatureId, asIntent(line)[session.game.meta.syntax ?? "b"]);
   }
 
-  /** SOFT CONTROL — a spark-triggered need ALWAYS announces before acting
+  /** SOFT CONTROL — a spark-directed act ALWAYS announces before acting
    *  (attention-spark.md): the player drew the creature's attention to a thing,
    *  so it states its intent even though routine self-directed behavior stays
-   *  quiet. Ungated, unlike announceIntent's task-claim criteria. */
+   *  quiet. Intent syntax + deixis: "I will eat this apple." Ungated, unlike
+   *  announceIntent's task-claim criteria. */
   function announceSparkIntent(session: QuestSession, cid: string, goal: GoalSpec) {
-    const line = goalIntentLine(goal, intentLineSyms(session));
+    const line = goalIntentLine(goal, intentLineSyms(session, { deixis: true }));
     if (!line) return;
     if (isPetCid(cid)) ensurePetCreature(session, cid);
     else ensureResidentCreature(session, cid);
-    npcChatBubble(session, cid, line[session.game.meta.syntax ?? "b"]);
+    npcChatBubble(session, cid, asIntent(line)[session.game.meta.syntax ?? "b"]);
   }
 
   /** Per-sweep task lifecycle: expire stale OPEN tasks back to the player,
@@ -13351,25 +14084,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (container && id.startsWith("take:")) {
         if (!sess) return;
         // The DOLLHOUSE SPIRIT's container view is READ-ONLY — a formless
-        // observer can't reach in. Pressing a stack NAMES it aloud, and (soft
-        // control, attention-spark.md) SIGNALS the engaged creature — the one you
-        // just conversed with — to go use that item; else the nearest idle body
-        // present. Moving things is still the family's job, not the spirit's.
+        // observer can't reach in. Pressing a stack NAMES it aloud and is a
+        // COMMAND-LEVEL instruction (attention-spark.md) to the last creature
+        // the player conversed with (while on screen; else the engaged /
+        // nearest idle body): use that item — willing-gated, refused aloud.
+        // Moving things is still the family's job, not the spirit's.
         if (spirit && sess.dollhouse !== null) {
           const glyph = id.slice(5);
           const said = playerStatement(glyph);
           if (opts.spokenExternally) yieldToStatement(said);
           else speakPlayerStatement(said);
-          const motive = glyphMotive(glyph);
-          const box = world?.state.objects[container.objId];
-          if (motive && box) {
-            const engaged = sess.sparkFocus;
-            const cid =
-              engaged && engaged.strength >= ENGAGE_MIN && idleForDirect(sess, engaged.cid)
-                ? engaged.cid
-                : nearestIdleGroupCreature(sess, world!.state, box, ATTEND_REACH_M);
-            if (cid) useItemMotive(sess, cid, { x: box.x, y: box.y }, motive);
-          }
+          attendContainerGlyph(sess, container.objId, glyph);
           return;
         }
         takeFromContainer(sess, id.slice(5)); // id.slice(5) = the glyph stack
@@ -13882,6 +14607,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     setPathDebug(on) {
       pathDebugOn = on; // remembered across reloads — buildHost re-adopts it
       pathDebug?.setEnabled(on);
+      attentionDebug?.setEnabled(on); // the attention readout rides the same toggle
       world?.setPathDebug(on); // the capture itself: no snapshots, no lines
     },
     pathDebugOn() {
@@ -13904,6 +14630,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
     setInteriorReveal(on) {
       questView?.setInteriorReveal?.(on);
+    },
+    setCrowdBudget(n) {
+      crowdBudget = n;
+    },
+    setCreatureTier(t) {
+      if (t === creatureTier) return;
+      creatureTier = t;
+      // Queue every existing town body for a staggered factory rebuild (the
+      // factory reads the tier at build time); drained a few per frame in the
+      // town frame block. New spawns pick the tier up automatically.
+      retierQueue = Object.keys(world?.state.avatars ?? {}).filter(
+        (id) => id.startsWith("resident_") || id.startsWith("sheep_") || id.startsWith("pet_"),
+      );
     },
     setExternalCursor(on) {
       questView?.setExternalCursor?.(on);

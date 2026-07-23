@@ -8,6 +8,9 @@
 import {
   baseWord,
   gloss,
+  isDeicticNoun,
+  isGrammarMod,
+  isIntentVerb,
   isPronoun,
   isQuality,
   NO_NAMES,
@@ -129,7 +132,9 @@ const L: Record<string, Lexeme> = {
   like: { w: "like" },
   play: { w: "play" },
   read: { w: "read" },
-  wear: { w: "get dressed" }, // only reached via want-to: "I want to get dressed"
+  // Transitive "wear the shirt"; the bare want-to keeps the idiom via inf
+  // ("I want to get dressed").
+  wear: { w: "wear", inf: "get dressed" },
   color: { w: "color" }, // recolour an item at the tub ("color the shirt red")
   throw: { w: "throw" },
   with: { w: "with" },
@@ -183,6 +188,17 @@ const L: Record<string, Lexeme> = {
   scarf: { w: "scarf" },
   drum: { w: "drum" },
   guitar: { w: "guitar" },
+  // Grammar-marker words (gloss safety only — the markers normally render as
+  // constructions, never as these bare words).
+  this: { w: "this" },
+  will: { w: "will" },
+  // Attention/self-care verbs (attention-spark actions): lexemes so the
+  // conjugation table owns them explicitly rather than via fallback.
+  eat: { w: "eat", inf: "eat" },
+  drink: { w: "drink", inf: "drink" },
+  sleep: { w: "sleep", inf: "sleep" },
+  wash: { w: "wash", inf: "wash" },
+  talk: { w: "talk", inf: "talk" },
 };
 
 function pluralize(w: string): string {
@@ -200,7 +216,9 @@ const isMass = (t: Token) => !!lex(t.head).mass;
 
 /** Adjective + possessive words carried on the noun token, in English order. */
 function npWords(np: NP): { words: string[]; my: boolean } {
-  const adjs = np.noun.mods.filter((m) => m !== "my" && m !== "not").map((m) => lex(m).w);
+  const adjs = np.noun.mods
+    .filter((m) => m !== "my" && m !== "not" && !isGrammarMod(m))
+    .map((m) => lex(m).w);
   return { words: [...adjs, lex(np.noun.head).w], my: np.noun.mods.includes("my") };
 }
 
@@ -232,6 +250,9 @@ function npText(np: NP, art: Art): string {
     return `more ${words.join(" ")}`;
   }
   if (my) return `my ${words.join(" ")}`;
+  // The deictic (.this) names a PARTICULAR instance — the demonstrative
+  // replaces the article ("this apple", "these clothes").
+  if (isDeicticNoun(np.noun)) return `${isPlural(np.noun) ? "these" : "this"} ${words.join(" ")}`;
   if (art === "none" || (art === "a" && (isPlural(np.noun) || isMass(np.noun)))) {
     return words.join(" ");
   }
@@ -278,6 +299,9 @@ function goDest(dest: Token): string {
 
 function conj(verb: Token, subject: Token | undefined, neg: boolean): string {
   const v = lex(verb.head);
+  // The intent marker (.will) — a statement of what the speaker is about to
+  // do: "will eat" / "won't eat", any subject.
+  if (isIntentVerb(verb)) return `${neg ? "won't" : "will"} ${v.w}`;
   const third = !!subject && subject.head !== "i_me" && subject.head !== "you" && !isPlural(subject);
   if (neg) return `${third ? "doesn't" : "don't"} ${v.w}`;
   return third ? (v.v3 ?? `${v.w}s`) : v.w;
@@ -333,8 +357,22 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
   // Subject-less "want"/"have"/negated verbs — and any subject-less verb in
   // the player's mouth — are first person ("I want an apple", "I don't have
   // the sock", never the imperative misread "Want an apple"/"Don't have it").
-  if (!f.subject && (f.verb.head === "want" || f.verb.head === "have" || f.neg || opts.firstPerson)) {
+  // A will-marked verb is a STATEMENT OF INTENT and is always first person:
+  // "eat.will + apple" reads "I will eat the apple", never "Eat the apple".
+  if (
+    !f.subject &&
+    (f.verb.head === "want" || f.verb.head === "have" || f.neg || opts.firstPerson || isIntentVerb(f.verb))
+  ) {
     f = { ...f, subject: { head: "i_me", mods: [], q: false } };
+  }
+
+  // Verbs whose object rides a preposition ("play WITH the ball", "talk TO
+  // Mara") — the glyph line stays verb+object, the surface adds the joint.
+  if ((f.verb.head === "play" || f.verb.head === "talk") && f.object && !f.tail) {
+    const joint = f.verb.head === "play" ? "with" : "to";
+    const subj0 = f.subject ? subjWord(f.subject) : "I";
+    const s0 = `${subj0} ${conj(f.verb, f.subject ?? { head: "i_me", mods: [], q: false }, f.neg)} ${joint} ${npText(f.object, "the")}`;
+    return `${cap(s0)}${f.question ? "?" : "."}`;
   }
 
   const subj = f.subject ? subjWord(f.subject) : "";
@@ -464,8 +502,11 @@ export const en: GlyphLanguage = {
       case "going": {
         const dest = frame.fetch ? `to get ${npText(frame.fetch, "a")}` : goDest(frame.dest!);
         const s = frame.subject;
+        // The intent form ("go.will"): "I will go to the bathroom."
+        if (frame.intent && (!s || s.head === "i_me")) return `I will go ${dest}.`;
         if (!s || s.head === "i_me") return `I'm going ${dest}.`;
         if (s.head === "you") return `Go ${dest}.`;
+        if (frame.intent) return `${cap(npText({ noun: s }, "the"))} will go ${dest}.`;
         return `${cap(npText({ noun: s }, "the"))} is going ${dest}.`;
       }
       case "whereGoing":

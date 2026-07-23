@@ -89,7 +89,7 @@ export interface HeadGenome {
   /** 0 = fleshy muzzle blended into the skin, 1 = hard rigid beak. */
   beak: number;
   /** Beak/muzzle length / head radius. */
-  beakLengthFrac: number;
+  snoutLengthFrac: number;
   /** Eye PAIRS (0..3). Eyes are rigid details on the head. */
   eyePairs: number;
   /** Eye radius / head radius. */
@@ -401,7 +401,7 @@ export const TAIL_RANGES: RangesOf<TailGenome> = {
 export const HEAD_RANGES: RangesOf<HeadGenome> = {
   sizeFrac: { min: 0.2, max: 1.6 },
   beak: { min: 0, max: 1 },
-  beakLengthFrac: { min: 0, max: 2.5 },
+  snoutLengthFrac: { min: 0, max: 2.5 },
   eyePairs: { min: 0, max: 3, int: true },
   eyeSizeFrac: { min: 0.05, max: 0.45 },
   eyeAngle: { min: 0.15, max: 1.5 },
@@ -488,7 +488,7 @@ export function defaultGenome(): Genome {
     head: {
       sizeFrac: 0.6,
       beak: 0.25,
-      beakLengthFrac: 0.8,
+      snoutLengthFrac: 0.8,
       eyePairs: 1,
       eyeSizeFrac: 0.22,
       eyeAngle: 0.7,
@@ -1029,7 +1029,7 @@ export function randomGenome(seed: number): Genome {
     head: {
       sizeFrac: lerp(0.35, 0.9, rng()),
       beak: rng() < 0.4 ? lerp(0.5, 1, rng()) : lerp(0, 0.35, rng()),
-      beakLengthFrac: lerp(0.3, 1.6, rng()),
+      snoutLengthFrac: lerp(0.3, 1.6, rng()),
       eyePairs: 1 + (rng() < 0.12 ? 1 : 0),
       eyeSizeFrac: lerp(0.12, 0.32, rng()),
       eyeAngle: lerp(0.3, 1.2, rng()),

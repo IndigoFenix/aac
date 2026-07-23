@@ -179,6 +179,27 @@ export function posOf(head: string): SymPos {
  *  clauses with one of these — the causal frame splits on it. */
 export const CONNECTIVES = new Set(["because", "therefore", "in_order_to", "when", "until"]);
 
+/** THE INTENT MARKER — a `.will` modifier on the verb turns a clause into a
+ *  STATEMENT OF INTENT ("i_me + eat.will + apple" → "I will eat the apple").
+ *  Statements of intent are always FIRST PERSON (a creature announcing what it
+ *  is about to do — before acting, echoing an order, or spark-directed), so a
+ *  will-marked verb with no subject reads "I …", never as an imperative. Each
+ *  ruleset renders its own future/going-to periphrasis. */
+export const INTENT_MOD = "will";
+export const isIntentVerb = (t: Token): boolean => t.mods.includes(INTENT_MOD);
+
+/** THE DEICTIC MARKER — a `.this` modifier on a noun names a PARTICULAR
+ *  instance ("apple.this" → "this apple"): the creature is talking about the
+ *  exact thing that was pointed at, not any member of the kind. Reserved as
+ *  the one way of conveying specific items in both directions. */
+export const DEIXIS_MOD = "this";
+export const isDeicticNoun = (t: Token): boolean => t.mods.includes(DEIXIS_MOD);
+
+/** Noun modifiers that are GRAMMAR, not descriptors — every ruleset's
+ *  adjective walk must skip these (alongside "my"/"not" which are handled
+ *  individually). */
+export const isGrammarMod = (m: string): boolean => m === DEIXIS_MOD || m === INTENT_MOD;
+
 /** Personal pronouns are never articled NPs: object position takes each
  *  language's object form ("me", clitic "te", "אותך"), subject position its
  *  subject form — a ruleset must branch BEFORE its generic noun-phrase path.
@@ -281,8 +302,9 @@ export type Frame =
   /** Movement ("[subj +] go [+ to] + {dest}" / "[subj +] go + get + {thing}"):
    *  the where-going ANSWER and travel commands. No subject / i_me = the
    *  speaker en route ("I'm going home"); a "you" subject = the imperative
-   *  ("Go home."); a noun/name = third person ("Mara is going to the market"). */
-  | { kind: "going"; subject?: Token; dest?: Token; fetch?: NP }
+   *  ("Go home."); a noun/name = third person ("Mara is going to the market").
+   *  `intent` = the go verb carried `.will` ("I will go to the market"). */
+  | { kind: "going"; subject?: Token; dest?: Token; fetch?: NP; intent?: boolean }
   /** The where-going QUESTION ("place#question + [you +] go" — "Where are you
    *  going?"). */
   | { kind: "whereGoing" }
@@ -438,13 +460,19 @@ export function classify(tokens: Token[]): Frame {
     const gi = tokens.findIndex((t) => t.head === "go");
     if (gi >= 0 && gi <= 1 && !tokens[gi]!.mods.includes("not")) {
       const subject = gi === 1 ? tokens[0] : undefined;
+      const intent = isIntentVerb(tokens[gi]!);
       if (!subject || posOf(subject.head) !== "verb") {
         const rest = tokens.slice(gi + 1).filter((t) => t.head !== "to");
         if (rest.length === 1 && rest[0]!.head !== "get") {
-          return { kind: "going", ...(subject ? { subject } : {}), dest: rest[0]! };
+          return { kind: "going", ...(subject ? { subject } : {}), dest: rest[0]!, ...(intent ? { intent } : {}) };
         }
         if (rest.length === 2 && rest[0]!.head === "get") {
-          return { kind: "going", ...(subject ? { subject } : {}), fetch: { noun: rest[1]! } };
+          return {
+            kind: "going",
+            ...(subject ? { subject } : {}),
+            fetch: { noun: rest[1]! },
+            ...(intent ? { intent } : {}),
+          };
         }
       }
     }
@@ -605,12 +633,14 @@ export function baseWord(lang: GlyphLanguage, head: string): string {
   return lang.lexicon[head]?.w ?? head.replace(/^color_/, "").replace(/_/g, " ");
 }
 
-/** The shared fallback: lexicon words in glyph order (negations lead). */
+/** The shared fallback: lexicon words in glyph order (negations lead; the
+ *  grammar markers `.will`/`.this` are dropped — a gloss is telegraphic, and
+ *  "ball this"/"eat will" would be worse than saying nothing extra). */
 export function gloss(lang: GlyphLanguage, tokens: Token[], notWord: string): string {
   return tokens
     .map((t) => {
       const leads = t.mods.filter((m) => m === "not").map(() => notWord);
-      const rest = t.mods.filter((m) => m !== "not").map((m) => baseWord(lang, m));
+      const rest = t.mods.filter((m) => m !== "not" && !isGrammarMod(m)).map((m) => baseWord(lang, m));
       return [...leads, baseWord(lang, t.head), ...rest].join(" ");
     })
     .join(" ")

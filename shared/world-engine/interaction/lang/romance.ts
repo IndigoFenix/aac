@@ -12,6 +12,9 @@
 import {
   DEVICE_STATE,
   gloss,
+  isDeicticNoun,
+  isGrammarMod,
+  isIntentVerb,
   isPronoun,
   isQuality,
   NO_NAMES,
@@ -46,8 +49,16 @@ export interface RomanceConfig {
   moreWord: string; // "más" / "mais"
   /** Article ("" = none): definite/indefinite × gender × number/mass. */
   art(def: boolean, g: Gender, pl: boolean, mass: boolean): string;
+  /** Demonstrative determiner for the `.this` deictic ("este/esta…") —
+   *  replaces the article on a particular-instance NP. */
+  dem(g: Gender, pl: boolean): string;
   /** Possessive "my", agreeing with the noun. */
   my(g: Gender, pl: boolean): string;
+  /** First-person going-to future for the `.will` intent marker ("voy a
+   *  comer" / "vou comer") — receives the infinitive (or base form). */
+  intentGo(inf: string): string;
+  /** Comitative preposition for play/talk objects ("con" / "com"). */
+  withWord: string;
   /** "you" conjugates as 3rd person (Brazilian você). */
   youIsThird?: boolean;
   /** Subject pronouns; "" drops the pronoun (Spanish pro-drop). */
@@ -156,7 +167,7 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
     if (NAMES.has(np.noun.head)) {
       const gen = NAMES.get(np.noun.head)!;
       const adjs = np.noun.mods
-        .filter((m) => m !== "my" && m !== "not")
+        .filter((m) => m !== "my" && m !== "not" && !isGrammarMod(m))
         .map((m) => adjForm(m, gen, false));
       return [nameWord(np.noun.head), ...adjs].join(" ");
     }
@@ -171,11 +182,14 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
     const x = lex(np.noun.head);
     const noun = plural && !pl(np.noun) && !mass(np.noun) ? pluralWord(x) : x.w;
     const adjs = np.noun.mods
-      .filter((m) => m !== "my" && m !== "not")
+      .filter((m) => m !== "my" && m !== "not" && !isGrammarMod(m))
       .map((m) => adjForm(m, gen, plural));
     const core = [noun, ...adjs].join(" ");
     if (np.more) return `${cfg.moreWord} ${core}`;
     if (my) return `${cfg.my(gen, plural)} ${core}`;
+    // The deictic (.this): demonstrative determiner replaces the article
+    // ("esta manzana", "este juguete").
+    if (isDeicticNoun(np.noun)) return `${cfg.dem(gen, plural)} ${core}`;
     const art = cfg.art(def, gen, plural, mass(np.noun));
     return art ? `${art} ${core}` : core;
   }
@@ -252,12 +266,24 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
       const s = `${subj ? `${subj} ` : ""}${f.neg ? `${cfg.notWord} ` : ""}${cfg.clitic(head)} ${conj(f.verb, f.subject, false)}`;
       return f.question ? cfg.q(cap(s.trim())) : `${cap(s.trim())}.`;
     }
+    // A will-marked verb is a STATEMENT OF INTENT — always first person.
+    if (isIntentVerb(f.verb) && !f.subject) {
+      f = { ...f, subject: { head: "i_me", mods: [], q: false } };
+    }
     const def = f.verb.head !== "want" || f.neg || !!f.tail;
     // A verb governing a preposition wraps its object through the ruleset's
     // contraction ("preciso DO banheiro") — plain verbs take the bare NP.
+    // PLAY/TALK objects ride the comitative ("juego con la pelota", "falo com
+    // a Mara" — well, with the plain article).
     const objNp = f.object ? npText(f.object, def) : "";
     const obj = f.object
-      ? ` ${lex(f.verb.head).objPrep === "of" && cfg.of ? cfg.of(objNp, g(f.object.noun), pl(f.object.noun)) : objNp}`
+      ? ` ${
+          (f.verb.head === "play" || f.verb.head === "talk") && !isPronoun(f.object.noun.head)
+            ? `${cfg.withWord} ${objNp}`
+            : lex(f.verb.head).objPrep === "of" && cfg.of
+              ? cfg.of(objNp, g(f.object.noun), pl(f.object.noun))
+              : objNp
+        }`
       : "";
     const tail = f.tail
       ? ` ${
@@ -269,7 +295,13 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
         }`
       : "";
     const subj = f.subject ? subjText(f.subject) : "";
-    const s = `${subj ? `${subj} ` : ""}${conj(f.verb, f.subject, f.neg)}${obj}${tail}`.trim();
+    // The intent construction ("voy a comer…" / "vou comer…") — the going-to
+    // future over the infinitive, preverbal negation over the whole complex.
+    const verb =
+      isIntentVerb(f.verb) && f.subject?.head === "i_me"
+        ? `${f.neg ? `${cfg.notWord} ` : ""}${cfg.intentGo(lex(f.verb.head).inf ?? lex(f.verb.head).w)}`
+        : conj(f.verb, f.subject, f.neg);
+    const s = `${subj ? `${subj} ` : ""}${verb}${obj}${tail}`.trim();
     return f.question ? cfg.q(cap(s)) : `${cap(s)}.`;
   }
 

@@ -146,6 +146,13 @@ const L: Record<string, Lexeme> = {
   scarf: { w: "bufanda", g: "f" },
   drum: { w: "tambor", g: "m" },
   guitar: { w: "guitarra", g: "f" },
+  // Attention/self-care verbs (attention-spark actions) — 1sg + infinitive
+  // (the intent construction "voy a comer" needs the infinitive).
+  eat: { w: "como", v2: "comes", v3: "come", v3p: "comen", inf: "comer" },
+  drink: { w: "bebo", v2: "bebes", v3: "bebe", v3p: "beben", inf: "beber" },
+  sleep: { w: "duermo", v2: "duermes", v3: "duerme", v3p: "duermen", inf: "dormir" },
+  wash: { w: "lavo", v2: "lavas", v3: "lava", v3p: "lavan", inf: "lavar" },
+  talk: { w: "hablo", v2: "hablas", v3: "habla", v3p: "hablan", inf: "hablar" },
 };
 
 const ES_CONN: Record<string, string> = {
@@ -166,6 +173,9 @@ export const es = makeRomance({
     if (pl || mass) return "";
     return g === "f" ? "una" : "un";
   },
+  dem: (g, pl) => (g === "f" ? (pl ? "estas" : "esta") : pl ? "estos" : "este"),
+  intentGo: (inf) => `voy a ${inf}`,
+  withWord: "con",
   my: () => "mi", // mis for plural
   pronoun: () => "", // pro-drop, every person: "Quiero una manzana", "No luchamos"
   // "Te ayudo." / "No me quiere." / "Nos ayudas." / "Los ayudo."

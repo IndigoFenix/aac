@@ -261,7 +261,7 @@ export class CreatureAnimator {
     this.handGroup = pickHandGroup(blueprint);
     this.armGroup = pickArmGroup(blueprint);
     this.mouthChain = blueprint.head.mouthOpen > 0
-      ? (blueprint.head.beakLengthFrac > 0 ? "snout" : "jaw")
+      ? (blueprint.head.snoutLengthFrac > 0 ? "snout" : "jaw")
       : null;
     this.activeGroup = this.handGroup >= 0 ? this.handGroup : this.armGroup;
     this.pointGroup = pickPointLimb(blueprint);

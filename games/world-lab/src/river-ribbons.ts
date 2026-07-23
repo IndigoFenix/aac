@@ -22,7 +22,7 @@
 import * as THREE from "three";
 import type { CelestialBody } from "@shared/world-engine/space/body";
 import { extractRiverNetwork, type RiverPolyline } from "@shared/world-engine/planet/rivers";
-import { litMaterial } from "@shared/world-engine/materials";
+import { roadMaterial } from "@shared/world-engine/materials";
 
 // ── Tunables (life-size metres; glyph-exaggerated for orbit legibility, the
 //    way roads' FAR ribbons are — tune against a real fly-over). ─────────────
@@ -120,8 +120,13 @@ export function createRiverRibbons(body: CelestialBody): RiverRibbons | null {
 
   const radius = body.radius;
   const heightAt = (dir: [number, number, number]): number => built.surface.heightAt(dir);
-  const material = litMaterial({ color: RIVER_COLOR, roughness: 0.7, metalness: 0.0 });
-  material.side = THREE.DoubleSide;
+  // Same recipe as the FAR trade-road ribbons: a lit-only dark colour crushes
+  // to near-black under the toon ramp at distance, so a STATIC emissive floor
+  // keeps the line readable from orbit. Constant emission has no motion and no
+  // specular lobe — it is not the seizure hazard, and roughness stays high.
+  const material = roadMaterial(RIVER_COLOR, {
+    emissive: 0x2a5f9e, emissiveIntensity: 0.5, roughness: 0.8,
+  });
 
   const root = new THREE.Group();
   root.name = "rivers";

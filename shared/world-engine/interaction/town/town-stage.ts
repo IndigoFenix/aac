@@ -27,6 +27,7 @@ import {
   type WorldSpec,
 } from "@shared/world-engine/index.js";
 import type { CompiledEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
+import { probesOn } from "@shared/world-engine/perf-probes.js";
 import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/furniture.js";
 import { buildingRoomPlan, houseRoomPlan } from "@shared/world-engine/kernel/town/rooms.js";
 import { workProgram, type BuildingProgram } from "@shared/world-engine/kernel/town/stations.js";
@@ -200,6 +201,11 @@ export interface TownStage {
      *  furniture and pantry closed forms stand untouched). Omit = every
      *  house tracked, byte-identical to before. */
     isHousePooled?: (houseIndex: number) => boolean,
+    /** AMBIENT CROWD BUDGET override (view-distance-lod-tiers.md Phase 2): max
+     *  street bodies to embody this frame, ramped by camera→town distance so the
+     *  crowd streams in gradually on descent. Omit = the stage's build-time
+     *  budget (STREET_NPCS). */
+    crowdBudget?: number,
   ): TownStageFrame;
   /** The streamer's CURRENT per-lot materialization — house lots by their
    *  plan `index`, work lots by their plan array position. THE single
@@ -462,6 +468,7 @@ export function* createTownStageSteps(
   const workIds = new Map<number, string[]>();
   /** Whether each work stood COMPLETE at its last registration. */
   const workBuilt = new Map<number, boolean>();
+  let _errLogAt = -Infinity; // TEMP stage-errands probe pacing
   const registerWork = (i: number, tSec: number): void => {
     const wk = plan.works[i]!;
     const cx = center.x + wk.dx + wk.w / 2;
@@ -576,6 +583,11 @@ export function* createTownStageSteps(
     isVisible?: (houseIndex: number) => boolean,
     isRoomVisible?: (buildingId: string) => boolean,
     isHousePooled?: (houseIndex: number) => boolean,
+    /** AMBIENT CROWD BUDGET override (view-distance-lod-tiers.md Phase 2): the
+     *  max street bodies to embody THIS frame, ramped by camera→town distance so
+     *  the crowd streams in a few per frame on descent instead of flooding all at
+     *  once at the mount. Undefined = the stage's build-time budget. */
+    crowdBudget?: number,
   ): TownStageFrame => {
     // The "interior on show" gate — shared by the interior staging, the
     // furniture and the residents (see the FURNITURE note below). No signal
@@ -767,7 +779,7 @@ export function* createTownStageSteps(
 
     // RESIDENTS: one model step; map spawns onto engine NPCs with the
     // behavior that keeps the clock honest (indoor tether, errand pace).
-    const upd = residents.update(p, tSec, bodyBudget, bodyPos, visibleR, isVisible, isRoomVisible, isHousePooled);
+    const upd = residents.update(p, tSec, crowdBudget ?? bodyBudget, bodyPos, visibleR, isVisible, isRoomVisible, isHousePooled);
     const add: NpcSpec[] = upd.spawn.map(s => {
       // The body's species: a defined member's own (frog_person aunt), else
       // the town's constructing species — sizes collision AND planning.
@@ -792,6 +804,7 @@ export function* createTownStageSteps(
       // ...and embodied runners head out when their cycle says so.
       ...upd.trips.map(t => ({ npcId: t.id, points: t.points })),
     ];
+    const _errSpawnN = errands.length - upd.trips.length; // TEMP stage-errands probe
     const remove: string[] = [...upd.despawn];
 
     // THE CARAVAN — the intercity line's pair of carriers, streamed exactly
@@ -867,6 +880,17 @@ export function* createTownStageSteps(
       }
     }
 
+    // TEMP stage-errands probe (view-distance-lod-tiers.md): WHICH source
+    // feeds the standing per-frame errand stream — mid-trip SPAWN remainders,
+    // cycle TRIPS, or HAULER/caravan pop-ins? ≤1 line/sim-second per stage.
+    if (probesOn() && errands.length && typeof console !== "undefined" && tSec - _errLogAt > 1) {
+      _errLogAt = tSec;
+      const haulerN = errands.length - _errSpawnN - upd.trips.length;
+      console.log(
+        `[stage-errands] ${plan.key ?? "town"} total=${errands.length} spawn=${_errSpawnN} trips=${upd.trips.length} hauler=${haulerN} ` +
+          `ids=${errands.slice(0, 3).map(e => e.npcId).join(",")}`,
+      );
+    }
     return { buildings, add, remove, errands, addObjects, removeObjects };
   };
 

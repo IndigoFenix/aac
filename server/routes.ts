@@ -1575,6 +1575,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Server-rendered YouTube player relay page (see youtube-embed-page.ts).
+  // The packaged shells (Electron app://aac, Capacitor capacitor://localhost)
+  // are not http(s) origins, so a direct in-shell YouTube embed is rejected
+  // with error 152/153. This page is served over real https, so framing the
+  // player one level deep here gives YouTube a valid origin/referrer. The
+  // outer shell drives it via postMessage. Public (reflects only a videoId).
+  app.get("/api/aac/youtube/embed", async (req, res) => {
+    const { renderYoutubeEmbedPage, isValidYoutubeVideoId } = await import("./services/youtube/youtube-embed-page");
+    const videoId = req.query.v;
+    if (!isValidYoutubeVideoId(videoId)) {
+      return res.status(400).type("html").send("<!DOCTYPE html><title>Invalid video</title>");
+    }
+    // Replace the global X-Frame-Options: SAMEORIGIN (helmet frameguard) with a
+    // frame-ancestors allowlist so the app:// / capacitor:// shells — and
+    // localhost dev servers — may frame this page. Mirrors games-static.ts.
+    const devAncestors =
+      process.env.NODE_ENV === "production"
+        ? ""
+        : " http://localhost:* http://127.0.0.1:*";
+    res.removeHeader("X-Frame-Options");
+    res.setHeader(
+      "Content-Security-Policy",
+      `frame-ancestors 'self' app: capacitor: https://localhost${devAncestors}`,
+    );
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.type("html").send(renderYoutubeEmbedPage(videoId));
+  });
+
   // List videos in a YouTube playlist (RSS-backed). Public data; the client
   // already knows the playlistId because the server sent the permitted-items
   // list to it.

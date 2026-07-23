@@ -38,7 +38,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 3.0, girth: 0.05, girthPeak: 0.3, torsoSegments: 11, frontTaper: 0.5, rearTaper: 0.4 },
       neck: { segments: 2, lengthFrac: 0.2, radiusFrac: 0.7, lift: 0.2 },
       tail: { segments: 9, lengthFrac: 1.6, radiusFrac: 0.6, droop: 0.4 },
-      head: { sizeFrac: 0.5, beak: 0.15, beakLengthFrac: 0.4, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.9 },
+      head: { sizeFrac: 0.5, beak: 0.15, snoutLengthFrac: 0.4, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.9 },
       limbGroups: [],
     },
   },
@@ -49,7 +49,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { crossSection: 0.5, girth: 0.2, girthPeak: 0.5, torsoLengthM: 1.0 },
       neck: { segments: 0 },
       tail: { segments: 5, lengthFrac: 0.7, radiusFrac: 0.45, droop: 0 },
-      head: { sizeFrac: 0.5, beak: 0.1, beakLengthFrac: 0.25, eyePairs: 1, eyeSizeFrac: 0.2 },
+      head: { sizeFrac: 0.5, beak: 0.1, snoutLengthFrac: 0.25, eyePairs: 1, eyeSizeFrac: 0.2 },
       posture: { bodyHeight: 0.15 },
       // Pectoral fins: short, splayed, membranous legs.
       limbGroups: [
@@ -70,7 +70,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { crossSection: 2.6, girth: 0.26, girthPeak: 0.4, torsoLengthM: 1.4, frontTaper: 0.5, rearTaper: 0.7 },
       neck: { segments: 0 },
       tail: { segments: 6, lengthFrac: 1.7, radiusFrac: 0.2, droop: 0.05 },
-      head: { sizeFrac: 0.4, beak: 0.1, beakLengthFrac: 0.3, eyePairs: 1 },
+      head: { sizeFrac: 0.4, beak: 0.1, snoutLengthFrac: 0.3, eyePairs: 1 },
       limbGroups: [],
       chains: [
         { attach: "body", station: 0.95, count: 1, radial: false, segments: 4, lengthFrac: 0.5, radiusFrac: 0.04, taper: 0.1, aim: 0.3, spread: 0, curl: 0.2, tip: "stinger" },
@@ -84,7 +84,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 1.4, girth: 0.16, girthPeak: 0.5 },
       neck: { segments: 2, lengthFrac: 0.25, radiusFrac: 0.5, lift: 0.3 },
       tail: { segments: 5, lengthFrac: 1.0, radiusFrac: 0.4, droop: 0.4 },
-      head: { sizeFrac: 0.5, beak: 0.4, beakLengthFrac: 0.8 },
+      head: { sizeFrac: 0.5, beak: 0.4, snoutLengthFrac: 0.8 },
       posture: { bodyHeight: 0.4 },
       // Sprawled reptilian legs (lateral socket → elbows-out, feet wide).
       limbGroups: [
@@ -111,7 +111,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
         // Snout leaves near the TOP of the flat skull (foreheadHeight high),
         // straight off the front — no forehead at all.
         foreheadHeight: 0.8, foreheadLength: 0.05, foreheadSlope: -0.1,
-        beak: 0.15, beakLengthFrac: 1.6, snoutRadiusFrac: 0.5, muzzleSquash: 0.35,
+        beak: 0.15, snoutLengthFrac: 1.6, snoutRadiusFrac: 0.5, muzzleSquash: 0.35,
         snoutFlatten: 1.8, snoutCurve: -0.1, mouthOpen: 1, jawDepth: 0.12, jawOffset: 0,
         eyePairs: 1, eyeSizeFrac: 0.14, eyeAngle: 0.55, eyeHeight: 0.9, eyeBulge: 0.75,
       },
@@ -133,7 +133,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       // Hard hooked beak with a working lower mandible — no hands and no
       // free arms (the wings are membrane), so this is the mouth-pickup
       // creature: the animator grabs with the beak (pose.gape).
-      head: { sizeFrac: 0.5, beak: 0.7, beakLengthFrac: 0.7, snoutRadiusFrac: 0.33, snoutCurve: 0.35, mouthOpen: 0.8, eyePairs: 1, eyeSizeFrac: 0.2, eyeAngle: 0.5 },
+      head: { sizeFrac: 0.5, beak: 0.7, snoutLengthFrac: 0.7, snoutRadiusFrac: 0.33, snoutCurve: 0.35, mouthOpen: 0.8, eyePairs: 1, eyeSizeFrac: 0.2, eyeAngle: 0.5 },
       // Long hind legs lead; shorter membranous forelimbs lift off (wings).
       limbGroups: [
         { placement: "bilateral", count: 1, stationStart: 0.78, stationEnd: 0.84, lengthFrac: 0.85, restLevation: -0.3, restFlexion: -0.5, stance: 0.6, toeCount: 3, footLengthFrac: 0.18, radiusFrac: 0.09 },
@@ -172,7 +172,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
         // Muzzle almost fully squared into the face (full-width tip, tiny
         // projection); a DEEP mandible drops the chin well below the small
         // terminal mouth — that is where the face gets its height.
-        beak: 0, beakLengthFrac: 0.14, snoutSegments: 2, snoutRadiusFrac: 0.42,
+        beak: 0, snoutLengthFrac: 0.14, snoutSegments: 2, snoutRadiusFrac: 0.42,
         muzzleSquash: 0.9, snoutFlatten: 1.1, snoutCurve: 0, mouthOpen: 0.32,
         jawDepth: 0.38, jawOffset: 0.15, mouthVertical: 0,
         // The nose is its OWN feature: protruding forward off the face with
@@ -208,7 +208,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       // small front mouth (mouthOpen 0.3 — the cheeks close off the long
       // jaw behind it), lateral eyes, and a roman-nose bridge (snoutCurve).
       head: {
-        sizeFrac: 0.5, lengthFrac: 1.2, braincaseDome: 0.95, beak: 0.1, beakLengthFrac: 1.5,
+        sizeFrac: 0.5, lengthFrac: 1.2, braincaseDome: 0.95, beak: 0.1, snoutLengthFrac: 1.5,
         foreheadHeight: 0.55, foreheadLength: 0.35, foreheadSlope: 0.05,
         snoutSegments: 3, snoutRadiusFrac: 0.5, muzzleSquash: 0.7, snoutFlatten: 0.7,
         snoutCurve: 0.12, mouthOpen: 0.3, jawDepth: 0.2, jawOffset: 0.1,
@@ -240,7 +240,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
         // stays small and separate at the jaw.
         sizeFrac: 0.8, braincaseDome: 1.2, facePitch: -0.1, beak: 0.05,
         foreheadHeight: 0.5, foreheadLength: 0.2, foreheadSlope: 0.15,
-        beakLengthFrac: 0.5, snoutSegments: 2, snoutRadiusFrac: 0.55, muzzleSquash: 0.7,
+        snoutLengthFrac: 0.5, snoutSegments: 2, snoutRadiusFrac: 0.55, muzzleSquash: 0.7,
         snoutFlatten: 0.9, mouthOpen: 0.25, jawDepth: 0.28, jawOffset: 0.1,
         noseLengthFrac: 4.2, noseRadiusFrac: 0.26, noseHeight: 0.05,
         noseSegments: 7, noseDroop: 0.55,
@@ -274,7 +274,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 0.9, girth: 0.22, girthPeak: 0.55, profile: [{ at: 0.25, scale: 0.8 }, { at: 0.5, scale: 0.7 }, { at: 0.75, scale: 1.1 }] },
       neck: { segments: 1, lengthFrac: 0.15, radiusFrac: 0.6, lift: 0.3 },
       tail: { segments: 0 },
-      head: { sizeFrac: 0.45, beak: 0.3, beakLengthFrac: 0.4, eyePairs: 1 },
+      head: { sizeFrac: 0.45, beak: 0.3, snoutLengthFrac: 0.4, eyePairs: 1 },
       posture: { bodyHeight: 0.35 },
       limbGroups: [
         { placement: "bilateral", count: 3, stationStart: 0.2, stationEnd: 0.85, attachHeight: 0.44, restProtraction: 0, restLevation: 0.3, restFlexion: 0, radiusFrac: 0.04, lengthFrac: 0.5, stance: 0.7, toeCount: 1 },
@@ -308,7 +308,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { crossSection: 1.2, girth: 0.18, girthPeak: 0.25, torsoLengthM: 0.9, frontTaper: 0.4, rearTaper: 0.3, profile: [{ at: 0.2, scale: 1 }, { at: 0.45, scale: 0.4 }, { at: 0.8, scale: 1.55 }] },
       neck: { segments: 0 },
       tail: { segments: 0 },
-      head: { sizeFrac: 0.4, beak: 0, beakLengthFrac: 0.1, eyePairs: 2, eyeSizeFrac: 0.2, eyeAngle: 0.6 },
+      head: { sizeFrac: 0.4, beak: 0, snoutLengthFrac: 0.1, eyePairs: 2, eyeSizeFrac: 0.2, eyeAngle: 0.6 },
       posture: { bodyHeight: 0.55 },
       limbGroups: [
         { placement: "bilateral", count: 4, stationStart: 0.12, stationEnd: 0.4, sizePeak: 0, sizeContrast: 0.15, attachHeight: 0.45, restProtraction: 0, restLevation: 0.4, restFlexion: 0, radiusFrac: 0.08, lengthFrac: 0.72, stance: 0.8, toeCount: 1 },
@@ -322,7 +322,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { girth: 0.16, girthPeak: 0.3, torsoLengthM: 1.2, frontTaper: 0.3, rearTaper: 0.2, profile: [{ at: 0.3, scale: 1.1 }, { at: 0.45, scale: 0.18 }, { at: 0.62, scale: 1.5 }, { at: 0.95, scale: 0.7 }] },
       neck: { segments: 2, lengthFrac: 0.3, radiusFrac: 0.5, lift: 0.5 },
       tail: { segments: 0 },
-      head: { sizeFrac: 0.6, beak: 0.2, beakLengthFrac: 0.4, eyePairs: 1, eyeSizeFrac: 0.3, eyeAngle: 0.9 },
+      head: { sizeFrac: 0.6, beak: 0.2, snoutLengthFrac: 0.4, eyePairs: 1, eyeSizeFrac: 0.3, eyeAngle: 0.9 },
       posture: { bodyHeight: 0.35 },
       limbGroups: [
         { placement: "bilateral", count: 3, stationStart: 0.32, stationEnd: 0.6, sizePeak: 0.5, sizeContrast: 0.1, attachHeight: 0.44, restProtraction: 0, restLevation: 0.25, restFlexion: 0, radiusFrac: 0.04, lengthFrac: 0.5, stance: 0.7, toeCount: 1 },
@@ -362,7 +362,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 1.0, girth: 0.09, girthPeak: 0.45, frontTaper: 0.4, rearTaper: 0.5, profile: [{ at: 0.3, scale: 0.85 }, { at: 0.6, scale: 1.15 }] },
       neck: { segments: 2, lengthFrac: 0.22, radiusFrac: 0.5, lift: 0.4 },
       tail: { segments: 0 },
-      head: { sizeFrac: 0.4, beak: 0.2, beakLengthFrac: 0.3, eyePairs: 1, eyeSizeFrac: 0.36, eyeAngle: 1.1 },
+      head: { sizeFrac: 0.4, beak: 0.2, snoutLengthFrac: 0.3, eyePairs: 1, eyeSizeFrac: 0.36, eyeAngle: 1.1 },
       posture: { bodyPitch: 0.3, bodyHeight: 0.45 },
       // Four walking legs (mid + rear) — natural standers, sprawled.
       // Two raptorial forelegs are CAPABLE (mounted low like the walkers) but
@@ -385,7 +385,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { girth: 0.33, girthPeak: 0.3, torsoLengthM: 0.7 },
       neck: { segments: 0 },
       tail: { segments: 0 },
-      head: { sizeFrac: 0.7, beak: 0, beakLengthFrac: 0, eyePairs: 1, eyeSizeFrac: 0.28 },
+      head: { sizeFrac: 0.7, beak: 0, snoutLengthFrac: 0, eyePairs: 1, eyeSizeFrac: 0.28 },
       limbGroups: [],
       chains: [
         { attach: "head", station: 0.5, count: 8, radial: true, segments: 7, lengthFrac: 1.2, radiusFrac: 0.07, taper: 0.1, aim: -0.4, spread: 0.5, curl: 0.8, tip: "none" },
@@ -399,7 +399,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 0.5, girth: 0.45, girthPeak: 0.5, crossSection: 2.0, frontTaper: 0.6, rearTaper: 0.6 },
       neck: { segments: 0 },
       tail: { segments: 0 },
-      head: { sizeFrac: 0.3, beak: 0, beakLengthFrac: 0, eyePairs: 0 },
+      head: { sizeFrac: 0.3, beak: 0, snoutLengthFrac: 0, eyePairs: 0 },
       limbGroups: [],
       chains: [
         { attach: "body", station: 0.5, count: 10, radial: true, segments: 7, lengthFrac: 1.4, radiusFrac: 0.03, taper: 0.1, aim: -0.9, spread: 0.3, curl: 0.4, tip: "none" },
@@ -416,7 +416,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 1.1, girth: 0.22, girthPeak: 0.4, frontTaper: 0.4, rearTaper: 0.5 },
       neck: { segments: 2, lengthFrac: 0.3, radiusFrac: 0.65, lift: 0.6 },
       tail: { segments: 2, lengthFrac: 0.2, radiusFrac: 0.3, droop: 0.8 },
-      head: { sizeFrac: 0.55, beak: 0.2, beakLengthFrac: 0.7, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.0 },
+      head: { sizeFrac: 0.55, beak: 0.2, snoutLengthFrac: 0.7, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.0 },
       limbGroups: [
         { placement: "bilateral", count: 2, stationStart: 0.15, stationEnd: 0.85, lengthFrac: 0.55, radiusFrac: 0.14, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1 },
       ],
@@ -438,7 +438,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 1.3, girth: 0.15, girthPeak: 0.4 },
       neck: { segments: 4, lengthFrac: 0.6, radiusFrac: 0.45, lift: 1.1 },
       tail: { segments: 2, lengthFrac: 0.15, radiusFrac: 0.3, droop: 0.5 },
-      head: { sizeFrac: 0.45, beak: 0.25, beakLengthFrac: 0.9, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 1.0 },
+      head: { sizeFrac: 0.45, beak: 0.25, snoutLengthFrac: 0.9, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 1.0 },
       limbGroups: [
         { placement: "bilateral", count: 2, stationStart: 0.15, stationEnd: 0.85, lengthFrac: 0.85, radiusFrac: 0.09, taper: 0.45, attachHeight: 0.35, restLevation: -0.6, restFlexion: -0.25, stance: 0.9, footLengthFrac: 0.22, toeCount: 1 },
       ],
@@ -462,7 +462,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       spine: { torsoLengthM: 1.6, girth: 0.24, girthPeak: 0.55 },
       neck: { segments: 2, lengthFrac: 0.25, radiusFrac: 0.7, lift: 0.4 },
       tail: { segments: 5, lengthFrac: 0.6, radiusFrac: 0.2, droop: 1.0 },
-      head: { sizeFrac: 0.5, beak: 0.15, beakLengthFrac: 0.8, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.1 },
+      head: { sizeFrac: 0.5, beak: 0.15, snoutLengthFrac: 0.8, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.1 },
       limbGroups: [
         { placement: "bilateral", count: 2, stationStart: 0.15, stationEnd: 0.85, lengthFrac: 0.6, radiusFrac: 0.15, taper: 0.55, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1 },
       ],
@@ -487,7 +487,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       neck: { segments: 2, lengthFrac: 0.22, radiusFrac: 0.6, lift: 0.5 },
       tail: { segments: 2, lengthFrac: 0.18, radiusFrac: 0.25, droop: 0.9 },
       // A small bare head poking out of the fleece.
-      head: { sizeFrac: 0.38, beak: 0.15, beakLengthFrac: 0.6, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.0 },
+      head: { sizeFrac: 0.38, beak: 0.15, snoutLengthFrac: 0.6, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.0 },
       limbGroups: [
         { placement: "bilateral", count: 2, stationStart: 0.18, stationEnd: 0.82, lengthFrac: 0.45, radiusFrac: 0.1, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.16, toeCount: 1 },
       ],

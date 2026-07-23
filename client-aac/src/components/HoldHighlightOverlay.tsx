@@ -4,10 +4,11 @@
 // Only active while eyegaze is enabled. In that mode a normal tap still selects
 // the button exactly as before, but pressing and *holding* a button draws a
 // yellow ring-timer + border extension (mirroring the eyegaze dwell effect, but
-// yellow) and, once the hold completes, marks that button with a persistent
-// yellow highlight — and speaks its sentence via the client-side TTS — rather
-// than selecting it. Holding a different button moves the highlight to it. This
-// lets a caretaker point a student toward a target without triggering selection.
+// yellow) and, once the hold completes, marks that button with a yellow
+// highlight — and speaks its sentence via the client-side TTS — rather than
+// selecting it. The highlight lasts only as long as the press: releasing (or
+// cancelling) the pointer clears it. This lets a caretaker point a student
+// toward a target without triggering selection.
 //
 // The committed highlight is owned by BoardAudioContext (shared with the audio
 // scan feature), so a single yellow box is drawn whether the highlight came
@@ -160,9 +161,14 @@ export default function HoldHighlightOverlay({ enabled, holdDurationMs }: Props)
       const wasCompleted = active.completed;
       activeRef.current = null;
       pushHold(null);
-      // A committed hold arms suppressClick for the trailing click. pointercancel
-      // produces no click, so disarm it to avoid eating an unrelated later click.
-      if (wasCompleted && e.type === "pointercancel") suppressClickRef.current = false;
+      if (wasCompleted) {
+        // The highlight lives only for the duration of the press — releasing (or
+        // cancelling) the pointer clears it.
+        highlightRef.current(null);
+        // A committed hold arms suppressClick for the trailing click. pointercancel
+        // produces no click, so disarm it to avoid eating an unrelated later click.
+        if (e.type === "pointercancel") suppressClickRef.current = false;
+      }
       // A short press (released before completion) is a normal tap: leave the
       // click alone so selection happens exactly as it does today.
     };

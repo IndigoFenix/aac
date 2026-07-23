@@ -17,6 +17,7 @@
 // stay in shared/social-world; this only knows the generic transport seam below.
 
 import {
+  __probeStats,
   addLocalAvatar,
   applyRemoteAvatar,
   carryObject,
@@ -46,6 +47,7 @@ import {
   type WorldState,
 } from "./engine.js";
 import { createDwellTracker } from "./dwell.js";
+import { probesOn } from "./perf-probes.js";
 import { speciesBodyRadius } from "./creatures/species.js";
 import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
 import { WORLD_MAX_NPCS, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type Vec2, type WorldSpec } from "./types.js";
@@ -54,6 +56,7 @@ import { createGazeInterpreter } from "./gaze-intent.js";
 import { approachAim, pickEntity } from "./interact.js";
 import { DEFAULT_WORLD_TUNABLES, type WorldTunables } from "./world-tunables.js";
 import {
+  __npcStats,
   createDetourMemory,
   createNpcController,
   detourAim,
@@ -453,7 +456,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   const pathSnaps = new Map<string, NpcPathSnapshot>();
 
   /** Step every hosted NPC body for this frame (controller → aim → locomotion). */
+  /** TEMP: advanceNpcs sub-phase accumulators, reported by the frame-phase log. */
+  const _npcPhase = { aim: 0, detour: 0, steer: 0, bodies: 0, aimProbes: 0 };
   const advanceNpcs = (dt: number): void => {
+    _npcPhase.aim = _npcPhase.detour = _npcPhase.steer = _npcPhase.bodies = 0; // TEMP
+    _npcPhase.aimProbes = 0; // TEMP
+    const _pn = (): number => (typeof performance !== "undefined" ? performance.now() : 0);
     if (!npcControllers.length) return;
     // "Humans" = bodies an NPC should react to: anything not autonomous, PLUS a
     // CLAIMED creature — a body with a spark in it is a person to its
@@ -486,6 +494,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         fixturesWalkable(state, p, radius, self.floor) &&
         terrainWalkable(state, p) &&
         (deps.constraint?.walkable(p, radius) ?? true);
+      _npcPhase.bodies++; // TEMP
+      const _tAim = _pn(); // TEMP
+      const _pAim = __probeStats.struct; // TEMP
       const aim = ctrl.computeAim({
         self,
         humans,
@@ -508,6 +519,8 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       // dogleg corners): the plan already avoids the furniture, and a local bend
       // drags the body off its verified corridor into exactly the traps the route
       // was built to skirt.
+      const _tDet = _pn(); _npcPhase.aim += _tDet - _tAim; // TEMP
+      _npcPhase.aimProbes += __probeStats.struct - _pAim; // TEMP
       let bent = aim;
       if (aim && !ctrl.errandLegTight()) {
         bent = detourAim(self, aim, walk, bodyR, detourSides.prefer(ctrl.npcId, state.time));
@@ -515,6 +528,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         // what carries one bypass through to the end (createDetourMemory).
         if (bent !== aim) detourSides.record(ctrl.npcId, sideOfBend(self, aim, bent), state.time);
       }
+      const _tSteer = _pn(); _npcPhase.detour += _tSteer - _tDet; // TEMP
       // DEBUG: snapshot the whole decision — the errand PLAN, the waypoint the
       // controller picked (`aim`), and what the detour actually steers at
       // (`bent`). aim ≠ bent is a live bypass; a body whose bent aim thrashes
@@ -531,6 +545,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         });
       }
       steerAvatar(state, ctrl.npcId, bent, dt, npcConfigs.get(ctrl.npcId), deps.constraint);
+      _npcPhase.steer += _pn() - _tSteer; // TEMP
     }
     // Bodies that stopped being hosted shouldn't linger as ghost lines.
     if (pathDebug && pathSnaps.size > npcControllers.length) {
@@ -624,6 +639,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     Object.values(state.objects).find((o) => o.carriedBy === driven())?.id;
 
   const frame = (dt: number, now: number): void => {
+    // TEMP frame-phase probe (view-distance-lod-tiers.md): split a slow frame
+    // into engine tick / npc advance / quest sim (needs+pursuit+stream) / render
+    // so a "minutes per frame" stall names its phase. Logs only over-threshold
+    // frames. Remove with the descent/bake probes. `__framePhase` in the console.
+    const _pnow = (): number => (typeof performance !== "undefined" ? performance.now() : 0);
+    const _pf = { tick: 0, npc: 0, sim: 0, render: 0 };
     // Interpret the raw pointer into an aim EACH frame against the (moving) camera:
     // the fixation gate drops flicks, weakening eases off during saccades, and the
     // idle timer latches WATCH/sitting. The mapped aim tracks the screen point even
@@ -860,7 +881,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // default. Unclaimed, drivenId === localId (never in npcConfigs) → undefined
     // → WORLD_ENGINE_DEFAULTS, exactly as before.
     const drivenConfig = npcConfigs.get(driven());
+    const _tA = _pnow();
     const { events } = tickWorld(state, { aim }, dt, drivenConfig, deps.constraint);
+    _pf.tick = _pnow() - _tA;
     // SPIRIT: a carried object rides the GAZE. A formless stationary avatar can't
     // walk it into place, and the engine parks a carried item a fixed step in
     // FRONT of the carrier — so in spirit mode it would just sit by the invisible
@@ -878,12 +901,16 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     }
     // Advance hosted NPC bodies (no-op when this peer hosts none). Runs after the
     // local tick so controllers see this frame's player position.
+    const _tB = _pnow();
     advanceNpcs(dt);
+    _pf.npc = _pnow() - _tB;
     emitProximityIfChanged();
     // Glide remote avatars between the ~8–15 Hz packets (dead-reckon + ease).
     smoothRemoteAvatars(state, dt);
     // Game layer hook (single-player quest logic): runs on the final frame state.
+    const _tC = _pnow();
     deps.onFrame?.(state, dt);
+    _pf.sim = _pnow() - _tC;
 
     if (net) {
       if (events.length) pendingEvents.push(...events);
@@ -918,6 +945,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       }
     }
 
+    const _tD = _pnow();
     view.render(state, dt, {
       aim,
       sitting: intent.sitting,
@@ -938,6 +966,22 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         selectProgress: Math.max(carryDwellProgress, deps.cursorProgress?.() ?? 0),
       },
     });
+    _pf.render = _pnow() - _tD;
+    const _total = _pf.tick + _pf.npc + _pf.sim + _pf.render;
+    if (_total > 150 && probesOn() && typeof console !== "undefined") {
+      (globalThis as unknown as Record<string, unknown>).__framePhase = _pf;
+      console.log(
+        `[frame-phase] ${_total.toFixed(0)}ms — tick:${_pf.tick.toFixed(0)} npc:${_pf.npc.toFixed(0)}` +
+          `(aim:${_npcPhase.aim.toFixed(0)}/${_npcPhase.aimProbes}p det:${_npcPhase.detour.toFixed(0)} steer:${_npcPhase.steer.toFixed(0)} n:${_npcPhase.bodies})` +
+          ` sim:${_pf.sim.toFixed(0)} render:${_pf.render.toFixed(0)}` +
+          ` probes:S${__probeStats.struct}/F${__probeStats.fix}` +
+          ` picks:${__npcStats.picks}(fail:${__npcStats.pickFails})`,
+      );
+    }
+    __probeStats.struct = 0; // TEMP: per-frame probe counts
+    __probeStats.fix = 0;
+    __npcStats.picks = 0; // TEMP
+    __npcStats.pickFails = 0;
   };
 
   const loop = (now: number): void => {

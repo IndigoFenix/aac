@@ -78,6 +78,9 @@ export interface SparkDraw {
   motive: AttentionMotive | null;
   x: number;
   y: number;
+  /** The SPECIFIC world object the attention rests on (null for a bare area) —
+   *  a fired act targets THIS instance, never "the nearest of its kind". */
+  objId: string | null;
   /** 0..1 — ramps up while hovering, decays when the gaze leaves. */
   strength: number;
 }
@@ -147,4 +150,74 @@ export function attentionBonus(
   if (!draw || !draw.motive || draw.strength <= 0) return 0;
   if (!tplKey.startsWith(draw.motive)) return 0;
   return SPARK.bonus * draw.strength * attentiveness(engage, cid);
+}
+
+// ---------------------------------------------------------------------------
+// The ATTENTION-ACTION TABLE — what indicating a thing ASKS OF a creature
+// ---------------------------------------------------------------------------
+
+/** What the host knows about an indicated object, beyond its affordances:
+ *  transient states, garment-ness, ownership and placement. All spec-side or
+ *  session-side reads — the table itself stays pure. */
+export interface AttentionTargetInfo extends ObjectAffordances {
+  /** Transient state facets on the instance ("dirty", "hot"…). */
+  states: readonly string[];
+  /** Is the object a garment (wearable)? */
+  isClothing: boolean;
+  /** No creature/household owns it — free to take. */
+  unclaimed: boolean;
+  /** A loose prop out of any container (clutter — a tidy candidate). */
+  loose: boolean;
+  /** A storage container currently below its stock buffer. */
+  stockLow: boolean;
+}
+
+/** One candidate act. `motive` set = gated by the creature's OWN meter (it
+ *  must actually be hungry/tired/… — else it refuses); absent = an anytime
+ *  act (wearing clean clothes, taking a free thing, tidying clutter). */
+export interface AttentionAction {
+  kind:
+    | "eat" // food while hungry
+    | "drink" // drink while thirsty
+    | "play" // toy while bored
+    | "sleep" // bed while tired
+    | "use" // privy while needing it
+    | "wash" // bath while dirty
+    | "washItem" // a dirty ITEM → launder it
+    | "wear" // clean clothing, any time
+    | "get" // an unclaimed item, any time
+    | "tidy" // a loose item, any time
+    | "getMore"; // a low stockpile, any time
+  motive?: AttentionMotive;
+}
+
+/**
+ * The ordered candidate acts for an indicated object — first WILLING act wins
+ * (the host walks the list, checking each motive-gated act against the
+ * creature's meter and falling through to the anytime acts). Empty = the
+ * object asks nothing. Affordance-first like objectMotive: the object's own
+ * function outranks housekeeping readings, and a dirty thing wants washing
+ * before anything else.
+ */
+export function attentionActions(info: AttentionTargetInfo): AttentionAction[] {
+  const acts: AttentionAction[] = [];
+  const dirty = info.states.includes("dirty");
+  if (dirty) acts.push({ kind: "washItem" });
+  const motive = objectMotive(info);
+  if (motive && !dirty) {
+    const MOTIVE_ACT: Record<AttentionMotive, AttentionAction["kind"]> = {
+      hunger: "eat",
+      thirst: "drink",
+      fun: "play",
+      energy: "sleep",
+      waste: "use",
+      hygiene: "wash",
+    };
+    acts.push({ kind: MOTIVE_ACT[motive], motive });
+  }
+  if (info.isClothing && !dirty) acts.push({ kind: "wear" });
+  if (info.stockLow) acts.push({ kind: "getMore" });
+  if (info.loose && info.unclaimed) acts.push({ kind: "get" });
+  if (info.loose) acts.push({ kind: "tidy" });
+  return acts;
 }

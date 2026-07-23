@@ -87,3 +87,15 @@ export function getApiBaseUrl(): string {
  * session, so callers can import this directly instead of re-resolving.
  */
 export const API_BASE_URL = getApiBaseUrl();
+
+/**
+ * True when running inside a packaged shell (Electron `app://`, Capacitor
+ * iPad `capacitor://`) rather than a web page. These origins are not http(s),
+ * which matters for anything that must present a real https origin/referrer to
+ * a third party — e.g. the YouTube IFrame player, which rejects the app://
+ * origin (error 152/153) and must be framed via the https backend relay
+ * instead. See client-aac/src/components/YouTubePlayer.tsx.
+ */
+export const IS_PACKAGED_APP =
+  typeof window !== "undefined" &&
+  PACKAGED_APP_PROTOCOLS.includes(window.location.protocol);

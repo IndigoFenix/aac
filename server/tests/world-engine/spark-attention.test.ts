@@ -7,11 +7,13 @@
 
 import {
   objectMotive,
+  attentionActions,
   attentionBonus,
   attentiveness,
   ramp,
   decayStrength,
   SPARK,
+  type AttentionTargetInfo,
   type ObjectAffordances,
   type SparkDraw,
   type SparkFocus,
@@ -87,7 +89,7 @@ describe("attentiveness — engagement is the sole gate", () => {
 });
 
 describe("attentionBonus — strong for the engaged creature, zero otherwise", () => {
-  const draw = (o: Partial<SparkDraw>): SparkDraw => ({ motive: "hunger", x: 0, y: 0, strength: 1, ...o });
+  const draw = (o: Partial<SparkDraw>): SparkDraw => ({ motive: "hunger", x: 0, y: 0, objId: "obj_0", strength: 1, ...o });
   const engage = (cid: string, strength = 1): SparkFocus => ({ cid, strength });
 
   it("gives the ENGAGED creature a strong bonus (≥ the fire threshold of 1)", () => {
@@ -118,5 +120,57 @@ describe("attentionBonus — strong for the engaged creature, zero otherwise", (
       SPARK.bonus * 0.5,
       5,
     );
+  });
+});
+
+describe("attentionActions — item type × state → the default act", () => {
+  const info = (o: Partial<AttentionTargetInfo>): AttentionTargetInfo => ({
+    affords: [],
+    properties: [],
+    stationKind: null,
+    isWater: false,
+    states: [],
+    isClothing: false,
+    unclaimed: false,
+    loose: false,
+    stockLow: false,
+    ...o,
+  });
+  const kinds = (i: AttentionTargetInfo) => attentionActions(i).map((a) => a.kind);
+
+  it("meter-gated defaults: food→eat, water→drink, toy→play, bed→sleep, privy→use, bath→wash", () => {
+    expect(kinds(info({ properties: ["food"] }))[0]).toBe("eat");
+    expect(kinds(info({ isWater: true }))[0]).toBe("drink");
+    expect(kinds(info({ affords: ["play"] }))[0]).toBe("play");
+    expect(kinds(info({ stationKind: "bed" }))[0]).toBe("sleep");
+    expect(kinds(info({ stationKind: "privy" }))[0]).toBe("use");
+    expect(kinds(info({ stationKind: "bath" }))[0]).toBe("wash");
+    expect(attentionActions(info({ properties: ["food"] }))[0]!.motive).toBe("hunger");
+  });
+
+  it("a DIRTY item wants washing before anything — even a dirty shirt or toy", () => {
+    expect(kinds(info({ states: ["dirty"], isClothing: true }))[0]).toBe("washItem");
+    expect(kinds(info({ states: ["dirty"], affords: ["play"] }))[0]).toBe("washItem");
+  });
+
+  it("clean clothing wears at ANY time (no meter gate)", () => {
+    const acts = attentionActions(info({ isClothing: true }));
+    expect(acts[0]!.kind).toBe("wear");
+    expect(acts[0]!.motive).toBeUndefined();
+  });
+
+  it("anytime fallthrough: unclaimed loose → get, owned loose → tidy, low stock → getMore", () => {
+    expect(kinds(info({ loose: true, unclaimed: true }))).toEqual(["get", "tidy"]);
+    expect(kinds(info({ loose: true }))).toEqual(["tidy"]);
+    expect(kinds(info({ stockLow: true }))).toEqual(["getMore"]);
+  });
+
+  it("an unwilling meter act FALLS THROUGH to the anytime acts (a not-hungry body still GETS the free apple)", () => {
+    // The host walks the list: eat gated → get → tidy.
+    expect(kinds(info({ properties: ["food"], loose: true, unclaimed: true }))).toEqual(["eat", "get", "tidy"]);
+  });
+
+  it("a wall asks nothing", () => {
+    expect(kinds(info({}))).toEqual([]);
   });
 });

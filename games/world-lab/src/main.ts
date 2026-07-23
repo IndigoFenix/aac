@@ -63,7 +63,7 @@ import { mountDebugPanel } from "./debug-panel";
 import { mountSpecForm } from "./spec-form";
 import { createFlashWatch } from "./flash-watch";
 import { HdrProbePass } from "./hdr-probe";
-import type { QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
+import type { CreatureTier, QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const select = $<HTMLSelectElement>("world-select");
@@ -1139,6 +1139,72 @@ window.addEventListener("keydown", e => {
 });
 const TOWN_LIVE_IN_M = 1_500;  // live town mounts (hysteresis pair with…)
 const TOWN_LIVE_OUT_M = 2_600; // …live town unmounts, static plan returns
+// VIEW-DISTANCE LOD (view-distance-lod-tiers.md Phase 2): the town's ambient
+// street crowd budget ramps with camera→town distance — 0 beyond
+// CROWD_ABSTRACT_M (no individual creatures at orbit; you neither see nor should
+// HEAR them), climbing to full at/under CROWD_FULL_M. Ramping means the streamer
+// embodies the crowd a few bodies per descending frame instead of all at once at
+// the mount (the ~12 s freeze). CROWD_MAX mirrors the kernel's STREET_NPCS —
+// overshooting is harmless (the stage clamps to its own budget), undershooting
+// just shows fewer.
+const CROWD_ABSTRACT_M = 1_000;
+const CROWD_FULL_M = 140;
+const CROWD_MAX = 40;
+const CROWD_STEP = 8;    // budget granularity — coarse ⇒ few transitions
+const CROWD_HYST_M = 60; // the camera must move THIS far before the budget is
+                         // re-evaluated. A jittering distance otherwise re-spawns
+                         // the marginal street body every frame (residents.ts:
+                         // desired = budget + locked), and each spawn is a ~200ms
+                         // creature-mesh build — the district/ground churn.
+function crowdBudgetForDist(distM: number): number | null {
+  if (distM >= CROWD_ABSTRACT_M) return 0;
+  if (distM <= CROWD_FULL_M) return null; // stage default (full crowd)
+  const t = (CROWD_ABSTRACT_M - distM) / (CROWD_ABSTRACT_M - CROWD_FULL_M);
+  return Math.round((CROWD_MAX * t) / CROWD_STEP) * CROWD_STEP; // quantized
+}
+// Hysteretic wrapper: hold the applied budget until the camera has moved
+// CROWD_HYST_M, so a STABLE view (orbit, district, hovering) never churns bodies.
+// Reset on mount (mountLiveTown) so a fresh town re-evaluates immediately.
+let appliedCrowd: number | null = 0;
+let appliedCrowdAtM = Infinity;
+function hystereticCrowdBudget(distM: number): number | null {
+  if (Math.abs(distM - appliedCrowdAtM) >= CROWD_HYST_M) {
+    appliedCrowdAtM = distM;
+    appliedCrowd = crowdBudgetForDist(distM);
+  }
+  return appliedCrowd;
+}
+// CREATURE VIEW TIER (view-distance-lod-tiers.md Phase 3): the fidelity town
+// bodies render at, by camera→town distance — full skinned bake near the
+// ground, the cheap simple loft on approach, the placeholder capsule at far
+// district range (beyond CROWD_ABSTRACT_M the budget is 0: no bodies at all).
+// PER-CAMERA BY DESIGN: this is render chrome computed from the LOCAL camera —
+// in multiplayer every peer picks its own tier over the same replicated
+// bodies; it must never feed the sim. Boundary thrash is prevented twice over:
+// a tier only flips after the distance crosses its boundary by TIER_HYST_M,
+// and a flip rebuilds bodies a few per frame (quest-host's re-tier stream),
+// never all at once.
+const TIER_SIMPLE_M = 180;  // full ↔ simple boundary
+const TIER_CAPSULE_M = 450; // simple ↔ capsule boundary
+const TIER_HYST_M = 40;
+let appliedTier: CreatureTier = "full";
+function hystereticCreatureTier(distM: number): CreatureTier {
+  switch (appliedTier) {
+    case "full":
+      if (distM > TIER_SIMPLE_M + TIER_HYST_M)
+        appliedTier = distM > TIER_CAPSULE_M + TIER_HYST_M ? "capsule" : "simple";
+      break;
+    case "simple":
+      if (distM > TIER_CAPSULE_M + TIER_HYST_M) appliedTier = "capsule";
+      else if (distM < TIER_SIMPLE_M - TIER_HYST_M) appliedTier = "full";
+      break;
+    case "capsule":
+      if (distM < TIER_CAPSULE_M - TIER_HYST_M)
+        appliedTier = distM < TIER_SIMPLE_M - TIER_HYST_M ? "full" : "simple";
+      break;
+  }
+  return appliedTier;
+}
 // SINGLE GROUND HOST (PLANET_ENTITY_PLAN step 3, slice 1): true boots the
 // wilderness side of the ground path as a QuestHost3D wilderness session
 // (minded, talkable creatures) — the same host class as the town side; false
@@ -1223,6 +1289,8 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     // frames later when the clamp re-seals. Start sealed; the per-frame clamp
     // re-opens it at the structure rung / when riding.
     embedTown.host.setInteriorReveal(false);
+    appliedCrowdAtM = Infinity; // a fresh town re-evaluates its crowd budget
+    appliedTier = "full"; // …and its creature tier (the first push re-tiers)
     // A proximity mount must not steal the board from the wilderness session
     // the walker is standing in (last-wins claim — hand it straight back).
     if (groundedIn === "wild") embedWild?.claimBoard?.();
@@ -2382,6 +2450,23 @@ function streamGround(
     // real fix promotes a creature pulled out of its town to a historical
     // figure that outlives the town host (see quest-boot.ts TODO).
     disposeEmbeddedTown();
+  }
+  // VIEW-DISTANCE LOD (view-distance-lod-tiers.md Phase 2): set the mounted
+  // town's ambient crowd budget BEFORE it steps below. WALKING the town (or a
+  // structure/ridden focus) is always FULL — distance-to-centre is meaningless
+  // on foot, and a stable budget there is what keeps ground play churn-free.
+  // Otherwise (flight / orbit / district) ramp by camera→town distance through
+  // the HYSTERETIC wrapper: 0 at orbit (no bodies, no voices), and — critically
+  // — a value that only changes when the camera really moves, so a hovering
+  // orbit or district view never re-spawns the marginal body every frame.
+  if (embedTown && liveViz) {
+    const walking = groundedIn === "town" || spiritTownDriven;
+    const townDistM = anchorPos.distanceTo(liveViz.fc.worldPos);
+    embedTown.host.setCrowdBudget(walking ? null : hystereticCrowdBudget(townDistM));
+    // Phase 3 creature tier rides the same push: full whenever walking (bodies
+    // at arm's length), else the hysteretic distance band. Per-CAMERA, render-
+    // only — see hystereticCreatureTier.
+    embedTown.host.setCreatureTier(walking ? "full" : hystereticCreatureTier(townDistM));
   }
   // The layer that OWNS the walker is stepped at full frame rate by the
   // grounded loop; every other mounted ground layer keeps living at the

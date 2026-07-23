@@ -529,9 +529,14 @@ export function createTownGoods(
     const trip = walk * 2 + good.shopSec;
     // The interval to eat from full DOWN TO the household's surplus buffer, then refill.
     const period = shopPeriod(trip, good.capDays, surplusFracOf(house), qfillOf(house));
+    // SELF-HEAL a poisoned shift (a NaN written before reanchor guarded the
+    // flat-sawtooth case) — a non-finite offset makes errand().cycle NaN and
+    // the trip gate re-emit every frame; drop it rather than carry it forever.
+    const shift = cycleShift.get(house.index) ?? 0;
+    if (!Number.isFinite(shift)) cycleShift.delete(house.index);
     const offset =
       (hashSeed(seed, `${key}:${good.key}:${house.index}`) / 4294967296) * period +
-      (cycleShift.get(house.index) ?? 0);
+      (Number.isFinite(shift) ? shift : 0);
     return { period, walk, trip, offset };
   };
 
@@ -545,12 +550,21 @@ export function createTownGoods(
     const surplus = surplusUnitsOf(house);
     const level = Math.max(surplus, Math.min(boxCap, units / f));
     const drain = (boxCap - surplus) / Math.max(1e-9, period);
+    // FLAT SAWTOOTH (boxCap ≈ surplus — a good this house barely buffers):
+    // nothing to anchor, and pressing on divides 0/0 → the shift goes NaN and
+    // POISONS the house's offset FOREVER — `errand().cycle` turns NaN, the
+    // once-per-cycle trip gate (`tripSent.get(id) === cycle`) never matches
+    // again (NaN ≠ NaN), and the runner re-emits a fresh trip EVERY FRAME (the
+    // permanent street-walker / errand-router storm).
+    if (!(drain > 1e-9)) return;
     // Seconds since a refill that leave `level` in the box, kept short of the segment
     // end so the next trip is due soon-but-not-mid-air when the box is at the floor.
     const elapsed = Math.min((boxCap - level) / drain, Math.max(0, period - trip - 1));
     const target = trip + elapsed;
     const cur = (((t + offset) % period) + period) % period;
-    cycleShift.set(house.index, (cycleShift.get(house.index) ?? 0) + (target - cur));
+    const shift = target - cur;
+    if (!Number.isFinite(shift)) return; // never let a degenerate anchor poison the offset
+    cycleShift.set(house.index, (cycleShift.get(house.index) ?? 0) + shift);
   };
 
   const errand = (house: TownHouse, t: number): HouseErrand => {

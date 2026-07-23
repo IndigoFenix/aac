@@ -148,6 +148,13 @@ const L: Record<string, Lexeme> = {
   scarf: { w: "cachecol", g: "m" },
   drum: { w: "tambor", g: "m" },
   guitar: { w: "violão", g: "m" },
+  // Attention/self-care verbs (attention-spark actions) — 1sg + infinitive
+  // (the intent construction "vou comer" needs the infinitive).
+  eat: { w: "como", v2: "comes", v3: "come", v3p: "comem", inf: "comer" },
+  drink: { w: "bebo", v2: "bebes", v3: "bebe", v3p: "bebem", inf: "beber" },
+  sleep: { w: "durmo", v2: "dormes", v3: "dorme", v3p: "dormem", inf: "dormir" },
+  wash: { w: "lavo", v2: "lavas", v3: "lava", v3p: "lavam", inf: "lavar" },
+  talk: { w: "falo", v2: "falas", v3: "fala", v3p: "falam", inf: "falar" },
 };
 
 const PT_CONN: Record<string, string> = {
@@ -168,6 +175,9 @@ export const pt = makeRomance({
     if (pl || mass) return "";
     return g === "f" ? "uma" : "um";
   },
+  dem: (g, pl) => (g === "f" ? (pl ? "estas" : "esta") : pl ? "estes" : "este"),
+  intentGo: (inf) => `vou ${inf}`,
+  withWord: "com",
   my: (g, pl) => (g === "f" ? (pl ? "minhas" : "minha") : pl ? "meus" : "meu"),
   youIsThird: true,
   // Portuguese keeps the subject pronoun ("Nós não lutamos.").

@@ -98,6 +98,11 @@ export interface NpcErrand {
   onDone?: () => void;
 }
 
+/** TEMP (view-distance-lod-tiers.md): wander waypoint-pick counter — picks
+ *  should be SECONDS apart per body; a per-frame pick storm is the aim-phase
+ *  cost. Reported/reset by world-host's frame-phase probe. Remove with it. */
+export const __npcStats = { picks: 0, pickFails: 0 };
+
 /** DEBUG READOUT of a live errand: the PLAN (`points`, door-routed by
  *  doorRouteErrand) and which leg is live. `index` is the point being walked to
  *  right now — points before it are done, points after are still to come. */
@@ -613,6 +618,7 @@ class BaseController implements NpcController {
     // auto-opening door — until stuck detection fires). A few redraws almost
     // always find open ground; home is the safe fallback.
     if (!ctx.walkable) return draw();
+    __npcStats.picks++; // TEMP
     const radius = ctx.radius ?? 0.6;
     for (let i = 0; i < 8; i++) {
       const p = draw();
@@ -629,6 +635,7 @@ class BaseController implements NpcController {
       // walker that cannot route.
       if (ctx.walkable(p, radius) && this.corridorClear(ctx, p, radius)) return p;
     }
+    __npcStats.pickFails++; // TEMP — all 8 draws failed; fallback
     // Safe fallback: the pad's center when confined (home may lie outside it).
     if (this.wanderRect) {
       return { x: this.wanderRect.x + this.wanderRect.w / 2, y: this.wanderRect.y + this.wanderRect.h / 2 };
@@ -637,7 +644,14 @@ class BaseController implements NpcController {
   }
 
   /** Is the straight line self→p walkable end to end, at the body's radius?
-   *  Sampled at CORRIDOR_STEP; the endpoint is the caller's business. */
+   *  Sampled at CORRIDOR_STEP; the endpoint is the caller's business.
+   *  PROBE-BOUNDED: a body far from its home (an errand left it across town)
+   *  draws candidates near home — a 100m+ corridor at a fixed fine step cost
+   *  ~200 probes PER DRAW × 8 draws × many bodies (the aim-phase storm). The
+   *  step widens with length so one corridor never exceeds ~24 probes; a
+   *  coarser march on a LONG roam can miss a thin wall, and the wander
+   *  stuck-detection (3s, repick) copes exactly as it always has. Short
+   *  corridors keep the fine door-gap-safe step. */
   private corridorClear(ctx: NpcControlCtx, p: Vec2, radius: number): boolean {
     const walk = ctx.walkable;
     if (!walk) return true;
@@ -645,8 +659,8 @@ class BaseController implements NpcController {
     const dy = p.y - ctx.self.y;
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) return true;
-    const CORRIDOR_STEP = 0.75; // finer than a door gap is wide — a gap must not be missed
-    for (let d = CORRIDOR_STEP; d < len; d += CORRIDOR_STEP) {
+    const step = Math.max(0.75, len / 24); // fine when near; bounded when far
+    for (let d = step; d < len; d += step) {
       if (!walk({ x: ctx.self.x + (dx / len) * d, y: ctx.self.y + (dy / len) * d }, radius)) return false;
     }
     return true;

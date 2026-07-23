@@ -684,7 +684,7 @@ export function buildSkeleton(
   const craniumFront = headBone.tail;
 
   // Snout params.
-  const snoutLen = g.head.beakLengthFrac * headR;
+  const snoutLen = g.head.snoutLengthFrac * headR;
   const snoutBaseR = headR * g.head.snoutRadiusFrac;
   const snoutAspect = Math.max(0.35, Math.min(3, g.head.snoutFlatten * g.head.crossSection));
   const snoutUR = snoutBaseR / Math.sqrt(snoutAspect);

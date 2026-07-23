@@ -111,7 +111,7 @@ export interface HeadBlueprint {
   sizeFrac: number;
   /** Braincase length : width along the face axis. 1 = a round cranium,
    *  >1 = a longer skull vault (the rostrum length is SEPARATE —
-   *  `beakLengthFrac`). */
+   *  `snoutLengthFrac`). */
   lengthFrac: number;
   /** #4 cranial dome — braincase height : width. 0.5 = a flat skull roof
    *  (crocodile, fish), 1 = round, 1.4 = a tall domed cranium (primate,
@@ -157,7 +157,7 @@ export interface HeadBlueprint {
   /** #1 rostrum length / head radius — the projecting muzzle, measured
    *  from the front of the braincase. Long for a dog/horse/croc, ~0 for a
    *  flat-faced human/cat. Independent of the braincase length. */
-  beakLengthFrac: number;
+  snoutLengthFrac: number;
   /** Bone segments the rostrum is built from (more = smoother bend). */
   snoutSegments: number;
   /** Rostrum base radius / head radius: bulldog 0.6, heron 0.3. */
@@ -570,7 +570,7 @@ export const HEAD_RANGES: RangesOf<HeadBlueprint> = {
   foreheadLength: { min: 0, max: 2 },
   foreheadSlope: { min: -1, max: 1 },
   beak: { min: 0, max: 1 },
-  beakLengthFrac: { min: 0, max: 5 },
+  snoutLengthFrac: { min: 0, max: 5 },
   snoutSegments: { min: 1, max: 8, int: true },
   snoutRadiusFrac: { min: 0.08, max: 0.9 },
   muzzleSquash: { min: 0, max: 1 },
@@ -688,7 +688,7 @@ export function defaultBlueprint(): Blueprint {
       foreheadLength: 0.3,
       foreheadSlope: 0,
       beak: 0.25,
-      beakLengthFrac: 0.8,
+      snoutLengthFrac: 0.8,
       snoutSegments: 2,
       snoutRadiusFrac: 0.45,
       muzzleSquash: 0,
@@ -781,7 +781,7 @@ export function plantBlueprint(
     head: {
       sizeFrac: 0.2, lengthFrac: 1, braincaseDome: 1, crossSection: 1, facePitch: 0, faceHeight: 0,
       foreheadHeight: 0.45, foreheadLength: 0.3, foreheadSlope: 0,
-      beak: 0, beakLengthFrac: 0, snoutSegments: 2, snoutRadiusFrac: 0.45, muzzleSquash: 0,
+      beak: 0, snoutLengthFrac: 0, snoutSegments: 2, snoutRadiusFrac: 0.45, muzzleSquash: 0,
       snoutFlatten: 1, snoutCurve: 0, mouthOpen: 0, jawDepth: 0.18, jawOffset: 0, mouthVertical: 0,
       noseLengthFrac: 0, noseRadiusFrac: 0.12, noseHeight: 0, noseSegments: 2, noseDroop: 0,
       eyePairs: 0, eyeSizeFrac: 0.05, eyeAngle: 0.5, eyeHeight: 0.35, eyeBulge: 0.35,
@@ -1371,7 +1371,7 @@ export function randomBlueprint(seed: number): Blueprint {
       foreheadLength: lerp(0, 0.5, rng()),
       foreheadSlope: (rng() - 0.5) * 0.7,
       beak: rng() < 0.4 ? lerp(0.5, 1, rng()) : lerp(0, 0.35, rng()),
-      beakLengthFrac: lerp(0.3, 1.6, rng()),
+      snoutLengthFrac: lerp(0.3, 1.6, rng()),
       snoutSegments: Math.round(lerp(2, 4, rng())),
       snoutRadiusFrac: lerp(0.25, 0.6, rng()),
       muzzleSquash: rng() < 0.5 ? lerp(0, 0.5, rng()) : 0,

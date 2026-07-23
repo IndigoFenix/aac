@@ -87,15 +87,17 @@ export interface ChunkGeometryData {
   positions: Float32Array;
   colors: Float32Array;
   normals: Float32Array;
-  /** 0..1 water at this vertex: 1 where it was clamped up to sea level, and
-   *  `surface.wetAt` (a river, at its own altitude) elsewhere. Dry worlds with
-   *  no river field get all-zero. Lets the render adapter shade water without a
-   *  second mesh — see three.ts. */
+  /** 0..1 water at this vertex: 1 where it was clamped up to sea level, 0
+   *  everywhere else. OCEAN ONLY — rivers are curves and render as draped
+   *  ribbons, not as wet terrain vertices (a substrate cell is far too coarse
+   *  to be a river; see the note at the wet assignment). Lets the render
+   *  adapter shade the sea without a second mesh — see three.ts. */
   water: Float32Array;
   /** CURRENT direction per vertex (2 per vertex), in the same detail-UV metres
-   *  `detailUv` is in — the shader scrolls the wave field along it. Zero on
-   *  ocean, lakes and land, which reads as "no current": still water keeps the
-   *  ocean's own constant drift. Rivers only. */
+   *  `detailUv` is in — the shader scrolls the wave field along it. Currently
+   *  ALL-ZERO (the ocean has no current; zero = "still, use the ocean's own
+   *  drift"). Kept because the shader's clamped flow path is the seam the
+   *  river ribbon material will feed. */
   flow: Float32Array;
   /** Ground-material mix per vertex (3 per vertex: sand, grass, rock), from
    *  `surface.materialAt`. All-zero on surfaces that don't implement it, which
@@ -179,7 +181,6 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
   const rgb: [number, number, number] = [0, 0, 0];
   const mat: MaterialWeights = [0, 0, 0];
   const reg: MaterialRegime = [0, 0, 0];
-  const flow3: [number, number, number] = [0, 0, 0];
 
   let cx = 0;
   let cy = 0;
@@ -201,12 +202,13 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       // the real height below, so oceans are depth-shaded without a z-fighting
       // shell.
       const isOcean = !!params.seaClamp && h < 0;
-      // RIVERS are water too, but they are NOT the ocean: a river sits at
-      // whatever altitude its bed does, so it must not be clamped down to sea
-      // level (that would drain every river on the planet into the sea). The
-      // two share only the water SHADING path — hence `wet` decides the
-      // attribute while `isOcean` alone decides the radius.
-      const wet = isOcean ? 1 : (surface.wetAt ? surface.wetAt(dir) : 0);
+      // OCEAN ONLY. Rivers are NOT painted onto the terrain mesh: a substrate
+      // cell is ~15 km wide at the flight tier, so marking riverine vertices
+      // wet turned every watercourse into a region-sized sheet of animated
+      // "sea" with trees standing in it. A river is a CURVE, and it is drawn
+      // as one — the draped ribbon (planet/rivers.ts + the game's river-ribbons
+      // renderer). The mesh under it keeps its carved bed and damp tint.
+      const wet = isOcean ? 1 : 0;
       const r = radius + (isOcean ? 0 : h);
       const idx = (j * N + i) * 3;
       abs[idx + 0] = dx * r;
@@ -217,29 +219,11 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       colors[idx + 1] = rgb[1];
       colors[idx + 2] = rgb[2];
       water[j * N + i] = wet;
-      // CURRENT, in detail-UV space. The shader scrolls the wave field along
-      // this, so it has to live in the same coordinates the wave field is tiled
-      // in — surface metres on the cube face. Project the planet-local flow
-      // onto the face's two tangent directions to get there. Zero (still) on
-      // ocean, lakes and dry land, which the shader reads as "no current" and
-      // falls back to the ocean's drift.
-      if (surface.flowAt && wet > 0.02 && !isOcean) {
-        surface.flowAt(dir, flow3);
-        if (flow3[0] !== 0 || flow3[1] !== 0 || flow3[2] !== 0) {
-          // Tangent basis at this direction: the face axes with their radial
-          // component removed. Not normalized against each other — the cube
-          // face's u/v are orthogonal, and the residual skew near a corner is
-          // far below what a drifting texture can show.
-          const du = F.u[0] * dx + F.u[1] * dy + F.u[2] * dz;
-          const dv = F.v[0] * dx + F.v[1] * dy + F.v[2] * dz;
-          const tux = F.u[0] - dx * du, tuy = F.u[1] - dy * du, tuz = F.u[2] - dz * du;
-          const tvx = F.v[0] - dx * dv, tvy = F.v[1] - dy * dv, tvz = F.v[2] - dz * dv;
-          const tum = Math.hypot(tux, tuy, tuz) || 1;
-          const tvm = Math.hypot(tvx, tvy, tvz) || 1;
-          flow[(j * N + i) * 2 + 0] = (flow3[0] * tux + flow3[1] * tuy + flow3[2] * tuz) / tum;
-          flow[(j * N + i) * 2 + 1] = (flow3[0] * tvx + flow3[1] * tvy + flow3[2] * tvz) / tvm;
-        }
-      }
+      // `flow` stays all-zero: with rivers off the mesh, no terrain vertex has
+      // a current, and zero is the shader's "still water — use the ocean's own
+      // drift" value. The attribute (and the shader's clamped flow path) is
+      // kept for the river ribbon renderer to feed when it adopts this
+      // material.
       if (surface.materialAt) {
         surface.materialAt(h, dir, mat);
         terrain[idx + 0] = mat[0];

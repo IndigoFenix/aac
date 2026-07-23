@@ -46,6 +46,7 @@
  */
 
 import type { TownPlan, TownHouse } from "./plan";
+import { probesOn } from "../../perf-probes.js";
 import {
   FOOD_DAY_SEC, HOUSEHOLD, doorTransit, goodBoxAt, houseDoorstep, pantryBoxAt, workDoorstep,
   type TownGoods,
@@ -328,6 +329,24 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
   /** Embodied bodies + their house/member, and per-body trip bookkeeping. */
   const bodies = new Map<string, { house: TownHouse; member: number }>();
   const tripSent = new Map<string, number>();
+  let _tripLogAt = -Infinity; // TEMP trip-emit probe pacing
+  // ── EMBODIMENT DWELL (view-distance-lod-tiers.md rework) ──────────────────
+  // The desired set is a pure function of CONTINUOUS inputs (distances to a
+  // moving viewer, rank among moving bodies, budget) — marginal bodies sit on
+  // a decision boundary and, stateless, flip across it EVERY FRAME: a
+  // spawn+despawn pair per body per frame, each spawn re-shipping its mid-trip
+  // walkTo as a fresh errand (the measured `spawn=25 trips=0` storm).
+  // Embodiment is therefore an EVENT WITH A DWELL, not a per-frame re-vote:
+  // once embodied a body holds ≥EMBODY_HOLD_S (unless its whole basis is gone),
+  // once abstracted it stays ≥ABSTRACT_HOLD_S, and at most SPAWN_STREAM bodies
+  // materialize per frame (the town's FIRST frame is exempt — it must start
+  // populated, mid-errand, per the pop-in rule below).
+  const EMBODY_HOLD_S = 4;
+  const ABSTRACT_HOLD_S = 2;
+  const SPAWN_STREAM = 6;
+  const embodiedAt = new Map<string, number>();
+  const abstractedAt = new Map<string, number>();
+  let lastNow = 0; // last update() clock — dwell anchor for out-of-frame drops
   /** Last observed in-shift state per body — commute trips fire on the edge. */
   const jobPhase = new Map<string, boolean>();
   /** Houses whose interior was on show LAST update — a homecoming into a
@@ -358,6 +377,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
       isVisible ? isVisible(h.index) : inHouseRect(p, h);
     const firstFrame = !primed;
     primed = true;
+    lastNow = now; // dwell anchor for dropBody (called outside update's frame)
     // THE VIEW GUARD's "can the camera see this point": within the renderer's
     // world reach (`visibleR` — a circle approximating the frustum) and NOT
     // hidden inside a concealed interior (an unwatched house, any work
@@ -631,16 +651,42 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
         // despawnPriority function's job — edit ordering THERE.)
         const at = bodyPos(id);
         if (!firstFrame && at && inView(at)) continue;
+        // EMBODIMENT DWELL: a freshly-embodied body is not un-decided by the
+        // next frame's rank jitter — it holds its slot for the dwell. CONCEALED
+        // interiors are exempt (abstract instantly, the historical rule): the
+        // despawn is invisible there, and re-embodiment is paced by the
+        // ABSTRACT dwell anyway — so a flapping reveal damps, never loops.
+        if (
+          !firstFrame && at !== null && !hiddenIndoors(at) &&
+          now - (embodiedAt.get(id) ?? -Infinity) < EMBODY_HOLD_S
+        ) continue;
         despawn.push(id);
         bodies.delete(id);
-        tripSent.delete(id);
         jobPhase.delete(id);
+        embodiedAt.delete(id);
+        abstractedAt.set(id, now);
+        // tripSent is KEPT: the trip gate is idempotent per (id, CYCLE) — a
+        // body despawned and respawned inside the same shopping cycle resumes
+        // its trip silently instead of re-emitting it (entries retire when
+        // the cycle advances; the map is bounded by the resident count).
       }
     }
+    let streamed = 0;
     for (const [id, c] of desired) {
       if (bodies.has(id)) continue;
       const h = houseOf.get(c.house);
       if (!h) continue;
+      if (!firstFrame) {
+        // ABSTRACT DWELL: a just-abstracted body doesn't re-materialize on the
+        // next frame's rank jitter — and a spawn the host refused (dropBody)
+        // retries on this same pacing rather than every frame.
+        if (now - (abstractedAt.get(id) ?? -Infinity) < ABSTRACT_HOLD_S) continue;
+        // STREAM-IN BUDGET: embodiment is paced like every other pipeline
+        // stage — a burst of newly-desired bodies materializes over a few
+        // frames, never as one spike. (First frame exempt: populated start.)
+        if (streamed >= SPAWN_STREAM) continue;
+      }
+      streamed++;
       // THE VIEW GUARD, spawn half: never MATERIALIZE where the camera can
       // see. Concealed-interior entries pass untouched (people enter the
       // world through buildings); a spawn point on visible ground relocates
@@ -680,6 +726,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
         }
       }
       bodies.set(id, { house: h, member: c.member });
+      embodiedAt.set(id, now); // dwell anchor — holds the slot against rank jitter
       spawn.push({
         id, x: sx, y: sy, home: c.home, wanderRadius: c.wanderRadius,
         ...(walkTo ? { walkTo } : {}),
@@ -702,7 +749,21 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
       if (!run) continue;
       const est = run.goods.errand(b.house, now);
       if (est.phase === "home" || !est.walkTo) continue;
+      // A non-finite cycle can never satisfy the once-per-cycle gate below
+      // (NaN ≠ NaN) — it would re-emit this trip EVERY FRAME forever. A house
+      // whose cycle is degenerate (poisoned offset, zero-period good) sends
+      // nobody rather than an infinite stream. (goods.ts reanchor guards the
+      // known poison source; this is the belt to its braces.)
+      if (!Number.isFinite(est.cycle)) continue;
       if (tripSent.get(id) === est.cycle) continue;
+      // TEMP trip-emit probe (view-distance-lod-tiers.md): a steady per-frame
+      // stream means the gate below never holds — log WHY: is `cycle` jumping
+      // (offset re-anchored under the runner) or `prev` missing (tripSent
+      // cleared by a despawn)? ≤1 line/sim-second. Remove with the probes.
+      if (probesOn() && typeof console !== "undefined" && now - _tripLogAt > 1) {
+        _tripLogAt = now;
+        console.log(`[trip-emit] ${id} cyc=${est.cycle} prev=${tripSent.get(id) ?? "none"} phase=${est.phase} sent=${tripSent.size}`);
+      }
       tripSent.set(id, est.cycle);
       trips.push({ id, points: throughDoor(b.house, est.walkTo, true, run.box(b.house)) });
     }
@@ -795,6 +856,10 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
       bodies.delete(id);
       tripSent.delete(id);
       jobPhase.delete(id);
+      embodiedAt.delete(id);
+      // A dropped body (host refused the spawn / GHOST heal) retries on the
+      // abstract dwell's pacing — never on the next frame.
+      abstractedAt.set(id, lastNow);
     },
     reset: () => {
       primed = false; // a fresh host repopulates freely again
@@ -802,6 +867,8 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
       tripSent.clear();
       jobPhase.clear();
       lastVisible.clear();
+      embodiedAt.clear();
+      abstractedAt.clear();
     },
   };
 }

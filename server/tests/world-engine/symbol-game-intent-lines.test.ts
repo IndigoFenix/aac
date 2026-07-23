@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import {
+  asIntent,
   defaultAnnounceCriteria,
   goalIntentLine,
   type IntentLineSyms,
@@ -74,6 +75,87 @@ describe("goalIntentLine — GoalSpec → the announcement glyphs", () => {
       // The lang layer must never crash on it (gloss fallback at worst).
       expect(translateGlyph(line!.c, "en").length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("asIntent — the STATEMENT-OF-INTENT syntax (.will)", () => {
+  it("marks the verb so the line reads 'I will …', never an imperative", () => {
+    const line = goalIntentLine({ kind: "fetch", item: { match: { kind: "wood" } } }, syms)!;
+    const intent = asIntent(line);
+    expect(intent.c).toBe("i_me + get.will + wood");
+    // Level b has no subject — the will marker itself forces first person.
+    expect(intent.b).toBe("get.will + wood");
+    expect(translateGlyph(intent.b, "en")).toBe("I will get the wood.");
+    expect(translateGlyph(intent.c, "en")).toBe("I will get the wood.");
+  });
+
+  it("renders the going-to future in every ruleset", () => {
+    const line = asIntent(goalIntentLine({ kind: "consume", item: { match: { kind: "apple" } } }, syms)!);
+    expect(translateGlyph(line.c, "en")).toBe("I will eat the apple.");
+    expect(translateGlyph(line.c, "he")).toBe("אני הולך לאכול את התפוח.");
+    expect(translateGlyph(line.c, "he", { speaker: "f" })).toBe("אני הולכת לאכול את התפוח.");
+    expect(translateGlyph(line.c, "es")).toBe("Voy a comer la manzana.");
+    expect(translateGlyph(line.c, "pt")).toBe("Eu vou comer a maçã.");
+  });
+
+  it("marks movement intent through the going frame", () => {
+    const line = asIntent(goalIntentLine({ kind: "goTo", place: { kind: "named", id: "market" } }, syms)!);
+    expect(line.c).toBe("i_me + go.will + to + market");
+    expect(translateGlyph(line.c, "en")).toBe("I will go to the market.");
+  });
+
+  it("never marks a line that would degrade to the telegraphic gloss", () => {
+    // A give-with-recipient has 4 content slots — its c-level drops the
+    // subject and glosses; the marker must stay off rather than emit
+    // "give will apple you".
+    const line = goalIntentLine({ kind: "give", item: { match: { kind: "apple" } }, to: "__player__" }, syms)!;
+    const intent = asIntent(line);
+    expect(translateGlyph(intent.c, "en")).not.toContain("will will");
+    expect(translateGlyph(intent.c, "en").toLowerCase()).not.toMatch(/\bwill\b.*\bwill\b/);
+  });
+
+  it("level a (the bare teaching slot) is never marked", () => {
+    const line = asIntent(goalIntentLine({ kind: "fetch", item: { match: { kind: "wood" } } }, syms)!);
+    expect(line.a).toBe("wood");
+  });
+});
+
+describe("the deixis marker — '.this' names the PARTICULAR instance", () => {
+  it("renders the demonstrative in every ruleset", () => {
+    expect(translateGlyph("i_me + eat.will + apple.this", "en")).toBe("I will eat this apple.");
+    expect(translateGlyph("i_me + eat.will + apple.this", "he")).toBe("אני הולך לאכול את התפוח הזה.");
+    expect(translateGlyph("i_me + eat.will + apple.this", "es")).toBe("Voy a comer esta manzana.");
+    expect(translateGlyph("i_me + eat.will + apple.this", "pt")).toBe("Eu vou comer esta maçã.");
+  });
+
+  it("wear + this garment ('I will wear this shirt')", () => {
+    expect(translateGlyph("i_me + wear.will + shirt.this", "en")).toBe("I will wear this shirt.");
+  });
+});
+
+describe("attention-act shapes — the table's spoken intents", () => {
+  it("a bed speaks SLEEP, a bath WASH, a privy the bathroom trip", () => {
+    const sleep = goalIntentLine({ kind: "rest", place: { kind: "named", id: "bed" }, pose: "sleep" }, syms)!;
+    expect(translateGlyph(asIntent(sleep).c, "en")).toBe("I will sleep.");
+    const wash = goalIntentLine({ kind: "rest", place: { kind: "named", id: "bath" } }, syms)!;
+    expect(translateGlyph(asIntent(wash).c, "en")).toBe("I will wash.");
+    const privy = goalIntentLine({ kind: "rest", place: { kind: "named", id: "privy" } }, syms)!;
+    expect(translateGlyph(asIntent(privy).c, "en")).toBe("I will go to the bathroom.");
+  });
+
+  it("play with a particular toy ('I will play with this ball')", () => {
+    expect(translateGlyph("i_me + play.will + ball.this", "en")).toBe("I will play with this ball.");
+    expect(translateGlyph("i_me + play.will + ball.this", "he")).toBe("אני הולך לשחק בכדור הזה.");
+  });
+
+  it("talk to a partner ('I will talk to the bear')", () => {
+    const line = asIntent(goalIntentLine({ kind: "converse", target: "bear" }, syms)!);
+    expect(translateGlyph(line.c, "en")).toBe("I will talk to the bear.");
+  });
+
+  it("the refusal lines speak proper negation", () => {
+    expect(translateGlyph("i_me + hungry.not", "en")).toBe("I'm not hungry.");
+    expect(translateGlyph("i_me + need.not + bathroom", "en")).toBe("I don't need the bathroom.");
   });
 });
 

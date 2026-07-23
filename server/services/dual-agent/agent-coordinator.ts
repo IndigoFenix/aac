@@ -1236,6 +1236,12 @@ export class AgentCoordinator {
   // once on the first frame's scene description (see flushContextUpdates).
   // -------------------------------------------------------------------------
   private startupBehavior: StartupBehavior = "contextual";
+  /** True when this connection RESUMED an existing session (the client
+   *  round-tripped a sessionId the service recognized) rather than starting a
+   *  fresh one. Set in handleInitialize; read by fireStartupGreeting to skip
+   *  the greeting on reconnect so a transient network drop doesn't re-greet the
+   *  student and feel like the AAC "reset". */
+  private sessionWasResumed = false;
   /** One-shot: true until the startup greeting fires, the user presses a
    *  button first, or the fallback timer resolves it. */
   private startupPending = true;
@@ -2278,6 +2284,14 @@ export class AgentCoordinator {
     this.sessionId = state.sessionId;
     this.studentId = state.studentId;
     this.userId = state.userId;
+    // Resume detection: the service resumes from cache/DB keyed by the id the
+    // client sent, so a resumed session comes back with the SAME id; a new
+    // session gets a fresh UUID (state.sessionId !== msg.sessionId). Used to
+    // suppress the startup greeting on reconnect (see fireStartupGreeting).
+    this.sessionWasResumed = !!msg.sessionId && state.sessionId === msg.sessionId;
+    if (this.sessionWasResumed) {
+      console.log(`[AgentCoordinator] Resumed session ${this.sessionId} (reconnect) — startup greeting suppressed`);
+    }
     // Register so a clinician action (e.g. AAC reload) can reach this session.
     if (this.studentId) {
       if (this.liveHandle) unregisterLiveSession(this.studentId, this.liveHandle);
@@ -5062,7 +5076,10 @@ export class AgentCoordinator {
       return;
     }
 
-    const canGreet = this.startupBehavior === "contextual" && !this.socialPeer;
+    // Resumed sessions (reconnect) never greet: the conversation is already
+    // ongoing, so a fresh "Hi Shachaf!" on every network blip is exactly the
+    // "keeps resetting" symptom. Come up quietly on the already-pushed board.
+    const canGreet = this.startupBehavior === "contextual" && !this.socialPeer && !this.sessionWasResumed;
     const greet = canGreet && (identified || this.studentIsActiveUser());
     if (greet) {
       flowNote("COORDINATOR", `Startup greeting — identified=${identified} force=${!!opts.force} mode=${this.startupBehavior}`);

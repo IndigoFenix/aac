@@ -1079,6 +1079,51 @@ function doorOpenRadius(s: DoorSpec, config: WorldEngineConfig): number {
  * `floor` set only blocks an avatar on that (rounded) storey; one without blocks
  * on every storey. Stairs are never solid. No structures ⇒ always true.
  */
+// ── Probe spatial index ──────────────────────────────────────────────────────
+// `structuresWalkable` / `fixturesWalkable` are the ROUTER'S HOT PROBES — the
+// indoor leg planner (floor-route.ts) marches them at 0.1 m along every leg and
+// floods them over grid cells, tens of calls per waypoint, ~50+ waypoints per
+// door-routed errand. As linear scans over EVERY wall segment / furniture spec
+// they cost millions of distance checks per errand (the descend/dollhouse
+// seconds-per-frame stall). Grid-bucket the segments once per spec ARRAY — the
+// same WeakMap-on-array-identity versioning as `buildingGridOf`: every spec
+// mutation replaces the array (setWorldStructures/addWorldObject/…), so
+// identity IS the version. Checks per candidate are byte-identical to the old
+// loop (door openness stays live-read), only the candidate set shrinks.
+const STRUCT_GRID_CELL = 4;
+/** Numeric cell key — string keys allocated per probe were a real constant
+ *  factor (locomotion probes run tens of thousands of times a frame). Offsets
+ *  keep both axes positive; 2^20 cells ≈ ±2000 km of world per axis. */
+const GRID_KEY_SPAN = 1 << 20;
+const gridKey = (cx: number, cy: number): number => (cx + GRID_KEY_SPAN / 2) * GRID_KEY_SPAN + (cy + GRID_KEY_SPAN / 2);
+/** TEMP probe counters (view-distance-lod-tiers.md) — how many walkable probes
+ *  ran since the last frame-phase report. Remove with the probes. */
+export const __probeStats = { struct: 0, fix: 0 };
+const structureGridCache = new WeakMap<StructureSpec[], Map<number, StructureSpec[]>>();
+function structureGridOf(structures: StructureSpec[]): Map<number, StructureSpec[]> {
+  let grid = structureGridCache.get(structures);
+  if (grid) return grid;
+  grid = new Map();
+  for (const s of structures) {
+    if (s.kind === "stairs") continue; // never blocks — not a probe candidate
+    const pad = s.thickness / 2;
+    const cx0 = Math.floor((Math.min(s.a.x, s.b.x) - pad) / STRUCT_GRID_CELL);
+    const cx1 = Math.floor((Math.max(s.a.x, s.b.x) + pad) / STRUCT_GRID_CELL);
+    const cy0 = Math.floor((Math.min(s.a.y, s.b.y) - pad) / STRUCT_GRID_CELL);
+    const cy1 = Math.floor((Math.max(s.a.y, s.b.y) + pad) / STRUCT_GRID_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const key = gridKey(cx, cy);
+        const cell = grid.get(key);
+        if (cell) cell.push(s);
+        else grid.set(key, [s]);
+      }
+    }
+  }
+  structureGridCache.set(structures, grid);
+  return grid;
+}
+
 export function structuresWalkable(
   state: WorldState,
   p: Vec2,
@@ -1088,16 +1133,28 @@ export function structuresWalkable(
 ): boolean {
   const structures = state.spec.structures;
   if (!structures) return true;
+  __probeStats.struct++; // TEMP
   const onFloor = Math.round(floor);
-  for (const s of structures) {
-    if (s.kind === "stairs") continue; // walkable — it changes your floor, not blocks
-    if (s.floor !== undefined && s.floor !== onFloor) continue; // a different storey's wall
-    if (s.kind === "wall") {
-      if (pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) return false;
-    } else {
-      const open = state.doors[s.id]?.open ?? 0;
-      if (open < config.doorPassThreshold && pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) {
-        return false;
+  const grid = structureGridOf(structures);
+  const cx0 = Math.floor((p.x - radius) / STRUCT_GRID_CELL);
+  const cx1 = Math.floor((p.x + radius) / STRUCT_GRID_CELL);
+  const cy0 = Math.floor((p.y - radius) / STRUCT_GRID_CELL);
+  const cy1 = Math.floor((p.y + radius) / STRUCT_GRID_CELL);
+  for (let cx = cx0; cx <= cx1; cx++) {
+    for (let cy = cy0; cy <= cy1; cy++) {
+      const cell = grid.get(gridKey(cx, cy));
+      if (!cell) continue;
+      for (const s of cell) {
+        if (s.kind === "stairs") continue; // walkable — it changes your floor, not blocks
+        if (s.floor !== undefined && s.floor !== onFloor) continue; // a different storey's wall
+        if (s.kind === "wall") {
+          if (pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) return false;
+        } else {
+          const open = state.doors[s.id]?.open ?? 0;
+          if (open < config.doorPassThreshold && pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) {
+            return false;
+          }
+        }
       }
     }
   }
@@ -1334,12 +1391,55 @@ export function removeWorldObject(state: WorldState, id: string): boolean {
  *  they stand where bodies must be able to stand. Exported so PLANNING
  *  predicates (the host's detour/waypoint logic) can see the same solids
  *  locomotion collides with — a blind planner slides along tables forever. */
-export function fixturesWalkable(state: WorldState, p: Vec2, radius: number, floor = 0): boolean {
-  for (const f of state.spec.objects) {
+// Fixture probe grid — same pattern/rationale as `structureGridOf` above.
+// Bucketed by the fixture's LIVE position at build time: fixtures are the
+// immobile furniture layer (they are never walked or carried), and any
+// add/remove replaces `spec.objects`, re-keying the cache. Live state
+// (position, floor) is still read per candidate at query time.
+const fixtureGridCache = new WeakMap<ObjectSpec[], Map<number, ObjectSpec[]>>();
+function fixtureGridOf(state: WorldState): Map<number, ObjectSpec[]> {
+  const specs = state.spec.objects;
+  let grid = fixtureGridCache.get(specs);
+  if (grid) return grid;
+  grid = new Map();
+  for (const f of specs) {
     if (!f.fixture || PASSTHROUGH_FIXTURES.has(f.fixture)) continue;
     const o = state.objects[f.id];
-    if (!o || o.floor !== floor) continue;
-    if (Math.abs(p.x - o.x) < f.radius + radius && Math.abs(p.y - o.y) < f.radius + radius) return false;
+    if (!o) continue;
+    const cx0 = Math.floor((o.x - f.radius) / STRUCT_GRID_CELL);
+    const cx1 = Math.floor((o.x + f.radius) / STRUCT_GRID_CELL);
+    const cy0 = Math.floor((o.y - f.radius) / STRUCT_GRID_CELL);
+    const cy1 = Math.floor((o.y + f.radius) / STRUCT_GRID_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const key = gridKey(cx, cy);
+        const cell = grid.get(key);
+        if (cell) cell.push(f);
+        else grid.set(key, [f]);
+      }
+    }
+  }
+  fixtureGridCache.set(specs, grid);
+  return grid;
+}
+
+export function fixturesWalkable(state: WorldState, p: Vec2, radius: number, floor = 0): boolean {
+  __probeStats.fix++; // TEMP
+  const grid = fixtureGridOf(state);
+  const cx0 = Math.floor((p.x - radius) / STRUCT_GRID_CELL);
+  const cx1 = Math.floor((p.x + radius) / STRUCT_GRID_CELL);
+  const cy0 = Math.floor((p.y - radius) / STRUCT_GRID_CELL);
+  const cy1 = Math.floor((p.y + radius) / STRUCT_GRID_CELL);
+  for (let cx = cx0; cx <= cx1; cx++) {
+    for (let cy = cy0; cy <= cy1; cy++) {
+      const cell = grid.get(gridKey(cx, cy));
+      if (!cell) continue;
+      for (const f of cell) {
+        const o = state.objects[f.id];
+        if (!o || o.floor !== floor) continue;
+        if (Math.abs(p.x - o.x) < f.radius + radius && Math.abs(p.y - o.y) < f.radius + radius) return false;
+      }
+    }
   }
   return true;
 }

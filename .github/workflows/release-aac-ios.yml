@@ -1,65 +1,57 @@
-name: Release AAC iPad
+name: Release AAC iPad (TestFlight)
 
-# Builds the Aivota AAC iPad app (Capacitor + WKWebView). Counterpart to
-# release-aac.yml, which builds the Windows installer — same web bundle,
-# different native shell.
+# Builds the Aivota AAC iPad app SIGNED and uploads it to TestFlight. Counterpart
+# to release-aac.yml (Windows installer) and to build-aac-ios-unsigned.yml —
+# the two iOS workflows are deliberately split by delivery path so there is no
+# ambiguity about which one to run:
 #
-# WHY A macOS RUNNER: iOS apps can only be compiled and packaged by Xcode,
-# which is macOS-only. There is no Windows or Linux path. This workflow is
-# therefore the ONLY way to produce an iPad build without owning a Mac.
+#   build-aac-ios-unsigned.yml  → unsigned .ipa artifact, installed via
+#                                 Sideloadly/AltStore with a free Apple ID.
+#                                 No Apple secrets. Use this for early testing.
+#   release-aac-ios.yml (THIS)  → signed build to TestFlight. Needs a paid
+#                                 Apple Developer account + the secrets below.
+#                                 Use this for managed beta distribution.
 #
-# ── TWO DISTRIBUTION TARGETS (the `distribution` input) ─────────────────────
-#   sideloadly-unsigned  (default)
-#       Builds and archives the app UNSIGNED, packages it into a plain .ipa,
-#       and uploads it as a workflow artifact. Needs NO Apple secrets and NO
-#       App Store Connect setup.
-#
-#       The tester installs it with Sideloadly (https://sideloadly.io) on their
-#       own Windows/Mac: Sideloadly RE-SIGNS the .ipa with the tester's own
-#       Apple ID and installs over USB. A free Apple ID works — with the
-#       trade-off that the app stops launching after 7 days and must be
-#       re-installed (a paid developer Apple ID lasts a year). This is why the
-#       .ipa can be unsigned: our signature would just be thrown away and
-#       replaced by the tester's.
-#
-#   testflight-signed
-#       Full signed archive → export → upload to TestFlight. Requires the four
-#       secrets below AND an app record in App Store Connect (bundle id
-#       com.aivota.aac). Use this once the app is proven and you want managed
-#       beta distribution instead of per-device Sideloadly installs.
+# WHY A macOS RUNNER: iOS apps can only be compiled, signed and packaged by
+# Xcode, which is macOS-only. There is no Windows or Linux path.
 #
 # WHY NO AUTO-UPDATE FEED: Apple does not permit replacing the app binary
 # outside the App Store, so there is no equivalent of the S3 latest.yml feed
-# release-aac.yml publishes. (OTA swapping of the *web bundle* is permitted and
-# is scaffolded in capacitor.config.ts, but switched off until the shell is
-# verified on a device.) With Sideloadly, "updating" = installing a newer .ipa.
+# release-aac.yml publishes. iPad binary updates ship through TestFlight / the
+# App Store. (OTA swapping of the *web bundle* is scaffolded in
+# capacitor.config.ts but switched off until the shell is verified on a device.)
 #
-# ── REQUIRED SECRETS (only for distribution = testflight-signed) ────────────
+# ── REQUIRED SECRETS ────────────────────────────────────────────────────────
+# Create these in Settings → Secrets and variables → Actions:
+#
 #   APPLE_TEAM_ID              10-char Apple Developer Team ID (Membership page).
 #   APP_STORE_CONNECT_KEY_ID   App Store Connect API key id (10 chars).
 #   APP_STORE_CONNECT_ISSUER_ID  Issuer UUID shown above the key list.
-#   APP_STORE_CONNECT_KEY_P8   Full contents of the AuthKey_XXXX.p8, incl. the
-#                              BEGIN/END lines. Downloadable ONCE. Create at
-#                              App Store Connect → Users and Access →
-#                              Integrations → App Store Connect API ("App
-#                              Manager" role).
+#   APP_STORE_CONNECT_KEY_P8   Full contents of the AuthKey_XXXX.p8, including
+#                              the BEGIN/END PRIVATE KEY lines. Downloadable
+#                              ONCE. Create at App Store Connect → Users and
+#                              Access → Integrations → App Store Connect API,
+#                              "App Manager" role.
 #
-# Trigger: manual only for now (workflow_dispatch).
+# Before the first run you must also create the app record in App Store Connect
+# with bundle id com.aivota.aac (matching capacitor.config.ts), or the upload
+# fails with "no suitable application record".
+#
+# Trigger: manual only for now (workflow_dispatch). Once verified, wire it to
+# the same `v*` tags as release-aac.yml.
 
 on:
   workflow_dispatch:
     inputs:
-      distribution:
-        description: 'How to package the build'
-        type: choice
-        options:
-          - sideloadly-unsigned
-          - testflight-signed
-        default: sideloadly-unsigned
       backend_url:
         description: 'Backend the build talks to (baked as VITE_API_URL)'
         required: false
         default: 'https://aivota-demo-us.onrender.com'
+      upload:
+        description: 'Upload to TestFlight (uncheck to just get a signed .ipa artifact)'
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -70,7 +62,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build AAC iPad app
+    name: Build & upload to TestFlight
     runs-on: macos-14
     timeout-minutes: 60
 
@@ -87,10 +79,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Only the TestFlight path needs Apple credentials. Fail early and legibly
-      # rather than 40 minutes later inside xcodebuild.
+      # Fail early and legibly rather than 40 minutes later inside xcodebuild.
       - name: Verify required secrets are present
-        if: ${{ inputs.distribution == 'testflight-signed' }}
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -103,7 +93,7 @@ jobs:
           [ -z "$ISSUER_ID" ] && missing="$missing APP_STORE_CONNECT_ISSUER_ID"
           [ -z "$KEY_P8" ]    && missing="$missing APP_STORE_CONNECT_KEY_P8"
           if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing — see the header of this workflow file. (Or use distribution = sideloadly-unsigned, which needs no secrets.)"
+            echo "::error::Missing repository secrets:$missing — see the header of this workflow file. (For unsigned testing without secrets, use the 'Build AAC iPad (unsigned)' workflow instead.)"
             exit 1
           fi
           echo "All required secrets present."
@@ -119,13 +109,12 @@ jobs:
       # `ios/` is gitignored; generate it fresh from the Capacitor template.
       #
       # --packagemanager CocoaPods is REQUIRED. Capacitor 8 defaults `cap add`
-      # to Swift Package Manager (see @capacitor/cli config.js: the default
-      # template is ios-spm-template.tar.gz), and the SPM template ships NO
-      # standalone App.xcworkspace and NO Podfile — you would archive the
-      # .xcodeproj directly. The CocoaPods template restores App.xcworkspace,
-      # which the Archive steps below build. Capacitor then detects the package
-      # manager by artifact (absence of CapApp-SPM/ ⇒ CocoaPods), so `cap sync`
-      # correctly runs `pod install`.
+      # to Swift Package Manager (the default template is ios-spm-template.tar.gz),
+      # and the SPM template ships NO standalone App.xcworkspace and NO Podfile —
+      # so the Archive step below, which builds `-workspace App.xcworkspace`,
+      # fails with "App.xcworkspace does not exist." The CocoaPods template
+      # restores the workspace; Capacitor detects the package manager by artifact
+      # (absence of CapApp-SPM/ ⇒ CocoaPods), so `cap sync` runs `pod install`.
       - name: Generate iOS project
         run: npx cap add ios --packagemanager CocoaPods
 
@@ -148,8 +137,7 @@ jobs:
           echo "Found ios/App/App.xcworkspace."
 
       # Version the build from package.json. CFBundleVersion must strictly
-      # increase for TestFlight uploads, so the run number is used. (Harmless
-      # for Sideloadly, which does not care about version ordering.)
+      # increase for every TestFlight upload, so the run number is used.
       - name: Set version and build number
         run: |
           VERSION=$(node -p "require('./package.json').version")
@@ -158,51 +146,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" App/Info.plist
 
-      # ── SIDELOADLY (UNSIGNED) PATH ──────────────────────────────────────────
-      # Archive with signing disabled entirely — the tester's Apple ID signs it
-      # later, so any signature we applied would be stripped and replaced.
-      - name: Archive (unsigned)
-        if: ${{ inputs.distribution == 'sideloadly-unsigned' }}
-        run: |
-          cd ios/App
-          xcodebuild archive \
-            -workspace App.xcworkspace \
-            -scheme App \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=
-
-      # An .ipa is just a zip with a top-level Payload/ holding the .app. No
-      # signing involved; Sideloadly re-signs the whole bundle (including the
-      # embedded CocoaPods frameworks) on the tester's machine.
-      - name: Package unsigned .ipa
-        if: ${{ inputs.distribution == 'sideloadly-unsigned' }}
-        run: |
-          APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
-          if [ ! -d "$APP" ]; then
-            echo "::error::Archive did not produce App.app — the build failed. See the Archive (unsigned) step log."
-            exit 1
-          fi
-          mkdir -p "$RUNNER_TEMP/ipa/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
-          mkdir -p "$RUNNER_TEMP/export"
-          ( cd "$RUNNER_TEMP/ipa" && zip -qry "$RUNNER_TEMP/export/AivotaAAC-unsigned.ipa" Payload )
-          echo "Built unsigned .ipa:"
-          ls -la "$RUNNER_TEMP/export"
-
-      - name: Upload unsigned .ipa artifact
-        if: ${{ inputs.distribution == 'sideloadly-unsigned' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: aivota-aac-ipad-unsigned-ipa
-          path: ${{ runner.temp }}/export/*.ipa
-          if-no-files-found: error
-          retention-days: 14
-
-      # ── TESTFLIGHT (SIGNED) PATH ────────────────────────────────────────────
       - name: Write App Store Connect API key
-        if: ${{ inputs.distribution == 'testflight-signed' }}
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
@@ -211,8 +155,10 @@ jobs:
           printf '%s' "$KEY_P8" > ~/private_keys/AuthKey_${KEY_ID}.p8
           chmod 600 ~/private_keys/AuthKey_${KEY_ID}.p8
 
+      # -allowProvisioningUpdates lets Xcode create/refresh the signing
+      # certificate and provisioning profile via the API key, so no certificates
+      # need to be exported from a Mac we don't have.
       - name: Archive (signed)
-        if: ${{ inputs.distribution == 'testflight-signed' }}
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -232,8 +178,7 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CODE_SIGN_STYLE=Automatic
 
-      - name: Export + upload to TestFlight
-        if: ${{ inputs.distribution == 'testflight-signed' }}
+      - name: Export IPA
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -259,6 +204,23 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID"
+
+      # Keep the signed IPA even when not uploading, so a build-only run is still
+      # useful (validate the signing chain without pushing to testers).
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aivota-aac-ipad-signed-ipa
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to TestFlight
+        if: ${{ inputs.upload }}
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
           IPA=$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)
           echo "Uploading $IPA to TestFlight"
           xcrun altool --upload-app \
@@ -271,21 +233,17 @@ jobs:
         if: ${{ always() }}
         run: |
           {
-            echo "### Aivota AAC iPad build"
+            echo "### Aivota AAC iPad — signed build"
             echo ""
             echo "- Version: $(node -p "require('./package.json').version") (build $GITHUB_RUN_NUMBER)"
             echo "- Backend: ${{ inputs.backend_url }}"
-            echo "- Distribution: ${{ inputs.distribution }}"
+            echo "- Uploaded to TestFlight: ${{ inputs.upload }}"
             echo ""
-            if [ "${{ inputs.distribution }}" = "sideloadly-unsigned" ]; then
-              echo "Download **AivotaAAC-unsigned.ipa** from this run's Artifacts and"
-              echo "send it to the tester. They install it with Sideloadly"
-              echo "(https://sideloadly.io) using their own Apple ID. With a free"
-              echo "Apple ID the app must be re-installed every 7 days; on the iPad"
-              echo "they must also Trust the profile under Settings → General →"
-              echo "VPN & Device Management after the first install."
-            else
+            if [ "${{ inputs.upload }}" = "true" ]; then
               echo "Processing on Apple's side takes ~5-15 minutes before the build"
-              echo "appears in TestFlight. Add testers in App Store Connect → TestFlight."
+              echo "appears in TestFlight. Add testers in App Store Connect → TestFlight;"
+              echo "the tester installs Apple's TestFlight app, then installs this build."
+            else
+              echo "Build-only run — download the signed .ipa from this run's Artifacts."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

@@ -14,6 +14,9 @@
 
 import {
   gloss,
+  isDeicticNoun,
+  isGrammarMod,
+  isIntentVerb,
   isPluralPronoun,
   isPronoun,
   isQuality,
@@ -196,6 +199,13 @@ const L: Record<string, Lexeme> = {
   scarf: { w: "צעיף", g: "m" },
   drum: { w: "תוף", g: "m" },
   guitar: { w: "גיטרה", g: "f" },
+  // Attention/self-care verbs (attention-spark actions) — present + infinitive
+  // (the intent periphrasis "הולך לאכול" needs the infinitive).
+  eat: { w: "אוכל", f: "אוכלת", vmpl: "אוכלים", vfpl: "אוכלות", inf: "לאכול" },
+  drink: { w: "שותה", f: "שותה", vmpl: "שותים", vfpl: "שותות", inf: "לשתות" },
+  sleep: { w: "ישן", f: "ישנה", vmpl: "ישנים", vfpl: "ישנות", inf: "לישון" },
+  wash: { w: "רוחץ", f: "רוחצת", vmpl: "רוחצים", vfpl: "רוחצות", inf: "לרחוץ" },
+  talk: { w: "מדבר", f: "מדברת", vmpl: "מדברים", vfpl: "מדברות", inf: "לדבר" },
 };
 
 function lex(head: string): Lexeme {
@@ -278,13 +288,16 @@ function npText(np: NP, def: boolean): string {
   const g = nounGender(np.noun);
   const pl = nounPlural(np.noun);
   const my = np.noun.mods.includes("my");
+  const deictic = isDeicticNoun(np.noun);
   const adjs = np.noun.mods
-    .filter((m) => m !== "my" && m !== "not")
+    .filter((m) => m !== "my" && m !== "not" && !isGrammarMod(m))
     .map((m) => adjForm(m, g, pl));
-  const definite = def || my;
+  // The deictic (.this) is always definite: "התפוח הזה", "השמלה הזאת".
+  const definite = def || my || deictic;
   // Construct nouns override their definite form ("כלי נגינה" → "כלי הנגינה").
   const noun = definite ? (lex(np.noun.head).defw ?? `ה${lex(np.noun.head).w}`) : lex(np.noun.head).w;
   const words = [noun, ...adjs.map((a) => (definite ? `ה${a}` : a))];
+  if (deictic) words.push(pl ? "האלה" : g === "f" ? "הזאת" : "הזה");
   if (my) words.push("שלי");
   return np.more ? `עוד ${words.join(" ")}` : words.join(" ");
 }
@@ -377,22 +390,47 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
   }
 
   // -- the general present-tense frame ---------------------------------------
+  // A will-marked verb is a STATEMENT OF INTENT — always first person.
+  if (isIntentVerb(f.verb) && !f.subject) {
+    f = { ...f, subject: { head: "i_me", mods: [], q: false } };
+  }
   const g = subjGender(f.subject, opts);
-  const verb = `${f.neg ? "לא " : ""}${verbForm(f.verb.head, g, subjPlural(f.subject))}`;
+  let verb = `${f.neg ? "לא " : ""}${verbForm(f.verb.head, g, subjPlural(f.subject))}`;
+  // The intent periphrasis ("הולך לאכול" — going-to future) when the verb has
+  // an infinitive; negated / infinitive-less intent stays present tense (an
+  // honest near-future reading in Hebrew).
+  if (isIntentVerb(f.verb) && !f.neg && f.subject?.head === "i_me") {
+    const inf = lex(f.verb.head).inf;
+    if (inf) verb = `${verbForm("go", g)} ${inf}`;
+  }
+  // TRANSITIVE wear ("לובש את החולצה") — the lexeme's מתלבש/להתלבש is the
+  // intransitive get-dressed idiom (kept for the bare want-to); an object
+  // switches the root.
+  if (f.verb.head === "wear" && f.object) {
+    verb =
+      isIntentVerb(f.verb) && !f.neg && f.subject?.head === "i_me"
+        ? `${verbForm("go", g)} ללבוש`
+        : `${f.neg ? "לא " : ""}${g === "f" ? "לובשת" : "לובש"}`;
+  }
   // Wants are indefinite ("אני רוצה תפוח"); declines and placements name the
   // specific thing — definite, with את ("אני לא רוצה את הגרב"). A dative verb
   // (objPrep "to") governs ל־ on its object ("אני עוזר לך", "אני עוזר לדוב");
-  // a pronoun object elsewhere takes the אות־ form ("אני אוהב אותך").
+  // a pronoun object elsewhere takes the אות־ form ("אני אוהב אותך"). PLAY
+  // takes ב־ ("משחק בכדור"); TALK takes עם ("מדבר עם מרה").
   const objDef = f.verb.head !== "want" || f.neg || !!f.tail;
   const obj = f.object
     ? ` ${
-        lex(f.verb.head).objPrep === "to"
-          ? dative(f.object.noun, opts.addressee)
-          : isPronoun(f.object.noun.head)
-            ? OBJ_PRON[f.object.noun.head]
-            : objDef
-              ? et(f.object)
-              : npText(f.object, false)
+        f.verb.head === "play" && !isPronoun(f.object.noun.head)
+          ? fuse("ב", f.object)
+          : f.verb.head === "talk" && !isPronoun(f.object.noun.head)
+            ? `עם ${npText(f.object, true)}`
+            : lex(f.verb.head).objPrep === "to"
+              ? dative(f.object.noun, opts.addressee)
+              : isPronoun(f.object.noun.head)
+                ? OBJ_PRON[f.object.noun.head]
+                : objDef
+                  ? et(f.object)
+                  : npText(f.object, false)
       }`
     : "";
   const tail = f.tail

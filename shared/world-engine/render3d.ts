@@ -21,6 +21,7 @@
 // headless server never pulls it in.
 
 import * as THREE from "three";
+import { probesOn } from "./perf-probes.js";
 import type { BuildingSpec, Rect, RoadPath, StructureSpec, Vec2, WorldSpec } from "./types.js";
 import {
   accessibleBuildings,
@@ -335,6 +336,37 @@ function segmentsCross(
   const d3 = side(p1x, p1z, p2x, p2z, p3x, p3z);
   const d4 = side(p1x, p1z, p2x, p2z, p4x, p4z);
   return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+// TEMP render-block reporter (view-distance-lod-tiers.md): rolling per-sync
+// cost across render(), printed every ~2s. `structsBuilt` counts fresh wall/door
+// meshes (a shell⇄full staging swap builds ~30 in one frame — the walk-around
+// burst suspect). Remove with the quest-host probes.
+const rbNow = (): number => (typeof performance !== "undefined" ? performance.now() : 0);
+const rbAcc = { last: 0, frames: 0, blocks: new Map<string, { total: number; max: number }>() };
+function rbMark(name: string, ms: number): void {
+  if (!probesOn()) return;
+  const b = rbAcc.blocks.get(name) ?? { total: 0, max: 0 };
+  b.total += ms;
+  if (ms > b.max) b.max = ms;
+  rbAcc.blocks.set(name, b);
+}
+function rbFlush(): void {
+  if (!probesOn()) return;
+  rbAcc.frames++;
+  const now = rbNow();
+  if (rbAcc.last === 0) rbAcc.last = now;
+  if (now - rbAcc.last < 2000) return;
+  const rows = [...rbAcc.blocks]
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([k, v]) => `${k}:${v.total.toFixed(0)}(${v.max.toFixed(0)})`)
+    .join(" ");
+  if (typeof console !== "undefined") {
+    console.log(`[render-blocks] ${(now - rbAcc.last).toFixed(0)}ms window / ${rbAcc.frames} frames — ${rows}`);
+  }
+  rbAcc.blocks.clear();
+  rbAcc.frames = 0;
+  rbAcc.last = now;
 }
 
 /** Does the horizontal segment (ax,az)→(bx,bz) enter the axis-aligned rect —
@@ -2532,17 +2564,25 @@ export class World3DRenderer {
         `me:${me ? `${Math.round(me.x)},${Math.round(me.y)}@${buildingAt(state, me.x, me.y)?.id ?? "out"}` : "none"}`;
     }
 
+    let _rb = rbNow(); // TEMP render-block reporter
     this.syncAvatars(state, dt, faceFor, labelFor, intent?.sitting ?? false, intent?.interactId, visible);
+    rbMark("avatars", rbNow() - _rb); _rb = rbNow();
     this.syncStructures(state, fade, dt);
+    rbMark("structs", rbNow() - _rb); _rb = rbNow();
+    if (this.dbgBuilt) rbMark("structsBuilt", this.dbgBuilt); // count, not ms
     this.syncObjects(state, intent?.interactId, fade, glyphIconFor ?? glyphFor, dt);
+    rbMark("objects", rbNow() - _rb); _rb = rbNow();
     this.syncBuildings(state, fade, dt);
+    rbMark("buildings", rbNow() - _rb); _rb = rbNow();
     this.syncBubbles(state, glyphFor);
+    rbMark("bubbles", rbNow() - _rb); _rb = rbNow();
     this.updateCamera(state, dt, intent);
     this.updateFog();
     this.updateComfort(state, dt);
     this.updateSpark(state, intent);
     this.spark.update(dt);
     this.overlay?.update(dt);
+    rbMark("camMisc", rbNow() - _rb); _rb = rbNow();
 
     // Scene, then the comfort vignette on top (autoClear is off). In HOST mode
     // the meshes are updated above but the flight composer draws the shared
@@ -2553,6 +2593,8 @@ export class World3DRenderer {
       this.renderer!.clearDepth();
       this.renderer!.render(this.overlayScene, this.overlayCamera);
     }
+    rbMark("gl", rbNow() - _rb); // TEMP
+    rbFlush(); // TEMP
   }
 
   /** ALTITUDE-ADAPTIVE FOG (owner mode): the fixed street window (40..150 m)

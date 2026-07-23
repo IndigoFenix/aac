@@ -620,7 +620,7 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
      The head stopped being sphere + beak-cone + eye-dots. Rules:
      - ONE LOFT: skull bulb ellipsoid (`sizeFrac` × `lengthFrac`
        elongation × `crossSection` width:height) flowing into a snout of
-       two loft bones (chain "snout": `beakLengthFrac`, `snoutFlatten`
+       two loft bones (chain "snout": `snoutLengthFrac`, `snoutFlatten`
        cross-section, `snoutCurve` hook/upturn). `beak` hardness picks
        the material (skin→accent keratin) and how sharply it tapers to
        the tip. The beak RigidDetail is gone (stinger-tip cones remain).
@@ -667,7 +667,7 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
        (radius-scaled extension coned the crown of erect creatures);
        snouts root ON the surface (0.92) instead of buried (0.7) so
        thin noses keep their length — all muzzles read ~0.2·headR
-       longer, beakLengthFrac is truer to visible length.
+       longer, snoutLengthFrac is truer to visible length.
      - `__creatureLab.frameHead(distMult)` + `shot-head.cjs` capture
        head close-ups for face iteration. Tests 91.
    - **Head v2: ONE structure, real mouth seam DONE 2026-07-08**
@@ -692,7 +692,7 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
        cross-coupling — this is what fixed the horse.
      - NEW BLUEPRINT DIALS: `snoutSegments` (N muzzle bones — a long one
        bends smoothly = the elephant trunk, now the snout, NOT a growth
-       chain; beakLengthFrac range raised to 5), `muzzleSquash` (0 point
+       chain; snoutLengthFrac range raised to 5), `muzzleSquash` (0 point
        → 1 flat blunt wall: pug / human / cow pad), `snoutRadiusFrac`
        (muzzle girth, freed from beak hardness earlier). `faceHeight` now
        only sets the EYE latitude (was also moving the snout root).
@@ -707,7 +707,7 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
      tip so the elephant read as a beak and the human nose couldn't
      protrude, and eyes sank inside the head). Decoupled into three
      independent systems:
-     - MUZZLE / jaws (the jawline SHAPE): beakLengthFrac, snoutRadiusFrac,
+     - MUZZLE / jaws (the jawline SHAPE): snoutLengthFrac, snoutRadiusFrac,
        muzzleSquash, snoutFlatten, snoutCurve, snoutSegments. Unchanged.
      - MOUTH OPENING = a bounded COMMISSURE, separate from the jawline:
        `mouthOpen` (0..1) slides the hinge between the muzzle tip and the
@@ -750,7 +750,7 @@ A debug mode reachable from the debug menu: flat test pad, one creature.
      - ROSTRUM = a wedge rooted at the braincase FRONT, hinged off it by
        `facePitch` (#8, now rostrum-vs-braincase, NOT whole-head) — a
        raptor's hook / grazer's droop no longer drags the cranium. Reuses
-       beakLengthFrac (#1 length), muzzleSquash (#2 taper), snoutFlatten
+       snoutLengthFrac (#1 length), muzzleSquash (#2 taper), snoutFlatten
        (#3 depth), snoutCurve (#9 dorsal profile), snoutRadiusFrac.
      - MANDIBLE: NEW `jawDepth` (#11 robustness, slender ↔ massive) +
        `jawOffset` (#12 under/overbite). Mouth commissure unchanged

@@ -24,6 +24,7 @@
 // anywhere.
 
 import * as THREE from "three";
+import { probesOn } from "../perf-probes.js";
 import type { Blueprint } from "./blueprint";
 import { clampBlueprint } from "./blueprint";
 import { buildSkeleton, type CreatureSkeleton } from "./skeleton";
@@ -115,8 +116,9 @@ function snapshot(
   bp: Blueprint,
   toon: boolean | undefined,
   matRef: { mat?: THREE.Material },
+  sides?: number,
 ): THREE.BufferGeometry {
-  const built = buildCreatureMesh(skel, bp, { toon });
+  const built = buildCreatureMesh(skel, bp, { toon, ...(sides !== undefined ? { sides } : {}) });
   const geom = built.mesh.geometry;
   geom.deleteAttribute("skinIndex");
   geom.deleteAttribute("skinWeight");
@@ -136,6 +138,7 @@ function bakeLocomotion(
   pattern: GaitPattern,
   toon: boolean | undefined,
   matRef: { mat?: THREE.Material },
+  sides?: number,
 ): BakedClip {
   const animator = new CreatureAnimator(bp);
   animator.setSpeed(speed01);
@@ -162,19 +165,27 @@ function bakeLocomotion(
   for (let i = 0; i < frameCount; i++) {
     let last = step();
     for (let s = 1; s < stride; s++) last = step();
-    frames.push({ phase: i / frameCount, geometry: snapshot(last.skel, bp, toon, matRef) });
+    frames.push({ phase: i / frameCount, geometry: snapshot(last.skel, bp, toon, matRef, sides) });
   }
   return { name: "walk", frames, loopSeconds: frameCount * stride * dt, loops: true };
 }
 
 /** Bake the static rest pose as a one-frame clip (idle / plants / fruit). */
-function bakeIdle(bp: Blueprint, toon: boolean | undefined, matRef: { mat?: THREE.Material }): BakedClip {
+function bakeIdle(bp: Blueprint, toon: boolean | undefined, matRef: { mat?: THREE.Material }, sides?: number): BakedClip {
   const skel = buildSkeleton(bp);
-  return { name: "idle", frames: [{ phase: 0, geometry: snapshot(skel, bp, toon, matRef) }], loopSeconds: 1, loops: false };
+  return { name: "idle", frames: [{ phase: 0, geometry: snapshot(skel, bp, toon, matRef, sides) }], loopSeconds: 1, loops: false };
 }
 
 const WALK_FRAMES = 14;
 const WALK_SPEED01 = 0.42;
+
+/** DETAIL TIERS (view-distance-lod-tiers.md Phase 3): `simple` is the
+ *  mid-distance body — fewer loft sides and fewer baked walk frames. A
+ *  RENDER-ONLY choice each client makes from ITS OWN camera (multiplayer peers
+ *  dress the same replicated bodies at their own fidelity); never sim state. */
+export type CreatureDetail = "full" | "simple";
+const SIMPLE_SIDES = 5;
+const SIMPLE_WALK_FRAMES = 7;
 
 /** The species' clamped blueprint, dressed in `outfit` when given. Fresh
  *  object per call (bake steps mutate posture). Absent outfit = the species
@@ -183,7 +194,12 @@ function dressedBlueprint(species: Species, outfit?: OutfitBlueprint): Blueprint
   return clampBlueprint(outfit ? { ...species.blueprint, outfit } : species.blueprint);
 }
 
-function buildSpeciesAssets(species: Species, look: CreatureLook, outfit?: OutfitBlueprint): SpeciesAssets {
+function buildSpeciesAssets(
+  species: Species,
+  look: CreatureLook,
+  outfit?: OutfitBlueprint,
+  detail: CreatureDetail = "full",
+): SpeciesAssets {
   // BODILESS (the player's "spark"): there is no body to build. Its blueprint is
   // empty, and clampBlueprint fills every unset field — so building it would
   // silently produce a DEFAULT body and stand a stranger in the world where the
@@ -204,9 +220,11 @@ function buildSpeciesAssets(species: Species, look: CreatureLook, outfit?: Outfi
   const restSkel = buildSkeleton(dressedBlueprint(species, outfit));
   const naturalHeight = Math.max(0.1, restSkel.bounds.max.y - restSkel.bounds.min.y);
 
-  clips.set("idle", bakeIdle(dressedBlueprint(species, outfit), toon, matRef));
+  const sides = detail === "simple" ? SIMPLE_SIDES : undefined;
+  const walkFrames = detail === "simple" ? SIMPLE_WALK_FRAMES : WALK_FRAMES;
+  clips.set("idle", bakeIdle(dressedBlueprint(species, outfit), toon, matRef, sides));
   if (species.kind === "creature" && canWalk(dressedBlueprint(species, outfit))) {
-    clips.set("walk", bakeLocomotion(dressedBlueprint(species, outfit), WALK_FRAMES, WALK_SPEED01, "trot", toon, matRef));
+    clips.set("walk", bakeLocomotion(dressedBlueprint(species, outfit), walkFrames, WALK_SPEED01, "trot", toon, matRef, sides));
   }
 
   const material = matRef.mat!;
@@ -245,30 +263,54 @@ function outfitHash(outfit?: OutfitBlueprint): string {
   return `|o:${(h >>> 0).toString(36)}`;
 }
 
-function assetKey(id: string, look: CreatureLook, outfit?: OutfitBlueprint): string {
+function assetKey(id: string, look: CreatureLook, outfit?: OutfitBlueprint, detail: CreatureDetail = "full"): string {
   // Key on the EFFECTIVE mode, not the raw field: an unset `toon` follows the
   // engine-wide mode, so keying on `look.toon` alone would hand a global-toon
   // creature the cached assets of an explicitly-standard one.
   const toon = look.toon ?? (getShadingMode() === "toon");
-  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}`;
+  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}${detail === "simple" ? "|lod:s" : ""}`;
 }
 
 /** Get (building + caching on first call) the shared assets for a species. Call
  *  this at load time for every species a scene will use to PRELOAD the bakes.
  *  `outfit` bakes the species WEARING it (cached separately per outfit). */
-export function getSpeciesAssets(id: string, look: CreatureLook = {}, outfit?: OutfitBlueprint): SpeciesAssets {
-  const key = assetKey(id, look, outfit);
+export function getSpeciesAssets(
+  id: string,
+  look: CreatureLook = {},
+  outfit?: OutfitBlueprint,
+  detail: CreatureDetail = "full",
+): SpeciesAssets {
+  const key = assetKey(id, look, outfit, detail);
   let assets = ASSET_CACHE.get(key);
   if (!assets) {
-    assets = buildSpeciesAssets(requireSpecies(id), look, outfit);
+    // TEMP bake probe (view-distance-lod-tiers.md Phase 3): each MISS is a
+    // 14-frame locomotion bake (+120 warmup skeleton solves) — the per-stream-in
+    // lag suspect. If a town's ~40 residents log ~40 misses, outfits aren't
+    // collapsing to presets (the fix is to quantize resident dress); a handful
+    // of misses means the bake is shared and the cost lies elsewhere. Remove
+    // with the descent probe. `__bakeCount` / `__bakeMs` readable in the console.
+    const _t0 = typeof performance !== "undefined" ? performance.now() : 0;
+    assets = buildSpeciesAssets(requireSpecies(id), look, outfit, detail);
     ASSET_CACHE.set(key, assets);
+    if (probesOn() && typeof console !== "undefined") {
+      const g = globalThis as unknown as { __bakeCount?: number; __bakeMs?: number };
+      const ms = (typeof performance !== "undefined" ? performance.now() : 0) - _t0;
+      g.__bakeCount = (g.__bakeCount ?? 0) + 1;
+      g.__bakeMs = (g.__bakeMs ?? 0) + ms;
+      console.log(`[bake-probe] #${g.__bakeCount} ${key} ${ms.toFixed(0)}ms (cache=${ASSET_CACHE.size}, total=${g.__bakeMs.toFixed(0)}ms)`);
+    }
   }
   return assets;
 }
 
 /** Drop a cached species' assets (frees GPU geometry + material). */
-export function disposeSpeciesAssets(id: string, look: CreatureLook = {}, outfit?: OutfitBlueprint): void {
-  const key = assetKey(id, look, outfit);
+export function disposeSpeciesAssets(
+  id: string,
+  look: CreatureLook = {},
+  outfit?: OutfitBlueprint,
+  detail: CreatureDetail = "full",
+): void {
+  const key = assetKey(id, look, outfit, detail);
   const assets = ASSET_CACHE.get(key);
   if (assets) {
     assets.dispose();
@@ -346,9 +388,14 @@ class DynamicCreatureModel implements CreatureModel {
   private readonly backDepth: number;
   private time = 0;
 
-  constructor(species: Species, look: CreatureLook, scale: number, outfit?: OutfitBlueprint) {
+  /** Loft sides for the rebuild — set when built at "simple" detail, so even
+   *  the per-frame dynamic path lofts cheaper at distance. */
+  private readonly sides: number | undefined;
+
+  constructor(species: Species, look: CreatureLook, scale: number, outfit?: OutfitBlueprint, detail: CreatureDetail = "full") {
     this.bp = dressedBlueprint(species, outfit);
     this.toon = look.toon;
+    this.sides = detail === "simple" ? SIMPLE_SIDES : undefined;
     this.animator = new CreatureAnimator(this.bp);
     this.object.scale.setScalar(scale);
     this.object.add(this.rig);
@@ -382,7 +429,10 @@ class DynamicCreatureModel implements CreatureModel {
   }
 
   private rebuild(skel: CreatureSkeleton): void {
-    const built = buildCreatureMesh(skel, this.bp, { toon: this.toon });
+    const built = buildCreatureMesh(skel, this.bp, {
+      toon: this.toon,
+      ...(this.sides !== undefined ? { sides: this.sides } : {}),
+    });
     if (this.built) {
       this.rig.remove(this.built.mesh);
       this.built.mesh.geometry.dispose();
@@ -415,12 +465,15 @@ export interface CreateCreatureOptions {
    *  (one bake per (species, look, outfit) — see outfitPresetFor for a small
    *  shared wardrobe); dynamic models re-loft it every frame. Absent = bare. */
   outfit?: OutfitBlueprint;
+  /** Loft fidelity (Phase 3 view tiers). Default "full"; "simple" lofts fewer
+   *  sides and bakes fewer walk frames — the mid-distance body. */
+  detail?: CreatureDetail;
 }
 
 /** A cheap preloaded creature (baked clips). Use for residents, distant
  *  creatures, plants and fruit — anything that doesn't need per-frame fidelity. */
 export function createBakedCreature(id: string, opts: CreateCreatureOptions = {}): CreatureModel {
-  const assets = getSpeciesAssets(id, opts.look ?? {}, opts.outfit);
+  const assets = getSpeciesAssets(id, opts.look ?? {}, opts.outfit, opts.detail);
   return new BakedCreatureModel(assets, resolveScale(assets, opts));
 }
 
@@ -433,7 +486,7 @@ export function createDynamicCreature(id: string, opts: CreateCreatureOptions = 
   // clothes must not change a creature's height, and a dynamic model should
   // never trigger a dressed bake just to measure one.
   const assets = getSpeciesAssets(id, opts.look ?? {});
-  return new DynamicCreatureModel(species, opts.look ?? {}, resolveScale(assets, opts), opts.outfit);
+  return new DynamicCreatureModel(species, opts.look ?? {}, resolveScale(assets, opts), opts.outfit, opts.detail);
 }
 
 export type { DynamicCreatureModel };
@@ -466,6 +519,11 @@ export interface CreatureAvatarFactoryOptions {
    *  stable resident hash) to dress them, undefined for bare. Baked avatars
    *  sharing a preset share one bake. */
   outfitFor?: (avatarId: string) => OutfitBlueprint | undefined;
+  /** Loft fidelity for NEW models, read at model-creation time (Phase 3 view
+   *  tiers): return "simple" for the mid-distance band. A LOCAL client-camera
+   *  choice — re-tier an existing body via render3d's `resetAvatarModel`, which
+   *  rebuilds it through this factory at the then-current answer. */
+  detailFor?: () => CreatureDetail;
 }
 
 /** A gesture's WORLD target, rotated into the body-local frame (+Z forward, +X
@@ -531,7 +589,10 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
   const dynamicLocal = opts.dynamicLocal ?? true;
   return (id, isLocal): AvatarModel => {
     const speciesId = opts.speciesFor(id, isLocal);
-    const mopts = { look: opts.look, heightM, outfit: opts.outfitFor?.(id) };
+    // Detail is sampled ONCE per model build (the local player is always full);
+    // a tier change re-enters here through resetAvatarModel.
+    const detail = isLocal ? "full" : (opts.detailFor?.() ?? "full");
+    const mopts = { look: opts.look, heightM, outfit: opts.outfitFor?.(id), detail };
     const container = new THREE.Group();
     // The local player is always dynamic; NPCs are baked until they gesture.
     let baked: CreatureModel | null = isLocal && dynamicLocal ? null : createBakedCreature(speciesId, mopts);

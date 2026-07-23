@@ -441,23 +441,37 @@ export class DualAgentService {
     // No-op when CONSENT_GATE_ENABLED is unset; honors legacy grace.
     await requireActiveConsent(studentId);
 
-    // Check cache first
+    // Check cache first. GUARD: a resumed session MUST belong to the same
+    // student we're (re)connecting for. The client round-trips its sessionId
+    // across reconnects; a stale id left over from a previous student (device
+    // handed off, student switch) must never resume the wrong student's
+    // conversation. On mismatch, ignore the id and start fresh.
     if (existingSessionId && sessionCache.has(existingSessionId)) {
       const cached = sessionCache.get(existingSessionId)!;
-      cached.lastAccess = Date.now();
-      // Refresh TZ / GPS on resume in case the client moved.
-      if (timezone) cached.monitorAgent.setTimezone?.(timezone);
-      if (gps) cached.monitorAgent.setGps?.(gps);
-      console.log("[DualAgentService] Resuming cached session:", existingSessionId);
-      return cached.state;
+      if (cached.state.studentId === studentId) {
+        cached.lastAccess = Date.now();
+        // Refresh TZ / GPS on resume in case the client moved.
+        if (timezone) cached.monitorAgent.setTimezone?.(timezone);
+        if (gps) cached.monitorAgent.setGps?.(gps);
+        console.log("[DualAgentService] Resuming cached session:", existingSessionId);
+        return cached.state;
+      }
+      console.warn(
+        `[DualAgentService] Ignoring cached-session resume — student mismatch (session student=${cached.state.studentId}, requested=${studentId})`,
+      );
     }
 
-    // Try to load from database
+    // Try to load from database (same student-match guard).
     if (existingSessionId) {
       const dbSession = await this.loadSessionFromDB(existingSessionId);
-      if (dbSession) {
+      if (dbSession && dbSession.studentId === studentId) {
         console.log("[DualAgentService] Resuming session from DB:", existingSessionId);
         return dbSession;
+      }
+      if (dbSession) {
+        console.warn(
+          `[DualAgentService] Ignoring DB-session resume — student mismatch (session student=${dbSession.studentId}, requested=${studentId})`,
+        );
       }
     }
 

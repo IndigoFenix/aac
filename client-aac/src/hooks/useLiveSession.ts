@@ -175,6 +175,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Session state
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Reconnect-resume: the server assigns a sessionId on `initialized`. We keep
+  // it (tagged with the student it belongs to) and round-trip it in the next
+  // `initialize` so an auto-reconnect RESUMES the same session — conversation
+  // history, memory and budget carry over — instead of the server minting a
+  // fresh blank session, which re-greeted the student and felt like the AAC
+  // "resetting" on every network blip. Cleared on clearSession / student switch
+  // so a stale id can never resume a different student's session (the server
+  // re-checks the same student invariant defensively).
+  const resumeSessionIdRef = useRef<string | null>(null);
+  const resumeSessionStudentRef = useRef<string | null>(null);
+  const studentIdRef = useRef(studentId);
+  studentIdRef.current = studentId;
   // Server-supplied tuning bundle. Stored as state so any consumer that
   // wants to react to a new config (e.g. when reconnecting against a
   // server with different thresholds) re-renders. Defaults to null —
@@ -540,6 +552,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
         case "initialized":
           setSessionId(msg.sessionId);
+          // Remember the server's sessionId (tagged with the student) so the
+          // next reconnect can round-trip it and resume this session.
+          resumeSessionIdRef.current = msg.sessionId;
+          resumeSessionStudentRef.current = studentIdRef.current;
           // Capture server-driven tuning (activity monitor / sleep / gesture)
           // if present. Newer servers ship this; older builds omit it and
           // consumers fall back to their built-in defaults.
@@ -1105,6 +1121,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "session_reset":
           setSessionId(msg.sessionId);
+          // Server minted a replacement session — adopt it as the resume token
+          // so subsequent reconnects continue THIS session, not the dead one.
+          resumeSessionIdRef.current = msg.sessionId;
+          resumeSessionStudentRef.current = studentIdRef.current;
           setReconnecting(false);
           setError(null);
           setProcessing({ speaker: false, board: false, interpret: false });
@@ -1390,9 +1410,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           const gps = await getCurrentGps();
           if (gps) lastGpsSentRef.current = gps;
 
+          // Round-trip the prior sessionId on reconnect so the server resumes
+          // this student's session instead of starting a blank one. Only when
+          // it belongs to the CURRENT student (guards against a stale id after
+          // a student switch); the server re-checks the same invariant.
+          const resumeSessionId =
+            resumeSessionIdRef.current && resumeSessionStudentRef.current === studentId
+              ? resumeSessionIdRef.current
+              : undefined;
           wsSend({
             type: "initialize",
             studentId,
+            ...(resumeSessionId ? { sessionId: resumeSessionId } : {}),
             userId: userRef.current?.user?.id,
             muteState,
             responseMode,
@@ -2032,6 +2061,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       wsRef.current = null;
     }
     setSessionId(null);
+    // Drop the resume token so a deliberate teardown (logout, student switch)
+    // starts a fresh session rather than resuming this one.
+    resumeSessionIdRef.current = null;
+    resumeSessionStudentRef.current = null;
     setIsInitialized(false);
     isInitializedRef.current = false;
     setCurrentMessage(null);

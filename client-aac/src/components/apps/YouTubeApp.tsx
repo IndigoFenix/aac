@@ -11,6 +11,7 @@ import { X, Play, Pause, RotateCcw, Rewind, FastForward, ChevronLeft, ChevronRig
 import { apiRequest } from "@/lib/queryClient";
 import type { PermittedYoutubeChannel, PermittedYoutubeItem, PermittedYoutubeVideo } from "@shared/schema";
 import { useLanguage } from "@/contexts/LanguageContext";
+import YouTubePlayer, { type YouTubePlayerHandle } from "@/components/YouTubePlayer";
 
 interface YouTubeAppProps {
   /** Initial video to play. When omitted, app opens in browse mode (requires `channels` or `videos`). */
@@ -32,38 +33,6 @@ interface RssVideo {
   title: string;
   thumbnailUrl: string;
   published: string;
-}
-
-// YouTube IFrame API types
-declare global {
-  interface Window {
-    YT: any;
-    onYouTubeIframeAPIReady: (() => void) | undefined;
-  }
-}
-
-let ytApiLoaded = false;
-let ytApiLoading = false;
-const ytApiCallbacks: Array<() => void> = [];
-
-function loadYTApi(): Promise<void> {
-  if (ytApiLoaded) return Promise.resolve();
-  return new Promise((resolve) => {
-    ytApiCallbacks.push(resolve);
-    if (ytApiLoading) return;
-    ytApiLoading = true;
-
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.head.appendChild(tag);
-
-    window.onYouTubeIframeAPIReady = () => {
-      ytApiLoaded = true;
-      ytApiLoading = false;
-      for (const cb of ytApiCallbacks) cb();
-      ytApiCallbacks.length = 0;
-    };
-  });
 }
 
 export default function YouTubeApp({
@@ -688,107 +657,20 @@ function PlayerView({
   onBackToBrowse?: () => void;
 }) {
   const { t } = useLanguage();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YouTubePlayerHandle>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  useEffect(() => {
-    let destroyed = false;
-
-    (async () => {
-      await loadYTApi();
-      if (destroyed) return;
-
-      const playerId = `yt-player-${Date.now()}`;
-      const div = document.createElement("div");
-      div.id = playerId;
-      containerRef.current?.querySelector(".yt-container")?.appendChild(div);
-
-      playerRef.current = new window.YT.Player(playerId, {
-        videoId,
-        width: "100%",
-        height: "100%",
-        // Serve from the nocookie host and declare a real https referrer. In the
-        // Electron/Capacitor shells the page origin is `app://aac`, which YouTube
-        // rejects with error 153 (invalid referrer). The desktop main process
-        // rewrites the Referer/Origin headers; these vars align the postMessage
-        // handshake with that same https origin.
-        host: "https://www.youtube-nocookie.com",
-        playerVars: {
-          autoplay: 1,
-          controls: 0,
-          modestbranding: 1,
-          rel: 0,
-          playsinline: 1,
-          fs: 0,
-          widget_referrer: "https://www.youtube.com/",
-        },
-        events: {
-          onReady: () => {
-            if (!destroyed) setIsReady(true);
-          },
-          onStateChange: (event: any) => {
-            if (destroyed) return;
-            if (event.data === 1) setIsPlaying(true);
-            else if (event.data === 2) setIsPlaying(false);
-            else if (event.data === 0) setIsPlaying(false);
-          },
-          onError: (event: any) => {
-            // YT error codes: 2=bad param, 5=HTML5 player, 100=removed/private,
-            // 101/150=embedding disabled, 153=missing/invalid referrer.
-            console.error(`[YouTubeApp] playback error ${event?.data} for video ${videoId}`);
-            if (!destroyed) setHasError(true);
-          },
-        },
-      });
-    })();
-
-    return () => {
-      destroyed = true;
-      try {
-        playerRef.current?.destroy();
-      } catch {
-        // ignore
-      }
-      playerRef.current = null;
-    };
-  }, [videoId]);
-
-  const togglePlay = useCallback(() => {
-    const p = playerRef.current;
-    if (!p) return;
-    try {
-      const state = p.getPlayerState();
-      if (state === 1) p.pauseVideo();
-      else p.playVideo();
-    } catch { /* ignore */ }
-  }, []);
-
-  const seekRelative = useCallback((delta: number) => {
-    const p = playerRef.current;
-    if (!p) return;
-    try {
-      const current = p.getCurrentTime() || 0;
-      p.seekTo(Math.max(0, current + delta), true);
-    } catch { /* ignore */ }
-  }, []);
-
-  const restart = useCallback(() => {
-    const p = playerRef.current;
-    if (!p) return;
-    try {
-      p.seekTo(0, true);
-      p.playVideo();
-    } catch { /* ignore */ }
-  }, []);
+  const togglePlay = useCallback(() => playerRef.current?.toggle(), []);
+  const seekRelative = useCallback((delta: number) => playerRef.current?.seekRelative(delta), []);
+  const restart = useCallback(() => playerRef.current?.restart(), []);
 
   const btnBase =
     "flex items-center justify-center rounded-2xl text-white font-bold shadow-lg active:scale-95 transition-transform select-none";
 
   return (
-    <div ref={containerRef} className="h-full bg-black flex flex-col">
+    <div className="h-full bg-black flex flex-col">
       <div className="relative z-10 flex items-center gap-3 px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
         {onBackToBrowse && (
           <button type="button"
@@ -804,14 +686,21 @@ function PlayerView({
       </div>
 
       <div className="flex-1 relative">
-        <div className="yt-container absolute inset-0" />
+        <YouTubePlayer
+          ref={playerRef}
+          videoId={videoId}
+          onReady={() => setIsReady(true)}
+          onPlayingChange={setIsPlaying}
+          onError={() => setHasError(true)}
+          className="absolute inset-0"
+        />
         {!isReady && !hasError && (
-          <div className="absolute inset-0 flex items-center justify-center text-white text-xl">
+          <div className="absolute inset-0 flex items-center justify-center text-white text-xl pointer-events-none">
             {t("youtubeApp.loading")}
           </div>
         )}
         {hasError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black">
             <p className="text-white text-xl">{t("youtubeApp.unavailable")}</p>
             <button type="button" data-dwell onClick={onClose} className={`${btnBase} w-20 h-20 bg-red-600 hover:bg-red-700`} aria-label={t("youtubeApp.close")}>
               <X size={36} />
