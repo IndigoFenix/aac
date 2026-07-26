@@ -19,6 +19,8 @@ export {
   getBrowserBridge,
   getElectronBridge,
   getGazeBridge,
+  getInstancesBridge,
   getNativeVersion,
 } from "./bridge";
-export type { GazeBridge, GazeSidecarStatus } from "./bridge";
+export type { GazeBridge, GazeSidecarStatus, InstancesBridge } from "./bridge";
+export type { AppInstance, AppInstanceReport } from "@shared/app-instances.js";

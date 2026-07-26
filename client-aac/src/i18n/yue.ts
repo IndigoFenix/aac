@@ -308,6 +308,7 @@ export const yue: Translations = {
     createInAdmin: "喺管理面板度建立面板",
     pageOf: "第 {current} 頁，共 {total} 頁",
     guessingMode: "估緊...",
+    selectionArea: "望呢度嚟揀",
   },
 
   processing: {
@@ -1007,6 +1008,10 @@ export const yue: Translations = {
     notDetected: "偵測唔到",
     driverNotFound: "搵唔到眼動儀驅動程式",
     locateDriver: "搵驅動程式…",
+  },
+  instances: {
+    duplicateRunning: "Aivota AAC 已經有另一個窗口開住 — 請閂咗佢，然後重新開啟呢個",
+    multipleInstalls: "有兩個 Aivota AAC 安裝版本行住 — 請閂咗多餘嘅窗口，並移除重複嘅安裝",
   },
   audioScan: {
     start: "讀出版面",

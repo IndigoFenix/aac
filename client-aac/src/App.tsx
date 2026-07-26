@@ -20,6 +20,7 @@ import { ServerStatusGuard } from "@/components/ServerStatusGuard";
 import { DeviceLimitOverlay } from "@/components/DeviceManager";
 import AppVersionBadge from "@/components/AppVersionBadge";
 import UpdateStatusIndicator from "@/components/UpdateStatusIndicator";
+import DebugConsole from "@/components/DebugConsole";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { deregisterCurrentDevice } from "@/lib/device-id";
 import { preloadClientModels } from "@/lib/preloadModels";
@@ -265,6 +266,9 @@ function App() {
               <Toaster />
               <MainApp />
               <CookieConsent />
+              {/* Mounted at the root so on-device logs are reachable even on the
+                  login screen (4-finger tap / Ctrl+Shift+D). See DebugConsole. */}
+              <DebugConsole />
             </TooltipProvider>
           </ServerStatusGuard>
         </LanguageProvider>

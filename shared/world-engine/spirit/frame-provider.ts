@@ -72,10 +72,25 @@ export interface SpiritNearTown {
   radius: number;
 }
 
+/** THE ENTITY ENGINE that resolves the ground cursor — a session whose gaze
+ *  pipeline picks the drawn world (walls stop the ray, the hit is the drawn
+ *  skin) and snaps to the entity under the pixel. It reports; someone else
+ *  draws. Implemented by every quest host (town or wilderness); the ladder
+ *  never cares which, only that one is standing where the player is. */
+export interface SpiritCursorHost {
+  /** Opt the host's OWN spark off — it reports through `cursorWorld` and the
+   *  provider's one spark draws it. A host that draws AND reports would put
+   *  two cursors on screen. Flat standalone hosts omit both (they draw). */
+  setExternalCursor?(on: boolean): void;
+  /** The host's computed cursor target (WORLD coords into `out`) + display
+   *  state, or null when the pointer rests on nothing. */
+  cursorWorld?(out: THREE.Vector3): { hovering: boolean; select: number } | null;
+}
+
 /** The structure rung's host — a World3DRenderer-backed session (embedded
  *  live town, or the standalone quest host). POSE ONLY: the ladder owns the
  *  camera; the host must never write it. */
-export interface SpiritStructureHost {
+export interface SpiritStructureHost extends SpiritCursorHost {
   /** Flip the dollhouse cutaway (null = off). */
   setSpiritFocus(frame: SpiritFocusTarget["frame"]): void;
   /** The dollhouse rig pose for `frame` at orbit azimuth `spiritAz`, WORLD
@@ -89,14 +104,6 @@ export interface SpiritStructureHost {
   clearPointer(): void;
   /** Step the session one frame (no-op when the host self-loops). */
   step(dt: number, now: number): void;
-  /** PLANET LAW seam (optional — planet-embedded hosts only): opt the host's
-   *  OWN spark off; it reports its cursor target through `cursorWorld` and the
-   *  planet's one spark draws it. Flat standalone hosts omit both — the town
-   *  IS the world there and keeps its own cursor. */
-  setExternalCursor?(on: boolean): void;
-  /** The host's computed cursor target (WORLD coords into `out`) + display
-   *  state, or null when the pointer rests on nothing. */
-  cursorWorld?(out: THREE.Vector3): { hovering: boolean; select: number } | null;
 }
 
 /** An OPEN town — the TOWN/STRUCTURE rungs' world access. */
@@ -279,16 +286,32 @@ export interface SpiritFrameProvider {
    *  reason a RATE (not a speed) is the honest signal is written down. Null
    *  clears. Optional: providers without a HUD spark ignore it. */
   sparkDrift?(vel: THREE.Vector3 | null): void;
-  /** GROUND-mode cursor, provider-owned: place the spark where the POINTER
-   *  RAY meets the DRAWN world (rendered terrain/roads/town ground) — the
-   *  same discipline a live town host's engine cursor uses, so ground mode
-   *  renders identically with or without a town. `null` pointer hides it.
+  /** GROUND-mode cursor, provider-owned: put the cursor where the POINTER RAY
+   *  meets the DRAWN world (rendered terrain/roads/town ground), lifted a
+   *  little — an ordinary object standing on the ground, which is why the world
+   *  occludes it without anything clever. `null` pointer hides it.
+   *  `select` is the entity engine's dwell progress (0..1) for whatever the
+   *  cursor rests on. `at` is that engine's SNAP POINT (a creature's head, an
+   *  object's top) in WORLD coords — supplied instead of the ray hit when the
+   *  gaze rests on something a raycast alone could not identify.
    *  Returns true when the provider owns the ground cursor (the ladder then
    *  never drives the overlay spark on the ground rung). Providers without
    *  a drawn world to raycast (flat quest worlds) omit it — the ladder falls
    *  back to the overlay spark at the analytic gaze point, which on a flat
    *  world coincides with the drawn ground. */
-  groundSpark?(pointer: { x: number; y: number } | null): boolean;
+  groundSpark?(
+    pointer: { x: number; y: number } | null,
+    select?: number,
+    at?: THREE.Vector3,
+  ): boolean;
+  /** THE ENTITY ENGINE STANDING WHERE THE PLAYER IS — the ground rung's cursor
+   *  reporter, asked fresh every frame. A town host when the glide is in a
+   *  town, the wilderness host in open country: the ladder must not care which,
+   *  because the player doesn't — the same gaze pick, wall stop, entity snap
+   *  and dwell apply on both sides of a town's edge. Omitted (or null) ⇒ the
+   *  ladder falls back to the town session's `structureHost()`, then to the
+   *  provider's bare drawn-world ray. */
+  cursorHost?(): SpiritCursorHost | null;
   /** DIAGNOSTICS: what the provider's cursor did on the LAST frame — which
    *  exit `groundSpark` took (no pointer / drawn-world miss / hit) and, on a
    *  hit, how far out it landed. String only; no behaviour. */

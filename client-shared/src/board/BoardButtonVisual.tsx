@@ -17,6 +17,8 @@
 import { type ReactNode, useMemo } from "react";
 import { motion } from "framer-motion";
 import { resolveButtonBackground } from "@shared/button-color";
+import { labelFontSize, labelLines, type RatioLevel } from "@shared/button-sizing";
+import { ShapedButton, type CornerSpace } from "./ShapedButton";
 import type { BoardButtonInput, BoardRenderDeps, IconVisual } from "./types";
 
 // One-shot keyframe injection for the legacy imageKey loading spinner. Guarded
@@ -50,6 +52,43 @@ export interface BoardButtonVisualProps {
   ariaLabel?: string;
   /** Optional extra content rendered as an absolute overlay (e.g. link arrow). */
   cornerIndicator?: ReactNode;
+  /**
+   * CSS length to keep clear at the label row's inline END — used when a corner
+   * indicator sits in the lower corner (the AAC's SELECTION AREA eye mark) and
+   * must not cover the text. Logical, so it pads the left under `dir="rtl"`,
+   * matching a mark positioned with `inset-inline-end`.
+   */
+  labelInsetEnd?: string;
+  /**
+   * Tag the button's content boxes with `data-dwell-zone` so the AAC's gaze
+   * INTENT DECODER can tell where on the button a fixation landed:
+   *   core — the icon/glyph, the fast path to selecting;
+   *   ink  — the label text, which charges more slowly because reading it is
+   *          the thing students must be able to do WITHOUT selecting;
+   *   rest — everything else (padding, and the grid gutters outside), which
+   *          never charges and is the board's distributed rest area.
+   * Presence of these markers is what puts a button in decoder mode, so this
+   * stays off for every surface that isn't the student's main board.
+   */
+  dwellZones?: boolean;
+  /**
+   * Icon-to-text sizing (`aacSettings.iconTextRatio`, via `ratioLevel()`). When
+   * given, icon and label each fill a real flex share of the button and the
+   * label's font-size is derived from its own box — so `textFontSize` is
+   * ignored. When omitted, the older fixed-font-size layout is used unchanged,
+   * which is what the fixed-scale surfaces (mini board, world-lab, the
+   * clinician canvas) still want.
+   */
+  ratioLevel?: RatioLevel;
+  /** Extra content rendered between the icon and the label, centred. */
+  midIndicator?: ReactNode;
+  /**
+   * Draw the surface as an SVG path with concave corner cuts instead of a CSS
+   * box, so the space where four buttons meet reads as one circle. Board
+   * variant only — overlay buttons are big modal choices with no grid to share
+   * corners with. Omit for the unchanged CSS box.
+   */
+  cornerSpace?: CornerSpace | null;
   /** Passed through to the motion.button so callers can pin data-* attributes etc. */
   extraButtonProps?: Record<string, unknown>;
   /**
@@ -154,6 +193,11 @@ export function BoardButtonVisual(props: BoardButtonVisualProps) {
     overlaySize,
     ariaLabel,
     cornerIndicator,
+    labelInsetEnd,
+    dwellZones = false,
+    ratioLevel,
+    midIndicator,
+    cornerSpace,
     extraButtonProps,
     interactive = true,
   } = props;
@@ -201,21 +245,57 @@ export function BoardButtonVisual(props: BoardButtonVisualProps) {
   }
 
   // Board variant — shared inner markup for both interactive and static modes.
+  // With a ratio level the two rows split the button's height proportionally
+  // and each fills its own share; without one, the legacy fixed-font layout.
+  const lines = ratioLevel ? labelLines(button.label, ratioLevel) : 2;
   const inner = (
     <>
-      <div className="icon-fill-area">{icon}</div>
       <div
-        className="flex items-center justify-center w-full overflow-hidden shrink-0"
-        style={{ maxHeight: "40%", marginTop: 2 }}
+        className="icon-fill-area"
+        data-dwell-zone={dwellZones ? "ink" : undefined}
+        style={ratioLevel ? { flex: `${ratioLevel.iconFlex} 1 0` } : undefined}
+      >
+        {icon}
+      </div>
+      {midIndicator}
+      <div
+        className={
+          ratioLevel
+            ? "label-fill-area"
+            : "flex items-center justify-center w-full overflow-hidden shrink-0"
+        }
+        data-dwell-zone={dwellZones ? "ink" : undefined}
+        style={
+          ratioLevel
+            ? { flex: `${ratioLevel.textFlex} 1 0`, paddingInlineEnd: labelInsetEnd }
+            : { maxHeight: "40%", marginTop: 2, paddingInlineEnd: labelInsetEnd }
+        }
       >
         <span
-          className="font-medium text-center text-gray-800 leading-tight line-clamp-2"
-          style={{ fontSize: textFontSize ?? "0.875rem" }}
+          className="font-medium text-center text-gray-800 leading-tight"
+          style={{
+            fontSize: ratioLevel ? labelFontSize(button.label, ratioLevel) : (textFontSize ?? "0.875rem"),
+            display: "-webkit-box",
+            WebkitBoxOrient: "vertical",
+            WebkitLineClamp: lines,
+            overflow: "hidden",
+            overflowWrap: "break-word",
+          }}
         >
           {button.label}
         </span>
       </div>
-      {cornerIndicator}
+      {/* Corner indicators anchor to the button's corners — which is exactly
+          what a corner cut removes. Re-anchor them to the inset box so the
+          link arrow, launch mark and busy spinner stay on the button instead
+          of being clipped away. `--corner-inset` is published by ShapedButton. */}
+      {cornerIndicator && cornerSpace ? (
+        <div style={{ position: "absolute", inset: "var(--corner-inset, 0px)", pointerEvents: "none" }}>
+          {cornerIndicator}
+        </div>
+      ) : (
+        cornerIndicator
+      )}
     </>
   );
 
@@ -239,20 +319,23 @@ export function BoardButtonVisual(props: BoardButtonVisualProps) {
   }
 
   return (
-    <motion.button
-      data-dwell
-      onClick={onClick}
-      aria-label={ariaLabel ?? button.label}
-      initial={entering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: entering ? 0.3 : 0.15 }}
+    <ShapedButton
+      cornerSpace={cornerSpace}
+      background={background}
       className={className}
-      style={{ backgroundColor: background, padding: 5 }}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      {...extraButtonProps}
+      style={{ padding: 5 }}
+      onClick={onClick}
+      ariaLabel={ariaLabel ?? button.label}
+      domProps={{ "data-dwell": "", ...extraButtonProps }}
+      motionProps={{
+        initial: entering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 },
+        animate: { opacity: 1, scale: 1 },
+        transition: { duration: entering ? 0.3 : 0.15 },
+        whileHover: { scale: 1.05 },
+        whileTap: { scale: 0.95 },
+      }}
     >
       {inner}
-    </motion.button>
+    </ShapedButton>
   );
 }

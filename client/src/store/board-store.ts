@@ -28,6 +28,10 @@ type InternalBoard = BoardIR & {
 
   /** Hint for the AI about when to select this board */
   automaticSelectionHint?: string;
+
+  /** How much corner rest space this board's buttons give an eyegaze student:
+   *  'none' | 'small' (default) | 'large'. See shared/button-shape.ts. */
+  restSpace?: string;
 };
 
 const createId = () =>
@@ -161,6 +165,7 @@ export interface BoardState {
     irData: BoardIR;
     automaticSelection?: boolean;
     automaticSelectionHint?: string;
+    restSpace?: string;
     isGenerated?: boolean;
   }) => void;
 
@@ -987,7 +992,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   openBoardFromServer: (row: any) => {
     set((state) => {
-      const { id, name, irData, automaticSelection, automaticSelectionHint } = row;
+      const { id, name, irData, automaticSelection, automaticSelectionHint, restSpace } = row;
   
       const existing = state.boards.find((b) => b.dbId === id);
   
@@ -1016,6 +1021,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       internal.isDirty = false;
       internal.automaticSelection = automaticSelection ?? false;
       internal.automaticSelectionHint = automaticSelectionHint ?? undefined;
+      internal.restSpace = restSpace ?? undefined;
   
       const boards = existing
         ? state.boards.map((b) =>

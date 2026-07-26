@@ -86,6 +86,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ratioLevel, labelFontSize, labelLines } from '@shared/button-sizing';
 
 interface AACSettingsPanelProps {
   isOpen?: boolean;
@@ -266,6 +267,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [eyegazeProvider, setEyegazeProvider] = useState<string>('mouse');
+  const [selectionMethod, setSelectionMethod] = useState<string>('whole_button');
+  const [restSpace, setRestSpace] = useState<string>('large');
   const [gazeSmoothing, setGazeSmoothing] = useState<GazeSmoothingSettings>(defaultSmoothingSettings());
   const [gazeAdvancedOpen, setGazeAdvancedOpen] = useState(false);
   const [allowReadProgress, setAllowReadProgress] = useState(true);
@@ -380,6 +383,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
+      setSelectionMethod(aac?.selectionMethod ?? 'whole_button');
+      setRestSpace(aac?.restSpace ?? 'large');
       setGazeSmoothing(parseSmoothingSettings(aac?.eyegazeSmoothing));
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
@@ -429,6 +434,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
       const originalEyegazeProvider = aac?.eyegazeProvider ?? 'mouse';
+      const originalSelectionMethod = aac?.selectionMethod ?? 'whole_button';
+      const originalRestSpace = aac?.restSpace ?? 'large';
       const originalGazeSmoothing = serializeSmoothingSettings(parseSmoothingSettings(aac?.eyegazeSmoothing));
       const originalAllowReadProgress = aac?.allowReadProgress ?? true;
       const originalAllowReadReports = aac?.allowReadReports ?? true;
@@ -471,6 +478,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
         eyegazeProvider !== originalEyegazeProvider ||
+        selectionMethod !== originalSelectionMethod ||
+        restSpace !== originalRestSpace ||
         serializeSmoothingSettings(gazeSmoothing) !== originalGazeSmoothing ||
         allowReadProgress !== originalAllowReadProgress ||
         allowReadReports !== originalAllowReadReports ||
@@ -488,7 +497,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -515,6 +524,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       eyegazeTimeout: number;
       eyegazeProvider: string;
       eyegazeSmoothing: string;
+      selectionMethod: string;
+      restSpace: string;
       allowReadProgress: boolean;
       allowReadReports: boolean;
       allowNotes: boolean;
@@ -573,6 +584,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       eyegazeTimeout,
       eyegazeProvider,
       eyegazeSmoothing: serializeSmoothingSettings(gazeSmoothing),
+      selectionMethod,
+      restSpace,
       allowReadProgress,
       allowReadReports,
       allowNotes,
@@ -620,6 +633,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
+      setSelectionMethod(aac?.selectionMethod ?? 'whole_button');
+      setRestSpace(aac?.restSpace ?? 'large');
       setGazeSmoothing(parseSmoothingSettings(aac?.eyegazeSmoothing));
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
@@ -1564,31 +1579,47 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       <Label className="text-base font-medium">{t('aacSettings.buttonSize')}</Label>
                       <p className="text-sm text-muted-foreground">{t('aacSettings.buttonSizeDesc')}</p>
                     </div>
+                    {/* Preview. Uses the SAME level table, the same flex split
+                        and the same container-relative label sizing as the
+                        student's board, so it is accurate by construction
+                        rather than by two tables being kept in step by hand.
+                        (It previously had its own copy of the numbers and drew
+                        a layout the board renderer no longer used.) */}
                     <div className="flex gap-2 md:gap-3 justify-center">
                       {([1, 2, 3, 4, 5] as const).map((lvl) => {
                         const isActive = iconTextRatio === lvl;
-                        // Preview sizing: icon flex vs text flex
-                        const iconFlex = [9, 4, 3, 2, 1][lvl - 1];
-                        const textFlex = [1, 1, 1, 1, 2][lvl - 1];
-                        const emojiSize = ['text-2xl', 'text-xl', 'text-lg', 'text-base', 'text-sm'][lvl - 1];
-                        const labelSize = ['text-[6px]', 'text-[7px]', 'text-[8px]', 'text-[9px]', 'text-xs'][lvl - 1];
+                        const level = ratioLevel(lvl);
+                        const previewLabel = t('aacSettings.buttonSizePreviewLabel');
+                        const lines = labelLines(previewLabel, level);
                         return (
                           <button
                             key={lvl}
                             type="button"
                             onClick={() => setIconTextRatio(lvl)}
                             className={cn(
-                              "flex flex-col items-center justify-center flex-1 min-w-0 max-w-16 h-20 rounded-lg border-2 transition-all",
+                              "flex flex-col items-center justify-center flex-1 min-w-0 max-w-16 h-20 rounded-lg border-2 transition-all p-1",
                               isActive
                                 ? "border-primary bg-primary/10 ring-2 ring-primary/30"
                                 : "border-border hover:border-primary/50 bg-card"
                             )}
                           >
-                            <div className="flex items-center justify-center w-full" style={{ flex: iconFlex }}>
-                              <span className={`${emojiSize} leading-none`}>😊</span>
+                            <div className="icon-fill-area" style={{ flex: `${level.iconFlex} 1 0` }}>
+                              <span className="icon-fill-emoji">😊</span>
                             </div>
-                            <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: textFlex }}>
-                              <span className={`${labelSize} font-medium text-center leading-tight text-foreground`}>Hello</span>
+                            <div className="label-fill-area" style={{ flex: `${level.textFlex} 1 0` }}>
+                              <span
+                                className="font-medium text-center leading-tight text-foreground"
+                                style={{
+                                  fontSize: labelFontSize(previewLabel, level),
+                                  display: '-webkit-box',
+                                  WebkitBoxOrient: 'vertical',
+                                  WebkitLineClamp: lines,
+                                  overflow: 'hidden',
+                                  overflowWrap: 'break-word',
+                                }}
+                              >
+                                {previewLabel}
+                              </span>
                             </div>
                           </button>
                         );
@@ -1864,6 +1895,45 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           <span>5s</span>
                           <span>10s</span>
                         </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">
+                          {t('aacSettings.selectionMethod')}
+                        </Label>
+                        <Select value={selectionMethod} onValueChange={setSelectionMethod}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="whole_button">{t('aacSettings.selectionMethodWholeButton')}</SelectItem>
+                            <SelectItem value="selection_area">{t('aacSettings.selectionMethodSelectionArea')}</SelectItem>
+                            <SelectItem value="intent">{t('aacSettings.selectionMethodIntent')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {t('aacSettings.selectionMethodHint')}
+                        </p>
+                      </div>
+                      {/* Rest areas — the circle of empty space cut from where
+                          four buttons meet, so there is always somewhere close
+                          by to look that selects nothing. */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">
+                          {t('aacSettings.restSpace')}
+                        </Label>
+                        <Select value={restSpace} onValueChange={setRestSpace}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="large">{t('aacSettings.restSpaceLarge')}</SelectItem>
+                            <SelectItem value="small">{t('aacSettings.restSpaceSmall')}</SelectItem>
+                            <SelectItem value="none">{t('aacSettings.restSpaceNone')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {t('aacSettings.restSpaceHint')}
+                        </p>
                       </div>
                     </div>
                   )}

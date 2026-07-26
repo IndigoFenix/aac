@@ -308,6 +308,7 @@ export const de: Translations = {
     createInAdmin: "Tafeln im Admin-Bereich erstellen",
     pageOf: "Seite {current} von {total}",
     guessingMode: "Raten...",
+    selectionArea: "Zum Auswählen hierher schauen",
   },
 
   processing: {
@@ -1007,6 +1008,10 @@ export const de: Translations = {
     notDetected: "nicht erkannt",
     driverNotFound: "Eyetracker-Treiber nicht gefunden",
     locateDriver: "Treiber suchen\u2026",
+  },
+  instances: {
+    duplicateRunning: "Eine weitere Kopie von Aivota AAC ist schon offen \u2014 schlie\u00dfen Sie sie und starten Sie diese neu",
+    multipleInstalls: "Zwei Installationen von Aivota AAC laufen \u2014 schlie\u00dfen Sie das zus\u00e4tzliche Fenster und entfernen Sie die doppelte Installation",
   },
   audioScan: {
     start: "Tafel vorlesen",

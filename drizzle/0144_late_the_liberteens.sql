@@ -1,0 +1,1 @@
+ALTER TABLE "boards" ADD COLUMN "rest_space" text DEFAULT 'small';

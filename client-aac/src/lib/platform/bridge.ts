@@ -9,6 +9,7 @@
 // must handle that, because it is the normal case on web and iPad.
 
 import type { UpdateStatus } from "@shared/native-update.js";
+import type { AppInstanceReport } from "@shared/app-instances.js";
 import { getHost } from "./host";
 
 /** Gaze sidecar control. Electron/Windows only — see capabilities.gazeSidecar. */
@@ -49,6 +50,19 @@ export interface UpdateBridge {
   onStatus: (cb: (status: UpdateStatus) => void) => () => void;
 }
 
+/**
+ * "How many copies of me are running?" — Electron/Windows only.
+ *
+ * A second copy is not cosmetic: both instances spawn a gaze sidecar, and the
+ * vendor eye-tracker DLL admits one consumer, so the tracker silently belongs to
+ * whichever copy won. The client shows this so a caretaker closes the extra copy
+ * instead of chasing a phantom hardware fault.
+ */
+export interface InstancesBridge {
+  get: (refresh?: boolean) => Promise<AppInstanceReport | null>;
+  onReport: (cb: (report: AppInstanceReport) => void) => () => void;
+}
+
 export interface ElectronBridge {
   isElectron?: boolean;
   getVersion?: () => Promise<string>;
@@ -56,6 +70,7 @@ export interface ElectronBridge {
   browser?: BrowserBridge;
   gaze?: GazeBridge;
   update?: UpdateBridge;
+  instances?: InstancesBridge;
 }
 
 export function getElectronBridge(): ElectronBridge | null {
@@ -69,6 +84,10 @@ export function getGazeBridge(): GazeBridge | null {
 
 export function getBrowserBridge(): BrowserBridge | null {
   return getElectronBridge()?.browser ?? null;
+}
+
+export function getInstancesBridge(): InstancesBridge | null {
+  return getElectronBridge()?.instances ?? null;
 }
 
 /**

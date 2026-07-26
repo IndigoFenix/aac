@@ -861,9 +861,65 @@ function sparkLandCurve(q: number, rise: number, dip: number): number {
   return rise * Math.sin((Math.PI * (q - 0.25)) / 0.75);
 }
 
+/** A SPRITE THAT SURVIVES DEPTH TESTING: the spark's glow texture on a unit
+ *  plane that takes the camera's rotation at draw time. Looks exactly like the
+ *  `THREE.Sprite` it replaces — same texture, same world-space `scale`, same
+ *  centre — but it is an ordinary mesh as far as the depth buffer is concerned.
+ *
+ *  MEASURED 2026-07-26 on the real GPU (Intel UHD 620 / D3D11,
+ *  games/world-lab/spark-depth-probe.cjs): in ONE frame, a depth-tested MESH at
+ *  the cursor's exact point drew and the depth-tested SPRITE at that same point
+ *  did not. Sprites do not survive depth testing in a renderer built with
+ *  `logarithmicDepthBuffer` (the planet/space path) — which is the whole reason
+ *  the planet's cursor could only ever be seen by drawing it on top of the
+ *  world. The flat quest hosts never hit it: their renderers have no log depth.
+ *  Don't "simplify" this back to a Sprite. */
+class SparkQuad extends THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
+  private static geo: THREE.PlaneGeometry | null = null;
+  private readonly _pq = new THREE.Quaternion();
+
+  constructor(mat: THREE.MeshBasicMaterial) {
+    SparkQuad.geo ??= new THREE.PlaneGeometry(1, 1);
+    super(SparkQuad.geo, mat);
+    // It goes wherever the gaze lands, including behind the camera mid-dart;
+    // its own bounding sphere is meaningless once it faces the viewer.
+    this.frustumCulled = false;
+  }
+
+  /** Face the camera at DRAW time, so it is right for whichever camera renders
+   *  it — and so a group parented to the CAMERA (the flight HUD) comes out the
+   *  same as one parented to the planet (the ground cursor): the parent's own
+   *  rotation is divided back out. */
+  override onBeforeRender = (
+    _r: THREE.WebGLRenderer, _s: THREE.Scene, camera: THREE.Camera,
+  ): void => {
+    if (this.parent) {
+      this.parent.getWorldQuaternion(this._pq);
+      this.quaternion.copy(this._pq.invert()).multiply(camera.quaternion);
+    } else {
+      this.quaternion.copy(camera.quaternion);
+    }
+    this.updateMatrix();
+    this.updateMatrixWorld(true);
+  };
+}
+
+/** The spark's material — the sprite-material fields it actually used, on a
+ *  mesh material (see SparkQuad). */
+function sparkQuadMaterial(map: THREE.Texture): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    map,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    opacity: 0,
+  });
+}
+
 interface SparkEmber {
-  readonly sprite: THREE.Sprite;
-  readonly mat: THREE.SpriteMaterial;
+  readonly sprite: SparkQuad;
+  readonly mat: THREE.MeshBasicMaterial;
   readonly pos: THREE.Vector3;
   readonly vel: THREE.Vector3;
   life: number;
@@ -881,10 +937,10 @@ type SparkArc = "land" | "lift" | "bounce" | "hop";
 
 export class GazeSpark {
   readonly group = new THREE.Group();
-  private readonly coreSprite: THREE.Sprite;
-  private readonly haloSprite: THREE.Sprite;
-  private readonly coreMat: THREE.SpriteMaterial;
-  private readonly haloMat: THREE.SpriteMaterial;
+  private readonly coreSprite: SparkQuad;
+  private readonly haloSprite: SparkQuad;
+  private readonly coreMat: THREE.MeshBasicMaterial;
+  private readonly haloMat: THREE.MeshBasicMaterial;
   private readonly light: THREE.PointLight;
   private readonly tex: THREE.CanvasTexture;
   private readonly embers: SparkEmber[] = [];
@@ -924,23 +980,11 @@ export class GazeSpark {
 
   constructor() {
     this.tex = makeSparkTexture();
-    this.coreMat = new THREE.SpriteMaterial({
-      map: this.tex,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      opacity: 0,
-    });
-    this.haloMat = new THREE.SpriteMaterial({
-      map: this.tex,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      opacity: 0,
-    });
-    this.coreSprite = new THREE.Sprite(this.coreMat);
+    this.coreMat = sparkQuadMaterial(this.tex);
+    this.haloMat = sparkQuadMaterial(this.tex);
+    this.coreSprite = new SparkQuad(this.coreMat);
     this.coreSprite.renderOrder = 19;
-    this.haloSprite = new THREE.Sprite(this.haloMat);
+    this.haloSprite = new SparkQuad(this.haloMat);
     this.haloSprite.renderOrder = 17;
     this.haloSprite.scale.setScalar(SPARK.haloScale);
     // Illuminates the object under the gaze while resting on it (off while moving).
@@ -953,14 +997,8 @@ export class GazeSpark {
     // recycling a live ember (which pops as a mid-flight ember teleports):
     // dart = emberLife/emberInterval = 18, stream = streamLife/streamInterval = 10.
     for (let i = 0; i < 32; i++) {
-      const mat = new THREE.SpriteMaterial({
-        map: this.tex,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        opacity: 0,
-      });
-      const sprite = new THREE.Sprite(mat);
+      const mat = sparkQuadMaterial(this.tex);
+      const sprite = new SparkQuad(mat);
       sprite.renderOrder = 18;
       sprite.visible = false;
       sprite.scale.setScalar(SPARK.emberScale);
@@ -1047,6 +1085,20 @@ export class GazeSpark {
    *  a genuine gaze flick jumps in both frames; camera rotation only in one;
    *  a HUD point (world-moving, camera-stable) only in the other. Omitted ⇒
    *  internal threshold alone (world-stable groups: hosts, flat overlays). */
+  /** PUT THE SPARK HERE. No easing, no dart, no shrink — the point is the
+   *  point, at full size, in this group's frame. The movement rules
+   *  (`setTarget`) are a layer on top of this; a caller that just wants the
+   *  light to stand where it says wants THIS. */
+  place(x: number, y: number, z: number, hovering = false): void {
+    this.target.set(x, y, z);
+    this.pos.copy(this.target);
+    this.shown = true;
+    this.hovering = hovering;
+    this.phase = "idle";
+    this.phaseT = 0;
+    this.core = 1;
+  }
+
   setTarget(x: number, y: number, z: number, hovering: boolean, worldJumped?: boolean): void {
     this.tmp.set(x, y, z);
     if (!this.shown) {

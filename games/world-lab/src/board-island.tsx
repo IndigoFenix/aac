@@ -19,6 +19,7 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
+import { restSpaceRatio } from "@shared/button-shape";
 import type { BoardButtonInput, BoardRenderDeps, GlyphRenderProps, IconVisual } from "@client-shared/board/types";
 // The component lives in the .tsx (the bare `@shared/glyph-compositor`
 // resolves to the types-only .ts) — import it explicitly, as the AAC does.
@@ -70,6 +71,12 @@ const resolveIcon = (button: BoardButtonInput): IconVisual => {
 
 const deps: BoardRenderDeps = { resolveIcon, GlyphComponent: LabGlyph };
 
+// The lab's board is a 2x4 strip of small buttons, so it takes the `small`
+// corner space — same mechanism as the student's board, less of it. `gapPx`
+// must match `.quest-boardpanel-grid { gap: 8px }` in styles.css, since the cut
+// circles are centred in the gutter.
+const BOARD_CORNER_SPACE = { ratio: restSpaceRatio("small"), gapPx: 8 };
+
 function BoardStrip({ view, onSelect }: { view: QuestBoardView | null; onSelect: (id: string) => void }) {
   const options = view?.options.slice(0, 8) ?? [];
   return (
@@ -99,6 +106,7 @@ function BoardStrip({ view, onSelect }: { view: QuestBoardView | null; onSelect:
               iconFontSize={ICON_FONT}
               textFontSize={TEXT_FONT}
               borderClassName="board-btn-border"
+              cornerSpace={BOARD_CORNER_SPACE}
             />
           );
         })}

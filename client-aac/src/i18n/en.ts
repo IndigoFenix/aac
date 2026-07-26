@@ -306,6 +306,7 @@ export const en = {
     createInAdmin: "Create boards in the admin panel",
     pageOf: "Page {current} of {total}",
     guessingMode: "Guessing...",
+    selectionArea: "Look here to select",
   },
 
   processing: {
@@ -1005,6 +1006,10 @@ export const en = {
     notDetected: "not detected",
     driverNotFound: "Eye tracker driver not found",
     locateDriver: "Locate driver…",
+  },
+  instances: {
+    duplicateRunning: "Another copy of Aivota AAC is already open — close it, then restart this one",
+    multipleInstalls: "Two installations of Aivota AAC are running — close the extra window and remove the duplicate",
   },
   audioScan: {
     start: "Read board aloud",

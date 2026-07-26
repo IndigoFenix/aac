@@ -10,6 +10,7 @@ const saveBoardSchema = z.object({
   studentId: z.string().optional(),
   automaticSelection: z.boolean().optional(),
   automaticSelectionHint: z.string().nullable().optional(),
+  restSpace: z.enum(["none", "small", "large"]).optional(),
 });
 
 export class BoardController {
@@ -20,7 +21,7 @@ export class BoardController {
    */
   async saveBoard(req: Request, res: Response): Promise<void> {
     try {
-      const { name, irData, studentId, automaticSelection, automaticSelectionHint } =
+      const { name, irData, studentId, automaticSelection, automaticSelectionHint, restSpace } =
         saveBoardSchema.parse(req.body);
 
       const board = await boardRepository.createBoard({
@@ -30,6 +31,7 @@ export class BoardController {
         ...(studentId ? { studentId } : {}),
         ...(automaticSelection !== undefined ? { automaticSelection } : {}),
         ...(automaticSelectionHint !== undefined ? { automaticSelectionHint } : {}),
+        ...(restSpace !== undefined ? { restSpace } : {}),
       });
 
       res.status(201).json(board);
@@ -118,6 +120,7 @@ export class BoardController {
         irData: z.unknown().optional(),
         automaticSelection: z.boolean().optional(),
         automaticSelectionHint: z.string().nullable().optional(),
+        restSpace: z.enum(["none", "small", "large"]).optional(),
       }).strict();
       const parsed = updateSchema.safeParse(req.body);
       if (!parsed.success) {

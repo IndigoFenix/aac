@@ -308,6 +308,7 @@ export const ko: Translations = {
     createInAdmin: "관리자 패널에서 보드를 만드세요",
     pageOf: "{total}페이지 중 {current}페이지",
     guessingMode: "추측 중...",
+    selectionArea: "선택하려면 여기를 보세요",
   },
 
   processing: {
@@ -1007,6 +1008,10 @@ export const ko: Translations = {
     notDetected: "감지되지 않음",
     driverNotFound: "시선 추적기 드라이버를 찾을 수 없음",
     locateDriver: "드라이버 찾기…",
+  },
+  instances: {
+    duplicateRunning: "Aivota AAC의 다른 창이 이미 열려 있습니다 — 그 창을 닫고 이 앱을 다시 시작하세요",
+    multipleInstalls: "Aivota AAC가 두 벌 설치되어 실행 중입니다 — 여분의 창을 닫고 중복 설치를 제거하세요",
   },
   audioScan: {
     start: "보드 읽어 주기",

@@ -177,6 +177,7 @@ export function BoardSelector() {
         irData: fullBoard.irData,
         automaticSelection: fullBoard.automaticSelection,
         automaticSelectionHint: fullBoard.automaticSelectionHint,
+        restSpace: fullBoard.restSpace,
         isGenerated: fullBoard.isGenerated,
       });
 
@@ -226,6 +227,9 @@ export function BoardSelector() {
       }
       if (board.automaticSelectionHint !== undefined) {
         payload.automaticSelectionHint = board.automaticSelectionHint;
+      }
+      if (board.restSpace !== undefined) {
+        payload.restSpace = board.restSpace;
       }
       if ((board as any).isGenerated !== undefined) {
         (payload as any).isGenerated = (board as any).isGenerated;
@@ -592,6 +596,44 @@ export function BoardSelector() {
               )}>
                 {t('board.autoSelect') || 'AAC Auto-Select'}
               </Label>
+            </div>
+            {/* Corner rest space — how much of each button's corner is cut away
+                so an eyegaze student has somewhere to look that selects
+                nothing. Per-board: a board with small buttons and a learned
+                layout wants less of it than a dynamic one. */}
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="rest-space" className={cn(
+                'text-xs whitespace-nowrap',
+                isDark ? 'text-slate-400' : 'text-gray-500'
+              )}>
+                {t('board.restSpace')}
+              </Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className={cn(
+                      'w-3.5 h-3.5 cursor-help shrink-0',
+                      isDark ? 'text-slate-500' : 'text-gray-400'
+                    )} />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs">
+                    {t('board.restSpaceHint')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <select
+                id="rest-space"
+                className={cn(
+                  'text-xs rounded border px-1.5 py-0.5',
+                  isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-gray-200 text-gray-700'
+                )}
+                value={board.restSpace ?? 'small'}
+                onChange={(e) => patchBoardMeta({ restSpace: e.target.value })}
+              >
+                <option value="none">{t('board.restSpaceNone')}</option>
+                <option value="small">{t('board.restSpaceSmall')}</option>
+                <option value="large">{t('board.restSpaceLarge')}</option>
+              </select>
             </div>
             <div className="flex items-center gap-1.5">
               <Label htmlFor="auto-select-hint" className={cn(

@@ -112,18 +112,63 @@ export interface SphereTectonicWorld {
   src: Int32Array;
 }
 
-/** Rotate `p` about unit `axis` by `angle` (Rodrigues, allocation-free). */
+/** Rotate `p` about unit `axis` by the angle whose cos/sin are `c`/`s`
+ *  (Rodrigues, allocation-free). The trig is taken PRE-COMPUTED because the
+ *  gather rotates every cell by the same per-plate angle each epoch —
+ *  hoisting cos/sin out of the n×plates inner loop is a large share of the
+ *  epoch cost; the arithmetic below is unchanged, so results are
+ *  bit-identical to computing the trig inline. */
 function rotate(
   px: number, py: number, pz: number,
   ax: number, ay: number, az: number,
-  angle: number, out: [number, number, number],
+  c: number, s: number, out: [number, number, number],
 ): void {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
   const d = (ax * px + ay * py + az * pz) * (1 - c);
   out[0] = px * c + (ay * pz - az * py) * s + ax * d;
   out[1] = py * c + (az * px - ax * pz) * s + ay * d;
   out[2] = pz * c + (ax * py - ay * px) * s + az * d;
+}
+
+/** Per-topology scratch the epoch loop reuses: flat cell centers (pos3
+ *  without the per-call tuple) and radius-3 chart disks (the prefilter's
+ *  conservative mark stencil). Built once per lattice, cached weakly. */
+interface TopoScratch {
+  pos: Float64Array; // n×3 unit cell centers
+  diskOff: Int32Array; // n+1 prefix offsets into diskIdx
+  diskIdx: Int32Array; // concatenated radius-3 disk cell lists
+}
+const topoScratch = new WeakMap<GridTopology, TopoScratch>();
+
+function scratchFor(topo: GridTopology): TopoScratch {
+  let sc = topoScratch.get(topo);
+  if (sc) return sc;
+  const n = topo.n;
+  const pos = new Float64Array(n * 3);
+  for (let c = 0; c < n; c++) {
+    const p = topo.pos3!(c);
+    pos[c * 3] = p[0];
+    pos[c * 3 + 1] = p[1];
+    pos[c * 3 + 2] = p[2];
+  }
+  const lists: number[][] = new Array(n);
+  let total = 0;
+  for (let c = 0; c < n; c++) {
+    const l: number[] = [];
+    topo.disk(c, 3, cell => { l.push(cell); });
+    lists[c] = l;
+    total += l.length;
+  }
+  const diskOff = new Int32Array(n + 1);
+  const diskIdx = new Int32Array(total);
+  let at = 0;
+  for (let c = 0; c < n; c++) {
+    diskOff[c] = at;
+    for (const cell of lists[c]) diskIdx[at++] = cell;
+  }
+  diskOff[n] = at;
+  sc = { pos, diskOff, diskIdx };
+  topoScratch.set(topo, sc);
+  return sc;
 }
 
 /** Median neighbour angle — the lattice's cell pitch in radians. */
@@ -243,6 +288,73 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
     p.moved += p.rate / w.pitch;
   }
 
+  // Hoist the scan's per-plate rotation params. Angles are FIXED for the
+  // whole scan (orogeny damps rate, not angle), so the inverse-rotation
+  // trig is computed once per plate instead of once per cell×plate.
+  const scratch = scratchFor(topo);
+  const pos = scratch.pos;
+  const cosI = new Float64Array(nPlates);
+  const sinI = new Float64Array(nPlates);
+  for (let p = 0; p < nPlates; p++) {
+    cosI[p] = Math.cos(-w.plates[p].angle);
+    sinI[p] = Math.sin(-w.plates[p].angle);
+  }
+
+  const out: [number, number, number] = [0, 0, 0];
+
+  // PREFILTER (pure speed — results are bit-identical): the gather asks
+  // "which plates' rasters cover cell c?" for every (cell, plate) pair.
+  // Scatter answers it conservatively first: forward-rotate every masked
+  // plate cell once and mark a radius-3 chart disk of world cells as
+  // candidates for that plate; the exact inverse test then runs only on
+  // marked pairs. Radius 3 over-covers the forward-vs-inverse binning
+  // slack (≤ ~1.6 cell pitches at any lattice density, distortion
+  // included), so no true candidate is ever skipped — verified by
+  // epoch-state equality against the unfiltered scan. Mid-scan mask welds
+  // (fresh floor) mark their own disks below, keeping the superset exact.
+  const diskOff = scratch.diskOff;
+  const diskIdx = scratch.diskIdx;
+  const candMask = nPlates <= 32 ? new Uint32Array(n) : null;
+  if (candMask) {
+    for (let p = 0; p < nPlates; p++) {
+      const pl = w.plates[p];
+      const cF = Math.cos(pl.angle);
+      const sF = Math.sin(pl.angle);
+      const ax = pl.axis[0], ay = pl.axis[1], az = pl.axis[2];
+      const mk = w.mask[p];
+      const bit = 1 << p;
+      for (let s = 0; s < n; s++) {
+        if (!mk[s]) continue;
+        rotate(pos[s * 3], pos[s * 3 + 1], pos[s * 3 + 2], ax, ay, az, cF, sF, out);
+        const wc = topo.cellAt!(out);
+        for (let k = diskOff[wc]; k < diskOff[wc + 1]; k++) candMask[diskIdx[k]] |= bit;
+      }
+    }
+  }
+
+  // GEOMETRY PASS: bin every flagged cell's inverse-rotated center, one
+  // plate at a time — plate-constant kinematics stay in registers and the
+  // resolution scan below runs trig-free. Invariant: a set candidate bit
+  // always has a valid srcOf entry (mid-scan welds fill theirs on mark).
+  const srcOf = new Int32Array(n * nPlates);
+  for (let p = 0; p < nPlates; p++) {
+    const pl = w.plates[p];
+    const ax = pl.axis[0], ay = pl.axis[1], az = pl.axis[2];
+    const c0 = cosI[p], s0 = sinI[p];
+    const omc = 1 - c0;
+    const base = p * n;
+    const bit = 1 << p;
+    for (let c = 0; c < n; c++) {
+      if (candMask && !(candMask[c] & bit)) continue;
+      const px = pos[c * 3], py = pos[c * 3 + 1], pz = pos[c * 3 + 2];
+      const d = (ax * px + ay * py + az * pz) * omc;
+      out[0] = px * c0 + (ay * pz - az * py) * s0 + ax * d;
+      out[1] = py * c0 + (az * px - ax * pz) * s0 + ay * d;
+      out[2] = pz * c0 + (ax * py - ay * px) * s0 + az * d;
+      srcOf[base + c] = topo.cellAt!(out);
+    }
+  }
+
   // 2. GATHER the world from the plate frames; convergent cells resolve
   //    with the flat rules. All reads are pre-state (deltas buffered);
   //    a loser's source column is consumed AT MOST ONCE per epoch.
@@ -254,7 +366,8 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
   const nSrc = new Int32Array(n);
   nPlate.fill(-1);
 
-  const consumed: Set<number>[] = w.mask.map(() => new Set());
+  const consumed: Uint8Array[] = w.mask.map(() => new Uint8Array(n));
+  const consumedList: number[][] = w.mask.map(() => []);
   // Buffered winner deltas, applied to plate rasters after the scan.
   const dThick: Map<number, number>[] = w.mask.map(() => new Map());
   const dOre: Map<number, number>[] = w.mask.map(() => new Map());
@@ -263,18 +376,17 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
     m.set(k, (m.get(k) ?? 0) + dv);
   };
 
-  const out: [number, number, number] = [0, 0, 0];
   const candP: number[] = [];
   const candSrc: number[] = [];
   for (let c = 0; c < n; c++) {
-    const pos = topo.pos3!(c);
+    const px = pos[c * 3], py = pos[c * 3 + 1], pz = pos[c * 3 + 2];
     candP.length = 0;
     candSrc.length = 0;
+    const bits = candMask ? candMask[c] : -1;
     for (let p = 0; p < nPlates; p++) {
-      const pl = w.plates[p];
-      rotate(pos[0], pos[1], pos[2], pl.axis[0], pl.axis[1], pl.axis[2], -pl.angle, out);
-      const s = topo.cellAt!(out);
-      if (w.mask[p][s] && !consumed[p].has(s)) { candP.push(p); candSrc.push(s); }
+      if (!((bits >>> p) & 1)) continue;
+      const s = srcOf[p * n + c];
+      if (w.mask[p][s] && !consumed[p][s]) { candP.push(p); candSrc.push(s); }
     }
 
     if (candP.length === 0) {
@@ -289,7 +401,7 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
       let ps = c;
       if (prev >= 0) {
         const pl = w.plates[prev];
-        rotate(pos[0], pos[1], pos[2], pl.axis[0], pl.axis[1], pl.axis[2], -pl.angle, out);
+        rotate(px, py, pz, pl.axis[0], pl.axis[1], pl.axis[2], cosI[prev], sinI[prev], out);
         ps = topo.cellAt!(out);
       }
       nSrc[c] = ps;
@@ -300,12 +412,29 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
       }
       // Persist the new floor into the owner's raster (skip if a rounding
       // twin already holds that source — next epoch's gather re-covers it).
-      if (prev >= 0 && !w.mask[prev][ps] && !consumed[prev].has(ps)) {
+      if (prev >= 0 && !w.mask[prev][ps] && !consumed[prev][ps]) {
         w.mask[prev][ps] = 1;
         w.pThick[prev][ps] = OCEAN_T;
         w.pConti[prev][ps] = 0;
         w.pOre[prev][ps] = nOre[c];
         w.pCover[prev][ps] = nCover[c];
+        // The weld is live: LATER scan cells can sample this fresh source
+        // through the mask read above. Its inverse image sits within the
+        // same binning slack of c, so marking c's disk keeps the
+        // prefilter a strict superset. Newly-marked cells missed the
+        // geometry pass — fill their srcOf here (same rotation, pure).
+        if (candMask) {
+          const bit = 1 << prev;
+          const pl = w.plates[prev];
+          const base = prev * n;
+          for (let k = diskOff[c]; k < diskOff[c + 1]; k++) {
+            const c2 = diskIdx[k];
+            if (candMask[c2] & bit) continue;
+            candMask[c2] |= bit;
+            rotate(pos[c2 * 3], pos[c2 * 3 + 1], pos[c2 * 3 + 2], pl.axis[0], pl.axis[1], pl.axis[2], cosI[prev], sinI[prev], out);
+            srcOf[base + c2] = topo.cellAt!(out);
+          }
+        }
       }
       continue;
     }
@@ -333,7 +462,8 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
     for (let i = 0; i < candP.length; i++) {
       if (i === win) continue;
       const lp = candP[i], ls = candSrc[i];
-      consumed[lp].add(ls); // the slab is spent — never consumed twice
+      consumed[lp][ls] = 1; // the slab is spent — never consumed twice
+      consumedList[lp].push(ls);
       if (w.pConti[lp][ls] && nConti[c]) {
         // Continent-on-continent: orogeny — thickening, damping, suture ore.
         const add = Math.min(MAX_THICK - nThick[c], OROGENY_KEEP * w.pThick[lp][ls]);
@@ -365,7 +495,7 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
 
   // Commit the scan: consumed slabs leave their plates; winner deltas land.
   for (let p = 0; p < nPlates; p++) {
-    for (const s of consumed[p]) w.mask[p][s] = 0;
+    for (const s of consumedList[p]) w.mask[p][s] = 0;
     for (const [s, dv] of dThick[p]) w.pThick[p][s] = Math.min(MAX_THICK, w.pThick[p][s] + dv);
     for (const [s, dv] of dOre[p]) w.pOre[p][s] += dv;
     for (const [s, v] of setCover[p]) w.pCover[p][s] = v;
@@ -398,20 +528,23 @@ export function sphereTectonicEpoch(w: SphereTectonicWorld): void {
   //    Shedding strips COVER at the source (exhumation) and buries it at the
   //    sink — the mechanism that exposes ore. Writes land on the world
   //    arrays AND the plate rasters through this epoch's gather mapping.
+  // Locals for the imported tuning constants — module-interop getters are
+  // not free in every build, and this loop reads them per cell.
+  const SEA = SEA_HEIGHT, E_BASE = ELEV_BASE, E_SCALE = ELEV_SCALE, TAL = TALUS, E_RATE = ERODE_RATE;
   const elev = new Float32Array(n);
-  for (let c = 0; c < n; c++) elev[c] = (w.thick[c] - ELEV_BASE) * ELEV_SCALE;
+  for (let c = 0; c < n; c++) elev[c] = (w.thick[c] - E_BASE) * E_SCALE;
   const eThick = new Float64Array(n);
   const eCover = new Float64Array(n);
   const nb: number[] = new Array(topo.maxDegree).fill(0);
   for (let c = 0; c < n; c++) {
-    if (elev[c] <= SEA_HEIGHT) continue; // no subaerial relief to shed
+    if (elev[c] <= SEA) continue; // no subaerial relief to shed
     const k = topo.neighbours(c, nb);
     let low = c;
     for (let j = 0; j < k; j++) if (elev[nb[j]] < elev[low]) low = nb[j];
     // BASE LEVEL: the sea is where cutting stops (the flat clamp, verbatim).
-    const diff = elev[c] - Math.max(elev[low], SEA_HEIGHT);
-    if (diff <= TALUS) continue;
-    const move = (ERODE_RATE * (diff - TALUS)) / ELEV_SCALE;
+    const diff = elev[c] - Math.max(elev[low], SEA);
+    if (diff <= TAL) continue;
+    const move = (E_RATE * (diff - TAL)) / E_SCALE;
     eThick[c] -= move;
     eThick[low] += move;
     eCover[c] -= move;
@@ -449,11 +582,12 @@ function filledElev(w: SphereTectonicWorld): Float32Array {
   if (cached && cached.epoch === w.epoch) return cached.filled;
   const { topo } = w;
   const n = topo.n;
+  const SEA = SEA_HEIGHT; // local — interop getters cost in the sweep loops
   const raw = new Float32Array(n);
   let hasSea = false;
   for (let c = 0; c < n; c++) {
     raw[c] = Math.max(0, Math.min(63, Math.round(rawElev(w, c))));
-    if (raw[c] < SEA_HEIGHT) hasSea = true;
+    if (raw[c] < SEA) hasSea = true;
   }
   const nb: number[] = new Array(topo.maxDegree).fill(0);
   if (hasSea) {
@@ -461,13 +595,13 @@ function filledElev(w: SphereTectonicWorld): Float32Array {
     for (let pass = 0; pass < 3; pass++) {
       for (let c = 0; c < n; c++) {
         const h = raw[c];
-        if (h > SEA_HEIGHT + 7 || h < SEA_HEIGHT - 2) continue;
+        if (h > SEA + 7 || h < SEA - 2) continue;
         const k = topo.neighbours(c, nb);
         let seaNb = 0;
         let landNb = 0;
-        for (let j = 0; j < k; j++) raw[nb[j]] < SEA_HEIGHT ? seaNb++ : landNb++;
-        if (h >= SEA_HEIGHT && seaNb >= 3) raw[c] = SEA_HEIGHT - 1;
-        else if (h < SEA_HEIGHT && landNb >= 3) raw[c] = SEA_HEIGHT;
+        for (let j = 0; j < k; j++) raw[nb[j]] < SEA ? seaNb++ : landNb++;
+        if (h >= SEA && seaNb >= 3) raw[c] = SEA - 1;
+        else if (h < SEA && landNb >= 3) raw[c] = SEA;
       }
     }
   }
@@ -475,14 +609,14 @@ function filledElev(w: SphereTectonicWorld): Float32Array {
   if (!hasSea) {
     filled.set(raw);
   } else {
-    for (let c = 0; c < n; c++) filled[c] = raw[c] < SEA_HEIGHT ? raw[c] : Infinity;
+    for (let c = 0; c < n; c++) filled[c] = raw[c] < SEA ? raw[c] : Infinity;
     // Alternating-direction sweeps to fixpoint: filled = max(raw, min(nb filled)).
     for (let sweep = 0; sweep < 200; sweep++) {
       let changed = false;
       const fwd = sweep % 2 === 0;
       for (let i = 0; i < n; i++) {
         const c = fwd ? i : n - 1 - i;
-        if (raw[c] < SEA_HEIGHT) continue;
+        if (raw[c] < SEA) continue;
         const k = topo.neighbours(c, nb);
         let m = Infinity;
         for (let j = 0; j < k; j++) if (filled[nb[j]] < m) m = filled[nb[j]];

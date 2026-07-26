@@ -308,6 +308,7 @@ export const pt: Translations = {
     createInAdmin: "Crie quadros no painel de administra\u00e7\u00e3o",
     pageOf: "P\u00e1gina {current} de {total}",
     guessingMode: "Adivinhando...",
+    selectionArea: "Olhe aqui para selecionar",
   },
 
   processing: {
@@ -1007,6 +1008,10 @@ export const pt: Translations = {
     notDetected: "n\u00e3o detectado",
     driverNotFound: "Driver do rastreador ocular n\u00e3o encontrado",
     locateDriver: "Localizar driver\u2026",
+  },
+  instances: {
+    duplicateRunning: "Outra c\u00f3pia do Aivota AAC j\u00e1 est\u00e1 aberta \u2014 feche-a e reinicie esta",
+    multipleInstalls: "Duas instala\u00e7\u00f5es do Aivota AAC est\u00e3o em execu\u00e7\u00e3o \u2014 feche a janela extra e remova a c\u00f3pia duplicada",
   },
   audioScan: {
     start: "Ler o quadro em voz alta",

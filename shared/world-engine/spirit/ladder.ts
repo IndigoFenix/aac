@@ -20,9 +20,9 @@ import {
   DEFAULT_CAMERA_TUNABLES, DEFAULT_COMFORT_TUNABLES,
 } from "../world-tunables.js";
 import type {
-  SphereGroundOps, SpiritChartFrame, SpiritFrameProvider, SpiritFocusTarget,
-  SpiritGroundBuildingHit, SpiritGroundSession, SpiritLevel, SpiritNearTown,
-  SpiritTownSession,
+  SphereGroundOps, SpiritChartFrame, SpiritCursorHost, SpiritFrameProvider,
+  SpiritFocusTarget, SpiritGroundBuildingHit, SpiritGroundSession, SpiritLevel,
+  SpiritNearTown, SpiritTownSession,
 } from "./frame-provider.js";
 import { LEVEL_RANK } from "./frame-provider.js";
 import { createSpiritPose, blendPose, applyPose, type SpiritPose } from "./pose.js";
@@ -190,17 +190,24 @@ export interface SpiritLadder {
   focusWorld(out: THREE.Vector3): boolean;
   readonly level: SpiritLevel;
   readonly ceiling: SpiritLevel;
+  /** IS THE GLIDE STANDING IN A TOWN? (ground rung with a town ref attached —
+   *  content under the glide, re-evaluated per frame). The host layer reads it
+   *  to tick that town at the FULL frame rate: the player is in it, and its
+   *  session is the cursor/interaction engine for the rung. False at every
+   *  other rung — a town you merely orbit keeps the airborne cadence. */
+  groundInTown(): boolean;
   /** DIAGNOSTICS (ground rung): which cursor OWNS the spark this frame —
-   *  `host` (a live town's engine cursor), `prov` (the provider raycasting the
-   *  drawn world), `fallb` (overlay at the analytic gaze point), or `none`.
+   *  `rep` (an entity engine under the glide resolved it: wall stop, entity
+   *  snap, dwell — the good path, identical to the flat host's), `prov` (the
+   *  provider's bare drawn-world ray: position only, no engine reporting),
+   *  `host` (a FLAT standalone drawing its own), `fallb` (overlay at the
+   *  analytic gaze point), or `none`.
    *
-   *  USER LAW: the spark is the PLAYER's and the player is on a PLANET, so
-   *  `host` is a TOWN LEAK INTO THE CAMERA and should never appear on the
-   *  ground rung — towns own populations/procgen, never the cursor or the
-   *  frame (the town-view camera above the ground is the one exception).
-   *  Reading `host` here means the town is drawing the player's cursor, which
-   *  masks the planet cursor everywhere a town happens to be mounted.
-   *  String only; no behaviour. */
+   *  USER LAW the string still guards: the cursor is the PLAYER's, so it must
+   *  never be resolved in TOWN-PLAZA coordinates — a town owns population and
+   *  procgen, never the frame. `rep` is not that leak: the host reports in
+   *  WORLD coords off the DRAWN planet skin, which is the same pick the
+   *  wilderness makes. String only; no behaviour. */
   debugGround(): string;
   dispose(): void;
 }
@@ -342,6 +349,10 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
   let struct: StructureState | null = null;
   let ground: GroundState | null = null;
   let holdZoom = false;
+  /** The entity engine currently opted OUT of drawing its own cursor for the
+   *  ground rung (it reports; the provider draws). Held so the opt-out can be
+   *  handed back when the rung ends or the engine changes under the glide. */
+  let cursorOptedOut: SpiritCursorHost | null = null;
   /** DIAGNOSTICS: last ground frame's cursor-owner fork — see `debugGround`. */
   let groundDbg = "-";
   /** This frame's flight steering RATES (s⁻¹), captured by `driveFlightRegimes`
@@ -583,7 +594,17 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
 
   /** Leave the glide upward: back to the district orbit when we came from a
    *  town, else back to flight (both ceiling-gated by the caller). */
+  /** Hand the cursor BACK to whichever entity engine the ground rung borrowed
+   *  it from. The opt-out is asserted per frame while gliding, so it must be
+   *  released on the way out or that host stays cursor-less for the rest of its
+   *  life — visible the moment the player walks it as an ordinary avatar. */
+  function releaseGroundCursor(): void {
+    cursorOptedOut?.setExternalCursor?.(false);
+    cursorOptedOut = null;
+  }
+
   function exitGroundUp(g: GroundState): void {
+    releaseGroundCursor();
     const chart = g.geom.frameAt(g.loc);
     // Keep FACING: the orbit / the drone continue along the glide's heading,
     // read off the LOCAL frame (the dev axes ARE the local axes).
@@ -1176,42 +1197,62 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     const committedLoc = committed
       ? g.geom.move(g.loc, committed.x - g.glide.x, committed.z - g.glide.z, _gazeLoc)
       : null;
-    // THE GROUND CURSOR — one owner, town or wild: the PLANET's spark, sitting
-    // where the pointer ray meets the DRAWN world. With a live town host under
-    // the glide, the host REPORTS its cursor target (external-cursor opt-out:
-    // hover snap to heads / object tops, select progress — content, which is a
-    // town's job) and the planet spark displays it; over open ground the
-    // provider raycasts the rendered terrain itself (groundSpark). The overlay
-    // fallback serves providers with no drawn world — including FLAT standalone
-    // hosts (no groundSpark), which keep their own engine cursor exactly as
-    // before: the town IS the world there, the planet law is about towns ON a
-    // planet. The march's committed point still drives steering/dwell/
-    // possession — simulation truth — but the visible cursor never depends on
-    // it.
+    // THE GROUND CURSOR — ONE PIPELINE, flat world or planet. Standing on the
+    // ground is the same act in both; only the coordinate root differs, so the
+    // cursor may not behave differently either. Each side supplies exactly what
+    // it is the authority on:
+    //
+    //  • THE DRAWN WORLD gives the BARE GROUND POINT. The pointer ray is cast
+    //    at the rendered skin (terrain LOD chunks, roads, town meshes, walls),
+    //    so the spark sits on the pixel the player is looking at and stops
+    //    against a wall the gaze rests on. An engine's analytic ground sampler
+    //    cannot do this on a planet — the sampler and the LOD mesh disagree by
+    //    metres, which is the spark sinking under the skin.
+    //  • THE ENTITY ENGINE under the glide (the quest host — a town's, the
+    //    wilderness's) gives the ENTITY SNAP and the DWELL: a settled gaze
+    //    resting on a creature or an object reports that entity's head / top,
+    //    and select progress blooms the spark. A raycast alone can never know
+    //    it is looking AT someone. This is not "the town owning the player's
+    //    cursor": buildings and creatures are planet entities that happen to
+    //    stand in a town, and the report is WORLD coords — town-plaza
+    //    coordinates never enter.
+    //
+    // A flat standalone world runs the very same split inside its host (its
+    // sampler IS its drawn ground), which is why the flat cursor has always
+    // read correctly and is the behaviour being matched here.
+    //
+    // WHO DRAWS IT: the provider, which owns the drawing frame. On a planet
+    // that is the camera-parented spark (floating-origin safe, ONE cursor
+    // whether or not a town happens to be mounted — no hand-off pop at the
+    // town boundary); on a flat standalone world the host draws its own, in
+    // the same scene, with the same GazeSpark laws.
+    //
+    // The march's committed point still drives steering/dwell/possession —
+    // simulation truth — but the visible cursor never depends on it.
     let owner: string;
+    // Assert the opt-out every frame (self-healing — the host may have
+    // (re)mounted mid-glide, and its view mounts late). A host that draws its
+    // own spark AND reports would put two cursors on screen.
+    const reporter = provider.groundSpark ? (provider.cursorHost?.() ?? host) : null;
+    if (reporter !== cursorOptedOut) releaseGroundCursor(); // the engine changed under the glide
+    reporter?.setExternalCursor?.(true);
+    cursorOptedOut = reporter;
+    const report = provider.groundSpark && pointer
+      ? (reporter?.cursorWorld?.(_sparkPos) ?? null)
+      : null;
     if (provider.groundSpark) {
-      // PLANET path. Assert the opt-out every frame (self-healing — the host
-      // may have (re)mounted mid-glide, and its view mounts late).
-      // THE TOWN IS NEVER CONSULTED FOR THE CURSOR — not for position, not
-      // for hover, not for dwell. A town's buildings and creatures are PLANET
-      // entities that happen to be inside it, so the pointer resolves against
-      // the DRAWN WORLD (which contains them) by exactly the rule the open
-      // wilderness uses. The host is only opted out of drawing its own.
-      //
-      // What this replaced: any non-null host report won the position, so a
-      // mounted town placed the cursor from its OWN analytic ground — under
-      // the drawn skin (invisible once depth is on) and pre-resolved every
-      // frame, so the spark never darted and read as a laser pointer.
-      //
-      // NO `provider.spark(null)` HERE EITHER. That hid the spark, and
-      // setTarget's "appear in place, don't streak in" path fires whenever the
-      // spark is hidden — hiding it every frame and immediately re-targeting
-      // it TELEPORTED it to the gaze point forever, so it could never dart.
-      host?.setExternalCursor?.(true);
-      provider.groundSpark(pointer ? { x: pointer.x, y: pointer.y } : null);
-      owner = "prov";
+      // ONE call, one cursor: the provider puts its ground cursor where the
+      // pointer ray meets the DRAWN world — unless an entity engine has SNAPPED
+      // the gaze onto something it owns (a creature's head, an object's top),
+      // which no ground ray can produce, in which case that point wins.
+      provider.groundSpark(
+        pointer ? { x: pointer.x, y: pointer.y } : null,
+        report?.select ?? 0,
+        report?.hovering ? _sparkPos : undefined,
+      );
+      owner = report?.hovering ? "rep" : report ? "prov+" : "prov";
     } else if (hostHere) {
-      // FLAT standalone: the host's own engine cursor (unchanged).
+      // FLAT standalone: the host draws its own engine cursor (unchanged).
       provider.spark(null);
       owner = "host";
     } else if (committedLoc) {
@@ -1225,9 +1266,11 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
       owner = "none";
     }
     // PROBE: which owner drew the cursor, and the town state that decided it.
-    // `host` at the ground rung on a PLANET would be the leak restored — it
-    // must only ever read `host` on flat standalone worlds. `ptr` tells a
-    // MISSED cast apart from a frame nobody asked for a cursor at all.
+    // `rep` = an entity engine resolved it (the good path — hover + dwell);
+    // `prov` = the bare drawn-world ray (no engine reporting: wilderness, or a
+    // gaze that has settled on nothing); `host` = a flat standalone drawing its
+    // own. `ptr` tells a MISSED cast apart from a frame nobody asked for a
+    // cursor at all.
     groundDbg =
       `${owner} ptr:${pointer ? `${Math.round(pointer.x)},${Math.round(pointer.y)}` : "-"}` +
       ` town:${g.townRef !== null && g.townRef !== undefined ? "ref" : "-"}`;
@@ -1313,6 +1356,7 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
       // Keep FACING: the dollhouse starts at the glide's heading.
       const spiritAz = Math.atan2(g.glide.fx, -g.glide.fz);
       ground = null;
+      releaseGroundCursor(); // the dollhouse draws its own (town-view exception)
       enterStructure(t, hit.target, spiritAz);
       return { status: "SPIRIT", waiting: post.waiting, nearTown: post.nearTown };
     }
@@ -1349,6 +1393,10 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
       // Keep FACING: resume the glide along the camera's current forward.
       camera.getWorldDirection(_tmpDir);
       enterGround(worldPoint, townRef, _tmpDir);
+    },
+    groundInTown() {
+      return level === "ground" && !!ground &&
+        ground.townRef !== null && ground.townRef !== undefined;
     },
     debugGround() {
       if (level !== "ground" || !ground) return "-";
@@ -1390,6 +1438,7 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
       return { status: "SPIRIT ladder-v1 · no world", waiting: null, nearTown: null };
     },
     dispose() {
+      releaseGroundCursor();
       town?.session.structureHost()?.clearPointer();
     },
   };

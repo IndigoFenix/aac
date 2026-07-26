@@ -44,6 +44,12 @@ interface MockWorld {
   setHostCursor(c: { pos: THREE.Vector3; hovering: boolean; select: number } | null): void;
   hostExtCursor(): boolean | null;
   groundSparkCalls(): ({ x: number; y: number } | null)[];
+  /** The dwell progress the ladder passed through with each drawn-world cast —
+   *  the engine's bloom riding on the ray's metres. */
+  groundSparkSelects(): number[];
+  /** The SNAP POINT (an entity engine's own placement) handed to the last
+   *  ground-cursor call, or null when the ray decided the metres. */
+  groundSparkAt(): THREE.Vector3 | null;
   setTownCalls(): (unknown | null)[];
   sparkHover(): boolean;
   sparkSelect(): number;
@@ -75,6 +81,8 @@ function mockWorld(
   let hostExtCursor: boolean | null = null;
   let sparkNullCalls = 0;
   const groundSparkCalls: ({ x: number; y: number } | null)[] = [];
+  const groundSparkSelects: number[] = [];
+  let groundSparkAt: THREE.Vector3 | null = null;
   const setTownCalls: (unknown | null)[] = [];
 
   const host: MockWorld["host"] = {
@@ -170,8 +178,10 @@ function mockWorld(
     // A DRAWN world to raycast = the planet path (the flat default omits it,
     // exactly as the flat provider does).
     ...(opts?.drawnWorld ? {
-      groundSpark(pointer: { x: number; y: number } | null) {
+      groundSpark(pointer: { x: number; y: number } | null, select?: number, at?: THREE.Vector3) {
         groundSparkCalls.push(pointer ? { ...pointer } : null);
+        groundSparkSelects.push(select ?? 0);
+        groundSparkAt = at ? at.clone() : null;
         return true;
       },
     } : {}),
@@ -191,6 +201,8 @@ function mockWorld(
     setHostCursor: (c) => { hostCursor = c; },
     hostExtCursor: () => hostExtCursor,
     groundSparkCalls: () => groundSparkCalls,
+    groundSparkSelects: () => groundSparkSelects,
+    groundSparkAt: () => groundSparkAt,
     setTownCalls: () => setTownCalls,
     sparkHover: () => sparkHover,
     sparkSelect: () => sparkSelect,
@@ -732,33 +744,71 @@ describe("GROUND — the spark sits under the cursor", () => {
   });
 });
 
-describe("GROUND — the PLANET owns the cursor (planet law)", () => {
+describe("GROUND — ONE cursor pipeline, planet or flat", () => {
   const TOWN = { town: true };
   const NEAR = { ref: TOWN, label: "Mockville", distM: 100, radius: 400 };
 
-  it("a mounted town is opted out of drawing, and NEVER supplies the cursor", () => {
+  it("the entity engine RESOLVES the cursor, the planet DRAWS it", () => {
     const w = mockWorld("flight", true, { drawnWorld: true });
     const ladder = createSpiritLadder({ provider: w.provider, ceiling: "flight" });
     w.setNearTown(NEAR);
     ladder.dropToGround(new THREE.Vector3(0, 0, 0), TOWN);
     run(ladder, CENTRE, 5);
-    // The host draws no spark of its own…
+    // The host never draws a spark of its own — one cursor on screen, and on a
+    // planet it is the provider's (an object on the planet, the same one
+    // whether or not a town happens to be mounted).
     expect(w.hostExtCursor()).toBe(true);
-    // …and the pointer rides the drawn-world raycast — the same cursor the
-    // open wilderness gets.
+    // Nothing reported yet ⇒ the bare drawn-world raycast stands in.
     expect(w.groundSparkCalls().some((c) => c !== null)).toBe(true);
+    expect(ladder.debugGround().startsWith("prov")).toBe(true);
 
-    // THE LAW: nothing is in the town context except abstractions; every
-    // physical loaded object is on the planet. So a town reporting a cursor —
-    // hovering one of its creatures, mid-dwell, anything — changes NOTHING:
-    // the planet still raycasts the drawn world (which contains that creature)
-    // and the town's report is not read for position, hover, or bloom.
-    const casts = w.groundSparkCalls().length;
+    // …but the moment an entity engine under the glide REPORTS a cursor, that
+    // is the cursor: its pick stopped on walls, snapped to the entity under the
+    // pixel and carries the dwell — the pipeline the flat path has always had.
+    // A town reporting is NOT the old frame leak: the report is WORLD coords
+    // off the drawn skin, never town-plaza coordinates.
     w.setHostCursor({ pos: new THREE.Vector3(5, 1, 5), hovering: true, select: 0.5 });
     run(ladder, CENTRE, 1);
-    expect(w.groundSparkCalls().length).toBe(casts + 1); // the planet cast still ran
-    expect(w.sparkAt()).toBeNull();                      // the town's position never used
-    expect(ladder.debugGround().startsWith("prov")).toBe(true);
+    const at = w.groundSparkAt(); // the snap point rides the same one call
+    expect(at).not.toBeNull();
+    expect(at!.x).toBeCloseTo(5, 3);
+    expect(at!.z).toBeCloseTo(5, 3);
+    expect(ladder.debugGround().startsWith("rep")).toBe(true);
+  });
+
+  it("a BARE ground point keeps the drawn-world metres — the engine only lends its dwell", () => {
+    // The engine's own ground point is analytic (its height sampler), and on a
+    // planet the sampler and the drawn LOD skin disagree by metres — taking its
+    // position for a bare point is the spark sinking under the ground the
+    // player can see. So: ray for WHERE, engine for the bloom.
+    const w = mockWorld("flight", true, { drawnWorld: true });
+    const ladder = createSpiritLadder({ provider: w.provider, ceiling: "flight" });
+    w.setNearTown(NEAR);
+    ladder.dropToGround(new THREE.Vector3(0, 0, 0), TOWN);
+    w.setHostCursor({ pos: new THREE.Vector3(5, 1, 5), hovering: false, select: 0.4 });
+    const casts = w.groundSparkCalls().length;
+    run(ladder, CENTRE, 1);
+    expect(w.groundSparkCalls().length).toBe(casts + 1); // the ray placed it
+    const selects = w.groundSparkSelects();
+    expect(selects[selects.length - 1]).toBeCloseTo(0.4, 3); // …carrying the dwell
+    expect(w.groundSparkAt()).toBeNull();                    // …and no snap point
+    expect(ladder.debugGround().startsWith("prov+")).toBe(true);
+  });
+
+  it("the glide standing in a town is what makes the town tick at full rate", () => {
+    const w = mockWorld("flight", true, { drawnWorld: true });
+    const ladder = createSpiritLadder({ provider: w.provider, ceiling: "flight" });
+    w.setNearTown(NEAR);
+    expect(ladder.groundInTown()).toBe(false); // still airborne
+    ladder.dropToGround(new THREE.Vector3(0, 0, 0), TOWN);
+    run(ladder, CENTRE, 2);
+    // The host layer reads this to step that town at the frame rate: it is the
+    // player's cursor + interaction engine on this rung, and a 2 Hz gaze
+    // pipeline reads as a lagging laser pointer.
+    expect(ladder.groundInTown()).toBe(true);
+    w.setNearTown({ ...NEAR, distM: 600 }); // glide out past the attach radius
+    run(ladder, null, 2);
+    expect(ladder.groundInTown()).toBe(false);
   });
 
   it("never hides the spark on a frame it re-targets (the teleport that killed the dart)", () => {

@@ -166,7 +166,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     "elevenlabsEnabled", "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",
     "iconTextRatio", "languageLevel", "usePcsSymbols", "singleGlyphButtons",
     "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols", "dynamicBoardsEnabled",
-    "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider",
+    "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "selectionMethod", "restSpace",
     "signLanguage", "multiCameraMode",
     "allowReadProgress", "allowReadReports", "allowNotes",
     "appConfig", "chatAgentPrompt", "autoAacPrompt", "seizureDetection",
@@ -559,6 +559,20 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       type: "string",
       title: "Eyegaze Provider",
       description: "'auto', 'camera', 'tobii', 'eyetech', 'lctech', 'webhid', 'mouse'",
+    },
+    selectionMethod: {
+      id: "selectionMethod",
+      type: "string",
+      title: "Selection Method",
+      description:
+        "How a gaze selects a button: 'whole_button'; 'selection_area' (a small eye mark in the button's corner, so labels can be read without selecting); or 'intent' (decodes reading vs. choosing from how steadily the gaze rests, and where on the button)",
+    },
+    restSpace: {
+      id: "restSpace",
+      type: "string",
+      title: "Rest Areas",
+      description:
+        "How much space is cut from board buttons' corners so the gap where four meet forms a circle the student can rest their gaze in without selecting: 'large', 'small', or 'none'",
     },
     signLanguage: {
       id: "signLanguage",

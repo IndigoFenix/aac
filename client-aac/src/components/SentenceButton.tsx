@@ -17,6 +17,8 @@ import { Glyph } from "@/components/Glyph";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
+import type { RatioLevel } from "@shared/button-sizing";
+import type { CornerSpace } from "@client-shared/board/ShapedButton";
 import type { BoardRenderDeps, GlyphRenderProps, IconVisual } from "@client-shared/board/types";
 import {
   resolveButtonBackground,
@@ -121,6 +123,16 @@ interface SentenceButtonProps {
   ariaLabel?: string;
   /** Optional extra content rendered as an absolute overlay (e.g. link arrow). */
   cornerIndicator?: ReactNode;
+  /** Space to keep clear at the label's inline end (see BoardButtonVisual). */
+  labelInsetEnd?: string;
+  /** Tag content boxes with `data-dwell-zone` for the gaze intent decoder. */
+  dwellZones?: boolean;
+  /** Icon-to-text sizing level; when set, the label fills its own flex share. */
+  ratioLevel?: RatioLevel;
+  /** Rendered between the icon and the label (the intent decoder's core mark). */
+  midIndicator?: ReactNode;
+  /** Concave corner cuts, so the gap where four buttons meet forms a circle. */
+  cornerSpace?: CornerSpace | null;
   /** Passed through to motion.button so callers can pin data-* attributes etc. */
   extraButtonProps?: Record<string, unknown>;
 }
@@ -144,6 +156,11 @@ export function SentenceButton(props: SentenceButtonProps) {
       overlaySize={props.overlaySize}
       ariaLabel={props.ariaLabel}
       cornerIndicator={props.cornerIndicator}
+      labelInsetEnd={props.labelInsetEnd}
+      dwellZones={props.dwellZones}
+      ratioLevel={props.ratioLevel}
+      midIndicator={props.midIndicator}
+      cornerSpace={props.cornerSpace}
       extraButtonProps={props.extraButtonProps}
     />
   );

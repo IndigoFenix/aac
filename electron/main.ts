@@ -2,12 +2,26 @@ import { app, BrowserWindow, protocol, ipcMain, session, dialog, shell } from "e
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import log from "electron-log";
 import { GazeSidecarSupervisor, GazeSupervisorPaths } from "./hardware/gaze-sidecar-supervisor";
 import { setupAutoUpdater, stopAutoUpdater } from "./auto-update";
+import { acquireSingleInstanceLock, setupInstanceGuard } from "./instance-guard";
 import { isUrlPermitted } from "../shared/permitted-websites";
 import type { PermittedWebsite } from "../shared/schema";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ── One running copy, before anything else ──
+// Must come before any window/protocol/updater work: a duplicate launch has to
+// bow out without spawning a second gaze sidecar (two instances fight over the
+// single-consumer eye-tracker DLL) or a second auto-updater. The holder gets
+// `second-instance` and raises its own window — see electron/instance-guard.ts.
+if (!acquireSingleInstanceLock()) {
+  log.info("[instance] another copy of Aivota AAC is already running — this launch is exiting");
+  app.quit();
+  // Hard stop: nothing below this line may run in a duplicate launch.
+  process.exit(0);
+}
 
 // Register app:// as a privileged scheme BEFORE app.ready
 protocol.registerSchemesAsPrivileged([
@@ -279,7 +293,19 @@ app.on("ready", async () => {
   // false there). Started after the window so the renderer is wired up
   // before any status events fire.
   if (mainWindow) {
-    setupAutoUpdater(mainWindow);
+    setupAutoUpdater(mainWindow, {
+      // The gaze sidecar runs the app's OWN executable (Electron-as-node), so
+      // to the NSIS installer's running-app check it is indistinguishable from
+      // the app still being open — and a live handle on files inside the
+      // install directory. It has to be gone before the installer starts, not
+      // merely on the way out.
+      beforeInstall: () => {
+        log.info("[main] update install requested — stopping gaze sidecar first");
+        gazeSupervisor?.stop();
+      },
+    });
+    // Second-launch handling + the multiple-copies scan/report.
+    setupInstanceGuard(mainWindow);
   }
 });
 
@@ -341,6 +367,16 @@ ipcMain.handle("gaze:locateDll", async (_e, device: string) => {
     return gazeSupervisor?.getStatus() ?? null;
   }
   return gazeSupervisor?.setDll(device, result.filePaths[0]) ?? null;
+});
+
+// Teardown runs on `before-quit`, not only on `window-all-closed`: a quit can be
+// initiated with the window already gone (or by the updater's quitAndInstall),
+// and the sidecar MUST die on every one of those paths — it holds the vendor DLL
+// and runs the app's own exe, so a survivor blocks the next install and grabs
+// the tracker away from the relaunched app.
+app.on("before-quit", () => {
+  gazeSupervisor?.stop();
+  stopAutoUpdater();
 });
 
 app.on("window-all-closed", () => {

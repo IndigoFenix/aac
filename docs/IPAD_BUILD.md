@@ -97,7 +97,44 @@ The tester installs Apple's **TestFlight** app, then installs the build through
 it. Internal testers (your App Store Connect team) get builds immediately;
 external testers need a one-time Beta App Review, usually under 48 hours.
 
-### Gotcha: Capacitor 8 defaults to SPM, which has no `.xcworkspace`
+## On-device debugging
+
+A sideloaded iPad has no Safari inspector and no terminal. The AAC client has a
+built-in log viewer for this: `client-aac/src/lib/debug-log.ts` captures console
+output + global errors + API failures into a ring buffer, and
+`components/DebugConsole.tsx` shows it on-device.
+
+Open it with a **4-finger tap anywhere** (or **Ctrl+Shift+D** on desktop). It's
+hidden — students never see it. Reproduce the issue, tap **Copy**, and the log
+(with device/version/URL context) goes to the clipboard to paste back. It's
+mounted at the app root, so it works on the login screen too.
+
+## Gotcha: iPad session cookie is dropped (login bounces back)
+
+Symptom: log in, the institute/student picker flashes for an instant, then it
+returns to the login screen.
+
+Cause: the app is served from `capacitor://localhost` and the backend is a
+cross-origin https server. The server's session cookie is `SameSite=None`, which
+WKWebView treats as a third-party cookie and — under iOS ITP — refuses to store
+or send. So `credentials: "include"` carries no cookie and the post-login
+`/auth/user` check 401s.
+
+Fix (no server change): on the Capacitor host only, JSON API calls are routed
+through **CapacitorHttp** (native HTTP + native cookie store, not subject to
+WKWebView's cookie rules) — see `client-aac/src/lib/queryClient.ts` (`apiFetch`).
+The web and Electron builds keep normal fetch. CapacitorHttp's *global* fetch
+patch is deliberately NOT enabled (it would break fetch streaming); the plugin
+is called directly for the API layer only. Any client code that calls the API
+via a raw `fetch()` instead of the `queryClient.ts` helpers will still hit the
+cookie problem on iPad — route it through `apiRequest`/`fetchWithAuth`.
+
+Not yet verified: the live AI session connects over WebSocket, whose handshake
+also carries the session cookie. If the live session fails to authenticate on
+iPad after login works, it's the same third-party-cookie cause in a channel the
+CapacitorHttp fix doesn't cover — watch the debug console for it.
+
+## Gotcha: Capacitor 8 defaults to SPM, which has no `.xcworkspace`
 
 `cap add ios` in Capacitor 8 defaults to **Swift Package Manager**, whose
 template ships no `App.xcworkspace` and no Podfile — archiving with

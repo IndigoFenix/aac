@@ -1368,6 +1368,52 @@ export default function UnifiedDebugPanel({
                     )}
                   </div>
                 )}
+                {/* INTENT DECODER probe. The stillness threshold self-calibrates
+                    per student, so these numbers are the only way to tell a
+                    student who can't settle from one the tuning is wrong for. */}
+                {dwellDebug.intent && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] text-gray-500">Intent</div>
+                      <div className="flex gap-1">
+                        {dwellDebug.intent.revisit && (
+                          <Badge className="text-[9px] px-1 bg-purple-500 text-white">revisit</Badge>
+                        )}
+                        {dwellDebug.intent.fallback && (
+                          <Badge className="text-[9px] px-1 bg-amber-500 text-white">fallback</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-[11px] font-medium">
+                      {dwellDebug.intent.state} · {dwellDebug.intent.zone}
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-gray-500">
+                      dispersion {dwellDebug.intent.dispersion.toFixed(0)} / threshold{" "}
+                      {dwellDebug.intent.threshold.toFixed(0)}px
+                    </div>
+                    {/* Derived from the AAC dwell-timeout setting, not fixed. */}
+                    <div className="text-[10px] text-gray-500">
+                      charge {Math.round(dwellDebug.intent.timings.chargeTimeMs)}ms · settle{" "}
+                      {Math.round(dwellDebug.intent.timings.qualifyCoreMs)}/
+                      {Math.round(dwellDebug.intent.timings.qualifyInkMs)}ms · pause{" "}
+                      {Math.round(dwellDebug.intent.timings.pauseMs)}ms
+                    </div>
+                    {/* Bar fills toward the threshold; past it the gaze reads as
+                        scanning rather than settling. */}
+                    <div className="mt-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          dwellDebug.intent.dispersion <= dwellDebug.intent.threshold
+                            ? "bg-green-500"
+                            : "bg-orange-500"
+                        }`}
+                        style={{
+                          width: `${Math.min(100, (dwellDebug.intent.dispersion / Math.max(1, dwellDebug.intent.threshold)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

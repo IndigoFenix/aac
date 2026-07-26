@@ -630,6 +630,17 @@ export const aacSettings = pgTable("aac_settings", {
   eyegazeTimeout: integer("eyegaze_timeout").default(2000), // Dwell time in ms (1000-10000)
   eyegazeProvider: text("eyegaze_provider"), // 'auto', 'camera', 'tobii', 'eyetech', 'lctech', 'webhid', 'mouse'
   eyegazeSmoothing: text("eyegaze_smoothing"), // hardware-tracker jitter smoothing strength: 'off'|'light'|'medium'|'strong' (null = 'medium')
+  // What part of a board button the dwell timer runs on.
+  //   'whole_button'   — the whole button (default; looking at it selects it)
+  //   'selection_area' — a small eye mark in the button's lower corner, so the
+  //                      label can be read without triggering a selection
+  selectionMethod: text("selection_method").default("whole_button"),
+  // How much space is cut from the corners of board buttons, so the gap where
+  // four of them meet forms a circle the student can rest their gaze in.
+  //   'large' (default) | 'small' | 'none'
+  // The STUDENT's preference. A board may ask for less via boards.rest_space,
+  // but never for more — see minRestSpace() in shared/button-shape.ts.
+  restSpace: text("rest_space").default("large"),
 
   // AI identity
   aiName: text("ai_name"), // Custom AI name (e.g. "Buddy", "Sam")
@@ -2195,6 +2206,12 @@ export const boards = pgTable("boards", {
   language: text("language").default("en"),
   automaticSelection: boolean("automatic_selection").default(false).notNull(),
   automaticSelectionHint: text("automatic_selection_hint"),
+  // How much REST SPACE to cut from each button's corners, so the gap where
+  // four of them meet forms a circle an eyegaze student can park their gaze in.
+  //   'none' | 'small' (default) | 'large'
+  // Board-level rather than student-level: a board's own button size and
+  // whether its layout is learned decide how much space is worth the area.
+  restSpace: text("rest_space").default("small"),
   isGenerated: boolean("is_generated").default(false).notNull(), // AI-generated during AAC session
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

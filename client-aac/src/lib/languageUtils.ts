@@ -17,7 +17,7 @@ export const SUPPORTED_LANGUAGES: LanguageConfig[] = [
     code: 'he',
     name: 'עברית',
     direction: 'rtl',
-    fontFamily: 'Arial, "Noto Sans Hebrew", "David", serif'
+    fontFamily: '"Noto Sans Hebrew", Arial, sans-serif'
   }
 ];
 

@@ -8,6 +8,7 @@ import { LogOut, User, Building2, Users } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { API_BASE_URL } from "@/lib/api-base";
+import { fetchWithAuth } from "@/lib/queryClient";
 
 interface Student {
   id: string;
@@ -81,9 +82,8 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
   const { data: classroomsData, isLoading: classroomsLoading } = useQuery<ClassroomsResponse>({
     queryKey: ["/api/users/me/classrooms", { instituteId: selectedInstituteId }],
     queryFn: async () => {
-      const res = await fetch(
+      const res = await fetchWithAuth(
         `${apiBase}/api/users/me/classrooms?instituteId=${selectedInstituteId}`,
-        { credentials: "include" }
       );
       if (!res.ok) {
         const text = (await res.text()) || res.statusText;
@@ -108,7 +108,7 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
       const url = selectedClassroomId
         ? `${apiBase}/api/classrooms/${selectedClassroomId}/students`
         : `${apiBase}/api/students?instituteId=${selectedInstituteId}`;
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetchWithAuth(url);
       if (!res.ok) {
         const text = (await res.text()) || res.statusText;
         throw new Error(`${res.status}: ${text}`);

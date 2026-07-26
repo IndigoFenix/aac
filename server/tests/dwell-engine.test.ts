@@ -161,3 +161,108 @@ describe("DwellEngine — stale gaze suspension", () => {
     expect(runUntilFired(engine, "a", point, 0, 700, () => 0)).toBe("a");
   });
 });
+
+// ─── Selection-area mode ──────────────────────────────────────────
+// The problem it solves: with whole-button dwell a student can't read a label
+// without selecting it. A small confirm area (the eye mark) becomes the only
+// thing that fills the timer, and glancing at the label merely pauses/drains it
+// rather than cancelling outright.
+describe("DwellEngine — selection area", () => {
+  const POINT = { x: 100, y: 100 };
+
+  /** Tick the engine at 50ms intervals over one area target; returns the last result. */
+  function run(
+    engine: DwellEngine<string>,
+    target: string,
+    startAt: number,
+    endAt: number,
+    inArea: boolean,
+  ) {
+    let last = engine.update(target, POINT, startAt, startAt, inArea);
+    for (let t = startAt + 50; t <= endAt; t += 50) {
+      last = engine.update(target, POINT, t, t, inArea);
+      if (last.fired) return last;
+    }
+    return last;
+  }
+
+  it("fills only while the gaze is inside the area, and fires there", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: DWELL_MS });
+    const r = run(engine, "a", 0, 700, true);
+    expect(r.fired).toBe("a");
+  });
+
+  it("never fires from gaze that stays on the button but off the area", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: DWELL_MS });
+    const r = run(engine, "a", 0, 10000, false);
+    expect(r.fired).toBeNull();
+    expect(r.progress).toBe(0);
+    // Nothing to drain, so nothing is reported as draining either.
+    expect(r.draining).toBe(false);
+  });
+
+  it("holds progress through the pause window, then drains", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: DWELL_MS });
+    const filled = run(engine, "a", 0, 300, true).progress;
+    expect(filled).toBeCloseTo(0.5, 2);
+
+    // Default pauseMs is 500 — nothing moves for the first half-second off-area.
+    const paused = run(engine, "a", 350, 800, false);
+    expect(paused.progress).toBeCloseTo(filled, 5);
+    expect(paused.draining).toBe(false);
+
+    const drained = run(engine, "a", 850, 1400, false);
+    expect(drained.progress).toBeLessThan(filled);
+    expect(drained.draining).toBe(true);
+  });
+
+  it("drains faster the longer the gaze stays off the area", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: 20000 }); // long, so it can't empty
+    run(engine, "a", 0, 10000, true); // fill well past halfway
+
+    const start = run(engine, "a", 10050, 11000, false).progress; // past the pause window
+    const afterFirst = run(engine, "a", 11050, 13000, false).progress;
+    const afterSecond = run(engine, "a", 13050, 15000, false).progress;
+
+    const firstLoss = start - afterFirst;
+    const secondLoss = afterFirst - afterSecond;
+    expect(firstLoss).toBeGreaterThan(0);
+    expect(secondLoss).toBeGreaterThan(firstLoss);
+  });
+
+  it("resumes from the drained level when the gaze returns to the area", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: DWELL_MS });
+    run(engine, "a", 0, 300, true);
+    const drained = run(engine, "a", 350, 1400, false).progress;
+    expect(drained).toBeGreaterThan(0); // partial loss, not a reset
+
+    const resumed = run(engine, "a", 1450, 1550, true);
+    expect(resumed.progress).toBeGreaterThan(drained);
+    expect(resumed.draining).toBe(false);
+  });
+
+  it("resets to zero when the gaze leaves the button entirely", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: DWELL_MS });
+    run(engine, "a", 0, 300, true);
+
+    // Off the board completely — the target goes null.
+    engine.update(null, POINT, 350, 350);
+
+    expect(engine.update("a", POINT, 400, 400, true).progress).toBe(0);
+    // And it needs a fresh full dwell, not the remainder of the old one.
+    expect(engine.update("a", POINT, 700, 700, true).fired).toBeNull();
+  });
+
+  it("never drains below zero", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: DWELL_MS });
+    run(engine, "a", 0, 100, true); // barely any progress
+    const r = run(engine, "a", 150, 20000, false);
+    expect(r.progress).toBe(0);
+  });
+
+  it("leaves area-less targets on whole-button dwell (mixed board)", () => {
+    const engine = new DwellEngine<string>({ dwellTimeMs: DWELL_MS });
+    // Undefined inArea = no selection area on this button: plain wall-clock.
+    expect(runUntilFired(engine, "plain", POINT, 0, 700, (t) => t)).toBe("plain");
+  });
+});

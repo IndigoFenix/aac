@@ -258,6 +258,18 @@ function bootQuestGame(
     // the ladder poses the camera (setExternalCamera), then the view draws.
     onFrame: (dt) => {
       if (!ladder) return;
+      // INTERIORS FOLLOW WHETHER A REAL BODY IS IN THE HOUSE — never the rung
+      // alone, and never the glide's parked stand-in (the planet path's rule,
+      // which the flat path was missing entirely). The ground glide parks the
+      // host's player avatar on itself every frame so streaming and the
+      // door-open reveal follow it; with the reveal left ON that stand-in
+      // counted as an OCCUPANT, so every house the spirit drifted past lost its
+      // walls and promoted its household to live bodies. A formless spirit in
+      // the street is not an occupant. CLAIM a creature and you are a person
+      // standing in a room again, so the interior opens exactly as it does for
+      // a walker; the dollhouse opens one regardless — that is what the
+      // structure rung IS.
+      host?.setInteriorReveal(possessedNow || ladder.level === "structure");
       if (possessedNow) {
         setStatus(`AVATAR — you are ${host?.possessed ?? "?"} · walk with the mouse · Speak "stop" to let go · "build" to found`);
         return;

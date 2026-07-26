@@ -28,7 +28,7 @@ import { createSpaceFlight, type SpaceFlight, type FlightCity } from "./space-fl
 import { createSpaceHud, type SpaceHud, type HudCity } from "./space-hud";
 import { createDroneCamera, type DroneCamera } from "@shared/world-engine/spirit/drone-camera";
 import { createSpiritLadder, CITY_FOCUS_ALT, type SpiritLadder } from "@shared/world-engine/spirit/ladder";
-import type { SpiritLevel, SpiritStructureHost } from "@shared/world-engine/spirit/frame-provider";
+import type { SpiritCursorHost, SpiritLevel, SpiritStructureHost } from "@shared/world-engine/spirit/frame-provider";
 import { createPlanetSpiritProvider } from "./spirit/planet-provider";
 import { GazeSpark } from "@shared/world-engine/render3d";
 import type { CelestialBody } from "@shared/world-engine/space/body";
@@ -853,8 +853,8 @@ function probeMeshes(root: THREE.Object3D, exclude?: THREE.Object3D): THREE.Mesh
 // live camera and says which one it is:
 //   • amp≈0 / core≈0        → never DRAWN (hidden, or mid-dart at zero size)
 //   • amp>0 and OFF@…       → drawn, but placed outside the frustum
-// The spark group is parented to the CAMERA (camera-frame easing), so its
-// stored position is camera-LOCAL — lift it through the group's world matrix
+// The spark's stored position is in its GROUP's frame (the planet's body group
+// — it is an object on the planet), so lift it through the group's world matrix
 // before projecting, or the answer is nonsense.
 const _sparkWorld = new THREE.Vector3();
 const _sparkNdc = new THREE.Vector3();
@@ -2614,6 +2614,18 @@ function spiritStructureHost(fc: FlightCity): SpiritStructureHost | null {
   return _spiritHost;
 }
 
+/** THE ENTITY ENGINE THE PLAYER IS STANDING IN — whichever ground layer is
+ *  mounted here: the live town's host, else the wilderness session (unified
+ *  ground only; the legacy sandbox chunk has no gaze pipeline to report). The
+ *  ladder's ground rung asks every frame and never learns which it got: the
+ *  cursor obeys the same laws on both sides of a town's edge, because standing
+ *  on the ground is the same act on both sides. Town-plaza coordinates never
+ *  enter — the host reports in WORLD coords. */
+function spiritCursorHost(): SpiritCursorHost | null {
+  if (embedTown && liveViz) return spiritStructureHost(liveViz.fc);
+  return embedWild?.quest ?? null;
+}
+
 /** THE BODY THE SPARK DRIVES in the live town under `fc` (SIM coords + facing),
  *  or null when the spark rides nothing. `drivenId === localId` IS the "no
  *  claim" state — a fresh spark drives its own formless body (engine.ts).
@@ -2624,6 +2636,45 @@ function spiritDrivenBody(fc: FlightCity): { x: number; y: number; fx: number; f
   if (!st || st.drivenId === st.localId) return null;
   const a = st.avatars[st.drivenId];
   return a ? { x: a.x, y: a.y, fx: a.fx, fy: a.fy } : null;
+}
+
+/** RE-PARENT THE SPARK TO SUIT THE RUNG, and set its depth test to match.
+ *
+ *  FLIGHT: a HUD cursor — anchored to the CAMERA, drawn on top. The flight
+ *  effect (the slipstream embers, the depth lead as you dive) is authored in
+ *  camera space and only reads right from there.
+ *  GROUND / STRUCTURE: an object standing in the world — hung off the planet's
+ *  body group, the same parent the terrain chunks, towns, trees and creatures
+ *  use, so the floating-origin rebase carries it and the world occludes it.
+ *
+ *  The spark's remembered positions are in its GROUP's frame, so the swap goes
+ *  through `GazeSpark.rebase` (old parent → new parent) and the cursor stays
+ *  exactly where it was on screen instead of leaping by the whole frame shift. */
+const _sparkReparent = new THREE.Matrix4();
+function sparkToRung(s: SpiritRun): void {
+  // THE SKY MUST NOT TOUCH THE SPARK. `forceBodyMeshesOpaque` walks the body
+  // group every frame and stomps every mesh under it to
+  // `transparent=false / depthWrite=true / opacity=1` — so the moment the spark
+  // hangs off the planet, its additive, non-writing glow is flattened into an
+  // opaque depth-writing quad and vanishes against the ground. The sky prunes
+  // any subtree that owns its material state; the ground layers already claim
+  // it (see mountWildernessAt), and the spark, which runs its own fades and
+  // blending, claims it too. Set on the GROUP, so the core, halo and embers
+  // under it are all spared.
+  s.spark.group.userData[OWNS_MATERIAL_STATE] = true;
+  const world = s.ladder.level === "ground" || s.ladder.level === "structure";
+  const want: THREE.Object3D = world ? s.focusBody.group : camera;
+  const have = s.spark.group.parent;
+  if (have !== want) {
+    if (have) {
+      have.updateWorldMatrix(true, false);
+      want.updateWorldMatrix(true, false);
+      // new-frame ← old-frame, so the eased position survives the swap.
+      s.spark.rebase(_sparkReparent.copy(want.matrixWorld).invert().multiply(have.matrixWorld));
+    }
+    want.add(s.spark.group);
+  }
+  s.spark.setDepthTest(world);
 }
 
 /** Does the spark ride a body right now? (the mounted town's own city). */
@@ -2651,13 +2702,22 @@ function spiritForceGates(pos: THREE.Vector3): string | null {
 function stepSpirit(dt: number, now: number): void {
   if (!flight || !spirit) return;
   const s = spirit;
-  // A RIDDEN BODY ticks at the FULL frame rate. Claim the town's step up front
-  // — streamGround (called from inside ladder.step → postFrame) skips its own
-  // throttled airborne step when this flag is set, and we take the step below
-  // at the real dt. Left throttled, a claimed creature would walk in ~2 Hz
-  // lurches while its camera tracked it smoothly.
+  // STANDING IN A TOWN TICKS IT AT THE FULL FRAME RATE — riding one of its
+  // bodies, or gliding its streets on the ground rung. Claim the town's step up
+  // front: streamGround (called from inside ladder.step → postFrame) skips its
+  // own throttled airborne step when this flag is set, and we take the step
+  // below at the real dt.
+  //  • riding: left throttled, a claimed creature walks in ~2 Hz lurches while
+  //    its camera tracks it smoothly;
+  //  • gliding: the town host IS the player's cursor engine on that rung (it
+  //    picks the walls, snaps the gaze to entities, runs the dwell), and a
+  //    2 Hz gaze pipeline is exactly what made the planet cursor read as a
+  //    lagging laser pointer next to the flat path's.
+  // The airborne cadence is for towns you are NOT in — it stays.
   const riding = spiritRiding();
-  spiritTownDriven = riding; // also set by the structure rung's host step
+  const glidingTown = s.ladder.level === "ground" && s.ladder.groundInTown();
+  const stepTownFull = riding || glidingTown;
+  spiritTownDriven = stepTownFull; // also set by the structure rung's host step
 
   // A town-rung initial_focus resolves once the home world's cities exist
   // (the geology bake founds them): park the drone over the focus town and
@@ -2696,23 +2756,13 @@ function stepSpirit(dt: number, now: number): void {
   // terrain skin (a pose under the LOD mesh is a fully blank screen).
   clampCameraAboveDrawnGround();
 
-  // SPARK DEPTH — OFF EVERYWHERE, KNOWINGLY WRONG.
-  //
-  // The intent stands: the spark is a 3D BEING, so on the ground and in a
-  // structure it should be occluded by terrain and walls, and should read as
-  // flying BEHIND things on its way across. With depth ON it is invisible,
-  // and none of the explanations held up: it is not buried (lifting the seat
-  // 3 m and 10 m changed nothing), not a three sprite/log-depth gap (r184's
-  // sprite shader carries logdepthbuf in both stages), not the town-frame
-  // position leak (the cursor is planet-owned now), and not hits on faded
-  // cut-away walls (fixed separately, no effect here). Whatever occludes it
-  // has never been measured — the honest next step is to read the DEPTH
-  // BUFFER at the spark's pixel, or A/B a plain depth-tested mesh at the same
-  // world position (`__spark.marker`).
-  //
-  // Until then: draw it on top. A visible cursor in the wrong depth order
-  // beats a correct one nobody can see.
-  s.spark.setDepthTest(false);
+  // WHERE THE SPARK LIVES, BY RUNG. In FLIGHT it is a HUD cursor: anchored to
+  // the CAMERA, drawn on top, with the slipstream authored in camera space —
+  // that is the flight effect and it must not change. On the GROUND it is an
+  // object standing in the world: hung off the planet's body group (the same
+  // parent the terrain chunks, towns, trees and creatures use), depth-tested,
+  // carried by the floating-origin rebase like everything else on the surface.
+  sparkToRung(s);
 
   // GROUND rung: the glide is a live interlocutor — forward the pointer to
   // the live town host so dwell-to-talk / containers work mid-glide (the
@@ -2743,13 +2793,14 @@ function stepSpirit(dt: number, now: number): void {
     embedTown.host.setInteriorReveal(s.ladder.level === "structure" || riding);
   }
 
-  // The RIDDEN body's own step — AFTER the ladder posed the camera and the
-  // pointer landed, for two reasons: the host steers the claimed body toward
-  // the gaze it picks through THIS camera (a pick against last frame's matrix
-  // is a full frame of planetary sweep off the surface), and its camera-
-  // dependent mesh sync wants the posed camera too. The structure rung steps
-  // its host from inside the ladder for exactly the same reason.
-  if (riding && embedTown) {
+  // The town's own step while the player STANDS IN IT (riding or gliding) —
+  // AFTER the ladder posed the camera and the pointer landed, for two reasons:
+  // the host picks the gaze (and steers a claimed body toward it) through THIS
+  // camera — a pick against last frame's matrix is a full frame of planetary
+  // sweep off the surface — and its camera-dependent mesh sync wants the posed
+  // camera too. The structure rung steps its host from inside the ladder for
+  // exactly the same reason, so never double-step it here.
+  if (stepTownFull && embedTown && s.ladder.level !== "structure") {
     const t0 = performance.now();
     embedTown.host.step(dt, now);
     perf.town = performance.now() - t0;
@@ -2767,6 +2818,13 @@ function stepSpirit(dt: number, now: number): void {
   }
 
   (window as unknown as Record<string, unknown>).__spirit = {
+    // THE LIVE LADDER + DRONE — so a probe can fly the camera down and stand
+    // it on the ground without a human at the mouse (`drone.setGround(dir,
+    // alt)` then `ladder.dropToGround(drone.groundPoint(...))`); every spark
+    // forensic below needs a ground rung over STREAMED terrain to say anything.
+    ladder: s.ladder,
+    drone: s.drone,
+    body: s.focusBody,
     level: s.ladder.level, ceiling: s.ladder.ceiling,
     alt: Math.round(s.drone.altitude), pointerInside: flightPointer.inside,
     // TRACE: per-frame probe history (ring, ~4 s at 60 fps). Copying the
@@ -2884,11 +2942,10 @@ function bootSpiritWorld(game: GameSettings): void {
   const startHeading = new THREE.Vector3(0, 1, 0); // tangentialised by the drone
   const drone = createDroneCamera(startDir, startHeading, maxAlt);
   const spark = new GazeSpark();
-  spark.setDepthTest(false); // draw ON TOP — the flight scene's logdepth buffer
-                             // hides sprites behind the round planet otherwise
-  // CAMERA-FRAME cursor: the spark rides the camera and eases in camera-local
-  // space (the provider converts targets), so the floating-origin rebase and
-  // flight speed never strand its eased position (the darting-into-the-sky).
+  // WHERE THE SPARK HANGS IS THE RUNG'S CALL (see sparkParentForRung):
+  // camera-anchored in FLIGHT — it is a HUD cursor there, and the flight effect
+  // (slipstream embers, depth lead) is authored in camera space — and hung off
+  // the PLANET on the ground, where it is an object standing in the world.
   scene.add(camera);
   camera.add(spark.group);
 
@@ -2916,6 +2973,7 @@ function bootSpiritWorld(game: GameSettings): void {
     },
     forceGates: spiritForceGates,
     castGroundRay: castDrawnGround,
+    cursorHost: spiritCursorHost,
   });
 
   // The focus rung: null flies the whole scope; a town-rung focus ("site:N")
@@ -2998,9 +3056,8 @@ function bootPlanetScope(game: GameSettings): void {
   const startHeading = new THREE.Vector3(0, 1, 0);
   const drone = createDroneCamera(startDir, startHeading, maxAlt);
   const spark = new GazeSpark();
-  spark.setDepthTest(false);
   scene.add(camera);
-  camera.add(spark.group);
+  camera.add(spark.group); // FLIGHT anchor; the rung re-parents it (see stepSpirit)
   // The streaming flight normally sets the camera's clip planes for space
   // distances; without it, stale near/far clip the planet to black.
   camera.near = Math.max(0.5, radius * 0.0002);

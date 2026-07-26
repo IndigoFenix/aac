@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "selection_method" text DEFAULT 'whole_button';

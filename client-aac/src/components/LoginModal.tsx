@@ -130,7 +130,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={() => !isLoading && onClose()}>
-      <DialogContent className="sm:max-w-[500px] shadow-lg" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-[500px] shadow-lg" onPointerDownOutside={(e) => e.preventDefault()} hideCloseButton>
         <DialogHeader className="space-y-1 text-center sm:text-center">
           <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
           <DialogTitle className="text-2xl font-bold text-center">

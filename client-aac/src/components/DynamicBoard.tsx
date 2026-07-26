@@ -10,6 +10,12 @@ import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { Glyph } from "@/components/Glyph";
 import { SentenceButton, resolveButtonBackground } from "@/components/SentenceButton";
+import { SelectionAreaMark } from "@/components/SelectionAreaMark";
+import { IntentCoreMark } from "@/components/IntentCoreMark";
+import { ratioLevel } from "@shared/button-sizing";
+import { restSpaceRatio, type RestSpace } from "@shared/button-shape";
+import { ShapedButton } from "@client-shared/board/ShapedButton";
+import type { SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 import { ProceduralFace, NEUTRAL_FACE } from "@shared/social-bot/ProceduralFace";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
 
@@ -67,27 +73,95 @@ interface DynamicBoardProps {
    *  apps so their startup params resolve (open_app). */
   onLaunchApp?: (appId: string, appData?: any) => void;
   onRequestAppOpen?: (appId: string) => void;
+  /**
+   * How a gaze selects a button (`aacSettings.selectionMethod`). Both non-default
+   * modes exist to solve the same problem — a student can't read a label without
+   * selecting it — and both apply ONLY to dynamically-generated SENTENCE
+   * BUTTONs. Fixed board chrome (nav, word-finder/more, practice-friend) stays
+   * on whole-button dwell: it's recognised by shape and position, not read.
+   *   selection_area — a small confirm mark in the button's lower corner.
+   *   intent         — zone markers, so the decoder can tell an icon fixation
+   *                    from a label fixation from a rest.
+   */
+  selectionMethod?: SelectionMethod;
+  /**
+   * How much REST SPACE to bite out of each button's corners, so the gap where
+   * four of them meet forms a circle a student can park their gaze in without
+   * selecting anything. Board-configurable because boards differ: dynamic
+   * boards are read rather than memorised and want `large`, while static
+   * boards have smaller buttons and a learned layout, where a big bite costs
+   * more area than the resting space is worth.
+   */
+  restSpace?: RestSpace;
 }
 
+// Icon-to-text sizing lives in client-shared/board/button-sizing.ts so the AAC
+// settings preview is driven by the same table and the same formulas — it used
+// to keep its own copy, and drew a layout this renderer had stopped using.
+
+// Tailwind `gap-2` on the button grid, in px. The void circles are positioned
+// against the same value, so if the gap changes this must too.
+const GRID_GAP_PX = 8;
+
 /**
- * Sizing config for each icon-text ratio level.
- * iconFlex/textFlex control vertical space allocation.
- * iconScale/textScale are fractions of the computed row height used for font-size.
- * imgSize controls symbol/face image size as percentage.
+ * REST MARKERS — a small dot of BUTTON material at the centre of each circle
+ * of empty space, i.e. at every interior grid vertex where four buttons meet.
+ *
+ * The empty space itself is real now: each button's surface is an SVG path
+ * with the corner genuinely cut away (see shared/button-shape.ts), so nothing
+ * needs to be painted over the buttons to fake it. What remains is giving the
+ * eye something to read the blankness AGAINST — the dot makes the ring around
+ * it register as deliberate space rather than as buttons that got trimmed.
+ *
+ * The dot is board furniture, not a target: `data-dwell-void` keeps the gaze
+ * hit-test off it, and it takes pointer events so a tap there does nothing
+ * either. Only INTERIOR vertices get one — at the board's outer edge no four
+ * buttons meet, so there is no circle to mark.
  */
-const RATIO_LEVELS: Record<number, {
-  iconFlex: number;
-  textFlex: number;
-  iconScale: number;
-  textScale: number;
-  imgSize: string;
-}> = {
-  1: { iconFlex: 9, textFlex: 1, iconScale: 0.55, textScale: 0.08, imgSize: "70%" },
-  2: { iconFlex: 4, textFlex: 1, iconScale: 0.50, textScale: 0.09, imgSize: "65%" },
-  3: { iconFlex: 3, textFlex: 1, iconScale: 0.45, textScale: 0.10, imgSize: "60%" },
-  4: { iconFlex: 2, textFlex: 1, iconScale: 0.35, textScale: 0.12, imgSize: "50%" },
-  5: { iconFlex: 1, textFlex: 2, iconScale: 0.25, textScale: 0.15, imgSize: "40%" },
-};
+function CornerVoids({
+  rows,
+  cols,
+  radius,
+}: {
+  rows: number;
+  cols: number;
+  /** The buttons' actual cut radius in px, so the marker matches the real hole. */
+  radius: number;
+}) {
+  if ((rows < 2 && cols < 2) || radius <= 0) return null;
+  const g = GRID_GAP_PX;
+  // Fill the hole, less a rim the same width as the gutter between buttons —
+  // so the empty space reads as a ring of consistent thickness all the way
+  // round, rather than a dot floating in a much larger gap.
+  const dot = Math.max(4, 2 * (radius - g));
+  // Centre of the j-th gutter along an axis of `n` equal tracks:
+  //   j track-widths + (j-1) whole gaps + half of the j-th gap.
+  const centre = (j: number, n: number) =>
+    `calc(${j} * (100% - ${(n - 1) * g}px) / ${n} + ${(j - 1) * g}px + ${g / 2}px)`;
+
+  const voids = [];
+  for (let r = 1; r < rows; r++) {
+    for (let c = 1; c < cols; c++) {
+      voids.push(
+        <span
+          key={`void-${r}-${c}`}
+          data-dwell-void
+          aria-hidden="true"
+          className="absolute rounded-full border border-gray-200 shadow-sm"
+          style={{
+            left: centre(c, cols),
+            top: centre(r, rows),
+            width: dot,
+            height: dot,
+            transform: "translate(-50%, -50%)",
+            backgroundColor: getButtonColor(),
+          }}
+        />,
+      );
+    }
+  }
+  return <>{voids}</>;
+}
 
 /** Slot state for the grid */
 type SlotState =
@@ -175,14 +249,24 @@ export default function DynamicBoard({
   socialSession: socialSessionProp = null,
   onLaunchApp,
   onRequestAppOpen,
+  selectionMethod = "whole_button",
+  restSpace = "none",
 }: DynamicBoardProps) {
+  const selectionArea = selectionMethod === "selection_area";
+  const intentZones = selectionMethod === "intent";
+  // Every cell in the grid takes the same corner space, or the circles at the
+  // vertices come out with square quadrants where an un-cut cell sits.
+  const cornerRatio = restSpace === "none" ? 0 : restSpaceRatio(restSpace);
+  const cornerSpace = cornerRatio > 0 ? { ratio: cornerRatio, gapPx: GRID_GAP_PX } : null;
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [cutRadius, setCutRadius] = useState(0);
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
   const dualAgent = useDualAgentContextOptional();
   const isRTL = language === "he" || language === "ar";
 
   // Icon/text sizing based on ratio level
-  const level = RATIO_LEVELS[Math.max(1, Math.min(5, iconTextRatio))] || RATIO_LEVELS[3];
+  const level = ratioLevel(iconTextRatio);
 
   // Multi-page navigation state
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
@@ -202,7 +286,39 @@ export default function DynamicBoard({
   // `extraHeaderOffset` adds the grown-header allowance (e.g. the glyphInputTranslation strip).
   const baselineRem = 10.5 + extraHeaderOffset;
   const iconFontSize = `clamp(1rem, calc((100dvh - ${baselineRem}rem) / ${gridRows} * ${level.iconScale}), 8rem)`;
-  const textFontSize = `clamp(0.5rem, calc((100dvh - ${baselineRem}rem) / ${gridRows} * ${level.textScale}), 1.5rem)`;
+  // Sentence buttons size their label from its own box (see button-sizing.ts);
+  // this is only for the inline nav-button renderer below, which has no
+  // ratio-driven layout of its own.
+  const textFontSize = `clamp(0.5rem, calc((100dvh - ${baselineRem}rem) / ${gridRows} * 0.11), 1.5rem)`;
+  // The intent decoder's fast-select mark, sized off the same row-height
+  // baseline as everything else so it scales with the grid.
+  const coreMarkSize = `clamp(10px, calc((100dvh - ${baselineRem}rem) / ${gridRows} * 0.10), 26px)`;
+  // SELECTION AREA plate, sized off the same row-height baseline so it scales
+  // with the grid. Big enough to aim an eye tracker at, small enough to leave
+  // the label readable beside it.
+  const selectionMarkSize = `clamp(18px, calc((100dvh - ${baselineRem}rem) / ${gridRows} * 0.24), 40px)`;
+
+  // The rest markers have to match the holes the buttons actually cut, so the
+  // radius is derived from the measured cell — the same number each button
+  // computes from its own box — rather than from a parallel CSS estimate that
+  // would drift out of step with it.
+  const cornerRatioForMeasure = cornerSpace?.ratio ?? 0;
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || cornerRatioForMeasure <= 0) {
+      setCutRadius(0);
+      return;
+    }
+    const measure = () => {
+      const cellW = (el.clientWidth - (gridCols - 1) * GRID_GAP_PX) / gridCols;
+      const cellH = (el.clientHeight - (gridRows - 1) * GRID_GAP_PX) / gridRows;
+      setCutRadius(Math.max(0, Math.min(cellW, cellH) * cornerRatioForMeasure));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [cornerRatioForMeasure, gridRows, gridCols]);
 
   const [slots, setSlots] = useState<SlotState[]>(Array(totalSlots).fill(BLANK_SLOT));
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -529,9 +645,12 @@ export default function DynamicBoard({
   const renderSlot = (slot: SlotState, index: number) => {
     if (slot.type === "blank") {
       return (
-        <div
+        <ShapedButton
+          as="div"
           key={`blank-${index}`}
-          className="flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 min-h-0"
+          cornerSpace={cornerSpace}
+          dashed
+          className="flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 min-h-0 relative"
         />
       );
     }
@@ -539,13 +658,18 @@ export default function DynamicBoard({
     if (slot.type === "fading") {
       const button = localizeSuggestion(slot.button);
       return (
-        <motion.div
+        <ShapedButton
+          as="div"
           key={`fading-${button.label}-${index}`}
-          initial={{ opacity: 1, scale: 1 }}
-          animate={{ opacity: 0, scale: 0.9 }}
-          transition={{ duration: 1.5 }}
-          className="flex flex-col items-center justify-center rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 min-w-0 overflow-hidden"
-          style={{ backgroundColor: getButtonColor(button.color, button.glyph), padding: 5 }}
+          cornerSpace={cornerSpace}
+          background={getButtonColor(button.color, button.glyph)}
+          className="flex flex-col items-center justify-center rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 min-w-0 overflow-hidden relative"
+          style={{ padding: 5 }}
+          motionProps={{
+            initial: { opacity: 1, scale: 1 },
+            animate: { opacity: 0, scale: 0.9 },
+            transition: { duration: 1.5 },
+          }}
         >
           <div className="icon-fill-area">
             {renderIcon(button)}
@@ -555,7 +679,7 @@ export default function DynamicBoard({
               {button.label}
             </span>
           </div>
-        </motion.div>
+        </ShapedButton>
       );
     }
 
@@ -594,19 +718,25 @@ export default function DynamicBoard({
       const disabled = !face; // post-session beat — no face yet, button inert
       const labelText = inSession ? (session!.characterName || button.label) : button.label;
       return (
-        <motion.button
-          {...(disabled ? {} : { "data-dwell": "" })}
-          data-testid="board-practice-friend"
+        <ShapedButton
           key={`btn-practice-${index}`}
-          initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
-          animate={{ opacity: disabled ? 0.45 : 1, scale: 1 }}
-          transition={{ duration: isEntering ? 0.3 : 0.15 }}
-          onClick={() => { if (!disabled) handleButtonClick(button); }}
-          disabled={disabled}
+          cornerSpace={cornerSpace}
+          background={getButtonColor(button.color, button.glyph)}
           className="flex flex-col items-center justify-center rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 min-h-0 min-w-0 overflow-hidden relative"
-          style={{ backgroundColor: getButtonColor(button.color, button.glyph), padding: 5 }}
-          whileHover={disabled ? undefined : { scale: 1.05 }}
-          whileTap={disabled ? undefined : { scale: 0.95 }}
+          style={{ padding: 5 }}
+          onClick={() => { if (!disabled) handleButtonClick(button); }}
+          domProps={{
+            ...(disabled ? {} : { "data-dwell": "" }),
+            "data-testid": "board-practice-friend",
+            disabled,
+          }}
+          motionProps={{
+            initial: isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 },
+            animate: { opacity: disabled ? 0.45 : 1, scale: 1 },
+            transition: { duration: isEntering ? 0.3 : 0.15 },
+            whileHover: disabled ? undefined : { scale: 1.05 },
+            whileTap: disabled ? undefined : { scale: 0.95 },
+          }}
         >
           <div className="icon-fill-area">
             {face ? (
@@ -636,7 +766,7 @@ export default function DynamicBoard({
               {labelText}
             </span>
           </div>
-        </motion.button>
+        </ShapedButton>
       );
     }
 
@@ -676,20 +806,26 @@ export default function DynamicBoard({
         ? getButtonColor(button.color, button.glyph)
         : kind === "wordfinder" ? "#EDE9FE" : "#E5E7EB";
       return (
-        <motion.button
-          data-dwell
-          data-speech={labelText}
-          data-mirror-id={button.id}
-          data-testid={`board-${kind}`}
+        <ShapedButton
           key={`btn-${kind}-${index}`}
-          initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: isEntering ? 0.3 : 0.15 }}
-          onClick={() => handleButtonClick(button)}
+          cornerSpace={cornerSpace}
+          background={bg}
           className={`flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
-          style={{ backgroundColor: bg, padding: 5 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          style={{ padding: 5 }}
+          onClick={() => handleButtonClick(button)}
+          domProps={{
+            "data-dwell": "",
+            "data-speech": labelText,
+            "data-mirror-id": button.id,
+            "data-testid": `board-${kind}`,
+          }}
+          motionProps={{
+            initial: isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 },
+            animate: { opacity: 1, scale: 1 },
+            transition: { duration: isEntering ? 0.3 : 0.15 },
+            whileHover: { scale: 1.05 },
+            whileTap: { scale: 0.95 },
+          }}
         >
           <div className="icon-fill-area"><span className="icon-fill-emoji">{icon}</span></div>
           <div className="flex items-center justify-center w-full overflow-hidden shrink-0" style={{ maxHeight: "40%", marginTop: 2 }}>
@@ -697,7 +833,7 @@ export default function DynamicBoard({
               {labelText}
             </span>
           </div>
-        </motion.button>
+        </ShapedButton>
       );
     }
 
@@ -707,19 +843,25 @@ export default function DynamicBoard({
     // the yes/no auto-color behavior.
     if (isBackButton) {
       return (
-        <motion.button
-          data-dwell
-          data-speech={button.label}
-          data-mirror-id={button.id}
+        <ShapedButton
           key={`btn-${button.label}-${index}`}
-          initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: isEntering ? 0.3 : 0.15 }}
-          onClick={() => handleButtonClick(button)}
+          cornerSpace={cornerSpace}
+          background={getButtonColor(button.color, button.glyph)}
           className={`flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
-          style={{ backgroundColor: getButtonColor(button.color, button.glyph), padding: 5 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          style={{ padding: 5 }}
+          onClick={() => handleButtonClick(button)}
+          domProps={{
+            "data-dwell": "",
+            "data-speech": button.label,
+            "data-mirror-id": button.id,
+          }}
+          motionProps={{
+            initial: isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 },
+            animate: { opacity: 1, scale: 1 },
+            transition: { duration: isEntering ? 0.3 : 0.15 },
+            whileHover: { scale: 1.05 },
+            whileTap: { scale: 0.95 },
+          }}
         >
           <div className="icon-fill-area">
             <i className={`fas ${actionType === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-gray-700 icon-fill-emoji`} />
@@ -729,7 +871,7 @@ export default function DynamicBoard({
               {button.label}
             </span>
           </div>
-        </motion.button>
+        </ShapedButton>
       );
     }
 
@@ -747,12 +889,16 @@ export default function DynamicBoard({
         extraButtonProps={{ "data-mirror-id": button.id, "data-speech": button.spokenText || button.label }}
         getFaceImage={getFaceImage ?? undefined}
         iconFontSize={iconFontSize}
-        textFontSize={textFontSize}
-        iconFlex={level.iconFlex}
-        textFlex={level.textFlex}
+        ratioLevel={level}
         entering={isEntering}
+        cornerSpace={cornerSpace}
+        midIndicator={intentZones ? <IntentCoreMark size={coreMarkSize} /> : undefined}
+        // Keep the label clear of the eye mark's corner (logical, so RTL pads
+        // the other side). Only reserved when the mark is actually rendered.
+        labelInsetEnd={selectionArea ? `calc(${selectionMarkSize} + 4px)` : undefined}
+        dwellZones={intentZones}
         cornerIndicator={
-          (busyPhase && busyButtonId && button.id === busyButtonId) || isLinkButton || isLaunchButton ? (
+          (busyPhase && busyButtonId && button.id === busyButtonId) || isLinkButton || isLaunchButton || selectionArea ? (
             <>
               {busyPhase && busyButtonId && button.id === busyButtonId ? <ButtonBusyIndicator phase={busyPhase} /> : null}
               {isLinkButton ? (
@@ -761,6 +907,7 @@ export default function DynamicBoard({
               {isLaunchButton ? (
                 <span className="absolute top-0.5 right-0.5 text-teal-600 opacity-80" style={{ fontSize: "0.6em" }}>⤢</span>
               ) : null}
+              {selectionArea ? <SelectionAreaMark size={selectionMarkSize} /> : null}
             </>
           ) : null
         }
@@ -869,8 +1016,9 @@ export default function DynamicBoard({
       {/* Grid */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div
+          ref={gridRef}
           data-scan-root
-          className="grid gap-2 w-full h-full"
+          className="grid gap-2 w-full h-full relative"
           style={{
             gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
             gridTemplateRows: `repeat(${gridRows}, minmax(0, 1fr))`,
@@ -879,6 +1027,7 @@ export default function DynamicBoard({
           <AnimatePresence mode="popLayout">
             {slots.map((slot, i) => renderSlot(slot, i))}
           </AnimatePresence>
+          {cornerSpace && <CornerVoids rows={gridRows} cols={gridCols} radius={cutRadius} />}
         </div>
       </div>
     </div>

@@ -15,10 +15,15 @@
 // from a hold or from the scan. The in-progress ring/border below is local to
 // the hold gesture.
 //
-// Hit-tests the same [data-dwell] elements the eyegaze dwell engine uses.
+// Hit-tests the same [data-dwell] elements the eyegaze dwell engine uses — and
+// honours the same SELECTION AREA contract: when the pressed button carries a
+// [data-dwell-area] child (selectionMethod "selection_area"), the press has to
+// start ON that mark, and the ring draws around it rather than over the label.
+// No drain behaviour here — a pointer either stays down or it doesn't.
 
 import { useEffect, useRef, useState } from "react";
 import { useBoardAudio } from "@/contexts/BoardAudioContext";
+import { selectionAreaOf, pointInSelectionArea } from "@/contexts/EyeTrackingDwellContext";
 
 const BORDER_WIDTH = 4;
 const BORDER_RADIUS = 12; // matches rounded-xl
@@ -34,7 +39,10 @@ const MIN_HOLD_MS = 400;
 const TICK_MS = 40; // ~25Hz — enough to follow scroll/layout without churn.
 
 interface HoldVisual {
+  /** The button — the clock border traces this. */
   rect: DOMRect;
+  /** Where the ring timer draws: the selection area when there is one. */
+  ringRect: DOMRect;
   progress: number; // 0-1
 }
 
@@ -68,6 +76,8 @@ export default function HoldHighlightOverlay({ enabled, holdDurationMs }: Props)
   // Mutable hold state shared between the DOM event handlers and the rAF loop.
   const activeRef = useRef<{
     element: HTMLElement;
+    /** The button's selection area, when it has one. Null = whole-button hold. */
+    areaEl: HTMLElement | null;
     pointerId: number;
     startTime: number;
     completed: boolean;
@@ -88,7 +98,11 @@ export default function HoldHighlightOverlay({ enabled, holdDurationMs }: Props)
       const prev = holdSnapRef.current;
       const changed =
         !!prev !== !!next ||
-        (prev && next && (!rectsEqual(prev.rect, next.rect) || Math.abs(prev.progress - next.progress) > 0.005));
+        (prev &&
+          next &&
+          (!rectsEqual(prev.rect, next.rect) ||
+            !rectsEqual(prev.ringRect, next.ringRect) ||
+            Math.abs(prev.progress - next.progress) > 0.005));
       if (changed) {
         holdSnapRef.current = next;
         setHold(next);
@@ -115,6 +129,10 @@ export default function HoldHighlightOverlay({ enabled, holdDurationMs }: Props)
         return;
       }
       const rect = active.element.getBoundingClientRect();
+      // The area element can be replaced by a board re-render mid-hold; fall
+      // back to the button rather than dropping the ring.
+      const ringRect =
+        active.areaEl && document.contains(active.areaEl) ? active.areaEl.getBoundingClientRect() : rect;
       const progress = Math.min(1, (t - active.startTime) / holdDurationRef.current);
       if (progress >= 1 && !active.completed) {
         // Commit: this button becomes the highlight (and is spoken); the click
@@ -124,7 +142,7 @@ export default function HoldHighlightOverlay({ enabled, holdDurationMs }: Props)
         highlightRef.current(active.element, true);
       }
       // Once committed the ring gives way to the persistent highlight box.
-      pushHold(active.completed ? null : { rect, progress });
+      pushHold(active.completed ? null : { rect, ringRect, progress });
     };
 
     const ensureLoop = () => {
@@ -134,14 +152,28 @@ export default function HoldHighlightOverlay({ enabled, holdDurationMs }: Props)
     const onPointerDown = (e: PointerEvent) => {
       const target = (e.target as HTMLElement | null)?.closest("[data-dwell]") as HTMLElement | null;
       if (!target) return;
-      activeRef.current = { element: target, pointerId: e.pointerId, startTime: performance.now(), completed: false };
+      // Selection-area buttons: the hold must START on the eye mark, same as the
+      // gaze timer. A press anywhere else on the button is just a tap (which
+      // still selects normally on release).
+      const areaEl = selectionAreaOf(target);
+      if (areaEl && !pointInSelectionArea(target, areaEl, e.clientX, e.clientY)) return;
+      activeRef.current = {
+        element: target,
+        areaEl,
+        pointerId: e.pointerId,
+        startTime: performance.now(),
+        completed: false,
+      };
       ensureLoop();
     };
 
     const onPointerMove = (e: PointerEvent) => {
       const active = activeRef.current;
       if (!active || e.pointerId !== active.pointerId || active.completed) return;
-      const r = active.element.getBoundingClientRect();
+      // Drift is measured against whatever the hold started on — the eye mark
+      // when there is one, so sliding off it onto the label abandons the hold.
+      const anchorEl = active.areaEl && document.contains(active.areaEl) ? active.areaEl : active.element;
+      const r = anchorEl.getBoundingClientRect();
       const outside =
         e.clientX < r.left - MOVE_TOLERANCE_PX ||
         e.clientX > r.right + MOVE_TOLERANCE_PX ||
@@ -219,7 +251,13 @@ export default function HoldHighlightOverlay({ enabled, holdDurationMs }: Props)
       {hold && (
         <>
           <HoldBorder rect={hold.rect} progress={hold.progress} />
-          <HoldRing rect={hold.rect} progress={hold.progress} />
+          <HoldRing
+            rect={hold.ringRect}
+            progress={hold.progress}
+            /* On the eye mark the ring hugs the mark; on a whole button it
+               sits at 60% so it doesn't crowd the icon. */
+            fillFraction={hold.ringRect === hold.rect ? 0.6 : 1}
+          />
         </>
       )}
     </div>
@@ -314,10 +352,12 @@ function HoldBorder({ rect, progress }: { rect: DOMRect; progress: number }) {
   );
 }
 
-/** Circular ring-timer centred on the button, filling as the hold progresses. */
-function HoldRing({ rect, progress }: { rect: DOMRect; progress: number }) {
-  const diameter = Math.min(rect.width, rect.height) * 0.6;
-  const radius = (diameter - RING_STROKE) / 2;
+/** Circular ring-timer centred on the hold target, filling as the hold progresses. */
+function HoldRing({ rect, progress, fillFraction }: { rect: DOMRect; progress: number; fillFraction: number }) {
+  const diameter = Math.min(rect.width, rect.height) * fillFraction;
+  // The eye mark is small, so a fixed 6px stroke would swallow it whole.
+  const stroke = Math.max(2, Math.min(RING_STROKE, diameter * 0.18));
+  const radius = (diameter - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - progress);
 
@@ -333,7 +373,7 @@ function HoldRing({ rect, progress }: { rect: DOMRect; progress: number }) {
         r={radius}
         fill="none"
         stroke="rgba(255, 255, 255, 0.25)"
-        strokeWidth={RING_STROKE}
+        strokeWidth={stroke}
       />
       <circle
         cx={svgSize / 2}
@@ -341,7 +381,7 @@ function HoldRing({ rect, progress }: { rect: DOMRect; progress: number }) {
         r={radius}
         fill="none"
         stroke={ACCENT}
-        strokeWidth={RING_STROKE}
+        strokeWidth={stroke}
         strokeDasharray={circumference}
         strokeDashoffset={dashOffset}
         strokeLinecap="round"

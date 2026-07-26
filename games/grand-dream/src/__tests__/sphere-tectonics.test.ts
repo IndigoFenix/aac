@@ -36,6 +36,33 @@ describe("sphere tectonics — determinism and drift", () => {
     expect(Array.from(c.thick)).not.toEqual(Array.from(a.thick));
   });
 
+  it("history is PINNED across code versions (the bake-cache contract)", () => {
+    // World-lab's IndexedDB bake cache is keyed by params + a version tag
+    // (`bake6:`), so a code change that alters histories WITHOUT a version
+    // bump silently serves stale planets. This pin makes such a change
+    // LOUD: if it fails and the change is intentional, bump the bake cache
+    // version in world-lab's geo-bake.ts AND update this hash. Perf-only
+    // refactors (trig hoisting, gather prefilter) must keep it green —
+    // they are required to be bit-identical.
+    const w = createSphereTectonics({ topo, seed: 3 });
+    for (let e = 0; e < 350; e++) sphereTectonicEpoch(w);
+    let h = 0x811c9dc5;
+    const mix = (v: number): void => {
+      h = Math.imul(h ^ (v >>> 0), 0x01000193) >>> 0;
+      h = Math.imul(h ^ ((v / 4294967296) >>> 0), 0x01000193) >>> 0;
+    };
+    const f32 = new Float32Array(1);
+    const u32 = new Uint32Array(f32.buffer);
+    for (let c = 0; c < topo.n; c++) {
+      f32[0] = w.thick[c]; mix(u32[0]);
+      mix(w.plate[c]);
+      f32[0] = w.ore[c]; mix(u32[0]);
+    }
+    mix(w.events.length);
+    expect(w.events.length).toBe(6485);
+    expect("0x" + h.toString(16)).toBe("0x44ac0faa");
+  });
+
   it("plates rotate rigidly across the sphere (continents genuinely travel)", () => {
     const w = createSphereTectonics({ topo, seed: 1 });
     const plate0 = Array.from(w.plate);

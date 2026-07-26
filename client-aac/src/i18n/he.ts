@@ -308,6 +308,7 @@ export const he: Translations = {
     createInAdmin: "צור לוחות בלוח הניהול",
     pageOf: "עמוד {current} מתוך {total}",
     guessingMode: "מנחש...",
+    selectionArea: "הבט כאן כדי לבחור",
   },
 
   processing: {
@@ -1007,6 +1008,10 @@ export const he: Translations = {
     notDetected: "לא זוהה",
     driverNotFound: "מנהל ההתקן של עוקב העיניים לא נמצא",
     locateDriver: "אתר מנהל התקן…",
+  },
+  instances: {
+    duplicateRunning: "עותק נוסף של Aivota AAC כבר פתוח — סגרו אותו והפעילו מחדש",
+    multipleInstalls: "שתי התקנות של Aivota AAC פועלות — סגרו את החלון הנוסף והסירו את העותק הכפול",
   },
   audioScan: {
     start: "הקראת הלוח",

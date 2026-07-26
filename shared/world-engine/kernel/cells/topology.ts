@@ -294,17 +294,29 @@ export function makeCubeSphereTopology(faceN: number): GridTopology {
       return [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]] as const;
     },
     cellAt(dir) {
-      let f = 0;
-      let best = -Infinity;
-      for (let ff = 0; ff < 6; ff++) {
-        const d = dot3(dir, CUBE_FACES[ff].n);
-        if (d > best) { best = d; f = ff; }
+      // Scalar face pick — the faces are the ±axes, so the argmax over the
+      // six face dots is just the dominant component. Tie-breaks replicate
+      // the sequential first-strictly-greater scan exactly (axis order
+      // x, y, z; + before − within an axis), and the hardcoded u/v below
+      // are the face-frame dots with their zero terms dropped — the cell
+      // index is bit-identical to the old 6-dot loop. This is the gather
+      // primitive (tectonics, field sampling); it earns the inlining.
+      const x = dir[0], y = dir[1], z = dir[2];
+      const ax = x < 0 ? -x : x, ay = y < 0 ? -y : y, az = z < 0 ? -z : z;
+      let f: number, w: number, tu: number, tv: number;
+      if (ax >= ay && ax >= az) {
+        if (x >= 0) { f = 0; w = x; tu = -z; tv = y; }
+        else { f = 1; w = -x; tu = z; tv = y; }
+      } else if (ay >= az) {
+        if (y >= 0) { f = 2; w = y; tu = x; tv = -z; }
+        else { f = 3; w = -y; tu = x; tv = z; }
+      } else {
+        if (z >= 0) { f = 4; w = z; tu = x; tv = y; }
+        else { f = 5; w = -z; tu = -x; tv = y; }
       }
-      const F = CUBE_FACES[f];
-      const w = dot3(dir, F.n);
       // Invert the equal-angle mapping: chart coord a = atan(t)·4/π.
-      const a = Math.atan(dot3(dir, F.u) / w) * (4 / Math.PI);
-      const b = Math.atan(dot3(dir, F.v) / w) * (4 / Math.PI);
+      const a = Math.atan(tu / w) * (4 / Math.PI);
+      const b = Math.atan(tv / w) * (4 / Math.PI);
       const ui = Math.min(N - 1, Math.max(0, Math.floor(((a + 1) / 2) * N)));
       const vi = Math.min(N - 1, Math.max(0, Math.floor(((b + 1) / 2) * N)));
       return cellOf(f, ui, vi);

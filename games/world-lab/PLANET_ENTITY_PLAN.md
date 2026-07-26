@@ -137,7 +137,48 @@ for dialogue, the town clock as *shared local time* those entities consult.
 Ordered so each lands green on its own; the 80-gate de-gating is LAST because
 it is wide but mechanical once ownership is right.
 
-- **1 ✅ Cursor ownership (2026-07-17 — SHIPPED, browser-verify pending).**
+- **1 ✅ Cursor ownership — AMENDED 2026-07-26 (user: "the spark should behave
+  the same in a flat region and on a planet; only the coordinate root differs").
+  THE RULE NOW: the ground cursor is ONE pipeline, and the two halves come from
+  the two authorities.** The DRAWN WORLD gives the bare ground point (ray at the
+  rendered skin: terrain LOD, roads, town meshes, walls — an analytic sampler
+  sinks the spark under the skin on a planet). The ENTITY ENGINE standing where
+  the player is — `SpiritFrameProvider.cursorHost()`, the mounted town's host or
+  the wilderness session, asked fresh per frame — gives the ENTITY SNAP (head /
+  object top) and the DWELL, because no raycast can know it is looking AT
+  someone. The provider still DRAWS (camera-parented spark: one cursor, no
+  hand-off pop at the town edge; a flat standalone keeps drawing its own).
+  Reading the host is NOT the leak the original law forbade: the report is WORLD
+  coords off the drawn planet, so town-plaza coordinates never enter — and the
+  host's ground pick already casts `castGroundRay`, which is what actually
+  closed that leak. Also fixed with it: the ground-rung town was stepped at the
+  ~2 Hz AIRBORNE cadence while the player glided its streets, so its gaze
+  pipeline (and therefore any cursor it reported) ran a fifth of a second
+  behind — `SpiritLadder.groundInTown()` now makes main.ts tick it at full rate,
+  exactly as riding does. Pins: spirit-ladder.test.ts "ONE cursor pipeline"
+  (engine resolves + planet draws / bare point keeps the ray's metres + carries
+  the dwell / groundInTown both directions).
+
+  **SPARK DEPTH / OWNERSHIP — SETTLED 2026-07-26 by putting the spark WHERE
+  EVERY OTHER OBJECT LIVES.** The planet path parented the spark group to the
+  CAMERA and drew it depth-OFF (a HUD pinned to the eye); the flat quest hosts
+  have always put the same `GazeSpark` in their scene, which is why it occluded
+  correctly there and drew through walls here. Now `body.group.add(spark.group)`
+  — the parent terrain chunks, towns, trees and creatures already use — the
+  provider converts the ladder's WORLD point through `body.group.worldToLocal`,
+  and depth is per rung (ON at ground/structure, OFF in flight). The rebase
+  carries it with the planet, so nothing needs re-expressing. The ground cursor
+  is then just: ray → drawn hit → raise `SPARK_SEAT_M` → `setTarget`, with an
+  entity engine's snap point riding the same call (`groundSpark(pointer, select,
+  at)`). Dead ends, do not repeat: a billboarded-mesh spark, a depth "lean", and
+  a second cursor object — all reverted. NOTE for future probes: SwiftShader and
+  a real GPU disagree about depth-tested sprites, and a `document.hidden` tab
+  pauses rAF (the world freezes mid-dart and looks invisible) — check
+  `visibilityState` before trusting any reading. Harness:
+  `games/world-lab/spark-depth-probe.cjs`.
+  The original entry, kept for its history:
+
+  **1 ✅ Cursor ownership (2026-07-17 — SHIPPED, browser-verify pending).**
   The `hostHere` fork is gone: on the planet path (any provider with
   `groundSpark`) the PLANET's spark draws the ground cursor always. The host
   is opted out via `setExternalCursor(true)` (render3d stashes the computed

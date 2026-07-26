@@ -308,6 +308,7 @@ export const zh: Translations = {
     createInAdmin: "在管理面板中创建面板",
     pageOf: "第 {current} 页，共 {total} 页",
     guessingMode: "猜测中...",
+    selectionArea: "看这里以选择",
   },
 
   processing: {
@@ -1007,6 +1008,10 @@ export const zh: Translations = {
     notDetected: "未检测到",
     driverNotFound: "未找到眼动仪驱动程序",
     locateDriver: "定位驱动程序…",
+  },
+  instances: {
+    duplicateRunning: "Aivota AAC 已有另一个窗口在运行 — 请关闭它，然后重新启动本窗口",
+    multipleInstalls: "有两个 Aivota AAC 安装版本正在运行 — 请关闭多余的窗口并删除重复安装",
   },
   audioScan: {
     start: "朗读版面",

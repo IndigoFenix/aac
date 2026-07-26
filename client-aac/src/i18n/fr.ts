@@ -308,6 +308,7 @@ export const fr: Translations = {
     createInAdmin: "Créez des tableaux dans le panneau d'administration",
     pageOf: "Page {current} sur {total}",
     guessingMode: "Devinette...",
+    selectionArea: "Regardez ici pour sélectionner",
   },
 
   processing: {
@@ -1007,6 +1008,10 @@ export const fr: Translations = {
     notDetected: "non détecté",
     driverNotFound: "Pilote du suiveur oculaire introuvable",
     locateDriver: "Localiser le pilote…",
+  },
+  instances: {
+    duplicateRunning: "Une autre copie d'Aivota AAC est déjà ouverte : fermez-la puis relancez celle-ci",
+    multipleInstalls: "Deux installations d'Aivota AAC sont en cours d'exécution : fermez la fenêtre supplémentaire et supprimez le doublon",
   },
   audioScan: {
     start: "Lire le tableau à voix haute",

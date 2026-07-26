@@ -19,8 +19,9 @@ import type { CelestialBody } from "@shared/world-engine/space/body";
 import { createSurfaceChart } from "@shared/world-engine/space/surface-chart";
 import type { DroneCamera } from "@shared/world-engine/spirit/drone-camera";
 import type {
-  SpiritChartFrame, SpiritFocusTarget, SpiritFrameProvider, SpiritGroundSession,
-  SpiritNearTown, SpiritPostFrame, SpiritStructureHost, SpiritTownSession,
+  SpiritChartFrame, SpiritCursorHost, SpiritFocusTarget, SpiritFrameProvider,
+  SpiritGroundSession, SpiritNearTown, SpiritPostFrame, SpiritStructureHost,
+  SpiritTownSession,
 } from "@shared/world-engine/spirit/frame-provider";
 import type { SpaceFlight, FlightCity } from "../space-fly";
 
@@ -69,6 +70,12 @@ export interface PlanetProviderDeps {
    *  pointer is on, i.e. on the RENDERED ground — the analytic surface and
    *  the LOD mesh can disagree by metres. */
   castGroundRay?(origin: THREE.Vector3, dir: THREE.Vector3, far: number): THREE.Vector3 | null;
+  /** THE ENTITY ENGINE the player is standing in RIGHT NOW — the mounted town
+   *  host when the glide is inside one, the wilderness host in open country.
+   *  Asked fresh every ground frame: it resolves the cursor (wall stop, drawn-
+   *  world hit, entity snap, dwell), the planet's one spark draws it. Null
+   *  where no host is mounted — the bare drawn-world ray then stands in. */
+  cursorHost?(): SpiritCursorHost | null;
 }
 
 const _local = new THREE.Vector3();
@@ -108,17 +115,29 @@ function terrainRadiusAt(body: CelestialBody, worldDir: THREE.Vector3): number {
 export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFrameProvider {
   const { camera, flight, body, drone } = deps;
   const sessions = new Map<number, SpiritTownSession>();
+  /** WORLD → the frame the spark's group currently hangs in. The RUNG decides
+   *  that parent (main.ts `sparkToRung`): the camera in flight, where it is a
+   *  HUD cursor, the planet's body group on the ground, where it is an object
+   *  in the world. Asking the group itself means this seam never has to know
+   *  which. In place. */
+  const toSparkFrame = (p: THREE.Vector3): THREE.Vector3 => {
+    const parent = deps.spark.group.parent ?? camera;
+    parent.updateWorldMatrix(true, false);
+    return parent.worldToLocal(p);
+  };
+  const _cursorWorld = new THREE.Vector3();
+  const _driftVec = new THREE.Vector3();
+  const _driftQ = new THREE.Quaternion();
   /** DIAGNOSTICS: last frame's `groundSpark` exit — see `debugCursor`. */
   let cursorDbg = "-";
 
-  // WORLD-frame dart verdict for the cursor. The spark group rides the CAMERA
-  // (easing survives the floating-origin rebase), but that makes the internal
-  // camera-local jump detector alias CAMERA MOTION into "the target jumped" —
-  // at 50 m a 0.01 rad/frame yaw is half a metre of camera-local displacement,
-  // so steering dart-stormed the core to size 0 (the border flicker; the
-  // "hidden" ground spark). Consecutive targets are compared in BODY-LOCAL
-  // coords instead (spin-fixed, rebase-stable — the planet frame, where the
-  // cursor actually lives) and setTarget requires BOTH verdicts to dart.
+  // WORLD-frame dart verdict for the cursor. Kept from the days when the spark
+  // group rode the CAMERA, where the internal (group-local) jump detector
+  // aliased camera MOTION into "the target jumped" — at 50 m a 0.01 rad/frame
+  // yaw is half a metre of camera-local displacement, and steering dart-stormed
+  // the core to size 0. Now that the group hangs off the planet the two frames
+  // agree, but the planet-frame comparison is still the honest one: it is
+  // spin-fixed and rebase-stable, i.e. where the cursor actually lives.
   const _cursorNowLocal = new THREE.Vector3();
   const _cursorPrevLocal = new THREE.Vector3();
   let cursorPrevHas = false;
@@ -562,24 +581,21 @@ export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFram
     },
 
     spark(pos, hovering = false, select = 0) {
-      // CAMERA-FRAME spark: the spark group rides the camera (main.ts parents
-      // it there), so its dart/follow easing happens in camera-local space —
-      // the floating-origin rebase (and flight speed) can't leave last
-      // frame's eased position kilometres behind (the "darts into the sky").
-      // Dart decisions come from the PLANET frame (cursorWorldJump).
+      // ALL THIS SEAM DOES is convert the WORLD point the ladder names into the
+      // frame the spark's group currently hangs in — the camera in flight (a
+      // HUD cursor, where the flight effect is authored), the planet's body
+      // group on the ground (an object among the terrain, buildings and
+      // creatures: depth-tested like them, carried by the rebase like them).
       deps.spark.setSelect(select);
       if (pos) {
         const jumped = cursorWorldJump(pos);
-        camera.updateMatrixWorld(true);
         _sparkLocal.copy(pos);
-        // Debug seat lift applies to the HOST-REPORTED cursor too (the town
-        // path), which is where the burial question actually lives.
         const lift = dbgLift();
         if (lift !== 0) {
           _sphDir.copy(pos).sub(body.worldPosition).normalize();
           _sparkLocal.addScaledVector(_sphDir, lift);
         }
-        camera.worldToLocal(_sparkLocal);
+        toSparkFrame(_sparkLocal);
         deps.spark.setTarget(_sparkLocal.x, _sparkLocal.y, _sparkLocal.z, hovering, jumped);
       } else {
         cursorPrevHas = false; // a re-show must appear in place, never dart in
@@ -588,20 +604,44 @@ export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFram
     },
 
     sparkDrift(vel) {
-      // Straight through: the ladder already speaks this spark's frame. The
-      // group rides the camera (see `spark` above), so a camera-local velocity
-      // IS a group-local one — no conversion, and none would be right anyway,
-      // since the vector is an invented screen-scaled fiction rather than any
-      // world velocity (the real one is hundreds of m/s and invisible).
-      deps.spark.setDrift(vel);
+      // The ladder speaks CAMERA-local (it is a screen-scaled fiction — the
+      // real velocity is hundreds of m/s and invisible), while the spark's
+      // group now hangs off the planet. Rotate the direction across: camera →
+      // world → group. A flight-rung effect only; every other rung clears it.
+      if (!vel) {
+        deps.spark.setDrift(null);
+        return;
+      }
+      camera.getWorldQuaternion(_driftQ);
+      _driftVec.copy(vel).applyQuaternion(_driftQ);      // camera → world
+      (deps.spark.group.parent ?? camera).getWorldQuaternion(_driftQ);
+      deps.spark.setDrift(_driftVec.applyQuaternion(_driftQ.invert())); // → group
+
     },
 
-    groundSpark(pointer) {
-      // GROUND cursor = the pointer ray's hit on the DRAWN world — identical
-      // discipline to a live town host's engine cursor, so ground mode reads
-      // the same with or without a town. By construction the spark cannot
-      // leave the pixel the player is gazing at: it does not consume the
-      // analytic gaze march at all (that keeps steering the glide).
+    cursorHost() {
+      return deps.cursorHost?.() ?? null;
+    },
+
+    groundSpark(pointer, select = 0, at) {
+      // STEP 1 — JUST RENDER IT. Where the pointer meets the DRAWN world, a bit
+      // above the ground, in the scene: the spark is PLACED there (no easing,
+      // no dart), full size, depth-tested like every other object standing on
+      // the planet. Movement rules come after this reads right on screen.
+      //
+      // `at` is an entity engine's snap point (a creature's head, an object's
+      // top) — already where it belongs, so it skips the lift.
+      deps.spark.setSelect(select);
+      const put = (worldPoint: THREE.Vector3, hovering: boolean): void => {
+        _cursorWorld.copy(worldPoint);
+        toSparkFrame(_cursorWorld);
+        deps.spark.place(_cursorWorld.x, _cursorWorld.y, _cursorWorld.z, hovering);
+      };
+      if (at) {
+        put(at, true);
+        cursorDbg = "snap";
+        return true;
+      }
       if (!deps.castGroundRay) {
         cursorDbg = "nocast";
         return false;
@@ -624,32 +664,21 @@ export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFram
       );
       const hit = deps.castGroundRay(_ray.ray.origin, _ray.ray.direction, GROUND_CURSOR_FAR);
       if (!hit) {
-        // Horizon/sky gaze: nothing drawn under the pointer — hide rather
-        // than float a cursor in the air. In OPEN WILDERNESS this is the prime
-        // suspect: a miss here is indistinguishable on screen from the spark
-        // never being placed, and the cast targets a mesh list that streaming
+        // Horizon/sky gaze: nothing drawn under the pointer — hide rather than
+        // float a cursor in the air. The cast targets a mesh list that streaming
         // mounts/unmounts under the glide (see castDrawnGround's cache).
         cursorDbg = "MISS";
         cursorPrevHas = false;
         deps.spark.hide();
         return true;
       }
+      // Raise it a little above the ground, along the local up.
       _sphDir.copy(hit).sub(body.worldPosition).normalize();
       _sparkLocal.copy(hit).addScaledVector(_sphDir, SPARK_SEAT_M + dbgLift());
-      const jumped = cursorWorldJump(_sparkLocal);
-      camera.worldToLocal(_sparkLocal);
-      // No dwell bloom yet on the ground rung. It used to be fed by the town
-      // host, which is the same frame leak as taking the position from it: a
-      // dwell is progress toward selecting a PLANET object, so it must come
-      // from the planet's own interaction over the entity under the ray.
-      // TODO(planet-entity-store): drive select from the planet-side dwell
-      // once loaded entities are addressed on the body (PLANET_ENTITY_PLAN
-      // step 4) — NOT by reaching back into a town host.
-      deps.spark.setSelect(0);
-      deps.spark.setTarget(_sparkLocal.x, _sparkLocal.y, _sparkLocal.z, false, jumped);
+      put(_sparkLocal, false);
       // Hit distance from the eye: a plausible ground cursor is metres-to-tens
       // away. A huge value means the ray skimmed to a far chunk (grazing gaze).
-      cursorDbg = `hit d${_sparkLocal.length().toFixed(1)}`;
+      cursorDbg = `hit d${_sparkLocal.distanceTo(camera.position).toFixed(1)}`;
       return true;
     },
 

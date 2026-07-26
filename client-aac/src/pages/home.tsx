@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserX, Eye, EyeOff, Play } from "lucide-react";
+import { UserX, Eye, EyeOff, Play, Copy } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
 import { SentenceConstructorBoard } from "@/components/SentenceConstructorBoard";
 import AppsBoard from "@/components/AppsBoard";
@@ -97,7 +97,8 @@ import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
 import { useSignLanguagePhrase } from "@/hooks/useSignLanguagePhrase";
 import { isValidSignLanguageCode, isValidLanguageCode } from "@/i18n";
 import { serializeGestureContext, describeFaceForScene, describeHandForScene } from "@/lib/gestureContextSerializer";
-import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
+import { EyeTrackingDwellProvider, type SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
+import type { RestSpace } from "@shared/button-shape";
 import DwellOverlay from "@/components/DwellOverlay";
 import HoldHighlightOverlay from "@/components/HoldHighlightOverlay";
 import { BoardAudioProvider } from "@/contexts/BoardAudioContext";
@@ -105,6 +106,7 @@ import GazeCalibrationOverlay from "@/components/GazeCalibrationOverlay";
 import { createPortal } from "react-dom";
 import { useEyeGaze } from "@/hooks/useEyeGaze";
 import { useGazeSidecar } from "@/hooks/useGazeSidecar";
+import { useAppInstances } from "@/hooks/useAppInstances";
 import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
 import { parseSmoothingSettings, defaultSmoothingSettings, type GazeSmoothingSettings } from "@shared/gaze-smoothing.js";
 
@@ -521,8 +523,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   }, [t, currentLanguage]);
 
   // Eyegaze dwell settings — stored in DB via student profile
-  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number; smoothing: GazeSmoothingSettings }>({
-    enabled: false, provider: "mouse", timeout: 2000, smoothing: defaultSmoothingSettings()
+  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number; smoothing: GazeSmoothingSettings; selectionMethod: SelectionMethod; restSpace: RestSpace }>({
+    enabled: false, provider: "mouse", timeout: 2000, smoothing: defaultSmoothingSettings(), selectionMethod: "whole_button", restSpace: "large"
   });
   // Sync eyegaze settings from userProfile when it loads
   useEffect(() => {
@@ -533,6 +535,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
         provider: aac?.eyegazeProvider ?? "mouse",
         timeout: aac?.eyegazeTimeout ?? 2000,
         smoothing: parseSmoothingSettings(aac?.eyegazeSmoothing),
+        // How a gaze selects: the whole button, a small eye mark in its corner,
+        // or the intent decoder reading fixation vs. scanning. All exist so a
+        // label can be read without that reading counting as a choice.
+        selectionMethod: (aac?.selectionMethod as SelectionMethod) ?? "whole_button",
+        restSpace: (aac?.restSpace as RestSpace) ?? "large",
       });
     }
   }, [userProfile]);
@@ -942,6 +949,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     enabled: eyegazeSettings.enabled,
     device: gazeSidecarDevice,
   });
+
+  // A second copy of the app on the same machine steals the eye-tracker DLL from
+  // this one (one consumer per device), so the symptom is a dead gaze cursor with
+  // a perfectly healthy-looking sidecar. Name the real cause instead.
+  const { report: instanceReport, duplicateRunning } = useAppInstances();
 
   // Eyegaze provider detection notification
   const [eyegazeNotification, setEyegazeNotification] = useState<{ name: string; type: "connected" | "failed" } | null>(null);
@@ -1949,6 +1961,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     <EyeTrackingDwellProvider
       mode={!eyegazeSettings.enabled ? "off" : rawFaces.length === 0 ? "off" : isCursorControlMode ? "mouse" : "eyegaze"}
       dwellTimeMs={eyegazeSettings.timeout}
+      selectionMethod={eyegazeSettings.selectionMethod}
       gazePoint={eyeGaze.gazePoint}
       isCalibrated={eyeGaze.isCalibrated}
       supportsCalibration={eyeGaze.supportsCalibration}
@@ -1982,6 +1995,35 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
         )}
       </AnimatePresence>
 
+      {/* Duplicate-instance banner. Sits ABOVE the sidecar banner because it
+          explains it: when two copies of the app run, the second one holds the
+          eye-tracker DLL and this one's sidecar can never connect, so fixing the
+          tracker is pointless until the extra copy is closed. Newer builds refuse
+          to start a second copy outright (electron/instance-guard.ts) — this
+          catches a copy that was already running, or a second INSTALL. */}
+      {createPortal(
+        <AnimatePresence>
+          {duplicateRunning && (
+            <motion.div
+              initial={{ y: -60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -60, opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              style={{ zIndex: 2147483647 }}
+              className="fixed top-2 left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-red-600 text-white"
+            >
+              <Copy className="w-4 h-4 shrink-0" />
+              <span className="truncate">
+                {instanceReport?.multipleInstalls
+                  ? t("instances.multipleInstalls")
+                  : t("instances.duplicateRunning")}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+
       {/* Eye-tracker sidecar status banner. Portaled to <body> and given a very
           high z-index so it sits ABOVE (and is not blurred by) the wake/pause
           overlay, whose transformed/filtered ancestor would otherwise contain
@@ -1998,7 +2040,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               exit={{ y: -60, opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               style={{ zIndex: 2147483646 }}
-              className="fixed top-2 left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-amber-500 text-white"
+              className={`fixed ${duplicateRunning ? "top-16" : "top-2"} left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-amber-500 text-white`}
             >
               <EyeOff className="w-4 h-4 shrink-0" />
               <span className="truncate">
@@ -2434,6 +2476,13 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 socialSession={socialFace.session}
                 onLaunchApp={(appId, appData) => launchAppFnRef.current?.(appId, appData)}
                 onRequestAppOpen={(appId) => requestAppOpenFnRef.current?.(appId)}
+                // Only meaningful while a gaze gesture is running — with eyegaze
+                // off, a tap already selects and the extra chrome/zones would
+                // just be clutter.
+                selectionMethod={eyegazeSettings.enabled ? eyegazeSettings.selectionMethod : "whole_button"}
+                // The student's own preference; dynamic boards have no board
+                // row to narrow it. With eyegaze off it's just lost area.
+                restSpace={eyegazeSettings.enabled ? eyegazeSettings.restSpace : "none"}
               />
             </div>
           ) : (
@@ -2451,6 +2500,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
               suppressLocalSpeech={aiSessionActive}
               iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
+              eyegazeEnabled={eyegazeSettings.enabled}
+              studentRestSpace={eyegazeSettings.restSpace}
               getFaceImage={resolveFaceImage}
               onBack={() => {
                 // Handle back at root level - could show board selector

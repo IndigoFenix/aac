@@ -10,6 +10,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
     setAllowlist: (list: unknown) => ipcRenderer.invoke("browser:setAllowlist", list),
     clearAllowlist: () => ipcRenderer.invoke("browser:clearAllowlist"),
   },
+  // How many copies of the app are running (see electron/instance-guard.ts).
+  // A second copy takes the eye-tracker DLL away from this one, so the client
+  // surfaces it rather than letting it look like a tracker fault.
+  instances: {
+    get: (refresh?: boolean) => ipcRenderer.invoke("app:getInstances", { refresh }),
+    onReport: (cb: (report: unknown) => void) => {
+      const listener = (_e: unknown, report: unknown) => cb(report);
+      ipcRenderer.on("app:instances", listener);
+      return () => ipcRenderer.removeListener("app:instances", listener);
+    },
+  },
   // Eye-tracker gaze sidecar control
   gaze: {
     /** Ensure the sidecar is running for a device (auto-locates the DLL). */

@@ -46,9 +46,48 @@
   object-fit: contain;
 }
 
+/* The label's counterpart to `.icon-fill-area`: a size container holding the
+   button's text, so the label can be sized in `cqh`/`cqw` and FILL its share
+   of the button instead of sitting at a fixed font-size with slack around it.
+   Its share comes from the flex value the renderer sets per icon-text ratio
+   level; at the largest level that share equals the icon's, which is what
+   "text as large as the icon" means. See client-shared/board/button-sizing.ts. */
+.label-fill-area {
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
 /* Safe area padding for devices with notches / home indicators */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* TYPOGRAPHY.
+   These have to be defined HERE. `body { @apply font-sans }` resolves through
+   the shared tailwind config to `var(--font-sans)`, and the only definition
+   used to live in client/src/index.css — the CLINICIAN stylesheet, which this
+   app never loads. So the variable was undefined, the font-family declaration
+   was invalid, and every screen in the student's app fell back to the user
+   agent's default: a serif.
+
+   A SYSTEM stack rather than a webfont, deliberately. The AAC ships as a
+   standalone app (Electron on `app://aac`, Capacitor on iPad) and has to work
+   with no network; the clinician client's Google Fonts link would fail there
+   and land back on the same UA default. system-ui also picks up the platform's
+   own well-hinted UI face, which already covers most of the scripts we
+   translate into — the Noto entries are the fallback for platforms that don't. */
+:root {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", "Noto Sans", "Noto Sans Hebrew", "Noto Sans Arabic",
+    "Noto Sans SC", "Noto Sans KR", Arial, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 :root {

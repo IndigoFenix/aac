@@ -26,6 +26,20 @@
   height: 100%;
   object-fit: contain;
 }
+/* Label counterpart — lets the button's text FILL its flex share (sized in
+   cqh/cqw) rather than sit at a fixed font-size. Used by the AAC settings
+   button-size preview so the preview matches the student's board exactly.
+   Keep in sync with the AAC copy. */
+.label-fill-area {
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
 
 /* LIGHT MODE */
 :root {

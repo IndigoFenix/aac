@@ -256,6 +256,11 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
     plates: spec.geology.plates,
     continentR: spec.geology.continentR,
     hotspots: spec.geology.hotspots,
+    // Final frame only: nothing on the planet path consumes intermediate
+    // keyframes (scrub tooling runs on the flat stepper), and each one
+    // pays a full depression-fill + bake. A future scrubber passes its
+    // own cadence here.
+    keyframeEvery: 0,
   });
   const authors = bakeCellAuthors(geology.world);
 

@@ -741,14 +741,28 @@ export interface QuestSession {
    *  wins (unlike a busy townsperson). Joined via "follow me", left via "stop". */
   party: Set<string>;
   /** INVENTORY as fungible STACKS (feedback_items_stack_one_container): items merge by
-   *  SIGNATURE = their composed glyph ("food", "apple.hot"). `pocket` = the player's
-   *  inventory as glyph → count (NOT distinct instances); `selectedPocketGlyph` = the
-   *  armed stack; `smallProps` = world objectId → the LOOSE concrete prop on the ground
+   *  SIGNATURE = their composed glyph ("food", "apple.hot").
+   *
+   *  `pocket` = THE INVENTORY OF THE BODY THE PLAYER IS BEING — a VIEW, not a
+   *  store: it resolves to `needCarried` for the claimed creature while the
+   *  spark rides one, else for the player's own creature. An inventory belongs
+   *  to a body; there is no separate player account shadowing the creature's
+   *  own (user law) — so what a claimed baker already carries IS what the strip
+   *  shows, and what you pick up while riding stays with that body when you let
+   *  go. Writing through it (`stackAdd(session.pocket, …)`) writes that
+   *  creature's stack.
+   *
+   *  `selectedPocketGlyph` = the armed stack;
+   *  `smallProps` = world objectId → the LOOSE concrete prop on the ground
    *  ({instance id, glyph}) — the only place a small item is a concrete instance, so it
    *  can be carried/owned; picking it up MERGES it into the pocket count and drops the
    *  instance. A fresh instance is MATERIALIZED from a glyph only when a stack leaves
    *  storage into the world/dialogue (drop / put-visible / present). */
-  pocket: Record<string, number>;
+  readonly pocket: Record<string, number>;
+  /** WHOSE HANDS THE PLAYER IS USING — the claimed creature while the spark
+   *  rides one, else the player's own creature. `pocket` resolves through it;
+   *  possession is the only thing that moves it. */
+  handsCid: string;
   selectedPocketGlyph: string | null;
   /** `at` = townClock when the prop hit the floor — the TIDY chore only sweeps
    *  props older than TIDY_GRACE_S (a toy mid-game isn't snatched). */
@@ -1841,7 +1855,23 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     stayDwell: new Map(),
     escorting: new Set(),
     party: new Set(),
-    pocket: {},
+    // THE POCKET IS NOT A THING OF ITS OWN (user law, 2026-07-26): an inventory
+    // belongs to a BODY, so "the player's pocket" is just the carried stack of
+    // whatever creature the player is being right now — a claimed avatar while
+    // it rides one, its own walker body otherwise. One store per body, read
+    // through the same `needCarried` map every other creature uses, so the box
+    // on screen IS that creature's inventory rather than a parallel account
+    // that shadowed it.
+    handsCid: PLAYER_CREATURE_ID,
+    get pocket(): Record<string, number> {
+      const cid = this.handsCid;
+      let bag = this.needCarried.get(cid);
+      if (!bag) {
+        bag = {};
+        this.needCarried.set(cid, bag);
+      }
+      return bag;
+    },
     selectedPocketGlyph: null,
     smallProps: new Map(),
     containers: new Map(),
@@ -2287,6 +2317,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function applyPossession(cid: string | null, prev: string | null) {
     const s = sess;
     if (!s || !world) return;
+    // THE HANDS MOVE WITH THE SPARK. An inventory belongs to a body, so the
+    // item strip is a VIEW of whichever creature the player is being: claim a
+    // baker and the strip shows what the baker carries (and what you gather
+    // stays with the baker when you let go). No transfer happens here — there
+    // is nothing to transfer, because there was never a second account.
+    s.handsCid = cid ?? PLAYER_CREATURE_ID;
+    s.selectedPocketGlyph = null; // the armed stack belonged to the old hands
+    pushPocket(s); // the strip now shows the new body's inventory
     if (cid) {
       const body = avatarIdOf(cid);
       // Suspend the creature's own drives (the party-recruit suppression set).
@@ -16480,13 +16518,21 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       if (container && id.startsWith("take:")) {
         if (!sess) return;
-        // The DOLLHOUSE SPIRIT's container view is READ-ONLY — a formless
-        // observer can't reach in. Pressing a stack NAMES it aloud and is a
-        // COMMAND-LEVEL instruction (attention-spark.md) to the last creature
-        // the player conversed with (while on screen; else the engaged /
-        // nearest idle body): use that item — willing-gated, refused aloud.
-        // Moving things is still the family's job, not the spirit's.
-        if (spirit && sess.dollhouse !== null) {
+        // A BODILESS SPARK CANNOT REACH IN — anywhere, not just the dollhouse.
+        // Hands are a property of a BODY, and the spark has none: it is a light
+        // the world can notice, so pressing a stack NAMES it aloud and is a
+        // COMMAND-LEVEL instruction (attention-spark.md) to the creature it is
+        // addressing — the last one it conversed with (while on screen), else
+        // the engaged one, else the nearest idle body of the player's group:
+        // use that item — willing-gated, refused aloud.
+        //
+        // CLAIM A BODY and the same press is that body's own act: it takes the
+        // stack into ITS inventory (`spiritNow()` is false the moment the spark
+        // rides something, exactly as it is for a plain walker — one rule, one
+        // question: does the player have hands here?). This used to key on
+        // `dollhouse !== null` instead, so a spark gliding a live town's
+        // streets teleported goods out of boxes it had no body to reach.
+        if (spiritNow()) {
           const glyph = id.slice(5);
           const said = playerStatement(glyph);
           if (opts.spokenExternally) yieldToStatement(said);
