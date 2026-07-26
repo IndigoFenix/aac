@@ -91,6 +91,14 @@ const L: Record<string, Lexeme> = {
   bear: { w: "urso", g: "m" },
   frog: { w: "sapo", g: "m" },
   dog: { w: "cachorro", g: "m" },
+  // Creature SPECIES words (reference resolution: "falo com o/a {espécie}").
+  person: { w: "pessoa", g: "f", plw: "pessoas" },
+  animal: { w: "animal", g: "m", plw: "animais" },
+  creature: { w: "criatura", g: "f" },
+  cow: { w: "vaca", g: "f" },
+  deer: { w: "cervo", g: "m" },
+  ram: { w: "carneiro", g: "m" },
+  sheep: { w: "ovelha", g: "f" },
   box: { w: "caixa", g: "f" },
   basket: { w: "cesta", g: "f" },
   bubbles: { w: "bolhas", g: "f", pl: true },
@@ -189,11 +197,14 @@ export const pt = makeRomance({
   my: (g, pl) => (g === "f" ? (pl ? "minhas" : "minha") : pl ? "meus" : "meu"),
   youIsThird: true,
   // Portuguese keeps the subject pronoun ("Nós não lutamos.").
-  pronoun: (h) => (h === "i_me" ? "eu" : h === "you" ? "você" : h === "we" ? "nós" : "eles"),
-  // "Eu te ajudo." / "Ele não me quer." / "Você nos ajuda." / "Eu os ajudo."
-  clitic: (h) => (h === "i_me" ? "me" : h === "you" ? "te" : h === "we" ? "nos" : "os"),
-  // "para mim", "para você", "com nós", "para eles"
-  tonic: (h) => (h === "i_me" ? "mim" : h === "you" ? "você" : h === "we" ? "nós" : "eles"),
+  pronoun: (h) =>
+    h === "i_me" ? "eu" : h === "you" ? "você" : h === "we" ? "nós" : h === "he" ? "ele" : h === "she" ? "ela" : "eles",
+  // "Eu te ajudo." / "Ele não me quer." / "Você nos ajuda." / "Eu o/a ajudo." / "Eu os ajudo."
+  clitic: (h) =>
+    h === "i_me" ? "me" : h === "you" ? "te" : h === "we" ? "nos" : h === "he" ? "o" : h === "she" ? "a" : "os",
+  // "para mim", "para você", "com nós", "com ele/ela", "para eles"
+  tonic: (h) =>
+    h === "i_me" ? "mim" : h === "you" ? "você" : h === "we" ? "nós" : h === "he" ? "ele" : h === "she" ? "ela" : "eles",
   likePron: (h) =>
     h === "i_me"
       ? "Você gosta de mim."
@@ -201,7 +212,11 @@ export const pt = makeRomance({
         ? "Eu gosto de você."
         : h === "we"
           ? "Você gosta de nós."
-          : "Eu gosto deles.",
+          : h === "he"
+            ? "Eu gosto dele."
+            : h === "she"
+              ? "Eu gosto dela."
+              : "Eu gosto deles.",
   estar: { v1: "estou", v2: "está", v3: "está", v3p: "estão", v1p: "estamos" },
   ser: { v3: "é", v3p: "são" },
   to: (np) => `para ${np}`,

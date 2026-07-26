@@ -18,6 +18,7 @@ import {
   type AnimatedSpriteFacet,
 } from "./glyph-registry.js";
 import { resolveEmoji, isEmoji, isNonReversibleEmoji } from "./emoji-registry.js";
+import { buildNumeralGlyph, parseNumeralValue, type NumeralShape } from "./numeral-glyph.js";
 import {
   parseGlyph,
   computeLayout,
@@ -266,6 +267,12 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // Collect modifier transforms applied to this slot
   const transforms = collectModifierTransforms(slot);
 
+  // A bare whole-number key renders as the constructed numeral glyph in place
+  // of any image/emoji. A numeric count modifier (or the legacy one/two/three)
+  // draws the same numeral small as a badge beneath the host symbol.
+  const numeralValue = slot ? parseNumeralValue(slot.key) : null;
+  const count = collectCount(slot);
+
   const hasGlow = transforms.has("glow");
   const isShrunken = transforms.has("shrink");
   const mainScale = isShrunken ? 0.5 : 1.0;
@@ -402,7 +409,17 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           <foreignObject> sized to the slot so any animation driver works.
           The dimension warp / RTL flip are encoded as SVG `transform` on
           the foreignObject so they still apply uniformly. */}
-      {slot && item?.animatedSprite && renderAnimatedSymbol && (
+      {numeralValue !== null && (
+        <NumeralArt
+          n={numeralValue}
+          x={layout.x + SLOT_UNIT * 0.08}
+          y={layout.y + SLOT_UNIT * 0.08}
+          width={SLOT_UNIT * 0.84}
+          height={SLOT_UNIT * 0.84}
+          color="#1E40AF"
+        />
+      )}
+      {numeralValue === null && slot && item?.animatedSprite && renderAnimatedSymbol && (
         <foreignObject
           x={mainX}
           y={mainY}
@@ -413,7 +430,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           {renderAnimatedSymbol(item.animatedSprite, slot.key)}
         </foreignObject>
       )}
-      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && url && (
+      {numeralValue === null && slot && (!item?.animatedSprite || !renderAnimatedSymbol) && url && (
         <image
           href={url}
           x={mainX}
@@ -425,7 +442,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           onError={onImageError ? () => onImageError(url) : undefined}
         />
       )}
-      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && emojiDataUrl && (
+      {numeralValue === null && slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && emojiDataUrl && (
         <image
           href={emojiDataUrl}
           x={mainX}
@@ -436,7 +453,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           transform={emojiImageTransform}
         />
       )}
-      {slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && !emojiDataUrl && (
+      {numeralValue === null && slot && (!item?.animatedSprite || !renderAnimatedSymbol) && !url && !emojiDataUrl && (
         <text
           x={layout.x + SLOT_UNIT / 2}
           y={layout.y + SLOT_UNIT / 2}
@@ -512,9 +529,16 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
       {/* Badge-type modifiers (and `hands`, which is treated as a badge for v1) */}
       <BadgeStack slot={slot} layout={layout} rtl={rtl} resolveImage={resolveImage} onImageError={onImageError} />
 
-      {/* Dot indicators at bottom for count modifiers */}
-      {transforms.has("dots") && (
-        <DotIndicator slot={slot} layout={layout} />
+      {/* Exact-count numeral drawn small beneath the host (replaces the old dots) */}
+      {numeralValue === null && count !== null && (
+        <NumeralArt
+          n={count}
+          x={layout.x + SLOT_UNIT * 0.14}
+          y={layout.y + SLOT_UNIT * 0.6}
+          width={SLOT_UNIT * 0.72}
+          height={SLOT_UNIT * 0.34}
+          color="#1E40AF"
+        />
       )}
       {transforms.has("gauge") && (
         <GaugeIndicator level={collectGaugeLevel(slot) ?? 0} layout={layout} />
@@ -745,6 +769,29 @@ function collectGaugeLevel(slot: ParsedSlot | undefined): number | null {
   for (const modKey of slot.modifiers) {
     const g = getVocabularyItem(modKey)?.modifier;
     if (g?.transform === "gauge" && g.gauge !== undefined) return g.gauge;
+  }
+  return null;
+}
+
+/** Spelled small numbers kept working as count modifiers for back-compat. */
+const SPELLED_COUNT: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+
+/**
+ * The exact count a slot's modifiers request, for the numeral badge beneath a
+ * host noun. A bare-digit modifier (`wood.24`) gives the value directly; the
+ * legacy spelled words (`wood.two`) still map to their number. Returns null when
+ * no count modifier is present. `many` has no exact value and is ignored.
+ */
+function collectCount(slot: ParsedSlot | undefined): number | null {
+  if (!slot) return null;
+  for (const modKey of slot.modifiers) {
+    const digit = parseNumeralValue(modKey);
+    if (digit !== null) return digit;
+    const spelled = SPELLED_COUNT[modKey.toLowerCase()];
+    if (spelled !== undefined) return spelled;
   }
   return null;
 }
@@ -1122,35 +1169,63 @@ function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
   );
 }
 
-interface DotIndicatorProps {
-  slot: ParsedSlot | undefined;
-  layout: SlotLayout;
+interface NumeralArtProps {
+  /** Quantity to draw (0..99999). 0 renders nothing. */
+  n: number;
+  /** Target rectangle in viewBox units; the numeral is fit inside it. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+  /** "center" (default) or "start" horizontal placement inside the rect. */
+  align?: "center" | "start";
 }
 
-function DotIndicator(props: DotIndicatorProps): React.ReactElement | null {
-  const { slot, layout } = props;
-  if (!slot) return null;
-  // Determine dot count from the count-modifier present
-  let dotCount = 0;
-  for (const mk of slot.modifiers) {
-    if (mk === "one") dotCount = 1;
-    else if (mk === "two") dotCount = 2;
-    else if (mk === "many") dotCount = 4;
-  }
-  if (dotCount === 0) return null;
-
-  const dotR = 5;
-  const spacing = 14;
-  const totalWidth = (dotCount - 1) * spacing;
-  const startX = layout.x + SLOT_UNIT / 2 - totalWidth / 2;
-  const y = layout.y + SLOT_UNIT - 10;
+/**
+ * Renders the constructed numeral glyph (shared/numeral-glyph.ts) as SVG,
+ * scaled to fit the given rect while preserving aspect and bottom-anchored so
+ * the marks grow upward. Used both full-slot (a bare number key) and small as a
+ * count badge beneath a host noun.
+ */
+function NumeralArt(props: NumeralArtProps): React.ReactElement | null {
+  const { n, x, y, width, height, color = "#1E40AF", align = "center" } = props;
+  const glyph = buildNumeralGlyph(n);
+  if (glyph.shapes.length === 0 || glyph.width <= 0 || glyph.height <= 0) return null;
+  const k = Math.min(width / glyph.width, height / glyph.height);
+  const rw = glyph.width * k;
+  const rh = glyph.height * k;
+  const ox = x + (align === "start" ? 0 : (width - rw) / 2);
+  const oy = y + (height - rh) / 2;
   return (
-    <g fill="#1E40AF">
-      {Array.from({ length: dotCount }).map((_, i) => (
-        <circle key={i} cx={startX + i * spacing} cy={y} r={dotR} />
-      ))}
+    <g transform={`translate(${ox} ${oy}) scale(${k})`}>
+      {glyph.shapes.map((sh, i) => renderNumeralShape(sh, i, color))}
     </g>
   );
+}
+
+function renderNumeralShape(sh: NumeralShape, key: number, color: string): React.ReactElement {
+  switch (sh.kind) {
+    case "line":
+      return (
+        <line key={key} x1={sh.x1} y1={sh.y1} x2={sh.x2} y2={sh.y2}
+          stroke={color} strokeWidth={sh.w} strokeLinecap="round" />
+      );
+    case "ring":
+      return (
+        <circle key={key} cx={sh.cx} cy={sh.cy} r={sh.r}
+          fill="none" stroke={color} strokeWidth={sh.w} opacity={sh.faint ? 0.5 : 1} />
+      );
+    case "dot":
+      return <circle key={key} cx={sh.cx} cy={sh.cy} r={sh.r} fill={color} />;
+    case "text":
+      return (
+        <text key={key} x={sh.x} y={sh.y} fontSize={sh.size} textAnchor="middle"
+          fontFamily="ui-monospace, monospace" fontWeight={600} fill={color}>
+          {sh.text}
+        </text>
+      );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

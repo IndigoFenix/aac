@@ -419,6 +419,54 @@ describe("household stations: beds, chairs at the table, a box", () => {
   });
 });
 
+// ── round 8: AXIS-ALIGNED FACING + the pantry refrigerator ───────────────
+// Corner/wall furniture should face the room SQUARE-ON — down one of the
+// building frame's own axes — not tilted diagonally at the room's centroid.
+// The alignment is a general placement property (placement.axisFaceInto),
+// so every corner-placed kind inherits it; no item hard-codes its angle.
+describe("round-8 axis-aligned facing: corner furniture faces down an axis", () => {
+  const goods = [{ key: "food", slot: 0 }, { key: "tools", slot: 1 }];
+
+  /** A facing is axis-aligned when its unit vector lies on a world axis —
+   *  one of cos/sin is ±1 and the other 0 (frame axes are world-axis-aligned
+   *  for every door side). The old diagonal facing failed this hard (≈0.7). */
+  const axisAligned = (facing: number): boolean =>
+    Math.min(Math.abs(Math.cos(facing)), Math.abs(Math.sin(facing))) < 1e-6;
+
+  it("chests, the fridge, the privy, the bin and the boxes all face an axis", () => {
+    let idx = 0;
+    for (const door of ["north", "south", "east", "west"] as const) {
+      for (let w = 7; w <= 13.01; w += 1.5) {
+        for (let h = 7; h <= 10.01; h += 1.5) {
+          const sideways = door === "east" || door === "west";
+          const ww = sideways ? h : w;
+          const hh = sideways ? w : h;
+          const house: TownHouse = {
+            index: idx++, dx: -ww / 2, dy: -hh / 2, w: ww, h: hh, door, color: "#a8875f", floors: 1,
+          };
+          const pieces = houseFurniture(center, house, goods);
+          // Corner/wall kinds that used to face the diagonal centroid.
+          for (const p of pieces) {
+            if (["chest", "refrigerator", "privy", "bin", "box"].includes(p.kind)) {
+              expect(`${house.index} ${p.id} facing ${p.facing.toFixed(3)}: ${axisAligned(p.facing)}`)
+                .toBe(`${house.index} ${p.id} facing ${p.facing.toFixed(3)}: true`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("the FOOD box is a refrigerator, openable, and opened as a deliberate access (openable container)", () => {
+    const pieces = houseFurniture(center, house, goods);
+    const fridge = pieces.find(p => p.good === "food")!;
+    expect(fridge.kind).toBe("refrigerator");
+    // openable ⇒ registered as an 'in' container whose lid a taker opens
+    // (quest-host openContainerLid), the same deliberate access as any chest.
+    expect(fridge.openable).toBe(true);
+  });
+});
+
 // ── round 6e: THE SERVICE LANE ──────────────────────────────────────────
 // fits() keeps pieces off doors and off each other; the service lane
 // keeps every station REACHABLE — a body (radius 0.4, wall keep-out 0.6)
@@ -536,7 +584,7 @@ describe("round-6e SERVICE LANE: every station stays reachable from a door", () 
 });
 
 // ── Round 7: the KITCHEN cell — the cluster's stations follow their cell.
-describe("round-7 kitchen: stove/cupboard/barrel stand IN the kitchen room when one exists", () => {
+describe("round-7 kitchen: stove/barrel stand IN the kitchen room when one exists", () => {
   const goods = [{ key: "food", slot: 0 }, { key: "tools", slot: 1 }];
   const inRoom = (p: FurniturePiece, r: { x: number; y: number; w: number; h: number }): boolean =>
     p.x - p.radius >= r.x - 1e-9 && p.x + p.radius <= r.x + r.w + 1e-9 &&
@@ -557,16 +605,18 @@ describe("round-7 kitchen: stove/cupboard/barrel stand IN the kitchen room when 
           const plan = houseRoomPlan(center, h);
           const kitchen = plan.rooms.find((r) => r.kind === "kitchen");
           const pieces = houseFurniture(center, h, goods);
-          const kitPieces = pieces.filter((p) => ["oven", "cupboard", "barrel"].includes(p.kind));
           if (kitchen) {
             sawKitchen++;
-            for (const p of kitPieces) {
+            // The OVEN never yields and the BARREL keeps its cell — both
+            // stand in the kitchen. (The CUPBOARD may YIELD to the fridge —
+            // asserted in the kitchen-priority block below.)
+            for (const p of pieces.filter((x) => ["oven", "barrel"].includes(x.kind))) {
               expect(`${h.index} ${p.id} in kitchen: ${inRoom(p, kitchen.rect)}`)
                 .toBe(`${h.index} ${p.id} in kitchen: true`);
             }
             // The dedicated cell always fits its own stations (that's
             // what its minW floor bought).
-            expect(kitPieces.some((p) => p.kind === "oven")).toBe(true);
+            expect(pieces.some((p) => p.kind === "oven")).toBe(true);
           } else if (plan.partitioned) {
             const stove = pieces.find((p) => p.kind === "oven");
             if (stove) {
@@ -579,5 +629,115 @@ describe("round-7 kitchen: stove/cupboard/barrel stand IN the kitchen room when 
     }
     expect(sawKitchen).toBeGreaterThan(0);
     expect(sawFallbackStove).toBeGreaterThan(0);
+  });
+});
+
+// ── KITCHEN PRIORITY (user decision): the fridge belongs in the kitchen,
+// and the cupboard YIELDS to it. When a kitchen exists the pantry
+// refrigerator (the food goods box) claims a kitchen corner — displacing
+// the cupboard to the living room when the oven (which NEVER yields) and
+// the fridge leave it no fitting wall — and the returning shopper's stand
+// spot follows the fridge into the kitchen, staying reachable. With no
+// kitchen, the living-room behavior is unchanged.
+describe("kitchen priority: the fridge is IN the kitchen; the cupboard yields", () => {
+  const goods = [{ key: "food", slot: 0 }, { key: "tools", slot: 1 }];
+  const inRoom = (p: FurniturePiece, r: { x: number; y: number; w: number; h: number }): boolean =>
+    p.x - p.radius >= r.x - 1e-9 && p.x + p.radius <= r.x + r.w + 1e-9 &&
+    p.y - p.radius >= r.y - 1e-9 && p.y + p.radius <= r.y + r.h + 1e-9;
+  const ptIn = (pt: { x: number; y: number }, r: { x: number; y: number; w: number; h: number }): boolean =>
+    pt.x >= r.x - 1e-9 && pt.x <= r.x + r.w + 1e-9 && pt.y >= r.y - 1e-9 && pt.y <= r.y + r.h + 1e-9;
+
+  it("FULL SWEEP: fridge in kitchen, oven survives, cupboard yields, spot follows, nothing overlaps", () => {
+    let sawFridgeInKitchen = 0;
+    let sawFridgeHeldOut = 0;
+    let sawNoKitchen = 0;
+    let sawYield = 0;
+    let i = 0;
+    for (const door of ["north", "south", "east", "west"] as const) {
+      for (let w = 8; w <= 13.01; w += 0.7) {
+        for (let d = 7.5; d <= 10.01; d += 0.6) {
+          const sideways = door === "east" || door === "west";
+          const h: TownHouse = {
+            index: i++, dx: -(sideways ? d : w) / 2, dy: -(sideways ? w : d) / 2,
+            w: sideways ? d : w, h: sideways ? w : d, door, color: "#a8875f", floors: 1,
+          };
+          const plan = houseRoomPlan(center, h);
+          const kitchen = plan.rooms.find((r) => r.kind === "kitchen");
+          const living = plan.rooms[0]!.rect;
+          const pieces = houseFurniture(center, h, goods);
+          const fridge = pieces.find((p) => p.good === "food")!;
+          const oven = pieces.find((p) => p.kind === "oven");
+          const cup = pieces.find((p) => p.kind === "cupboard");
+          const spot = goodBoxAt(center, h, 0); // the pantry stand spot / trip-end
+
+          // Nothing overlaps, ever (the fridge fit around, or displaced).
+          expect(`house ${h.index}: ${overlappingPairs(pieces).join("; ")}`).toBe(`house ${h.index}: `);
+
+          if (kitchen) {
+            // THE OVEN NEVER YIELDS — it exists and stays in the kitchen,
+            // whether or not the fridge joined it.
+            expect(`${h.index} oven present: ${!!oven}`).toBe(`${h.index} oven present: true`);
+            expect(`${h.index} oven in kitchen: ${inRoom(oven!, kitchen.rect)}`)
+              .toBe(`${h.index} oven in kitchen: true`);
+            // The fridge is IN the kitchen when the room can seat it beside
+            // the oven; a too-cramped kitchen (the oven outranks it) keeps it
+            // in the living room. Either way its crate and its stand spot
+            // agree — they share ONE room (the single source).
+            const fridgeRoom = inRoom(fridge, kitchen.rect) ? "kitchen"
+              : inRoom(fridge, living) ? "living" : "STRANDED";
+            expect(`${h.index} fridge room: ${fridgeRoom}`).not.toBe(`${h.index} fridge room: STRANDED`);
+            const spotRoom = ptIn(spot, kitchen.rect) ? "kitchen" : ptIn(spot, living) ? "living" : "STRANDED";
+            expect(`${h.index} spot follows fridge: ${spotRoom}`).toBe(`${h.index} spot follows fridge: ${fridgeRoom}`);
+            if (fridgeRoom === "kitchen") {
+              sawFridgeInKitchen++;
+              // With the fridge in the kitchen, the cupboard is either in the
+              // kitchen (both fit) or yielded to the living room — never lost.
+              if (cup) {
+                const home = inRoom(cup, kitchen.rect) ? "kitchen" : inRoom(cup, living) ? "living" : "STRANDED";
+                expect(`${h.index} cupboard: ${home}`).not.toBe(`${h.index} cupboard: STRANDED`);
+                if (home === "living") sawYield++;
+              } else {
+                sawYield++; // dropped for want of anywhere — still a valid yield
+              }
+            } else {
+              sawFridgeHeldOut++;
+            }
+          } else {
+            sawNoKitchen++;
+            // No kitchen: the fridge keeps the living-room corner (unchanged).
+            expect(`${h.index} fridge in living: ${inRoom(fridge, living)}`)
+              .toBe(`${h.index} fridge in living: true`);
+            expect(`${h.index} spot in living: ${ptIn(spot, living)}`)
+              .toBe(`${h.index} spot in living: true`);
+          }
+        }
+      }
+    }
+    expect(sawFridgeInKitchen).toBeGreaterThan(0); // the fridge really moves into kitchens
+    expect(sawFridgeHeldOut).toBeGreaterThan(0); // a cramped kitchen really holds it out (oven wins)
+    expect(sawNoKitchen).toBeGreaterThan(0); // kitchen-less houses occur too
+    expect(sawYield).toBeGreaterThan(0); // the cupboard really does yield sometimes
+  });
+
+  it("the fridge crate and its stand spot agree (single source, kitchen and living alike)", () => {
+    let i = 0;
+    for (const door of ["north", "south", "east", "west"] as const) {
+      for (let w = 8; w <= 13.01; w += 1.1) {
+        for (let d = 7.5; d <= 10.01; d += 1.1) {
+          const sideways = door === "east" || door === "west";
+          const h: TownHouse = {
+            index: i++, dx: -(sideways ? d : w) / 2, dy: -(sideways ? w : d) / 2,
+            w: sideways ? d : w, h: sideways ? w : d, door, color: "#a8875f", floors: 1,
+          };
+          const pieces = houseFurniture(center, h, goods);
+          const fridge = pieces.find((p) => p.good === "food")!;
+          const spot = goodBoxAt(center, h, 0);
+          // The crate (radius+0.1 inset) and the stand spot (1.75 inset) sit
+          // in the SAME corner — within the inset difference of one another.
+          expect(`${h.index}: ${Math.hypot(fridge.x - spot.x, fridge.y - spot.y) < 1.75}`)
+            .toBe(`${h.index}: true`);
+        }
+      }
+    }
   });
 });

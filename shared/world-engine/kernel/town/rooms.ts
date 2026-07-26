@@ -246,6 +246,41 @@ export function livingRect(
   return houseRoomPlan(center, house).rooms[0]!.rect;
 }
 
+/** World point of a room doorway's center (u along the wall from its min
+ *  corner — buildingStructures' convention). Exported for the goods-box
+ *  resolver (placement.ts). */
+export function doorwayWorldPoint(room: HouseRoom, d: RoomDoorway): { x: number; y: number } {
+  const r = room.rect;
+  return d.edge === "north" ? { x: r.x + d.offset, y: r.y }
+    : d.edge === "south" ? { x: r.x + d.offset, y: r.y + r.h }
+    : d.edge === "west" ? { x: r.x, y: r.y + d.offset }
+    : { x: r.x + r.w, y: r.y + d.offset };
+}
+
+/** The corner of a room farthest from its nearest doorway — where the
+ *  pantry fridge tucks so the oven keeps a wall and the shopper's stand
+ *  spot in front stays reachable from the door. Index is goodBoxAt's
+ *  (0 SW · 1 SE · 2 NE · 3 NW). The fit-aware room decision (kitchen vs
+ *  living) lives in placement.ts's goodBoxPlacement (it needs the fit
+ *  machinery to guarantee the oven never yields). */
+export function kitchenDeepestCorner(room: HouseRoom): number {
+  const r = room.rect;
+  const corners = [
+    { i: 0, x: r.x, y: r.y + r.h },
+    { i: 1, x: r.x + r.w, y: r.y + r.h },
+    { i: 2, x: r.x + r.w, y: r.y },
+    { i: 3, x: r.x, y: r.y },
+  ];
+  const doors = room.doorways.map((d) => doorwayWorldPoint(room, d));
+  let best = corners[0]!;
+  let bestD = -Infinity;
+  for (const c of corners) {
+    const d = doors.length ? Math.min(...doors.map((p) => Math.hypot(c.x - p.x, c.y - p.y))) : 0;
+    if (d > bestD + 1e-9) { bestD = d; best = c; }
+  }
+  return best.i;
+}
+
 /** Door-wall length (u axis) and depth (v axis) of a house. Exported for
  *  construction.ts (annex candidates reason in the same door-local frame). */
 export function frameDims(house: Pick<TownHouse, "w" | "h" | "door">): { L: number; D: number } {
@@ -337,13 +372,13 @@ const planCache = new Map<string, HouseRoomPlan>();
 const deltaKeyOf = new Map<string, string>(); // baseKey → its one delta cache key
 /** Does the delta change the ROOM PLAN? (Placed furniture doesn't.) */
 const shapesRooms = (d: BuildingDelta | undefined): d is BuildingDelta =>
-  !!d && (d.annexes.length > 0 || d.demolished.length > 0);
+  !!d && (d.annexes.length > 0 || d.demolished.length > 0 || (d.interior?.length ?? 0) > 0);
 /** Content hash of the ROOM-SHAPING delta fields — the memo re-key. By
  *  CONTENT, not rev: two stores with equal geometry share the entry, a
  *  furniture-only rev bump doesn't rebuild, and an undone annex falls
  *  back to the base plan's own cache line. */
 const deltaShapeKey = (d: BuildingDelta): string =>
-  `d${hashSeed(0, JSON.stringify({ a: d.annexes, m: d.demolished }))}`;
+  `d${hashSeed(0, JSON.stringify({ a: d.annexes, m: d.demolished, i: d.interior ?? [] }))}`;
 export function houseRoomPlan(
   center: { x: number; y: number },
   house: HouseShape,
@@ -763,7 +798,45 @@ function annotateDepths(rooms: HouseRoom[]): void {
  * door cut at the RECORDED point — any room whose wall carries the point
  * records the doorway (bandPlan's sharedDoor convention), so the door
  * survives even when its original host merged into a union.
+ *
+ * An INTERIOR room (⑤b) carves a band OUT of its recorded host (after
+ * annexes — an annex room may itself split): the host keeps the
+ * rectangular remainder and every door that survives on its walls (the
+ * cut was validated to strand none — interiorOptions); the new room takes
+ * the band and the recorded partition door joins them. This is the ONE
+ * path that may shrink rooms[0] — legal only for a NON-HOUSE root (a
+ * shell subdividing from within); the living-room invariant then relaxes
+ * to "same id, same street door, never grown".
  */
+/** Host minus a flush guillotine cut → the rectangular remainder, null
+ *  when the cut isn't a full-span band at one end (validated at request
+ *  time — this is the defensive twin). */
+function rectMinusRect(
+  host: { x: number; y: number; w: number; h: number },
+  cut: { x: number; y: number; w: number; h: number },
+): { x: number; y: number; w: number; h: number } | null {
+  const EPS = 1e-6;
+  const sameX = Math.abs(cut.x - host.x) < EPS && Math.abs(cut.w - host.w) < EPS;
+  const sameY = Math.abs(cut.y - host.y) < EPS && Math.abs(cut.h - host.h) < EPS;
+  if (sameX && host.h - cut.h > EPS) {
+    if (Math.abs(cut.y - host.y) < EPS) {
+      return { x: host.x, y: cut.y + cut.h, w: host.w, h: host.h - cut.h };
+    }
+    if (Math.abs(cut.y + cut.h - (host.y + host.h)) < EPS) {
+      return { x: host.x, y: host.y, w: host.w, h: host.h - cut.h };
+    }
+  }
+  if (sameY && host.w - cut.w > EPS) {
+    if (Math.abs(cut.x - host.x) < EPS) {
+      return { x: cut.x + cut.w, y: host.y, w: host.w - cut.w, h: host.h };
+    }
+    if (Math.abs(cut.x + cut.w - (host.x + host.w)) < EPS) {
+      return { x: host.x, y: host.y, w: host.w - cut.w, h: host.h };
+    }
+  }
+  return null;
+}
+
 function applyDelta(
   base: HouseRoomPlan,
   center: { x: number; y: number },
@@ -836,17 +909,75 @@ function applyDelta(
     }
   }
 
+  // ── interior rooms (⑤b), in ordinal order — AFTER annexes, so an annex
+  // room may host a cut. Each spec was validated at request time; a spec
+  // whose host is gone or whose remainder wouldn't tile skips defensively
+  // (never a half-applied room).
+  for (const s of [...(delta.interior ?? [])].sort((p, q) => p.ord - q.ord)) {
+    const host = rooms.find((r) => r.id === s.hostId);
+    if (!host) continue;
+    const cutRect = frameRect(house, x0, y0, s.u0, s.u1, s.v0, s.v1);
+    const rem = rectMinusRect(host.rect, cutRect);
+    if (!rem) continue;
+    // The host keeps every door that survives on the remainder's walls;
+    // one that falls on the CUT's outer boundary TRANSFERS whole to the
+    // new room (re-creation hands the demolished room its old doors back
+    // — the adjacent room still records its own half, so the shared door
+    // re-pairs by world point). The cut was validated to strand none.
+    const carried: RoomDoorway[] = [];
+    const transferred: Array<{ at: { x: number; y: number }; width: number }> = [];
+    for (const dw of host.doorways) {
+      const at = doorWorldPoint(host, dw);
+      const ndw = doorwayOnRect(rem, at, dw.width);
+      if (ndw) carried.push(ndw);
+      else transferred.push({ at, width: dw.width });
+    }
+    host.rect = rem;
+    host.doorways = carried;
+    const room: HouseRoom = {
+      id: `${idBase}_i${s.ord}`,
+      kind: s.kind,
+      rect: cutRect,
+      doorways: [],
+      depth: 0,
+    };
+    for (const tr of transferred) {
+      const ndw = doorwayOnRect(cutRect, tr.at, tr.width);
+      if (ndw) room.doorways.push(ndw);
+    }
+    rooms.push(room);
+    if (room.kind === "bedroom") bedrooms.push(room.id);
+    if (room.kind === "bath" && !bathId) bathId = room.id;
+    const at = framePoint(house, x0, y0, s.doorAt.u, s.doorAt.v);
+    for (const r of rooms) {
+      const dw = doorwayOnRect(r.rect, at, s.doorAt.width);
+      if (dw) r.doorways.push(dw);
+    }
+  }
+
   annotateDepths(rooms);
 
   // THE LIVING-ROOM INVARIANT — rooms[0] byte-equal to the base. Goods
   // anchors, chest ids and errand endpoints all hang off it; a delta
-  // that moved it is a programming error, not a content state.
+  // that moved it is a programming error, not a content state. The ONE
+  // legal exception: an interior spec naming rooms[0] (a shell's root
+  // subdividing — non-house callers only, interiorOptions' keepRoot
+  // gate) may SHRINK it; the id, a surviving doorway (the street door)
+  // and containment in the base rect still hold.
+  const rootSplit = (delta.interior ?? []).some((s) => s.hostId === base.rooms[0]!.id);
   const lb = base.rooms[0]!.rect;
   const la = rooms[0]!.rect;
-  if (
-    rooms[0]!.id !== base.rooms[0]!.id ||
-    la.x !== lb.x || la.y !== lb.y || la.w !== lb.w || la.h !== lb.h
-  ) {
+  if (rooms[0]!.id !== base.rooms[0]!.id) {
+    throw new Error(`applyDelta moved the living room of ${idBase}`);
+  }
+  if (rootSplit) {
+    const inside =
+      la.x >= lb.x - 1e-6 && la.y >= lb.y - 1e-6 &&
+      la.x + la.w <= lb.x + lb.w + 1e-6 && la.y + la.h <= lb.y + lb.h + 1e-6;
+    if (!inside || rooms[0]!.doorways.length === 0) {
+      throw new Error(`applyDelta broke the root of ${idBase}`);
+    }
+  } else if (la.x !== lb.x || la.y !== lb.y || la.w !== lb.w || la.h !== lb.h) {
     throw new Error(`applyDelta moved the living room of ${idBase}`);
   }
 
@@ -873,7 +1004,7 @@ export function memberRoomOf(plan: HouseRoomPlan, member: number): HouseRoom {
 /** The fields a work interior is a pure function of. `stations` is the
  *  building's extra-fixture override (workFurniture reads it; the room plan
  *  ignores it). */
-export type WorkShape = Pick<TownWork, "dx" | "dy" | "w" | "h" | "door" | "species" | "stations">;
+export type WorkShape = Pick<TownWork, "dx" | "dy" | "w" | "h" | "door" | "species" | "stations" | "bare">;
 
 const workPlanCache = new Map<string, HouseRoomPlan>();
 

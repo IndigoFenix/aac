@@ -259,8 +259,15 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
       );
     }
     // A bare PRONOUN object is a preverbal CLITIC ("te ayudo", "no me quiere"),
-    // never an articled NP after the verb.
-    if (f.object && isPronoun(f.object.noun.head) && !f.tail) {
+    // never an articled NP after the verb. PLAY/TALK are the exception — they
+    // ride the comitative ("hablo con él", never the clitic "lo hablo").
+    if (
+      f.object &&
+      isPronoun(f.object.noun.head) &&
+      !f.tail &&
+      f.verb.head !== "play" &&
+      f.verb.head !== "talk"
+    ) {
       const head = f.object.noun.head as PronounHead;
       const subj = f.subject ? subjText(f.subject) : "";
       const s = `${subj ? `${subj} ` : ""}${f.neg ? `${cfg.notWord} ` : ""}${cfg.clitic(head)} ${conj(f.verb, f.subject, false)}`;
@@ -278,7 +285,7 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
     const objNp = f.object ? npText(f.object, def) : "";
     const obj = f.object
       ? ` ${
-          (f.verb.head === "play" || f.verb.head === "talk") && !isPronoun(f.object.noun.head)
+          f.verb.head === "play" || f.verb.head === "talk"
             ? `${cfg.withWord} ${objNp}`
             : lex(f.verb.head).objPrep === "of" && cfg.of
               ? cfg.of(objNp, g(f.object.noun), pl(f.object.noun))

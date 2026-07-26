@@ -27,6 +27,7 @@ import { climateFields, applyClimate, type ClimateFields } from "./climate";
 import { applyEcology, biomePalette, DEFAULT_BIOSPHERE } from "./ecology";
 import { substrateSurface, type PlanetSurface, type PlanetPalette, type RGB } from "./surface";
 import { attachRiverRelief, type RiverRelief } from "./rivers";
+import { createRoutePaint, type RoutePaint } from "./route-paint";
 import { EARTHLIKE_BLUE, hexToLinear } from "./palettes";
 import { validateFields, type FieldSpec, type GroupSpec } from "../kernel/spec-schema";
 import { GEOLOGY_FIELDS } from "../kernel/civ/region-game";
@@ -182,6 +183,10 @@ export interface BuiltPlanet {
    *  the terrain when the region loads (`addRivers`). Absent on riverless
    *  worlds. */
   riverRelief?: RiverRelief;
+  /** ROAD PAINT (planet/route-paint.ts) — always present, starts EMPTY: the
+   *  host merges route sets as they appear (interstates at founding, region
+   *  lanes on refine, stitches) and repaints standing chunks. */
+  routePaint: RoutePaint;
 }
 
 /** The surface both build paths share — one construction, one look. */
@@ -226,7 +231,12 @@ export function rebuiltPlanetWorld(
   // SHREDS the network on every flat. Recomputing is pure — a healthy grid
   // re-derives its identical accumulation and just gains the pointers.
   if (grid.fields.river && !grid.fields.riverDown) recomputeGridFlows(grid);
-  const built: BuiltPlanet = { spec, topo: grid.topo, grid, sites, surface: surfaceFor(spec, grid) };
+  const built: BuiltPlanet = {
+    spec, topo: grid.topo, grid, sites,
+    surface: surfaceFor(spec, grid),
+    routePaint: createRoutePaint(spec.radius),
+  };
+  built.surface.roadTintAt = built.routePaint.tintAt;
   attachRiverRelief(built); // same fold as buildPlanetWorld — a rebuilt planet renders identically
   return built;
 }
@@ -312,7 +322,11 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
 
   const surface = surfaceFor(spec, prep.grid);
 
-  const built: BuiltPlanet = { spec, topo, grid: prep.grid, sites: spec.settle ? prep.sites : [], geology, surface };
+  const built: BuiltPlanet = {
+    spec, topo, grid: prep.grid, sites: spec.settle ? prep.sites : [], geology, surface,
+    routePaint: createRoutePaint(spec.radius),
+  };
+  built.surface.roadTintAt = built.routePaint.tintAt;
   // Fold the river network back into the terrain: recolor + valley notch
   // (rivers.ts). After surfaceFor so it wraps the finished surface.
   attachRiverRelief(built);

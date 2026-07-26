@@ -37,6 +37,25 @@ export interface WorldDressSpec {
   palette?: string[];
 }
 
+/** An authored ROOM PROGRAM (`architecture.rooms[i]`, pipeline ④): what a
+ *  room kind MEANS in this culture — the furniture that satisfies it
+ *  (`requires`, all standing in one room) and the furniture that derives
+ *  it (`signature`, any piece; defaults to `requires`). Kernel-validated
+ *  at resolve time (programs.ts): unknown station kinds resolve to no-ops,
+ *  the workstation-override precedent. */
+export interface WorldRoomProgramSpec {
+  kind: string;
+  requires: string[];
+  signature?: string[];
+}
+
+/** An authored STRUCTURE PROGRAM (`architecture.buildings[i]`, pipeline ④):
+ *  what rooms make a building this culture's "<type>". */
+export interface WorldStructureProgramSpec {
+  type: string;
+  rooms: string[];
+}
+
 /**
  * How a culture BUILDS (`game.culture.architecture`) — where its dwellings put
  * their workstations. `workstations` maps a fixture kind to a PLACEMENT-MODE
@@ -44,12 +63,21 @@ export interface WorldDressSpec {
  * shared hall), a formal one gives the oven its `own_room` (a separate
  * kitchen). Resolved into the workstation registry the town furnishes from —
  * the authored-then-resolved shape `dress` established. Absent kinds keep the
- * default placement. (`rooms`/`buildings` sub-blocks are reserved for later —
- * authoring them is rejected until they resolve to something.)
+ * default placement.
+ *
+ * `rooms` / `buildings` (construction pipeline ④): the culture's PROGRAM
+ * definitions — room kind → furniture, building type → rooms. One table read
+ * both directions (kernel/town/programs.ts): programs are goals, derived
+ * kinds are facts. Authored defs replace same-name defaults in place; new
+ * names append. Absent = the kernel default culture.
  */
 export interface WorldArchitectureSpec {
   /** Fixture kind → placement override (see kernel workstations.ts). */
   workstations?: ArchitectureOverrides;
+  /** Room program defs (kernel defaults ⊕ these — programs.ts). */
+  rooms?: WorldRoomProgramSpec[];
+  /** Structure program defs (kernel defaults ⊕ these — programs.ts). */
+  buildings?: WorldStructureProgramSpec[];
 }
 
 /** The `game.culture` block as authored (snake_case, kernel-gated). */
@@ -119,7 +147,7 @@ export function parseWorldDressSpec(raw: unknown, path: string): WorldDressSpec 
  *  no-op, exactly as dress gates shape and clothing.ts validates values). */
 export function parseWorldArchitectureSpec(raw: unknown, path: string): WorldArchitectureSpec {
   if (!isObj(raw)) fail(path, "expected an object (the architecture declaration)");
-  const allowed = ["workstations"];
+  const allowed = ["workstations", "rooms", "buildings"];
   for (const k of Object.keys(raw as object)) {
     if (!allowed.includes(k)) fail(`${path}.${k}`, `unknown field (allowed: ${allowed.join(", ")})`);
   }
@@ -154,6 +182,41 @@ export function parseWorldArchitectureSpec(raw: unknown, path: string): WorldArc
       map[kind] = ov;
     }
     out.workstations = map;
+  }
+  if ("rooms" in r) {
+    if (!Array.isArray(r.rooms)) fail(`${path}.rooms`, "expected an array of room programs");
+    if (r.rooms.length > 16) fail(`${path}.rooms`, "at most 16 room programs");
+    out.rooms = r.rooms.map((v, i) => {
+      const p = `${path}.rooms[${i}]`;
+      if (!isObj(v)) fail(p, "expected an object ({ kind, requires, signature? })");
+      const vr = v as Record<string, unknown>;
+      const allowedR = ["kind", "requires", "signature"];
+      for (const kk of Object.keys(vr)) {
+        if (!allowedR.includes(kk)) fail(`${p}.${kk}`, `unknown field (allowed: ${allowedR.join(", ")})`);
+      }
+      if (typeof vr.kind !== "string" || !vr.kind.trim()) fail(`${p}.kind`, "expected a non-empty room kind");
+      const spec: WorldRoomProgramSpec = {
+        kind: vr.kind.trim(),
+        requires: parseWords(vr.requires, `${p}.requires`, 8),
+      };
+      if ("signature" in vr) spec.signature = parseWords(vr.signature, `${p}.signature`, 8);
+      return spec;
+    });
+  }
+  if ("buildings" in r) {
+    if (!Array.isArray(r.buildings)) fail(`${path}.buildings`, "expected an array of structure programs");
+    if (r.buildings.length > 16) fail(`${path}.buildings`, "at most 16 structure programs");
+    out.buildings = r.buildings.map((v, i) => {
+      const p = `${path}.buildings[${i}]`;
+      if (!isObj(v)) fail(p, "expected an object ({ type, rooms })");
+      const vr = v as Record<string, unknown>;
+      const allowedB = ["type", "rooms"];
+      for (const kk of Object.keys(vr)) {
+        if (!allowedB.includes(kk)) fail(`${p}.${kk}`, `unknown field (allowed: ${allowedB.join(", ")})`);
+      }
+      if (typeof vr.type !== "string" || !vr.type.trim()) fail(`${p}.type`, "expected a non-empty structure type");
+      return { type: vr.type.trim(), rooms: parseWords(vr.rooms, `${p}.rooms`, 8) };
+    });
   }
   return out;
 }

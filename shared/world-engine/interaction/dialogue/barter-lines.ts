@@ -16,10 +16,12 @@
 
 import { phrase, type LeveledGlyphs } from "./dialogue-gen.js";
 
-/** A speakable count (1..3) as its quantity glyph — the barter quote's
- *  whole number range (barter.ts caps quotes inside it). */
+/** A quantity as its numeral-glyph token — the exact whole number. The glyph
+ *  compositor draws a bare digit key as the constructed numeral (stroke/hand/
+ *  wheel), and the language layer speaks it locale-neutrally via its gloss
+ *  path. (barter.ts caps quotes to a small whole-number range.) */
 export function quantityGlyph(n: number): string {
-  return n <= 1 ? "one" : n === 2 ? "two" : "three";
+  return String(Math.max(1, Math.floor(n)));
 }
 
 /** The TERMS, spoken on acceptance — the reserved "ok" carries the quote:

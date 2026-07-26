@@ -18,6 +18,7 @@
 // image with an apple centered inside it.
 
 import { resolveEmoji } from "./emoji-registry.js";
+import { isNumeralKey } from "./numeral-glyph.js";
 import {
   getVocabularyItem,
   type ToneFamily,
@@ -609,6 +610,9 @@ export type HasResolvedSymbol = (key: string) => boolean;
 /** True iff `key` would render to something other than "❓" right now. */
 function canResolveKey(key: string, hasSymbol: HasResolvedSymbol): boolean {
   if (!key) return false;
+  // A bare whole number renders as the constructed numeral glyph (and a numeric
+  // count modifier renders as its badge) — always resolvable, never ❓.
+  if (isNumeralKey(key)) return true;
   // Explicit custom-symbol reference (e.g. `symbol:abc`). The compositor's
   // resolver translates the prefix into a `/api/custom-symbols/<id>/image`
   // URL; that URL is assumed to load successfully here so canResolveGlyph

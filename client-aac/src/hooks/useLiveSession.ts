@@ -6,6 +6,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import type { ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import { useStreamingAudioPlayer } from "./useStreamingAudioPlayer";
+import { speakViaElevenLabs } from "@/lib/elevenlabsClientTts";
 import { useAudioRecorder } from "./useAudioRecorder";
 import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
@@ -795,35 +796,30 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "client_tts": {
-          // Server requests client-side ElevenLabs TTS synthesis. Always synthesized
-          // + queued so it transmits over a call; local mute is the master gain.
-          const { text: ttsText, voiceId, apiKey, language: ttsLang, voiceRole } = msg.data as {
-            text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student";
+          // Server requests client-side ElevenLabs synthesis. speakViaElevenLabs
+          // picks the fastest available path (device cache → streaming PCM →
+          // buffered MP3) and always routes through the shared audio player, so
+          // the audio still transmits over a call and local mute stays the
+          // master gain rather than a dropped chunk.
+          const { text: ttsText, voiceId, apiKey, language: ttsLang, voiceRole, id: ttsId } = msg.data as {
+            text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student"; id?: string;
           };
           const tag = voiceRole === "ai" ? "avatar" : "utterance";
           // Chain to preserve ordering between consecutive client_tts events
           clientTtsChainRef.current = clientTtsChainRef.current.then(async () => {
+            let ok = true;
             try {
-              const V3_LANGS = new Set(["he", "ar"]);
-              const modelId = ttsLang && V3_LANGS.has(ttsLang) ? "eleven_v3" : "eleven_multilingual_v2";
-              const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-                method: "POST",
-                headers: { "xi-api-key": apiKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
-                body: JSON.stringify({ text: ttsText, model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
-              });
-              if (!resp.ok) {
-                console.error("[LiveSession] Client TTS error:", resp.status);
-                return;
-              }
-              const arrayBuf = await resp.arrayBuffer();
-              const bytes = new Uint8Array(arrayBuf);
-              let binary = "";
-              for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-              const base64 = btoa(binary);
-              audioPlayer.queueChunk({ chunk: base64, format: "mp3", tag });
+              await speakViaElevenLabs(
+                { text: ttsText, voiceId, apiKey, language: ttsLang, tag },
+                audioPlayer,
+              );
             } catch (err) {
+              ok = false;
               console.error("[LiveSession] Client TTS failed:", err);
             }
+            // Release the server's ordering wait. Sent even on failure — a
+            // silent press must not also stall the AI's reply behind a timeout.
+            if (ttsId) wsSend({ type: "tts_done", id: ttsId, ok });
           });
           break;
         }

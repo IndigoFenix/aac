@@ -55,6 +55,8 @@ import type { WorldView } from "./world-view.js";
 import { createGazeInterpreter } from "./gaze-intent.js";
 import { approachAim, pickEntity } from "./interact.js";
 import { DEFAULT_WORLD_TUNABLES, type WorldTunables } from "./world-tunables.js";
+import { separateBodies } from "./interaction/quest/stand-points.js";
+import { tickFurnitureAnchor, isFurnitureAnchored } from "./interaction/quest/furniture-anchor.js";
 import {
   __npcStats,
   createDetourMemory,
@@ -473,6 +475,10 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     const humans = Object.values(state.avatars).filter(
       (a) => !npcIds.has(a.id) || a.id === driven(),
     );
+    // One live snapshot of ALL bodies for the crowding oracle (references —
+    // positions stay live as bodies step). Hoisted so occupancy probing never
+    // re-walks the avatar map per waypoint draw (aim-phase cost).
+    const allBodies = Object.values(state.avatars);
     for (const ctrl of npcControllers) {
       // A CLAIMED body is steered by the spark's gaze in tickWorld this frame.
       // SUSPEND its controller — never delete it: the creature keeps its
@@ -487,6 +493,20 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       // and per-NPC configs make it creature-specific (a big pet plans at
       // its own girth).
       const bodyR = (npcConfigs.get(ctrl.npcId) ?? WORLD_ENGINE_DEFAULTS).avatarRadius;
+      // FURNITURE-USE ANCHOR (furniture-anchor.ts) — a body USING a fixture it
+      // claimed (asleep on its bed, sat on its chair/privy) is driven by the
+      // anchor, not the errand steering: it eases ONTO the use point (bypassing
+      // that one fixture's collision), pins there, and eases back off to a
+      // validated dismount when done. When the anchor owns the frame, skip the
+      // ordinary aim/detour/steer entirely — no tug-of-war between the two.
+      if (
+        tickFurnitureAnchor(state, ctrl.npcId, dt, npcConfigs.get(ctrl.npcId), {
+          bodyR,
+          radiusOf: (id) => (npcConfigs.get(id) ?? WORLD_ENGINE_DEFAULTS).avatarRadius,
+        })
+      ) {
+        continue;
+      }
       // Terrain (water / wall-steep slope) joins the oracle so wander waypoints
       // and detours refuse blocked ground — an NPC stalls at a lake edge instead
       // of spinning against the movement gate.
@@ -498,6 +518,20 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         fixturesWalkable(state, p, radius, self.floor) &&
         terrainWalkable(state, p) &&
         (deps.constraint?.walkable(p, radius) ?? true);
+      // THE CROWDING ORACLE — is `p` within combined radii of ANOTHER body?
+      // Idle wander waypoints prefer un-occupied ground so milling townsfolk
+      // spread out instead of stacking. Separation scales with body size
+      // (this body + the other body's own radius), never a magic constant. On
+      // the same floor only (a body upstairs isn't in the way).
+      const occupied = (p: { x: number; y: number }, radius: number): boolean => {
+        for (const o of allBodies) {
+          if (o.id === ctrl.npcId) continue;
+          if (o.floor !== self.floor) continue;
+          const oR = (npcConfigs.get(o.id) ?? WORLD_ENGINE_DEFAULTS).avatarRadius;
+          if (Math.hypot(o.x - p.x, o.y - p.y) < radius + oR) return true;
+        }
+        return false;
+      };
       _npcPhase.bodies++; // TEMP
       const _tAim = _pn(); // TEMP
       const _pAim = __probeStats.struct; // TEMP
@@ -516,6 +550,8 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         // controller refuse to aim at blocked ground (wander waypoints).
         walkable: walk,
         radius: bodyR,
+        // Spread milling bodies out — don't roam onto a spot a neighbour holds.
+        occupied,
       });
       // Walk AROUND what's in the way, not into it — the local detour bends the aim
       // past a building face instead of grinding along it (npc-controller detourAim).
@@ -551,6 +587,34 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       steerAvatar(state, ctrl.npcId, bent, dt, npcConfigs.get(ctrl.npcId), deps.constraint);
       _npcPhase.steer += _pn() - _tSteer; // TEMP
     }
+    // EMERGENT BODY SEPARATION (stand-points separateBodies) — locomotion collides
+    // bodies with walls but NEVER with each other, and the crowding oracle only
+    // biases where a body AIMS (wander waypoints, stand points). Neither unmerges
+    // bodies that actually OVERLAP: two residents whose stand points / homecoming
+    // spots land on the same patch arrive fused and stand there forever (observed:
+    // an idle family pile), and two on parallel errands walk in lockstep reading as
+    // one body. So each frame push any overlapping pair gently apart, gated on the
+    // ground each body can actually stand on. The spark-driven body is an immovable
+    // OBSTACLE its neighbours part around; rooted `flora:` (trees a resident stands
+    // at to harvest) are excluded entirely — they neither shove nor are shoved.
+    const drivenNow = driven();
+    separateBodies(
+      // A body held by the furniture anchor (asleep on its bed, sat on its
+      // chair) is excluded ENTIRELY: it must not be pushed off the fixture, and
+      // it blocks the room no more than the fixture it sits on already does — so
+      // it neither shoves nor is shoved. Rooted `flora:` are excluded the same way.
+      allBodies.filter((b) => !b.id.startsWith("flora:") && !isFurnitureAnchored(b)),
+      dt,
+      {
+        radiusOf: (id) => (npcConfigs.get(id) ?? WORLD_ENGINE_DEFAULTS).avatarRadius,
+        movable: (id) => id !== drivenNow,
+        canStand: (p, r) =>
+          structuresWalkable(state, p, r, p.floor) &&
+          fixturesWalkable(state, p, r, p.floor) &&
+          terrainWalkable(state, p) &&
+          (deps.constraint?.walkable(p, r) ?? true),
+      },
+    );
     // Bodies that stopped being hosted shouldn't linger as ghost lines.
     if (pathDebug && pathSnaps.size > npcControllers.length) {
       for (const id of pathSnaps.keys()) if (!npcIds.has(id)) pathSnaps.delete(id);

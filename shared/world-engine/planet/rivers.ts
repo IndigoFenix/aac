@@ -238,9 +238,12 @@ const SHOULDER = 2.5;
  *  channel-scale, never valley-scale. */
 const RIVER_FILL = 0.5;
 
-/** How much a coarse mesh may widen the PAINT (never the notch), as the cap
- *  on the vertex-spacing clamp — glyph width, radius-scaled. */
-const paintHalfWidthCapM = (radius: number): number => Math.max(2000, radius * 0.002);
+// NO WIDTH GLYPH. Paint renders at the channel's TRUE width at every LOD —
+// widening thin channels to vertex spacing was tried and pulled: at real
+// stream densities it washed whole regions solid blue from orbit, and made
+// rivers visibly slim as the camera descended. A channel narrower than the
+// mesh can resolve FADES instead (see paintFromQuery) — the way a real creek
+// disappears from altitude.
 
 /** Linear-space water colour the paint blends toward (dull blue — static
  *  vertex colour, no specular, no motion: not the seizure hazard). */
@@ -277,21 +280,23 @@ export interface RiverRelief {
    *  (lod.refresh) for the ones already standing. `halfWidthFloorM`: pass
    *  ~1 m for child-tier creeks (see riverHalfWidthM). */
   addRivers(key: string, rivers: RiverPolyline[], halfWidthFloorM?: number): boolean;
-  /** Blend water colour into `rgb` where `dir` lies within a channel.
-   *  `minHalfWidthM` is the caller's vertex spacing clamp (capped). */
-  tintAt(dir: V3, minHalfWidthM: number, rgb: [number, number, number]): void;
+  /** Blend water colour into `rgb` where `dir` lies within a channel — at
+   *  the channel's TRUE width. `vertSpanM` is the caller's vertex spacing:
+   *  a band narrower than the mesh can resolve FADES by coverage (never
+   *  widens — the glyph washed regions blue from orbit). Pass 0 for full
+   *  strength (exact queries, tests). */
+  tintAt(dir: V3, vertSpanM: number, rgb: [number, number, number]): void;
   /** Valley-notch depth at `dir`, metres (0 away from rivers). */
   depthAt(dir: V3): number;
   /** THE WATER LAYER: depth of standing water above the notched ground at
    *  `dir` (0 = dry), filling `outFlow` with the unit DOWNSTREAM direction
    *  (planet-local, tangent-ish to the sphere) when wet. The river fills the
    *  top RIVER_FILL of its notch, so the water surface is level across the
-   *  channel and the banks stay dry. TRUE width only — never the LOD glyph
-   *  (glyphed water was the region-sized animated "sea" bug). */
+   *  channel and the banks stay dry. TRUE width only, like the paint. */
   waterAt(dir: V3, outFlow: [number, number, number]): number;
   /** ONE query for the mesh builder's hot path: paint (tintAt) + water depth
    *  + flow direction (waterAt) from a single spatial lookup. */
-  sampleAt(dir: V3, minHalfWidthM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
+  sampleAt(dir: V3, vertSpanM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
 }
 
 /**
@@ -309,8 +314,10 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
   // wiggles are cell-sized), coarse enough to keep the index small.
   const stepM = Math.max(400, Math.min(4000, radius * 0.0005));
 
-  // Max query reach: the paint's LOD-widened edge, or the notch shoulder.
-  const maxReachM = Math.max(1.3 * paintHalfWidthCapM(radius), SHOULDER * riverHalfWidthM(4000));
+  // Max query reach: the notch shoulder of the widest possible channel (paint
+  // reaches only 1.3 × half-width — inside the shoulder). True-width paint
+  // keeps this small, so bins are tight and queries scan short lists.
+  const maxReachM = SHOULDER * riverHalfWidthM(4000);
   // Bin edge (unit-chord space): one bin ≥ reach + half a segment, so ±1-bin
   // scans see every segment that could matter.
   const binU = (1.15 * (maxReachM + stepM / 2)) / radius;
@@ -389,19 +396,21 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
     }
   };
 
-  const hwCap = paintHalfWidthCapM(radius);
-
   // The three reads off ONE query's state (qDist/qHalfW/qTx..) — so the mesh
   // builder's combined sampleAt pays a single spatial lookup per vertex.
-  const paintFromQuery = (minHalfWidthM: number, rgb: [number, number, number]): void => {
+  const paintFromQuery = (vertSpanM: number, rgb: [number, number, number]): void => {
     if (qDist === Infinity) return;
-    // Paint width: the channel's own, widened to the caller's vertex
-    // spacing (capped) so coarse LODs keep a visible line.
-    const hw = Math.max(qHalfW, Math.min(minHalfWidthM, hwCap));
-    // Full water inside 0.8×hw, feathered to zero at 1.3×hw.
+    // TRUE width, always — see the no-glyph note above. Full water inside
+    // 0.8×hw, feathered to zero at 1.3×hw.
+    const hw = qHalfW;
     const t = (1.3 * hw - qDist) / (0.5 * hw);
     if (t <= 0) return;
-    const s = (t >= 1 ? 1 : t * t * (3 - 2 * t)) * PAINT_MAX;
+    // MINIFICATION FADE: when the whole band falls between mesh vertices,
+    // dim the paint by its coverage instead of widening it — the energy-
+    // conserving answer. A creek dissolves from altitude; a trunk stays a
+    // faint honest line.
+    const coverage = vertSpanM > 0 ? Math.min(1, (2.6 * hw) / vertSpanM) : 1;
+    const s = (t >= 1 ? 1 : t * t * (3 - 2 * t)) * PAINT_MAX * coverage;
     rgb[0] += (WATER_R - rgb[0]) * s;
     rgb[1] += (WATER_G - rgb[1]) * s;
     rgb[2] += (WATER_B - rgb[2]) * s;
@@ -436,9 +445,9 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
       rivers.push(...add);
       return true;
     },
-    tintAt(dir, minHalfWidthM, rgb) {
+    tintAt(dir, vertSpanM, rgb) {
       query(dir[0], dir[1], dir[2]);
-      paintFromQuery(minHalfWidthM, rgb);
+      paintFromQuery(vertSpanM, rgb);
     },
     depthAt(dir) {
       query(dir[0], dir[1], dir[2]);
@@ -448,9 +457,9 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
       query(dir[0], dir[1], dir[2]);
       return waterFromQuery(outFlow);
     },
-    sampleAt(dir, minHalfWidthM, rgb, outFlow) {
+    sampleAt(dir, vertSpanM, rgb, outFlow) {
       query(dir[0], dir[1], dir[2]);
-      paintFromQuery(minHalfWidthM, rgb);
+      paintFromQuery(vertSpanM, rgb);
       return waterFromQuery(outFlow);
     },
   };

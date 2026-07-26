@@ -109,6 +109,7 @@ import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
 import { parseSmoothingSettings, defaultSmoothingSettings, type GazeSmoothingSettings } from "@shared/gaze-smoothing.js";
 
 import { useLanguage } from "@/contexts/LanguageContext";
+import { setCacheablePhrases } from "@/services/tts-cache";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
 import { useQuery } from "@tanstack/react-query";
 import { fetchWithAuth } from "@/lib/queryClient";
@@ -508,6 +509,16 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [showDebugPanel, setShowDebugPanel] = useState<boolean>(false);
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
+
+  // Declare which utterances the on-device TTS cache may keep. Deliberately
+  // just the quick-action yes/no labels for the CURRENT language — every other
+  // sentence on this AAC is AI-generated per turn and would never be hit again.
+  // Re-registered on language change so a switch can't replay the old locale's
+  // cached audio (the cache key includes language, but the eligibility list has
+  // to move with it too).
+  useEffect(() => {
+    setCacheablePhrases([t("quickActions.yes"), t("quickActions.no")]);
+  }, [t, currentLanguage]);
 
   // Eyegaze dwell settings — stored in DB via student profile
   const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number; smoothing: GazeSmoothingSettings }>({

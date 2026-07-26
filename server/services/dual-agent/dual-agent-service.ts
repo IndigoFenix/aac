@@ -30,7 +30,7 @@ import {
   buildInteractiveAgentPrompt,
   composeAacPersona,
 } from "../memory-schema/aac-memory-schema";
-import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
+import { ttsFacade, isClientSideTtsVoice, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type AppConfig } from "./app-registry";
 import { getContactsByStudent } from "../biometric";
@@ -386,7 +386,9 @@ export class DualAgentService {
    * for stutter-free, lower-latency playback.
    */
   private isClientTts(voice: ResolvedVoice): boolean {
-    return !!(voice.elevenlabsApiKey && voice.elevenlabsVoiceId);
+    // Shared with AgentCoordinator's client-direct path — one definition of
+    // "safe to synthesize on the device" so the two can't drift apart.
+    return isClientSideTtsVoice(voice);
   }
 
   /**

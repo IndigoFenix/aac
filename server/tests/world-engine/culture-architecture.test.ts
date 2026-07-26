@@ -46,9 +46,27 @@ describe("game.culture.architecture — parse + gate", () => {
     expect(a.workstations!.bath).toEqual({ placement: "own_room", room: "wet" });
   });
 
+  it("accepts room + building PROGRAM defs (pipeline ④ — the reserved blocks made real)", () => {
+    const a = parseWorldArchitectureSpec(
+      {
+        rooms: [{ kind: "bedroom", requires: ["bed", "chest"], signature: ["bed"] }],
+        buildings: [{ type: "house", rooms: ["bedroom", "living"] }],
+      },
+      "a",
+    );
+    expect(a.rooms).toEqual([{ kind: "bedroom", requires: ["bed", "chest"], signature: ["bed"] }]);
+    expect(a.buildings).toEqual([{ type: "house", rooms: ["bedroom", "living"] }]);
+  });
+
   it("rejects unknown fields, bad placement, junk shape — path-exact", () => {
     expect(() => parseWorldCultureSpec({ architecture: { rooms: {} } }, "game.culture")).toThrow(
-      /game\.culture\.architecture\.rooms: unknown field/,
+      /game\.culture\.architecture\.rooms: expected an array/,
+    );
+    expect(() => parseWorldArchitectureSpec({ rooms: [{ kind: "x" }] }, "a")).toThrow(
+      /a\.rooms\[0\]\.requires: expected an array of words/,
+    );
+    expect(() => parseWorldArchitectureSpec({ buildings: [{ type: "x", rooms: ["y"], extra: 1 }] }, "a")).toThrow(
+      /a\.buildings\[0\]\.extra: unknown field/,
     );
     expect(() => parseWorldArchitectureSpec({ workstations: { oven: { placement: "attic" } } }, "a")).toThrow(
       /a\.workstations\.oven\.placement: expected one of in_room \| own_room \| own_building/,

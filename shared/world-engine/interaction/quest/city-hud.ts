@@ -55,6 +55,16 @@ export function wellbeingEmoji(w: number): string {
   return "😫";
 }
 
+/** The registered glyph KEY the wellbeing face renders through, so the city
+ *  chip's face is a COMPOSED glyph (like the family chips) and not a raw
+ *  text-node emoji. Only the content face has a matching vocabulary item
+ *  (`happy`); the coarser 😐/😟/😫 have none, so they stay `undefined` and the
+ *  presenter passes the emoji itself THROUGH the compositor. Resolve with
+ *  `iconGlyph(wellbeingGlyph(w), wellbeingEmoji(w))`. */
+export function wellbeingGlyph(w: number): string | undefined {
+  return w >= 0.7 ? "happy" : undefined;
+}
+
 /** One tracked house's aggregate slice (host-sampled). */
 export interface CityHudTrackedHouse {
   index: number;

@@ -326,7 +326,12 @@ const RECIPES: Record<string, Recipe> = {
     hinge.add(handle);
     ctx.content.add(hinge);
     ctx.setOpen = (frac) => {
-      hinge.rotation.y = -frac * (Math.PI * 0.6);
+      // The leaf extends toward +Z from a hinge on the door's -Z edge, so a
+      // POSITIVE yaw swings its free edge toward +X — OUT into the room the
+      // fixture faces, the way a real fridge door opens. (A negative yaw
+      // swung it toward −X, back through the body into the wall — the
+      // "opens the wrong way" bug.)
+      hinge.rotation.y = frac * (Math.PI * 0.6);
     };
   },
 

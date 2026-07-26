@@ -34,7 +34,7 @@ import {
   type HouseShape,
   type RoomDoorway,
 } from "./rooms";
-import { CLUSTERS, type AnnexCluster, type StationKind } from "./stations";
+import { ANNEX_ROOM_KIND, CLUSTERS, type AnnexCluster, type StationKind } from "./stations";
 import { growStreets, type TownStreets } from "./streets";
 import type { TownPlan } from "./plan";
 // Type-only by design (zoning.ts imports THIS module at runtime — the one
@@ -48,9 +48,19 @@ import type { CohortRow } from "./population";
 // trade routes exactly as it keeps founded buildings (P0, nations arc).
 import {
   createTransferLedger,
+  stackHead,
+  stackUnits,
   type SerializedTransferLedger,
   type TransferLedger,
 } from "./transfer.js";
+// Same one-direction rule: the SPOKEN-FOR ledger (construction pipeline ①)
+// serializes with the deltas so reservations survive reload beside the
+// stacks they speak for.
+import {
+  createReservationLedger,
+  type ReservationLedger,
+  type SerializedReservationLedger,
+} from "./reservations.js";
 // Kernel-root import (the scale.ts precedent): AUTHORED law rows persist
 // beside the construction they govern; the absolute ring never does (it
 // re-derives from game.culture every boot).
@@ -86,6 +96,88 @@ export interface AnnexSpec {
  *  request is accepted). */
 export type AnnexCandidate = Omit<AnnexSpec, "ord">;
 
+/** One INTERIOR room (pipeline ⑤b — subdivision): a room carved OUT OF a
+ *  standing room's floor (a guillotine cut — the host keeps the remainder,
+ *  the new room takes the band, one shared door joins them). This is how an
+ *  empty shell grows its first rooms, and how a demolished base room rises
+ *  again in its exact old place (the union host re-splits along the old
+ *  partition line). Stored exactly, like an annex, so re-materialization is
+ *  exact on every replay. */
+export interface InteriorSpec {
+  /** Ordinal — interior room k of this building, forever (ids `_i<ord>`). */
+  ord: number;
+  /** The room whose floor is split — its id AT APPLY TIME (a base room, a
+   *  demolition union, an annex `_a*`, or an earlier interior `_i*`). */
+  hostId: string;
+  /** The structural kind the room is raised AS (its DERIVED kind still
+   *  follows its furniture — programs.ts roomKindOf; this is the label the
+   *  order named and the cluster its furniture pull reads). */
+  kind: HouseRoom["kind"];
+  /** Frame rect (door-local u/v), strictly inside the host's rect and
+   *  flush against it on three sides (the guillotine law). */
+  u0: number;
+  u1: number;
+  v0: number;
+  v1: number;
+  /** The shared-wall door's center on the new partition (frame) + width. */
+  doorAt: { u: number; v: number; width: number };
+}
+
+/** A candidate interior room — an InteriorSpec minus the ordinal. */
+export type InteriorCandidate = Omit<InteriorSpec, "ord">;
+
+/** Discriminate a pending designation's candidate: interior rooms carry
+ *  their host, annexes carry their side. */
+export const isInteriorCandidate = (
+  c: AnnexCandidate | InteriorCandidate,
+): c is InteriorCandidate => "hostId" in c;
+
+/** A PENDING ANNEX (pipeline ⑤ — annex staging): an ordered-but-unbuilt
+ *  room. The AnnexSpec delta row (the room itself) is written only when the
+ *  pile covers the costs AND the labor clock ran — until then the order is
+ *  a serialized designation gathering materials into `pile` (the
+ *  FoundedBuilding costs/pile/laborStartDay model, one level down;
+ *  endpoint `annexpile:<ord>`). */
+export interface PendingAnnex {
+  /** Pending ordinal — town-wide, monotone, never reused. */
+  ord: number;
+  /** The building it grows ("h_3"; works key by workDeltaKey below). */
+  buildingKey: string;
+  /** The annex cluster (annex candidates only — an interior candidate
+   *  carries its kind itself; see pendingRoomKindOf). */
+  cluster?: AnnexCluster;
+  /** The exact validated geometry (annexOptions / interiorOptions output) —
+   *  committed via requestAnnex / requestInterior at completion, so
+   *  re-materialization stays exact. */
+  candidate: AnnexCandidate | InteriorCandidate;
+  costs: Record<string, number>;
+  /** The growth-rect material heap (live stack map, the `stock` pattern). */
+  pile: Record<string, number>;
+  startedDay: number;
+  buildDays: number;
+  /** Street-day the pile covered the costs — building MAY begin here. */
+  laborStartDay?: number;
+  /** BANKED LABOR, in build-days (pipeline ⑥ — builders make buildings):
+   *  accrues only while builders stand at the site (more builders bank
+   *  faster, capped); the room rises at `labor >= buildDays`. Absent = 0. */
+  labor?: number;
+}
+
+/** The room kind a pending designation raises — the interior candidate's
+ *  own kind, else the annex cluster's realized kind. */
+export function pendingRoomKindOf(p: PendingAnnex): string {
+  if (isInteriorCandidate(p.candidate)) return p.candidate.kind;
+  return p.cluster ? ANNEX_ROOM_KIND[p.cluster] : "room";
+}
+
+/** The construction-delta KEY of a plan WORK row: a FOUNDED work keys by its
+ *  immortal founding ordinal (`f_<ord>` — plan indices shift as the base
+ *  town grows works, the delta must not), a base work by its plan index.
+ *  Every consumer (stage, board, orders) resolves through this one door. */
+export function workDeltaKey(wk: { foundedOrd?: number }, index: number): string {
+  return wk.foundedOrd !== undefined ? `f_${wk.foundedOrd}` : `w_${index}`;
+}
+
 /** A player/creature-placed furniture piece (world meters, like
  *  FurniturePiece — the generator fits its stations AROUND these). */
 export interface PlacedPiece {
@@ -97,6 +189,15 @@ export interface PlacedPiece {
   facing: number;
   openable: boolean;
   roomId: string;
+  /** SET-UP state (construction pipeline ⑥ — delivered-then-assembled): a
+   *  freshly delivered/placed piece is `false` — it stands on the ground as
+   *  its real model TIPPED ON ITS SIDE (not yet assembled). A resident (or a
+   *  short grace) sets it up, flipping this to `true` and the fixture rises
+   *  upright. ABSENT ⇒ set up (every generated fixture, and every piece
+   *  placed before this field existed — the field is purely additive). Kept
+   *  generic: no furniture kind carries its own tipped pose — the flag is a
+   *  placement property every kind inherits (emergent-over-scripted). */
+  setUp?: boolean;
 }
 
 /** A demolished BASE room and the door-adjacent room that absorbs its
@@ -116,12 +217,23 @@ export interface BuildingDelta {
    *  for base rooms, spec removal for annexes). */
   annexes: AnnexSpec[];
   demolished: DemolishedRoom[];
+  /** INTERIOR rooms (⑤b) — carved out of standing rooms in ord order,
+   *  AFTER annexes (an annex room may itself be split). Removal is spec
+   *  removal, order-guarded (demolishCheck). Absent = none. */
+  interior?: InteriorSpec[];
   placed: PlacedPiece[];
   /** Generated piece ids removed/stowed — furnishPlan never emits them
    *  (their space genuinely frees; an anchored piece follows its anchor). */
   removedPieces: string[];
   /** The auto-expansion accumulator (construction v1 §5). */
   prosperity?: number;
+  /** PERSISTENT ROOM PROGRAMS (pipeline ④): the rooms this building is
+   *  ORDERED to have — standing wants, append-only, NEVER deleted (the
+   *  designation outlives the room). An unmet program outranks the default
+   *  differentiation in nextAnnexWant, so a demolished programmed room
+   *  re-rises in place; its furniture requirement (programs.ts
+   *  roomProgramOf) drives crafting until met. */
+  programs?: Array<{ ord: number; room: string }>;
 }
 
 /**
@@ -161,11 +273,32 @@ export interface FoundedBuilding {
    *  house (plan.houses row + residents) instead of an empty work row, on
    *  this session and every rebuild. */
   household?: boolean;
+  /** PIPELINE ② (construction-pipeline.md): the material bill that must be
+   *  STAGED at the site before labor starts (glyph → count, recorded at
+   *  order time). ABSENT = a pre-pipeline / collapsed row — paid at order,
+   *  labor ran from `startedDay` (the legacy clock). */
+  costs?: Record<string, number>;
+  /** The SITE PILE — materials hauled to the staked plot so far (a live
+   *  stack map, the `stock` pattern; endpoint `sitepile:<ord>`). Consumed
+   *  into the building at completion. */
+  pile?: Record<string, number>;
+  /** Street-day the pile covered the costs — BUILDING may begin (recorded
+   *  when staging lands; unset while the site waits for materials). */
+  laborStartDay?: number;
+  /** BANKED LABOR, in build-days (pipeline ⑥ — builders make buildings,
+   *  they never rise by themselves): accrues only while builders stand at
+   *  the site, faster with more of them (capped); done at `labor >=
+   *  buildDays`. Absent = 0. Legacy rows (no costs — growth's collapsed
+   *  twin) keep the pure clock instead. */
+  labor?: number;
 }
 
 /** A founding candidate — a FoundedBuilding minus the ordinal/clock fields
  *  (assigned when the order is accepted). */
-export type FoundingCandidate = Omit<FoundedBuilding, "ord" | "startedDay" | "buildDays" | "completed">;
+export type FoundingCandidate = Omit<
+  FoundedBuilding,
+  "ord" | "startedDay" | "buildDays" | "completed" | "costs" | "pile" | "laborStartDay"
+>;
 
 export interface SerializedTownDeltas {
   version: number;
@@ -188,6 +321,13 @@ export interface SerializedTownDeltas {
    *  in-flight hauls survive reload beside the geometry they feed.
    *  Absent = empty ledger. */
   transfers?: SerializedTransferLedger;
+  /** THE SPOKEN-FOR LEDGER (construction pipeline ①) — units of stock
+   *  reserved by pending tasks/designations, so two orders never draw the
+   *  same wood. Absent = empty ledger. */
+  reservations?: SerializedReservationLedger;
+  /** PENDING ANNEXES (pipeline ⑤ — annex staging), in posting order.
+   *  Absent = none. */
+  annexSites?: PendingAnnex[];
   /** ABSTRACT-PARTNER SHELVES (⑤ stub partners): partner key → the
    *  synthetic stack `town:<key>` endpoints alias when the partner isn't a
    *  real sim. Serialized so a standing barter route resumes against the
@@ -212,10 +352,22 @@ export interface TownDeltas {
   /** FOUNDED whole buildings, in founding order (①b). Read-only view. */
   founded(): readonly FoundedBuilding[];
   /** Commit a validated founding candidate (from foundingOptions) — assigns
-   *  its ordinal, stamps the clock, bumps the version. */
-  foundBuilding(c: FoundingCandidate, startedDay: number, buildDays: number): FoundedBuilding;
+   *  its ordinal, stamps the clock, bumps the version. With `costs` the row
+   *  is a pipeline-② DESIGNATION: nothing paid, an empty site pile, labor
+   *  waiting on staging. Without, the legacy pre-paid clock (the collapsed
+   *  twin growth uses — materials already drawn from the yard). */
+  foundBuilding(
+    c: FoundingCandidate,
+    startedDay: number,
+    buildDays: number,
+    costs?: Record<string, number>,
+  ): FoundedBuilding;
+  /** STAGE founded building `ord` (pipeline ②, idempotent): the pile covers
+   *  the costs — labor runs from `day`. Bumps the version. */
+  stageFounded(ord: number, day: number): void;
   /** Mark founded building `ord` construction-COMPLETE (idempotent). Bumps
-   *  the version so the stage re-stages doors + furniture the same frame. */
+   *  the version so the stage re-stages doors + furniture the same frame.
+   *  Consumes the site pile — the materials ARE the building now. */
   completeFounding(ord: number): void;
   /** Mark founded house `ord` HOUSEHOLDED (④ move-in, idempotent). Bumps
    *  the version so the stage reconciles the work-row→house conversion. */
@@ -242,6 +394,21 @@ export interface TownDeltas {
    *  executes against (quest-host aliases it as `session.transfers`); it
    *  serializes with the deltas so standing routes survive reload. */
   readonly transfers: TransferLedger;
+  /** THE SPOKEN-FOR LEDGER (pipeline ①) — reservations on abstract stock;
+   *  material resolution draws FREE units only (reservations.ts
+   *  resolveMaterials). Serializes with the deltas. */
+  readonly reservations: ReservationLedger;
+  /** PENDING ANNEXES (pipeline ⑤) — read-only view, posting order. */
+  annexSites(): readonly PendingAnnex[];
+  /** Post an annex DESIGNATION (assigns its ordinal, bumps the version —
+   *  the staked growth rect is orderable state). */
+  postAnnexSite(p: Omit<PendingAnnex, "ord">): PendingAnnex;
+  /** STAGE pending annex `ord` (idempotent): the pile covers the costs —
+   *  labor runs from `day`. Bumps the version. */
+  stageAnnexSite(ord: number, day: number): void;
+  /** Drop pending annex `ord` (committed via requestAnnex, or cancelled —
+   *  the caller banks any pile remainder first). Bumps the version. */
+  removeAnnexSite(ord: number): void;
   /** ABSTRACT-PARTNER SHELVES (⑤) — partner key → synthetic stack, mutated
    *  in place (the `stock` pattern); serializes with the deltas. */
   readonly partnerStock: Record<string, Record<string, number>>;
@@ -256,14 +423,17 @@ export function emptyDelta(): BuildingDelta {
   return { rev: 0, annexes: [], demolished: [], placed: [], removedPieces: [] };
 }
 
-/** True when a delta changes nothing (a fresh or fully-undone one). */
+/** True when a delta changes nothing (a fresh or fully-undone one). A
+ *  standing program row counts — the want must survive serialization. */
 export function deltaIsEmpty(d: BuildingDelta | undefined): boolean {
   return (
     !d ||
     (d.annexes.length === 0 &&
       d.demolished.length === 0 &&
+      (d.interior?.length ?? 0) === 0 &&
       d.placed.length === 0 &&
-      d.removedPieces.length === 0)
+      d.removedPieces.length === 0 &&
+      (d.programs?.length ?? 0) === 0)
   );
 }
 
@@ -286,6 +456,10 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     (r) => JSON.parse(JSON.stringify(r)) as CohortRow,
   );
   const transfers = createTransferLedger(json?.transfers);
+  const reservations = createReservationLedger(json?.reservations);
+  const annexSites: PendingAnnex[] = (json?.annexSites ?? []).map(
+    (p) => JSON.parse(JSON.stringify(p)) as PendingAnnex,
+  );
   const partnerStock: Record<string, Record<string, number>> = JSON.parse(
     JSON.stringify(json?.partnerStock ?? {}),
   ) as Record<string, Record<string, number>>;
@@ -302,17 +476,30 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     },
     keys: () => [...buildings.keys()],
     founded: () => founded,
-    foundBuilding: (c, startedDay, buildDays) => {
+    foundBuilding: (c, startedDay, buildDays, costs) => {
       const ord = founded.reduce((m, b) => Math.max(m, b.ord + 1), 0);
-      const b: FoundedBuilding = { ord, ...c, startedDay, buildDays };
+      const b: FoundedBuilding = {
+        ord,
+        ...c,
+        startedDay,
+        buildDays,
+        ...(costs ? { costs: { ...costs }, pile: {} } : {}),
+      };
       founded.push(b);
       store.version++;
       return b;
+    },
+    stageFounded: (ord, day) => {
+      const b = founded.find((f) => f.ord === ord);
+      if (!b || b.laborStartDay !== undefined) return;
+      b.laborStartDay = day;
+      store.version++;
     },
     completeFounding: (ord) => {
       const b = founded.find((f) => f.ord === ord);
       if (!b || b.completed) return;
       b.completed = true;
+      delete b.pile; // consumed — the materials are the building
       store.version++;
     },
     admitHousehold: (ord) => {
@@ -333,6 +520,27 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     civic,
     cohorts,
     transfers,
+    reservations,
+    annexSites: () => annexSites,
+    postAnnexSite: (p) => {
+      const ord = annexSites.reduce((m, a) => Math.max(m, a.ord + 1), 0);
+      const row: PendingAnnex = { ord, ...JSON.parse(JSON.stringify(p)) as Omit<PendingAnnex, "ord"> };
+      annexSites.push(row);
+      store.version++;
+      return row;
+    },
+    stageAnnexSite: (ord, day) => {
+      const p = annexSites.find((a) => a.ord === ord);
+      if (!p || p.laborStartDay !== undefined) return;
+      p.laborStartDay = day;
+      store.version++;
+    },
+    removeAnnexSite: (ord) => {
+      const i = annexSites.findIndex((a) => a.ord === ord);
+      if (i < 0) return;
+      annexSites.splice(i, 1);
+      store.version++;
+    },
     partnerStock,
     laws,
     toJSON: () => ({
@@ -346,6 +554,8 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       civicProsperity: civic.prosperity,
       cohorts: cohorts.map((r) => JSON.parse(JSON.stringify(r)) as CohortRow),
       transfers: transfers.toJSON(),
+      reservations: reservations.toJSON(),
+      annexSites: annexSites.map((p) => JSON.parse(JSON.stringify(p)) as PendingAnnex),
       partnerStock: JSON.parse(JSON.stringify(partnerStock)) as Record<string, Record<string, number>>,
       laws: laws.map((l) => JSON.parse(JSON.stringify(l)) as Law),
     }),
@@ -354,11 +564,60 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
 }
 
 /** Is founded building `b` construction-complete at town street-day `day`?
- *  The serialized `completed` fact wins (a reboot resets the clock); until
- *  it's written, the clock decides — so visuals never wait on the host. */
+ *  The serialized `completed` fact wins (a reboot resets the clock). A
+ *  pipeline row (carrying `costs`) needs its materials STAGED and its
+ *  labor WORKED (⑥ — builders make buildings: `labor` banks only while
+ *  bodies stand at the site, so an unattended plot honestly waits at any
+ *  clock). A legacy row (no costs — growth's collapsed twin, pre-pipeline
+ *  worldgen) keeps the pure clock. */
 export function foundedBuildingDone(b: FoundedBuilding, day: number): boolean {
-  return b.completed === true || day >= b.startedDay + b.buildDays;
+  if (b.completed === true) return true;
+  if (b.costs) {
+    if (b.laborStartDay === undefined) return false;
+    return (b.labor ?? 0) >= b.buildDays - 1e-9;
+  }
+  return day >= b.startedDay + b.buildDays;
 }
+
+/** Bank worked labor on a designation (⑥): `days` of build-day credit —
+ *  the sweep calls this with (elapsed × builders-present, capped). Works
+ *  for FoundedBuilding and PendingAnnex alike. */
+export function bankLabor(b: { labor?: number }, days: number): void {
+  if (days <= 0) return;
+  b.labor = (b.labor ?? 0) + days;
+}
+
+/** Is a pending designation's labor worked off (⑥)? Staged + banked. */
+export function pendingLaborDone(p: PendingAnnex): boolean {
+  return p.laborStartDay !== undefined && (p.labor ?? 0) >= p.buildDays - 1e-9;
+}
+
+/** The units still MISSING from a designation's pile (head → count; empty =
+ *  staged, or a legacy pre-paid row). Works for FoundedBuilding and
+ *  PendingAnnex alike (the one costs/pile shape). Facted pile variants pay
+ *  toward their head, the missingCosts convention. */
+export function stagingMissing(b: {
+  costs?: Readonly<Record<string, number>>;
+  pile?: Readonly<Record<string, number>>;
+}): Record<string, number> {
+  const missing: Record<string, number> = {};
+  if (!b.costs) return missing;
+  const need = new Map<string, number>();
+  for (const [glyph, n] of Object.entries(b.costs)) {
+    const head = stackHead(glyph);
+    need.set(head, (need.get(head) ?? 0) + Math.max(0, n));
+  }
+  for (const [head, n] of need) {
+    const short = n - stackUnits(b.pile ?? {}, head);
+    if (short > 0) missing[head] = short;
+  }
+  return missing;
+}
+
+/** The town builder's-yard STOCK ENDPOINT id — the registered yard crate's
+ *  id in the host AND the endpoint reservations key the kernel growth step
+ *  reads (one id, both sides — the coincidence law). */
+export const TOWN_YARD_EP = "town:yard";
 
 // ── ANNEX FEASIBILITY ───────────────────────────────────────────────────
 
@@ -566,6 +825,208 @@ function doorwayFramePoint(
   return { u: f.u0, v: f.v0 };
 }
 
+// ── INTERIOR SUBDIVISION (pipeline ⑤b) ──────────────────────────────────
+// The annexOptions law turned INWARD: candidates are guillotine cuts of a
+// standing room's floor — the new room takes a band flush against three of
+// the host's walls, the host keeps the rectangular remainder, one shared
+// door joins them. Feasibility lives INSIDE the candidate test: a cut that
+// reaches the caller keeps every existing doorway of the host (street door
+// included) on the REMAINDER's walls with full jamb berth — circulation is
+// untouched by construction, so no post-hoc connectivity repair exists.
+
+/** Interior rooms per building — the footprint's floors bound it long
+ *  before this does; the cap is the runaway backstop. */
+export const MAX_INTERIOR_ROOMS = 6;
+
+/** Smallest dimension a HOST keeps after a cut (each shrunk axis). */
+const INTERIOR_HOST_MIN = 2.8;
+
+/** A room kind's geometry floors — through its annex cluster where one
+ *  exists (the CLUSTERS registry stays the one rulebook), a modest room
+ *  otherwise (hall, living, culture kinds). */
+const CLUSTER_OF_KIND: Readonly<Partial<Record<string, AnnexCluster>>> = Object.fromEntries(
+  Object.entries(ANNEX_ROOM_KIND).map(([cluster, kind]) => [kind, cluster as AnnexCluster]),
+);
+function interiorFloors(kind: string): { minW: number; minD: number } {
+  const c = CLUSTER_OF_KIND[kind];
+  return c ? clusterFloors(c) : { minW: 2.8, minD: 2.8 };
+}
+
+/** Frame rects of DEMOLISHED base rooms of `kind` — the in-place
+ *  re-creation candidates (construction-pipeline.md: a rebuilt room
+ *  reoccupies its footprint when it still fits). The union host re-splits
+ *  along the exact old partition; a rect already re-taken fails
+ *  interiorOptions' containment and drops out naturally. */
+export function demolishedRects(
+  center: { x: number; y: number },
+  house: HouseShape,
+  basePlan: HouseRoomPlan,
+  delta: BuildingDelta | undefined,
+  kind: HouseRoom["kind"],
+): Array<{ u0: number; u1: number; v0: number; v1: number }> {
+  const out: Array<{ u0: number; u1: number; v0: number; v1: number }> = [];
+  for (const dem of delta?.demolished ?? []) {
+    const r = basePlan.rooms.find((rr) => rr.id === dem.roomId);
+    if (r && r.kind === kind) out.push(frameOfRect(center, house, r.rect));
+  }
+  return out;
+}
+
+/**
+ * Feasible interior rooms for one building, best-first. `preferred` frame
+ * rects (demolished-room re-creation) are tried FIRST and exactly; then
+ * generic cuts of every OPEN host — a room of kind living/hall (the shell's
+ * root, a corridor grown wide) — far band, then sides, then the street
+ * band. `keepRoot` guards rooms[0] (the living-room invariant: a HOUSE's
+ * goods anchors hang off it; a shell's root may shrink). `excludeHosts`
+ * removes rooms a pending designation already targets — two staked cuts
+ * never share a host.
+ */
+export function interiorOptions(
+  center: { x: number; y: number },
+  house: HouseShape,
+  plan: HouseRoomPlan,
+  delta: BuildingDelta | undefined,
+  want: HouseRoom["kind"],
+  opts?: {
+    keepRoot?: boolean;
+    preferred?: ReadonlyArray<{ u0: number; u1: number; v0: number; v1: number }>;
+    excludeHosts?: ReadonlySet<string>;
+  },
+): InteriorCandidate[] {
+  if ((delta?.interior?.length ?? 0) >= MAX_INTERIOR_ROOMS) return [];
+  const EPS = 1e-3;
+  const M = metricsOf(house);
+  const doorW = want === "bath" ? M.bathDoorW : M.roomDoorW;
+  const jamb = M.doorJamb;
+  const { minW, minD } = interiorFloors(want);
+  const gone = new Set((delta?.demolished ?? []).map((d) => d.roomId));
+  const rooms = plan.rooms.filter(
+    (r) => !gone.has(r.id) && !opts?.excludeHosts?.has(r.id),
+  );
+  const out: InteriorCandidate[] = [];
+  const seen = new Set<string>();
+
+  /** Every doorway of `host` must survive — on the REMAINDER's walls, or
+   *  TRANSFERRED whole to the new room's walls (re-creation: the union
+   *  host carries the demolished room's old doors; the re-cut hands them
+   *  back — applyDelta re-homes them). Full width + jamb berth either
+   *  way; the ROOT's street-wall doors (frame v = 0) must stay with the
+   *  root — rooms[0] remains the street door's room. */
+  const doorsSurvive = (
+    host: HouseRoom,
+    rem: { u0: number; u1: number; v0: number; v1: number },
+    cut: { u0: number; u1: number; v0: number; v1: number },
+    isRoot: boolean,
+  ): boolean => {
+    for (const d of host.doorways) {
+      const at = doorwayFramePoint(center, house, host, d);
+      const half = d.width / 2 + jamb;
+      const onRect = (r: { u0: number; u1: number; v0: number; v1: number }): boolean => {
+        if (
+          (Math.abs(at.v - r.v0) < EPS || Math.abs(at.v - r.v1) < EPS) &&
+          at.u - half >= r.u0 - EPS && at.u + half <= r.u1 + EPS
+        ) return true;
+        return (
+          (Math.abs(at.u - r.u0) < EPS || Math.abs(at.u - r.u1) < EPS) &&
+          at.v - half >= r.v0 - EPS && at.v + half <= r.v1 + EPS
+        );
+      };
+      if (isRoot && Math.abs(at.v) < EPS) {
+        if (!onRect(rem)) return false;
+        continue;
+      }
+      if (!onRect(rem) && !onRect(cut)) return false;
+    }
+    return true;
+  };
+
+  const tryCut = (host: HouseRoom, cut: { u0: number; u1: number; v0: number; v1: number }): void => {
+    const hf = frameOfRect(center, house, host.rect);
+    // Inside the host, dims above the kind's floors (either orientation).
+    if (
+      cut.u0 < hf.u0 - EPS || cut.u1 > hf.u1 + EPS ||
+      cut.v0 < hf.v0 - EPS || cut.v1 > hf.v1 + EPS
+    ) return;
+    const cw = cut.u1 - cut.u0;
+    const ch = cut.v1 - cut.v0;
+    if (Math.min(cw, ch) < Math.min(minW, minD) - EPS) return;
+    if (Math.max(cw, ch) < Math.max(minW, minD) - EPS) return;
+    // The guillotine law: full host span on one axis, flush at one end of
+    // the other — the remainder is a rectangle by construction.
+    const fullU = Math.abs(cut.u0 - hf.u0) < EPS && Math.abs(cut.u1 - hf.u1) < EPS;
+    const fullV = Math.abs(cut.v0 - hf.v0) < EPS && Math.abs(cut.v1 - hf.v1) < EPS;
+    let rem: { u0: number; u1: number; v0: number; v1: number };
+    let wall: { axis: "u" | "v"; at: number };
+    if (fullU) {
+      if (Math.abs(cut.v0 - hf.v0) < EPS) {
+        rem = { u0: hf.u0, u1: hf.u1, v0: cut.v1, v1: hf.v1 };
+        wall = { axis: "v", at: cut.v1 };
+      } else if (Math.abs(cut.v1 - hf.v1) < EPS) {
+        rem = { u0: hf.u0, u1: hf.u1, v0: hf.v0, v1: cut.v0 };
+        wall = { axis: "v", at: cut.v0 };
+      } else return;
+      if (rem.v1 - rem.v0 < INTERIOR_HOST_MIN - EPS) return;
+    } else if (fullV) {
+      if (Math.abs(cut.u0 - hf.u0) < EPS) {
+        rem = { u0: cut.u1, u1: hf.u1, v0: hf.v0, v1: hf.v1 };
+        wall = { axis: "u", at: cut.u1 };
+      } else if (Math.abs(cut.u1 - hf.u1) < EPS) {
+        rem = { u0: hf.u0, u1: cut.u0, v0: hf.v0, v1: hf.v1 };
+        wall = { axis: "u", at: cut.u0 };
+      } else return;
+      if (rem.u1 - rem.u0 < INTERIOR_HOST_MIN - EPS) return;
+    } else return;
+    if (!doorsSurvive(host, rem, cut, host === plan.rooms[0])) return;
+    // The shared door: centered on the partition, jamb-clamped to the span
+    // both rooms share on that wall.
+    const lo = (wall.axis === "v" ? cut.u0 : cut.v0) + jamb + doorW / 2;
+    const hi = (wall.axis === "v" ? cut.u1 : cut.v1) - jamb - doorW / 2;
+    if (hi - lo < -EPS) return;
+    const mid = Math.min(Math.max((lo + hi) / 2, lo), hi);
+    const doorAt =
+      wall.axis === "v"
+        ? { u: mid, v: wall.at, width: doorW }
+        : { u: wall.at, v: mid, width: doorW };
+    const key = `${host.id}|${cut.u0.toFixed(3)},${cut.u1.toFixed(3)},${cut.v0.toFixed(3)},${cut.v1.toFixed(3)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ hostId: host.id, kind: want, ...cut, doorAt });
+  };
+
+  // PREFERRED rects first (re-creation in place) — against ANY standing
+  // host that contains them (the demolition union), root included when
+  // allowed.
+  const hostable = rooms.filter((r) => !(opts?.keepRoot && r === plan.rooms[0]));
+  for (const p of opts?.preferred ?? []) {
+    for (const host of hostable) tryCut(host, p);
+  }
+  // GENERIC cuts — only OPEN hosts (the shell's root, a hall): carving a
+  // band off someone's bedroom is never a default.
+  const bandT = (need: number, span: number): number | null => {
+    let t = Math.max(need, 3.0);
+    if (span - t < INTERIOR_HOST_MIN) t = span - INTERIOR_HOST_MIN;
+    return t >= need - 1e-9 ? t : null;
+  };
+  for (const host of hostable) {
+    if (host.kind !== "living" && host.kind !== "hall") continue;
+    const hf = frameOfRect(center, house, host.rect);
+    const HU = hf.u1 - hf.u0;
+    const HV = hf.v1 - hf.v0;
+    // Far band first (deepest from the street door), then the sides, then
+    // the street band (usually rejected — the street door lives there).
+    const tV = HU >= minW - 1e-9 ? bandT(minD, HV) : null;
+    const tU = HV >= minD - 1e-9 ? bandT(minW, HU) : null;
+    if (tV !== null) tryCut(host, { u0: hf.u0, u1: hf.u1, v0: hf.v1 - tV, v1: hf.v1 });
+    if (tU !== null) {
+      tryCut(host, { u0: hf.u0, u1: hf.u0 + tU, v0: hf.v0, v1: hf.v1 });
+      tryCut(host, { u0: hf.u1 - tU, u1: hf.u1, v0: hf.v0, v1: hf.v1 });
+    }
+    if (tV !== null) tryCut(host, { u0: hf.u0, u1: hf.u1, v0: hf.v0, v1: hf.v0 + tV });
+  }
+  return out;
+}
+
 // ── THE MUTATION WRITES ─────────────────────────────────────────────────
 
 export type ConstructionResult =
@@ -589,6 +1050,24 @@ export function requestAnnex(
   return { ok: true };
 }
 
+/** Accept a candidate from interiorOptions — assigns its ordinal and bumps
+ *  the revision. The candidate was validated by construction; this only
+ *  re-checks the cap (the requestAnnex law — commit-time geometry drift is
+ *  the caller's to re-validate against the live plan). */
+export function requestInterior(
+  deltas: TownDeltas,
+  buildingKey: string,
+  c: InteriorCandidate,
+): ConstructionResult {
+  const d = deltas.get(buildingKey);
+  if ((d?.interior?.length ?? 0) >= MAX_INTERIOR_ROOMS) return { ok: false, reason: "cap" };
+  const ord = (d?.interior ?? []).reduce((m, s) => Math.max(m, s.ord + 1), 0);
+  deltas.mutate(buildingKey, (bd) => {
+    (bd.interior ??= []).push({ ord, ...c });
+  });
+  return { ok: true };
+}
+
 /** Pure feasibility of demolishRoom — the same rules, NO mutation (the
  *  structure board pre-filters with this so it never shows a dead button).
  *  `into` = the base-room merge host; null = an annex spec removal. */
@@ -608,6 +1087,20 @@ export function demolishCheck(
   if (annexMatch && d?.annexes.some((a) => `_a${a.ord}` === `_a${annexMatch[1]}`)) {
     // Annex: spec removal. Its door leaves with it (applyDelta cuts annex
     // doors from the spec, never from the base plan).
+    return { ok: true, into: null };
+  }
+  const interiorMatch = /_i(\d+)$/.exec(roomId);
+  if (interiorMatch) {
+    const spec = d?.interior?.find((s) => String(s.ord) === interiorMatch[1]);
+    if (!spec) return { ok: false, reason: "no-room" };
+    // Interior: spec removal, ORDER-GUARDED — later specs replay against
+    // the geometry this one left behind, so it may go only while nothing
+    // later depends on it: it hosts no later cut, and no later cut shares
+    // its host (whose remainder this removal would move).
+    const later = (d?.interior ?? []).filter((s) => s.ord > spec.ord);
+    if (later.some((s) => s.hostId === roomId || s.hostId === spec.hostId)) {
+      return { ok: false, reason: "not-rect" };
+    }
     return { ok: true, into: null };
   }
   // Base room: find the merge host among door-adjacent rooms — union
@@ -645,12 +1138,17 @@ export function demolishRoom(
   const check = demolishCheck(deltas, buildingKey, plan, roomId);
   if (!check.ok) return check;
   const annexMatch = /_a(\d+)$/.exec(roomId);
+  const interiorMatch = /_i(\d+)$/.exec(roomId);
   const into = check.into;
 
   const stowed: Partial<Record<StationKind, number>> = {};
   deltas.mutate(buildingKey, (bd) => {
     if (annexMatch && bd.annexes.some((a) => String(a.ord) === annexMatch[1])) {
       bd.annexes = bd.annexes.filter((a) => String(a.ord) !== annexMatch[1]);
+    } else if (interiorMatch && bd.interior?.some((s) => String(s.ord) === interiorMatch[1])) {
+      // Interior: the partition comes back down — the host re-absorbs the
+      // floor (spec removal, order-guarded by demolishCheck above).
+      bd.interior = bd.interior.filter((s) => String(s.ord) !== interiorMatch[1]);
     } else if (into) {
       bd.demolished.push({ roomId, into });
     }
@@ -669,6 +1167,24 @@ export function placeFurniture(deltas: TownDeltas, buildingKey: string, piece: P
   deltas.mutate(buildingKey, (d) => {
     d.placed.push(piece);
   });
+}
+
+/** Mark a delivered (tipped) placed piece as SET UP — the fixture rises
+ *  upright (construction pipeline ⑥). Idempotent; a no-op for an unknown id
+ *  or an already-standing piece (so the rev/version only bumps on a real
+ *  transition, and the stage refurnishes exactly once). Returns whether it
+ *  changed anything. */
+export function markPieceSetUp(deltas: TownDeltas, buildingKey: string, pieceId: string): boolean {
+  // Peek first — mutate() unconditionally bumps the rev (and refurnishes the
+  // building), so only enter it on a real transition.
+  const d = deltas.get(buildingKey);
+  const p = d?.placed.find((q) => q.id === pieceId);
+  if (!p || p.setUp !== false) return false;
+  deltas.mutate(buildingKey, (bd) => {
+    const q = bd.placed.find((r) => r.id === pieceId);
+    if (q) q.setUp = true;
+  });
+  return true;
 }
 
 /** Un-place a placed piece — back to a stack in the caller's hands. */
@@ -965,10 +1481,29 @@ export const PROSPERITY_THRESHOLD = 6;
  *  day builds an annex). */
 export const PROSPERITY_DAILY_CAP = 1.5;
 
-/** The next annex CLUSTER a house wants, from its realized plan — unmet
- *  program first (a third sleep cell), then the differentiations in
+/** Annex cluster a programmed room kind rises through (ANNEX_ROOM_KIND
+ *  inverted). Kinds with no cluster (living, hall, culture-authored) are
+ *  not annexable — their programs wait for interior subdivision (⑤). */
+const CLUSTER_OF_ROOM: Readonly<Record<string, AnnexCluster>> = Object.fromEntries(
+  Object.entries(ANNEX_ROOM_KIND).map(([cluster, kind]) => [kind, cluster as AnnexCluster]),
+);
+
+/** The next annex CLUSTER a house wants, from its realized plan — ORDERED
+ *  programs first (pipeline ④ persistent wants: a demolished programmed
+ *  room re-rises before any default differentiation), then the unmet
+ *  occupant program (a third sleep cell), then the differentiations in
  *  historical order (kitchen → store → workshop). Null = content. */
-export function nextAnnexWant(plan: HouseRoomPlan): AnnexCluster | null {
+export function nextAnnexWant(
+  plan: HouseRoomPlan,
+  programs?: ReadonlyArray<{ room: string }>,
+): AnnexCluster | null {
+  if (programs) {
+    for (const p of programs) {
+      const cluster = CLUSTER_OF_ROOM[p.room];
+      if (!cluster) continue;
+      if (!plan.rooms.some((r) => r.kind === p.room)) return cluster;
+    }
+  }
   if (plan.bedrooms.length < 3) return "sleep";
   if (!plan.rooms.some((r) => r.kind === "kitchen")) return "kitchen";
   if (!plan.rooms.some((r) => r.kind === "store")) return "store";
@@ -1023,7 +1558,7 @@ export function constructionStep(
     const key = `h_${e.h.index}`;
     const delta = deltas.get(key);
     const housePlan = houseRoomPlan(center, e.h, delta);
-    const want = nextAnnexWant(housePlan);
+    const want = nextAnnexWant(housePlan, delta?.programs);
     if (!want) continue; // content — prosperity keeps banking harmlessly
     const neighbors = rects.filter((_, ri) => ri !== e.i);
     const opts = annexOptions(center, e.h, housePlan, neighbors, delta, want);

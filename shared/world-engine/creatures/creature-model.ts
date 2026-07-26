@@ -370,6 +370,22 @@ class BakedCreatureModel implements CreatureModel {
 // Dynamic model — full-fidelity rebuild, for the player + nearby creatures
 // ---------------------------------------------------------------------------
 
+/** The creature-local height of the body's LOWEST torso underside (meters) —
+ *  the belly/seat that should rest on a surface. Walks the torso bones and
+ *  takes the lowest (centre − loft radius) point. Measured on whatever pose the
+ *  skeleton is in, so read on a SEATED (crouched) skeleton it gives the seated
+ *  butt height above the feet-origin — the drop needed to land the body ON a
+ *  seat instead of floating a hip-height above it. Body-plan-agnostic (a
+ *  quadruped's belly, a biped's hips both fall out of the same walk). */
+function torsoUndersideY(skel: CreatureSkeleton): number {
+  let lo = Infinity;
+  for (const b of skel.bones) {
+    if (b.kind !== "torso") continue;
+    lo = Math.min(lo, b.head.y - b.radiusHead, b.tail.y - b.radiusTail);
+  }
+  return Number.isFinite(lo) ? Math.max(0, lo) : 0;
+}
+
 class DynamicCreatureModel implements CreatureModel {
   readonly object = new THREE.Group();
   /** The live animator — exposed so a host can drive pickUp/putDown reaches. */
@@ -386,6 +402,10 @@ class DynamicCreatureModel implements CreatureModel {
    *  the body sits behind the origin (so it rests ON the surface, not in it). */
   private readonly restHeight: number;
   private readonly backDepth: number;
+  /** Creature-local underside of the torso in the CURRENT pose — a SEATED body
+   *  reads its crouched hip height here so the anchor slide can drop it onto the
+   *  seat surface (see `seatDropWorld`). Refreshed every rebuild. */
+  private seatContactLocal: number;
   private time = 0;
 
   /** Loft sides for the rebuild — set when built at "simple" detail, so even
@@ -402,7 +422,18 @@ class DynamicCreatureModel implements CreatureModel {
     const rest = buildSkeleton(this.bp);
     this.restHeight = Math.max(0.1, rest.bounds.max.y - rest.bounds.min.y);
     this.backDepth = Math.max(0, -rest.bounds.min.z);
+    this.seatContactLocal = torsoUndersideY(rest);
     this.rebuild(rest);
+  }
+
+  /** World-meter drop that lands a SEATED body's underside on the seat surface
+   *  the anchor points at: the crouched torso underside (creature-local) scaled
+   *  to world. The factory subtracts this from a sit anchor's height and eases
+   *  it in with the same slide level, so the body settles ON the chair/privy
+   *  (feet hanging toward the floor) rather than floating a hip-height above it.
+   *  Sleep does not use it (its recline transform re-centres the lying body). */
+  get seatDropWorld(): number {
+    return this.seatContactLocal * this.object.scale.x;
   }
 
   update(dt: number, opts?: CreatureDriveOptions): void {
@@ -429,6 +460,7 @@ class DynamicCreatureModel implements CreatureModel {
   }
 
   private rebuild(skel: CreatureSkeleton): void {
+    this.seatContactLocal = torsoUndersideY(skel);
     const built = buildCreatureMesh(skel, this.bp, {
       toon: this.toon,
       ...(this.sides !== undefined ? { sides: this.sides } : {}),
@@ -561,6 +593,12 @@ export interface ActivityAnchor {
   y: number;
   z: number;
   yaw: number;
+  /** Which body part the anchor's use-point names (the furniture-use contract).
+   *  "pelvis" (a seat/privy) → the crouched hip underside is DROPPED onto the
+   *  surface (seatDropWorld); "torso" (a bed) → the recline re-centres the lying
+   *  body, no drop; "reach"/absent → no drop. Selecting the drop from the
+   *  CONTRACT (not `activity === "sit"`) keeps every layer reading one contract. */
+  contact?: "pelvis" | "torso" | "reach";
 }
 
 /** Latch the activity anchor across the pose's WIND-DOWN: the sim clears
@@ -673,13 +711,35 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
           // (anchorSlideLevel), and the LAST anchor is latched through the
           // wind-down (createAnchorLatch) — so waking, standing up, and being
           // walked off mid-activity all SLIDE off the fixture instead of
-          // snapping between it and the sim body.
-          const lie = anchorSlideLevel(posed, drive.speed01 ?? 0);
+          // snapping between it and the sim body. Drive the dissolve off the
+          // animator's SMOOTHED speed (speedLevel), not the raw sim velocity: a
+          // body that stands to walk off spikes its sim speed in one frame, which
+          // — read raw — would zero the slide and TELEPORT it off the seat before
+          // the pose eased out. The eased dial ramps with the gait, so the body
+          // slides off in step with standing up ("ease out, then walk").
+          const lie = anchorSlideLevel(posed, dyn.animator.speedLevel());
           const at = latchAnchor(anchor, lie);
           if (at) {
+            // A SITTER's anchor names the seat SURFACE; the body's origin is its
+            // FEET, so parking the origin there floats it a hip-height above the
+            // seat. Drop it by the crouched torso underside (seatDropWorld) so the
+            // body rests ON the seat with its feet hanging toward the floor. The
+            // drop rides the SAME `lie` slide as the rest of the move (and clamps
+            // at the floor while the crouch is still blending in), so it eases on
+            // and off exactly like the slide — never a snap or a sink. Sleep keeps
+            // its own recline re-centering and takes no drop.
+            // The DROP is selected by the anchor's CONTACT part (the use-point
+            // contract), not the activity name: only a "pelvis" contact (a
+            // seat/privy) drops the crouched hip underside onto the surface. A
+            // "torso" bed re-centres via its recline (no drop); a "reach" never
+            // anchors here. Falls back to the old activity test for a legacy
+            // anchor with no contact set.
+            const drops = at.contact ? at.contact === "pelvis" : drive.activity === "sit";
+            const sitDrop = drops ? dyn.seatDropWorld : 0;
+            const localY = Math.max(0, at.y - sitDrop - container.position.y);
             dyn.object.position.set(
               (at.x - container.position.x) * lie,
-              (at.y - container.position.y) * lie,
+              localY * lie,
               (at.z - container.position.z) * lie,
             );
             drive.yaw = mixYaw(drive.yaw!, at.yaw, lie);

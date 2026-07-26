@@ -33,6 +33,9 @@ const L: Record<string, Lexeme> = {
   they: { w: "they", pl: true },
   here: { w: "here" },
   there: { w: "there" },
+  // Third-person pronouns (subject forms; object forms in OBJ_PRON below).
+  he: { w: "he" },
+  she: { w: "she" },
   want: { w: "want" },
   give: { w: "give" },
   take: { w: "take" },
@@ -109,6 +112,16 @@ const L: Record<string, Lexeme> = {
   bear: { w: "bear" },
   frog: { w: "frog" },
   dog: { w: "dog" },
+  // Creature SPECIES words (reference resolution: "I talk to the {species}").
+  // The animal-people (bear/frog/dog/rabbit) reuse the words above; these fill
+  // the remaining registered species so a creature is never "the there".
+  person: { w: "person", plw: "people" },
+  animal: { w: "animal" },
+  creature: { w: "creature" },
+  cow: { w: "cow" },
+  deer: { w: "deer", plw: "deer" },
+  ram: { w: "ram" },
+  sheep: { w: "sheep", plw: "sheep" },
   box: { w: "box" },
   basket: { w: "basket" },
   bubbles: { w: "bubbles", pl: true },
@@ -234,7 +247,24 @@ type Art = "the" | "a" | "none";
 
 /** Object-case pronoun forms — a pronoun NP is never articled ("help me",
  *  never "help the you"). */
-const OBJ_PRON: Record<string, string> = { i_me: "me", you: "you", we: "us", they: "them" };
+const OBJ_PRON: Record<string, string> = {
+  i_me: "me",
+  you: "you",
+  we: "us",
+  they: "them",
+  he: "him",
+  she: "her",
+};
+
+/** Subject-case pronoun forms (a 3rd-person pronoun leading a clause). */
+const SUBJ_PRON: Record<string, string> = {
+  i_me: "I",
+  you: "you",
+  we: "we",
+  they: "they",
+  he: "he",
+  she: "she",
+};
 
 /** The active sentence's PROPER-NOUN book (SpeakOpts.names) — set per render.
  *  A name never takes an article and reads capitalized ("Mara is hungry"). */
@@ -288,11 +318,9 @@ const EN_CONN: Record<string, string> = {
 };
 
 function subjWord(t: Token): string {
-  if (t.head === "i_me") return "I";
-  if (t.head === "you") return "you";
-  // The collective voice takes its SUBJECT form — "we"/"they", never the
-  // object "us"/"them" npText would hand back, and never articled.
-  if (t.head === "we" || t.head === "they") return lex(t.head).w;
+  // Pronoun subjects take the SUBJECT form ("I"/"we"/"he"), never the object
+  // "me"/"us"/"him" npText would hand back, and never articled.
+  if (isPronoun(t.head)) return SUBJ_PRON[t.head] ?? lex(t.head).w;
   return npText({ noun: t }, "the");
 }
 

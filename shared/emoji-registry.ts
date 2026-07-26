@@ -172,6 +172,7 @@ const EXTRA_EMOJIS: Record<string, string> = {
   zoo: "🦁",
 
   // ─── Things / objects ───────────────────────────────────────────────
+  axe: "🪓",
   backpack: "🎒",
   balloon: "🎈",
   bicycle: "🚲",
@@ -202,6 +203,7 @@ const EXTRA_EMOJIS: Record<string, string> = {
   paper: "📄",
   pen: "🖊️",
   pencil: "✏️",
+  pick: "⛏️",
   picture: "🖼️",
   plate: "🍽️",
   present: "🎁",
@@ -296,6 +298,7 @@ const EXTRA_EMOJIS: Record<string, string> = {
   sun: "☀️",
   tree: "🌳",
   wind: "🌬️",
+  wood: "🪵",
 
   // ─── Colors ─────────────────────────────────────────────────────────
   black: "⚫",

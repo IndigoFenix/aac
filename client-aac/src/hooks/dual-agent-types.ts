@@ -106,6 +106,10 @@ export interface ClientCapabilities {
   clientStt?: boolean;
   sceneState?: boolean;
   poseSafety?: boolean;
+  /** This build can synthesize the student's ElevenLabs voice locally from a
+   *  `client_tts` dispatch and ack with `tts_done`. Latency capability, not a
+   *  cost-saving one — the server honours it regardless of full-attention. */
+  clientTts?: boolean;
 }
 
 /**
@@ -117,6 +121,7 @@ export const CLIENT_CAPABILITIES: ClientCapabilities = {
   clientStt: true,   // Phase 1: STT offload wired (server gates activation)
   sceneState: true,  // Phase 2: scene_state classify+send wired (server gates activation)
   poseSafety: true,  // Phase 3: body-pose posture/movement + conservative fall hint wired
+  clientTts: true,   // Client-direct ElevenLabs (streaming PCM + tts_done ack) wired
 };
 
 /**

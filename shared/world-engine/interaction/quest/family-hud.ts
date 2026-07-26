@@ -11,6 +11,7 @@
 //
 // This module is PURE (signals in, state out) so the emoji priority ladder is
 // unit-testable without booting a host.
+import { iconGlyph } from "./activity-bubble.js";
 
 /** One family member's chip. */
 export interface FamilyHudEntry {
@@ -92,7 +93,7 @@ const STATE_EMOJI: Record<FamilyStateKey, string> = {
   dressing: "👕",
   laundering: "🧼",
   bored: "🧸",
-  playing: "⚽",
+  playing: "🎮",
   tidying: "🧹",
   helping: "🤝",
   stressed: "😟",
@@ -102,6 +103,52 @@ const STATE_EMOJI: Record<FamilyStateKey, string> = {
   guest: "🙋",
   away: "🚶",
 };
+
+/**
+ * The registered GLYPH KEY each state renders through (glyph-registry.ts) — so
+ * the chip is a COMPOSED glyph image, exactly like the over-head bubbles, never
+ * a raw text-node emoji. States whose meaning has bundled ARTWORK map to that
+ * glyph (its image shows): commanded→run, hungry→eat, playing→play,
+ * lonely→lonely, dirty→dirty, tidying→clean, away→walk. States with a matching
+ * art-less vocabulary item still map to the KEY (thirsty→drink, toilet→
+ * bathroom, tired→tired, dressing→wear, content→happy) so a future icon
+ * upgrades them automatically. The rest (`undefined`) fall back to their own
+ * STATE_EMOJI, which the compositor still renders through the glyph system.
+ */
+const STATE_GLYPH: Record<FamilyStateKey, string | undefined> = {
+  commanded: "run",
+  asleep: undefined, // 💤 — distinct from tired's 😴; no "sleep" art
+  hungry: "eat",
+  thirsty: "drink",
+  toilet: "bathroom",
+  tired: "tired",
+  lonely: "lonely",
+  dirty: "dirty",
+  washing: undefined, // 🫧 — bathing; no washing-specific art
+  dressing: "wear",
+  laundering: undefined, // 🧼
+  bored: undefined, // 🧸 — the authored toy cue, not the bored FACE
+  playing: "play",
+  tidying: "clean",
+  helping: undefined, // 🤝
+  stressed: undefined, // 😟 — no frayed-but-fine glyph
+  errand: undefined, // 🧺 — the shopping basket; no errand art
+  working: undefined, // 💼
+  content: "happy",
+  guest: undefined, // 🙋 / ⛺ (founding) — kept per-entry, never state-mapped
+  away: "walk",
+};
+
+/**
+ * The composed-glyph string a chip renders — a REGISTERED glyph key (art or its
+ * own emoji) where the state maps one, else the entry's own emoji (still routed
+ * THROUGH the compositor, never a bare text node). Presenters hand this to the
+ * GlyphCompositor. `emoji` is the entry's live emoji so per-entry cues the state
+ * ladder never sets (the founding ⛺, a commanded guest's 🏃) survive unmapped.
+ */
+export function familyStateGlyph(state: FamilyStateKey, emoji: string): string {
+  return iconGlyph(STATE_GLYPH[state], emoji);
+}
 
 /**
  * The priority ladder: what the chip SHOWS when several things are true at

@@ -13,6 +13,8 @@ import {
   ANNEX_COSTS,
   annexOptions,
   demolishCheck,
+  demolishedRects,
+  interiorOptions,
   type AnnexCluster,
   type BuildingDelta,
   type TownDeltas,
@@ -98,6 +100,11 @@ export interface StructureActs {
   /** Clusters an annex could rise for RIGHT NOW — ground feasible, under
    *  the annex cap, and the builder's stock covers ANNEX_COSTS. */
   annex: AnnexCluster[];
+  /** Room kinds an INTERIOR room could rise for (⑤b — subdivision of an
+   *  open host, or re-creation of a demolished base room in place) that
+   *  no annex already offers. The order path prefers in-place anyway;
+   *  this list is the kinds the board would otherwise never show. */
+  interior: Array<HouseRoom["kind"]>;
   /** Rooms whose demolition the kernel would accept right now (never the
    *  living room, never a merge that breaks the door graph). */
   demolish: HouseRoom[];
@@ -106,29 +113,56 @@ export interface StructureActs {
 }
 
 /**
- * Everything the focused house can DO right now. Pure: reads the deltas,
- * never writes them (demolish feasibility runs the check, not the act).
- * `furnStock` reads the house's own container stacks (the host closes over
- * session.containerStock — the ONE container abstraction stays its).
+ * Everything the focused BUILDING can DO right now. Pure: reads the
+ * deltas, never writes them (demolish feasibility runs the check, not the
+ * act). `furnStock` reads the building's own container stacks (the host
+ * closes over session.containerStock — the ONE container abstraction
+ * stays its). Houses pass their `h_<i>` key with `keepRoot` (the
+ * living-room invariant); a founded shell passes its work delta key with
+ * an open root and no outward growth.
  */
 export function structureActsOf(input: {
   center: { x: number; y: number };
   house: HouseShape;
   plan: HouseRoomPlan;
   deltas: TownDeltas;
+  /** The building's construction-delta key (`h_<i>` / workDeltaKey). */
+  buildingKey?: string;
+  /** The PURE base plan (no delta) — demolished-room rects for in-place
+   *  re-creation come from here. Absent = no re-creation candidates. */
+  basePlan?: HouseRoomPlan;
+  /** Never offer rooms[0] as an interior host (houses — the living-room
+   *  invariant). Default true. */
+  keepRoot?: boolean;
+  /** Offer outward annex growth (houses). Default true; a shell grows
+   *  inward first. */
+  growOutward?: boolean;
   /** World rects of every OTHER footprint the annex must clear. */
   neighbors: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
   /** The builder's stock the annex would spend from (yard / site). */
   stock: Readonly<Record<string, number>>;
   furnStock: (glyph: string) => number;
 }): StructureActs {
-  const key = `h_${input.house.index}`;
+  const key = input.buildingKey ?? `h_${input.house.index}`;
   const delta: BuildingDelta | undefined = input.deltas.get(key);
   const affordable = costsMet({ costs: { ...ANNEX_COSTS } }, input.stock);
-  const annex = affordable
+  const annex = affordable && (input.growOutward ?? true)
     ? ANNEX_ORDER.filter(
         (c) =>
           annexOptions(input.center, input.house, input.plan, input.neighbors, delta, c).length > 0,
+      )
+    : [];
+  const annexKinds = new Set(annex.map((c) => ANNEX_ROOM_KIND[c]));
+  const interior = affordable
+    ? ANNEX_ORDER.map((c) => ANNEX_ROOM_KIND[c]).filter(
+        (k) =>
+          !annexKinds.has(k) &&
+          interiorOptions(input.center, input.house, input.plan, delta, k, {
+            keepRoot: input.keepRoot ?? true,
+            preferred: input.basePlan
+              ? demolishedRects(input.center, input.house, input.basePlan, delta, k)
+              : [],
+          }).length > 0,
       )
     : [];
   const demolish = input.plan.rooms.filter(
@@ -137,5 +171,5 @@ export function structureActsOf(input: {
   const furnish = FURNITURE_ITEMS.filter((f) => input.furnStock(furnitureGlyph(f.kind)) > 0).map(
     (f) => f.kind,
   );
-  return { annex, demolish, furnish };
+  return { annex, interior, demolish, furnish };
 }

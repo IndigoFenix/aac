@@ -112,6 +112,10 @@ export interface TownWork {
   /** The FoundedBuilding ordinal this row materializes (①b) — links the
    *  row to its construction-progress delta. Absent = a base work. */
   foundedOrd?: number;
+  /** An EMPTY SHELL (pipeline ⑤b — a building born without a role): no
+   *  registry stations furnish it; only its construction delta's placed
+   *  pieces stand inside. Rooms arrive by interior subdivision. */
+  bare?: boolean;
   /** VACATED live (④ move-in): this founded house-role row converted to a
    *  real plan.houses household mid-session. The row STAYS (works indices
    *  are load-bearing — jobs, attendance, the stage's registration maps)

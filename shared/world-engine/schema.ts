@@ -109,6 +109,9 @@ const objectSchema = z
       .optional(),
     openable: z.boolean().optional(),
     facing: finite.optional(),
+    // SET-UP state (construction ⑥): `false` renders the fixture TIPPED ON ITS
+    // SIDE (delivered, not yet assembled). Absent/true = standing upright.
+    setUp: z.boolean().optional(),
   })
   .strict();
 

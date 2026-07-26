@@ -22,7 +22,7 @@ import { isUrlPermitted } from "@shared/permitted-websites";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { boardRepository } from "../../repositories/boardRepository";
 import { dualAgentService } from "./dual-agent-service";
-import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
+import { ttsFacade, isClientSideTtsVoice, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 
 import { ObserverAgent, type ObserverOutputEvent, type ObserverCallbacks, type ObserverStartConfig } from "./observer-agent";
@@ -1286,6 +1286,14 @@ export class AgentCoordinator {
    *  to clear any queued utterance audio so the SENTENCE plays once. */
   private studentTtsAbortController: AbortController | null = null;
 
+  /** In-flight client-side TTS dispatches awaiting their `tts_done` ack.
+   *  The server-synthesized path knows when the student's voice finished
+   *  because it emits the audio itself; the client-direct path doesn't, so the
+   *  client reports back and this map releases the corresponding await. Every
+   *  entry carries a timeout so a dropped ack can never wedge a press. */
+  private pendingClientTts = new Map<string, { resolve: () => void; timer: NodeJS.Timeout }>();
+  private clientTtsSeq = 0;
+
   /** Type of the most recent user input. interpret() is only valid
    *  immediately after a sentence_composed turn; the tool description
    *  says so but native audio doesn't always honor it. We gate
@@ -1568,6 +1576,8 @@ export class AgentCoordinator {
       this.studentTtsAbortController.abort();
       this.studentTtsAbortController = null;
     }
+    // Settle client-side TTS waits too — their acks can never arrive now.
+    this.flushPendingClientTts();
 
     // Final Monitor flush — push a [SESSION_CLOSED] directive into
     // pendingMessages and force-trigger Monitor so it summarizes the
@@ -2050,6 +2060,11 @@ export class AgentCoordinator {
         return;
       case "button_press":
         await this.handleButtonPress(msg);
+        return;
+      case "tts_done":
+        // Client-side TTS finished playing — release the waiter in
+        // streamStudentTts so the press can proceed to Speaker.
+        this.resolveClientTts(msg.id);
         return;
       case "board_exit":
         this.handleBoardExit(msg);
@@ -7754,6 +7769,85 @@ export class AgentCoordinator {
     }
   }
 
+  // Ack-wait budget for client-side TTS. Covers ElevenLabs synthesis plus
+  // playback of the sentence; the per-char term scales with utterance length.
+  // These are a SAFETY NET, not the normal path — the client acks as soon as
+  // playback ends, which is almost always far sooner.
+  private static readonly CLIENT_TTS_BASE_WAIT_MS = 2_000;
+  private static readonly CLIENT_TTS_MS_PER_CHAR = 90;
+  private static readonly CLIENT_TTS_MAX_WAIT_MS = 20_000;
+
+  /**
+   * Hand an utterance to the client for direct ElevenLabs synthesis and wait
+   * until it has finished playing (or the wait times out / is superseded).
+   *
+   * Resolving on abort matters: a fresh press aborts the previous press's
+   * controller, and without that hook the superseded await would hold the new
+   * press behind an utterance the client has already been told to drop.
+   */
+  private dispatchClientTts(
+    text: string,
+    voice: ResolvedVoice,
+    voiceRole: "ai" | "student",
+    signal: AbortSignal,
+    source: string,
+  ): Promise<void> {
+    const id = `ctts-${++this.clientTtsSeq}`;
+    this.send({
+      type: "client_tts",
+      data: {
+        text,
+        voiceId: voice.elevenlabsVoiceId!,
+        apiKey: voice.elevenlabsApiKey!,
+        language: voice.language || "en",
+        voiceRole,
+        id,
+      },
+    });
+
+    const timeoutMs = Math.min(
+      AgentCoordinator.CLIENT_TTS_MAX_WAIT_MS,
+      AgentCoordinator.CLIENT_TTS_BASE_WAIT_MS + text.length * AgentCoordinator.CLIENT_TTS_MS_PER_CHAR,
+    );
+
+    return new Promise<void>((resolve) => {
+      const finish = (why: string) => {
+        const entry = this.pendingClientTts.get(id);
+        if (!entry) return; // already settled
+        clearTimeout(entry.timer);
+        this.pendingClientTts.delete(id);
+        signal.removeEventListener("abort", onAbort);
+        flowOutput("COORDINATOR", "client_tts_end", `[${source}] ${why}`);
+        resolve();
+      };
+      const onAbort = () => finish("superseded — client told to drop it");
+
+      const timer = setTimeout(
+        () => finish(`no ack after ${timeoutMs}ms — proceeding anyway`),
+        timeoutMs,
+      );
+      this.pendingClientTts.set(id, { resolve: () => finish("client finished playback"), timer });
+
+      if (signal.aborted) finish("aborted before dispatch");
+      else signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  /** Release the waiter for a client-side TTS dispatch (see `tts_done`). */
+  private resolveClientTts(id: string): void {
+    this.pendingClientTts.get(id)?.resolve();
+  }
+
+  /** Settle every outstanding client-TTS wait — used on teardown so no timer
+   *  outlives the session (and no await hangs forever). */
+  private flushPendingClientTts(): void {
+    for (const entry of Array.from(this.pendingClientTts.values())) {
+      clearTimeout(entry.timer);
+      entry.resolve();
+    }
+    this.pendingClientTts.clear();
+  }
+
   private async streamStudentTts(text: string, source: string = "?", meta?: { bid?: boolean; addressee?: string }): Promise<void> {
     if (!this.studentVoice) return;
     // Cancel any in-flight TTS from a prior press / interpret AND tell
@@ -7775,6 +7869,27 @@ export class AgentCoordinator {
     }
 
     flowOutput("COORDINATOR", "student_tts_start", `[${source}] "${text}"`);
+
+    // CLIENT-DIRECT path. When the student has their own ElevenLabs key, the
+    // client calls ElevenLabs itself: it already knows the sentence, so this
+    // removes a full client→server→client round trip from the critical path
+    // (material for users far from the region the server runs in). We hand off
+    // the text and wait for the client's `tts_done` ack, preserving the
+    // "student's voice finishes before the AI replies" ordering that callers
+    // depend on. Credit is billed here — the server knows the text either way.
+    // Gated on the advertised capability, NOT on `capable()` — this is a
+    // latency win, not a cost saving, so it applies in full-attention too. An
+    // older client that can't ack would otherwise stall every press behind the
+    // dispatch timeout.
+    if (this.clientCapabilities.clientTts && isClientSideTtsVoice(this.studentVoice)) {
+      this.ttsUsageCallback()({ provider: "elevenlabs", characters: text.length });
+      await this.dispatchClientTts(text, this.studentVoice, "student", controller.signal, source);
+      if (this.studentTtsAbortController === controller) {
+        this.studentTtsAbortController = null;
+      }
+      return;
+    }
+
     const iter = ttsFacade.synthesizeStream(text, this.studentVoice, controller.signal, this.ttsUsageCallback())[Symbol.asyncIterator]();
     const firstChunk = iter.next();
     try {

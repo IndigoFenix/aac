@@ -284,6 +284,16 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
     program: { store: true },
     jobs: 2, costs: { wood: 6, stone: 2 }, buildDays: 1.5, color: "#8a7fae", default: true,
   },
+  {
+    // THE EMPTY SHELL (pipeline ⑤b): a building with NO role — completes
+    // as a bare doored box (open interior, nothing furnished, no staff,
+    // no books). Rooms are added by interior subdivision; what it IS is
+    // derived from what ends up inside (programs.ts buildingKindOf).
+    type: "building", glyph: "building", label: "building", role: "work",
+    footprint: { w: 10, d: 9 },
+    program: {}, shell: true,
+    jobs: 0, costs: { wood: 5 }, buildDays: 1, color: "#9b8a6d", default: true,
+  },
 ];
 
 /** The founding STOCK an established town keeps on hand (the builder's
@@ -358,6 +368,7 @@ export function applyFoundedBuildings(
       color: spec?.color ?? "#9b8a6d",
       program: spec?.program ?? { store: true },
       ...(spec?.stations ? { stations: spec.stations } : {}),
+      ...(spec?.shell ? { bare: true } : {}),
       // Staff only a COMPLETED building (the host writes `completed` and
       // re-decorates jobs when construction finishes live).
       jobs: b.completed ? (spec?.jobs ?? 0) : 0,

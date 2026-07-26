@@ -38,7 +38,12 @@ import type { TownHouse, TownPlan, TownWork } from "@shared/world-engine/kernel/
 import {
   ERRAND_WALK, FOOD_DAY_SEC, HOUSEHOLD, doorTransit, houseDoorstep, streetGoods, type TownGoods,
 } from "@shared/world-engine/kernel/town/goods.js";
-import { foundedBuildingDone } from "@shared/world-engine/kernel/town/construction.js";
+import {
+  annexWorldRect,
+  foundedBuildingDone,
+  isInteriorCandidate,
+  workDeltaKey,
+} from "@shared/world-engine/kernel/town/construction.js";
 import { createTownTrade, type TownTrade } from "@shared/world-engine/kernel/town/trade.js";
 import { createResidentModel, STREET_NPCS } from "@shared/world-engine/kernel/town/residents.js";
 import type { TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
@@ -224,6 +229,9 @@ export interface TownStage {
      *  crowd streams in gradually on descent. Omit = the stage's build-time
      *  budget (STREET_NPCS). */
     crowdBudget?: number,
+    /** RECRUITED CIVIC WORKERS (pipeline ⑥): busy bodies are PINNED — never
+     *  culled, never handed trips — until the host frees them. */
+    isBusy?: (id: string) => boolean,
   ): TownStageFrame;
   /** The ACTIVE construction sites right now (world coords) — the sim-side
    *  query twin of the frame's `sites` push (reserved-ground checks read
@@ -441,9 +449,26 @@ export function* createTownStageSteps(
   let lastSiteSig: string | null = null;
   const annexSiteOf = (id: string, s: { rect: { x: number; y: number; w: number; h: number } }): ConstructionSite =>
     ({ id: `site_${id}`, ...s.rect, type: "annex" });
+  /** Pending-designation GROUND MARKINGS (⑤): a staked annex rect reads as
+   *  a construction site while its materials gather. Interior designations
+   *  skip — their ground is indoors (the cutaway shows the room when it
+   *  lands). */
+  const pendingSites = (): ConstructionSite[] => {
+    const out: ConstructionSite[] = [];
+    for (const p of opts.deltas?.annexSites() ?? []) {
+      if (isInteriorCandidate(p.candidate)) continue;
+      const m = /^h_(\d+)$/.exec(p.buildingKey);
+      const h = m ? plan.houses.find((hh) => hh.index === Number(m[1])) : undefined;
+      if (!h) continue;
+      const r = annexWorldRect(center, h, p.candidate);
+      out.push({ id: `site_pa_${p.ord}`, ...r, type: "annex" });
+    }
+    return out;
+  };
   const activeSites = (): ConstructionSite[] => [
     ...workSites.values(),
     ...[...scaffoldUntil.entries()].map(([id, s]) => annexSiteOf(id, s)),
+    ...pendingSites(),
   ];
   const houseStagingOf = (h: TownHouse): HouseStaging => {
     const delta = opts.deltas?.get(`h_${h.index}`);
@@ -503,6 +528,9 @@ export function* createTownStageSteps(
   const workIds = new Map<number, string[]>();
   /** Whether each work stood COMPLETE at its last registration. */
   const workBuilt = new Map<number, boolean>();
+  /** The delta rev each work last staged with (⑤b — a founded shell's
+   *  interior rooms re-register on its rev bump, the house pattern). */
+  const workStagedRev = new Map<number, number>();
   let _errLogAt = -Infinity; // TEMP stage-errands probe pacing
   const registerWork = (i: number, tSec: number): void => {
     const wk = plan.works[i]!;
@@ -526,7 +554,11 @@ export function* createTownStageSteps(
     }
     const done = workDoneAt(wk, tSec);
     workBuilt.set(i, done);
-    workPlans[i] = buildingRoomPlan(center, i, wk, workProgramOf(wk));
+    // The work's construction delta (⑤b): a founded shell's interior rooms
+    // ride its `f_<ord>` delta — the plan re-derives from it here.
+    const wkDelta = opts.deltas?.get(workDeltaKey(wk, i));
+    workStagedRev.set(i, wkDelta?.rev ?? 0);
+    workPlans[i] = buildingRoomPlan(center, i, wk, workProgramOf(wk), wkDelta);
     const ids: string[] = [];
     workSites.delete(i);
     if (!done) {
@@ -573,6 +605,8 @@ export function* createTownStageSteps(
     fixture: piece.kind,
     openable: piece.openable,
     facing: piece.facing,
+    // Delivered-but-not-set-up pieces render tipped on their side (⑥).
+    ...(piece.setUp !== undefined ? { setUp: piece.setUp } : {}),
     interactions: [],
     // A table and the pet's floor bowl SHOW their contents ("on"); the
     // lidded pieces hold theirs hidden ("in").
@@ -597,7 +631,9 @@ export function* createTownStageSteps(
       furnitureOf.delete(`w_${i}`);
       return;
     }
-    const pieces = workFurniture(center, i, wk, workProgramOf(wk), "", undefined, opts.registry);
+    const pieces = workFurniture(
+      center, i, wk, workProgramOf(wk), "", opts.deltas?.get(workDeltaKey(wk, i)), opts.registry,
+    );
     if (pieces.length) furnitureOf.set(`w_${i}`, pieces.map(toObjectSpec));
   };
   plan.works.forEach((_, i) => refreshWorkFurniture(i));
@@ -623,6 +659,8 @@ export function* createTownStageSteps(
      *  the crowd streams in a few per frame on descent instead of flooding all at
      *  once at the mount. Undefined = the stage's build-time budget. */
     crowdBudget?: number,
+    /** RECRUITED CIVIC WORKERS (⑥): pinned bodies — see TownStage.frame. */
+    isBusy?: (id: string) => boolean,
   ): TownStageFrame => {
     // The "interior on show" gate — shared by the interior staging, the
     // furniture and the residents (see the FURNITURE note below). No signal
@@ -673,6 +711,22 @@ export function* createTownStageSteps(
         refreshWorkFurniture(wi);
         changed = true;
       });
+      // Work deltas BUMPED live (⑤b): a founded shell whose interior grew
+      // (or lost) a room re-registers + refurnishes — the house rev-watch
+      // pattern, one level over.
+      plan.works.forEach((wk, wi) => {
+        if (wk.vacated) return;
+        const rev = opts.deltas!.get(workDeltaKey(wk, wi))?.rev ?? 0;
+        if ((workStagedRev.get(wi) ?? 0) === rev) return;
+        const wkKey = `w_${wi}`;
+        if (furnished.has(wkKey)) {
+          for (const o of furnitureOf.get(wkKey) ?? []) deltaRemoveObjects.push(o.id);
+          furnished.delete(wkKey);
+        }
+        registerWork(wi, tSec);
+        refreshWorkFurniture(wi);
+        changed = true;
+      });
       // Houses APPENDED live (④ move-in): register walls + furniture —
       // the household streams in through the resident model as usual.
       while (houseStagings.length < plan.houses.length) {
@@ -695,7 +749,8 @@ export function* createTownStageSteps(
         hs.full = rebuilt.full;
         if (houseVisible(hs.house)) {
           for (const b of rebuilt.full) {
-            if (!prevIds.has(b.id) && /_a\d+$/.test(b.id)) {
+            // New annex OR interior rooms (⑤b) pass through the scaffold.
+            if (!prevIds.has(b.id) && /_[ai]\d+$/.test(b.id)) {
               scaffoldUntil.set(b.id, {
                 until: tSec + SCAFFOLD_S,
                 rect: { ...b.footprint },
@@ -845,7 +900,7 @@ export function* createTownStageSteps(
 
     // RESIDENTS: one model step; map spawns onto engine NPCs with the
     // behavior that keeps the clock honest (indoor tether, errand pace).
-    const upd = residents.update(p, tSec, crowdBudget ?? bodyBudget, bodyPos, visibleR, isVisible, isRoomVisible, isHousePooled);
+    const upd = residents.update(p, tSec, crowdBudget ?? bodyBudget, bodyPos, visibleR, isVisible, isRoomVisible, isHousePooled, isBusy);
     const add: NpcSpec[] = upd.spawn.map(s => {
       // The body's species: a defined member's own (frog_person aunt), else
       // the town's constructing species — sizes collision AND planning.

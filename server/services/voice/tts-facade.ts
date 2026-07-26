@@ -38,6 +38,18 @@ export interface ResolvedVoice {
 }
 
 /**
+ * True when this voice can be synthesized BY THE CLIENT: the student supplied
+ * their own ElevenLabs key and voice ID, so handing those to the device costs
+ * only that family's own quota.
+ *
+ * The shared/admin key (`customVoice` → env ELEVENLABS_API_KEY) deliberately
+ * fails this check — it must never leave the server.
+ */
+export function isClientSideTtsVoice(voice: ResolvedVoice): boolean {
+  return !!(voice.elevenlabsApiKey && voice.elevenlabsVoiceId);
+}
+
+/**
  * Synthesize text to a full audio buffer, routing to the correct TTS provider.
  * Reports the resolved provider + char count via `onUsage` after the chosen
  * branch returns successfully (used for credit tracking).

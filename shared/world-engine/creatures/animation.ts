@@ -294,6 +294,14 @@ export class CreatureAnimator {
     return ease(this.activityAmt);
   }
 
+  /** The SMOOTHED locomotion dial (0 = still, 1 = full run) — not the raw target
+   *  `setSpeed` was handed, but the eased value the gait rides. A model syncs its
+   *  anchor slide-OFF to this so a body walking off a fixture eases away over the
+   *  speed ramp instead of snapping the instant the sim velocity spikes. */
+  speedLevel(): number {
+    return clamp01(this.speed);
+  }
+
   /** True while any activity pose is in effect or still blending out — a baked
    *  NPC's temporary dynamic body must not retire until this clears. */
   activityBusy(): boolean {
@@ -668,7 +676,11 @@ export class CreatureAnimator {
 
     // ── Posture: base + idle sway + reach crouch/lean ────────────────────
     const idleSway = !moving && this.action === "none" ? 0.012 * Math.sin(this.time * 1.4) : 0;
-    const crouchE = ease(this.crouch);
+    // The reach/carry crouch RELEASES as the body starts to move — the same speed
+    // dial the sustained activity uses (`act`, above). A body that begins its next
+    // walk while a pick / put gesture is still finishing then stands up smoothly
+    // instead of gliding along locked in the crouch (the "using while moving" bug).
+    const crouchE = ease(this.crouch) * (1 - clamp01(this.speed / 0.2));
     // Running leans the trunk into the motion; reaching bends it over the
     // target while the crouch folds the legs. The reach bend scales with
     // how erect the creature stands — an upright biped must fold its trunk

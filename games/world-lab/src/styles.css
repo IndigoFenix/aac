@@ -242,7 +242,9 @@ input.sf-ctl[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; accen
 .lab-family-chip.selected { border-color: #f2c14e; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.4); }
 /* Not in the world right now (out working/shopping/walking) — dimmed, not gone. */
 .lab-family-chip.away { opacity: 0.5; border-style: dashed; }
-.lab-family-emoji { font-size: 1.5rem; line-height: 1.7rem; }
+/* The state icon is now a composed glyph (GlyphCompositor fills its box), so it
+   needs explicit dimensions instead of a font size. */
+.lab-family-emoji { width: 1.9rem; height: 1.9rem; display: inline-flex; }
 .lab-family-name { font-size: 0.72rem; opacity: 0.85; white-space: nowrap; }
 
 /* ── City strip: per-district cohort chips (④ city HUD) — a glyph, souls,
@@ -262,7 +264,7 @@ input.sf-ctl[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; accen
 .lab-city-chip.total { border-color: #3d517e; background: #182238; }
 .lab-city-glyph { width: 1.4rem; height: 1.4rem; display: inline-flex; }
 .lab-city-pop { font-variant-numeric: tabular-nums; }
-.lab-city-well { font-size: 1rem; }
+.lab-city-well { width: 1.1rem; height: 1.1rem; display: inline-flex; }
 .lab-city-stock { display: inline-flex; align-items: center; gap: 2px; opacity: 0.9; font-variant-numeric: tabular-nums; }
 .lab-city-stock.short { color: #e88a7a; }
 .lab-city-stock-glyph { width: 1.1rem; height: 1.1rem; display: inline-flex; }

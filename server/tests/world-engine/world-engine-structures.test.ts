@@ -102,6 +102,38 @@ describe("doors", () => {
     expect(s.doors.d.open).toBeLessThan(0.5); // swung shut
   });
 
+  it("opens for a body TRAVERSING the doorway, not one passing nearby", () => {
+    // A narrow door at x∈[9,11], y=8, flanked by solid wall either side. A body
+    // to the SIDE, or ambling PARALLEL in front of the opening, must not swing
+    // it; only a body on a course THROUGH it does.
+    const narrow = (): StructureSpec[] => [
+      { kind: "wall", id: "wl", a: { x: 0, y: 8 }, b: { x: 9, y: 8 }, thickness: 1 },
+      { kind: "wall", id: "wr", a: { x: 11, y: 8 }, b: { x: 20, y: 8 }, thickness: 1 },
+      { kind: "door", id: "d", a: { x: 9, y: 8 }, b: { x: 11, y: 8 }, thickness: 1, openRadius: 3 },
+    ];
+
+    // (a) Walking PARALLEL to the wall, passing right in front of the opening
+    // (along y=6.6, from x=2 to x=18) — near the door the whole time, but never
+    // crossing it. The door stays shut.
+    const sPar = createWorldState({ ...spec(narrow()), spawns: [{ id: "s", x: 2, y: 6.6, facing: 0 }] }, "s");
+    let peakPar = 0;
+    for (let i = 0; i < 360; i++) {
+      tickWorld(sPar, { aim: { x: 18, y: 6.6 } }, 1 / 60);
+      peakPar = Math.max(peakPar, sPar.doors.d.open);
+    }
+    expect(peakPar).toBeLessThan(0.3); // never opened for a body just passing by
+
+    // (b) The same door, a body walking straight THROUGH it (x≈10, y 2→20).
+    const sThru = createWorldState({ ...spec(narrow()), spawns: [{ id: "s", x: 10, y: 2, facing: 0 }] }, "s");
+    let peakThru = 0;
+    for (let i = 0; i < 360; i++) {
+      tickWorld(sThru, { aim: { x: 10, y: 20 } }, 1 / 60);
+      peakThru = Math.max(peakThru, sThru.doors.d.open);
+    }
+    expect(peakThru).toBeGreaterThan(0.5); // opened for the body going through
+    expect(sThru.avatars.s.y).toBeGreaterThan(8); // and it got across
+  });
+
   it("a locked door stays solid; unlockDoor lets it open", () => {
     const s = createWorldState(spec([door({ locked: true })]), "me");
     expect(s.doors.d.locked).toBe(true);

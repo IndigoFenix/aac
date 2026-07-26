@@ -40,6 +40,11 @@ export interface NaturalProduct {
   yield: { min: number; max: number };
   /** `harvest` only: days until the source bears it again. */
   regrowDays?: number;
+  /** The TOOL that speeds this take (city-founding: "more effective with an
+   *  axe or pick, but can be done by hand"): holding the named glyph moves
+   *  `multiplier` units per act instead of one. Spec data, never an engine
+   *  constant — a new tool is a new row here, not new machinery. */
+  tool?: { glyph: string; multiplier: number };
 }
 
 export type NaturalSourceKind = "plant" | "animal" | "mineral";
@@ -63,7 +68,15 @@ const CATALOGUE: NaturalSource[] = [
     species: "oak",
     kind: "plant",
     feature: { icon: "🌳", radiusM: 0.7 },
-    products: [{ glyph: "wood", use: "building", method: "kill", yield: { min: 2, max: 4 } }],
+    products: [
+      {
+        glyph: "wood",
+        use: "building",
+        method: "kill",
+        yield: { min: 2, max: 4 },
+        tool: { glyph: "axe", multiplier: 2 },
+      },
+    ],
   },
   {
     species: "apple_tree",
@@ -71,7 +84,13 @@ const CATALOGUE: NaturalSource[] = [
     bodyHeightM: 3.4,
     products: [
       { glyph: "apple", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
-      { glyph: "wood", use: "building", method: "kill", yield: { min: 1, max: 2 } },
+      {
+        glyph: "wood",
+        use: "building",
+        method: "kill",
+        yield: { min: 1, max: 2 },
+        tool: { glyph: "axe", multiplier: 2 },
+      },
     ],
   },
   {
@@ -112,7 +131,15 @@ const CATALOGUE: NaturalSource[] = [
     species: "rock",
     kind: "mineral",
     feature: { icon: "🪨", radiusM: 0.55 },
-    products: [{ glyph: "stone", use: "building", method: "kill", yield: { min: 1, max: 2 } }],
+    products: [
+      {
+        glyph: "stone",
+        use: "building",
+        method: "kill",
+        yield: { min: 1, max: 2 },
+        tool: { glyph: "pick", multiplier: 2 },
+      },
+    ],
   },
 ];
 
@@ -178,14 +205,56 @@ export function killStockOf(species: string, roll: () => number): Record<string,
   return stock;
 }
 
+/** The stack a LIVE take of this source can bear at once — every harvest
+ *  product rolled once, in product order (deterministic `roll()` call
+ *  count). What the standing tree carries ripe, the ewe carries grown.
+ *  Empty for kill-only sources. */
+export function harvestStockOf(species: string, roll: () => number): Record<string, number> {
+  const src = BY_SPECIES.get(species);
+  const stock: Record<string, number> = {};
+  for (const p of src?.products ?? []) {
+    if (p.method !== "harvest") continue;
+    stock[p.glyph] = (stock[p.glyph] ?? 0) + rollYield(p, roll);
+  }
+  return stock;
+}
+
 /** Is the source CONSUMED when its yield is taken — i.e. does it carry any
  *  kill product? An emptied consumable feature is felled/quarried out. */
 export function sourceIsConsumable(src: NaturalSource): boolean {
   return src.products.some((p) => p.method === "kill");
 }
 
+/** THE FELLING TEST: consumable, and every kill glyph at zero in the live
+ *  stock. The last wood taken IS the felling — even while fruit still hangs
+ *  (a felled tree bears nothing; its harvest stock dies with it). Never
+ *  true for pure-harvest sources, which persist picked clean. */
+export function sourceKillExhausted(
+  src: NaturalSource,
+  stock: Record<string, number> | undefined,
+): boolean {
+  return (
+    sourceIsConsumable(src) &&
+    !src.products.some((p) => p.method === "kill" && (stock?.[p.glyph] ?? 0) > 0)
+  );
+}
+
 export function harvestProductsOf(species: string): NaturalProduct[] {
   return (BY_SPECIES.get(species)?.products ?? []).filter((p) => p.method === "harvest");
+}
+
+/** UNITS ONE TAKE ACT MOVES for this source's glyph: 1 bare-handed, the
+ *  product's declared tool multiplier when `hasTool` answers yes for its
+ *  tool glyph ("more effective with an axe or pick, but can be done by
+ *  hand"). 1 for glyphs the source doesn't yield. */
+export function takeUnitsOf(
+  src: NaturalSource | undefined,
+  glyph: string,
+  hasTool: (toolGlyph: string) => boolean,
+): number {
+  const p = src?.products.find((q) => q.glyph === glyph);
+  if (!p?.tool) return 1;
+  return hasTool(p.tool.glyph) ? Math.max(1, Math.floor(p.tool.multiplier)) : 1;
 }
 
 const uniqueGlyphs = (ps: NaturalProduct[]): string[] => [...new Set(ps.map((p) => p.glyph))];

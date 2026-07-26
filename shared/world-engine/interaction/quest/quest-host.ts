@@ -50,12 +50,24 @@ import {
 import { FOUNDING_AGE_DAYS, type TownHouse } from "@shared/world-engine/kernel/town/plan.js";
 import {
   ANNEX_ROOM_KIND,
+  craftLaborDays,
   FURNITURE_ITEMS,
+  furnitureItemOf,
+  nextCraftKind,
   STATION_PROPERTIES,
   furnitureGlyph,
   furnitureKindOfGlyph,
+  workProgram,
+  type FurnitureItemDef,
   type StationKind,
 } from "@shared/world-engine/kernel/town/stations.js";
+import {
+  programOverridesOf,
+  resolveRoomPrograms,
+  roomProgramMet,
+  roomProgramOf,
+  type RoomProgramDef,
+} from "@shared/world-engine/kernel/town/programs.js";
 import {
   makePlacementContext,
   placementCandidates,
@@ -67,30 +79,49 @@ import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/
 import {
   ANNEX_COSTS,
   annexOptions,
+  annexWorldRect,
+  bankLabor,
   constructionStep,
   demolishRoom,
+  demolishedRects,
   foundedBuildingDone,
+  pendingLaborDone,
   foundingOptions,
+  interiorOptions,
+  isInteriorCandidate,
+  markPieceSetUp,
   nextPlacedSerial,
+  pendingRoomKindOf,
   placeFurniture,
   PROSPERITY_DAILY_CAP,
   requestAnnex,
+  requestInterior,
+  stagingMissing,
+  TOWN_YARD_EP,
+  workDeltaKey,
+  type AnnexCandidate,
   type AnnexCluster,
   type FoundedBuilding,
   type FoundingCandidate,
+  type InteriorCandidate,
+  type PendingAnnex,
   type TownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
 import {
+  createReservationLedger,
+  freeUnits,
+  resolveMaterials,
+  type ReservationLedger,
+} from "@shared/world-engine/kernel/town/reservations.js";
+import {
+  ANNEX_ORDER,
   resolveStructureFocus,
   ROOM_GLYPH,
   structureActsOf,
   type StructureFocus,
 } from "@shared/world-engine/interaction/town/structure-board.js";
 import {
-  missingCosts,
   resolveStructure,
-  spendCosts,
-  costsMet,
   structureDisplayGlyph,
   type StructureSpec,
 } from "@shared/world-engine/kernel/town/structures.js";
@@ -114,6 +145,7 @@ import {
   stackHead,
   stackUnits,
   takeGoods,
+  takeStock,
   townEndpointId,
   type StockEndpoint,
   type TransferAgreement,
@@ -159,6 +191,8 @@ import {
   houseRoomPlan,
   livingRect,
   memberRoomOf,
+  type HouseRoom,
+  type HouseShape,
 } from "@shared/world-engine/kernel/town/rooms.js";
 import { roadRoute } from "@shared/world-engine/kernel/town/streets.js";
 import { IMPORT_ALLOTMENT, RARE_IMPORT_KIND, TRADE_IMPORT_KINDS } from "@shared/world-engine/kernel/town/trade.js";
@@ -173,7 +207,18 @@ import {
   SITE_STOCK_ID,
   type FoundedSite,
 } from "@shared/world-engine/interaction/town/founding.js";
-import { buildWilderness, type WildernessContent, type WildernessParams } from "./wilderness.js";
+import {
+  armHarvestRegrow,
+  buildWilderness,
+  dueHarvestRegrowth,
+  wildAnimalBodyId,
+  wildFeatureContainerId,
+  wildFeatureEmbodied,
+  type WildernessContent,
+  type WildernessCreature,
+  type WildernessParams,
+  type WildSource,
+} from "./wilderness.js";
 import { createPossession, type Possession } from "./possession.js";
 import {
   assignTownJobs,
@@ -237,14 +282,15 @@ import {
   DEFAULT_DRESS_PALETTE,
   type DressPalette,
 } from "../../creatures/clothing.js";
-import { SPARK_SPECIES_ID, requireSpecies, speciesBodyRadius } from "../../creatures/species.js";
-import { drinkGlyphs, naturalSourceOf, sourceIsConsumable, sourcesForGood } from "../../products.js";
+import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, requireSpecies, speciesBodyRadius } from "../../creatures/species.js";
+import { drinkGlyphs, naturalSourceOf, sourceKillExhausted, sourcesForGood, takeUnitsOf } from "../../products.js";
 import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
 import { buildConcepts } from "@shared/world-engine/interaction/content/concepts.js";
 import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
 import { genderFor } from "@shared/world-engine/interaction/behavior/gender.js";
 import { createGlyphImageSource } from "../../glyph-images.js";
 import type { ImageResolver } from "@shared/glyph-compositor.js";
+import { activityBubbleContent, restDoneBubble } from "@shared/world-engine/interaction/quest/activity-bubble.js";
 import { createDwellTracker } from "../../dwell.js";
 import { runWorldHost, type WorldHost } from "../../world-host.js";
 import type { WorldView } from "../../world-view.js";
@@ -254,6 +300,7 @@ import {
   clearWorldBubble,
   dropObject,
   expandWorldBuildings,
+  faceEachOther,
   placeInContainer,
   routeThroughDoors,
   buildingAt,
@@ -272,6 +319,7 @@ import {
   nearestClearSpot,
   standClear,
   standPointFor,
+  type BodyAvoidance,
 } from "./stand-points.js";
 import { createNpcVoice, speechEstimateMs, type NpcVoice } from "../../npc-voice.js";
 import { resolveLine, SAMPLE_NPC_DIALOGUE } from "../../npc-dialogue.js";
@@ -311,6 +359,7 @@ import {
   goalActivity,
   asIntent,
   commandEcho,
+  creatureReferenceGlyph,
   defaultAnnounceCriteria,
   type TaskPool,
   type TaskCandidate,
@@ -470,8 +519,46 @@ const TASK_CLAIM_INTERVAL_S = 1; // claim/expiry sweep cadence (claims are per-s
 // TRANSFERS (city-expansion ②) — the town builder's-yard crate id (its stack
 // map ALIASES deltas.stock, the FoundedSite-crate pattern) and the pocket
 // endpoint prefix (a creature's hands as a stock endpoint).
-const TOWN_YARD_ID = "town:yard";
+const TOWN_YARD_ID = TOWN_YARD_EP;
 const POCKET_EP = "pocket:";
+/** A founded site pile's endpoint id prefix (pipeline ② — `sitepile:<ord>`
+ *  aliases the FoundedBuilding row's live `pile`). */
+const SITE_PILE_EP = "sitepile:";
+/** A pending annex's growth-rect pile (pipeline ⑤ — `annexpile:<ord>`
+ *  aliases the PendingAnnex row's live `pile`). */
+const ANNEX_PILE_EP = "annexpile:";
+/** A BUILDING's furniture-delivery pile (pipeline ⑥ — `bfurn:<deltaKey>`):
+ *  where a hauled `furn.<kind>` stack lands before the placement sweep
+ *  stands it up in the building's program room. Session-lived stacks (the
+ *  agreement itself persists; a reload's orphan rescue re-runs the leg). */
+const BFURN_EP = "bfurn:";
+/** Annex labor, RELATIVE like StructureSpec.buildDays (house = 1) — a room
+ *  is half a house's raising. */
+const ANNEX_BUILD_DAYS = 0.5;
+/** BUILDERS MAKE BUILDINGS (⑥): labor banks only while builders stand at
+ *  the staged site — one builder works at 1× (a house = its buildDays of
+ *  standing), more work proportionally faster, capped here. */
+const BUILDERS_CAP = 3;
+/** "At the site" — a builder within this of the site center is working. */
+const BUILD_WORK_R = 8;
+/** The standing-work dwell chunk the sweep keeps re-issuing (seconds). */
+const BUILD_WORK_DWELL_S = 30;
+/** A present builder plays a work reach at the site this often (seconds) —
+ *  longer than one reach cycle so each "hammer" completes before the next. */
+const BUILD_GESTURE_PERIOD_S = 3;
+/** Seconds a delivered furniture piece lies TIPPED before it is stood up —
+ *  long enough to read as "just delivered, being assembled". */
+const FURN_SETUP_HOLD_S = 3;
+/** A capable resident within this of a tipped piece performs the stand-up
+ *  work reach as it is set up (otherwise it simply rises on its own). */
+const FURN_SETUP_R = 3.2;
+/** How far around a staked plot its haul tasks recruit (the communal
+ *  work-together radius — any idle body in earshot of the site). */
+const SITE_HAUL_FOCUS_R = 60;
+/** A waiting plot re-resolves its missing materials at most this often —
+ *  fresh stock (a felled tree hauled to the yard) unsticks it, without
+ *  re-posting expired tasks every sweep. */
+const SITE_HAUL_RETRY_S = 20;
 /** Source endpoints a transfer order may draw on per order (fan-out cap). */
 const TRANSFER_MAX_SOURCES = 3;
 /** The explicit terminal fallback (phase ①a §1) — an utterance no responder
@@ -537,13 +624,6 @@ function restDwellFor(tplKey: string, scale: WorldScale): number {
   if (tplKey === "laundry") return WASH_DWELL_S; // the scrub at the tub
   if (tplKey.startsWith("cook:")) return COOK_DWELL_S; // the pot at the oven
   return restDwellS(scale);
-}
-/** The bubble a completed rest-shaped step shows (what just happened, glanceable). */
-function restDoneEmoji(tplKey: string): string {
-  if (tplKey === "fun") return "⚽";
-  if (tplKey === "hygiene") return "🫧";
-  if (tplKey === "waste") return "🚽";
-  return "💤";
 }
 const EAT_SHOW_S = 2; // seconds the (instant) consume effect SHOWS as eating
 /** Seconds a loose prop must sit on the floor before the TIDY chore may sweep
@@ -870,7 +950,7 @@ export interface QuestSession {
    *  walker) leave it alone — it is busy. This is what ties every animation to
    *  its action (concept-parser.md §10.2). `apply` is idempotent-guarded by
    *  `applied`; `label` is for the debug readout. */
-  actionHold: Map<string, { t: number; dur: number; applied: boolean; apply: () => void; label: string }>;
+  actionHold: Map<string, { t: number; dur: number; effectAt: number; applied: boolean; apply: () => void; label: string }>;
   /** SURFACED unmet wants (the walker decided BLOCKED): cid → what it wants and
    *  where it would take it ("at" = the satisfy's station kinds). The visible
    *  half of ADOPTION — a housemate with a warm relation (or a spoken "help")
@@ -981,6 +1061,12 @@ export interface QuestSession {
    *  with the deltas and survive reload); wilderness sessions own a
    *  session-lived ledger until their site becomes a town. */
   transfers: TransferLedger;
+  /** THE SPOKEN-FOR LEDGER (pipeline ②, kernel/town/reservations.ts):
+   *  units of stock reserved by pending site hauls, so growth and rival
+   *  orders never draw the same wood. Aliases `deltas.reservations` exactly
+   *  as `transfers` aliases the deltas' ledger (same lifecycle, same
+   *  re-aliasing when a site is founded/abandoned). */
+  reservations: ReservationLedger;
   /** INTERCITY BARTER (⑤): an ABSTRACT partner's synthetic shelf, by partner
    *  key — the stack map `town:<key>` endpoints alias when the partner isn't
    *  a real sim (a cluster neighbor's REAL yard is used instead). Topped up
@@ -1480,16 +1566,45 @@ function animalSpeciesForIcon(icon: string | undefined): string | null {
   return icon ? ANIMAL_SPECIES_BY_ICON[icon] ?? null : null;
 }
 
+/** NATURAL-SOURCE BODIES (fauna/flora): one lazy factory per SPECIES (ids
+ *  carry it — `fauna:<species>:…` / `flora:<species>:…`), each standing its
+ *  registry height. Never a species-name special case. Shared by the town
+ *  factory (herds, orchards) and the puzzle factory (wild product animals). */
+function makeNaturalBodyFactory(
+  detailFor?: (id: string) => CreatureDetail,
+): (species: string) => ReturnType<typeof createCreatureAvatarFactory> {
+  const cache = new Map<string, ReturnType<typeof createCreatureAvatarFactory>>();
+  return (species: string) => {
+    let f = cache.get(species);
+    if (!f) {
+      const src = naturalSourceOf(species);
+      f = createCreatureAvatarFactory({
+        speciesFor: () => species,
+        heightM: src?.bodyHeightM ?? 0.95,
+        ...(src?.kind === "animal" && detailFor ? { detailFor } : {}),
+      });
+      cache.set(species, f);
+    }
+    return f;
+  };
+}
+const idSpeciesOf = (id: string) => id.split(":")[1] ?? "";
+
 /** Puzzle characters (`npc_<nodeId>`): an animal-person CREATURE model when
- *  their emoji face maps to one, else the emoji-capsule fallback. */
+ *  their emoji face maps to one, else the emoji-capsule fallback. Wild
+ *  PRODUCT ANIMALS (`fauna:<species>:…` — step ④) stand their registry
+ *  species body, exactly as a town's herds do. */
 function makePuzzleCharacterFactory(npcIcons: Map<string, string>): AvatarModelFactory {
   const emoji = makeNpcModelFactory(npcIcons);
   const animal = createCreatureAvatarFactory({
     speciesFor: (id) => animalSpeciesForIcon(npcIcons.get(id)) ?? "human_cute",
     heightM: 1.7,
   });
-  return (id, isLocal) =>
-    animalSpeciesForIcon(npcIcons.get(id)) ? animal(id, isLocal) : emoji(id, isLocal);
+  const naturalBody = makeNaturalBodyFactory();
+  return (id, isLocal) => {
+    if (id.startsWith("fauna:") || id.startsWith("flora:")) return naturalBody(idSpeciesOf(id))(id, isLocal);
+    return animalSpeciesForIcon(npcIcons.get(id)) ? animal(id, isLocal) : emoji(id, isLocal);
+  };
 }
 
 /** Stable tiny hash — outfit assignment etc. (same body, same clothes forever). */
@@ -1595,24 +1710,10 @@ function makeTownModelFactory(
   });
   // Town FAUNA + FLORA (the chains' living ends): the natural sources the
   // goods chains name — grazing herds by their producer, orchard plants by
-  // the farms. One lazy factory per SPECIES (ids carry it: `fauna:<species>:…`
-  // / `flora:<species>:…`), each standing its registry height — never a
-  // species-name special case here.
-  const naturalBodies = new Map<string, ReturnType<typeof createCreatureAvatarFactory>>();
-  const naturalBody = (species: string) => {
-    let f = naturalBodies.get(species);
-    if (!f) {
-      const src = naturalSourceOf(species);
-      f = createCreatureAvatarFactory({
-        speciesFor: () => species,
-        heightM: src?.bodyHeightM ?? 0.95,
-        ...(src?.kind === "animal" ? { detailFor } : {}),
-      });
-      naturalBodies.set(species, f);
-    }
-    return f;
-  };
-  const idSpecies = (id: string) => id.split(":")[1] ?? "";
+  // the farms (makeNaturalBodyFactory — the same bodies wild product
+  // animals stand in the open country).
+  const naturalBody = makeNaturalBodyFactory(detailFor);
+  const idSpecies = idSpeciesOf;
   // Household PETS: family members of a non-person species (world-doc authored;
   // species rides the same overrides map, keyed by pet cid). No outfit.
   const petBody = createCreatureAvatarFactory({
@@ -1805,6 +1906,7 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     // A town session's ledger/shelves ARE the deltas' (serialized with them —
     // standing routes survive reload); townless sessions keep their own.
     transfers: town ? town.deltas.transfers : createTransferLedger(),
+    reservations: town ? town.deltas.reservations : createReservationLedger(),
     partnerStock: town ? town.deltas.partnerStock : {},
     caravanSerial: 0,
     bondedCreatures: new Set(),
@@ -2418,8 +2520,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // A NAMED household member answers by NAME ("mara + have + ball").
         const name = nameOfCid(session, cid);
         if (name) return name;
-        const npcEntity = session.creatures?.nodeByCreature.get(cid)?.npcEntityId;
-        return (npcEntity && session.entities.get(npcEntity)?.glyph) || "there";
+        // Else the creature's SPECIES word ("the frog") — never a deictic
+        // "there", which reads as a broken "the there" once articled.
+        return creatureGlyph(session, cid) ?? speciesWordOf(speciesOf(session, cid));
       },
       // The household name book — third-party fact questions resolve through it
       // ("where + mara" → her resident cid).
@@ -2932,9 +3035,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // nouns are speakable — the sentence builder can compose "build house"
     // ("build" is already in the LEXICON; these are its objects).
     if (session.town || session.foundedSite) {
-      const stock = buildStockOf(session);
+      // Affordability reads FREE haul-able availability (pipeline ②), not
+      // the yard alone — wood in a chest or a standing tree counts.
+      const center = session.town ? session.town.stage.center : session.foundedSite!.at;
       for (const spec of structureCatalogOf(session)) {
-        if (stock && costsMet(spec, stock)) {
+        if (!Object.keys(buildMissingMaterials(session, spec, center)).length) {
           addRaw(spec.glyph, spec.label, { kind: "place", affords: ["build", "go"], properties: ["structure"] });
         }
       }
@@ -2949,7 +3054,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // under your feet, else a focus disc).
       addRaw("town", "town", { kind: "place", affords: ["go"] });
       addRaw("area", "area", { kind: "place", affords: ["go", "area"] });
-      for (const g of Object.keys({ ...(stock ?? {}), ...session.pocket })) {
+      const buildStock = session.town ? session.town.deltas.stock : session.foundedSite?.stock;
+      for (const g of Object.keys({ ...(buildStock ?? {}), ...session.pocket })) {
         const head = headOf(g);
         if (isSiteMaterial(head)) {
           addRaw(head, head, { kind: "item", affords: ["get", "give", "bring", "want"], properties: ["material"] });
@@ -3854,7 +3960,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const key = `${Math.round(raw.x * 2)}|${Math.round(raw.y * 2)}`;
         const hit = cache.get(key);
         if (hit) return hit;
-        const spot = nearestClearSpot(state, raw, from, pursuerR);
+        const spot = nearestClearSpot(state, raw, from, pursuerR, standAvoid(cid));
         cache.set(key, spot);
         return spot;
       };
@@ -4140,17 +4246,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // a walk that wrapped a fixture can strand it on the blocked side (the
         // bed/wall pin). A claimed SEAT is released first (§3.3): the chair
         // approach may be exactly what's stuck; the table edge always serves.
-        const status = walkTo(session, cid, step.pos, dt, {
-          onReroute: () => {
-            console.log(`[needs] ${cid} stalled en route to ${step.objId ?? "?"} — re-routing`);
-            if (step.objId) {
-              delete step.seatId;
-              const raw = needObjectPos(session, state, houseIndex, step.objId);
-              if (raw) step.pos = standPointFor(state, step.objId, raw, { x: body.x, y: body.y }, world?.npcRadiusOf(avatarIdOf(cid)));
-            }
-            return step.pos;
-          },
-        });
+        // THE FURNITURE ANCHOR HOLDS IT ON THE FIXTURE: once the body has been
+        // slid ONTO the piece it's using (furniture-anchor.ts pins it on the use
+        // point, off `step.pos`), it has ARRIVED and is USING it — count that as
+        // arrived so the rest/process dwell keeps ticking. Re-issuing a walk to the
+        // (now distant) stand spot would only fight the anchor, which world-host
+        // ignores for an anchored body anyway.
+        const anchoredToStep = !!step.objId && body.anchor?.fixtureId === step.objId;
+        const status: "arriving" | "arrived" | "gaveup" = anchoredToStep
+          ? "arrived"
+          : walkTo(session, cid, step.pos, dt, {
+              onReroute: () => {
+                console.log(`[needs] ${cid} stalled en route to ${step.objId ?? "?"} — re-routing`);
+                if (step.objId) {
+                  delete step.seatId;
+                  const raw = needObjectPos(session, state, houseIndex, step.objId);
+                  if (raw) step.pos = standPointFor(state, step.objId, raw, { x: body.x, y: body.y }, world?.npcRadiusOf(avatarIdOf(cid)), standAvoid(cid));
+                }
+                return step.pos;
+              },
+            });
         if (status === "gaveup") {
           // GIVE UP (termination over fidelity): the spot is unreachable — ARRIVE
           // IN PLACE. The elemental effects work by objId from wherever the body
@@ -4181,7 +4296,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           session.needMeters.set(`${cid}|${step.tplKey}`, 0);
           showWorldBubble(state, `rest:${cid}`, {
             anchor: { kind: "avatar", id: cid },
-            text: restDoneEmoji(step.tplKey),
+            ...restDoneBubble(step.tplKey),
             ttl: 2,
           });
           console.log(`[needs] ${cid} finished ${step.tplKey} (${step.objId ?? "in place"})`);
@@ -4508,7 +4623,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // tabletop ("stuck reaching the consume point"). Nudge to a standable
           // spot off the table edge — the SIT show still slides the body onto
           // the seat (seatId), so it dines at the chair all the same.
-          nearestClearSpot(state, { x: seat.x, y: seat.y }, { x: body.x, y: body.y }, world.npcRadiusOf(avatarIdOf(cid)))
+          nearestClearSpot(state, { x: seat.x, y: seat.y }, { x: body.x, y: body.y }, world.npcRadiusOf(avatarIdOf(cid)), standAvoid(cid))
         : intent.kind === "socialize"
           ? (() => {
               const pav = chatAvatar(state, target.id);
@@ -4518,7 +4633,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // Solid fixtures (beds/tables/chests) are unreachable at their
               // CENTER — walk to the stand-beside spot instead (standPointFor).
               const raw = needObjectPos(session, state, houseIndex, target.id);
-              return raw ? standPointFor(state, target.id, raw, { x: body.x, y: body.y }, world.npcRadiusOf(avatarIdOf(cid))) : null;
+              return raw ? standPointFor(state, target.id, raw, { x: body.x, y: body.y }, world.npcRadiusOf(avatarIdOf(cid)), standAvoid(cid)) : null;
             })();
       if (!pos) continue;
       if (probesOn() && !session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key})`);
@@ -4614,11 +4729,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // A rest step's dwell only counts down while the body is AT the spot
       // (arrival range mirrors stepNeeds) — the activity shows exactly then.
       // Fun plays, the bath and privy SIT (the crouch rig), everything else sleeps.
+      // A body the furniture anchor has slid ONTO the step's fixture (asleep on
+      // its bed, sat on its privy) is legitimately "at the spot" even though the
+      // pin moved it off `step.pos` (the stand spot) onto the fixture centre — so
+      // the activity must persist, or clearing it would release the anchor and the
+      // body would slide off and back on forever (the flap the sticky anchorId
+      // decision below already guards against for the SHOW).
+      const anchoredAtStep = !!step?.objId && av.anchor?.fixtureId === step.objId;
       if (
         (step?.kind === "rest" || step?.kind === "process") &&
         step.dwell !== undefined &&
         step.dwell > 0 &&
-        Math.hypot(av.x - step.pos.x, av.y - step.pos.y) <= 1.3
+        (anchoredAtStep || Math.hypot(av.x - step.pos.x, av.y - step.pos.y) <= 1.3)
       ) {
         // The anchor decision is made ONCE per step episode (sticky): a body
         // that honestly walked its errand anchors — the stand ring puts it
@@ -6365,31 +6487,48 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  lift, then the held carry pose), PUTDOWN on setting down (lower →
    *  release). The animator no-ops when the pose doesn't apply, so callers
    *  fire unconditionally. `at` = the box / floor spot being reached toward. */
-  /** Seconds a discrete action takes: crouch DOWN → touch (effect at mid) → rise. */
-  const ACTION_DUR_S = 0.8;
+  /** A discrete USE (pick / put / take / eat) fires a reach→grasp→lift carry
+   *  GESTURE the renderer plays over the crouch. That reach+grasp crouch runs
+   *  ~1.4 s from the moment the gesture fires; if the body is released to its
+   *  next leg before it finishes, it walks off STILL crouched (the "using while
+   *  moving" bug). So the hold PINS the body until the visible reach is done,
+   *  then locomotion resumes; the gesture's short lift tail then releases via the
+   *  animator's movement-dissolve. The EFFECT (and, inside it, the gesture) lands
+   *  EARLY in the hold so the whole reach plays inside the pin, not at its end. */
+  const ACTION_HOLD_S = 1.6; // total pin — covers a carry gesture's reach + grasp
+  const ACTION_EFFECT_S = 0.4; // when `apply` (and its gesture) fires within the hold
 
   /** Perform a discrete action as a CROUCH-IN-PLACE beat (concept-parser.md §10.2):
-   *  pin the body where it stands and land `apply` at the crouch MIDPOINT — never
+   *  pin the body where it stands and land `apply` EARLY in the hold — never
    *  mid-stride. Both driving loops (stepPursuit, stepNeeds) leave a body
    *  alone while it holds one, so an action and its animation stay welded: the
-   *  creature stops, crouches, touches the thing as the effect fires, and rises.
+   *  creature stops, crouches, touches the thing as the effect fires, holds the
+   *  reach out, and only then rises and walks on.
    *  A fresh call REPLACES any half-done hold on the same body. */
-  function beginAction(session: QuestSession, cid: string, label: string, apply: () => void) {
+  function beginAction(
+    session: QuestSession,
+    cid: string,
+    label: string,
+    apply: () => void,
+    opts?: { hold?: number; effectAt?: number },
+  ) {
     const npcId = avatarIdOf(cid);
     const av = world?.state.avatars[npcId];
-    // Pin in place for the crouch so a residual/ stale errand can't drag the body
-    // around while its action animation plays (the "moving while using" bug).
-    if (av && world) world.setNpcErrand(cid, { points: [{ x: av.x, y: av.y, dwell: ACTION_DUR_S + 0.2 }] });
-    session.actionHold.set(cid, { t: 0, dur: ACTION_DUR_S, applied: false, apply, label });
+    const hold = opts?.hold ?? ACTION_HOLD_S;
+    const effectAt = Math.min(opts?.effectAt ?? ACTION_EFFECT_S, hold);
+    // Pin in place for the whole hold so a residual / stale errand can't drag the
+    // body around while its action animation plays (the "moving while using" bug).
+    if (av && world) world.setNpcErrand(cid, { points: [{ x: av.x, y: av.y, dwell: hold + 0.2 }] });
+    session.actionHold.set(cid, { t: 0, dur: hold, effectAt, applied: false, apply, label });
   }
 
-  /** Advance every action hold: at the crouch MIDPOINT the effect lands ONCE
-   *  (`applied` guards it), and at the end the hold clears so the owning loop
-   *  resumes and re-plans from the now-updated world. */
+  /** Advance every action hold: at `effectAt` the effect lands ONCE (`applied`
+   *  guards it), and at the end the hold clears so the owning loop resumes and
+   *  re-plans from the now-updated world. */
   function stepActionHolds(session: QuestSession, dt: number) {
     for (const [cid, h] of [...session.actionHold]) {
       h.t += dt;
-      if (!h.applied && h.t >= h.dur * 0.5) {
+      if (!h.applied && h.t >= h.effectAt) {
         h.applied = true;
         h.apply();
       }
@@ -6755,7 +6894,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.lastDrive.set(npcId, "command");
       showWorldBubble(state, `rest:${cid}`, {
         anchor: { kind: "avatar", id: npcId },
-        text: pose === "sleep" ? "😴" : pose === "play" ? "🎲" : "🛋️",
+        // Play shows the registered "play" glyph artwork (not a dice emoji); the
+        // emoji arg is only a fallback if that glyph ever loses its art.
+        ...activityBubbleContent(
+          pose === "play" ? "play" : undefined,
+          pose === "sleep" ? "😴" : pose === "play" ? "🎮" : "🛋️",
+        ),
         ttl: 2,
       });
       return;
@@ -7077,6 +7221,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function avatarIdOf(cid: string): string {
     if (cid === PLAYER_CREATURE_ID) return world?.drivenBody() ?? PLAYER_ID;
     return cid.startsWith("resident_") || cid.startsWith("pet_") ? cid : `npc_${cid}`;
+  }
+
+  /** The crowding-avoidance descriptor for creature `cid`'s stand points: keep
+   *  clear of every OTHER body (its own body excluded), each at its real girth.
+   *  Handed to `standPointFor`/`nearestClearSpot` so two creatures working or
+   *  resting at the same spot stand shoulder-off instead of overlapping. */
+  function standAvoid(cid: string): BodyAvoidance {
+    return {
+      selfId: avatarIdOf(cid),
+      radiusOf: (id: string) => world?.npcRadiusOf(id) ?? DEFAULT_BODY_RADIUS_M,
+    };
   }
 
   /** A WorldResolver over the live world for compileGoal (goal-selection.ts).
@@ -7839,7 +7994,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       });
       return true;
     }
-    const spot = standPointFor(state, chair.id, { x: chair.x, y: chair.y }, { x: body.x, y: body.y }, world?.npcRadiusOf(avatarIdOf(cid)));
+    const spot = standPointFor(state, chair.id, { x: chair.x, y: chair.y }, { x: body.x, y: body.y }, world?.npcRadiusOf(avatarIdOf(cid)), standAvoid(cid));
     const chairId = chair.id;
     enqueueNpcErrand(session, avatarIdOf(cid), {
       points: [{ x: spot.x, y: spot.y, dwell: SIT_DWELL_S }],
@@ -7996,6 +8151,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if ((stock[glyph] ?? 0) <= 0) return; // someone took it meanwhile — honest no-op
         stackTake(stock, glyph);
         session.containerStock.set(sourceBox!, stock);
+        // A brief work reach at the spot marks the assembly (reusing the carry
+        // gesture, like every other station action); the piece lands DELIVERED
+        // (setUp:false) — it stands as its real model on its side and the setup
+        // sweep rises it upright a beat later (the settle).
+        fireCarryGesture(npcId, "putdown", { x: spot.x, y: spot.y });
         placeFurniture(deltas, key, {
           id: `furn_${house.index}_p${nextPlacedSerial(deltas.get(key))}`,
           kind,
@@ -8005,6 +8165,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           facing: spot.facing,
           openable: def.openable,
           roomId: spot.roomId,
+          setUp: false,
         });
         npcChatBubble(session, cid, placementDoneLine(thing).b);
       },
@@ -8054,6 +8215,281 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The drag-zone set last pushed to the host (diff-gated). */
   let lastDragKey = "";
 
+  // ── CRAFT JOBS (construction pipeline ③) ──────────────────────────────
+  // Furniture is MADE through the pipeline: real wood drawn from real
+  // stacks (reserved, hauled when watched / moved abstractly when not),
+  // then a LABOR CLOCK — cut to a third when the crafter works at a
+  // standing workbench, full hand-rate without one (the bench never
+  // gates; the first bench is itself hand-made). The clock is the truth;
+  // a shown body walks to the bench and renders the work (the jobs law).
+  // One job per house; session-lived rows (the craftDayOf pattern).
+  interface CraftJob {
+    def: FurnitureItemDef;
+    /** The container the inputs pile into and the finished stack lands in. */
+    spotId: string;
+    /** Haul agreements feeding the spot (reservations ride their ids). */
+    agreements: string[];
+    /** townClock s labor began — unset while inputs are still gathering. */
+    laborStart?: number;
+    laborS: number;
+  }
+  const craftJobs = new Map<number, CraftJob>();
+  const craftRetryAt = new Map<number, number>();
+  /** townClock second before a house re-checks its program wants (④). */
+  const programCraftAt = new Map<number, number>();
+  /** BUILDING furniture-delivery piles (⑥) — `bfurn:<deltaKey>` stacks,
+   *  session-lived (the agreements persist; a reload re-runs the leg). */
+  const shellFurnPiles = new Map<string, Record<string, number>>();
+  /** taskClock second before a WORK building re-checks its program wants. */
+  const shellProgramAt = new Map<string, number>();
+  /** DELIVERED-FURNITURE SETUP holds (construction ⑥ visuals): key
+   *  `<buildingKey>|<pieceId>` → seconds a just-placed piece stays TIPPED on
+   *  its side before a resident stands it up. Session-lived (a reload just
+   *  re-holds a still-tipped piece; the flag itself persists in the delta). */
+  const furnitureSetupHold = new Map<string, number>();
+  /** Per-builder accumulator for the periodic BUILD-STEP work reach (⑥): npc
+   *  avatar id → seconds since its last hammer gesture at the site. */
+  const buildGestureAcc = new Map<string, number>();
+
+  /** The session's room-program defs (pipeline ④): kernel defaults ⊕ the
+   *  world's culture (`game.culture.architecture.rooms`). */
+  function roomProgramDefsOf(session: QuestSession) {
+    return resolveRoomPrograms(programOverridesOf(session.town?.config.architecture));
+  }
+
+  /** Units of `glyph` stored across a house's containers. */
+  function houseStored(session: QuestSession, hi: number, glyph: string): number {
+    let n = 0;
+    for (const objId of houseContainerKeys(session, hi)) {
+      n += session.containerStock.get(objId)?.[glyph] ?? 0;
+    }
+    return n;
+  }
+
+  /** Where a house crafts: the workshop's woodstore when it has one, else
+   *  the communal cupboard (any house can craft — the bench only speeds). */
+  function craftSpotOf(session: QuestSession, hi: number): string {
+    const hasWorkshop =
+      session.town?.deltas.get(`h_${hi}`)?.annexes.some((a) => a.cluster === "workshop") ?? false;
+    return hasWorkshop ? `furn_${hi}_woodstore` : `furn_${hi}_cupboard`;
+  }
+
+  /**
+   * PROGRAM FULFILLMENT (pipeline ④): a standing room program whose
+   * required furniture is missing from the whole house — not standing, not
+   * stored — starts a craft job for it. AUTOMATION IS BENCH-FIRST (the
+   * law): a benchless house crafts the workbench before the wanted piece.
+   * Non-craftable stations (oven, privy) arrive with their room's own
+   * generation; missing ROOMS re-rise through nextAnnexWant's program-first
+   * ordering, not here.
+   */
+  function startProgramCraft(session: QuestSession, hi: number) {
+    const t = session.town;
+    const delta = t?.deltas.get(`h_${hi}`);
+    const rows = delta?.programs;
+    const house = t?.plan.houses.find((h) => h.index === hi);
+    if (!t || !rows?.length || !house) return;
+    const defs = roomProgramDefsOf(session);
+    const hp = houseRoomPlan(t.stage.center, house, delta);
+    const goodDefs = t.stage.goods.map((g) => ({ key: g.good.key, slot: g.good.slot }));
+    const pieces = houseFurniture(t.stage.center, house, goodDefs, "", delta);
+    const kindsIn = (r: { rect: { x: number; y: number; w: number; h: number } }) =>
+      pieces
+        .filter(
+          (p) =>
+            p.x >= r.rect.x && p.x <= r.rect.x + r.rect.w &&
+            p.y >= r.rect.y && p.y <= r.rect.y + r.rect.h,
+        )
+        .map((p) => p.kind);
+    for (const row of rows) {
+      const def = roomProgramOf(row.room, defs);
+      if (!def) continue;
+      if (hp.rooms.some((r) => roomProgramMet(def, kindsIn(r)))) continue;
+      for (const k of def.requires) {
+        if (pieces.some((p) => p.kind === k)) continue; // standing somewhere — placement's job
+        const fdef = furnitureItemOf(k);
+        if (!fdef?.craft) continue; // comes with the room's own generation
+        if (houseStored(session, hi, furnitureGlyph(k)) > 0) continue; // auto-place stands it up
+        const target =
+          houseBench(session, hi) || houseStored(session, hi, furnitureGlyph("workbench")) > 0
+            ? fdef
+            : furnitureItemOf("workbench")!;
+        craftJobs.set(hi, { def: target, spotId: craftSpotOf(session, hi), agreements: [], laborS: 0 });
+        return;
+      }
+    }
+  }
+
+  /** The house's standing WORKBENCH (generated pieces minus removals, plus
+   *  placed deltas) — presence picks the labor rate; its spot is where the
+   *  crafter stands to work. */
+  function houseBench(session: QuestSession, hi: number): { x: number; y: number } | null {
+    const t = session.town;
+    const house = t?.plan.houses.find((h) => h.index === hi);
+    if (!t || !house) return null;
+    const goodDefs = t.stage.goods.map((g) => ({ key: g.good.key, slot: g.good.slot }));
+    for (const p of houseFurniture(t.stage.center, house, goodDefs, "", t.deltas.get(`h_${hi}`))) {
+      if (p.kind === "workbench") return { x: p.x, y: p.y };
+    }
+    return null;
+  }
+
+  /** Material sources a HOUSE's craft may draw on: every container stack
+   *  its members may use (their own boxes, communal crates, the yard, wild
+   *  features), nearest the craft spot first. */
+  function craftMaterialSources(
+    session: QuestSession,
+    hi: number,
+    destAt: { x: number; y: number },
+    excludeId: string,
+  ): TransferSource[] {
+    const member = `resident_${hi}_0`;
+    const sources: TransferSource[] = [];
+    for (const [boxId, stack] of session.containerStock) {
+      if (boxId === excludeId) continue;
+      if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
+      if (!mayUse(member, hi, session.containerOwner.get(boxId))) continue;
+      const at = containerAnchor(session, boxId);
+      if (!at) continue;
+      sources.push({ id: boxId, stack, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
+    }
+    return sources;
+  }
+
+  /** Advance one house's craft job: gather (resolve + haul or the abstract
+   *  twin), start labor when the spot covers the bill, finish on the clock. */
+  function stepCraftJob(session: QuestSession, hi: number, job: CraftJob, isShown: boolean) {
+    const t = session.town;
+    if (!t || !world) return;
+    // Dead hauls drop their spoken-for units and their rows. A DELIVERED
+    // haul's units re-reserve ON THE SPOT under the job (⑥ — inputs in
+    // transit are spoken for END TO END: civic resolution must never read
+    // a craft spot's gathered wood as free supply).
+    const spotHolder = `craftspot:${hi}`;
+    job.agreements = job.agreements.filter((id) => {
+      const a = session.transfers.get(id);
+      if (!a || a.status === "done" || a.status === "failed") {
+        session.reservations.release(agrHolder(id));
+        if (a?.status === "done") {
+          for (const [g, n] of Object.entries(a.goods)) {
+            session.reservations.reserve(spotHolder, job.spotId, stackHead(g), n);
+          }
+        }
+        return false;
+      }
+      return true;
+    });
+    const spot = session.containerStock.get(job.spotId) ?? {};
+    session.containerStock.set(job.spotId, spot);
+    const consumes = job.def.craft!.consumes;
+    const member = `resident_${hi}_0`;
+    if (job.laborStart === undefined) {
+      // GATHER — what the spot and the in-flight hauls don't yet cover.
+      const missing: Record<string, number> = {};
+      for (const [g, n] of Object.entries(consumes)) {
+        let have = stackUnits(spot, g);
+        for (const id of job.agreements) {
+          const a = session.transfers.get(id);
+          if (a) have += stackUnits(a.goods, g);
+        }
+        if (n > have) missing[stackHead(g)] = n - have;
+      }
+      if (Object.keys(missing).length) {
+        if (session.townClock < (craftRetryAt.get(hi) ?? -Infinity)) return;
+        craftRetryAt.set(hi, session.townClock + SITE_HAUL_RETRY_S);
+        const anchor = containerAnchor(session, job.spotId);
+        if (!anchor) return;
+        const tmp = `craft:${hi}`;
+        const { draws } = resolveMaterials({
+          holder: tmp,
+          costs: missing,
+          sources: craftMaterialSources(session, hi, anchor, job.spotId),
+          ledger: session.reservations,
+        });
+        // One visible haul per body — the member carries the first draw when
+        // the house is watched; everything else moves as the abstract twin.
+        let carrierFree =
+          isShown &&
+          !!world.state.avatars[avatarIdOf(member)] &&
+          !session.transfers.executing(member) &&
+          !!stockEndpointOf(session, job.spotId)?.at;
+        for (const d of draws) {
+          if (carrierFree && stockEndpointOf(session, d.endpoint)?.at) {
+            const a = session.transfers.post({
+              from: d.endpoint,
+              to: job.spotId,
+              goods: { [d.glyph]: d.take },
+              issuer: member,
+              mode: "haul",
+              now: session.taskClock,
+              sourceGlyph: `craft:${job.def.kind}`,
+            });
+            session.reservations.reserve(agrHolder(a.id), d.endpoint, d.glyph, d.take);
+            job.agreements.push(a.id);
+            if (session.transfers.begin(a.id, member)) issueTransferHaul(session, member, a.id);
+            carrierFree = false;
+          } else {
+            // THE ABSTRACT TWIN: the hidden house draws the same units from
+            // the same stacks, instantly — conservation and coincidence.
+            const src = session.containerStock.get(d.endpoint);
+            if (src) {
+              const taken = takeStock(src, d.glyph, d.take);
+              for (const [g, c] of Object.entries(taken)) {
+                spot[g] = (spot[g] ?? 0) + c;
+                // Landed inputs stay SPOKEN FOR on the spot (⑥) — never
+                // free supply for civic resolution mid-craft.
+                session.reservations.reserve(spotHolder, job.spotId, stackHead(g), c);
+              }
+              fellIfConsumed(session, d.endpoint); // a drained kill-source fells
+            }
+          }
+        }
+        session.reservations.release(tmp);
+        return;
+      }
+      // START — deduct the inputs, stamp the labor clock at the going rate.
+      // OTHERS' reserved units are untouchable (⑥ — the one-reservation
+      // law): a civic haul that has spoken for wood ON THIS SPOT must find
+      // it when its hauler arrives. The job's OWN banked inputs (the
+      // craftspot holder) are exactly what it consumes now.
+      const own = new Map<string, number>();
+      for (const r of session.reservations.holderRows(spotHolder)) {
+        if (r.endpoint === job.spotId) own.set(r.glyph, (own.get(r.glyph) ?? 0) + r.qty);
+      }
+      for (const [g, n] of Object.entries(consumes)) {
+        const head = stackHead(g);
+        const othersReserved = Math.max(
+          0,
+          session.reservations.reservedUnits(job.spotId, head) - (own.get(head) ?? 0),
+        );
+        if (stackUnits(spot, head) - othersReserved < n) return; // blocked — wait
+      }
+      session.reservations.release(spotHolder);
+      takeGoods(spot, consumes);
+      const bench = houseBench(session, hi);
+      job.laborS = craftLaborDays(job.def, !!bench) * FOOD_DAY_SEC;
+      job.laborStart = session.townClock;
+      // A shown crafter walks to the bench (or the store) and DWELLS there
+      // for the labor — the body renders the work; the clock stays the
+      // truth either way.
+      if (isShown) {
+        const body = world.state.avatars[avatarIdOf(member)];
+        const standAt = bench ?? containerAnchor(session, job.spotId);
+        if (body && standAt && !session.transfers.executing(member)) {
+          enqueueNpcErrand(session, avatarIdOf(member), {
+            points: [{ x: standAt.x, y: standAt.y, dwell: job.laborS }],
+          });
+        }
+      }
+      return;
+    }
+    // WORK → DONE on the clock: the finished piece stacks at the spot.
+    if (session.townClock >= job.laborStart + job.laborS) {
+      stackAdd(spot, furnitureGlyph(job.def.kind));
+      craftJobs.delete(hi);
+    }
+  }
+
   /**
    * CONSTRUCTION HOUSEKEEPING (construction v1 §6) — three ambient loops:
    *   craft   a WORKSHOP house turns wood into one furniture stack a day
@@ -8069,25 +8505,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const t = session.town;
     if (!t || !world) return;
     const day = Math.floor(session.townClock / FOOD_DAY_SEC);
-    const craftable = FURNITURE_ITEMS.filter((f) => f.craft);
     for (const house of t.plan.houses) {
       const hi = house.index;
       const delta = t.deltas.get(`h_${hi}`);
       const hasWorkshop = delta?.annexes.some((a) => a.cluster === "workshop") ?? false;
-      if (hasWorkshop && craftable.length && (craftDayOf.get(hi) ?? -1) !== day) {
-        craftDayOf.set(hi, day);
-        const woodId = `furn_${hi}_woodstore`;
-        const stock = session.containerStock.get(woodId) ?? {};
-        if ((stock["wood"] ?? 0) <= 0) stock["wood"] = 3; // restocked off-screen
-        const def = craftable[(day + hi) % craftable.length]!;
-        const cost = def.craft!.consumes["wood"] ?? 1;
-        const out = furnitureGlyph(def.kind);
-        if ((stock["wood"] ?? 0) >= cost && (stock[out] ?? 0) < 2) {
-          stock["wood"] = (stock["wood"] ?? 0) - cost;
-          if ((stock["wood"] ?? 0) <= 0) delete stock["wood"];
-          stackAdd(stock, out);
+      // CRAFT (pipeline ③): one job at a time — advance the active one, or
+      // start the day's next want. A benchless crafter makes the WORKBENCH
+      // first, by hand. No off-screen restock anymore: no free wood ⇒ the
+      // job honestly waits, and fresh stock unsticks it.
+      const job = craftJobs.get(hi);
+      if (job) {
+        stepCraftJob(session, hi, job, shown(hi));
+      } else {
+        if (hasWorkshop && (craftDayOf.get(hi) ?? -1) !== day) {
+          craftDayOf.set(hi, day);
+          const def = nextCraftKind({
+            day,
+            salt: hi,
+            hasBench: !!houseBench(session, hi),
+            stored: (glyph) => houseStored(session, hi, glyph),
+          });
+          if (def) craftJobs.set(hi, { def, spotId: craftSpotOf(session, hi), agreements: [], laborS: 0 });
         }
-        session.containerStock.set(woodId, stock);
+        // PROGRAM FULFILLMENT (④): an unmet ordered room's missing craftable
+        // furniture starts a job in ANY house — bench-first (rate-limited).
+        if (!craftJobs.get(hi) && session.townClock >= (programCraftAt.get(hi) ?? 0)) {
+          programCraftAt.set(hi, session.townClock + 90);
+          startProgramCraft(session, hi);
+        }
       }
       // AUTO-PLACE: a shown household with stored furniture stands one up.
       if (!shown(hi)) continue;
@@ -8098,7 +8543,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (!stock) continue;
         for (const g of Object.keys(stock)) {
           const k = furnitureKindOfGlyph(g);
-          if (k && k !== "workbench" && (stock[g] ?? 0) > 0) {
+          // A stored bench goes up only where none stands (bench-first:
+          // the bootstrap tool is placed before anything else needs it).
+          if (k && (k !== "workbench" || !houseBench(session, hi)) && (stock[g] ?? 0) > 0) {
             kind = k;
             break;
           }
@@ -9397,6 +9844,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (objId === "well") return "water";
     const fm = objId.match(/^furn_\d+_(.+)$/);
     if (fm) return ((fm[1] ?? "").replace(/_\d+$/, "").split("_")[0]) || "thing"; // chest_food→chest
+    const ws = wildSourceOf(session, objId);
+    if (ws) return ws.species; // a wild source IS its species (oak, sheep)
     return "thing";
   }
 
@@ -9414,6 +9863,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     directCreatureTo(session, cid, pt, objId, { command: true });
   }
 
+  /** Where a container STANDS this frame: a placed object's spot, or — a
+   *  WILD PRODUCT ANIMAL (step ④): the container IS a walking body — its
+   *  avatar's live position. One container abstraction; the spot follows.
+   *  (Distinct from containerAnchor below, the transfer layer's walk-to
+   *  resolver, which also answers for streamed-out furniture.) */
+  function containerStandpoint(state: WorldState, objId: string): { x: number; y: number } | undefined {
+    return state.objects[objId] ?? state.avatars[objId];
+  }
+
   function nearestContainer(
     session: QuestSession,
     state: WorldState,
@@ -9424,7 +9882,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let target: { id: string; x: number; y: number } | null = null;
     let best = CONVO_RADIUS;
     for (const objId of session.containers.keys()) {
-      const o = state.objects[objId];
+      const o = containerStandpoint(state, objId);
       if (!o) continue;
       if (requireContents && containerCount(session, objId) <= 0) continue;
       const d = Math.hypot(me.x - o.x, me.y - o.y);
@@ -9444,7 +9902,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let target: { id: string; x: number; y: number } | null = null;
     let best = CONVO_FIG_RADIUS;
     for (const objId of session.containers.keys()) {
-      const o = state.objects[objId];
+      const o = containerStandpoint(state, objId);
       if (!o) continue;
       if (containerCount(session, objId) <= 0) continue;
       const d = Math.hypot(fix.x - o.x, fix.y - o.y);
@@ -9456,7 +9914,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** OPEN a container as a SELECTION POPUP: its contents as a board of takeable STACKS,
    *  like a conversation. Stays open until the player walks/looks away (leave-dwell). */
   function openContainer(session: QuestSession, containerObjId: string) {
-    if (!world || !world.state.objects[containerObjId]) return;
+    if (!world || !containerStandpoint(world.state, containerObjId)) return;
+    regrowWildStock(session, containerObjId); // ripen before the empty gate
     if (containerCount(session, containerObjId) <= 0) return;
     container = { objId: containerObjId, items: [] };
     voice?.cancel();
@@ -9474,7 +9933,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       closeContainer();
       return;
     }
-    const cObj = world?.state.objects[container.objId];
+    const cObj = world ? containerStandpoint(world.state, container.objId) : undefined;
     if (cObj) world?.setConversation({ x: cObj.x, y: cObj.y });
     presenter.board({
       kind: "acts",
@@ -9488,6 +9947,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const head = headOf(glyph);
           return { id: `take:${glyph}`, label: count > 1 ? `${head} ×${count}` : head, glyph, spokenText: "" };
         }),
+        // A WILD, unowned product animal offers the CLAIM (step ④ taming):
+        // "my sheep" — pressing it makes the animal the player's.
+        ...(((): QuestBoardView["options"] => {
+          const wa = wildAnimalOf(session, container.objId);
+          if (!wa || session.containerOwner.get(container.objId)) return [];
+          const g = `${wa.species}.my`;
+          return [{ id: `tame:${container.objId}`, label: g, glyph: g, spokenText: "" }];
+        })()),
         // Phase 3 (attention-spark.md): the container ITSELF, as well as its
         // contents — pressing it draws the family's attention to the box (a
         // fill-check) rather than taking from it.
@@ -9561,8 +10028,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!container) return;
     const objId = container.objId;
     const cOwner = session.containerOwner.get(objId);
-    if (isPrivateOwner(cOwner) && world) {
-      const objector = objectingOwner(cOwner, world.state.objects[objId]);
+    // Your OWN private property never objects to you (a tamed animal's owner
+    // milks it freely); everyone else's still does.
+    if (isPrivateOwner(cOwner) && world && !mayUse(PLAYER_CREATURE_ID, null, cOwner)) {
+      const objector = objectingOwner(cOwner, containerStandpoint(world.state, objId));
       if (objector) {
         refusePrivateTake(session, objId, glyph, objector);
         return;
@@ -9588,9 +10057,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!isKindOf(glyph, pb.key) || produceBoxUnits(session, objId) <= 0) return;
       session.produceConsumed.set(objId, addStoreConsumption(session.produceConsumed.get(objId), session.townClock));
     } else {
+      regrowWildStock(session, objId); // matured units are takeable this frame
       const stock = session.containerStock.get(objId) ?? {};
       if (!stackTake(stock, glyph)) return;
+      // TOOLS MULTIPLY THE TAKE (step ④, registry-declared): the right tool
+      // in the pocket moves more units per act — axe on wood, pick on stone.
+      // Bare hands always work at one. Extra units add to the pocket here;
+      // the common path below adds the first.
+      const ws = wildSourceOf(session, objId);
+      if (ws) {
+        const units = takeUnitsOf(naturalSourceOf(ws.species), glyph, (t) => (session.pocket[t] ?? 0) > 0);
+        for (let took = 1; took < units && stackTake(stock, glyph); took++) {
+          stackAdd(session.pocket, glyph);
+        }
+      }
       session.containerStock.set(objId, stock);
+      // A LIVE take off a standing source arms its regrow clock (no-op for
+      // kill glyphs and non-wild containers).
+      if (ws) armHarvestRegrow(ws, glyph, session.taskClock, FOOD_DAY_SEC);
       // A table shows its contents — remove one matching visible prop as it's taken.
       if (session.containers.get(objId) === "on" && world) {
         for (const [pObjId, rec] of session.smallProps) {
@@ -9616,26 +10100,110 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     leaveDwell.reset();
   }
 
-  /** KILL-METHOD ACQUISITION MADE REAL (products.ts): a wilderness feature
-   *  whose source is consumable (its yield is kill products — the tree IS its
-   *  wood, the rock its stone) disappears the moment its stock empties: the
-   *  last unit taken IS the felling/quarrying-out. Pure-harvest sources
-   *  persist. No-op for any container that isn't a wild feature. */
+  /** The wild PRODUCT ANIMAL a container id names (by its body id), or
+   *  undefined for anything that isn't one. */
+  function wildAnimalOf(
+    session: QuestSession,
+    objId: string,
+  ): (WildernessCreature & { species: string }) | undefined {
+    const c = session.wilderness?.creatures.find((x) => x.species && wildAnimalBodyId(x) === objId);
+    return c?.species ? (c as WildernessCreature & { species: string }) : undefined;
+  }
+
+  /** The wild yield-bearer a container id names: a standing FEATURE by its
+   *  container id (its body id when embodied, its own id as a box), or a
+   *  PRODUCT ANIMAL by its body id. Undefined for everything else (house
+   *  boxes, market shelves, plain locals). */
+  function wildSourceOf(session: QuestSession, objId: string): WildSource | undefined {
+    const w = session.wilderness;
+    if (!w) return undefined;
+    return (
+      w.features.find((x) => wildFeatureContainerId(x) === objId) ?? wildAnimalOf(session, objId)
+    );
+  }
+
+  /** TAME a wild product animal (step ④ husbandry): the claim makes it the
+   *  PLAYER'S — ownership.ts private property (the stop-gate now defends it
+   *  from others; your own never objects to you) — and the body re-tethers
+   *  to graze where it was claimed instead of drifting the wild. No mind is
+   *  added: livestock stays needless (relations' authority axis is for
+   *  minds; an owned animal's bond IS the ownership row). On promotion to
+   *  a town the owned animals are the seam that seeds the domestic herd
+   *  (economy.ts role "domestic" — the registry-derivation step closes it). */
+  function tameWildAnimal(session: QuestSession, objId: string) {
+    const c = wildAnimalOf(session, objId);
+    if (!c || !world) return;
+    if (session.containerOwner.get(objId)) return; // already someone's
+    session.containerOwner.set(objId, `creature:${PLAYER_CREATURE_ID}`);
+    // Re-tether: same body id (model cache holds), grazing close to the
+    // spot of the claim.
+    const av = world.state.avatars[objId];
+    const at = av ? { x: av.x, y: av.y } : { x: c.x, y: c.y };
+    world.removeNpc(objId);
+    world.addNpc({
+      id: objId,
+      x: at.x,
+      y: at.y,
+      species: c.species,
+      behavior: { movement: "wander", wanderRadius: 6, home: at, speed: 0.8, conversationRadius: 3 },
+    });
+    // The claim, stamped over the animal ("my sheep").
+    showWorldBubble(world.state, `tamed:${objId}`, {
+      anchor: { kind: "avatar", id: objId },
+      text: npcStatement(`${c.species}.my`),
+      glyph: `${c.species}.my`,
+      ttl: 2.5,
+    });
+    presentContainer(session); // the tame option retires; the takes stay
+  }
+
+  /** KILL-METHOD ACQUISITION MADE REAL (products.ts): a wild source that is
+   *  consumable (it carries kill products — the tree IS its wood, the animal
+   *  its meat) disappears the moment its KILL stock empties: the last unit
+   *  taken IS the felling/quarrying/kill, even while harvest yield still
+   *  hangs (a felled tree bears nothing, a taken animal gives no more milk —
+   *  the harvest stock dies with the source). Pure-harvest sources persist
+   *  picked clean. A feature's object is removed; a product animal's BODY
+   *  is removed (sandbox termination — clean, no carcass state). No-op for
+   *  any container that isn't a wild source. */
   function fellIfConsumed(session: QuestSession, objId: string) {
     const w = session.wilderness;
     if (!w || !world) return;
-    const idx = w.features.findIndex((f) => f.id === objId);
-    if (idx < 0) return;
-    const src = naturalSourceOf(w.features[idx]!.species);
-    if (!src || !sourceIsConsumable(src)) return;
-    const stock = session.containerStock.get(objId);
-    if (stock && Object.values(stock).some((n) => n > 0)) return;
+    const fi = w.features.findIndex((f) => wildFeatureContainerId(f) === objId);
+    const ci = fi < 0 ? w.creatures.findIndex((c) => c.species && wildAnimalBodyId(c) === objId) : -1;
+    if (fi < 0 && ci < 0) return;
+    const species = fi >= 0 ? w.features[fi]!.species : w.creatures[ci]!.species!;
+    const src = naturalSourceOf(species);
+    if (!src || !sourceKillExhausted(src, session.containerStock.get(objId))) return;
     if (container?.objId === objId) closeContainer();
-    world.removeObject(objId);
+    // The source's stand-in goes with it: a placed box object, or — an
+    // embodied plant / product animal — its body.
+    if (world.state.objects[objId]) world.removeObject(objId);
+    else world.removeNpc(objId);
+    if (fi >= 0) w.features.splice(fi, 1);
+    else w.creatures.splice(ci, 1);
     session.containers.delete(objId);
     session.containerStock.delete(objId);
     session.containerOwner.delete(objId);
-    w.features.splice(idx, 1);
+  }
+
+  /** LIVE-HARVEST REGROWTH made real (products.ts regrowDays): apply a wild
+   *  source's matured units to its live stock before anyone looks at or
+   *  takes from it — the standing tree bears fruit again, the ewe's wool
+   *  grows back. Lazy and deterministic — the ledger holds absolute
+   *  taskClock deadlines (the clock that runs in EVERY session), so closed
+   *  containers ripen too, and a long absence catches up whole periods up
+   *  to the rolled bearing capacity. The pure calculator lives in
+   *  wilderness.ts; the stacks are only ever written HERE. */
+  function regrowWildStock(session: QuestSession, objId: string) {
+    const s = wildSourceOf(session, objId);
+    if (!s) return;
+    const stock = session.containerStock.get(objId) ?? {};
+    const due = dueHarvestRegrowth(s, stock, session.taskClock, FOOD_DAY_SEC);
+    if (!due) return;
+    for (const [glyph, n] of Object.entries(due.add)) stock[glyph] = (stock[glyph] ?? 0) + n;
+    s.regrowAt = due.regrowAt;
+    session.containerStock.set(objId, stock);
   }
 
   // ── Ambient NPC↔NPC conversation ──────────────────────────────────────────
@@ -9820,6 +10388,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  who replies a beat later. */
   function runNpcExchange(session: QuestSession, speaker: string, listener: string) {
     if (!world || !session.creatures) return;
+    // Square the pair up: two idle creatures talking turn to FACE EACH OTHER
+    // for the exchange (both stand still, so the heading holds through the
+    // reply). Sim-side facing state — the renderer applies the game-angle→yaw
+    // mirror. Reasserted at the reply below in case a body has drifted.
+    const sAvatar = chatAvatar(world.state, speaker);
+    const lAvatar = chatAvatar(world.state, listener);
+    if (sAvatar && lAvatar) faceEachOther(sAvatar, lAvatar);
     const cworld = session.creatures.world;
     const level = sess?.game.meta.syntax ?? "b";
     const lNode = session.creatures.nodeByCreature.get(listener);
@@ -9884,6 +10459,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     setTimeout(() => {
       if (!world || sess !== session) return;
       if (choice) return; // the player started a conversation — don't talk over it
+      // Still facing each other as the listener answers (both were idle; this
+      // corrects for any small drift since the opener).
+      const sAv = chatAvatar(world.state, speaker);
+      const lAv = chatAvatar(world.state, listener);
+      if (sAv && lAv) faceEachOther(sAv, lAv);
       npcChatBubble(session, listener, reply!, text);
       if (target) pointNpcArm(listener, target);
     }, CHAT_REPLY_MS);
@@ -10498,6 +11078,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // BUILD ORDERS (①b): finished construction completes off the clock,
         // and the contextual buildable-structure board stays current.
         stepFoundedConstruction(session, dt);
+        stepFurnitureSetup(session, dt);
         pushCivicBuildBoard(session);
         simMark("s.founded", descendNow() - _bm); _bm = descendNow(); // TEMP
         // LIVING TOWN: stream the stage around the player — walls of the
@@ -10594,6 +11175,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // VIEW-DISTANCE LOD (Phase 2): cap the ambient crowd this frame
               // (0 at orbit) so street bodies never flood in one frame.
               crowdBudget ?? undefined,
+              // THE BUSY PIN (⑥): recruited civic workers keep their bodies
+              // and take no fresh trips until their work ends.
+              (id) => busyCivicBodies(session).has(id),
             );
             let _sbT = descendNow(); simMark("s.frame", _sbT - _dpT0); // TEMP
             if (f.buildings) townHost.setBuildings(f.buildings);
@@ -11389,11 +11973,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // view is READ-ONLY; see `select`).
         if (!session.selectedPocketGlyph && !choice && !convo && !container && world) {
           const me = state.avatars[PLAYER_ID];
-          const fix = world.getGaze().committedWorld;
-          const target = spiritNow()
-            ? containerAtGaze(session, state, fix)
-            : nearestContainer(session, state, me, true); // non-empty = openable now
-          const onBox = !!target && !!fix && Math.hypot(fix.x - target.x, fix.y - target.y) <= CONVO_FIG_RADIUS;
+          const gz2 = world.getGaze();
+          const fix = gz2.committedWorld;
+          // A WALKING container (wild product animal, step ④) never gets a
+          // ground fixation at its feet — its body captures the pick. The
+          // HOVER is the aim: a hovered container-avatar is the target
+          // outright, in either mode (the dwell's 1.2 m tolerance absorbs
+          // its grazing walk).
+          const hvAv = gz2.hover?.kind === "avatar" ? state.avatars[gz2.hover.id] : undefined;
+          const hoverBox =
+            hvAv &&
+            session.containers.has(hvAv.id) &&
+            containerCount(session, hvAv.id) > 0 &&
+            // The spirit looks in at any distance; a body must WALK UP.
+            (spiritNow() || (me && Math.hypot(me.x - hvAv.x, me.y - hvAv.y) <= CONVO_RADIUS))
+              ? { id: hvAv.id, x: hvAv.x, y: hvAv.y }
+              : null;
+          const target =
+            hoverBox ??
+            (spiritNow()
+              ? containerAtGaze(session, state, fix)
+              : nearestContainer(session, state, me, true)); // non-empty = openable now
+          const onBox =
+            !!target &&
+            (target.id === hoverBox?.id ||
+              (!!fix && Math.hypot(fix.x - target.x, fix.y - target.y) <= CONVO_FIG_RADIUS));
           if (target && onBox) {
             if (openDwell.step({ x: target.x, y: target.y }, dt * 1000).fired) openContainer(session, target.id);
           } else {
@@ -11416,7 +12020,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // Container popup open: hold the camera on the box; dwell on empty ground
             // (fixation off the box) to close it — the same leave gesture as a convo.
             talkDwell.reset();
-            const cObj = state.objects[container.objId];
+            const cObj = containerStandpoint(state, container.objId);
             if (cObj) {
               cvHost.setConversation({ x: cObj.x, y: cObj.y });
               const g = fix && !onFig(cObj.x, cObj.y, CONVO_FIG_RADIUS) ? { x: fix.x, y: fix.y } : null;
@@ -11891,25 +12495,67 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!w || !world) return;
     for (const f of w.features) {
       const src = naturalSourceOf(f.species);
-      world.addObject({
-        id: f.id,
-        x: f.x,
-        y: f.y,
-        shape: "box",
-        radius: src?.feature?.radiusM ?? 0.6,
-        fixture: "chest",
-        openable: true,
-        facing: 0,
-        interactions: [],
-        contains: [{ relation: "in", capacity: 12 }],
-        iconRef: src?.feature?.icon ?? "🌳",
-        glyph: Object.keys(f.stock)[0],
-      });
-      session.containers.set(f.id, "in");
-      session.containerStock.set(f.id, { ...f.stock });
-      session.containerOwner.set(f.id, null); // nature is nobody's
+      const key = wildFeatureContainerId(f);
+      // A GROWN BODY where the registry declares one (step ④: bodyHeightM
+      // on a plant — the orchard blueprints carry their fruit visibly): a
+      // rooted flora body, exactly the town-orchard convention; the
+      // container rides the body (containerStandpoint). Everything else
+      // keeps the placeholder box.
+      if (wildFeatureEmbodied(f)) {
+        world.addNpc({
+          id: key,
+          x: f.x,
+          y: f.y,
+          species: f.species,
+          behavior: { movement: "wander", wanderRadius: 0, home: { x: f.x, y: f.y }, speed: 0, conversationRadius: 3 },
+        });
+      } else {
+        world.addObject({
+          id: f.id,
+          x: f.x,
+          y: f.y,
+          shape: "box",
+          radius: src?.feature?.radiusM ?? 0.6,
+          fixture: "chest",
+          openable: true,
+          facing: 0,
+          interactions: [],
+          contains: [{ relation: "in", capacity: 12 }],
+          iconRef: src?.feature?.icon ?? "🌳",
+          glyph: Object.keys(f.stock)[0],
+        });
+      }
+      session.containers.set(key, "in");
+      session.containerStock.set(key, { ...f.stock });
+      session.containerOwner.set(key, null); // nature is nobody's
     }
     for (const c of w.creatures) {
+      // PRODUCT ANIMAL (step ④ hunting/husbandry): a walking natural source.
+      // Its yield rides the ONE container path — the body id keys the stock
+      // maps, and containerAnchor resolves it to the live avatar, so takes,
+      // regrowth and the felling rule (here: the kill) all work unchanged.
+      // No mind: livestock is takeable, not talkable (dialogue would race
+      // the container board on the same dwell).
+      if (c.species) {
+        const body = wildAnimalBodyId(c);
+        session.containers.set(body, "in");
+        session.containerStock.set(body, { ...(c.stock ?? {}) });
+        session.containerOwner.set(body, null); // wild — nobody's, until tamed
+        world.addNpc({
+          id: body,
+          x: c.x,
+          y: c.y,
+          species: c.species, // species-sized collision/planning radius
+          behavior: {
+            movement: "wander",
+            wanderRadius: 12,
+            home: { x: c.x, y: c.y },
+            speed: 0.8,
+            conversationRadius: 3,
+          },
+        });
+        continue;
+      }
       ensureWildCreature(session, c.id);
       const body = avatarIdOf(c.id);
       session.npcIcons.set(body, c.icon);
@@ -12085,7 +12731,72 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The world's symbol resolvers for the intent-announcement line. `deixis`
    *  marks EXACT-instance item refs with `.this` ("I will eat this apple") —
    *  the reserved way of naming a particular target. */
-  function intentLineSyms(session: QuestSession, opts: { deixis?: boolean } = {}): IntentLineSyms {
+  /** A creature's registered SPECIES id (creatures/species.ts). Best-effort
+   *  across every body convention: the player is a spark, authored family
+   *  members + pets carry their override, settlers their member row, herds
+   *  encode it in the id; everything else defaults to the town's constructing
+   *  species. Never throws — a reference must resolve for any creature. */
+  function speciesOf(session: QuestSession, cid: string): string {
+    if (cid === PLAYER_CREATURE_ID || cid === PLAYER_ID) return SPARK_SPECIES_ID;
+    const ov = familyOverrides(session)?.get(cid)?.species;
+    if (ov) return ov;
+    const settler = settlerMemberOf(session, cid)?.species;
+    if (settler) return settler;
+    const fauna = /^fauna:([^:]+):/.exec(cid);
+    if (fauna) return fauna[1]!;
+    if (isPetCid(cid)) return "quadruped";
+    return session.town?.config.species ?? session.town?.plan.species ?? "human_cute";
+  }
+
+  /** Species id → the glyph WORD it renders as ("bear_person" → "bear",
+   *  "human_cute" → "person", "ungulate" → "animal"). The lang lexicons carry
+   *  these words, so a species is always speakable, never a bare id. */
+  const SPECIES_WORD: Record<string, string> = { human: "person", quadruped: "animal", ungulate: "animal" };
+  function speciesWordOf(speciesId: string | undefined): string {
+    if (!speciesId) return "creature";
+    const base = speciesId.replace(/_(person|cute)$/, "");
+    return SPECIES_WORD[speciesId] ?? SPECIES_WORD[base] ?? base;
+  }
+
+  /** Do speaker + target share a GROUP (the reference's case-1 gate)? The
+   *  player guides the observed family, so any named member it can name is its
+   *  own group; two creatures share a group when they live in the same house. */
+  function inSameGroup(session: QuestSession, speaker: string, target: string): boolean {
+    if (speaker === target) return true;
+    if (speaker === PLAYER_CREATURE_ID || speaker === PLAYER_ID) {
+      // A named member the host can name belongs to the observed family — the
+      // player's own group (inPlayerGroup also admits an explicit party).
+      return inPlayerGroup(session, target) || nameOfCid(session, target) !== undefined;
+    }
+    const hs = houseIndexOfCid(speaker);
+    const ht = houseIndexOfCid(target);
+    return Number.isFinite(hs) && hs === ht;
+  }
+
+  /** THE creature reference for a spoken line (name / pronoun / species) — the
+   *  ONE resolver every verb goes through (intent-lines.ts creatureReferenceGlyph),
+   *  so no creature is ever voiced as "the there". The LISTENER (player) maps to
+   *  the "you" deixis before the rule runs. */
+  function creatureReference(session: QuestSession, speakerCid: string | undefined, targetCid: string): string {
+    if (targetCid === PLAYER_CREATURE_ID || targetCid === PLAYER_ID) return "you";
+    const speaker = speakerCid ?? PLAYER_CREATURE_ID;
+    const targetSpecies = speciesOf(session, targetCid);
+    return creatureReferenceGlyph(
+      { species: speciesOf(session, speaker), gender: genderFor(speaker), speciesWord: "" },
+      {
+        species: targetSpecies,
+        ...(nameOfCid(session, targetCid) ? { name: nameOfCid(session, targetCid)! } : {}),
+        gender: genderFor(targetCid),
+        speciesWord: creatureGlyph(session, targetCid) ?? speciesWordOf(targetSpecies),
+        inGroup: inSameGroup(session, speaker, targetCid),
+      },
+    );
+  }
+
+  function intentLineSyms(
+    session: QuestSession,
+    opts: { deixis?: boolean; speaker?: string } = {},
+  ): IntentLineSyms {
     return {
       item: (ref) =>
         "id" in ref
@@ -12103,11 +12814,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return p.kind === "home"
           ? "home"
           : p.kind === "creature"
-            ? (p.id === PLAYER_CREATURE_ID ? "you" : (creatureGlyph(session, p.id) ?? "there"))
+            ? creatureReference(session, opts.speaker, p.id)
             : "there";
       },
-      creature: (cid) =>
-        cid === PLAYER_CREATURE_ID ? "you" : (creatureGlyph(session, cid) ?? "there"),
+      creature: (cid) => creatureReference(session, opts.speaker, cid),
     };
   }
 
@@ -12117,8 +12827,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  EARNED: only when the child's own glyphs already matched the canonical
    *  form. Teaching and debugging in one line — a wrong echo is a parser bug;
    *  a right echo not acted on is an action bug. */
-  function commandEchoLine(session: QuestSession, frame: IntentFrame, goal: GoalSpec): string {
-    const { line, perfect } = commandEcho(frame, goal, intentLineSyms(session, { deixis: true }));
+  function commandEchoLine(session: QuestSession, frame: IntentFrame, goal: GoalSpec, speaker?: string): string {
+    const { line, perfect } = commandEcho(frame, goal, intentLineSyms(session, { deixis: true, speaker }));
     if (!line || perfect) return "ok";
     // The echo is a STATEMENT OF INTENT — the will-marked syntax ("I will
     // wash the clothes"), never the order's own imperative shape.
@@ -12131,7 +12841,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  in the intent syntax ("I will get the wood"). */
   function announceIntent(session: QuestSession, ctx: AnnounceContext) {
     if (!announceCriteria(ctx)) return;
-    const line = goalIntentLine(ctx.goal, intentLineSyms(session, { deixis: true }));
+    const line = goalIntentLine(ctx.goal, intentLineSyms(session, { deixis: true, speaker: ctx.creatureId }));
     if (!line) return;
     npcChatBubble(session, ctx.creatureId, asIntent(line)[session.game.meta.syntax ?? "b"]);
   }
@@ -12142,7 +12852,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  quiet. Intent syntax + deixis: "I will eat this apple." Ungated, unlike
    *  announceIntent's task-claim criteria. */
   function announceSparkIntent(session: QuestSession, cid: string, goal: GoalSpec) {
-    const line = goalIntentLine(goal, intentLineSyms(session, { deixis: true }));
+    const line = goalIntentLine(goal, intentLineSyms(session, { deixis: true, speaker: cid }));
     if (!line) return;
     if (isPetCid(cid)) ensurePetCreature(session, cid);
     else ensureResidentCreature(session, cid);
@@ -12155,6 +12865,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  one per task (chooseClaimant is pure + deterministic: nearest, ties by
    *  id, no RNG — the seed+clock+mutations law holds). */
   let taskSweepT = 0;
+  /** Bodies the host OWNS for civic work right now (⑥ — the busy pin):
+   *  pooled-task claimants and moving haul executors. The resident streamer
+   *  reads this to keep them embodied and trip-free; memoized per taskClock
+   *  tick (the model probes once per body per frame). */
+  let busyBodiesMemo: { at: number; set: Set<string> } | null = null;
+  function busyCivicBodies(session: QuestSession): Set<string> {
+    if (busyBodiesMemo && busyBodiesMemo.at === session.taskClock) return busyBodiesMemo.set;
+    const set = new Set<string>();
+    for (const t of session.taskPool.claimed()) {
+      if (t.claimedBy) set.add(avatarIdOf(t.claimedBy));
+    }
+    for (const a of session.transfers.active()) {
+      if (a.status === "moving" && a.executor) set.add(avatarIdOf(a.executor));
+    }
+    busyBodiesMemo = { at: session.taskClock, set };
+    return set;
+  }
+
   function stepTaskPool(session: QuestSession, dt: number) {
     session.taskClock += dt;
     if (!world || !session.creatures) return;
@@ -12199,7 +12927,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // TRANSFER tasks likewise complete off the LEDGER's status (the walk
     // ends at the crate; the agreement is what actually finished).
     for (const t of pool.claimed()) {
-      if (t.goal.kind === "build") continue;
+      if (t.goal.kind === "build" || t.goal.kind === "buildwork") continue; // the sweep retires these off REAL construction state
       if (t.goal.kind === "transfer") {
         const st = session.transfers.get(t.goal.agreementId)?.status;
         if (st === undefined || st === "done" || st === "failed") pool.complete(t.id);
@@ -12229,12 +12957,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         buildPrepMemo = null;
         if (task.goal.kind === "build" && bctx) {
           const spec = resolveStructure(bctx.catalog, task.goal.structure);
-          if (spec && costsMet(spec, bctx.stock)) {
+          if (spec) {
             // POINT-STEERED: the lot ranks by the task's RECORDED focus —
             // the claimant builds where the order was aimed, not merely
             // center-out (deterministic: the focus is part of the task).
             const near = steeringNear(bctx, task.focus);
             const cands = buildCandidates(bctx, spec, near ? { near } : undefined);
+            // Capability = ground exists (⑥ — materials never gate a
+            // DESIGNATION: the staked plot waits honestly and the staging
+            // re-resolve unsticks it when stock appears).
             if (cands.length) buildPrepMemo = { spec, candidate: cands[0]! };
           }
         }
@@ -12265,6 +12996,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // is CIVIC: a town resident volunteers for its town's construction
       // (roster-style appropriateness, not personal compliance), and a
       // bonded (once-ridden) creature volunteers for its family.
+      // CIVIC work — a town resident volunteers for its town's construction
+      // (and for the hauls that stage it — pipeline ②'s communal law), a
+      // bonded creature for its family; personal compliance covers the rest.
+      // A BUILD-WORK site's live anchor (⑥) — null once the site is gone,
+      // staged off, or already worked through.
+      let buildworkPrepMemo: { x: number; y: number } | null | undefined;
+      const buildworkPrep = (): { x: number; y: number } | null => {
+        if (buildworkPrepMemo !== undefined) return buildworkPrepMemo;
+        buildworkPrepMemo = null;
+        if (task.goal.kind === "buildwork") {
+          buildworkPrepMemo = buildworkSiteAt(session, task.goal.site);
+        }
+        return buildworkPrepMemo;
+      };
+      const civicTask =
+        task.goal.kind === "build" ||
+        task.goal.kind === "buildwork" ||
+        (task.goal.kind === "transfer" &&
+          (() => {
+            const to = session.transfers.get(task.goal.agreementId)?.to;
+            return (
+              !!to &&
+              (to.startsWith(SITE_PILE_EP) || to.startsWith(ANNEX_PILE_EP) || to.startsWith(BFURN_EP))
+            );
+          })());
       const candidates: TaskCandidate[] = [];
       for (const cid of session.creatures.nodeByCreature.keys()) {
         if (cid === PLAYER_CREATURE_ID || cid === possession.creatureId) continue;
@@ -12283,17 +13039,54 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           capable:
             task.goal.kind === "build"
               ? buildPrep() !== null
-              : task.goal.kind === "transfer"
-                ? transferPrep() && canGrasp(mind)
-                : compileGoal(task.goal, cid, resolver) !== null,
-          willing:
-            task.goal.kind === "build"
-              ? cid.startsWith("resident_") || session.bondedCreatures.has(cid) || compliant
-              : compliant,
+              : task.goal.kind === "buildwork"
+                ? buildworkPrep() !== null
+                : task.goal.kind === "transfer"
+                  ? transferPrep() && canGrasp(mind)
+                  : compileGoal(task.goal, cid, resolver) !== null,
+          willing: civicTask
+            ? cid.startsWith("resident_") || session.bondedCreatures.has(cid) || compliant
+            : compliant,
         });
+      }
+      // ⑥ AMBIENT RECRUITMENT: civic work recruits BEYOND the registered
+      // cast — any EMBODIED street resident may volunteer ("everyone works
+      // together"). They register lazily at claim time (the conversation
+      // path's ensureResidentCreature), so the far side of town is workforce
+      // too, not scenery. Build/transfer/build-work goals never compile
+      // per-body, so capability needs no mind; other kinds stay registered-only.
+      if (
+        civicTask &&
+        (task.goal.kind === "build" || task.goal.kind === "transfer" || task.goal.kind === "buildwork")
+      ) {
+        const seen = new Set(candidates.map((c) => c.id));
+        for (const [bodyId, body] of Object.entries(world.state.avatars)) {
+          if (!bodyId.startsWith("resident_")) continue; // never stage haulers/pets/cast
+          if (seen.has(bodyId) || session.creatures.nodeByCreature.has(bodyId)) continue;
+          if (bodyId === possession.creatureId) continue;
+          if (session.party.has(bodyId) || session.escorting.has(bodyId)) continue;
+          if (session.liveNeedBodies.has(bodyId)) continue; // the need loop owns it
+          if (pool.claimedBy(bodyId)) continue;
+          candidates.push({
+            id: bodyId,
+            pos: { x: body.x, y: body.y },
+            capable:
+              task.goal.kind === "build"
+                ? buildPrep() !== null
+                : task.goal.kind === "buildwork"
+                  ? buildworkPrep() !== null
+                  : transferPrep(),
+            willing: true, // a street resident treats civic work as its town's business
+          });
+        }
       }
       const winner = chooseClaimant(task, candidates);
       if (!winner) continue; // stays open — someone may wander into focus before expiry
+      // A recruited ambient volunteer becomes a REAL creature the moment it
+      // steps up (mind + node — the same registration a conversation does).
+      if (winner.startsWith("resident_") && !session.creatures.nodeByCreature.has(winner)) {
+        ensureResidentCreature(session, winner);
+      }
       if (task.goal.kind === "build") {
         const prep = buildPrep();
         if (!prep) continue;
@@ -12333,6 +13126,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         });
         issueTransferHaul(session, winner, agreementId);
         session.lastDrive.set(avatarIdOf(winner), "task");
+        continue;
+      }
+      if (task.goal.kind === "buildwork") {
+        // ⑥ BUILD WORK: walk to the staged site and STAND AT THE WORK —
+        // the construction sweep banks labor only while builders are
+        // present (and keeps re-issuing the standing dwell).
+        const at = buildworkPrep();
+        if (!at) continue;
+        if (!pool.claim(task.id, winner)) continue; // already FILLED — skip
+        announceIntent(session, {
+          creatureId: winner,
+          goal: task.goal,
+          source: "task-claim",
+          taskId: task.id,
+          issuer: task.issuer,
+        });
+        const npcId = avatarIdOf(winner);
+        session.needStep.delete(winner);
+        session.npcTasks.delete(npcId);
+        session.lastDrive.set(npcId, "task");
+        enqueueNpcErrand(session, npcId, {
+          points: [{ x: at.x, y: at.y, dwell: BUILD_WORK_DWELL_S }],
+        });
         continue;
       }
       const plan = compileGoal(task.goal, winner, resolver);
@@ -12439,8 +13255,56 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!p) return null;
       return { id, kind: "town", stack: p.stack, owner: null };
     }
+    // A FOUNDED SITE PILE (pipeline ②): `sitepile:<ord>` aliases the founded
+    // row's live pile — the staked plot's material heap. Communal, uncapped,
+    // anchored at the lot center (the marking is walkable ground). Gone once
+    // the building stands (completion consumed the pile).
+    if (id.startsWith(SITE_PILE_EP)) {
+      const ord = Number(id.slice(SITE_PILE_EP.length));
+      const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+      const b = deltas?.founded().find((f) => f.ord === ord);
+      if (!b || b.completed) return null;
+      const at = foundedLotAt(session, b);
+      if (!at) return null;
+      b.pile ??= {};
+      return { id, kind: "site", at, stack: b.pile, owner: null };
+    }
+    // A PENDING ANNEX PILE (pipeline ⑤): `annexpile:<ord>` aliases the
+    // pending row's pile, anchored at the growth rect's center. Communal,
+    // uncapped; gone once the room stands (the row was removed).
+    if (id.startsWith(ANNEX_PILE_EP)) {
+      const ord = Number(id.slice(ANNEX_PILE_EP.length));
+      const p = session.town?.deltas.annexSites().find((a) => a.ord === ord);
+      const at = p ? pendingAnnexAt(session, p) : null;
+      if (!p || !at) return null;
+      return { id, kind: "site", at, stack: p.pile, owner: null };
+    }
+    // A BUILDING's FURNITURE-DELIVERY pile (⑥): `bfurn:<deltaKey>` — the
+    // hauled piece lands here; the placement sweep stands it up. Anchored
+    // at the building's center; communal.
+    if (id.startsWith(BFURN_EP)) {
+      const key = id.slice(BFURN_EP.length);
+      const t = session.town;
+      const b = pendingBuildingOf(session, key);
+      if (!t || !b) return null;
+      let stack = shellFurnPiles.get(key);
+      if (!stack) {
+        stack = {};
+        shellFurnPiles.set(key, stack);
+      }
+      const at = {
+        x: t.stage.center.x + b.shape.dx + b.shape.w / 2,
+        y: t.stage.center.y + b.shape.dy + b.shape.h / 2,
+      };
+      return { id, kind: "site", at, stack, owner: null };
+    }
     if (session.marketStore.has(id) || session.produceBox.has(id) || id.startsWith("trade:")) return null;
-    if (!session.containers.has(id)) return null;
+    // A KNOWN STACK is a real endpoint even when its container object isn't
+    // STAGED right now (⑥ — the coincidence law): a far unshown house's
+    // woodstore holds real goods, and civic resolution already reads its
+    // stack; refusing the endpoint here made every draw from unstreamed
+    // ground fail at claim time. The anchor is deterministic either way.
+    if (!session.containers.has(id) && !session.containerStock.has(id)) return null;
     let stack = session.containerStock.get(id);
     if (!stack) {
       stack = {};
@@ -12742,8 +13606,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
             for (const [g, c] of Object.entries(taken)) {
               for (let k = 0; k < c; k++) removeVisibleContainedProp(session, agr.from, g);
+              // The loaded units are no longer spoken for (pipeline ② —
+              // no-op for agreements that reserved nothing).
+              session.reservations.consume(agrHolder(agreementId), agr.from, g, c);
             }
             if (agr.from === `${POCKET_EP}${PLAYER_CREATURE_ID}`) pushPocket(session);
+            fellIfConsumed(session, agr.from); // a hauled-empty kill-source is felled
             session.transfers.load(agreementId, taken);
           }
           // The visible load: one carried prop tokens the whole armful.
@@ -12846,6 +13714,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // one-shot haul active at this exact moment is orphaned deliberately —
     // pre-site wilderness has no persistence at all.
     session.transfers = site.deltas.transfers;
+    session.reservations = site.deltas.reservations;
     session.partnerStock = site.deltas.partnerStock;
     wildFoundedIds.clear(); // a fresh site raises nothing yet (①b)
     wildFurnishedOrds.clear();
@@ -12899,6 +13768,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session.foundedSite = null;
     // The site's ledger dies with the site — the session gets fresh books.
     session.transfers = createTransferLedger();
+    session.reservations = createReservationLedger();
     session.partnerStock = {};
     presenter.toast("🏚️ the empty site was abandoned", "feedback");
     deps.onSiteAbandoned?.(site.key);
@@ -12916,14 +13786,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The session's buildable-structure catalog (world content; config swap). */
   function structureCatalogOf(session: QuestSession): StructureSpec[] {
     return session.town?.structures ?? TOWN_PLAY_STRUCTURES;
-  }
-
-  /** The stock a build order spends: the founded site's gathered materials,
-   *  or the town's builder's-yard (deltas.stock). Null off both. */
-  function buildStockOf(session: QuestSession): Record<string, number> | null {
-    if (session.town) return session.town.deltas.stock;
-    if (session.foundedSite) return session.foundedSite.stock;
-    return null;
   }
 
   /** The construction clock, in GAME-days of the session's scale (townClock
@@ -13045,6 +13907,252 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  stand the scaffold (town: a plan row the stage reconciles; wilderness:
    *  the site's own walls), and walk the builder to the lot. Returns the
    *  founded row, or null when the stock could no longer cover it. */
+  /** A founded row's site-pile endpoint id. */
+  function sitePileId(ord: number): string {
+    return `${SITE_PILE_EP}${ord}`;
+  }
+
+  /** The reservation HOLDER a site haul's units ride under — the agreement's
+   *  own id, so consumption and release follow the agreement's lifecycle. */
+  function agrHolder(agreementId: string): string {
+    return `agr:${agreementId}`;
+  }
+
+  /** World anchor of a founded lot (the staked plot's center). */
+  function foundedLotAt(
+    session: QuestSession,
+    b: Pick<FoundedBuilding, "dx" | "dy" | "w" | "h">,
+  ): { x: number; y: number } | null {
+    const base = session.town ? session.town.stage.center : session.foundedSite?.at;
+    return base ? { x: base.x + b.dx + b.w / 2, y: base.y + b.dy + b.h / 2 } : null;
+  }
+
+  /** Candidate MATERIAL SOURCES for staging a site (pipeline ②): every
+   *  usable container stack — the yard, the site crate, communal chests,
+   *  wild features, our own boxes — ownership-gated exactly like a spoken
+   *  transfer order. Distance-ranked to the work spot. Site piles are not
+   *  containers, so a plot never raids another plot's heap. */
+  function siteMaterialSources(
+    session: QuestSession,
+    destAt: { x: number; y: number },
+  ): TransferSource[] {
+    const issuerHouse = familyOf(session)?.house ?? null;
+    const sources: TransferSource[] = [];
+    for (const [boxId, stack] of session.containerStock) {
+      if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
+      const owner = session.containerOwner.get(boxId);
+      if (!mayUse(PLAYER_CREATURE_ID, issuerHouse, owner)) continue;
+      const at = containerAnchor(session, boxId);
+      if (!at) continue;
+      sources.push({ id: boxId, stack, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
+    }
+    return sources;
+  }
+
+  /** The costs no FREE stack can cover right now (head → units) — the
+   *  build-order affordability check, over every haul-able source instead
+   *  of the yard alone, minus what pending hauls have spoken for. */
+  function buildMissingMaterials(
+    session: QuestSession,
+    spec: Pick<StructureSpec, "costs">,
+    destAt: { x: number; y: number },
+  ): Record<string, number> {
+    const sources = siteMaterialSources(session, destAt);
+    const need = new Map<string, number>();
+    for (const [g, n] of Object.entries(spec.costs)) {
+      const head = stackHead(g);
+      need.set(head, (need.get(head) ?? 0) + n);
+    }
+    const missing: Record<string, number> = {};
+    for (const [head, n] of need) {
+      const free = sources.reduce((s, src) => s + freeUnits(src.stack, session.reservations, src.id, head), 0);
+      if (free < n) missing[head] = n - free;
+    }
+    return missing;
+  }
+
+  /** A pending annex's pile endpoint id (pipeline ⑤). */
+  function annexPileId(ord: number): string {
+    return `${ANNEX_PILE_EP}${ord}`;
+  }
+
+  /** How far a CIVIC task recruits (⑥ — "everyone works together"): the
+   *  WHOLE town volunteers for communal construction, not just the bodies
+   *  within earshot of the site — a 205-house town's free lots all sit at
+   *  the edge, far from anyone. The recruited walker is PINNED (busy) for
+   *  the trek. Off a town, the wilderness earshot rule stays. */
+  function civicRecruitRadius(session: QuestSession): number {
+    const t = session.town;
+    return t ? Math.max(SITE_HAUL_FOCUS_R, t.plan.radius * 2 + 80) : SITE_HAUL_FOCUS_R;
+  }
+
+  /** A designation's building, resolved from its delta key: a plan house
+   *  (`h_<i>`), a founded work (`f_<ord>` — the immortal founding ordinal,
+   *  workDeltaKey), or a base work (`w_<i>`). Works graft a synthetic
+   *  index — every geometry read uses only the frame fields. The plan is
+   *  the LIVE one (delta applied, memoized). */
+  function pendingBuildingOf(
+    session: QuestSession,
+    buildingKey: string,
+  ): { shape: HouseShape; plan: ReturnType<typeof houseRoomPlan> } | null {
+    const t = session.town;
+    if (!t) return null;
+    const hm = /^h_(\d+)$/.exec(buildingKey);
+    if (hm) {
+      const h = t.plan.houses.find((hh) => hh.index === Number(hm[1]));
+      if (!h) return null;
+      return { shape: h, plan: houseRoomPlan(t.stage.center, h, t.deltas.get(buildingKey)) };
+    }
+    const fm = /^f_(\d+)$/.exec(buildingKey);
+    const wm = /^w_(\d+)$/.exec(buildingKey);
+    const wi = fm
+      ? t.plan.works.findIndex((w) => w.foundedOrd === Number(fm[1]))
+      : wm
+        ? Number(wm[1])
+        : -1;
+    const wk = wi >= 0 ? t.plan.works[wi] : undefined;
+    if (!wk) return null;
+    return {
+      shape: { ...wk, index: 100000 + wi },
+      plan: buildingRoomPlan(
+        t.stage.center, wi, wk, wk.program ?? workProgram(wk.type), t.deltas.get(buildingKey),
+      ),
+    };
+  }
+
+  /** World anchor of a pending designation's rect — an annex's growth rect
+   *  outside the footprint, an interior room's band inside it (both are
+   *  frame rects; annexWorldRect maps either). */
+  function pendingAnnexAt(session: QuestSession, p: PendingAnnex): { x: number; y: number } | null {
+    const t = session.town;
+    const b = pendingBuildingOf(session, p.buildingKey);
+    if (!t || !b) return null;
+    const r = annexWorldRect(t.stage.center, b.shape, p.candidate);
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+  }
+
+  /** A build-work site's live anchor (⑥): "f:<ord>" — a staged, incomplete
+   *  founded designation; "a:<ord>" — a staged, unworked pending room. Null
+   *  once the site is gone or worked through (claims stop; the sweep
+   *  retires its tasks). */
+  function buildworkSiteAt(session: QuestSession, siteId: string): { x: number; y: number } | null {
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return null;
+    const fm = /^f:(\d+)$/.exec(siteId);
+    if (fm) {
+      const b = deltas.founded().find((f) => f.ord === Number(fm[1]));
+      if (!b || b.completed || !b.costs || b.laborStartDay === undefined) return null;
+      if ((b.labor ?? 0) >= b.buildDays - 1e-9) return null;
+      return foundedLotAt(session, b);
+    }
+    const am = /^a:(\d+)$/.exec(siteId);
+    if (am) {
+      const p = deltas.annexSites().find((a) => a.ord === Number(am[1]));
+      if (!p || p.laborStartDay === undefined || pendingLaborDone(p)) return null;
+      return pendingAnnexAt(session, p);
+    }
+    return null;
+  }
+
+  /** Commit-time validation for an INTERIOR designation: the recorded host
+   *  must still stand and contain the cut (the plan may have shifted while
+   *  materials gathered). requestInterior itself re-checks only the cap —
+   *  the requestAnnex law; this is the plan-side half. */
+  function interiorCommitOk(session: QuestSession, p: PendingAnnex): boolean {
+    if (!isInteriorCandidate(p.candidate)) return false;
+    const t = session.town;
+    const b = pendingBuildingOf(session, p.buildingKey);
+    if (!t || !b) return false;
+    const host = b.plan.rooms.find((r) => r.id === (p.candidate as InteriorCandidate).hostId);
+    if (!host) return false;
+    const cut = annexWorldRect(t.stage.center, b.shape, p.candidate);
+    const EPS = 1e-3;
+    return (
+      cut.x >= host.rect.x - EPS &&
+      cut.y >= host.rect.y - EPS &&
+      cut.x + cut.w <= host.rect.x + host.rect.w + EPS &&
+      cut.y + cut.h <= host.rect.y + host.rect.h + EPS
+    );
+  }
+
+  /** POST THE HAULS that stage a designation's pile (pipeline ②/⑤): count
+   *  goods already in flight to it, resolve the remainder nearest-first
+   *  over FREE stacks, reserve each draw under its agreement, and pool one
+   *  civic task per haul — any idle body nearby may claim. Idempotent per
+   *  call; rate-limited per pile so expired tasks don't repost every
+   *  sweep. */
+  const pileRetryAt = new Map<string, number>();
+  function postPileHauls(
+    session: QuestSession,
+    opts: {
+      pileId: string;
+      at: { x: number; y: number };
+      /** Costs still missing beyond the pile (stagingMissing output). */
+      missing: Record<string, number>;
+      /** The spoken destination word for the haul's intent line. */
+      glyph: string;
+    },
+  ) {
+    const inflight: Record<string, number> = {};
+    for (const a of session.transfers.all()) {
+      if (a.to !== opts.pileId || (a.status !== "pending" && a.status !== "moving")) continue;
+      for (const [g, n] of Object.entries(a.goods)) {
+        const head = stackHead(g);
+        inflight[head] = (inflight[head] ?? 0) + n;
+      }
+    }
+    const want: Record<string, number> = {};
+    for (const [head, n] of Object.entries(opts.missing)) {
+      const short = n - (inflight[head] ?? 0);
+      if (short > 0) want[head] = short;
+    }
+    if (!Object.keys(want).length) return;
+    const now = session.taskClock;
+    if (now < (pileRetryAt.get(opts.pileId) ?? -Infinity)) return;
+    pileRetryAt.set(opts.pileId, now + SITE_HAUL_RETRY_S);
+    const led = session.reservations;
+    const tmp = `stage:${opts.pileId}`;
+    const { draws } = resolveMaterials({
+      holder: tmp,
+      costs: want,
+      sources: siteMaterialSources(session, opts.at),
+      ledger: led,
+    });
+    for (const d of draws) {
+      const a = session.transfers.post({
+        from: d.endpoint,
+        to: opts.pileId,
+        goods: { [d.glyph]: d.take },
+        issuer: PLAYER_CREATURE_ID,
+        mode: "haul",
+        now,
+        sourceGlyph: `bring ${d.take} ${d.glyph}`,
+      });
+      // The reservation rides the agreement: consumed as the hauler loads,
+      // released by the staging sweep when the agreement dies.
+      led.reserve(agrHolder(a.id), d.endpoint, d.glyph, d.take);
+      postPooledTask(
+        session,
+        { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: opts.glyph } },
+        PLAYER_CREATURE_ID,
+        { x: opts.at.x, y: opts.at.y, radius: civicRecruitRadius(session) },
+        `bring ${d.take} ${d.glyph}`,
+      );
+    }
+    led.release(tmp);
+  }
+
+  function postSiteHauls(session: QuestSession, b: FoundedBuilding) {
+    const at = foundedLotAt(session, b);
+    if (!at || !b.costs) return;
+    postPileHauls(session, {
+      pileId: sitePileId(b.ord),
+      at,
+      missing: stagingMissing(b),
+      glyph: resolveStructure(structureCatalogOf(session), b.type)?.glyph ?? "yard",
+    });
+  }
+
   function executeBuildOrder(
     session: QuestSession,
     spec: StructureSpec,
@@ -13053,7 +14161,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): FoundedBuilding | null {
     const ctx = buildContext(session);
     if (!ctx) return null;
-    if (!spendCosts(spec, ctx.stock)) return null;
+    // PIPELINE ② (construction-pipeline.md): the order is a DESIGNATION —
+    // nothing is paid up front. The costs ride the row; hauls bring the
+    // materials to the staked plot; labor runs from the day the pile covers
+    // the bill (the staging sweep), not from today.
     // A structure's catalog buildDays are RELATIVE (house = 1); the session's
     // scale turns them into game-days — half a year of them at realism, one
     // street-day on the shipped town profile (space-time-compression.md §4).
@@ -13061,6 +14172,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       candidate,
       buildDayNow(session),
       constructionGameDays(spec.buildDays, session.scale),
+      spec.costs,
     );
     if (session.town) {
       // The plan row (staff arrives at completion) — the stage reconciles
@@ -13071,12 +14183,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         color: spec.color,
         program: spec.program,
         ...(spec.stations ? { stations: spec.stations } : {}),
+        ...(spec.shell ? { bare: true } : {}),
         jobs: 0,
         foundedOrd: b.ord,
       });
     } else if (session.foundedSite) {
       noteSiteBuilding(session.foundedSite);
       refreshWildFounded(session);
+    }
+    // A zero-bill structure stages instantly (labor from today — exactly the
+    // pre-pipeline clock); everything else waits on its hauls.
+    if (!Object.keys(stagingMissing(b)).length) {
+      ctx.deltas.stageFounded(b.ord, b.startedDay);
+    } else {
+      postSiteHauls(session, b);
     }
     if (builder) {
       const target = workDoorstep(ctx.center, {
@@ -13107,6 +14227,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const wk = {
         dx: b.dx, dy: b.dy, w: b.w, h: b.h, door: b.door,
         ...(spec?.stations ? { stations: spec.stations } : {}),
+        ...(spec?.shell ? { bare: true } : {}),
       };
       if (!foundedBuildingDone(b, day)) {
         sites.push({
@@ -13115,7 +14236,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         });
         continue;
       }
-      const roomPlan = buildingRoomPlan(site.at, 1000 + b.ord, wk, spec?.program ?? { store: true });
+      const roomPlan = buildingRoomPlan(
+        site.at, 1000 + b.ord, wk, spec?.program ?? { store: true },
+        site.deltas.get(`f_${b.ord}`),
+      );
       for (const room of roomPlan.rooms) {
         specs.push({
           id: room.id,
@@ -13127,7 +14251,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       if (!wildFurnishedOrds.has(b.ord)) {
         wildFurnishedOrds.add(b.ord);
-        for (const piece of workFurniture(site.at, 1000 + b.ord, wk, spec?.program ?? { store: true })) {
+        for (const piece of workFurniture(
+          site.at, 1000 + b.ord, wk, spec?.program ?? { store: true }, "",
+          site.deltas.get(`f_${b.ord}`),
+        )) {
           const ok = world.addObject({
             id: piece.id,
             x: piece.x,
@@ -13156,6 +14283,225 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     questView?.setSites?.(sites);
   }
 
+  /** The plan-works index a building delta key names (f_<ord> → the founded
+   *  row's live index; w_<i> → i). -1 when it names nothing standing. */
+  function workIndexOfKey(session: QuestSession, key: string): number {
+    const t = session.town;
+    if (!t) return -1;
+    const fm = /^f_(\d+)$/.exec(key);
+    if (fm) return t.plan.works.findIndex((w) => w.foundedOrd === Number(fm[1]));
+    const wm = /^w_(\d+)$/.exec(key);
+    return wm ? Number(wm[1]) : -1;
+  }
+
+  /**
+   * WORK-BUILDING PROGRAM PULL (pipeline ⑥ — recursion's craft-designation
+   * leg): a standing program row on a completed work building (a shell's
+   * ordered bedroom) PULLS its required furniture. A stored `furn.<kind>`
+   * stack anywhere usable is hauled over as a CIVIC task (any resident may
+   * carry it — the `bfurn:` delivery pile); none stored starts a CRAFT JOB
+   * at the family's house, bench-first (the ④ automation law) — the shell's
+   * bed recurses into wood, which recurses into the felled tree. One action
+   * per sweep; per-building rate limit.
+   */
+  function stepShellPrograms(session: QuestSession) {
+    const t = session.town;
+    if (!t || !world) return;
+    const day = buildDayNow(session);
+    const defs = roomProgramDefsOf(session);
+    for (let wi = 0; wi < t.plan.works.length; wi++) {
+      const wk = t.plan.works[wi]!;
+      if (wk.vacated) continue;
+      const key = workDeltaKey(wk, wi);
+      const rows = t.deltas.get(key)?.programs;
+      if (!rows?.length) continue;
+      const fb =
+        wk.foundedOrd !== undefined
+          ? t.deltas.founded().find((f) => f.ord === wk.foundedOrd)
+          : undefined;
+      if (fb && !foundedBuildingDone(fb, day)) continue; // walls first
+      if (session.taskClock < (shellProgramAt.get(key) ?? 0)) continue;
+      shellProgramAt.set(key, session.taskClock + 20);
+      const center = t.stage.center;
+      const delta = t.deltas.get(key);
+      const program = wk.program ?? workProgram(wk.type);
+      const plan = buildingRoomPlan(center, wi, wk, program, delta);
+      const pieces = workFurniture(center, wi, wk, program, "", delta);
+      const kindsIn = (r: { rect: { x: number; y: number; w: number; h: number } }) =>
+        pieces
+          .filter(
+            (p) =>
+              p.x >= r.rect.x && p.x <= r.rect.x + r.rect.w &&
+              p.y >= r.rect.y && p.y <= r.rect.y + r.rect.h,
+          )
+          .map((p) => p.kind);
+      const pile = shellFurnPiles.get(key) ?? {};
+      const inbound = new Set<string>();
+      for (const a of session.transfers.active()) {
+        if (a.to === `${BFURN_EP}${key}`) for (const g of Object.keys(a.goods)) inbound.add(g);
+      }
+      for (const row of rows) {
+        const def = roomProgramOf(row.room, defs);
+        if (!def) continue;
+        if (plan.rooms.some((r) => roomProgramMet(def, kindsIn(r)))) continue;
+        for (const k of def.requires) {
+          if (pieces.some((p) => p.kind === k)) continue; // standing already
+          const fdef = furnitureItemOf(k);
+          if (!fdef?.craft) continue; // non-craftables come with generation
+          const glyph = furnitureGlyph(k);
+          if ((pile[glyph] ?? 0) > 0 || inbound.has(glyph)) break; // delivery underway — wait
+          const at = {
+            x: center.x + wk.dx + wk.w / 2,
+            y: center.y + wk.dy + wk.h / 2,
+          };
+          const src = siteMaterialSources(session, at)
+            .filter((s) => (s.stack[glyph] ?? 0) > 0)
+            .sort((p2, q) => p2.d - q.d || (p2.id < q.id ? -1 : 1))[0];
+          if (src) {
+            const a = session.transfers.post({
+              from: src.id,
+              to: `${BFURN_EP}${key}`,
+              goods: { [glyph]: 1 },
+              issuer: PLAYER_CREATURE_ID,
+              mode: "haul",
+              now: session.taskClock,
+              sourceGlyph: `bring ${k}`,
+            });
+            postPooledTask(
+              session,
+              { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: k } },
+              PLAYER_CREATURE_ID,
+              { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
+              `bring ${k}`,
+            );
+          } else {
+            // NONE STORED — the craft designation: the family's house makes
+            // it (bench-first). Busy crafter ⇒ retry next sweep.
+            const hi = familyOf(session)?.house ?? t.plan.houses[0]?.index;
+            if (hi === undefined || craftJobs.get(hi)) return;
+            const target =
+              houseBench(session, hi) || houseStored(session, hi, furnitureGlyph("workbench")) > 0
+                ? fdef
+                : furnitureItemOf("workbench")!;
+            craftJobs.set(hi, {
+              def: target,
+              spotId: craftSpotOf(session, hi),
+              agreements: [],
+              laborS: 0,
+            });
+          }
+          return; // one action per sweep
+        }
+      }
+    }
+  }
+
+  /** Stand DELIVERED furniture up (⑥): a `bfurn:` pile's stack becomes a
+   *  PlacedPiece the sweep after it lands — searched in the room whose
+   *  program wants the kind, else the kind's own cell. The stage's work
+   *  rev-watch raises the fixture the same frame. */
+  function stepShellFurnPlacement(session: QuestSession) {
+    const t = session.town;
+    if (!t || !world) return;
+    for (const [key, pile] of shellFurnPiles) {
+      const glyphs = Object.keys(pile).filter((g) => (pile[g] ?? 0) > 0);
+      if (!glyphs.length) {
+        shellFurnPiles.delete(key);
+        continue;
+      }
+      const wi = workIndexOfKey(session, key);
+      const wk = wi >= 0 ? t.plan.works[wi] : undefined;
+      if (!wk) continue;
+      const center = t.stage.center;
+      const program = wk.program ?? workProgram(wk.type);
+      for (const g of glyphs) {
+        const kind = furnitureKindOfGlyph(g);
+        const fdef = kind ? furnitureItemOf(kind) : undefined;
+        if (!kind || !fdef) {
+          delete pile[g]; // not furniture — never posted by us; drop honestly
+          continue;
+        }
+        // Re-derive plan+pieces per placement (the previous piece changed them).
+        const delta = t.deltas.get(key);
+        const plan = buildingRoomPlan(center, wi, wk, program, delta);
+        const pieces = workFurniture(center, wi, wk, program, "", delta);
+        const defs = roomProgramDefsOf(session);
+        const wantRoom = (delta?.programs ?? [])
+          .map((row) => roomProgramOf(row.room, defs))
+          .filter((d): d is RoomProgramDef => !!d && d.requires.includes(kind))
+          .map((d) => plan.rooms.find((r) => r.kind === d.kind))
+          .find((r) => !!r);
+        const pctx = makePlacementContext(center, wk, plan, [], [...pieces]);
+        const spot = placementCandidates(pctx, {
+          kind,
+          radius: fdef.radius,
+          ...(wantRoom ? { roomId: wantRoom.id } : {}),
+        })[0];
+        if (!spot) continue; // no legal spot yet — retry next sweep
+        stackTake(pile, g);
+        // Delivered, not yet assembled: it stands on its side until the setup
+        // sweep (with a nearby resident's work reach) rises it upright.
+        placeFurniture(t.deltas, key, {
+          id: `furn_w${wi}_p${nextPlacedSerial(t.deltas.get(key))}`,
+          kind,
+          x: spot.x,
+          y: spot.y,
+          radius: fdef.radius,
+          facing: spot.facing,
+          openable: fdef.openable,
+          roomId: spot.roomId,
+          setUp: false,
+        });
+        presenter.toast(`🪑 the ${kind} arrives for the ${wantRoom?.kind ?? "building"}`, "feedback");
+      }
+    }
+  }
+
+  let furnitureSetupT = 0;
+  /** DELIVERED-FURNITURE STAND-UP sweep (~1 s, construction ⑥ visuals): a
+   *  piece placed TIPPED on its side (setUp:false) is stood upright once its
+   *  short hold elapses — the renderer eases it from flat to standing (the
+   *  settle). A capable resident within reach plays a work reach as it rises
+   *  (reusing the carry gesture); with nobody about it simply rises on its own,
+   *  so a piece is never stuck lying down. Generic over every furniture kind —
+   *  the flag drives it, no per-kind code. */
+  function stepFurnitureSetup(session: QuestSession, dt: number) {
+    const t = session.town;
+    if (!t || !world) return;
+    furnitureSetupT += dt;
+    if (furnitureSetupT < 1) return;
+    const span = furnitureSetupT;
+    furnitureSetupT = 0;
+    for (const key of t.deltas.keys()) {
+      const d = t.deltas.get(key);
+      if (!d) continue;
+      for (const p of d.placed) {
+        if (p.setUp !== false) continue;
+        const hk = `${key}|${p.id}`;
+        const rem = (furnitureSetupHold.get(hk) ?? FURN_SETUP_HOLD_S) - span;
+        if (rem > 0) {
+          furnitureSetupHold.set(hk, rem);
+          continue;
+        }
+        // Hold elapsed — set it up. Nearest capable resident (hands, so no pet)
+        // within reach does the stand-up work reach; else it simply rises.
+        let worker: string | undefined;
+        let bestD = FURN_SETUP_R;
+        for (const [id, av] of Object.entries(world.state.avatars)) {
+          if (!id.startsWith("resident_") || av.canOpen === false) continue;
+          const dd = Math.hypot(av.x - p.x, av.y - p.y);
+          if (dd <= bestD) {
+            bestD = dd;
+            worker = id;
+          }
+        }
+        if (worker) fireCarryGesture(worker, "putdown", { x: p.x, y: p.y });
+        markPieceSetUp(t.deltas, key, p.id);
+        furnitureSetupHold.delete(hk);
+      }
+    }
+  }
+
   /** CONSTRUCTION COMPLETION sweep (~1 s): a founded building whose build
    *  clock ran out is marked complete IN THE DELTA (the serialized fact),
    *  its plan row gains its roster jobs (townJobsMemo invalidates so
@@ -13168,8 +14514,216 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!deltas) return;
     foundedSweepT += dt;
     if (foundedSweepT < 1) return;
+    const elapsedS = foundedSweepT; // labor accrues over the real swept span
     foundedSweepT = 0;
     const day = buildDayNow(session);
+    // ── STAGING (pipeline ②) ── Dead sitepile hauls drop their spoken-for
+    // units (idempotent — a consumed or already-released holder is empty);
+    // a plot whose pile covers its bill starts its labor clock; one still
+    // short re-resolves (rate-limited) so fresh stock unsticks it.
+    const isPileDest = (to: string) =>
+      to.startsWith(SITE_PILE_EP) || to.startsWith(ANNEX_PILE_EP) || to.startsWith(BFURN_EP);
+    for (const a of session.transfers.all()) {
+      if ((a.status === "done" || a.status === "failed") && isPileDest(a.to)) {
+        session.reservations.release(agrHolder(a.id));
+      }
+    }
+    // Craft hauls (pipeline ③) are job-tracked and jobs are session-lived:
+    // an agreement that outlived its job (a reload) fails here so its
+    // reservation releases instead of leaking.
+    const trackedCraft = new Set<string>();
+    for (const j of craftJobs.values()) for (const id of j.agreements) trackedCraft.add(id);
+    for (const a of session.transfers.active()) {
+      if (a.sourceGlyph?.startsWith("craft:") && !trackedCraft.has(a.id)) {
+        session.transfers.fail(a.id, "no-executor");
+        session.reservations.release(agrHolder(a.id));
+      }
+    }
+    // Craft-SPOT reservations (⑥ — banked job inputs) belong to
+    // session-lived jobs: release any a reload orphaned.
+    for (const r of session.reservations.toJSON().rows) {
+      if (!r.holder.startsWith("craftspot:")) continue;
+      if (!craftJobs.has(Number(r.holder.slice("craftspot:".length)))) {
+        session.reservations.release(r.holder);
+      }
+    }
+    // Reload seam: agreements persist in the deltas, pooled tasks and NPC
+    // errands don't — re-pool a pending sitepile haul that lost its task,
+    // re-walk a moving one whose hauler lost its errand (the restored-carry
+    // branch keeps its armful), fail one whose hauler is gone.
+    const pooledAgr = new Set<string>();
+    for (const t of [...session.taskPool.open(), ...session.taskPool.claimed()]) {
+      if (t.goal.kind === "transfer") pooledAgr.add(t.goal.agreementId);
+    }
+    for (const a of session.transfers.active()) {
+      if (!isPileDest(a.to)) continue;
+      const at = stockEndpointOf(session, a.to)?.at ?? null;
+      if (!at) {
+        session.transfers.fail(a.id, "no-endpoint");
+        continue;
+      }
+      if (a.status === "pending") {
+        // FAIL FAST on a drained source (⑥): the stock moved under the
+        // agreement — kill it now so the 20 s re-resolve picks a LIVE
+        // source instead of waiting out the task's whole expiry.
+        const from = stockEndpointOf(session, a.from);
+        if (!from || !Object.keys(a.goods).some((g) => stackUnits(from.stack, g) > 0)) {
+          session.transfers.fail(a.id, "missing");
+          session.reservations.release(agrHolder(a.id));
+          continue;
+        }
+      }
+      if (a.status === "pending" && !pooledAgr.has(a.id)) {
+        const glyph = a.to.startsWith(SITE_PILE_EP)
+          ? (() => {
+              const b = deltas.founded().find((f) => f.ord === Number(a.to.slice(SITE_PILE_EP.length)));
+              return b ? (resolveStructure(structureCatalogOf(session), b.type)?.glyph ?? "yard") : "yard";
+            })()
+          : a.to.startsWith(BFURN_EP)
+            ? (furnitureKindOfGlyph(Object.keys(a.goods)[0] ?? "") ?? "room")
+            : "room";
+        postPooledTask(
+          session,
+          { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: glyph } },
+          PLAYER_CREATURE_ID,
+          { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
+          a.sourceGlyph ?? "bring materials",
+        );
+      } else if (a.status === "moving" && a.executor && world) {
+        const body = avatarIdOf(a.executor);
+        if (!world.state.avatars[body]) {
+          session.transfers.fail(a.id, "no-executor");
+        } else if (!world.npcErrandActive(body) && !(session.npcTasks.get(body)?.length ?? 0)) {
+          issueTransferHaul(session, a.executor, a.id);
+        }
+      }
+    }
+    for (const b of deltas.founded()) {
+      if (b.completed || !b.costs || b.laborStartDay !== undefined) continue;
+      if (Object.keys(stagingMissing(b)).length === 0) {
+        deltas.stageFounded(b.ord, day);
+        const spec = resolveStructure(structureCatalogOf(session), b.type);
+        presenter.toast(
+          `🧱 materials staged — builders raise the ${spec?.label ?? b.type}`,
+          "feedback",
+        );
+      } else {
+        postSiteHauls(session, b);
+      }
+    }
+    // ── BUILDERS MAKE BUILDINGS (⑥): a staged site banks labor only while
+    // builders STAND at it — more of them, proportionally faster (capped).
+    // The sweep keeps up to BUILDERS_CAP standing build-work tasks pooled
+    // (any resident may claim — ambient recruitment), walks idle claimants
+    // back to the spot, and banks elapsed × present.
+    const dDays = elapsedS / FOOD_DAY_SEC;
+    const workSite = (siteId: string, at: { x: number; y: number }, row: { labor?: number }) => {
+      const tasks = [...session.taskPool.open(), ...session.taskPool.claimed()].filter(
+        (t) => t.goal.kind === "buildwork" && t.goal.site === siteId,
+      );
+      for (let n = tasks.length; n < BUILDERS_CAP; n++) {
+        session.taskPool.post({
+          goal: { kind: "buildwork", site: siteId },
+          issuer: PLAYER_CREATURE_ID,
+          focus: { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
+          now: session.taskClock,
+          sourceGlyph: "build",
+        });
+      }
+      let present = 0;
+      for (const t of tasks) {
+        if (t.status !== "claimed" || !t.claimedBy || !world) continue;
+        const npcId = avatarIdOf(t.claimedBy);
+        const body = world.state.avatars[npcId];
+        if (!body) continue;
+        if (Math.hypot(body.x - at.x, body.y - at.y) <= BUILD_WORK_R) {
+          present++;
+          // The BUILD STEP animation: a periodic work reach at the site,
+          // reusing the carry-reach gesture (no parallel system). Throttled so
+          // each reach cycle completes before the next hammer.
+          const acc = (buildGestureAcc.get(npcId) ?? BUILD_GESTURE_PERIOD_S) + elapsedS;
+          if (acc >= BUILD_GESTURE_PERIOD_S) {
+            fireCarryGesture(npcId, "pickup", { x: at.x, y: at.y });
+            buildGestureAcc.set(npcId, 0);
+          } else {
+            buildGestureAcc.set(npcId, acc);
+          }
+        }
+        // Keep the builder at the work (or walking to it): re-issue the
+        // standing dwell whenever the body runs idle.
+        if (!world.npcErrandActive(npcId) && !(session.npcTasks.get(npcId)?.length ?? 0)) {
+          enqueueNpcErrand(session, npcId, {
+            points: [{ x: at.x, y: at.y, dwell: BUILD_WORK_DWELL_S }],
+          });
+        }
+      }
+      bankLabor(row, dDays * Math.min(present, BUILDERS_CAP));
+    };
+    for (const b of deltas.founded()) {
+      if (b.completed || !b.costs || b.laborStartDay === undefined) continue;
+      if ((b.labor ?? 0) >= b.buildDays - 1e-9) continue;
+      const at = foundedLotAt(session, b);
+      if (at) workSite(`f:${b.ord}`, at, b);
+    }
+    // Retire build-work whose site is gone or worked through — claimants
+    // free the frame the walls land (open rows expire on their own).
+    for (const t of session.taskPool.claimed()) {
+      if (t.goal.kind !== "buildwork") continue;
+      if (!buildworkSiteAt(session, t.goal.site)) session.taskPool.complete(t.id);
+    }
+    // ── PENDING ROOMS (pipeline ⑤): gather → stage → labor → the room
+    // rises through the SAME commit the instant order used — requestAnnex
+    // for outward growth, requestInterior for a subdivision cut (⑤b).
+    if (session.town) {
+      for (const p of [...deltas.annexSites()]) {
+        const roomKind = pendingRoomKindOf(p);
+        if (p.laborStartDay === undefined) {
+          if (Object.keys(stagingMissing(p)).length === 0) {
+            deltas.stageAnnexSite(p.ord, day);
+            presenter.toast(`🧱 materials staged — the ${roomKind} is going up`, "feedback");
+          } else {
+            const at = pendingAnnexAt(session, p);
+            if (at) {
+              postPileHauls(session, {
+                pileId: annexPileId(p.ord),
+                at,
+                missing: stagingMissing(p),
+                glyph: ROOM_GLYPH[roomKind as HouseRoom["kind"]] ?? "room",
+              });
+            }
+          }
+          continue;
+        }
+        if (!pendingLaborDone(p)) {
+          // Staged but unworked — builders bank the labor (⑥).
+          const at = pendingAnnexAt(session, p);
+          if (at) workSite(`a:${p.ord}`, at, p);
+          continue;
+        }
+        // COMMIT — the ground may have moved since the order (the annex
+        // cap filled, the interior host re-shaped): a refused commit banks
+        // the pile back into the yard and drops the designation honestly,
+        // never silently.
+        const committed = isInteriorCandidate(p.candidate)
+          ? interiorCommitOk(session, p) &&
+            requestInterior(deltas, p.buildingKey, p.candidate).ok
+          : requestAnnex(deltas, p.buildingKey, p.candidate).ok;
+        if (committed) {
+          presenter.toast(`🏛️ the ${roomKind} is finished`, "feedback");
+        } else {
+          for (const [g, n] of Object.entries(p.pile)) {
+            deltas.stock[g] = (deltas.stock[g] ?? 0) + n;
+          }
+          presenter.toast(`💬 the ${roomKind} can't rise anymore — materials returned`, "feedback");
+        }
+        deltas.removeAnnexSite(p.ord);
+      }
+      // ⑥ RECURSION: standing work-building programs pull their furniture
+      // (craft where none stored, haul where stored), and delivered pieces
+      // stand up in their program rooms.
+      stepShellPrograms(session);
+      stepShellFurnPlacement(session);
+    }
     for (const b of deltas.founded()) {
       if (b.completed || !foundedBuildingDone(b, day)) continue;
       deltas.completeFounding(b.ord);
@@ -13219,18 +14773,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         : null;
     const spec = resolveStructure(ctx.catalog, structure);
     if (!spec) {
+      // A FURNITURE noun (pipeline ④): "build + chair" is a CRAFT order —
+      // the speaker's house makes the exact piece asked for through the
+      // craft pipeline. Hand-rate without a bench: the player's explicit
+      // ask is never rerouted (bench-first binds AUTOMATION only).
+      const fdef = FURNITURE_ITEMS.find((f) => f.kind === structure && f.craft);
+      if (fdef && session.town) {
+        const hi = familyOf(session)?.house ?? session.town.plan.houses[0]?.index;
+        if (hi !== undefined) {
+          if (craftJobs.get(hi)) {
+            presenter.toast(`💬 already making something — the ${structure} waits its turn`, "feedback");
+            return true;
+          }
+          craftJobs.set(hi, { def: fdef, spotId: craftSpotOf(session, hi), agreements: [], laborS: 0 });
+          if (speakerFor) npcChatBubble(session, speakerFor, "ok");
+          presenter.toast(
+            `🔨 making a ${structure}${houseBench(session, hi) ? "" : " — by hand, no workbench"}`,
+            "feedback",
+          );
+          return true;
+        }
+      }
       // UNKNOWN STRUCTURE — a NAMED conversational can't (never a silent
       // generic fallback; the workProgram() lesson).
       if (speakerFor) npcChatBubble(session, speakerFor, "no");
       presenter.toast(`💬 can't build "${structure}" — not a structure we know`, "feedback");
-      return true;
-    }
-    const missing = missingCosts(spec, ctx.stock);
-    if (Object.keys(missing).length) {
-      // MISSING MATERIALS — the glyphs are NAMED in the refusal.
-      const names = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
-      if (speakerFor) npcChatBubble(session, speakerFor, noStock(spec.glyph)[syntax]);
-      presenter.toast(`💬 we need more ${names} to build the ${spec.label}`, "feedback");
       return true;
     }
     // POINT-STEERED (city-founding): "build + house + HERE" — the player's
@@ -13258,6 +14825,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       presenter.toast(`💬 no ground for a ${spec.label} here`, "feedback");
       return true;
     }
+    // MISSING MATERIALS never refuse anymore (pipeline ⑥): the order POSTS
+    // as a designation and the staked plot honestly WAITS — fresh stock (a
+    // felled tree, a caravan, a demolition bank) unsticks it through the
+    // staging re-resolve. The shortfall is still NAMED aloud below.
+    const lotAt = foundedLotAt(session, candidates[0]!) ?? ctx.center;
+    const missing = buildMissingMaterials(session, spec, lotAt);
+    const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
     if (!explicitBuilder) {
       // UNTARGETED → the ①a TASK POOL: any appropriate creature in the
       // focus area may claim it (stepTaskPool's build capability check).
@@ -13293,7 +14867,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return true;
     }
     if (walker && speakerFor) npcChatBubble(session, walker, "ok"); // the RESERVED okay — an accepted order
-    presenter.toast(`🏗️ building the ${spec.label} — up in ${spec.buildDays} day${spec.buildDays === 1 ? "" : "s"}`, "feedback");
+    presenter.toast(
+      b.laborStartDay !== undefined
+        ? `🏗️ building the ${spec.label} — builders to work`
+        : missingNames
+          ? `🏗️ the ${spec.label} is staked out — we still need ${missingNames}`
+          : `🏗️ the ${spec.label} is staked out — bringing materials`,
+      "feedback",
+    );
     return true;
   }
 
@@ -13888,6 +15469,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       focus.kind === "house" && t
         ? (t.plan.houses.find((h) => h.index === focus.index) ?? null)
         : null;
+    // FREE haul-able availability (⑤ — rooms stage from anywhere, not the
+    // yard alone) around a doorstep.
+    const freeStockAt = (at: { x: number; y: number }): Record<string, number> => {
+      const sources = siteMaterialSources(session, at);
+      const synthetic: Record<string, number> = {};
+      for (const g of Object.keys(ANNEX_COSTS)) {
+        synthetic[g] = sources.reduce(
+          (n, src) => n + freeUnits(src.stack, session.reservations, src.id, g),
+          0,
+        );
+      }
+      return synthetic;
+    };
     let acts: ReturnType<typeof structureActsOf> | null = null;
     if (t && house) {
       const center = t.stage.center;
@@ -13895,9 +15489,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         center,
         house,
         plan: houseRoomPlan(center, house, t.deltas.get(`h_${house.index}`)),
+        // The PURE base plan — demolished rooms' rects, the in-place
+        // re-creation candidates (⑤b).
+        basePlan: houseRoomPlan(center, house),
         deltas: t.deltas,
         neighbors: houseNeighborRects(t, house),
-        stock: t.deltas.stock,
+        stock: freeStockAt(houseDoorstep(center, house)),
         furnStock: (glyph) => {
           let n = 0;
           for (const objId of houseContainerKeys(session, house.index)) {
@@ -13906,15 +15503,53 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           return n;
         },
       });
+    } else if (focus.kind === "work" && t) {
+      // ⑤b — a focused WORK building's own board: a completed founded
+      // shell (or any standing work) subdivides from within. A scaffold
+      // has no interior yet; a vacated row is a house now.
+      const wk = t.plan.works[focus.index];
+      const fb =
+        wk?.foundedOrd !== undefined
+          ? t.deltas.founded().find((f) => f.ord === wk.foundedOrd)
+          : undefined;
+      const standing = wk && !wk.vacated && (!fb || foundedBuildingDone(fb, buildDayNow(session)));
+      if (standing) {
+        const center = t.stage.center;
+        const key = workDeltaKey(wk, focus.index);
+        const shape: HouseShape = { ...wk, index: 100000 + focus.index };
+        acts = structureActsOf({
+          center,
+          house: shape,
+          plan: buildingRoomPlan(
+            center, focus.index, wk, wk.program ?? workProgram(wk.type), t.deltas.get(key),
+          ),
+          deltas: t.deltas,
+          buildingKey: key,
+          keepRoot: false, // a shell's root may shrink — it has no goods anchors
+          growOutward: false, // shells grow inward first (annexes are a later grain)
+          neighbors: [],
+          stock: freeStockAt(workDoorstep(center, wk)),
+          furnStock: () => 0,
+        });
+      }
     }
+    // House room buttons ride the annex id (orderAnnex resolves the MODE —
+    // in-place re-creation, annex ground, interior cut); kinds feasible
+    // only inward join through their cluster. Work rooms get their own id.
+    const clusterOfKind = (k: HouseRoom["kind"]): AnnexCluster | undefined =>
+      ANNEX_ORDER.find((c) => ANNEX_ROOM_KIND[c] === k);
+    const houseClusters = acts && house
+      ? [...acts.annex, ...acts.interior.map(clusterOfKind).filter((c): c is AnnexCluster => !!c)]
+      : [];
+    const workKinds = acts && !house ? acts.interior : [];
     const sig =
-      acts && (acts.annex.length || acts.demolish.length || acts.furnish.length)
-        ? `S${focus.kind}${focus.index}//${acts.annex.join("|")}//${acts.demolish.map((r) => r.id).join("|")}//${acts.furnish.join("|")}`
+      acts && (houseClusters.length || workKinds.length || acts.demolish.length || acts.furnish.length)
+        ? `S${focus.kind}${focus.index}//${houseClusters.join("|")}//${workKinds.join("|")}//${acts.demolish.map((r) => r.id).join("|")}//${acts.furnish.join("|")}`
         : "";
     if (sig === session.civicSig) return;
     const hadBoard = session.civicSig !== "";
     session.civicSig = sig;
-    if (!sig || !acts || !house) {
+    if (!sig || !acts) {
       if (hadBoard) presenter.clearBoard();
       return;
     }
@@ -13926,20 +15561,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       prompt: "home",
       promptText: translateGlyph("home", locale),
       options: [
-        ...acts.annex.map((c) => ({
-          id: `annex:${house.index}:${c}`,
+        ...houseClusters.map((c) => ({
+          id: `annex:${focus.index}:${c}`,
           label: `build ${ANNEX_ROOM_KIND[c]}`,
           glyph: `build + ${ROOM_GLYPH[ANNEX_ROOM_KIND[c]]}`,
           spokenText: translateGlyph(`build + ${ROOM_GLYPH[ANNEX_ROOM_KIND[c]]}`, locale),
         })),
+        ...workKinds.map((k) => ({
+          id: `wroom:${focus.index}:${k}`,
+          label: `build ${k}`,
+          glyph: `build + ${ROOM_GLYPH[k]}`,
+          spokenText: translateGlyph(`build + ${ROOM_GLYPH[k]}`, locale),
+        })),
         ...acts.demolish.map((r) => ({
-          id: `demolish:${house.index}:${r.id}`,
+          id: `${house ? "demolish" : "wdemolish"}:${focus.index}:${r.id}`,
           label: `break ${r.kind}`,
           glyph: `break + ${ROOM_GLYPH[r.kind]}`,
           spokenText: translateGlyph(`break + ${ROOM_GLYPH[r.kind]}`, locale),
         })),
         ...acts.furnish.map((k) => ({
-          id: `furn:${house.index}:${k}`,
+          id: `furn:${focus.index}:${k}`,
           label: `put ${k}`,
           glyph: `put + ${k}`,
           spokenText: translateGlyph(`put + ${k}`, locale),
@@ -13957,26 +15598,100 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!t || !house) return false;
     const roomKind = ANNEX_ROOM_KIND[cluster];
     if (!roomKind) return false;
-    const missing = missingCosts({ costs: { ...ANNEX_COSTS } }, t.deltas.stock);
-    if (Object.keys(missing).length) {
-      // MISSING MATERIALS — the glyphs are NAMED in the refusal.
-      const names = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
-      presenter.toast(`💬 we need more ${names} to build the ${roomKind}`, "feedback");
-      return true;
-    }
     const center = t.stage.center;
     const delta = t.deltas.get(`h_${houseIndex}`);
     const plan = houseRoomPlan(center, house, delta);
-    const candidate = annexOptions(center, house, plan, houseNeighborRects(t, house), delta, cluster)[0];
+    // Pending growth rects (any house, annex candidates) count as
+    // neighbors — two staked annexes never overlap (requestAnnex re-checks
+    // only the cap); pending INTERIOR cuts lock their host room instead.
+    const pendingRects = t.deltas.annexSites().flatMap((p) => {
+      if (isInteriorCandidate(p.candidate)) return [];
+      const m = /^h_(\d+)$/.exec(p.buildingKey);
+      const ph = m ? t.plan.houses.find((h) => h.index === Number(m[1])) : undefined;
+      return ph ? [annexWorldRect(center, ph, p.candidate)] : [];
+    });
+    const busyHosts = new Set(
+      t.deltas
+        .annexSites()
+        .filter((p) => p.buildingKey === `h_${houseIndex}` && isInteriorCandidate(p.candidate))
+        .map((p) => (p.candidate as InteriorCandidate).hostId),
+    );
+    // ⑤b IN-PLACE RE-CREATION first: a demolished room of this kind whose
+    // rect still fits re-splits the union host along the old partition
+    // line (the doc's law — a rebuilt room reoccupies its footprint).
+    // Then annex ground; then any other legal interior cut (a house
+    // rarely has one — its rooms are all owned).
+    const basePlan = houseRoomPlan(center, house);
+    const preferred = demolishedRects(center, house, basePlan, delta, roomKind);
+    const interiorCands = interiorOptions(center, house, plan, delta, roomKind, {
+      keepRoot: true,
+      preferred,
+      excludeHosts: busyHosts,
+    });
+    const nearEq = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+    const inPlace = interiorCands.find((c) =>
+      preferred.some(
+        (r) => nearEq(r.u0, c.u0) && nearEq(r.u1, c.u1) && nearEq(r.v0, c.v0) && nearEq(r.v1, c.v1),
+      ),
+    );
+    const annexCand = inPlace
+      ? undefined
+      : annexOptions(
+          center, house, plan,
+          [...houseNeighborRects(t, house), ...pendingRects],
+          delta, cluster,
+        )[0];
+    const candidate: AnnexCandidate | InteriorCandidate | undefined =
+      inPlace ?? annexCand ?? interiorCands[0];
     if (!candidate) {
       presenter.toast(`💬 no ground for a ${roomKind} on this house`, "feedback");
       return true;
     }
-    if (!requestAnnex(t.deltas, `h_${houseIndex}`, candidate).ok) return false;
-    // Spend AFTER the accepted request — missingCosts above guarantees the
-    // stock covers it within this same call.
-    spendCosts({ costs: { ...ANNEX_COSTS } }, t.deltas.stock);
-    presenter.toast(`🏗️ adding a ${roomKind} to the house`, "feedback");
+    // PIPELINE ⑤ (construction-pipeline.md): the room is a DESIGNATION —
+    // nothing paid up front. Materials haul to the rect (growth rect
+    // outside, the cut band inside); the room rises when the pile covers
+    // the bill and the labor clock runs out.
+    const rect = annexWorldRect(center, house, candidate);
+    const at = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+    // MISSING MATERIALS never refuse (⑥): the designation posts and waits;
+    // the shortfall is NAMED in the confirmation below.
+    const missing = buildMissingMaterials(session, { costs: { ...ANNEX_COSTS } }, at);
+    const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
+    const p = t.deltas.postAnnexSite({
+      buildingKey: `h_${houseIndex}`,
+      cluster,
+      candidate,
+      costs: { ...ANNEX_COSTS },
+      pile: {},
+      startedDay: buildDayNow(session),
+      buildDays: constructionGameDays(ANNEX_BUILD_DAYS, session.scale),
+    });
+    // THE PERSISTENT WANT (pipeline ④): the ordered room outlives the room
+    // itself — demolish it later and the standing program re-raises it in
+    // place (nextAnnexWant reads programs first); its furniture requirement
+    // drives crafting until met. One row per kind (a second order still
+    // annexes, the want needs no twin).
+    t.deltas.mutate(`h_${houseIndex}`, (d) => {
+      d.programs ??= [];
+      if (!d.programs.some((pr) => pr.room === roomKind)) {
+        d.programs.push({
+          ord: d.programs.reduce((m, pr) => Math.max(m, pr.ord + 1), 0),
+          room: roomKind,
+        });
+      }
+    });
+    postPileHauls(session, {
+      pileId: annexPileId(p.ord),
+      at,
+      missing: stagingMissing(p),
+      glyph: ROOM_GLYPH[roomKind] ?? "room",
+    });
+    presenter.toast(
+      missingNames
+        ? `🏗️ a ${roomKind} is staked out — we still need ${missingNames}`
+        : `🏗️ a ${roomKind} is staked out — bringing materials`,
+      "feedback",
+    );
     return true;
   }
 
@@ -14021,6 +15736,117 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   }
 
+  /** A PLAYER-ORDERED interior room on a WORK building (⑤b — the shell's
+   *  subdivision path): the same designation pipeline as a house room,
+   *  keyed by the work's construction delta (workDeltaKey — a founded
+   *  shell's rooms survive every rebuild under `f_<ord>`). */
+  function orderWorkRoom(
+    session: QuestSession,
+    workIndex: number,
+    roomKind: HouseRoom["kind"],
+  ): boolean {
+    const t = session.town;
+    const wk = t?.plan.works[workIndex];
+    if (!t || !wk || wk.vacated) return false;
+    const key = workDeltaKey(wk, workIndex);
+    // Only a standing building subdivides — a scaffold has no interior.
+    const fb =
+      wk.foundedOrd !== undefined
+        ? t.deltas.founded().find((f) => f.ord === wk.foundedOrd)
+        : undefined;
+    if (fb && !foundedBuildingDone(fb, buildDayNow(session))) {
+      presenter.toast(`💬 the walls aren't up yet`, "feedback");
+      return true;
+    }
+    const center = t.stage.center;
+    const delta = t.deltas.get(key);
+    const shape: HouseShape = { ...wk, index: 100000 + workIndex };
+    const plan = buildingRoomPlan(
+      center, workIndex, wk, wk.program ?? workProgram(wk.type), delta,
+    );
+    // A host a pending cut already targets is spoken for — two staked
+    // cuts never share a room.
+    const busyHosts = new Set(
+      t.deltas
+        .annexSites()
+        .filter((p) => p.buildingKey === key && isInteriorCandidate(p.candidate))
+        .map((p) => (p.candidate as InteriorCandidate).hostId),
+    );
+    const candidate = interiorOptions(center, shape, plan, delta, roomKind, {
+      keepRoot: false,
+      excludeHosts: busyHosts,
+    })[0];
+    if (!candidate) {
+      presenter.toast(`💬 no room for a ${roomKind} in there`, "feedback");
+      return true;
+    }
+    const rect = annexWorldRect(center, shape, candidate);
+    const at = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+    // MISSING MATERIALS never refuse (⑥): the cut posts and waits; the
+    // shortfall is NAMED in the confirmation below.
+    const missing = buildMissingMaterials(session, { costs: { ...ANNEX_COSTS } }, at);
+    const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
+    const p = t.deltas.postAnnexSite({
+      buildingKey: key,
+      candidate,
+      costs: { ...ANNEX_COSTS },
+      pile: {},
+      startedDay: buildDayNow(session),
+      buildDays: constructionGameDays(ANNEX_BUILD_DAYS, session.scale),
+    });
+    // THE PERSISTENT WANT (④) rides the work's own delta — the standing
+    // program outlives the room it raises.
+    t.deltas.mutate(key, (d) => {
+      d.programs ??= [];
+      if (!d.programs.some((pr) => pr.room === roomKind)) {
+        d.programs.push({
+          ord: d.programs.reduce((m, pr) => Math.max(m, pr.ord + 1), 0),
+          room: roomKind,
+        });
+      }
+    });
+    postPileHauls(session, {
+      pileId: annexPileId(p.ord),
+      at,
+      missing: stagingMissing(p),
+      glyph: ROOM_GLYPH[roomKind] ?? "room",
+    });
+    presenter.toast(
+      missingNames
+        ? `🏗️ a ${roomKind} is staked out — we still need ${missingNames}`
+        : `🏗️ a ${roomKind} is staked out — bringing materials`,
+      "feedback",
+    );
+    return true;
+  }
+
+  /** A PLAYER-ORDERED demolition on a WORK building (⑤b): the kernel rules
+   *  decide; stowed pieces bank into the builder's yard (a work has no
+   *  house boxes of its own). */
+  function orderWorkDemolish(session: QuestSession, workIndex: number, roomId: string): boolean {
+    const t = session.town;
+    const wk = t?.plan.works[workIndex];
+    if (!t || !wk) return false;
+    const key = workDeltaKey(wk, workIndex);
+    const center = t.stage.center;
+    const plan = buildingRoomPlan(
+      center, workIndex, wk, wk.program ?? workProgram(wk.type), t.deltas.get(key),
+    );
+    const room = plan.rooms.find((r) => r.id === roomId);
+    if (!room) return false;
+    const res = demolishRoom(t.deltas, key, plan, roomId);
+    if (!res.ok) {
+      presenter.toast(`💬 the ${room.kind} can't come down`, "feedback");
+      return true;
+    }
+    for (const [kind, n] of Object.entries(res.stowed)) {
+      const g = furnitureGlyph(kind as StationKind);
+      t.deltas.stock[g] = (t.deltas.stock[g] ?? 0) + (n ?? 0);
+    }
+    presenter.toast(`🔨 the ${room.kind} comes down`, "feedback");
+    return true;
+  }
+
   /** Contextual CIVIC BOARD options (①b board surface + ③ zoning): the
    *  buildable structures whose costs are met right now, then the ZONE
    *  words (every catalog category + "clear"), pushed while nothing else
@@ -14037,7 +15863,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
     const ctx = idle ? buildContext(session) : null;
-    const affordable = ctx ? ctx.catalog.filter((s) => costsMet(s, ctx.stock)) : [];
+    const affordable = ctx
+      ? ctx.catalog.filter((s) => !Object.keys(buildMissingMaterials(session, s, ctx.center)).length)
+      : [];
     // ZONE options (③): the catalog's speakable categories — chartering
     // needs no materials, so they ride whenever the session can build at
     // all (a town or a founded site).
@@ -14494,6 +16322,42 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
         return;
       }
+      if (id.startsWith("wroom:") && sess) {
+        // ⑤b — a focused WORK building's interior room ("build bedroom"
+        // on the empty shell): the same spoken sentence, the work path.
+        const s = sess;
+        const [, wi, kind] = id.split(":");
+        const roomKind = (kind ?? "hall") as HouseRoom["kind"];
+        const glyph = `build + ${ROOM_GLYPH[roomKind] ?? "room"}`;
+        const said = playerStatement(glyph);
+        if (opts.spokenExternally) yieldToStatement(said);
+        else speakPlayerStatement(said);
+        if (!orderWorkRoom(s, Number(wi), roomKind)) {
+          saySystem(s, CANT_HERE, `💬 "${glyph}" — can't build here`);
+        }
+        return;
+      }
+      if (id.startsWith("wdemolish:") && sess) {
+        const s = sess;
+        const [, wi, roomId] = id.split(":");
+        const wk = s.town?.plan.works[Number(wi)];
+        const droom =
+          s.town && wk
+            ? buildingRoomPlan(
+                s.town.stage.center, Number(wi), wk,
+                wk.program ?? workProgram(wk.type),
+                s.town.deltas.get(workDeltaKey(wk, Number(wi))),
+              ).rooms.find((r) => r.id === roomId)
+            : undefined;
+        const glyph = `break + ${droom ? ROOM_GLYPH[droom.kind] : "room"}`;
+        const said = playerStatement(glyph);
+        if (opts.spokenExternally) yieldToStatement(said);
+        else speakPlayerStatement(said);
+        if (!orderWorkDemolish(s, Number(wi), roomId ?? "")) {
+          saySystem(s, CANT_HERE, `💬 "${glyph}" — can't do that here`);
+        }
+        return;
+      }
       if (id.startsWith("demolish:") && sess) {
         const s = sess;
         const [, hi, roomId] = id.split(":");
@@ -14600,6 +16464,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         else speakPlayerStatement(said);
         attendObject(sess, objId);
         if (container && container.objId === objId) closeContainer(); // acted on the open box
+        return;
+      }
+      if (container && id.startsWith("tame:")) {
+        if (!sess) return;
+        // The spoken claim ("my sheep") IS the act — say it, then own it.
+        const wa = wildAnimalOf(sess, id.slice(5));
+        if (wa) {
+          const said = playerStatement(`${wa.species}.my`);
+          if (opts.spokenExternally) yieldToStatement(said);
+          else speakPlayerStatement(said);
+        }
+        tameWildAnimal(sess, id.slice(5));
         return;
       }
       if (container && id.startsWith("take:")) {
@@ -14878,7 +16754,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         s.helpOrders.set(helper, goal.target);
         s.needStep.delete(helper); // re-decide with the order in force
         s.liveNeedBodies.add(helper);
-        npcChatBubble(s, helper, commandEchoLine(s, frame, goal)); // "I will help Mara" / the earned ok
+        npcChatBubble(s, helper, commandEchoLine(s, frame, goal, helper)); // "I will help Mara" / the earned ok
         presenter.toast(`▶ ${sentence}`, "feedback");
         return;
       }
@@ -15076,7 +16952,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             s.needStep.delete(m);
             s.walk.delete(m); // drop any stale need-walk state — the pursuit starts fresh
             s.pursuits.set(m, { source: "command", goal, glyph: sentence });
-            npcChatBubble(s, m, commandEchoLine(s, frame, goal)); // the echo — or the earned ok
+            npcChatBubble(s, m, commandEchoLine(s, frame, goal, m)); // the echo — or the earned ok
           } else {
             saySystem(s, pursuitBlockLine(goal), `💬 "${sentence}" — can't do that here`, m);
           }
@@ -15087,7 +16963,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (plan) {
           s.npcTasks.delete(avatarIdOf(m)); // a command overrides the current errand
           issueGoalPlan(s, m, plan);
-          npcChatBubble(s, m, commandEchoLine(s, frame, goal)); // the echo — or the earned ok
+          npcChatBubble(s, m, commandEchoLine(s, frame, goal, m)); // the echo — or the earned ok
           moved++;
         }
       }

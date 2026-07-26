@@ -317,6 +317,9 @@ export interface TransferLedger {
   get(id: string): TransferAgreement | undefined;
   /** pending + moving, in creation order (deterministic processing order). */
   active(): TransferAgreement[];
+  /** EVERY agreement, terminal ones included, creation order — the audit
+   *  view (pipeline ② staging sweeps read dead sitepile hauls off it). */
+  all(): readonly TransferAgreement[];
   /** Scheduled agreements due at `now`, creation order. */
   due(now: number): TransferAgreement[];
   /** pending → moving: a hauler took the job. */
@@ -367,6 +370,7 @@ export function createTransferLedger(json?: SerializedTransferLedger): TransferL
     },
     get: (id) => byId.get(id),
     active: () => rows.filter((a) => a.status === "pending" || a.status === "moving"),
+    all: () => rows,
     due: (now) =>
       rows.filter(
         (a) => a.mode === "scheduled" && a.status === "pending" && (a.nextDueAt ?? 0) <= now,

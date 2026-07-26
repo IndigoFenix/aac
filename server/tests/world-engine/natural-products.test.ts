@@ -11,6 +11,7 @@ import {
   drinkGlyphs,
   foodGlyphs,
   harvestProductsOf,
+  harvestStockOf,
   killStockOf,
   naturalSourceOf,
   naturalSources,
@@ -18,7 +19,9 @@ import {
   productFeedsGood,
   rollYield,
   sourceIsConsumable,
+  sourceKillExhausted,
   sourcesForGood,
+  takeUnitsOf,
 } from "@shared/world-engine/products.js";
 import { FRUIT_TREES } from "@shared/world-engine/creatures/species.js";
 import { FOOD_KINDS } from "@shared/world-engine/kernel/town/goods-kinds.js";
@@ -80,6 +83,51 @@ describe("acquisition rolls", () => {
     expect(killStockOf("grape_vine", () => 0.5)).toEqual({});
     // Harvest products stay out of the kill stock even on mixed sources.
     expect(Object.keys(killStockOf("sheep", () => 0.5))).toEqual(["meat"]);
+  });
+
+  it("harvestStockOf rolls only the harvest products (the standing bearing)", () => {
+    expect(harvestStockOf("apple_tree", () => 0)).toEqual({ apple: 1 });
+    expect(harvestStockOf("apple_tree", () => 0.99)).toEqual({ apple: 3 });
+    // Kill products stay out of the bearing even on mixed sources.
+    expect(Object.keys(harvestStockOf("sheep", () => 0.5))).toEqual(["wool"]);
+    expect(Object.keys(harvestStockOf("cow", () => 0.5))).toEqual(["milk"]);
+    // A kill-only source bears nothing live.
+    expect(harvestStockOf("oak", () => 0.5)).toEqual({});
+    expect(harvestStockOf("rock", () => 0.5)).toEqual({});
+  });
+
+  it("takeUnitsOf — the right tool multiplies the take; bare hands always work at one", () => {
+    const oak = naturalSourceOf("oak");
+    const rock = naturalSourceOf("rock");
+    const has = (tools: string[]) => (g: string) => tools.includes(g);
+    // Axe on wood, pick on stone (registry-declared, never engine constants).
+    expect(takeUnitsOf(oak, "wood", has(["axe"]))).toBe(2);
+    expect(takeUnitsOf(oak, "wood", has([]))).toBe(1);
+    expect(takeUnitsOf(oak, "wood", has(["pick"]))).toBe(1); // wrong tool
+    expect(takeUnitsOf(rock, "stone", has(["pick"]))).toBe(2);
+    expect(takeUnitsOf(rock, "stone", has(["axe"]))).toBe(1);
+    // Products with no declared tool (fruit, wool) always move one.
+    expect(takeUnitsOf(naturalSourceOf("apple_tree"), "apple", has(["axe", "pick"]))).toBe(1);
+    // Unknown source/glyph stays safe.
+    expect(takeUnitsOf(undefined, "wood", has(["axe"]))).toBe(1);
+    expect(takeUnitsOf(oak, "stone", has(["axe", "pick"]))).toBe(1);
+  });
+
+  it("sourceKillExhausted — the felling test reads KILL glyphs only", () => {
+    const oak = naturalSourceOf("oak")!;
+    const appleTree = naturalSourceOf("apple_tree")!;
+    const banana = naturalSourceOf("banana_plant")!;
+    // Wood remaining keeps the tree standing; wood gone fells it.
+    expect(sourceKillExhausted(oak, { wood: 2 })).toBe(false);
+    expect(sourceKillExhausted(oak, { wood: 0 })).toBe(true);
+    expect(sourceKillExhausted(oak, {})).toBe(true);
+    expect(sourceKillExhausted(oak, undefined)).toBe(true);
+    // Hanging fruit does NOT keep a wood-emptied tree standing — the last
+    // wood taken IS the felling; the fruit dies with it.
+    expect(sourceKillExhausted(appleTree, { apple: 3, wood: 0 })).toBe(true);
+    expect(sourceKillExhausted(appleTree, { apple: 0, wood: 1 })).toBe(false);
+    // A pure-harvest source is never felled, even picked clean.
+    expect(sourceKillExhausted(banana, {})).toBe(false);
   });
 });
 

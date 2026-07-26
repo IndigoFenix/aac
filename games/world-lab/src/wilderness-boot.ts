@@ -17,6 +17,8 @@ import type { WorldSpec } from "@shared/world-engine/types";
 import { runWorldHost, type WorldHost } from "@shared/world-engine/world-host";
 import { createWorld3DView, type RenderHost } from "@shared/world-engine/render3d";
 import { createCreatureAvatarFactory } from "@shared/world-engine/creatures/creature-model";
+import { orchardPlants } from "@shared/world-engine/products";
+import type { WildMixEntry } from "@shared/world-engine/interaction/quest/wilderness";
 
 /** Side of the wilderness chunk (metres of sim manifold). The anchor sits at
  *  the CENTER (the landing point) — sim coords run 0..WILD_SIDE. */
@@ -36,6 +38,65 @@ export function faunaForBiome(biome: number): WildFauna {
     case 3: return { horses: 6 };  // grazer range
     default: return { horses: 0 };
   }
+}
+
+/** What the landing cell's biome SCATTERS as gatherable quest content
+ *  (step ④ biome selection — the seam buildWilderness's `mix` param was
+ *  cut for). Forest is oak-dominant; open grazing country is sparse trees
+ *  but wild flocks (animal entries scatter as WALKING product bodies —
+ *  milk/shear/hunt); barren ground is stone outcrops only. One
+ *  fruit-bearing plant from the registry's orchard joins any growing
+ *  biome — picked deterministically by the landing seed, so neighboring
+ *  cells bear different fruit and a live-harvest (regrowing) source
+ *  stands in every walkable wild. Species come from the products
+ *  registry, never named in the engine. */
+export function wildMixForBiome(biome: number, seed: number): WildMixEntry[] {
+  const orchard = orchardPlants();
+  const fruit: WildMixEntry[] = orchard.length
+    ? [{ species: orchard[(seed >>> 3) % orchard.length]!.species, count: biome === 1 ? 2 : 1 }]
+    : [];
+  switch (biome) {
+    case 1: // forest
+      return [{ species: "oak", count: 10 }, ...fruit, { species: "rock", count: 6 }];
+    case 2: // steppe / meadow — open country, wild flocks
+      return [
+        { species: "oak", count: 3 },
+        ...fruit,
+        { species: "rock", count: 5 },
+        { species: "sheep", count: 2 },
+      ];
+    case 3: // grazer range — flocks and wild cattle
+      return [
+        { species: "oak", count: 3 },
+        ...fruit,
+        { species: "rock", count: 5 },
+        { species: "sheep", count: 2 },
+        { species: "cow", count: 1 },
+      ];
+    default: // barren / sea-edge / ice — nothing grows
+      return [{ species: "rock", count: 8 }];
+  }
+}
+
+/** A FOUNDING-AGE town's gatherable surroundings, from its charter biome
+ *  (plan.ts TownPlan.biome — the site's ground character): farmland
+ *  country carries an orchard sprinkle and wild livestock to tame; mining
+ *  country is timber over heavy stone. Same registry-derived fruit pick
+ *  as the open-country mix. */
+export function homesteadWildMix(biome: "farmland" | "mining", seed: number): WildMixEntry[] {
+  const orchard = orchardPlants();
+  const fruit: WildMixEntry[] = orchard.length
+    ? [{ species: orchard[(seed >>> 3) % orchard.length]!.species, count: 2 }]
+    : [];
+  return biome === "mining"
+    ? [{ species: "oak", count: 8 }, ...fruit, { species: "rock", count: 10 }]
+    : [
+        { species: "oak", count: 8 },
+        ...fruit,
+        { species: "rock", count: 4 },
+        { species: "sheep", count: 2 },
+        { species: "cow", count: 1 },
+      ];
 }
 
 /** The mounted wilderness chunk — structurally the same surface main.ts's

@@ -105,12 +105,48 @@ export function createGeologyBaker(): GeologyBaker {
     const w = waiting.get(e.data.id);
     if (w) { waiting.delete(e.data.id); w.resolve(e.data); }
   };
+  // PRIORITY DISPATCH — the worker is one FIFO, and a NEW planet's bake must
+  // never queue behind another planet's refine/stitch backlog (measured: a
+  // cache-version bump re-queued every region's refine and every border's
+  // stitch, and the next planet's ~90 s bake sat behind minutes of it — the
+  // "planet never loads" report). Requests are held HERE and released one at
+  // a time, highest priority first; ties keep arrival order (stable sort).
+  const PRIORITY: Record<string, number> = { bake: 0, certifyTown: 1, refine: 2, stitch: 3 };
+  const queue: Array<{ req: Record<string, unknown> & { id: number; op: string }; resolve: (r: GeologyBakeResponse) => void }> = [];
+  let inFlight = false;
+  const pump = (): void => {
+    if (inFlight || !queue.length) return;
+    queue.sort((a, b) => (PRIORITY[a.req.op] ?? 9) - (PRIORITY[b.req.op] ?? 9));
+    const next = queue.shift()!;
+    inFlight = true;
+    waiting.set(next.req.id, {
+      resolve: r => { inFlight = false; next.resolve(r); pump(); },
+    });
+    worker.postMessage(next.req);
+  };
+  // A worker that dies (an import-time error, an OOM kill) answers NOTHING —
+  // without this, every pending bake waits forever and the planet silently
+  // never loads (the interim sphere just stands there). Fail LOUD and fail
+  // every waiter, so the console says what happened and callers can retry.
+  worker.onerror = (e: ErrorEvent) => {
+    console.error("geology worker error — failing all pending requests:", e.message ?? e);
+    // Drain the held queue FIRST: resolving an in-flight waiter re-pumps, and
+    // the pump must find nothing to feed the dead worker.
+    for (const q of queue.splice(0)) {
+      q.resolve({ id: q.req.id, ok: false, error: `geology worker died: ${e.message ?? "unknown error"}` });
+    }
+    for (const [id, w] of waiting) {
+      waiting.delete(id);
+      w.resolve({ id, ok: false, error: `geology worker died: ${e.message ?? "unknown error"}` });
+    }
+    inFlight = false;
+  };
   const dbPromise = openCache();
   const ask = (req: Record<string, unknown>): Promise<GeologyBakeResponse> => {
     const id = nextId++;
     return new Promise(resolve => {
-      waiting.set(id, { resolve });
-      worker.postMessage({ ...req, id });
+      queue.push({ req: { ...req, id, op: String(req.op) }, resolve });
+      pump();
     });
   };
   // The baked payload per body — what a refine posts back to the worker.

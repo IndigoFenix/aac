@@ -191,6 +191,11 @@ export interface ResidentModel {
     isVisible?: (houseIndex: number) => boolean,
     isRoomVisible?: (buildingId: string) => boolean,
     isHousePooled?: (houseIndex: number) => boolean,
+    /** RECRUITED CIVIC WORKERS (pipeline ⑥): a BUSY body — claimed by a
+     *  pooled task, executing a haul — is PINNED: never despawned (however
+     *  far it walks), never handed a fresh shopping trip (the host owns it
+     *  until the work ends). The normal cull resumes the frame it frees. */
+    isBusy?: (id: string) => boolean,
   ): ResidentUpdate;
   /** The member id filling errand ROLE `role` of a house (see roleMemberId). */
   runnerId(houseIndex: number, role: number): string | null;
@@ -368,6 +373,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     isVisible?: (houseIndex: number) => boolean,
     isRoomVisible?: (buildingId: string) => boolean,
     isHousePooled?: (houseIndex: number) => boolean,
+    isBusy?: (id: string) => boolean,
   ): ResidentUpdate => {
     // A house's interior is ON SHOW when its roof is transparent — the player
     // OCCUPIES it (an open door you're outside of doesn't reveal it; the roof
@@ -679,6 +685,11 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     const despawn: string[] = [];
     for (const id of bodies.keys()) {
       if (!desired.has(id)) {
+        // THE BUSY PIN (⑥ — recruited civic workers): a body the host has
+        // claimed for real work is NEVER culled, at any distance — a hauler
+        // vanishing mid-carry would strand its agreement. It keeps its body
+        // and its slot; the normal cull resumes the frame the work ends.
+        if (isBusy?.(id)) continue;
         // THE VIEW GUARD, cull half: never remove a body the camera can SEE —
         // a visible pop-out is a teleport. It keeps its body this frame and
         // re-competes next frame; culling lands once it walks out of view or
@@ -778,6 +789,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     // in and out of their own door on endless ghost errands.
     const trips: ResidentUpdate["trips"] = [];
     for (const [id, b] of bodies) {
+      if (isBusy?.(id)) continue; // ⑥ pin: the host owns this body's feet
       if (isHousePooled?.(b.house.index)) continue; // pooled: no fresh trips
       if (isHouseVisible(b.house)) continue;
       const run = runs.find(r => runnerId(b.house.index, r.role) === id);
@@ -809,6 +821,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     // position anyway, so a body caught elsewhere still walks sensibly. First
     // observation of a body seeds silently — its spawn already placed it right.
     for (const [id, b] of bodies) {
+      if (isBusy?.(id)) continue; // ⑥ pin: no commute pulls a working hauler
       if (isHousePooled?.(b.house.index)) continue; // pooled: no commutes
       const m = bodies.get(id)!.member;
       const jd = jobDutyOf(houseRoster(b.house.index)[m]);

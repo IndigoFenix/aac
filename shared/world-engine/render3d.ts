@@ -33,7 +33,8 @@ import {
 } from "./engine.js";
 import type { RenderIntent, ScreenPick, WorldView, WorldViewDeps } from "./world-view.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
-import { BED_TOP_FRAC, SEAT_TOP_FRAC, buildObjectModel, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
+import { buildObjectModel, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
+import { useContractFor, useAnchorWorld, type ContactPart } from "./furniture-use.js";
 import {
   getShadingMode, propMaterial, roadMaterial, structureMaterial, terrainMaterial, type LitMaterial,
 } from "./materials.js";
@@ -121,6 +122,11 @@ export const FLOOR_HEIGHT = 3.0;
 export function fixtureYaw(facing: number | undefined): number {
   return -(facing ?? 0);
 }
+
+/** Ease rate for a delivered fixture standing up (setUp false→true): ~1.5 s to
+ *  settle from flat to upright. Deliberately gentle — a slow matte rise, never
+ *  a snap. */
+const FIXTURE_SETTLE_RATE = 4;
 
 /** THREE yaw that turns a CREATURE rig's forward onto game angle `a`. The rig
  *  faces its local +Z (creature-model.ts facingYaw), which under a yaw of ψ
@@ -216,6 +222,33 @@ const GAZE_GROUND_ITERS = 18;
 
 export const DOLLHOUSE_FOV = 40;
 const DOLLHOUSE_PITCH = 0.5; // ~29° below horizontal — the low dollhouse angle
+
+/** How far a building may sit OUTSIDE the focused-house frame and still count
+ *  as part of it (the dollhouse cutaway membership test). An ANNEX is built
+ *  FLUSH past the base footprint — its near wall touches the house, but its
+ *  body lies wholly outside the base rect, so a strict overlap test drops it
+ *  (walls stay opaque, roof stays on, its shared wall z-fights the revealed
+ *  house). This slack pulls a flush annex back INTO the focus while staying
+ *  well under ANNEX_CLEARANCE (1.0 m), so a neighbouring house is never
+ *  swept in. Render chrome only — driven by the LOCAL focus, never sim state. */
+const FOCUS_FRAME_MARGIN = 0.5;
+
+/** Does building footprint `f` belong to the dollhouse focus framed by `sf`?
+ *  Overlap with the frame GROWN by FOCUS_FRAME_MARGIN, so an annex flush
+ *  against the base house (gap 0) is included while clearance-separated
+ *  neighbours (≥1 m) stay out. */
+export function inFocusFrame(
+  f: { x: number; y: number; w: number; h: number },
+  sf: { x: number; y: number; w: number; h: number },
+): boolean {
+  const m = FOCUS_FRAME_MARGIN;
+  return (
+    f.x < sf.x + sf.w + m &&
+    f.x + f.w > sf.x - m &&
+    f.y < sf.y + sf.h + m &&
+    f.y + f.h > sf.y - m
+  );
+}
 
 /** The dollhouse pose in MANIFOLD-LOCAL coordinates: a fixed low 3/4 angle
  *  framing the bounds at azimuth `PI/2 + spiritAz`, look-point at the
@@ -1266,7 +1299,7 @@ export interface AvatarFrame {
    *  pillow). The renderer resolves the activity's objId against the spec so
    *  models stay spec-blind; null/absent ⇒ the activity plays out where the
    *  body stands (a doze in place). */
-  activityAnchor?: { x: number; y: number; z: number; yaw: number } | null;
+  activityAnchor?: { x: number; y: number; z: number; yaw: number; contact?: ContactPart } | null;
 }
 
 /** A swappable avatar body. `object` is added to the scene once; `update` runs
@@ -1710,6 +1743,11 @@ export class World3DRenderer {
        *  half-extent, so a tall cabinet reported a short one and the spark
        *  hovered INSIDE it. Invalidated when the model's glyph changes. */
       topY?: number;
+      /** TIP fraction for a delivered-but-not-set-up fixture: 1 = lying flat
+       *  on its side (just delivered), 0 = standing upright (assembled). Eased
+       *  toward the target each frame so the stand-up reads as a gentle settle
+       *  rather than a pop. Only fixtures use it. */
+      tipFrac?: number;
     }
   >();
   /** Walls (static) + doors (a hinge pivot whose yaw tracks the door's `open`).
@@ -2578,9 +2616,9 @@ export class World3DRenderer {
       const sf = this.spiritFrame;
       for (const b of state.spec.buildings ?? []) {
         if (!visible.has(b.id)) continue;
-        const f = b.footprint;
-        const inFrame = f.x < sf.x + sf.w && f.x + f.w > sf.x && f.y < sf.y + sf.h && f.y + f.h > sf.y;
-        if (!inFrame) visible.delete(b.id);
+        // A flush ANNEX lies wholly outside the base frame — inFocusFrame's
+        // margin keeps it in the focus so it reveals + cuts away like the house.
+        if (!inFocusFrame(b.footprint, sf)) visible.delete(b.id);
       }
     }
     // camY is RELATIVE to the occupant's ground level, so the storey-plane fade
@@ -2611,9 +2649,9 @@ export class World3DRenderer {
         if (visible.has(b.id)) continue;
         if (sf) {
           // Outside the focused frame: an ordinary sealed building, not a cube.
-          const f = b.footprint;
-          const inFrame = f.x < sf.x + sf.w && f.x + f.w > sf.x && f.y < sf.y + sf.h && f.y + f.h > sf.y;
-          if (!inFrame) continue;
+          // The margin matches the visible-filter above, so a flush annex is
+          // treated as part of the focus in both passes.
+          if (!inFocusFrame(b.footprint, sf)) continue;
         }
         this.cutawayBlackout.add(b.id);
       }
@@ -2829,23 +2867,32 @@ export class World3DRenderer {
   private resolveActivityAnchor(
     state: WorldState,
     a: AvatarState,
-  ): { x: number; y: number; z: number; yaw: number } | null {
+  ): { x: number; y: number; z: number; yaw: number; contact: ContactPart } | null {
     const act = a.activity;
     if (!act || !act.objId) return null;
     const obj = state.objects[act.objId];
     const spec = state.spec.objects.find((o) => o.id === act.objId);
     if (!obj || !spec?.fixture) return null;
-    const ground = standHeightAt(state, obj.x, obj.y) + obj.floor * FLOOR_HEIGHT;
-    if (act.kind === "sleep") {
-      if (spec.fixture !== "bed") return null;
-      return { x: obj.x, y: ground + spec.radius * BED_TOP_FRAC, z: obj.y, yaw: bedSleeperYaw(spec.facing) };
-    }
-    if (act.kind === "sit") {
-      const frac = SEAT_TOP_FRAC[spec.fixture];
-      if (frac === undefined) return null; // no seat surface (a tub, a workbench)
-      return { x: obj.x, y: ground + spec.radius * frac, z: obj.y, yaw: sitterYaw(spec.facing) };
-    }
-    return null;
+    // Only sleeping and sitting pose the body ON a piece; eating/playing pose
+    // where the body stands.
+    if (act.kind !== "sleep" && act.kind !== "sit") return null;
+    // THE USE-POINT CONTRACT (furniture-use.ts) is the single authority for
+    // WHERE the body lands and which way it faces. `onFixture` decides whether
+    // this fixture is used ON (a bed, a seat — an anchor slides the body onto
+    // it) or BESIDE (a tub, a workbench — no anchor, pose in place). A sleep
+    // only anchors a torso-contact piece (a bed); a sit only a pelvis-contact
+    // seat (a chair, a privy).
+    const contract = useContractFor(spec.fixture);
+    if (!contract.onFixture) return null;
+    if (act.kind === "sleep" && contract.contactPart !== "torso") return null;
+    if (act.kind === "sit" && contract.contactPart !== "pelvis") return null;
+    const groundZ = standHeightAt(state, obj.x, obj.y) + obj.floor * FLOOR_HEIGHT;
+    const bodyYaw = act.kind === "sleep" ? bedSleeperYaw : sitterYaw;
+    return useAnchorWorld(
+      contract,
+      { x: obj.x, y: obj.y, radius: spec.radius, facing: spec.facing, groundZ },
+      bodyYaw,
+    );
   }
 
   private syncAvatars(
@@ -3416,7 +3463,10 @@ export class World3DRenderer {
         this.scene.add(mesh);
         this.scene.add(shadow);
         this.disposables.push(shadowGeom, shadowMat);
-        entry = { mesh, shadow, materials, model };
+        // A fixture that first appears DELIVERED (not set up) starts tipped;
+        // everything else starts upright. Starting AT the target means a plain
+        // fixture never settles on load — only a live set-up transition eases.
+        entry = { mesh, shadow, materials, model, tipFrac: spec?.fixture && spec?.setUp === false ? 1 : 0 };
         // A modeled object shows its descriptors PHYSICALLY (color/size/heat), so
         // it needs no floating symbol. Only the FAILSAFE (generic shape) wears the
         // emoji icon so it still reads as what it is.
@@ -3444,6 +3494,17 @@ export class World3DRenderer {
         if (spec?.fixture) {
           entry.model.setOpen?.(obj.open);
           entry.mesh.rotation.y = fixtureYaw(spec.facing);
+          // DELIVERED-BUT-NOT-SET-UP fixtures lie on their side; the flag flip
+          // (setUp false→true) eases them upright — a gentle, matte settle (no
+          // moving highlight; the models are high-roughness). Tip is about the
+          // mesh's own horizontal axis at height=radius, which lands the tipped
+          // model's base exactly on the floor for any fixture (the footprint
+          // becomes the new vertical extent), so no per-model offset is needed.
+          const tipTarget = spec.setUp === false ? 1 : 0;
+          const cur = entry.tipFrac ?? tipTarget;
+          const eased = cur + (tipTarget - cur) * Math.min(1, dt * FIXTURE_SETTLE_RATE);
+          entry.tipFrac = Math.abs(eased - tipTarget) < 1e-3 ? tipTarget : eased;
+          entry.mesh.rotation.x = entry.tipFrac * (Math.PI / 2);
         }
         // Carried objects turn to face the way their carrier faces (a recipe's
         // forward is +X; align it with the possessor's facing vector).

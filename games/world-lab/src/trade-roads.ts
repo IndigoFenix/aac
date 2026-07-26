@@ -49,13 +49,9 @@ import { roadMaterial, surfaceMaterial } from "@shared/world-engine/materials";
 // altitude (a 44 m terrain-tan ribbon measured ~1 px and invisible), lifted
 // over the coarse-LOD terrain between its sparse samples.
 const FAR_SEG_M = 2500;
-const FAR_HALF_W_M = 60;
-// Far samples are 2.5 km apart, so the metric relief bands (surface.ts —
-// hills at 1.5–24 km wavelength) alias between them; the lift must clear
-// the worst inter-sample hill or far ribbons dive through hillsides.
-const FAR_LIFT_M = 80;
-// Local (village-tier) roads: narrower at every layer — a lane, not a highway.
-const LOCAL_FAR_HALF_W_M = 25;
+// (The wide FAR road glyph is gone — roads are terrain PAINT now, see the
+// route-paint note at the queue. These remain for the border ink's layer.)
+// Local (village-tier) roads: a lane, not a highway.
 const LOCAL_NEAR_HALF_W_M = 2.5;
 // Deep history span: how many years of political past a planet carries
 // (nations P5). Content, not physics — the scrubber's domain.
@@ -405,9 +401,6 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
   root.add(farGroup, nearGroup);
   body.group.add(root);
 
-  // Warm ember glow — the beacons' language, dimmed to a thread: reads
-  // against any biome from any altitude without blooming like a city.
-  const farMat = roadMaterial(0x8a6f45, { emissive: 0x9a6a28, emissiveIntensity: 0.55 });
   // Political ink: a cool slate-blue thread, unmistakably not a road.
   const borderMat = roadMaterial(0x93a7c8, { emissive: 0x4f6ea8, emissiveIntensity: 0.5 });
   const nearMat = roadMaterial(0x8f7f63);
@@ -476,10 +469,16 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
     invalidateNear();
   };
 
-  // ── FAR: draped ribbon meshes, built a few per tick ─────────────────────
-  const farQueue: FarJob[] = routes.map(r => ({
-    route: r, halfW: FAR_HALF_W_M, liftM: FAR_LIFT_M, mat: farMat, sink: null,
-  }));
+  // ── ROADS ARE TERRAIN PAINT (planet/route-paint.ts) ─────────────────────
+  // The far ribbon glyph floated/buried as the quadtree re-chorded the
+  // ground and washed the map from altitude — the river-ribbon disease. The
+  // net now paints into the terrain's own vertex colours at TRUE lane width
+  // (fading below mesh resolution), and standing chunks re-sample once.
+  built.routePaint.addRoutes("interstates", routes, 6);
+  body.refreshTerrain?.(routes[0]!.dirs[0]!, radius * 4);
+
+  // The far QUEUE remains for BORDER ink only — map information, not ground.
+  const farQueue: FarJob[] = [];
   // Borders join the same build queue in their own ink (no caravans, no
   // near window — a border is map information, not a walkable surface).
   // They build into their OWN sink so a polity relabel can repaint them:
@@ -921,8 +920,11 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
       localSinks.set(key, sink);
       for (const r of data.roads) {
         live.push({ route: r, pts: chordPts(r), nearHalfW: LOCAL_NEAR_HALF_W_M, tag: key, carts: true });
-        farQueue.push({ route: r, halfW: LOCAL_FAR_HALF_W_M, liftM: FAR_LIFT_M, mat: farMat, sink });
       }
+      // Village lanes paint like the interstates — narrower, same law. The
+      // paint persists after eviction (world truth, idempotent per key); the
+      // caller refreshes nearby chunks with the rest of the region's landing.
+      built.routePaint.addRoutes(key, data.roads, 3);
       for (const hw of data.highways) {
         const ri = interstateIdx.get(`${hw.a}:${hw.b}`);
         if (ri === undefined) continue; // a route this net never derived
@@ -1012,7 +1014,6 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
       }
       carts.geometry.dispose();
       cartMat.dispose();
-      farMat.dispose();
       borderMat.dispose();
       fillMat.dispose();
       nearMat.dispose();

@@ -200,8 +200,14 @@ describe("houseRoomPlan: the generated split", () => {
     for (const h of sweep()) {
       const plan = houseRoomPlan(center, h);
       if (!plan.partitioned) continue;
-      const spots = [0, 1, 2, 3].map((slot) => goodBoxAt(center, h, slot));
       const living = plan.rooms[0]!;
+      // Only the goods whose box stands IN the living room — the pantry
+      // (slot 0) now follows the fridge into the kitchen when one exists,
+      // so its spot is a KITCHEN spot, checked by its own room's doors.
+      const inLiving = (s: { x: number; y: number }): boolean =>
+        s.x >= living.rect.x - 1e-9 && s.x <= living.rect.x + living.rect.w + 1e-9 &&
+        s.y >= living.rect.y - 1e-9 && s.y <= living.rect.y + living.rect.h + 1e-9;
+      const spots = [0, 1, 2, 3].map((slot) => goodBoxAt(center, h, slot)).filter(inLiving);
       for (const d of living.doorways) {
         if (d.edge === h.door) continue; // the street door — spots avoid it by layout
         const at =
@@ -266,15 +272,19 @@ describe("houseRoomPlan: the generated split", () => {
       expect(neighbors.length).toBeGreaterThanOrEqual(1);
       for (const nb of neighbors) expect(["living", "hall"]).toContain(nb.kind);
       if (neighbors.some((nb) => nb.kind === "living")) sawFront++;
-      // The front cut never starves the living room of its chest ends:
-      // the goods-corner spots still sit inside it.
+      // KITCHEN PRIORITY (user decision): the PANTRY (slot 0, the fridge)
+      // now stands in the KITCHEN when the room can seat it beside the oven
+      // (else it keeps the living room — the oven never yields), so its
+      // spot sits in one of those two rooms; the OTHER goods (slots 1-3)
+      // keep their living-room corners, and the front cut never starves the
+      // living room of THOSE ends.
       const lr = plan.rooms[0]!.rect;
-      for (const slot of [0, 1, 2, 3]) {
-        const s = goodBoxAt(center, h, slot);
-        expect(s.x).toBeGreaterThanOrEqual(lr.x);
-        expect(s.x).toBeLessThanOrEqual(lr.x + lr.w);
-        expect(s.y).toBeGreaterThanOrEqual(lr.y);
-        expect(s.y).toBeLessThanOrEqual(lr.y + lr.h);
+      const inRect = (s: { x: number; y: number }, r: { x: number; y: number; w: number; h: number }): boolean =>
+        s.x >= r.x - 1e-9 && s.x <= r.x + r.w + 1e-9 && s.y >= r.y - 1e-9 && s.y <= r.y + r.h + 1e-9;
+      const pantry = goodBoxAt(center, h, 0);
+      expect(inRect(pantry, k.rect) || inRect(pantry, lr)).toBe(true); // the fridge → kitchen or living
+      for (const slot of [1, 2, 3]) {
+        expect(inRect(goodBoxAt(center, h, slot), lr)).toBe(true); // the rest → the living room
       }
     }
     expect(sawFront).toBeGreaterThan(0); // the galley really occurs in-range

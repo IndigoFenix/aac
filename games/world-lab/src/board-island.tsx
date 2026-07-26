@@ -24,6 +24,9 @@ import type { BoardButtonInput, BoardRenderDeps, GlyphRenderProps, IconVisual } 
 // resolves to the types-only .ts) — import it explicitly, as the AAC does.
 import { GlyphCompositor } from "@shared/glyph-compositor.tsx";
 import type { CityHudChip, FamilyHudEntry, PocketEntry, QuestBoardView } from "@shared/world-engine/interaction/quest/quest-host";
+import { familyStateGlyph } from "@shared/world-engine/interaction/quest/family-hud";
+import { wellbeingGlyph } from "@shared/world-engine/interaction/quest/city-hud";
+import { iconGlyph } from "@shared/world-engine/interaction/quest/activity-bubble";
 import { LEXICON, parseSentence, type IntentKind } from "@shared/world-engine/interaction/intent/parse-intent";
 import {
   emptyRecency,
@@ -104,9 +107,13 @@ function BoardStrip({ view, onSelect }: { view: QuestBoardView | null; onSelect:
   );
 }
 
-// ── Family strip: the dollhouse household, one emoji-state chip per member ────
-// (family-hud.ts). A tap ADDRESSES that member — spoken commands go to it — so
-// the chip is the stable eyegaze target a moving body can't be.
+// ── Family strip: the dollhouse household, one state-glyph chip per member ────
+// (family-hud.ts). Each member's state renders as a COMPOSED glyph image through
+// the same GlyphCompositor the board buttons and over-head bubbles use — art
+// where the state has it, its emoji through the compositor otherwise, never a
+// raw text-node emoji (`familyStateGlyph`). A tap ADDRESSES that member — spoken
+// commands go to it — so the chip is the stable eyegaze target a moving body
+// can't be.
 
 function FamilyStrip({ members, onSelect }: { members: FamilyHudEntry[]; onSelect: (id: string) => void }) {
   if (members.length === 0) return null;
@@ -120,7 +127,9 @@ function FamilyStrip({ members, onSelect }: { members: FamilyHudEntry[]; onSelec
           title={m.state}
           onClick={() => onSelect(m.id)}
         >
-          <span className="lab-family-emoji">{m.emoji}</span>
+          <span className="lab-family-emoji">
+            <LabGlyph glyph={familyStateGlyph(m.state, m.emoji)} fallback={m.emoji} ariaLabel={m.state} noBackground />
+          </span>
           <span className="lab-family-name">{m.label}</span>
         </button>
       ))}
@@ -147,7 +156,9 @@ function CityStrip({ chips }: { chips: CityHudChip[] }) {
             <LabGlyph glyph={c.glyph} fallback={c.label} ariaLabel={c.label} noBackground />
           </span>
           <span className="lab-city-pop">👥{c.population}</span>
-          <span className="lab-city-well">{c.emoji}</span>
+          <span className="lab-city-well">
+            <LabGlyph glyph={iconGlyph(wellbeingGlyph(c.wellbeing), c.emoji)} fallback={c.emoji} ariaLabel="wellbeing" noBackground />
+          </span>
           {c.stocks.map((s) => (
             <span key={s.glyph} className={`lab-city-stock${s.shortage > 0.5 ? " short" : ""}`}>
               <span className="lab-city-stock-glyph">

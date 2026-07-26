@@ -58,6 +58,12 @@ export interface StructureSpec {
   /** Roster staff for the completed building (replaces the flat
    *  STAFF_PER_WORK for this building; 0 = unstaffed). */
   jobs: number;
+  /** An EMPTY SHELL (pipeline ⑤b): completes as a bare doored box — no
+   *  registry furniture, no interior program rooms; function arrives from
+   *  what's built and placed inside (interior subdivision + placed
+   *  pieces). "A building constructed with no role is just an empty box
+   *  awaiting programs." */
+  shell?: boolean;
   /** The economic half: a BuildingDef KEY in the world's compiled economy
    *  (produces/consumes/cap/district ride there). Absent = no aggregate row. */
   economy?: string;

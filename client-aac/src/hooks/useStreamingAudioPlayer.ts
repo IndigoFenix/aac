@@ -3,6 +3,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { processVoice } from "@/lib/pitchShifter";
+import { createPcmStreamSink, type PcmStreamSink } from "@/lib/pcmStreamSink";
 
 export interface AudioChunk {
   chunk: string; // Base64 encoded audio data
@@ -28,6 +29,24 @@ export interface UseStreamingAudioPlayerReturn {
   /** Tag of the currently playing chunk (e.g. "avatar", "utterance"), or null if idle */
   currentTag: string | null;
   queueChunk: (chunk: AudioChunk) => void;
+  /**
+   * Open a CONTINUOUS PCM stream for `tag` — the low-latency path used by
+   * client-direct TTS. Unlike queueChunk (one decodable file per call), the
+   * returned sink accepts arbitrary byte slices and plays them as one unbroken
+   * signal, so audio starts at time-to-first-byte instead of after the whole
+   * utterance has been synthesized.
+   *
+   * Returns null when AudioWorklet is unavailable or the module fails to load;
+   * callers MUST fall back to queueChunk so an utterance is never lost.
+   *
+   * Same-tag streams are exclusive: opening one aborts any stream already
+   * running on that tag, matching queueChunk's one-voice-at-a-time semantics.
+   */
+  openPcmStream: (opts: {
+    tag: string;
+    sourceRate: number;
+    prebufferMs?: number;
+  }) => Promise<PcmStreamSink | null>;
   play: () => void;
   stop: () => void;
   clear: () => void;
@@ -111,6 +130,8 @@ export function useStreamingAudioPlayer(
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   // Currently-playing AudioBufferSourceNode (pitch-shifted path)
   const bufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  // Live continuous-PCM streams, keyed by tag (see openPcmStream).
+  const pcmStreamsRef = useRef<Map<string, PcmStreamSink>>(new Map());
   // Local-output gain (mute = 0) and a parallel tap that exposes everything this
   // player sounds as a MediaStream, so the AAC's synthesized voice can be sent over
   // a call exactly like a microphone would be.
@@ -165,6 +186,8 @@ export function useStreamingAudioPlayer(
       }
       bufferSourceRef.current?.stop();
       bufferSourceRef.current = null;
+      pcmStreamsRef.current.forEach((sink) => sink.abort());
+      pcmStreamsRef.current.clear();
       if (volumeRafRef.current) cancelAnimationFrame(volumeRafRef.current);
       if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
       try { audioContextRef.current?.close(); } catch { /* ignore */ }
@@ -485,6 +508,88 @@ export function useStreamingAudioPlayer(
     [autoPlay, base64ToBlobUrl, base64ToArrayBuffer, playNext, onError]
   );
 
+  // Open a continuous PCM stream (client-direct TTS path). The sink connects
+  // to the SAME analyser the queued-chunk paths use, so local mute (masterGain)
+  // and the call tap (callDest) apply to streamed audio unchanged.
+  const openPcmStream = useCallback(
+    async (opts: { tag: string; sourceRate: number; prebufferMs?: number }): Promise<PcmStreamSink | null> => {
+      const ctx = audioContextRef.current;
+      const analyser = analyserRef.current;
+      if (!ctx || !analyser) return null;
+
+      // Same-tag exclusivity — a second press must not stack two voices.
+      // Drop ownership BEFORE aborting so the outgoing sink's finished-handler
+      // sees it is no longer the owner and skips its hand-back.
+      const superseded = pcmStreamsRef.current.get(opts.tag);
+      if (superseded) {
+        pcmStreamsRef.current.delete(opts.tag);
+        superseded.abort();
+      }
+
+      // Mark busy synchronously, BEFORE the await, so the mic is gated from the
+      // moment the press happens rather than when the first bytes land.
+      stoppedRef.current = false;
+      busyRef.current = true;
+      if (busyTailTimerRef.current) {
+        clearTimeout(busyTailTimerRef.current);
+        busyTailTimerRef.current = null;
+      }
+
+      const sink = await createPcmStreamSink(ctx, analyser, {
+        sourceRate: opts.sourceRate,
+        prebufferMs: opts.prebufferMs,
+      });
+
+      if (!sink) {
+        // Caller falls back to queueChunk; release the busy latch we took above
+        // unless something else is already playing.
+        if (!playingRef.current && queueRef.current.length === 0) {
+          if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
+          busyTailTimerRef.current = setTimeout(() => {
+            busyRef.current = false;
+            busyTailTimerRef.current = null;
+          }, POST_PLAY_TAIL_MS);
+        }
+        return null;
+      }
+
+      // A stream that opened after a stop()/clear() raced past it is stale.
+      if (stoppedRef.current) {
+        sink.abort();
+        return null;
+      }
+
+      pcmStreamsRef.current.set(opts.tag, sink);
+      playingRef.current = true;
+      setCurrentTag(opts.tag);
+      if (!playbackStartedRef.current) {
+        playbackStartedRef.current = true;
+        setIsPlaying(true);
+        setIsBuffering(false);
+        onPlaybackStart?.();
+      }
+
+      void sink.finished.then(({ underruns }) => {
+        if (underruns > 0) {
+          console.warn(`[StreamingAudioPlayer] PCM stream "${opts.tag}" had ${underruns} underrun(s)`);
+        }
+        // The map is the single source of truth for who owns a tag. A stream
+        // that has been superseded (or torn down by stop/clearByTag) must NOT
+        // run the hand-back: doing so would clear playingRef and start the
+        // queue underneath whichever stream replaced it — two voices at once.
+        if (pcmStreamsRef.current.get(opts.tag) !== sink) return;
+        pcmStreamsRef.current.delete(opts.tag);
+        playingRef.current = false;
+        // Hand back to the legacy queue — this also runs the end-of-playback
+        // bookkeeping (onPlaybackEnd + busy tail) when nothing is queued.
+        playNext();
+      });
+
+      return sink;
+    },
+    [onPlaybackStart, playNext],
+  );
+
   // Manual play (useful when autoplay is blocked)
   const play = useCallback(() => {
     setError(null);
@@ -508,6 +613,10 @@ export function useStreamingAudioPlayer(
     // Stop pitch-shifted source if playing
     try { bufferSourceRef.current?.stop(); } catch { /* may already be stopped */ }
     bufferSourceRef.current = null;
+
+    // Tear down any live PCM streams (client-direct TTS path).
+    pcmStreamsRef.current.forEach((sink) => sink.abort());
+    pcmStreamsRef.current.clear();
 
     // Start tail timer for busyRef (cover echo even when manually stopped)
     if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
@@ -533,6 +642,18 @@ export function useStreamingAudioPlayer(
   // Clear only chunks with a matching tag, leaving other-tag chunks queued.
   // If the currently-playing chunk matches, it is also stopped.
   const clearByTag = useCallback((tag: string) => {
+    // A live PCM stream on this tag is the same "voice" as its queued chunks —
+    // interrupting the tag has to cut it off too, or a superseded utterance
+    // keeps talking (exactly the doubling the queue clear exists to prevent).
+    const liveStream = pcmStreamsRef.current.get(tag);
+    if (liveStream) {
+      // Ownership first, then abort — same rule as openPcmStream, so the
+      // sink's finished-handler no-ops and we drive the hand-back from here.
+      pcmStreamsRef.current.delete(tag);
+      liveStream.abort();
+      playingRef.current = false;
+    }
+
     // Drop matching chunks from the queue (revoke their blob URLs first).
     const remaining: typeof queueRef.current = [];
     let dropped = 0;
@@ -555,6 +676,12 @@ export function useStreamingAudioPlayer(
         setIsBuffering(true);
         playNext();
       }
+    } else if (liveStream) {
+      // We killed a PCM stream and told its handler to stand down, so nothing
+      // else will resume the queue or run the end-of-playback bookkeeping.
+      // playNext covers both: it plays what's left, or settles the player.
+      if (queueRef.current.length > 0) setIsBuffering(true);
+      playNext();
     }
     if (dropped > 0) {
       console.log(`[StreamingAudioPlayer] Cleared ${dropped} chunk(s) with tag "${tag}"`);
@@ -577,6 +704,7 @@ export function useStreamingAudioPlayer(
     isBusyRef: busyRef,
     currentTag,
     queueChunk,
+    openPcmStream,
     play,
     stop,
     clear,

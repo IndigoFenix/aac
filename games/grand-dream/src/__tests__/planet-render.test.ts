@@ -20,6 +20,8 @@ import { SEA_HEIGHT } from "@shared/world-engine/kernel/geology/tectonics";
 import { substrateSurface, EARTHLIKE_PALETTE, type PlanetSurface, type Vec3 } from "@shared/world-engine/planet/surface";
 import { buildChunkGeometry, PLANET_FACES, DETAIL_TILE_M } from "@shared/world-engine/planet/chunk";
 import { createPlanetLod, type PlanetLodHost } from "@shared/world-engine/planet/lod";
+import { createRoutePaint } from "@shared/world-engine/planet/route-paint";
+import { routeFromDirs } from "@shared/world-engine/planet/routes";
 import * as THREE from "three";
 import { buildWaves } from "@shared/world-engine/planet/water-normals";
 import { applyTerrainShading, WATER_SAFETY, DETAIL_COMMON_GLSL, terrainPatchFor } from "@shared/world-engine/planet/terrain-shading";
@@ -391,6 +393,25 @@ describe("chunk geometry", () => {
       // Without a river sampler, land stays dry and still — the ocean drift.
       expect(dry.water.some((w) => w !== 0)).toBe(false);
       expect(dry.flow.some((f) => f !== 0)).toBe(false);
+    });
+
+    it("road paint tints land vertices through surface.roadTintAt", () => {
+      const base: PlanetSurface = {
+        radius: RADIUS,
+        heightAt: () => 10,
+        colorAt: (_h, _d, out) => { out[0] = 0.4; out[1] = 0.4; out[2] = 0.4; },
+      };
+      const road: PlanetSurface = {
+        ...base,
+        roadTintAt: (_d, _s, rgb) => { rgb[0] += 0.2; },
+      };
+      const p = { face: 4, uMin: -0.05, uMax: 0.05, vMin: -0.05, vMax: 0.05, resolution: 5, skirtDepth: 10 };
+      const plain = buildChunkGeometry({ ...p, surface: base });
+      const paved = buildChunkGeometry({ ...p, surface: road });
+      expect(paved.colors[0]).toBeCloseTo(plain.colors[0] + 0.2, 5);
+      // No geometry change, no water — a road is colour only.
+      expect(paved.water.some((w) => w !== 0)).toBe(false);
+      expect(Array.from(paved.positions)).toEqual(Array.from(plain.positions));
     });
 
     it("carries water and detailUv onto the skirt ring, like colors and normals", () => {
@@ -1284,6 +1305,51 @@ describe("planet LOD", () => {
     lod.refresh([0, 0, -RADIUS * 400], RADIUS * 0.01);
     expect(rebuilt.length).toBe(0);
     lod.dispose();
+  });
+});
+
+// Roads painted into the terrain (route-paint.ts) — the river-paint law
+// applied to lanes: true width, coverage fade, growable and idempotent.
+describe("route paint", () => {
+  const paint = createRoutePaint(RADIUS);
+  // A short lane along the equator: vertices ~100 m apart at RADIUS 10 km.
+  const laneDirs: Array<[number, number, number]> = [];
+  for (let i = 0; i <= 5; i++) {
+    const a = i * 0.01;
+    laneDirs.push([Math.cos(a), Math.sin(a), 0]);
+  }
+  const lane = routeFromDirs(laneDirs, RADIUS, 1, 2)!;
+
+  it("adds once per key and paints ON the lane at true width", () => {
+    expect(lane).toBeTruthy();
+    expect(paint.addRoutes("lane", [lane], 6)).toBe(true);
+    expect(paint.addRoutes("lane", [lane], 6)).toBe(false); // idempotent
+    expect(paint.segmentCount()).toBeGreaterThan(0);
+
+    const on: [number, number, number] = [0.3, 0.5, 0.2];
+    paint.tintAt(laneDirs[2], 0, on);
+    expect(on[0]).not.toBe(0.3); // pulled toward packed dirt
+
+    // 20 m off a 6 m half-width lane (band ends at 7.8 m): untouched — no
+    // width glyph, ever.
+    const t = 20 / RADIUS;
+    const off: [number, number, number] = [Math.cos(0.02), Math.sin(0.02), t];
+    const m = Math.hypot(off[0], off[1], off[2]);
+    off[0] /= m; off[1] /= m; off[2] /= m;
+    const rgb: [number, number, number] = [0.3, 0.5, 0.2];
+    paint.tintAt(off, 50_000, rgb);
+    expect(rgb).toEqual([0.3, 0.5, 0.2]);
+  });
+
+  it("fades by coverage on coarse meshes instead of widening", () => {
+    const fine: [number, number, number] = [0.3, 0.5, 0.2];
+    paint.tintAt(laneDirs[2], 0, fine);
+    const coarse: [number, number, number] = [0.3, 0.5, 0.2];
+    paint.tintAt(laneDirs[2], 5_000, coarse);
+    const dFine = Math.abs(fine[0] - 0.3);
+    const dCoarse = Math.abs(coarse[0] - 0.3);
+    expect(dCoarse).toBeGreaterThan(0);
+    expect(dCoarse).toBeLessThan(dFine);
   });
 });
 

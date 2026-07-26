@@ -60,11 +60,13 @@ import type { BuildingDelta } from "./construction";
 import {
   DOOR_DEPTH,
   PASS_THROUGH,
+  axisFaceInto,
   cellDedicated,
   cornerThenWall,
   faceInto,
   fitsSvc,
   frameDirAngle,
+  goodBoxPlacement,
   makePlacementContext,
   memberZone,
   scanWalls,
@@ -121,7 +123,9 @@ export function workFurniture(
   /** The workstation registry to furnish from (P2 per-culture, else default). */
   registry: WorkstationRegistry = DEFAULT_WORKSTATION_REGISTRY,
 ): FurniturePiece[] {
-  const defs = [...registry.work, ...workExtraStationDefs(work.stations, registry)];
+  // A BARE shell (⑤b) furnishes NOTHING from the registry — only its
+  // delta's placed pieces stand (furnishPlan seeds them before any def).
+  const defs = work.bare ? [] : [...registry.work, ...workExtraStationDefs(work.stations, registry)];
   return furnishPlan(
     center, work, buildingRoomPlan(center, index, work, program, delta),
     defs, `furn${scope}_w${index}`, [], delta,
@@ -143,7 +147,6 @@ function furnishPlan(
   // predicates read it as this driver pushes into it).
   const ctx: PlacementContext = makePlacementContext(center, shape, plan, goods);
   const pieces = ctx.pieces;
-  const lr = plan.rooms[0]!.rect;
 
   // CONSTRUCTION (v1): resident-placed pieces are FACTS ON THE GROUND —
   // seeded before any station so the driver fits around them; stowed
@@ -153,6 +156,9 @@ function furnishPlan(
     pieces.push({
       id: p.id, kind: p.kind, x: p.x, y: p.y,
       radius: p.radius, facing: p.facing, openable: p.openable,
+      // Carry the delivered-but-not-set-up flag through so the view can stand
+      // the real model on its side until a resident assembles it.
+      ...(p.setUp !== undefined ? { setUp: p.setUp } : {}),
     });
   }
 
@@ -173,7 +179,10 @@ function furnishPlan(
       x: w.x,
       y: w.y,
       radius,
-      facing: at.facing ?? faceInto(ctx, z, w.x, w.y),
+      // A wall scan supplies the wall's inward normal (already axis-aligned);
+      // a corner spot supplies none — face it square down an axis toward the
+      // most open space rather than diagonally at the room's centroid.
+      facing: at.facing ?? axisFaceInto(ctx, z, w.x, w.y, radius),
       openable,
       ...(good !== undefined ? { good } : {}),
     });
@@ -185,6 +194,18 @@ function furnishPlan(
   // among the pieces already placed.
   const placedAt = new Map<string, { piece: FurniturePiece; u: number; v: number }>();
   const idOf = (suffix: string): string => `${idPrefix}_${suffix}`;
+  /** A station's cell, then its cellFallback cells, resolved to zones and
+   *  deduped (a fallback that resolves to the same zone — e.g. communal
+   *  when no kitchen exists — is tried only once). */
+  const cellZones = (c: PlacementContext, def: StationDef): Zone[] => {
+    const seen = new Set<Zone>();
+    const out: Zone[] = [];
+    for (const ref of [def.cell, ...(def.cellFallback ?? [])]) {
+      const z = zoneForCell(c, ref);
+      if (!seen.has(z)) { seen.add(z); out.push(z); }
+    }
+    return out;
+  };
 
   for (const def of defs) {
     if (def.partitionedOnly && !plan.partitioned) continue;
@@ -194,18 +215,21 @@ function furnishPlan(
     const svc = !PASS_THROUGH.has(def.kind); // pass-through pieces skip the service lane
 
     if (rule.mode === "goodsCorner") {
-      // Tucked FLUSH into the communal cell's corners (edge against both
-      // walls). The slot picks the corner (goodBoxAt's mapping over the
-      // living rect: 0 SW · 1 SE · 2 NE · 3 NW); the errand's standing
-      // spot sits in FRONT of the chest, so the shopper walks up to a
-      // spot that's clear of the solid crate.
+      // Tucked FLUSH into a corner (edge against both walls) of the good's
+      // OWN room — goodBoxPlacement picks it: the pantry fridge claims the
+      // KITCHEN when one exists (the corner farthest from its door, so the
+      // oven keeps a wall), every other good a living-room corner (0 SW ·
+      // 1 SE · 2 NE · 3 NW). The errand's standing spot sits in FRONT of
+      // the chest, so the shopper walks up to a spot clear of the solid
+      // crate. Unconditional (the corner IS the box) — later kitchen
+      // stations FIT AROUND the fridge, and the cupboard YIELDS to it.
       const inWall = def.radius + 0.1; // edge a hair off the wall (no z-fight)
-      const lcx = lr.x + lr.w / 2;
-      const lcy = lr.y + lr.h / 2;
       goods.forEach((g, i) => {
-        const corner = (g.slot ?? i) % 4;
-        const chX = corner === 1 || corner === 2 ? lr.x + lr.w - inWall : lr.x + inWall;
-        const chY = corner === 0 || corner === 1 ? lr.y + lr.h - inWall : lr.y + inWall;
+        const { room, corner } = goodBoxPlacement(center, shape, plan, g.slot ?? i);
+        const r = room.rect;
+        const chX = corner === 1 || corner === 2 ? r.x + r.w - inWall : r.x + inWall;
+        const chY = corner === 0 || corner === 1 ? r.y + r.h - inWall : r.y + inWall;
+        const zone = ctx.zones.find((z) => z.room.id === room.id) ?? ctx.zones[0]!;
         pieces.push({
           id: idOf(`${def.key}_${g.key}`),
           // The registry may override the MODEL per good (food → a
@@ -215,7 +239,10 @@ function furnishPlan(
           x: chX,
           y: chY,
           radius: def.radius,
-          facing: Math.atan2(lcy - chY, lcx - chX),
+          // Square down a frame axis toward open floor (the refrigerator's
+          // door then swings into ITS room, not across the diagonal into a
+          // wall) — the general alignment rule, not a per-good angle.
+          facing: axisFaceInto(ctx, zone, chX, chY, def.radius),
           openable: def.openable,
           good: g.key,
         });
@@ -227,16 +254,22 @@ function furnishPlan(
       // A studio keeps the classic midpoint of the wall opposite the
       // door. A PARTITIONED cell's far wall is the partition — its
       // midpoint is the table's column and its flanks carry door
-      // corridors — so the piece moves to a side wall first.
-      const z = zoneForCell(ctx, def.cell);
-      const mid = { u: (z.u0 + z.u1) / 2, v: z.v1 - (def.radius + 0.1) };
-      const midAt = fitsSvc(ctx, z, mid.u, mid.v, def.radius, svc)
-        ? { ...mid, facing: frameDirAngle(ctx, 0, -1) }
-        : null;
-      const at = plan.partitioned
-        ? scanWalls(ctx, z, ["side0", "side1"], def.radius, svc) ?? midAt
-        : midAt ?? scanWalls(ctx, z, ["side0", "side1"], def.radius, svc);
-      if (at) push(z, idOf(def.key), def.kind, at, def.radius, def.openable);
+      // corridors — so the piece moves to a side wall first. Its own cell
+      // FIRST, then any cellFallback cells (the cupboard yields to the
+      // living room when the fridge took its kitchen wall).
+      for (const z of cellZones(ctx, def)) {
+        const mid = { u: (z.u0 + z.u1) / 2, v: z.v1 - (def.radius + 0.1) };
+        const midAt = fitsSvc(ctx, z, mid.u, mid.v, def.radius, svc)
+          ? { ...mid, facing: frameDirAngle(ctx, 0, -1) }
+          : null;
+        const at = plan.partitioned
+          ? scanWalls(ctx, z, ["side0", "side1"], def.radius, svc) ?? midAt
+          : midAt ?? scanWalls(ctx, z, ["side0", "side1"], def.radius, svc);
+        if (at) {
+          push(z, idOf(def.key), def.kind, at, def.radius, def.openable);
+          break;
+        }
+      }
       continue;
     }
 

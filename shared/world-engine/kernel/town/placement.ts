@@ -35,7 +35,7 @@ import {
   type WallKey,
 } from "./stations";
 import { DEFAULT_WORKSTATION_REGISTRY } from "./workstations";
-import { memberRoomOf, type HouseRoom, type HouseRoomPlan } from "./rooms";
+import { kitchenDeepestCorner, memberRoomOf, type HouseRoom, type HouseRoomPlan } from "./rooms";
 import { speciesBodyRadius } from "../../creatures/species";
 
 export interface FurniturePiece {
@@ -52,6 +52,12 @@ export interface FurniturePiece {
   openable: boolean;
   /** The street good whose household box this chest IS (pantry…). */
   good?: string;
+  /** SET-UP state (construction ⑥): `false` = delivered but not yet
+   *  assembled — the renderer stands the real model on its side. ABSENT ⇒
+   *  set up (every generated station, every already-standing placed piece).
+   *  Mirrors PlacedPiece.setUp; furniture.ts copies it through when it seeds
+   *  the delta's placed pieces. */
+  setUp?: boolean;
 }
 
 /** A room as a rectangle in the house's door-local FRAME (u along the
@@ -85,6 +91,10 @@ export const GAP = 0.05; // minimum daylight between two pieces
 export const STEP = 0.25;
 export const SPOT_IN = 1.75; // goodBoxAt's corner inset (keep in sync w/ rooms.ts doc)
 export const SPOT_CLEAR = 0.5; // a body's worth of clearance around the spot
+// The pantry-box (refrigerator) and oven footprints — the HOUSE_STATIONS
+// radii, named here for the fridge-vs-oven fit probe (goodBoxPlacement).
+const FRIDGE_R = 0.55;
+const OVEN_R = 0.6;
 
 // The flood's body radius is THE CONSTRUCTING SPECIES' (ctx.bodyR — a house
 // is furnished so ITS OWN species can pass), with the grid and wall band
@@ -219,6 +229,83 @@ function zoneOf(ctx: PlacementContext, room: HouseRoom): Zone {
   return zone;
 }
 
+/** Where a good's household box stands: WHICH ROOM and WHICH CORNER of it
+ *  (0 SW · 1 SE · 2 NE · 3 NW — goodBoxAt's mapping). */
+export interface GoodBoxAnchor {
+  room: HouseRoom;
+  corner: number;
+}
+
+/** The corner-inset position of a box in a room (walls it hugs by corner). */
+function cornerInset(
+  rect: { x: number; y: number; w: number; h: number },
+  corner: number,
+  inset: number,
+): { x: number; y: number } {
+  return {
+    x: corner === 1 || corner === 2 ? rect.x + rect.w - inset : rect.x + inset,
+    y: corner === 0 || corner === 1 ? rect.y + rect.h - inset : rect.y + inset,
+  };
+}
+
+// Fit-aware goods-box resolution is memoized per plan (a plan object maps
+// uniquely to one center+house, so the answer is stable for it).
+const boxPlacementCache = new WeakMap<HouseRoomPlan, Map<number, GoodBoxAnchor>>();
+
+/**
+ * THE single source for WHERE a street good's household box stands — which
+ * ROOM and which CORNER of it. THE PANTRY (slot 0, the food refrigerator)
+ * claims the KITCHEN whenever the house has one AND an oven still fits there
+ * beside it — the oven NEVER yields (user priority: the fridge belongs in
+ * the kitchen, and the CUPBOARD yields to it, but the oven outranks the
+ * fridge). Feasibility is the REAL fit rule, not a heuristic: the fridge is
+ * placed at the kitchen's deepest corner, its stand spot marked, and an oven
+ * (its radius) is scanned across the kitchen's walls under fits + the
+ * service lane; only if one lands does the fridge join the kitchen. Every
+ * other good, any house without a kitchen, and a kitchen too cramped to seat
+ * both keep the living-room corner (the historical behavior). goods.ts's
+ * goodBoxAt (the drawn crate + the trip-end), this module's shopper spots
+ * and furniture.ts's goodsCorner all resolve through here, so the crate, the
+ * stand spot and the trip-end can never drift apart.
+ */
+export function goodBoxPlacement(
+  center: { x: number; y: number },
+  shape: PlacementContext["shape"],
+  plan: HouseRoomPlan,
+  slot: number,
+): GoodBoxAnchor {
+  const corner = ((slot % 4) + 4) % 4;
+  const living = plan.rooms[0]!;
+  if (corner !== 0) return { room: living, corner };
+  const cached = boxPlacementCache.get(plan)?.get(0);
+  if (cached) return cached;
+
+  let anchor: GoodBoxAnchor = { room: living, corner: 0 };
+  const kitchen = plan.rooms.find((r) => r.kind === "kitchen");
+  if (kitchen) {
+    const kc = kitchenDeepestCorner(kitchen);
+    // A PROBE context (no goods → no spot recursion): stand the fridge in
+    // its corner, mark ITS shopper spot, and ask whether an oven still fits
+    // any kitchen wall (the driver's exact predicate — fits + service lane).
+    const probe = makePlacementContext(center, shape, plan, []);
+    const chest = cornerInset(kitchen.rect, kc, FRIDGE_R + 0.1);
+    probe.pieces.push({
+      id: "__fridge_probe", kind: "refrigerator",
+      x: chest.x, y: chest.y, radius: FRIDGE_R, facing: 0, openable: true, good: "food",
+    });
+    const spotW = cornerInset(kitchen.rect, kc, SPOT_IN);
+    probe.spots.push(toFrame(probe, spotW.x, spotW.y));
+    const z = probe.zones.find((zz) => zz.room.id === kitchen.id);
+    if (z && scanWalls(probe, z, ["side0", "side1", "far"], OVEN_R, true)) {
+      anchor = { room: kitchen, corner: kc };
+    }
+  }
+  const byslot = boxPlacementCache.get(plan) ?? new Map<number, GoodBoxAnchor>();
+  byslot.set(0, anchor);
+  boxPlacementCache.set(plan, byslot);
+  return anchor;
+}
+
 /** Build the shared context for one building. `pieces` is adopted as the
  *  LIVE list (defaults to empty — the generator's starting state). */
 export function makePlacementContext(
@@ -247,14 +334,15 @@ export function makePlacementContext(
     svc: { cache: null },
   };
   ctx.zones = plan.rooms.map((room) => zoneOf(ctx, room));
-  const lr = plan.rooms[0]!.rect;
+  // Each good's stand spot sits in FRONT of its box, in whatever room the
+  // box stands in (goodBoxPlacement — the pantry follows the fridge into the
+  // kitchen when the oven still fits), so a returning shopper stops at a
+  // reachable spot there. (An empty `goods` — the probe context inside
+  // goodBoxPlacement — computes no spots, so there is no recursion.)
   ctx.spots = goods.map((g, i) => {
-    const corner = (g.slot ?? i) % 4;
-    return toFrame(
-      ctx,
-      corner === 1 || corner === 2 ? lr.x + lr.w - SPOT_IN : lr.x + SPOT_IN,
-      corner === 0 || corner === 1 ? lr.y + lr.h - SPOT_IN : lr.y + SPOT_IN,
-    );
+    const { room, corner } = goodBoxPlacement(center, shape, plan, g.slot ?? i);
+    const sp = cornerInset(room.rect, corner, SPOT_IN);
+    return toFrame(ctx, sp.x, sp.y);
   });
   return ctx;
 }
@@ -562,6 +650,57 @@ export function zoneCenter(ctx: PlacementContext, z: Zone): { x: number; y: numb
 export function faceInto(ctx: PlacementContext, z: Zone, x: number, y: number): number {
   const c = zoneCenter(ctx, z);
   return Math.atan2(c.y - y, c.x - x);
+}
+
+/**
+ * AXIS-ALIGNED inward facing (round 8 — the alignment preference). A piece
+ * flush against a wall or tucked in a corner should face the room SQUARE-ON
+ * — along one of the building frame's own axes — not tilted on the diagonal
+ * toward the room's centroid (`faceInto`), which reads as furniture knocked
+ * askew. Among the four frame-cardinal directions this picks the one with
+ * the most OPEN space ahead (clear of the zone's walls AND of every solid
+ * piece already placed), so the openable/use side looks at floor a body can
+ * stand on, never at a wall or a neighbouring fixture.
+ *
+ * GENERAL by construction: the driver's wall/corner fallback and the goods
+ * corners both route their facing through here, so alignment is a placement
+ * property every kind inherits — no furniture item hard-codes its own angle
+ * (the emergent-over-scripted law).
+ */
+export function axisFaceInto(
+  ctx: PlacementContext,
+  z: Zone,
+  x: number,
+  y: number,
+  radius = 0,
+): number {
+  const f = toFrame(ctx, x, y);
+  const dirs: Array<{ du: number; dv: number }> = [
+    { du: 1, dv: 0 },
+    { du: -1, dv: 0 },
+    { du: 0, dv: 1 },
+    { du: 0, dv: -1 },
+  ];
+  let best = dirs[0]!;
+  let bestClear = -Infinity;
+  for (const d of dirs) {
+    // Room ahead to the zone wall in this direction.
+    let clear =
+      (d.du === 1 ? z.u1 - f.u : d.du === -1 ? f.u - z.u0 : d.dv === 1 ? z.v1 - f.v : f.v - z.v0) - radius;
+    // Nearest solid piece directly ahead (within a lateral body-band) caps it.
+    for (const p of ctx.pieces) {
+      if (PASS_THROUGH.has(p.kind)) continue;
+      const q = toFrame(ctx, p.x, p.y);
+      const ahead = d.du !== 0 ? (q.u - f.u) * d.du : (q.v - f.v) * d.dv;
+      const lateral = d.du !== 0 ? Math.abs(q.v - f.v) : Math.abs(q.u - f.u);
+      if (ahead > 1e-6 && lateral < radius + p.radius) clear = Math.min(clear, ahead - radius - p.radius);
+    }
+    if (clear > bestClear + 1e-9) {
+      bestClear = clear;
+      best = d;
+    }
+  }
+  return frameDirAngle(ctx, best.du, best.dv);
 }
 
 // ── THE INTERACTIVE SURFACE ─────────────────────────────────────────────

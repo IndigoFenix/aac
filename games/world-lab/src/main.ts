@@ -37,7 +37,7 @@ import { buildPlanetWorld } from "@shared/world-engine/planet/planet-game";
 import { createSurfaceChart, type SurfacePoint } from "@shared/world-engine/space/surface-chart";
 import { OWNS_MATERIAL_STATE } from "@shared/world-engine/space/space-sky";
 import { bootLivingTown, bootStructure, bootTownEmbedded, bootWildernessQuest, type QuestBoot, type EmbeddedTown, type SharedBoard, type BoardHandlers } from "./quest-boot";
-import { bootWilderness, faunaForBiome, WILD_SIDE, type WildernessGround } from "./wilderness-boot";
+import { bootWilderness, faunaForBiome, wildMixForBiome, WILD_SIDE, type WildernessGround } from "./wilderness-boot";
 import { createFloraField, type FloraField } from "./flora-field";
 import { createTradeRoads, type TradeRoads, type TownSpliceSpec } from "./trade-roads";
 import { createRiverRibbons, type RiverRibbons } from "./river-ribbons";
@@ -710,6 +710,7 @@ function mountWildernessAt(pos: THREE.Vector3, fwdWorld: THREE.Vector3): void {
           {
             seed: (cell * 2654435761) >>> 0,
             fauna: faunaForBiome(biome),
+            wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0),
             spirit: spirit !== null,
             ...(docSessionScale() ? { scale: docSessionScale() } : {}),
             // Nearby planet cities as trade partners for a site FOUNDED out
@@ -2098,17 +2099,19 @@ function stitchNeighbours(body: FlightCity["body"], regionCell: number): void {
           return;
         }
         if (routes.length) roadNets.get(body.id)?.addRegion(pairKey, { roads: routes, highways: [] });
-        // Stream JOINS fold into the terrain like the regions' own streams
-        // (idempotent by pair key, persist after evict), then the border band
-        // re-samples so the seam closes on standing chunks.
+        // Stream JOINS fold into the terrain like the regions' own streams;
+        // the pair ROADS painted through addRegion above. Idempotent by pair
+        // key, persist after evict; the border band re-samples once so the
+        // seam closes on standing chunks.
         const relief = body.geography?.riverRelief;
-        if (relief && streams.length && relief.addRivers(pairKey, streams)) {
-          const pa = body.geography!.grid.topo.pos3!(lo);
-          const pb = body.geography!.grid.topo.pos3!(hi);
+        if (relief && streams.length) relief.addRivers(pairKey, streams);
+        if (body.geography) {
+          const pa = body.geography.grid.topo.pos3!(lo);
+          const pb = body.geography.grid.topo.pos3!(hi);
           const mid: [number, number, number] = [pa[0] + pb[0], pa[1] + pb[1], pa[2] + pb[2]];
           const m = Math.hypot(mid[0], mid[1], mid[2]) || 1;
           mid[0] /= m; mid[1] /= m; mid[2] /= m;
-          body.refreshTerrain?.(mid, regionFrame(body.geography!, lo).widthM * 0.7);
+          body.refreshTerrain?.(mid, regionFrame(body.geography, lo).widthM * 0.7);
         }
         for (const rk of [aKey, bKey]) {
           const list = regionPairs.get(rk) ?? [];
@@ -2145,14 +2148,16 @@ function ensureRegionUnder(body: FlightCity["body"], pos: THREE.Vector3): Region
         // The village net + refined interstates join the body's road layers.
         roadNets.get(bodyId)?.addRegion(key, { roads, highways });
         // The region's own STREAMS fold into the terrain itself (river paint
-        // + valley notch — rivers.ts addRivers), then the standing chunks
-        // nearby re-sample so they show up without waiting for LOD churn.
-        // Streams stay painted after the region evicts: they are the world's
-        // deterministic truth, not region chrome, and addRivers dedupes by
-        // key on re-entry.
+        // + valley notch — rivers.ts addRivers); its LANES painted through
+        // trade-roads.addRegion above (route-paint.ts). Then the standing
+        // chunks nearby re-sample once so both show up without waiting for
+        // LOD churn. Paint persists after the region evicts: it is the
+        // world's deterministic truth, not region chrome, and both indexes
+        // dedupe by key on re-entry.
         const relief = body.geography?.riverRelief;
-        if (relief && rivers.length && relief.addRivers(key, rivers)) {
-          const frame = regionFrame(body.geography!, regionCell);
+        if (relief && rivers.length) relief.addRivers(key, rivers);
+        if (body.geography) {
+          const frame = regionFrame(body.geography, regionCell);
           body.refreshTerrain?.(frame.dir0, frame.widthM * 0.85);
         }
         // And any already-refined neighbour joins hands across the border.

@@ -37,7 +37,8 @@
 import type { TownHost } from "./host";
 import type { TownHouse, TownPlan, TownWork } from "./plan";
 import { HOUSEHOLD } from "./stations";
-import { livingRect } from "./rooms";
+import { houseRoomPlan, type HouseShape } from "./rooms";
+import { goodBoxPlacement } from "./placement";
 import { roadDistance, roadRoute, roadStreetPath, type TownStreets } from "./streets";
 import { allocateDistrictFill, deriveDistricts, type CityDistrict } from "./city-districts";
 import type { CompiledEconomy, GoodSpec } from "../modules/economy/economy";
@@ -314,21 +315,24 @@ export function pantryBoxAt(
 
 /** A good's house box corner by SLOT (registration order): 0 SW (the
  *  pantry), 1 SE, 2 NE, 3 NW — four goods before corners run out, and
- *  each good's returning shopper ends at their own crate. The corners
- *  are the LIVING ROOM's (rooms.ts livingRect — the whole rect for a
- *  studio, the front band once the house partitions), so the chest, the
- *  drawn crate and the trip end can never drift into a back bedroom. */
+ *  each good's returning shopper ends at their own crate. The room and
+ *  corner come from placement.ts's goodBoxPlacement (THE single source): the
+ *  pantry lands in the KITCHEN when the house has one, every other good
+ *  in the LIVING ROOM — so the chest, the drawn crate and the trip end
+ *  can never drift, and a returning shopper walks all the way to the
+ *  fridge wherever it stands. */
 export function goodBoxAt(
   center: { x: number; y: number },
   h: { index: number; dx: number; dy: number; w: number; h: number; door: "north" | "south" | "east" | "west" },
   slot: number,
 ): { x: number; y: number } {
-  const r = livingRect(center, h);
+  const { room, corner } = goodBoxPlacement(center, h as HouseShape, houseRoomPlan(center, h as HouseShape), slot);
+  const r = room.rect;
   const west = r.x + 1.75;
   const east = r.x + r.w - 1.75;
   const north = r.y + 1.75;
   const south = r.y + r.h - 1.75;
-  switch (slot % 4) {
+  switch (corner) {
     case 0: return { x: west, y: south };
     case 1: return { x: east, y: south };
     case 2: return { x: east, y: north };

@@ -104,6 +104,11 @@ const POS: Record<string, SymPos> = {
   dry: "adj",
   here: "interj",
   there: "interj",
+  // THIRD-PERSON pronouns (reference resolution — talk to him / help her): a
+  // creature referred to by pronoun when it's the same species as the speaker
+  // (gender.ts picks he/she). Object position takes each ruleset's him/her.
+  he: "pron",
+  she: "pron",
   trade: "verb",
   why: "interj", // the WHY question word (intercepted before frame dispatch)
   // Motive-batch verbs + preps: stay-with, preferences, want-to-do desires,
@@ -212,7 +217,11 @@ export const isGrammarMod = (m: string): boolean => m === DEIXIS_MOD || m === IN
  *  give the food", and the raw English glyph inside Hebrew. They are
  *  PLURAL, which is what makes existing agreement machinery (en `conj`,
  *  romance `verbForm`, he plural forms) render them without new branches. */
-export const PRONOUNS = new Set(["i_me", "you", "we", "they"]);
+/** The THIRD-PERSON singular pronouns (reference resolution): a creature named
+ *  by pronoun rather than by species word or proper name — `he` (male), `she`
+ *  (female). Gender is INHERENT to the head (semantic, language-invariant), so
+ *  each ruleset renders its own gendered object/subject forms. */
+export const PRONOUNS = new Set(["i_me", "you", "we", "they", "he", "she"]);
 export const isPronoun = (head: string): boolean => PRONOUNS.has(head);
 
 /** The pronouns that take PLURAL agreement ("we are", "they don't"). */
@@ -220,7 +229,7 @@ export const PLURAL_PRONOUNS = new Set(["we", "they"]);
 export const isPluralPronoun = (head: string): boolean => PLURAL_PRONOUNS.has(head);
 
 /** Every pronoun head a ruleset must map to its subject/object forms. */
-export type PronounHead = "i_me" | "you" | "we" | "they";
+export type PronounHead = "i_me" | "you" | "we" | "they" | "he" | "she";
 
 /** Bodily-sensation adjectives: "I'm cold" is an EXPERIENTIAL construction in
  *  many languages (Hebrew dative "קר לי", Spanish "tengo frío"), not the plain

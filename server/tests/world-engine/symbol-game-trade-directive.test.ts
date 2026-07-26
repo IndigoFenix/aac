@@ -106,25 +106,27 @@ describe("intent-compile — {kind:'trade'} rides give/take/partner", () => {
 // ── 3. The spoken terms + honest refusals ───────────────────────────────────
 
 describe("barter lines — the confirmation speaks the ratio", () => {
-  it("quantity glyphs cover the quote range", () => {
-    expect(quantityGlyph(1)).toBe("one");
-    expect(quantityGlyph(2)).toBe("two");
-    expect(quantityGlyph(3)).toBe("three");
+  it("quantity glyphs are the exact numeral tokens", () => {
+    // The compositor draws a bare digit key as the constructed numeral glyph;
+    // the words used to leak untranslated English into every locale.
+    expect(quantityGlyph(1)).toBe("1");
+    expect(quantityGlyph(2)).toBe("2");
+    expect(quantityGlyph(3)).toBe("3");
   });
 
   it('the terms line: reserved "ok" at level a; the deal itself at b/c', () => {
     const line = barterTermsLine({ give: 3, take: 2 }, "wood", "food");
     expect(line.a).toBe("ok");
-    expect(line.b).toBe("three + wood + for + two + food");
-    expect(line.c).toBe("ok + three + wood + for + two + food");
+    expect(line.b).toBe("3 + wood + for + 2 + food");
+    expect(line.c).toBe("ok + 3 + wood + for + 2 + food");
   });
 
   it("terms shift with the quote — hearing different numbers IS the lesson", () => {
     expect(barterTermsLine({ give: 1, take: 1 }, "wood", "food").b).toBe(
-      "one + wood + for + one + food",
+      "1 + wood + for + 1 + food",
     );
     expect(barterTermsLine({ give: 2, take: 3 }, "wood", "food").b).toBe(
-      "two + wood + for + three + food",
+      "2 + wood + for + 3 + food",
     );
   });
 

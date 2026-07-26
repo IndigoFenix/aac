@@ -19,10 +19,46 @@
 // so richer criteria later need no new plumbing.
 
 import { phrase, type LeveledGlyphs } from "./dialogue-gen.js";
-import { classify, INTENT_MOD, parseSentence, posOf } from "../lang/core.js";
+import { classify, INTENT_MOD, parseSentence, posOf, type Gender } from "../lang/core.js";
 import type { CreatureId } from "../behavior/creatures.js";
 import type { GoalSpec, ItemRef, PlaceRef } from "../behavior/rules.js";
 import { headOf } from "../../variations.js";
+
+// ---------------------------------------------------------------------------
+// CREATURE REFERENCE resolution — how a speaker NAMES a target creature
+// ---------------------------------------------------------------------------
+
+/** The facts a spoken reference is chosen from — supplied by the world (the
+ *  quest host resolves species / group / name / gender; the deixis of the
+ *  LISTENER is mapped to "you" upstream, before this runs). */
+export interface CreatureRef {
+  /** Registered species id (creatures/species.ts) — "spark" for the player. */
+  species: string;
+  /** A spoken proper NAME (lowercased) when the creature has one. */
+  name?: string;
+  /** Natural gender (behavior/gender.ts) — picks the he/she pronoun. */
+  gender: Gender;
+  /** The SPECIES word rendered as a common noun ("the frog") — the fallback
+   *  when neither a name nor a pronoun applies. Never a deictic. */
+  speciesWord: string;
+  /** Does the TARGET share the SPEAKER's group (household / party)? Only a
+   *  meaningful flag on the target ref. */
+  inGroup?: boolean;
+}
+
+/**
+ * How a `speaker` refers to a `target` creature in a spoken line — the glyph
+ * token the lang layer then renders. ONE rule for every verb (talk to / help /
+ * follow / give to …), so a creature is never voiced as "the there":
+ *   1. its NAME — when it's a named member of the speaker's own group,
+ *   2. a gendered PRONOUN (he / she) — when it's the SAME SPECIES as the speaker,
+ *   3. its SPECIES word otherwise ("the frog").
+ */
+export function creatureReferenceGlyph(speaker: CreatureRef, target: CreatureRef): string {
+  if (target.name && target.inGroup) return target.name;
+  if (target.species === speaker.species) return target.gender === "f" ? "she" : "he";
+  return target.speciesWord;
+}
 
 /** Symbol resolvers the pure layer can't own (the world names things). The
  *  creature resolver arrives deixis-ready: the caller maps the LISTENER of the
@@ -215,6 +251,9 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       }
       return { a: "build", b: "i_me + build", c: "i_me + build" };
     }
+    case "buildwork":
+      // ⑥ standing site work — "I'll build" (the site names no glyph word).
+      return { a: "build", b: "i_me + build", c: "i_me + build" };
     case "area":
       // A charter (③) is the ISSUER's instant act — host-written the moment
       // it's spoken, never pooled or claimed, so no creature ever announces
@@ -358,6 +397,8 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
         : { verb: "wash", object: goal.category || "thing" };
     case "build":
       return { verb: "build", ...(goal.structure !== "town" ? { object: goal.structure } : {}) };
+    case "buildwork":
+      return { verb: "build" }; // ⑥ standing site work
     case "trade":
       return { verb: "trade", object: goal.give };
     case "area":

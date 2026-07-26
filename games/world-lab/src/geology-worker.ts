@@ -59,6 +59,31 @@ export type GeologyBakeResponse =
   | { id: number; ok: true; op: "certifyTown"; cert: CreatureCertification; ms: number }
   | { id: number; ok: false; error: string };
 
+// The rebuilt planet is expensive per message — deserializing the whole grid
+// AND folding the river relief back in (rebuiltPlanetWorld → attachRiverRelief,
+// ~2–7 s at faceN 48). Refine/stitch traffic all targets the same one or two
+// planets, so cache the rebuilt world by bake key instead of paying that toll
+// on EVERY message (measured: the per-message rebuild was most of the queue
+// delay that held a new planet's bake behind old-planet stitches).
+const builtLru = new Map<string, ReturnType<typeof rebuiltPlanetWorld>>();
+const BUILT_KEEP = 2;
+function builtFor(
+  key: string, spec: PlanetWorldSpec, gridJson: string, sites: FoundingSite[],
+): ReturnType<typeof rebuiltPlanetWorld> {
+  const hit = builtLru.get(key);
+  if (hit) {
+    builtLru.delete(key);
+    builtLru.set(key, hit); // refresh LRU order
+    return hit;
+  }
+  const built = rebuiltPlanetWorld(spec, gridJson, sites);
+  builtLru.set(key, built);
+  while (builtLru.size > BUILT_KEEP) {
+    builtLru.delete(builtLru.keys().next().value!);
+  }
+  return built;
+}
+
 // Refined regions are expensive (~1–3 s) and stitching needs TWO of them —
 // keep the last few in memory, keyed by (bake key, cell), so a stitch that
 // follows its regions' refines pays only the pair matching.
@@ -104,8 +129,8 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
     if (req.op === "stitch") {
       // CROSS-REGION STITCHING: villages of two adjacent refined regions
       // join hands across their border (planet/refine.ts stitchRegions).
-      const built = rebuiltPlanetWorld(
-        req.spec as PlanetWorldSpec, req.gridJson, req.sites as FoundingSite[],
+      const built = builtFor(
+        req.key, req.spec as PlanetWorldSpec, req.gridJson, req.sites as FoundingSite[],
       );
       const a = refinedFor(built, req.key, req.cellA);
       const b = refinedFor(built, req.key, req.cellB);
@@ -121,8 +146,8 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
     if (req.op === "refine") {
       // TIER 1: rebuild the cached planet, refine one region, hand back its
       // villages (planet/refine.ts — the hierarchical-cells design).
-      const built = rebuiltPlanetWorld(
-        req.spec as PlanetWorldSpec, req.gridJson, req.sites as FoundingSite[],
+      const built = builtFor(
+        req.key, req.spec as PlanetWorldSpec, req.gridJson, req.sites as FoundingSite[],
       );
       const refined = refinedFor(built, req.key, req.regionCell);
       // The interstates crossing this region, re-solved on its child grid

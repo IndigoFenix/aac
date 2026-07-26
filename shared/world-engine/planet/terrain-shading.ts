@@ -136,9 +136,12 @@ export interface TerrainShadingOpts {
 const DEFAULT_ROUGHNESS = 0.55;
 const DEFAULT_METALNESS = 0.02;
 const DEFAULT_WAVE_STRENGTH = 0.6;
-/** River current, in detail tiles/sec — ~1.3 m/s at DETAIL_TILE_M = 64, a
- *  walking-pace river. Well inside WATER_SAFETY.maxFlowSpeed. */
-const DEFAULT_FLOW_SPEED = 0.02;
+/** River current, in detail tiles/sec — ~3.2 m/s at DETAIL_TILE_M = 64, a
+ *  brisk river. The point of the current is to make the FLOW LOGIC legible
+ *  (which way the solver routed the water), and at walking pace over the
+ *  river wave scale the drift read as still. Inside WATER_SAFETY.maxFlowSpeed;
+ *  see the frequency math there (river waves are RIVER_WAVE_SCALE finer). */
+const DEFAULT_FLOW_SPEED = 0.05;
 const DEFAULT_FOAM_COLOR = 0x9fc4d8;
 const DEFAULT_FOAM_STRENGTH = 0.3;
 const DEFAULT_GRASS_STRENGTH = 0.75;
@@ -161,13 +164,13 @@ export const WATER_SAFETY = {
   /** River current, in DETAIL TILES per second (×DETAIL_TILE_M for m/s).
    *
    *  Unlike its neighbours here this one is not close to the hazard, and the
-   *  number says why rather than hiding it: the wave field's longest wave is
-   *  ~16 m (see DETAIL_TILE_M), so a band crosses a fixed point at speed/16 Hz.
-   *  The photosensitive band starts around 3 Hz, which needs ~48 m/s — an order
-   *  of magnitude past anything a river does. This cap (~3.8 m/s, a fast river)
-   *  is about staying plausible, and about keeping the frequency argument TRUE
-   *  if DETAIL_TILE_M or the wave spectrum is ever retuned. Recheck the maths
-   *  if either moves; don't just raise the number. */
+   *  number says why rather than hiding it: river water samples the wave
+   *  field RIVER_WAVE_SCALE (4×) finer than the ocean, so its longest wave is
+   *  ~4 m and a band crosses a fixed point at speed × 64 / 4 Hz. At this cap
+   *  (0.06 tiles/s ≈ 3.8 m/s, a fast river) that is ~0.96 Hz — a third of the
+   *  ~3 Hz photosensitive band's floor, with the band's onset well above
+   *  that. Recheck the maths if DETAIL_TILE_M, RIVER_WAVE_SCALE, or the wave
+   *  spectrum moves; don't just raise the number. */
   maxFlowSpeed: 0.06,
 } as const;
 
@@ -212,13 +215,27 @@ const WATER_GLSL = /* glsl */ `
 uniform sampler2D uWaveField;
 uniform float uFlowSpeed;
 
+/** RIVER WAVE SCALE: flowing water samples the wave field this much FINER
+ *  than the ocean. The ocean's ~16 m waves dwarf a creek — over a few metres
+ *  of channel the pattern is essentially uniform and its drift reads as
+ *  STILL. 4× gives ~4 m ripples that visibly travel at channel scale.
+ *  MUST stay an INTEGER (the LAYER_B lattice-wrap rule: chunk borders seam
+ *  for any transform that doesn't map whole tiles to whole tiles), and the
+ *  WATER_SAFETY.maxFlowSpeed frequency math is written against it. */
+const float RIVER_WAVE_SCALE = 4.0;
+
+float isRiver() { return dot(vFlow, vFlow) > 1e-6 ? 1.0 : 0.0; }
+float waveScale() { return mix(1.0, RIVER_WAVE_SCALE, isRiver()); }
+
 /** The drift the wave field scrolls at, in TILES per second.
  *
  *  Still water (ocean, lakes, and anything with no river under it) keeps the
  *  two fixed drifts that carry its irregularity. A RIVER replaces them with its
  *  own current: vFlow is the unit downstream direction in detailUv metres
  *  (chunk.ts), zero wherever there is no current, which is what selects between
- *  the two here — no branch uniform, no second shader.
+ *  the two here — no branch uniform, no second shader. The river drift is
+ *  scaled by waveScale() so uFlowSpeed keeps meaning METRES per second over
+ *  the finer river coordinate.
  *
  *  NEGATED because scrolling a texture coordinate by +d makes the pattern
  *  appear to travel in −d: to make the water run DOWNSTREAM, sample upstream.
@@ -230,14 +247,14 @@ uniform float uFlowSpeed;
  *  at the same speed lock into one pattern, and the difference is the parallax
  *  that reads as depth. */
 vec2 waveDriftA() {
-  return dot(vFlow, vFlow) > 1e-6 ? -vFlow * uFlowSpeed : vec2( 0.031, 0.019);
+  return isRiver() > 0.5 ? -vFlow * uFlowSpeed * waveScale() : vec2( 0.031, 0.019);
 }
 vec2 waveDriftB() {
-  return dot(vFlow, vFlow) > 1e-6 ? LAYER_B * (-vFlow * uFlowSpeed * 0.8) : vec2(-0.023, 0.041);
+  return isRiver() > 0.5 ? LAYER_B * (-vFlow * uFlowSpeed * waveScale() * 0.8) : vec2(-0.023, 0.041);
 }
 
-vec2 waveUvA() { return vDetailUv / uDetailTile + waveDriftA() * uTime; }
-vec2 waveUvB() { return LAYER_B * (vDetailUv / uDetailTile) + waveDriftB() * uTime; }
+vec2 waveUvA() { return waveScale() * vDetailUv / uDetailTile + waveDriftA() * uTime; }
+vec2 waveUvB() { return LAYER_B * (waveScale() * vDetailUv / uDetailTile) + waveDriftB() * uTime; }
 `;
 
 const ROCK_GLSL = /* glsl */ `

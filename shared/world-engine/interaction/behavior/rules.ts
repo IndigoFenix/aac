@@ -184,6 +184,11 @@ export type GoalSpec =
   // creature weighs the spot by the same rules the house generator obeys.
   | { kind: "place"; item: ItemRef; at: PlacementRef }
   | { kind: "build"; structure: string; cap: number } // cap = max increments per fire (bounds civ-scale orders)
+  // WORK A CONSTRUCTION SITE (pipeline ⑥): stand at the staged site and
+  // BUILD — labor banks only while builders are present, and more of them
+  // build faster (capped). `site` = "f:<ord>" (a founded building) or
+  // "a:<ord>" (a pending annex/interior room). Host-routed like `build`.
+  | { kind: "buildwork"; site: string }
   // An AREA CHARTER (city-expansion ③): designate the ISSUER's focus area
   // for one structure category ("area farm here"); null = clear the ground
   // back to undesignated ("area none"). The area is the issuer's focus circle

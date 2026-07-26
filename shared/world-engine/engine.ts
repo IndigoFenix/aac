@@ -82,6 +82,16 @@ export interface AvatarState {
    *  clears it when it ends; the renderer's model factory poses the body (a 2D
    *  renderer may ignore it entirely). */
   activity?: AvatarActivity;
+  /** FURNITURE-USE ANCHOR — the sim-side state that eases a body ONTO a fixture
+   *  it is using (a bed, a chair, a privy) and back off again. Unlike `activity`
+   *  (display-only), this DRIVES the sim body: while it is set, the furniture
+   *  anchor state machine (interaction/quest/furniture-anchor.ts) owns this
+   *  body's movement — the normal steering is skipped and the body is INTERPOLATED
+   *  between fixed endpoints (a straight eased slide that crosses the fixture's own
+   *  footprint, which the steered walk cannot), and the crowding separation pass
+   *  leaves it alone. Cleared when the body has slid back out to a validated
+   *  dismount spot. */
+  anchor?: FurnitureAnchor;
   /** OUTFIT override — an outfit-preset index (creatures/clothing.ts
    *  `outfitPresetFor`) the body is WEARING now. Display-only like `activity`
    *  (`tickWorld` never reads it): the creature model factory watches it and
@@ -111,6 +121,33 @@ export interface AvatarActivity {
    *  so the sim keeps the sleeper standing beside it). Unknown/absent id ⇒ the
    *  body performs the activity where it stands (a doze in place). */
   objId?: string;
+}
+
+/** The sim-side state that eases a body ONTO a fixture it uses and back off.
+ *  Driven by interaction/quest/furniture-anchor.ts (a pure, test:engine-drivable
+ *  module — quest-host needs WebGL, so the state machine lives here on the sim
+ *  side instead). Three phases:
+ *   • "sliding-in"  — easing from where the body collided/arrived toward the use
+ *                     point (the fixture centre for a bed/seat), bypassing that
+ *                     ONE fixture's collision.
+ *   • "anchored"    — pinned at the use point (the body is ON the fixture); held
+ *                     out of the crowding-separation pass so it can't be shoved
+ *                     off, and still bypassing the fixture.
+ *   • "sliding-out" — easing to a VALIDATED dismount spot (walkable, on a
+ *                     use-direction side, clear of colliders and other bodies)
+ *                     before locomotion resumes; the anchor clears on arrival. */
+export interface FurnitureAnchor {
+  /** The fixture object id this body is using. */
+  fixtureId: string;
+  phase: "sliding-in" | "anchored" | "sliding-out";
+  /** The plan (game x/y) point the slide STARTED from — captured when each slide
+   *  phase begins; the body interpolates from here toward `target`. */
+  from: { x: number; y: number };
+  /** The plan (game x/y) point the body eases toward: the use point while
+   *  sliding-in / anchored, the validated dismount spot while sliding-out. */
+  target: { x: number; y: number };
+  /** Slide progress 0..1 along from→target (eased). 1 once anchored / dismounted. */
+  t: number;
 }
 
 /** A one-shot gesture request on an avatar: a deictic POINT, or the carry
@@ -592,6 +629,39 @@ export function steerAvatar(
     advanceAvatar(a, aim, state, config, step, effectiveConstraint(state, constraint, config, a.floor));
     updateAvatarFloor(state, a);
   }
+}
+
+/**
+ * Point a body's FACING at a world target. Sets the facing UNIT VECTOR (`fx`,
+ * `fy`) — the sim's native heading, the direction the body looks in GAME space.
+ * Callers must set this vector, NEVER a hand-rolled game angle: the renderer
+ * owns the game-angle→three.js-yaw conversion (the +X/+z frames are mirrored,
+ * so yaw NEGATES the game angle — render3d `facingYaw`/`fixtureYaw`), and doing
+ * it here in the vector keeps that mirror in exactly one place. No-op when the
+ * target sits on top of the body (no defined direction to look). Instant — the
+ * per-frame turn-rate cap in `advanceAvatar` only governs facing driven by an
+ * aim/velocity; a body standing idle (as in a conversation) holds whatever
+ * heading this writes until it moves again.
+ */
+export function faceToward(a: AvatarState, target: { x: number; y: number }): void {
+  const dx = target.x - a.x;
+  const dy = target.y - a.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1e-6) return;
+  a.fx = dx / d;
+  a.fy = dy / d;
+}
+
+/**
+ * Turn two idle bodies to FACE EACH OTHER — a conversation stance. Each looks
+ * straight at the other (via `faceToward`, so both headings are set as facing
+ * vectors, not angles). Use at the start of an idle creature-to-creature
+ * exchange so the pair squares up instead of talking past one another; a body
+ * that then walks off resumes velocity-driven facing on its own.
+ */
+export function faceEachOther(a: AvatarState, b: AvatarState): void {
+  faceToward(a, b);
+  faceToward(b, a);
 }
 
 // ---------------------------------------------------------------------------
@@ -1794,10 +1864,40 @@ function tickDoors(state: WorldState, step: number, config: WorldEngineConfig): 
     const cx = (s.a.x + s.b.x) / 2;
     const cy = (s.a.y + s.b.y) / 2;
     const radius = doorOpenRadius(s, config);
+    // The doorway's own axes: `u` runs ALONG the wall through the opening,
+    // `n` runs ACROSS it (the direction a body travels to pass through).
+    const dxw = s.b.x - s.a.x;
+    const dyw = s.b.y - s.a.y;
+    const wlen = Math.hypot(dxw, dyw) || 1;
+    const ux = dxw / wlen;
+    const uy = dyw / wlen;
+    const nx = -uy;
+    const ny = ux;
+    // A body opens a door only where it is actually TRAVERSING the opening —
+    // not merely passing nearby. The old bare radius circle tripped on any body
+    // within ~2 m of the door CENTRE, so a resident crossing the room beside a
+    // doorway, or shuffling along the wall past it, swung it for no reason. Two
+    // ways to qualify, both gated to the door's THROAT (laterally within the
+    // opening, never off past a jamb):
+    //   • STANDING IN the doorway — physically straddling the door plane (so a
+    //     paused body mid-crossing keeps it open), or
+    //   • MOVING ACROSS it — a velocity component through the plane (walking a
+    //     course that carries it through, opening a step before arrival).
+    // A body ambling parallel to the wall in front of the opening has neither.
+    const halfThroat = wlen / 2 + config.avatarRadius + 0.3;
+    const inDoorBand = config.avatarRadius + s.thickness / 2 + 0.2;
     let anyNear = false;
     let capableNear = false; // a body that CAN open doors is here to work the door
     for (const a of avatars) {
-      if (Math.hypot(a.x - cx, a.y - cy) > radius) continue;
+      const rx = a.x - cx;
+      const ry = a.y - cy;
+      const along = rx * ux + ry * uy; // lateral offset within the opening
+      const across = rx * nx + ry * ny; // distance across the doorway plane
+      if (Math.abs(along) > halfThroat) continue; // off past a jamb — walking by
+      const throughSpeed = a.vx * nx + a.vy * ny; // signed speed across the plane
+      const straddling = Math.abs(across) <= inDoorBand;
+      const crossing = Math.abs(across) <= radius && Math.abs(throughSpeed) > 0.1;
+      if (!straddling && !crossing) continue;
       anyNear = true;
       if (a.canOpen !== false) capableNear = true;
       if (door.locked && s.keyObjectId && state.objects[s.keyObjectId]?.carriedBy === a.id) {

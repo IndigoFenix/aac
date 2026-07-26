@@ -178,8 +178,8 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
   const detailOriginT = Math.floor((params.vMin * radius) / DETAIL_TILE_M) * DETAIL_TILE_M;
 
   // This chunk's vertex spacing in surface metres (gnomonic stretch ≤ √3 —
-  // near enough for a paint-width clamp). The river recolor widens thinner
-  // channels to this so they stay visible on coarse LODs.
+  // near enough for a coverage estimate). The river/road paint FADES bands
+  // narrower than this by coverage — true width at every LOD, never widened.
   const vertSpanM = (Math.max(params.uMax - params.uMin, params.vMax - params.vMin) / (N - 1)) * radius;
 
   const dir: [number, number, number] = [0, 0, 0];
@@ -209,10 +209,10 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       // shell.
       const isOcean = !!params.seaClamp && h < 0;
       surface.colorAt(h, dir, rgb);
-      // RIVERS: paint + the actual water layer, one relief lookup. The paint
-      // widens to this chunk's vertex spacing (capped) so thin channels hold a
-      // visible line at coarse LODs; the WATER is the channel's TRUE width
-      // only — never glyphed. (Cell-field wetness was tried and pulled: a
+      // RIVERS: paint + the actual water layer, one relief lookup. Both are
+      // the channel's TRUE width — a band narrower than this chunk's vertex
+      // spacing FADES by coverage instead of widening (width glyphs washed
+      // whole regions blue from orbit). (Cell-field wetness was tried and pulled: a
       // substrate cell is ~15 km at the flight tier, and marking riverine
       // CELLS wet turned every watercourse into a region-sized sheet of
       // animated "sea" with trees standing in it. The relief index knows the
@@ -225,10 +225,13 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       flowT[0] = 0; flowT[1] = 0; flowT[2] = 0;
       if (!isOcean) {
         if (surface.riverSampleAt) {
-          riverDepth = surface.riverSampleAt(dir, vertSpanM * 0.75, rgb, flowT);
+          riverDepth = surface.riverSampleAt(dir, vertSpanM, rgb, flowT);
         } else if (surface.riverTintAt) {
-          surface.riverTintAt(dir, vertSpanM * 0.75, rgb);
+          surface.riverTintAt(dir, vertSpanM, rgb);
         }
+        // Roads paint AFTER rivers so a lane crossing a channel reads as the
+        // crossing (the bridge's colour claim); same true-width + fade law.
+        if (surface.roadTintAt) surface.roadTintAt(dir, vertSpanM, rgb);
       }
       const isRiver = riverDepth > 0.05; // ankle-deep floor keeps damp banks dry
       const wet = isOcean || isRiver ? 1 : 0;

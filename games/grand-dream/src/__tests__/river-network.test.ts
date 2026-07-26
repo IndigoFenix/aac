@@ -161,21 +161,28 @@ describe("river network extraction", () => {
       expect(away).toEqual(before);
     });
 
-    it("tintAt widens with the caller's vertex spacing — the LOD glyph", () => {
-      // A point a few channel-widths off the centerline: invisible to a fine
-      // mesh, painted by a coarse one (whose vertices are further apart than
-      // the river is wide — without this, coarse LODs lose the line).
+    it("paint is TRUE width: it fades with vertex spacing, never widens", () => {
+      // IN the channel: a coarse mesh DIMS the paint (coverage fade) — the
+      // energy-conserving minification — but never loses the order.
+      const fine: [number, number, number] = [0.2, 0.5, 0.1];
+      relief.tintAt(mid, 0, fine);
+      const coarse: [number, number, number] = [0.2, 0.5, 0.1];
+      relief.tintAt(mid, 200_000, coarse);
+      expect(fine[2]).toBeGreaterThan(0.1);
+      expect(coarse[2]).toBeGreaterThan(0.1);
+      expect(coarse[2]).toBeLessThan(fine[2]);
+      // OFF the channel (km off the widest possible band): NO paint at ANY
+      // spacing. The old LOD glyph widened here — at real stream densities
+      // that washed whole regions solid blue from orbit.
       const offM = 5_000;
       const t = offM / built.spec.radius;
-      // Nudge perpendicular-ish: any tangent direction works for a distance test.
       const off: [number, number, number] = [mid[0] + t * -mid[1], mid[1] + t * mid[0], mid[2]];
       const m = Math.hypot(off[0], off[1], off[2]);
       off[0] /= m; off[1] /= m; off[2] /= m;
-      const fine: [number, number, number] = [0.2, 0.5, 0.1];
-      relief.tintAt(off, 100, fine);
-      const coarse: [number, number, number] = [0.2, 0.5, 0.1];
-      relief.tintAt(off, 50_000, coarse); // clamped internally to the glyph cap
-      expect(coarse[2]).toBeGreaterThanOrEqual(fine[2]);
+      const before: [number, number, number] = [0.2, 0.5, 0.1];
+      const painted: [number, number, number] = [0.2, 0.5, 0.1];
+      relief.tintAt(off, 50_000, painted);
+      expect(painted).toEqual(before);
     });
 
     it("waterAt: standing water in the channel, flowing DOWNSTREAM, dry far land", () => {

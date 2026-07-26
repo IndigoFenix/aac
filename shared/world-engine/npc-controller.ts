@@ -51,6 +51,17 @@ export interface NpcControlCtx {
    * planner then fights a body that fits (the round-7 doorway/table shake).
    */
   radius?: number;
+  /**
+   * THE CROWDING ORACLE — is `p` too close to ANOTHER body for a body of
+   * `radius` to stand there? (true = occupied.) The host builds it over the
+   * live avatars, excluding this NPC, at the combined-radii separation
+   * (`bodyR + otherR` — scales with body size, never a magic constant). Idle
+   * WANDER waypoints prefer un-occupied ground so milling townsfolk spread out
+   * instead of piling onto the same spot. A SOFT preference: when every
+   * candidate is crowded the roam still picks one (termination over fidelity).
+   * Absent ⇒ no crowding avoidance (bodies may overlap, as before).
+   */
+  occupied?: (p: Vec2, radius: number) => boolean;
 }
 
 /**
@@ -617,9 +628,25 @@ class BaseController implements NpcController {
     // inside a neighbor's house walks the NPC into the wall — or through an
     // auto-opening door — until stuck detection fires). A few redraws almost
     // always find open ground; home is the safe fallback.
-    if (!ctx.walkable) return draw();
+    if (!ctx.walkable) {
+      // No walkability oracle (open-world roam). Still avoid piling onto a
+      // neighbour when the crowding oracle is present — pick the first draw
+      // clear of other bodies, else any draw.
+      if (!ctx.occupied) return draw();
+      const r = ctx.radius ?? 0.6;
+      for (let i = 0; i < 8; i++) {
+        const p = draw();
+        if (!ctx.occupied(p, r)) return p;
+      }
+      return draw();
+    }
     __npcStats.picks++; // TEMP
     const radius = ctx.radius ?? 0.6;
+    // The first structurally-good draw that is also clear of OTHER bodies wins;
+    // remember the first structurally-good-but-crowded one as a fallback so a
+    // packed area still yields a waypoint (the crowding rule is a preference,
+    // never a deadlock — termination over fidelity).
+    let crowdedFallback: Vec2 | null = null;
     for (let i = 0; i < 8; i++) {
       const p = draw();
       // Probe at the BODY's radius (ctx.radius), not a padded one: indoors,
@@ -633,8 +660,13 @@ class BaseController implements NpcController {
       // line of sight — through a doorway when the line passes the gap, else
       // inside the current room — which is exactly the honest range for a
       // walker that cannot route.
-      if (ctx.walkable(p, radius) && this.corridorClear(ctx, p, radius)) return p;
+      if (!(ctx.walkable(p, radius) && this.corridorClear(ctx, p, radius))) continue;
+      // Prefer ground no other body already occupies (the crowding rule) so
+      // milling townsfolk fan out rather than converging on one point.
+      if (!ctx.occupied || !ctx.occupied(p, radius)) return p;
+      crowdedFallback ??= p;
     }
+    if (crowdedFallback) return crowdedFallback; // structurally fine, just crowded
     __npcStats.pickFails++; // TEMP — all 8 draws failed; fallback
     // Safe fallback: the pad's center when confined (home may lie outside it).
     if (this.wanderRect) {

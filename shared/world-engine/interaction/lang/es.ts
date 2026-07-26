@@ -90,6 +90,14 @@ const L: Record<string, Lexeme> = {
   bear: { w: "oso", g: "m" },
   frog: { w: "rana", g: "f" },
   dog: { w: "perro", g: "m" },
+  // Creature SPECIES words (reference resolution: "hablo con el/la {especie}").
+  person: { w: "persona", g: "f", plw: "personas" },
+  animal: { w: "animal", g: "m", plw: "animales" },
+  creature: { w: "criatura", g: "f" },
+  cow: { w: "vaca", g: "f" },
+  deer: { w: "ciervo", g: "m" },
+  ram: { w: "carnero", g: "m" },
+  sheep: { w: "oveja", g: "f" },
   box: { w: "caja", g: "f" },
   basket: { w: "cesta", g: "f" },
   bubbles: { w: "burbujas", g: "f", pl: true },
@@ -186,14 +194,16 @@ export const es = makeRomance({
   withWord: "con",
   my: () => "mi", // mis for plural
   pronoun: () => "", // pro-drop, every person: "Quiero una manzana", "No luchamos"
-  // "Te ayudo." / "No me quiere." / "Nos ayudas." / "Los ayudo."
-  clitic: (h) => (h === "i_me" ? "me" : h === "you" ? "te" : h === "we" ? "nos" : "los"),
-  // "a ti", "por mí", "con nosotros", "para ellos"
-  tonic: (h) => (h === "i_me" ? "mí" : h === "you" ? "ti" : h === "we" ? "nosotros" : "ellos"),
+  // "Te ayudo." / "No me quiere." / "Nos ayudas." / "Lo/La ayudo." / "Los ayudo."
+  clitic: (h) =>
+    h === "i_me" ? "me" : h === "you" ? "te" : h === "we" ? "nos" : h === "he" ? "lo" : h === "she" ? "la" : "los",
+  // "a ti", "por mí", "con nosotros", "con él/ella", "para ellos"
+  tonic: (h) =>
+    h === "i_me" ? "mí" : h === "you" ? "ti" : h === "we" ? "nosotros" : h === "he" ? "él" : h === "she" ? "ella" : "ellos",
   // gustar flips experiencer/subject: "i_me like you" → "Me gustas." The head
   // is the OBJECT, so the experiencer is the complementary person.
   likePron: (h) =>
-    h === "i_me" ? "Te gusto." : h === "you" ? "Me gustas." : h === "we" ? "Te gustamos." : "Me gustan.",
+    h === "i_me" ? "Te gusto." : h === "you" ? "Me gustas." : h === "we" ? "Te gustamos." : h === "he" || h === "she" ? "Me gusta." : "Me gustan.",
   estar: { v1: "estoy", v2: "estás", v3: "está", v3p: "están", v1p: "estamos" },
   ser: { v3: "es", v3p: "son" },
   to: (np) => (np.startsWith("el ") ? `al ${np.slice(3)}` : `a ${np}`),

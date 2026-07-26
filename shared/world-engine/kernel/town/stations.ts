@@ -155,6 +155,11 @@ export interface StationDef {
   /** The cluster whose cell this station seeks. */
   cluster: string;
   cell: CellRef;
+  /** Cells to fall back to, in order, when the station's own cell can't
+   *  FIT it (distinct from `cell`'s merge fallback, which fires only when
+   *  the cell doesn't EXIST). The cupboard uses it to YIELD to the living
+   *  room when the fridge claimed its kitchen space (fridge > cupboard). */
+  cellFallback?: readonly CellRef[];
   place: StationPlacement;
   /** Multiply per street GOOD (the chests) or per household MEMBER (the
    *  personal boxes); default one instance. */
@@ -311,9 +316,14 @@ export const HOUSE_STATIONS: ReadonlyArray<StationDef> = [
       spread: "eachSide", retryOtherAxisWhenPartitioned: true, faceAnchor: true } },
   // The cupboard follows the kitchen cluster (crockery lives with the
   // oven) — communal fallback keeps it the classic dresser where no
-  // kitchen cell exists.
+  // kitchen cell exists. When a kitchen DOES exist but the pantry fridge
+  // (and the oven, which never yields) leave it no fitting wall, the
+  // cupboard YIELDS to the living room (cellFallback) — the fridge
+  // outranks it in the kitchen (the user's priority), and it lands where
+  // the fridge used to stand.
   { key: "cupboard", kind: "cupboard", radius: 0.6, openable: true, cluster: "kitchen",
-    cell: { cell: "kitchen" }, place: { mode: "farMidThenSides" } },
+    cell: { cell: "kitchen" }, cellFallback: [{ cell: "communal" }],
+    place: { mode: "farMidThenSides" } },
   // The water barrel too — drawing water is the kitchen's chore.
   { key: "barrel", kind: "barrel", radius: 0.4, openable: true, cluster: "kitchen",
     cell: { cell: "kitchen" }, place: { mode: "wallScan", walls: ["side0", "side1", "far"] } },
@@ -361,9 +371,46 @@ export interface FurnitureItemDef {
   /** Placed half-extent (matches the registry rows' proportions). */
   radius: number;
   openable: boolean;
-  /** How it's MADE: a transform at a station consuming input glyphs
-   *  (the cook's pattern). Absent = buy/import only. */
-  craft?: { at: StationKind; consumes: Record<string, number> };
+  /** How it's MADE: input glyphs + the station that SPEEDS the work
+   *  (construction pipeline ③). `at` never GATES — every craftable piece
+   *  can be made by HAND, just slower (the workbench bootstrap: the first
+   *  bench is hand-made); working at the named station cuts the labor to
+   *  CRAFT_STATION_FACTOR. Absent craft = buy/import only. */
+  craft?: { at?: StationKind; consumes: Record<string, number> };
+}
+
+/** Street-days of labor one furniture piece takes BY HAND. */
+export const CRAFT_HAND_DAYS = 0.35;
+/** Labor factor at the recipe's accelerating station — a bench-made piece
+ *  takes a third of the hand labor. */
+export const CRAFT_STATION_FACTOR = 1 / 3;
+
+/** The labor a craft takes, in street-days: hand rate, cut to the station
+ *  factor when the crafter works at the recipe's accelerating station. */
+export function craftLaborDays(def: FurnitureItemDef, atStation: boolean): number {
+  return CRAFT_HAND_DAYS * (atStation && def.craft?.at ? CRAFT_STATION_FACTOR : 1);
+}
+
+/**
+ * The AUTOMATED crafter's next piece (pipeline ③): with no standing bench
+ * and none stored, the WORKBENCH comes first — the tool that speeds
+ * everything after it, hand-made by necessity. Otherwise the day's rotation
+ * pick, skipped (null) once 2 of that kind sit stored. Deterministic in
+ * (day, salt).
+ */
+export function nextCraftKind(opts: {
+  day: number;
+  salt: number;
+  hasBench: boolean;
+  stored: (glyph: string) => number;
+}): FurnitureItemDef | null {
+  const craftable = FURNITURE_ITEMS.filter((f) => f.craft);
+  if (!craftable.length) return null;
+  const bench = craftable.find((f) => f.kind === "workbench");
+  if (bench && !opts.hasBench && opts.stored(furnitureGlyph("workbench")) <= 0) return bench;
+  const def = craftable[(opts.day + opts.salt) % craftable.length]!;
+  if (opts.stored(furnitureGlyph(def.kind)) >= 2) return null;
+  return def;
 }
 
 /** The glyph a stacked (unplaced) piece of furniture carries. */
@@ -385,8 +432,9 @@ export const FURNITURE_ITEMS: ReadonlyArray<FurnitureItemDef> = [
   { kind: "box", radius: 0.45, openable: false, craft: { at: "workbench", consumes: { wood: 1 } } },
   { kind: "bin", radius: 0.35, openable: true, craft: { at: "workbench", consumes: { wood: 1 } } },
   { kind: "barrel", radius: 0.4, openable: true, craft: { at: "workbench", consumes: { wood: 1 } } },
-  /** A bench can be bought (the bootstrap: you can't craft your first). */
-  { kind: "workbench", radius: 0.7, openable: false },
+  /** The bootstrap tool: the FIRST bench is hand-made (slow); an existing
+   *  bench speeds making the next, like everything else. */
+  { kind: "workbench", radius: 0.7, openable: false, craft: { at: "workbench", consumes: { wood: 2 } } },
 ] as const;
 
 export const furnitureItemOf = (kind: StationKind): FurnitureItemDef | undefined =>

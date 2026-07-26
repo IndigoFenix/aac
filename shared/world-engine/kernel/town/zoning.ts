@@ -34,7 +34,11 @@
  */
 
 import { costsMet, resolveStructure, spendCosts, type StructureSpec } from "./structures.js";
+// Runtime import — the sanctioned direction (construction.ts sees zoning
+// through `import type` alone; the yard endpoint id rides down the stack).
+import { TOWN_YARD_EP } from "./construction.js";
 import type { FoundedBuilding, FoundingCandidate, TownDeltas } from "./construction.js";
+import { unreservedStock } from "./reservations.js";
 
 /** One zone charter — a serializable row (TownDeltas pattern, no RNG). */
 export interface ZoneCharter {
@@ -382,6 +386,9 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     (a, b) => b.score - a.score || a.idx - b.idx || (a.zone?.ord ?? -1) - (b.zone?.ord ?? -1),
   );
 
+  // FREE yard stock (pipeline ②): growth never spends units a pending
+  // haul/designation has spoken for — the reservation ledger's one law.
+  const freeStock = unreservedStock(d.stock, d.reservations, TOWN_YARD_EP);
   for (const r of ranked) {
     // Without a banked threshold, only URGENT need founds (survival now;
     // surplus growth waits for the bank).
@@ -391,12 +398,14 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     // charters nothing — buildings aren't fractional).
     const eco = r.spec.economy ? input.economyOf(r.spec.economy) : null;
     if (eco && input.countOf(r.spec.type) + 1 > input.capValueOf(eco.cap.by) * eco.cap.rate) continue;
-    // Real materials — the yard must cover it (missing wood halts growth).
-    if (!costsMet(r.spec, d.stock)) continue;
+    // Real materials — the FREE yard must cover it (missing or spoken-for
+    // wood halts growth). The spend still draws the REAL stock: free ⊆
+    // real, so covering costs from free leaves reserved units untouched.
+    if (!costsMet(r.spec, freeStock)) continue;
     // Geometric capacity — feasibility inside the enumeration.
     const candidate = input.candidatesFor(r.spec, r.zone)[0];
     if (!candidate) continue;
-    if (!spendCosts(r.spec, d.stock)) continue;
+    if (!spendCosts(r.spec, freeStock) || !spendCosts(r.spec, d.stock)) continue;
     const building = d.foundBuilding(candidate, input.day, r.spec.buildDays);
     // The bank pays only when it can — an urgent build before the
     // threshold is materials-paid, never a negative balance.

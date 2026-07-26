@@ -80,7 +80,12 @@ export interface PlanetSurface {
    *  water shader's clamped current path — the actual water layer, at the
    *  channel's TRUE width only (the LOD glyph applies to paint, never to
    *  water: glyphed water was the region-sized animated "sea" bug). */
-  riverSampleAt?(dir: Vec3, minHalfWidthM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
+  riverSampleAt?(dir: Vec3, vertSpanM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
+  /** ROAD RECOLOR (planet/route-paint.ts): blends packed-dirt colour into a
+   *  vertex colour where `dir` lies on a painted lane — true width, faded by
+   *  coverage below the mesh's resolution, same law as the river paint. The
+   *  index starts empty; the host merges route sets as they appear. */
+  roadTintAt?(dir: Vec3, vertSpanM: number, rgb: [number, number, number]): void;
   /** Vertex color for an elevation at a direction (dir enables field-driven
    *  tinting — fertility greens, ore dust). Writes into `out`. */
   colorAt(h: number, dir: Vec3, out: [number, number, number]): void;

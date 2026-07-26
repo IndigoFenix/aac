@@ -14,6 +14,7 @@
  * island (board-island.tsx), pixel-identical to the student's board.
  */
 import { avatarKind, type LoadedWorld } from "@shared/world-engine/kernel/manifest";
+import { furnitureUsePoseDump, type UseDumpWorld } from "@shared/world-engine/furniture-use";
 import {
   DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale, type WorldScaleSpec,
 } from "@shared/world-engine/scale";
@@ -36,7 +37,7 @@ import {
   type QuestHost3D,
   type QuestSession,
 } from "@shared/world-engine/interaction/quest/quest-host";
-import type { WildernessParams } from "@shared/world-engine/interaction/quest/wilderness";
+import type { WildernessParams, WildMixEntry } from "@shared/world-engine/interaction/quest/wilderness";
 import { PLAYER_ID } from "@shared/world-engine/solver/space3d";
 import type { RenderHost } from "@shared/world-engine/render3d";
 import {
@@ -50,7 +51,7 @@ import type { GoalTreeGame } from "@shared/world-engine/solver/types";
 import type { ObjectiveSummary } from "@shared/world-engine/solver/space";
 import type { GoalNode } from "@shared/world-engine/solver/types";
 import { labImageResolver } from "./glyph-resolver";
-import { mulberry, WILD_SIDE, type WildFauna } from "./wilderness-boot";
+import { homesteadWildMix, mulberry, WILD_SIDE, type WildFauna } from "./wilderness-boot";
 import type { BoardIsland } from "./board-island";
 
 export interface QuestBoot {
@@ -329,6 +330,28 @@ function bootQuestGame(
     ...(opts.culture ? { culture: opts.culture } : {}),
   });
   (window as unknown as Record<string, unknown>).__questLab = host;
+  // FURNITURE USE-POINT eyeball check: one console call dumps every creature in
+  // an activity vs its fixture's use-point contract (id, fixture, contactPart,
+  // planar + yaw delta from the use point) — so a wrong-looking sit/sleep/reach
+  // is one number away without pixel-peeping. `__questLab_pose()`.
+  (window as unknown as Record<string, unknown>).__questLab_pose = () => {
+    const w = host?.world?.state as unknown as UseDumpWorld | undefined;
+    const rows = w ? furnitureUsePoseDump(w) : [];
+    // eslint-disable-next-line no-console
+    console.table(
+      rows.map((r) => ({
+        id: r.id,
+        fixture: r.fixture,
+        contact: r.contactPart,
+        on: r.onFixture,
+        dPlanar: +r.planarDelta.toFixed(3),
+        dYaw: +r.yawDelta.toFixed(3),
+        useX: +r.usePoint.x.toFixed(2),
+        useY: +r.usePoint.y.toFixed(2),
+      })),
+    );
+    return rows;
+  };
 
   // Pointer-as-gaze: the mouse is the gaze. A walker steers toward it; a spirit
   // just looks (the host ignores steering in stationary mode). Under the
@@ -466,6 +489,7 @@ function bootQuestGame(
       host = null;
       releaseBoard(); // blank + un-route the persistent board (never unmount it)
       delete (window as unknown as Record<string, unknown>).__questLab;
+      delete (window as unknown as Record<string, unknown>).__questLab_pose;
       delete (window as unknown as Record<string, unknown>).__spiritLadder;
       root.remove();
     },
@@ -595,7 +619,16 @@ export function bootLivingTown(
     built.spec.config.wilderness ?? (built.spec.config.days ?? 220) <= FOUNDING_AGE_DAYS;
   return bootQuestGame(container, built.play.bundle.game, setStatus, {
     town: play,
-    ...(wildOn ? { wilderness: { seed: built.spec.config.seed } } : {}),
+    // The founding scatter reads the charter biome (farmland → orchard +
+    // wild livestock; mining → timber over stone).
+    ...(wildOn
+      ? {
+          wilderness: {
+            seed: built.spec.config.seed,
+            mix: homesteadWildMix(play.plan.biome, built.spec.config.seed),
+          },
+        }
+      : {}),
     scale: labSessionScale(loaded.game!.scale),
     culture: loaded.game!.culture,
     // The host keeps its SPIRIT interaction semantics (gaze-only, dwell to
@@ -810,7 +843,14 @@ export function bootTownEmbedded(
     play.config.wilderness ?? (play.config.days ?? 220) <= FOUNDING_AGE_DAYS;
   host.start(play.bundle.game, play, {
     ...(opts?.spirit ? { spirit: true } : {}),
-    ...(embedWild ? { wilderness: { seed: play.config.seed } } : {}),
+    ...(embedWild
+      ? {
+          wilderness: {
+            seed: play.config.seed,
+            mix: homesteadWildMix(play.plan.biome, play.config.seed),
+          },
+        }
+      : {}),
     scale: opts?.scale ?? DOLLHOUSE_SCALE,
   });
   (window as unknown as Record<string, unknown>).__questEmbed = host;
@@ -898,6 +938,9 @@ export function bootWildernessQuest(
   opts: {
     seed: number;
     fauna: WildFauna;
+    /** The landing biome's gatherable scatter (floraMixForBiome) — absent
+     *  falls back to the engine's oak-and-rock default. */
+    wildMix?: ReadonlyArray<WildMixEntry>;
     spirit?: boolean;
     scale?: WorldScale;
     /** Nearby settlements (planet cities) a FOUNDED SITE here can trade
@@ -997,7 +1040,12 @@ export function bootWildernessQuest(
   host.start(game, null, {
     // The chunk stands on a real planet: side matches the coordinator's
     // WILD_SIDE math and the rect is content extent, never a wall.
-    wilderness: { seed: opts.seed, side: WILD_SIDE, bounded: false },
+    wilderness: {
+      seed: opts.seed,
+      side: WILD_SIDE,
+      bounded: false,
+      ...(opts.wildMix ? { mix: opts.wildMix } : {}),
+    },
     ...(opts.spirit ? { spirit: true } : {}),
     scale: opts.scale ?? DOLLHOUSE_SCALE,
   });

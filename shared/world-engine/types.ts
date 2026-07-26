@@ -189,6 +189,10 @@ export interface ObjectSpec {
   openable?: boolean;
   /** Which way the fixture faces (radians, 0 = +x) — into the room. */
   facing?: number;
+  /** SET-UP state (construction ⑥): `false` renders the fixture TIPPED ON ITS
+   *  SIDE — delivered but not yet assembled; the view eases it upright when it
+   *  flips true. Absent/true = standing. Render-only; the sim never reads it. */
+  setUp?: boolean;
   /**
    * Optional emoji drawn as a billboarded sprite floating over the object, so
    * carryable props read as what they ARE (a cookie, an apple) rather than

@@ -671,6 +671,12 @@ export interface ClientCapabilities {
   clientStt?: boolean;    // Phase 1: transcribe speech locally → send `speech_text` instead of raw audio
   sceneState?: boolean;   // Phase 2: emit structured `scene_state` text in place of idle frames
   poseSafety?: boolean;   // Phase 3: run fall/abnormal-posture detection that forces a safety frame
+  /** Client can synthesize its own ElevenLabs voice from a `client_tts`
+   *  dispatch AND ack completion with `tts_done`. Unlike the flags above this
+   *  is a LATENCY capability, not a cost-saving one, so the coordinator reads
+   *  it directly rather than through `capable()` (which also requires
+   *  full-attention to be off). Absent on older clients → server synthesizes. */
+  clientTts?: boolean;
 }
 
 export type ClientMessage =
@@ -682,6 +688,7 @@ export type ClientMessage =
   | { type: "user_message"; text: string }
   | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm (ignored in live mode — Gemini hears PCM directly)
   | { type: "button_press"; buttons: string[]; sentences?: Record<string, string>; board?: any }
+  | { type: "tts_done"; id: string; ok?: boolean }  // client-side TTS (client_tts) finished playing — releases the server's wait so the AI's reply doesn't land on top of the student's own voice
   | { type: "board_exit"; label: string; instruction: string }  // exit button pressed on loaded board
   | { type: "gesture_context"; data: string }
   | { type: "person_context"; data: any }
@@ -772,7 +779,10 @@ export type ServerMessage =
   | { type: "binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither"; inputGlyphs?: Array<{ glyph: string; fallback?: string }> } }  // Binary-choice (incl. yes/no) — overlay with two AI-supplied ${T.button} options plus a server-decided escape button: "maybe" when the pair forms a yes/no, "neither" otherwise. Older clients without escapeKind fall back to local detection. `inputGlyphs` (experiment glyphInputTranslation) is a per-sentence glyph translation of the incoming speech, shown above the buttons.
   | { type: "ask_binary_choice"; data: { options: any[]; escapeKind?: "maybe" | "neither" } } // Deferred binary choice — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
-  | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
+  // `id` (when present) asks the client to ack completion with `tts_done`, so the
+  // server can keep the "student voice finishes before the AI replies" ordering
+  // it gets for free on the server-synthesized path.
+  | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student"; id?: string } }
   | { type: "client_local_tts"; data: { text: string; language: string; voiceRole: "ai" | "student" } }
   | { type: "reconnected" }                              // Reconnection successful
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures

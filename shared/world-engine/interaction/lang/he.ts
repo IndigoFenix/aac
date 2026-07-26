@@ -139,6 +139,14 @@ const L: Record<string, Lexeme> = {
   bear: { w: "דוב", g: "m" },
   frog: { w: "צפרדע", g: "f" },
   dog: { w: "כלב", g: "m" },
+  // Creature SPECIES words (reference resolution: "אני מדבר עם ה{מין}").
+  person: { w: "אדם", g: "m", plw: "אנשים" },
+  animal: { w: "חיה", g: "f", plw: "חיות" },
+  creature: { w: "יצור", g: "m" },
+  cow: { w: "פרה", g: "f" },
+  deer: { w: "צבי", g: "m" },
+  ram: { w: "איל", g: "m" },
+  sheep: { w: "כבשה", g: "f" },
   box: { w: "קופסה", g: "f" },
   basket: { w: "סל", g: "m" },
   bubbles: { w: "בועות", g: "f", pl: true },
@@ -262,14 +270,26 @@ const OBJ_PRON: Record<string, string> = {
   you: "אותך",
   we: "אותנו",
   they: "אותם",
+  he: "אותו",
+  she: "אותה",
 };
 
 /** Subject pronoun forms. "you" is gendered by the ADDRESSEE and so is not
  *  listed here — every caller that can see a "you" resolves it first. */
-const SUBJ_PRON: Record<string, string> = { i_me: "אני", we: "אנחנו", they: "הם" };
+const SUBJ_PRON: Record<string, string> = { i_me: "אני", we: "אנחנו", they: "הם", he: "הוא", she: "היא" };
 
 /** Dative pronoun forms (ל־ fused): "יש לנו", "אין להם". */
-const DAT_PRON: Record<string, string> = { i_me: "לי", you: "לך", we: "לנו", they: "להם" };
+const DAT_PRON: Record<string, string> = { i_me: "לי", you: "לך", we: "לנו", they: "להם", he: "לו", she: "לה" };
+
+/** Comitative pronoun forms (עם fused): "מדבר איתו", "איתה". */
+const COM_PRON: Record<string, string> = {
+  i_me: "איתי",
+  you: "איתך",
+  we: "איתנו",
+  they: "איתם",
+  he: "איתו",
+  she: "איתה",
+};
 
 /** Does this subject take PLURAL agreement? Only the collective pronouns do —
  *  lexically plural NOUN subjects keep their historical singular verb, so this
@@ -430,8 +450,10 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
     ? ` ${
         f.verb.head === "play" && !isPronoun(f.object.noun.head)
           ? fuse("ב", f.object)
-          : f.verb.head === "talk" && !isPronoun(f.object.noun.head)
-            ? `עם ${npText(f.object, true)}`
+          : f.verb.head === "talk"
+            ? (isPronoun(f.object.noun.head)
+                ? COM_PRON[f.object.noun.head]!
+                : `עם ${npText(f.object, true)}`)
             : lex(f.verb.head).objPrep === "to"
               ? dative(f.object.noun, opts.addressee)
               : isPronoun(f.object.noun.head)
