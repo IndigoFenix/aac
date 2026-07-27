@@ -245,6 +245,47 @@ it is wide but mechanical once ownership is right.
   handling (MSAA resolve / depth attachment), not the shaders. A 5-minute
   discriminator: render one frame with `renderer.render(scene, camera)`
   bypassing the composer and see if the depth-ON spark appears.
+  **SLICE 1.5 (2026-07-26 — SHIPPED, browser-verified): the wild session
+  mounts UNDER THE GLIDE, not just at a touchdown.** The user's parity law
+  ("gameplay at ground level is identical on a 2D region and a planet")
+  exposed the gap: a spirit gliding open country had NO entity engine under
+  it — `spiritCursorHost()` returned null, the cursor was the bare drawn-ray
+  (trees read as walls, no hover/dwell/products, no dart). Now:
+  - `mountWildernessAt` split: `mountWildChunk(pos)` mounts anchor + samplers
+    + quest session WITHOUT the walker (same proximity-mount contract as
+    `mountLiveTown` — camera/avatar stay with their owner, 5 s backoff after
+    a failed boot); the touchdown grants the walker on top.
+  - `spiritParkWild(worldPoint)` (provider dep `parkWildAvatar`, called from
+    the planet provider's `sphere.placeAvatar` every ground frame no town
+    content band covers): mounts the chunk if absent, parks the hidden gaze
+    avatar on the glide, and drives `maybeRebaseWild` — so the CHUNK FOLLOWS
+    THE GLIDE cross-country by the same floating-origin rebase the walker
+    uses (verified: chunk rebased continuously under a cross-planet descent).
+  - `spiritCursorHost` picks the engine by WHERE THE GLIDE STANDS
+    (`ladder.groundInTown()`): town host inside the content band, wild host
+    everywhere else. Preferring a mounted town outright was wrong in the
+    mount-radius ring around it.
+  - stepSpirit mirrors the town block for the wild session: pointer forwarded
+    at the ground rung, `setExternalCursor(true)` asserted, FULL-RATE step
+    (`spiritWildDriven`; streamGround's cadence step skips those frames), and
+    THE BOARD FOLLOWS THE GROUND under the glide (town↔wild last-wins claim
+    on content-band crossings — `spiritBoardTown`).
+  - streamGround's distance unload is gated off while the spirit ground rung
+    stands on open country (asked LIVE, not via the pre-step flag): during a
+    drop's descent blend the camera is still km up while the glide already
+    stands on the surface — measuring the camera dispose/remount-thrashed
+    the fresh chunk every few frames.
+  - Also landed with it: `groundSpark` step 2 — `place()` → `setTarget()`
+    with the planet-frame jump verdict, so the shared GazeSpark easing/dart
+    laws run identically on flat regions and planets (browser-verified:
+    idle→shrink→dart→grow on a pointer jump; `rep` owner + head-snap hover
+    on a wild creature in open country).
+  REMAINING for full parity (the user's tree complaint): the flora FIELD's
+  trees are render-only scenery — only the session's own wildMix scatter is
+  interactive, and the two populations are unrelated. One tree authority
+  (session scatter = flora placements, flora suppressed inside the live
+  chunk) is the next slice.
+
 - **2 ◻ Live-anchor rebase parity.** Give the embedded town the same
   floating-origin/rebase treatment the wilderness has (`WorldHost.rebase` +
   `rebaseLocal` already exist — wire them on the town path), so a loaded

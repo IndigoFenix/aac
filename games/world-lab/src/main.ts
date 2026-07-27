@@ -170,9 +170,22 @@ const toonShading = getShadingMode() === "toon";
 // primitives rasterize — one of the few stages that sits between "the beacon's
 // fragment shader writes 2.6" and "the resolved texture holds 1.6e4".
 const flashNoLogDepth = new URLSearchParams(location.search).get("flashlogdepth") === "0";
+// REVERSED-Z (`reverseDepthBuffer`), not `logarithmicDepthBuffer`, for the huge
+// range. Same precision story, but logdepth writes gl_FragDepth per fragment,
+// and BLENDED draws that write gl_FragDepth into the composer's offscreen
+// target lose their depth test entirely on ANGLE/D3D11 (measured: the same
+// transparent quad depth-tests fine rendered straight to the canvas, and fine
+// in the composer without logdepth — the ground cursor was invisible on
+// planets for exactly this reason, and the old "sprites don't survive
+// logdepth" note was this same driver bug misread). Reversed-Z is pure
+// projection + clip-control — no fragment depth writes, early-Z stays on —
+// so the broken driver path is never entered. `?depth=log` restores the old
+// mode for A/B; `?flashlogdepth=0` still drops both.
+const wantLogDepth = new URLSearchParams(location.search).get("depth") === "log";
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
-  logarithmicDepthBuffer: !flashNoLogDepth,
+  logarithmicDepthBuffer: wantLogDepth && !flashNoLogDepth,
+  reversedDepthBuffer: !wantLogDepth && !flashNoLogDepth,
 });
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -653,22 +666,31 @@ function attachSurfaceAnchor(point: SurfacePoint<CelestialBody>): THREE.Group {
   return g;
 }
 
-/** Mount the walkable wilderness chunk at a WORLD position (a touchdown, or a
- *  re-anchor as the walker nears the current chunk's edge). Flora is NOT here
- *  — it's the world-fixed streaming field; this chunk is the walker + fauna. */
-function mountWildernessAt(pos: THREE.Vector3, fwdWorld: THREE.Vector3): void {
-  if (!flight || embedWild) return;
+/** A failed wild boot must not re-throw every glide frame — back off. */
+let wildMountRetryAt = -1;
+
+/** Mount the walkable wilderness CHUNK (anchor + samplers + quest session) at
+ *  a WORLD position, WITHOUT granting it the walker — the same proximity-mount
+ *  contract a town has (mountLiveTown): the chunk renders and LIVES, camera
+ *  and avatar stay with whoever owns them (flight, or the spirit glide, which
+ *  parks the hidden gaze avatar through spiritParkWild). A touchdown grants
+ *  the walker on top (mountWildernessAt). Returns whether a chunk is live.
+ *  Flora is NOT here — it's the world-fixed streaming field; this chunk is
+ *  the entity engine: gatherable scatter + fauna + minds. */
+function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
+  if (embedWild) return true;
+  if (!flight || performance.now() < wildMountRetryAt) return false;
   const nb = flight.world.nearestBodyAltitudeAt(pos);
   const body = nb.body;
   const geo = body?.geography;
-  if (!body || !body.walkable || !geo) return;
+  if (!body || !body.walkable || !geo) return false;
   // Body-local landing direction (the anchor's radial).
   const local = body.group.worldToLocal(_wildPos.copy(pos));
   const r = local.length();
-  if (r < 1e-3) return;
+  if (r < 1e-3) return false;
   const dir = new THREE.Vector3(local.x / r, local.y / r, local.z / r);
   const dirArr: [number, number, number] = [dir.x, dir.y, dir.z];
-  if (geo.surface.heightAt(dirArr) < 0) return; // splashed down — flight swims
+  if (geo.surface.heightAt(dirArr) < 0) return false; // water — flight swims / glide holds the ray
   try {
     // Anchor on the surface via the SHARED surface-anchor — the identical frame a
     // town uses (its local frame IS the SurfaceChart at this landing point).
@@ -741,23 +763,42 @@ function mountWildernessAt(pos: THREE.Vector3, fwdWorld: THREE.Vector3): void {
           faunaForBiome(biome),
           (cell * 2654435761) >>> 0,
         );
-    // The incoming heading carries into the walker.
-    const fwd = _lp2.copy(fwdWorld)
-      .transformDirection(_inv.copy(wildAnchor.matrixWorld).invert());
+    // The incoming heading carries into the parked body (chunk centre = pos).
+    const fwd = fwdWorld
+      ? _lp2.copy(fwdWorld).transformDirection(_inv.copy(wildAnchor.matrixWorld).invert())
+      : _lp2.set(0, 0, 1);
     embedWild.placePlayer(WILD_SIDE / 2, WILD_SIDE / 2, fwd.x, fwd.z);
-    grounded = true;
-    groundedIn = "wild";
-    flight.setAvatarVisible(false);
-    spaceHud?.setVisible(false);
-    embedWild.host.setDriveCamera(true);
-    embedWild.host.setLocalAvatarHidden(false);
-    traceWalk(`wilderness mounted (${UNIFIED_GROUND ? "quest" : "plain"})`);
-    setStatus("wilderness — walk with the mouse · aim at the top of the screen to take off");
+    // Mounted WITHOUT the walker: camera + avatar stay with their owner until
+    // a touchdown grants them (mountWildernessAt / maybeLand).
+    embedWild.host.setDriveCamera(false);
+    embedWild.host.setLocalAvatarHidden(true);
+    traceWalk(`wilderness chunk mounted (${UNIFIED_GROUND ? "quest" : "plain"})`);
+    return true;
   } catch (err) {
     traceWalk(`wilderness mount FAILED: ${(err as Error).message}`);
     disposeWilderness();
+    wildMountRetryAt = performance.now() + 5000;
     setStatus((err as Error).message, true);
+    return false;
   }
+}
+
+/** FLY→LAND at open country: mount the chunk AND grant it the walker. Only
+ *  called with no chunk live (an existing one claims via maybeLand's bounds
+ *  check / is disposed first), so the fresh chunk centres on the touchdown. */
+function mountWildernessAt(pos: THREE.Vector3, fwdWorld: THREE.Vector3): void {
+  if (!flight) return;
+  if (!mountWildChunk(pos, fwdWorld)) return;
+  const ew = embedWild;
+  if (!ew) return;
+  grounded = true;
+  groundedIn = "wild";
+  flight.setAvatarVisible(false);
+  spaceHud?.setVisible(false);
+  ew.host.setDriveCamera(true);
+  ew.host.setLocalAvatarHidden(false);
+  traceWalk("wilderness walker granted (touchdown)");
+  setStatus("wilderness — walk with the mouse · aim at the top of the screen to take off");
 }
 
 /** FLOATING-ORIGIN RE-ANCHOR (no invisible walls, no remount): when the walker
@@ -2558,14 +2599,31 @@ function streamGround(
     }
   }
   if (embedWild && groundedIn !== "wild") {
-    wildStepAcc += dt;
-    if (wildStepAcc >= AIRBORNE_TOWN_STEP_S) {
-      embedWild.host.step(Math.min(0.05, wildStepAcc), now);
-      wildStepAcc = 0;
+    // Cadence step only while nothing else owns the tick: the spirit ground
+    // rung steps this session at the full frame rate (spiritWildDriven).
+    if (!spiritWildDriven) {
+      wildStepAcc += dt;
+      if (wildStepAcc >= AIRBORNE_TOWN_STEP_S) {
+        embedWild.host.step(Math.min(0.05, wildStepAcc), now);
+        wildStepAcc = 0;
+      }
     }
-    if (wildRoot) {
+    // Distance unload — but NEVER while the spirit ground rung stands on open
+    // country (asked LIVE, not via spiritWildDriven, which is computed before
+    // the ladder step and misses the very frame the chunk mounts): during the
+    // drop's descent blend the CAMERA is still kilometres up while the glide
+    // already stands on the surface, and measuring the camera here dispose/
+    // remount-thrashed the chunk every few frames until the blend landed. The
+    // glide's park re-anchors the chunk under the player each frame; when the
+    // rung exits, the ordinary distance rule resumes.
+    const glideOwnsWild = !!spirit && spirit.ladder.level === "ground" && !spirit.ladder.groundInTown();
+    if (wildRoot && !glideOwnsWild) {
       wildRoot.getWorldPosition(_wildPos);
-      if (anchorPos.distanceTo(_wildPos) > TOWN_LIVE_OUT_M) disposeWilderness();
+      const dWild = anchorPos.distanceTo(_wildPos);
+      if (dWild > TOWN_LIVE_OUT_M) {
+        traceWalk(`wild chunk out of range (d=${Math.round(dWild)} m) — unmounting`);
+        disposeWilderness();
+      }
     }
   }
   driveFlora(dt, anchorPos);
@@ -2579,6 +2637,14 @@ const DRONE_MIN_ALT = 12;   // dive floor (m)
 // The spirit ladder's structure rung steps the live-town host itself;
 // streamGround must NOT double-step it that frame.
 let spiritTownDriven = false;
+// Ground rung over OPEN COUNTRY: stepSpirit steps the wild session at the
+// full frame rate (it is the player's cursor engine there) — streamGround's
+// airborne-cadence step must skip those frames.
+let spiritWildDriven = false;
+// Which ground layer the shared board last followed the glide into (null =
+// re-claim on the next ground frame — e.g. after a rung change, when a
+// proximity town mount may have taken the board at boot).
+let spiritBoardTown: boolean | null = null;
 // FORENSICS: last-seen rung / near-town for the __walk seam trace.
 let lastSpiritLevel: string | null = null;
 let lastSpiritNearTown: string | null = null;
@@ -2614,16 +2680,40 @@ function spiritStructureHost(fc: FlightCity): SpiritStructureHost | null {
   return _spiritHost;
 }
 
-/** THE ENTITY ENGINE THE PLAYER IS STANDING IN — whichever ground layer is
- *  mounted here: the live town's host, else the wilderness session (unified
- *  ground only; the legacy sandbox chunk has no gaze pipeline to report). The
- *  ladder's ground rung asks every frame and never learns which it got: the
- *  cursor obeys the same laws on both sides of a town's edge, because standing
- *  on the ground is the same act on both sides. Town-plaza coordinates never
- *  enter — the host reports in WORLD coords. */
+/** THE ENTITY ENGINE THE PLAYER IS STANDING IN — chosen by WHERE THE GLIDE
+ *  STANDS, not by what happens to be mounted: the town's host inside that
+ *  town's content band (the ladder's townRef attach gate), the wilderness
+ *  session everywhere else (it glide-mounts under the spark — spiritParkWild).
+ *  Preferring a mounted town outright was wrong in the ring between its mount
+ *  radius and its content band: gliding open fields a kilometre out asked the
+ *  TOWN about ground it has no entities on, while the wild session standing
+ *  right there went unasked. The ladder asks every frame and never learns
+ *  which it got: the cursor obeys the same laws on both sides of a town's
+ *  edge. Town-plaza coordinates never enter — hosts report in WORLD coords. */
 function spiritCursorHost(): SpiritCursorHost | null {
-  if (embedTown && liveViz) return spiritStructureHost(liveViz.fc);
+  const inTown = spirit ? spirit.ladder.groundInTown() : embedTown !== null;
+  if (inTown && embedTown && liveViz) return spiritStructureHost(liveViz.fc);
   return embedWild?.quest ?? null;
+}
+
+/** WILD GROUND PRESENCE UNDER THE GLIDE (provider.parkWildAvatar — called
+ *  every ground frame the glide stands on ground no town's content band
+ *  covers). Standing on open country is the same act as standing in a street:
+ *  the wilderness session mounts under the spark and its hidden gaze avatar
+ *  parks on the glide, so hover/dwell/products/possession run off the SAME
+ *  engine code as a town's — and as a flat region's. The chunk then FOLLOWS
+ *  the glide: the parked pose drives the same floating-origin rebase the
+ *  walker uses (maybeRebaseWild), so gliding cross-country re-anchors the
+ *  chart instead of walking off its edge. */
+function spiritParkWild(p: THREE.Vector3): void {
+  if (grounded) return; // a walker owns the ground; its own loop parks/rebases
+  if (!mountWildChunk(p)) return; // water/unbaked/backoff — the bare ray stands in
+  const ew = embedWild;
+  if (!ew || !wildAnchor) return;
+  wildAnchor.updateWorldMatrix(true, false);
+  const local = wildAnchor.worldToLocal(_wildPos.copy(p));
+  ew.placePlayer(local.x, local.z);
+  maybeRebaseWild();
 }
 
 /** THE BODY THE SPARK DRIVES in the live town under `fc` (SIM coords + facing),
@@ -2718,6 +2808,13 @@ function stepSpirit(dt: number, now: number): void {
   const glidingTown = s.ladder.level === "ground" && s.ladder.groundInTown();
   const stepTownFull = riding || glidingTown;
   spiritTownDriven = stepTownFull; // also set by the structure rung's host step
+  // Standing on OPEN COUNTRY steps the WILD session at the full rate for the
+  // same reason a town gets it above: on the ground rung that session IS the
+  // player's cursor engine (gaze pick, entity snap, dwell), and the airborne
+  // cadence reads as a lagging laser pointer. Rides included — a claimed wild
+  // creature must not walk in cadence lurches either.
+  const glidingWild = s.ladder.level === "ground" && !glidingTown;
+  spiritWildDriven = glidingWild && embedWild !== null;
 
   // A town-rung initial_focus resolves once the home world's cities exist
   // (the geology bake founds them): park the drone over the focus town and
@@ -2792,6 +2889,31 @@ function stepSpirit(dt: number, now: number): void {
     // that is what the structure rung IS.
     embedTown.host.setInteriorReveal(s.ladder.level === "structure" || riding);
   }
+  // The WILD session gets the same treatment on its ground (open country):
+  // pointer forwarded so dwell-to-talk / containers / harvest hovers work
+  // mid-glide, external-cursor asserted so the planet's spark stays the ONE
+  // cursor. There is no wild structure rung — every other rung clears.
+  if (embedWild?.quest) {
+    if (s.ladder.level === "ground" && pointer) {
+      embedWild.host.setPointer(pointer.clientX, pointer.clientY);
+    } else {
+      embedWild.host.clearPointer();
+    }
+    if (s.ladder.level === "ground") embedWild.quest.setExternalCursor(true);
+  }
+  // THE BOARD FOLLOWS THE GROUND UNDER THE GLIDE — the same last-wins law the
+  // walker handoff runs: crossing a town's content band hands the shared
+  // board to the session that now owns the player's interactions (a town's
+  // streets, or the open country's wild session with its founding verbs).
+  // Reset off the ground rung so a proximity mount claiming the board at
+  // boot mid-flight is corrected on the next touch of ground.
+  if (s.ladder.level !== "ground") {
+    spiritBoardTown = null;
+  } else if (glidingTown !== spiritBoardTown) {
+    spiritBoardTown = glidingTown;
+    if (glidingTown) embedTown?.claimBoard();
+    else embedWild?.claimBoard?.();
+  }
 
   // The town's own step while the player STANDS IN IT (riding or gliding) —
   // AFTER the ladder posed the camera and the pointer landed, for two reasons:
@@ -2805,6 +2927,11 @@ function stepSpirit(dt: number, now: number): void {
     embedTown.host.step(dt, now);
     perf.town = performance.now() - t0;
     syncLiveHandoff();
+  }
+  // The wild session's full-rate step while the glide stands on its ground —
+  // same post-camera ordering, same reasons.
+  if (spiritWildDriven && embedWild) {
+    embedWild.host.step(dt, now);
   }
 
   // Force-gate veil (terrain baking under the camera — the ladder froze the
@@ -2974,6 +3101,7 @@ function bootSpiritWorld(game: GameSettings): void {
     forceGates: spiritForceGates,
     castGroundRay: castDrawnGround,
     cursorHost: spiritCursorHost,
+    parkWildAvatar: spiritParkWild,
   });
 
   // The focus rung: null flies the whole scope; a town-rung focus ("site:N")

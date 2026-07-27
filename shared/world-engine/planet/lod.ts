@@ -116,8 +116,16 @@ export function createPlanetLod(surface: PlanetSurface, host: PlanetLodHost, opt
     }
   };
 
+  // NO early-return cache here: the tree RE-ASSERTS visibility on every node it
+  // visits each update. Anything outside the tree that flips a chunk mesh's
+  // `visible` (a debug show-all sweep, a traverse gone wide) used to desync the
+  // mesh from the cached flag PERMANENTLY — every LOD ancestor of the camera's
+  // branch drew at once, and near the surface the camera slips UNDER a coarse
+  // ancestor's skin: the whole screen fills with unlit terrain at near depth
+  // (the ground blackout), and every transparent draw (the gaze spark) fails
+  // its depth test against that skin. A boolean write per visited node per
+  // update is nothing; permanent zombie state was not.
   const setVisible = (node: Node, visible: boolean): void => {
-    if (node.visible === visible) return;
     node.visible = visible;
     host.setChunkVisible(node.id, visible);
   };

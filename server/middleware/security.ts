@@ -37,6 +37,38 @@ export const IPAD_APP_ORIGIN = "capacitor://localhost";
 export const NATIVE_APP_ORIGINS = [DESKTOP_APP_ORIGIN, IPAD_APP_ORIGIN] as const;
 
 /**
+ * Header through which a packaged native client declares its own origin.
+ *
+ * A NATIVE http stack sends neither `Origin` nor `Referer`: the request is
+ * issued from native code (CapacitorHttp on iPad → URLSession), not by the
+ * WKWebView, so there is no browsing context to attribute it to. That makes
+ * every state-changing call fail the CSRF guard with "missing Origin/Referer" —
+ * exactly what broke iPad login once the API layer moved onto CapacitorHttp to
+ * get around WKWebView's third-party-cookie rules (client-aac/src/lib/queryClient.ts).
+ *
+ * The client therefore states its origin here. It is honoured ONLY when
+ * (a) no real Origin/Referer is present and (b) the value is one of the fixed
+ * `NATIVE_APP_ORIGINS`. That leaves nothing for an attacker to use: those
+ * origins are non-http(s) schemes no web page can occupy, and a browser cannot
+ * attach a custom header to a cross-site request without a preflight that the
+ * CORS policy above would have to allow first.
+ */
+export const NATIVE_ORIGIN_HEADER = "x-aivota-native-origin";
+
+/**
+ * Read `NATIVE_ORIGIN_HEADER` off a request, returning the declared origin only
+ * if it is one of the blessed native origins, else null.
+ */
+export function resolveDeclaredNativeOrigin(
+  headers: Record<string, string | string[] | undefined>,
+): string | null {
+  const raw = headers[NATIVE_ORIGIN_HEADER];
+  const value = (Array.isArray(raw) ? raw[0] : raw)?.trim();
+  if (!value) return null;
+  return (NATIVE_APP_ORIGINS as readonly string[]).includes(value) ? value : null;
+}
+
+/**
  * Resolve the CORS origin allowlist. Reads `ALLOWED_ORIGINS` (comma-separated)
  * if set; otherwise falls back to a development list. In production, NOT
  * setting `ALLOWED_ORIGINS` is a configuration mistake — the function still

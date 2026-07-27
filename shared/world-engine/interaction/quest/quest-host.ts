@@ -22,6 +22,14 @@
 
 import * as THREE from "three";
 import type { EntityDef, FulfillNode, GoalTreeGame } from "../../solver/types.js";
+// The use-point contract (furniture-use.ts) is the ONE authority for how a body
+// uses a fixture — the rest primitive reads it so the pose it shows and the pose
+// the renderer/anchor compose can never disagree.
+import { useContractFor } from "../../furniture-use.js";
+// The anchor's own contact-handoff distance — the ONE number a use-walk's arrival
+// is judged by too, so the walk can never stop where the anchor can't reach.
+import { engageReachFor } from "./furniture-anchor.js";
+import type { FixtureKind } from "../../types.js";
 import { certifyGoalTreeGame } from "../../solver/index.js";
 import { buildLogicalWorld, type LogicalWorld } from "../../solver/logical-world.js";
 import { walkGoalTree } from "../../solver/walk.js";
@@ -321,6 +329,10 @@ import {
   standPointFor,
   type BodyAvoidance,
 } from "./stand-points.js";
+// WHICH FURNITURE THE GAZE AIMS AT (furniture-aim.ts — pure, extracted so tests
+// can pin it): the hover IS the aim, never "whichever piece sits near the
+// fixation", which used to open a chest's neighbour.
+import { resolveFurnitureAim, type FurnitureAimGaze } from "./furniture-aim.js";
 import { createNpcVoice, speechEstimateMs, type NpcVoice } from "../../npc-voice.js";
 import { resolveLine, SAMPLE_NPC_DIALOGUE } from "../../npc-dialogue.js";
 import {
@@ -614,6 +626,24 @@ const FUN_DWELL_S = 7; // seconds playing at the box before the meter clears
 const WASH_DWELL_S = 6; // seconds scrubbing in the bath
 const PRIVY_DWELL_S = 4; // seconds at the privy
 const SIT_DWELL_S = 8; // seconds a commanded "sit" holds the chair
+/**
+ * THE PIECE THIS GOAL WILL POSE ON, when it will pose on one at all — the fixture
+ * id for a `rest` at a NAMED station whose use-point contract is an on-fixture use
+ * (a chair, a bed, a privy: `onFixture`), else null.
+ *
+ * The seam exists because such a walk has a different arrival contract from every
+ * other: the body does not merely need to be near its stand spot, it needs to be
+ * somewhere the furniture anchor can pick it up and slide it on. A `restHere` doze
+ * (`place.kind === "point"`) poses in place and names no piece; a table or chest is
+ * a `reach` use the body stands beside, so neither takes the tighter contract.
+ */
+function onFixtureUseTargetOf(state: WorldState, goal: GoalSpec): string | null {
+  if (goal.kind !== "rest" || goal.place.kind !== "named") return null;
+  const placeId = goal.place.id; // hoisted: narrowing doesn't survive the closure
+  const spec = state.spec.objects.find((s) => s.id === placeId);
+  if (!spec?.fixture) return null;
+  return useContractFor(spec.fixture).onFixture ? spec.id : null;
+}
 /** A rest-shaped step's dwell time, by motive. Action dwells (play, scrub,
  *  privy, cook) are animation-scale and fixed; SLEEP is the one dwell that is
  *  world physics — the scale's sleep fraction of its day. */
@@ -2369,9 +2399,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // A live need-based creature conversation (fulfill nodes) — dialogue is a
   // PROJECTION of creature state, re-computed after every act.
   let convo: { nodeId: string; level: SyntaxLevel; memo: ConversationMemo; acts: DialogueAct[] } | null = null;
-  // An OPEN container's selection popup (bug #5): its object id + the ordered entity
-  // ids on show. A press takes one; walking/looking away closes it, like a convo.
+  // The OPEN FURNITURE board (bug #5): the piece the gaze rests on — its object id +
+  // the glyph stacks on show, contents first, the thing itself last. A press takes one;
+  // walking/looking away closes it, like a convo. Furniture with NO stock (a chair, an
+  // empty chest) still opens one: the board names what the player is looking at.
   let container: { objId: string; items: string[] } | null = null;
+  /** Is the open board a STOCKED one? Only then is it MODAL — holding the camera,
+   *  walking an embodied body over, and pausing the attention spark, because the
+   *  player is reaching into it. A bare NAMING board just labels what the gaze rests
+   *  on; locking the view and freezing the world's gestures for a glance at a chair
+   *  would cost far more than the label is worth. */
+  const stockedBoard = () => !!container && container.items.length > 0;
   // The spirit ladder's focused-building frame (city-founding ③ focus
   // scope): re-asserted every structure-rung frame via setSpiritFocus,
   // nulled at town/district/ground. Sim-coords lot rect —
@@ -2398,6 +2436,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // OPEN-a-container dwell (bug #5): dwelling on an openable stocked container spills
   // its goods to grab. Separate from carry/drop dwells, and never runs while carrying.
   const openDwell = createDwellTracker({ dwellMs: 700, tolerance: 1.2, graceMs: 300 });
+  // Which container that dwell is currently filling FOR. The tracker anchors by
+  // POSITION, and two boxes can stand closer than its jitter tolerance (a chest
+  // beside a table) — so a dwell that already fired on one would swallow the
+  // move to its neighbour. Identity re-anchors it; a momentary loss of the pick
+  // (aim null) leaves it be, so the tracker's own grace still bridges blinks.
+  let openDwellBox: string | null = null;
   // SOFT CONTROL Phase 2 — between-two-creatures: a deliberate dwell on the gap
   // between two people prompts them to chat (stepSparkPairChat). Shorter than the
   // 700 ms talk dwell, longer than a passing glance.
@@ -3793,6 +3837,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  rests once and the pursuit ends — a need-born rest carries its motive's own
    *  dwell on the goal (`dwellS`, from `restDwellFor`). */
   const REST_CMD_DWELL_S = SIT_DWELL_S;
+  /** How far past a rest fixture's own EDGE a station-less doze may still count
+   *  as "at" it (metres). Only the `restHere` fallback reads it — a `restAt`
+   *  names its station and that is authoritative at any distance. Deliberately
+   *  TIGHT: a doze in the open has no station, so the only piece it may adopt is
+   *  one the body is already touching (it sat down at that chair, then nodded
+   *  off). A generous radius here means a body that merely walked PAST a chair
+   *  climbs onto it — the dog on the dining chair. */
+  const REST_REACH_MARGIN = 0.5;
+  /** How far past a posed station's own EDGE the body may stand and still SHOW
+   *  the pose (syncNeedActivities). Strictly wider than the furniture anchor's
+   *  engage reach (radius + body radius + ENGAGE_MARGIN), because the shown
+   *  activity IS the claim the anchor engages on — a narrower gate would leave a
+   *  band where the anchor would slide the body on but is never told to. */
+  const POSE_REACH_M = 2.2;
   /** S2 MASTER SWITCH: clean self-needs (NEED_PURSUIT_MOTIVES in need-goals.ts)
    *  install `source: "need"` pursuits — a need IS a self-assigned command. OFF
    *  reverts every motive to the legacy needStep walker wholesale. */
@@ -3808,6 +3866,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const NEED_PURSUIT_RETRY_S = 25;
   /** Arrival radius for a pursuing body — the same 1.3 the needs walker counts. */
   const COMMAND_ARRIVE = 1.3;
+  /** The arrival tolerance for a leg that ends in POSING ON a piece
+   *  (`onFixureUseTargetOf`): the stand spot is the contact handoff, not a rough
+   *  destination, so the body walks it properly instead of stopping a metre out.
+   *  Loose enough that the follower's own braking still counts as there.
+   *  ⚠️ Must stay ≤ the reach `r.arrived` uses, or the two fight. */
+  const USE_LEG_ARRIVE = 0.45;
   /** Discrete actions a single pursuit may attempt before parting aloud — the
    *  carried-item family needs at most ~3 (pick → walk → give/place), so a body
    *  past this is looping on a step it can't complete. */
@@ -3991,27 +4055,60 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // raw position (0.5 m grid) so a putIn's item AND container each stay put;
       // the stall re-route clears the cache to replan from the new spot.
       const pursuerR = world.npcRadiusOf(avatarIdOf(cid));
-      const standable = (raw: { x: number; y: number } | null) => {
+      // `objId` = the FIXTURE this point belongs to, when the goal named one. The
+      // id is what carries the use-point contract (which side a chest is opened
+      // from) and — for a PASS-THROUGH seat — the fact that a SEAT is the aim at
+      // all. `nearestClearSpot` only ever sees a bare point, so it read a dining
+      // chair as "somewhere inside the table" and put the approach on whichever
+      // table face the WALKER came from: a table-width (~2.4 m) from the seat. The
+      // body then cut the table's corner to get there and wedged on the collider,
+      // and its arrival fell outside every use gate, so it never sat down.
+      const standable = (raw: { x: number; y: number } | null, objId?: string) => {
         if (!raw) return null;
         if (standClear(state, raw, pursuerR)) return raw; // already reachable — body-independent, no commit needed
         const cache = (pur.stand ??= new Map<string, { x: number; y: number }>());
-        const key = `${Math.round(raw.x * 2)}|${Math.round(raw.y * 2)}`;
+        const key = `${objId ?? ""}|${Math.round(raw.x * 2)}|${Math.round(raw.y * 2)}`;
         const hit = cache.get(key);
         if (hit) return hit;
-        const spot = nearestClearSpot(state, raw, from, pursuerR, standAvoid(cid));
+        const spot = objId
+          ? standPointFor(state, objId, raw, from, pursuerR, standAvoid(cid))
+          : nearestClearSpot(state, raw, from, pursuerR, standAvoid(cid));
         cache.set(key, spot);
         return spot;
       };
       const r: WorldResolver = {
         ...base,
         itemPosition: (id) => standable(base.itemPosition(id)),
-        place: (p) => standable(base.place(p)),
+        // A goal that NAMES a real fixture hands its id down (see `standable`).
+        // Guarded to a genuine fixture id: `place` also accepts a SPOKEN name
+        // ("bed"), which resolves to some object but is not itself an object id —
+        // that keeps the point-only resolution.
+        place: (p) => {
+          const named =
+            p.kind === "named" && state.spec.objects.some((o) => o.id === p.id && o.fixture) ? p.id : undefined;
+          return standable(base.place(p), named);
+        },
         stationFor: (s) => standable(base.stationFor(s)), // a transform station is a solid box — stand beside it
         diningSpot: (self, kinds) => standable(base.diningSpot?.(self, kinds) ?? null), // the table is solid too
         colorStation: (self) => standable(base.colorStation?.(self) ?? null), // the tub is solid — stand beside it
         arrived: (self, pos) => {
           const b = state.avatars[avatarIdOf(self)];
-          return !!b && Math.hypot(b.x - pos.x, b.y - pos.y) <= COMMAND_ARRIVE;
+          if (!b) return false;
+          // A goal that ends in USING an on-fixture piece is arrived when the
+          // FURNITURE ANCHOR can take the body — never at a flat radius from the
+          // stand spot. The stand spot beside a dining chair sits 1.81 m from the
+          // seat inside a 2.22 m engage reach, so COMMAND_ARRIVE's 1.3 m of slack
+          // let the walk stop up to 3.11 m out: past the reach, past the pose
+          // gate, no claim, no slide — and the pursuit was over, so nothing was
+          // left to close the gap. The body stood frozen wherever it stopped,
+          // typically flush against the table it was rounding ("turns too soon,
+          // hits the table, gets stuck"). Same authority as the anchor itself.
+          const useId = onFixtureUseTargetOf(state, pur.goal);
+          if (useId) {
+            const o = state.objects[useId];
+            if (o) return Math.hypot(b.x - o.x, b.y - o.y) <= engageReachFor(state, useId, pursuerR);
+          }
+          return Math.hypot(b.x - pos.x, b.y - pos.y) <= COMMAND_ARRIVE;
         },
       };
       const next = pursue(pur.goal, cid, r);
@@ -4037,8 +4134,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // (unreachable after re-routes), do the pending action IN PLACE — the
         // effects work by objId from wherever the body stands (termination over
         // fidelity). onReroute drops the committed spots so the retry re-picks.
+        // The LEG's own tolerance must be at least as tight as `r.arrived` above,
+        // or the two deadlock: walkTo would call the leg done and stop issuing the
+        // errand while `pursue` kept returning "move", leaving the body parked
+        // short of a spot nobody was steering it to any more. A use-leg therefore
+        // walks the stand spot PROPERLY — that spot was chosen to put the piece
+        // inside the anchor's reach, so the last metre is the whole point of it.
         const status = walkTo(session, cid, next.pos, dt, {
-          arrive: COMMAND_ARRIVE,
+          arrive: onFixtureUseTargetOf(state, pur.goal) ? USE_LEG_ARRIVE : COMMAND_ARRIVE,
           onReroute: () => {
             pur.stand?.clear();
             return null;
@@ -4457,13 +4560,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // (a graspless pet at a lidded pantry, an empty world). Housemates read
       // this book (adoptionTemplates); anything else clears the entry — and a
       // served want also releases any standing "help X" orders aimed at it.
-      if (decided?.intent.kind === "blocked" && !decided.tpl.key.startsWith("adopt:")) {
-        const at = decided.tpl.satisfy.kind === "consume" ? (decided.tpl.satisfy.at ?? ["table"]) : [];
+      // The want is read off `decided.blocked` — the top unservable row — NOT
+      // off the acted-on intent: a body that blocks on serve and goes to play
+      // instead is still a body whose meal has nowhere to go, and the
+      // housemates' adoption rows must keep seeing it.
+      const blockedRow = decided?.blocked;
+      if (blockedRow && !blockedRow.tpl.key.startsWith("adopt:")) {
+        const at = blockedRow.tpl.satisfy.kind === "consume" ? (blockedRow.tpl.satisfy.at ?? ["table"]) : [];
         session.blockedNeeds.set(cid, {
-          tplKey: decided.tpl.key,
-          goodKey: decided.tpl.item.category ?? "",
+          tplKey: blockedRow.tpl.key,
+          goodKey: blockedRow.tpl.item.category ?? "",
           at,
-          priority: decided.tpl.priority,
+          priority: blockedRow.tpl.priority,
         });
       } else {
         if (session.blockedNeeds.delete(cid)) {
@@ -4814,9 +4922,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
         else if (pose) {
           // A commanded pose ("you sit") shows once the body reaches its
-          // station (or immediately, posing in place).
+          // station (or immediately, posing in place). EDGE-RELATIVE: the reach
+          // is measured from the piece's own footprint, never from its centre —
+          // a flat 1.6 m read a wide bed as "not reached" from the very stand
+          // spot the walk aimed at, so the claim never appeared and the anchor
+          // had nothing to slide onto (the sleeper stayed on the floor). Wider
+          // than the anchor's own engage reach on purpose: the claim must exist
+          // before the anchor can act on it.
           const st = pose.objId ? state.objects[pose.objId] : undefined;
-          if (!st || Math.hypot(av.x - st.x, av.y - st.y) <= 1.6) {
+          const stSpec = pose.objId ? state.spec.objects.find((o) => o.id === pose.objId) : undefined;
+          if (!st || Math.hypot(av.x - st.x, av.y - st.y) <= (stSpec?.radius ?? 0) + POSE_REACH_M) {
             act = { kind: pose.kind, objId: pose.objId };
           }
         }
@@ -5609,7 +5724,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           ? Object.entries(session.needCarried.get(cid) ?? {})
               .filter(([g, n]) => n > 0 && matchesNeedItem(g, tpl.item))
               .reduce((s, [, n]) => s + n, 0)
-          : carryTotalOf(session.needCarried.get(cid), goodKey),
+          // A FOOD row that EATS also counts a carried MEAL (the projection
+          // rule, §4): "meal" is a category DISJOINT from "food"
+          // (MEAL_KINDS = the `.hot` variants), so a cooked unit in hand read
+          // as 0 to hunger — which then walked to the pantry for a raw apple
+          // while holding a dinner it could not put down (serve's table was
+          // full or missing, so the meal rode the hands forever and the row
+          // stayed BLOCKED). The consume EFFECT already reaches for the hot
+          // meal first (`eatOrder`); this is the decision side catching up,
+          // and it is the SAME projection the pursuit path applies.
+          // ⚠️ CONSUME ROWS ONLY — a `transform` (cook) or `deposit`
+          // (provision:food) row must NOT see meals, or the cook would take
+          // its own finished dish back to the oven and the pantry row would
+          // bank dinner into the raw-food chest.
+          : carryTotalOf(session.needCarried.get(cid), goodKey) +
+            (tpl.satisfy.kind === "consume" && goodKey === "food"
+              ? carryTotalOf(session.needCarried.get(cid), "meal")
+              : 0),
       // A stock drive measured in another category (`of`) counts THAT
       // category's carried units for its fire check (needs.ts) — the
       // cook's in-hand meal is the loop's brake.
@@ -6896,34 +7027,73 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     if (step.kind === "rest") {
       // OCCUPY the station and DWELL posed — the REST primitive (concept-parser
-      // §10). The pursuit already WALKED the body here, so pose it in place: the
-      // nearest rest fixture within reach sets the pose (bed → sleep, box →
-      // play, else sit), the same `needPoseShow` channel "you sit" uses so the
-      // body is visibly stationary. A dwell errand PINS it for the spell (else
-      // the wander behavior walks it off mid-animation). One dwell, then the
-      // pursuit ends — the needs walker keeps its own meter-clearing rest.
+      // §10). The pursuit already WALKED the body here, so pose it in place.
+      // A dwell errand PINS it for the spell (else the wander behavior walks it
+      // off mid-animation). One dwell, then the pursuit ends — the needs walker
+      // keeps its own meter-clearing rest.
+      //
+      // WHICH FIXTURE is being used comes from the GOAL, not from geometry: a
+      // `restAt` names its station in `place` (need-goals restAt →
+      // {kind:"named"}), and that id is what `needPoseShow` must carry so the
+      // furniture anchor slides the body ONTO it. A blind "nearest rest fixture
+      // within 2.2 m" scan used to stand in for this, and it silently dropped
+      // the bed whenever the walk settled a few centimetres outside that flat
+      // radius — the body then slept on the FLOOR beside its own bed (observed:
+      // a sleeper 2.24 m from a 0.9 m-radius bed, i.e. barely a step past the
+      // stand spot, posed `sit` in the open). The walk's own arrival tolerance
+      // (COMMAND_ARRIVE, measured from a stand spot already a body-radius out)
+      // makes that overshoot ORDINARY, so no fixed radius can be the authority.
+      // The proximity scan survives only as the fallback for a `restHere` doze,
+      // where the goal genuinely names no station — and it is radius-aware now,
+      // so a wide bed is judged from its EDGE like every other reach.
       const state = world.state;
       const body = state.avatars[npcId];
       if (!body) return;
       const REST_FIXTURES = new Set(["bed", "chair", "box", "bath", "privy"]);
+      const fixtureKindOf = (id: string): string | undefined => {
+        const spec = state.spec.objects.find((s) => s.id === id);
+        return spec?.fixture && REST_FIXTURES.has(spec.fixture) ? spec.fixture : undefined;
+      };
       let stObjId: string | undefined;
       let stKind: string | undefined;
-      let bestD = 2.2;
-      for (const spec of state.spec.objects) {
-        if (!spec.fixture || !REST_FIXTURES.has(spec.fixture)) continue;
-        const o = state.objects[spec.id];
-        if (!o) continue;
-        const d = Math.hypot(o.x - body.x, o.y - body.y);
-        if (d < bestD) {
-          bestD = d;
-          stObjId = spec.id;
-          stKind = spec.fixture;
+      // THE GOAL'S OWN STATION first — the bed/chair/privy this rest was for.
+      if (step.place.kind === "named" && state.objects[step.place.id]) {
+        const k = fixtureKindOf(step.place.id);
+        if (k) {
+          stObjId = step.place.id;
+          stKind = k;
         }
       }
-      // The goal's own pose wins (a doze in the open is a SLEEP, fun's toy-play
-      // a PLAY — no fixture nearby to say so); else derive from what's reached.
-      const pose: AvatarActivityKind =
-        step.pose ?? (stKind === "bed" ? "sleep" : stKind === "box" ? "play" : "sit");
+      if (!stObjId) {
+        // A doze with no named station: fall back to what the body has actually
+        // REACHED, edge-relative (radius + a reach margin), never a flat radius.
+        let bestSlack = REST_REACH_MARGIN;
+        for (const spec of state.spec.objects) {
+          if (!spec.fixture || !REST_FIXTURES.has(spec.fixture)) continue;
+          const o = state.objects[spec.id];
+          if (!o) continue;
+          const slack = Math.hypot(o.x - body.x, o.y - body.y) - spec.radius;
+          if (slack < bestSlack) {
+            bestSlack = slack;
+            stObjId = spec.id;
+            stKind = spec.fixture;
+          }
+        }
+      }
+      // WHAT the pose is: an ON-FIXTURE piece decides it from its own use-point
+      // contract (torso contact ⇒ lie down, pelvis ⇒ sit), because that contract
+      // is also what the renderer and the anchor read — a motive that asserted
+      // "sleep" while the body is pinned on a CHAIR would leave the sim on the
+      // seat and the picture unanchored (render3d only lies a sleeper on a
+      // torso-contact piece). Otherwise the goal's own pose wins (a doze in the
+      // open is a SLEEP, fun's toy-play a PLAY — no fixture to say so), falling
+      // back to what was reached.
+      const onFixtureContact = stKind ? useContractFor(stKind as FixtureKind) : null;
+      const pose: AvatarActivityKind = onFixtureContact?.onFixture
+        ? onFixtureContact.contactPart === "torso"
+          ? "sleep"
+          : "sit"
+        : (step.pose ?? (stKind === "box" ? "play" : "sit"));
       const dwell = step.dwellS ?? REST_CMD_DWELL_S; // a need's nap vs the commanded-sit default
       session.needStep.delete(cid);
       session.npcTasks.delete(npcId);
@@ -9106,10 +9276,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const containerCount = (session: QuestSession, objId: string): number =>
     Object.values(containerContents(session, objId)).reduce((a, b) => a + b, 0);
 
-  /** The nearest registered container to `me` within `CONVO_RADIUS` whose world object is
-   *  present (streamed in). Fixtures aren't reliably in the gaze screen-pick, so we match
-   *  BY POSITION (like the conversation dwell). `requireContents` restricts to non-empty
-   *  ones (openable now) vs. any (a put target). */
   /** The motive a hovered world object draws attention to (spark-attention.ts),
    *  read from the object's OWN affordances / station role (the affordance law)
    *  — or null when it serves no meter-driven motive. A loose prop speaks
@@ -9884,6 +10050,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (fm) return ((fm[1] ?? "").replace(/_\d+$/, "").split("_")[0]) || "thing"; // chest_food→chest
     const ws = wildSourceOf(session, objId);
     if (ws) return ws.species; // a wild source IS its species (oak, sheep)
+    // Any other FIXTURE is its kind — the spec's own word (chest, table, bed).
+    // Catches the pieces whose ids carry no house prefix: market stalls
+    // (`store:food`), site crates, workshop furniture.
+    const fx = world?.state.spec.objects.find((o) => o.id === objId)?.fixture;
+    if (fx) return fx;
     return "thing";
   }
 
@@ -9910,74 +10081,67 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return state.objects[objId] ?? state.avatars[objId];
   }
 
-  function nearestContainer(
+  /** THE FURNITURE THE GAZE IS AIMED AT (furniture-aim.ts holds the rule and its
+   *  reasoning) — the ONE resolver the board popup and the put gesture target
+   *  through: the hovered piece, the piece a hovered prop sits in, else nothing.
+   *  This binds it to the live session: the registered containers, the spec's
+   *  FIXTURE flag (furniture, stocked or not), and live standpoints. */
+  function gazeFurniture(
     session: QuestSession,
     state: WorldState,
+    gz: FurnitureAimGaze,
     me: { x: number; y: number } | undefined,
-    requireContents: boolean,
+    want: "furniture" | "container",
   ): { id: string; x: number; y: number } | null {
-    if (!me) return null;
-    let target: { id: string; x: number; y: number } | null = null;
-    let best = CONVO_RADIUS;
-    for (const objId of session.containers.keys()) {
-      const o = containerStandpoint(state, objId);
-      if (!o) continue;
-      if (requireContents && containerCount(session, objId) <= 0) continue;
-      const d = Math.hypot(me.x - o.x, me.y - o.y);
-      if (d <= best) { best = d; target = { id: objId, x: o.x, y: o.y }; }
-    }
-    return target;
+    return resolveFurnitureAim(
+      {
+        isContainer: (id) => session.containers.has(id),
+        isFurniture: (id) => !!state.spec.objects.find((o) => o.id === id)?.fixture,
+        containedIn: (id) => state.objects[id]?.containedIn?.objectId,
+        standpoint: (id) => containerStandpoint(state, id),
+        ids: () => session.containers.keys(),
+      },
+      gz,
+      { want, me, spirit: spiritNow(), reach: CONVO_RADIUS, fixRadius: CONVO_FIG_RADIUS },
+    );
   }
 
-  /** The non-empty container the GAZE fixation rests on, at any distance —
-   *  the SPIRIT's way of looking inside (its body never approaches anything). */
-  function containerAtGaze(
-    session: QuestSession,
-    state: WorldState,
-    fix: { x: number; y: number } | null | undefined,
-  ): { id: string; x: number; y: number } | null {
-    if (!fix) return null;
-    let target: { id: string; x: number; y: number } | null = null;
-    let best = CONVO_FIG_RADIUS;
-    for (const objId of session.containers.keys()) {
-      const o = containerStandpoint(state, objId);
-      if (!o) continue;
-      if (containerCount(session, objId) <= 0) continue;
-      const d = Math.hypot(fix.x - o.x, fix.y - o.y);
-      if (d <= best) { best = d; target = { id: objId, x: o.x, y: o.y }; }
-    }
-    return target;
-  }
-
-  /** OPEN a container as a SELECTION POPUP: its contents as a board of takeable STACKS,
-   *  like a conversation. Stays open until the player walks/looks away (leave-dwell). */
+  /** OPEN a piece of FURNITURE as a SELECTION POPUP: the thing itself on the board,
+   *  plus its contents as takeable STACKS when it holds any. An EMPTY chest — or a
+   *  chair, which holds nothing ever — still shows: the board names what the player
+   *  is looking at (pressing it draws the family's attention there), which is why
+   *  this no longer refuses a stock-less piece and quietly left the builder board up.
+   *  Stays open until the player walks/looks away (leave-dwell). */
   function openContainer(session: QuestSession, containerObjId: string) {
     if (!world || !containerStandpoint(world.state, containerObjId)) return;
-    regrowWildStock(session, containerObjId); // ripen before the empty gate
-    if (containerCount(session, containerObjId) <= 0) return;
+    regrowWildStock(session, containerObjId); // ripen before the board is drawn
     container = { objId: containerObjId, items: [] };
+    leaveDwell.reset(); // a SWITCH from another piece must not inherit its leave fill
     voice?.cancel();
     presentContainer(session);
   }
 
-  /** Render the open container's contents as a board — one option per glyph STACK, its
-   *  label carrying the count. */
+  /** Render the open furniture as a board: one option per glyph STACK (its label
+   *  carrying the count) — CONTENTS FIRST — then the thing itself. */
   function presentContainer(session: QuestSession) {
     if (!container) return;
     const contents = containerContents(session, container.objId);
     const glyphs = Object.keys(contents);
     container.items = glyphs;
-    if (glyphs.length === 0) {
-      closeContainer();
+    const cObj = world ? containerStandpoint(world.state, container.objId) : undefined;
+    if (!cObj) {
+      closeContainer(); // it streamed away / was consumed mid-board
       return;
     }
-    const cObj = world ? containerStandpoint(world.state, container.objId) : undefined;
-    if (cObj) world?.setConversation({ x: cObj.x, y: cObj.y });
+    // HOLD THE CAMERA (and an embodied body's approach) only for a board with STOCK
+    // on it — that hold exists to steady a box you're reaching into. A bare naming
+    // board must not lock the view or walk the body over for a glance at a chair.
+    world?.setConversation(glyphs.length > 0 ? { x: cObj.x, y: cObj.y } : null);
     presenter.board({
       kind: "acts",
       nodeId: container.objId,
       posedByEntityId: container.objId,
-      prompt: "open",
+      prompt: glyphs.length > 0 ? "open" : "",
       promptText: "",
       options: [
         ...glyphs.map((glyph) => {
@@ -9993,9 +10157,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const g = `${wa.species}.my`;
           return [{ id: `tame:${container.objId}`, label: g, glyph: g, spokenText: "" }];
         })()),
-        // Phase 3 (attention-spark.md): the container ITSELF, as well as its
-        // contents — pressing it draws the family's attention to the box (a
-        // fill-check) rather than taking from it.
+        // Phase 3 (attention-spark.md): the FURNITURE ITSELF, after its contents —
+        // pressing it draws the family's attention to the thing (a fill-check)
+        // rather than taking from it. On a stock-less piece it is the whole board.
         {
           id: `attend:${container.objId}`,
           label: objectWord(session, container.objId),
@@ -11886,7 +12050,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               engageCreature(session, convo.nodeId, ENGAGE_CONVO_HOLD_S);
               session.lastConvoCid = convo.nodeId;
             }
-            const sparkBlocked = !!convo || !!container || !!choice || !!session.selectedPocketGlyph;
+            const sparkBlocked = !!convo || stockedBoard() || !!choice || !!session.selectedPocketGlyph;
             stepSparkAttention(session, world, dt, sparkBlocked);
             if (!sparkBlocked) {
               stepSparkDirect(session, state);
@@ -11982,16 +12146,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         stepTaskPool(session, dt);
         simMark("chatter", descendNow() - _bm); _bm = descendNow(); // TEMP
         // INVENTORY placement: a SELECTED stack (outside conversation) is placed by the
-        // gaze — dwell on the nearest CONTAINER (by position) puts one in, dwell on nearby
-        // GROUND drops one. (Selecting a stack WHILE in conversation presents it instead.)
+        // gaze — dwell on the CONTAINER THE GAZE IS ON (empty ones included) puts one
+        // in, dwell on nearby GROUND drops one. Only a real container takes a stack;
+        // a chair is furniture the board can name but nothing you can stow into.
+        // (Selecting a stack WHILE in conversation presents it instead.)
         if (session.selectedPocketGlyph && !choice && !container && world) {
           const me = state.avatars[PLAYER_ID];
           const gz = world.getGaze();
-          const box = nearestContainer(session, state, me, false); // any container is a put target
+          const box = gazeFurniture(session, state, gz, me, "container");
           const fix = gz.committedWorld;
-          const onBox = !!box && !!fix && Math.hypot(fix.x - box.x, fix.y - box.y) <= CONVO_FIG_RADIUS;
           const reachGround = !!me && !!fix && Math.hypot(me.x - fix.x, me.y - fix.y) <= CONVO_RADIUS;
-          if (box && onBox) {
+          if (box) {
             if (dropDwell.step({ x: box.x, y: box.y }, dt * 1000).fired) putSelectedIn(session, box.id);
           } else if (reachGround) {
             if (dropDwell.step({ x: fix!.x, y: fix!.y }, dt * 1000).fired) dropSelected(session, fix!.x, fix!.y);
@@ -12001,43 +12166,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         } else {
           dropDwell.step(null, dt * 1000);
         }
-        // OPEN A CONTAINER: with nothing armed and not already in a conversation or an open
-        // box, dwelling on a NON-EMPTY container opens its SELECTION POPUP. ONE
-        // path for every container (chest / cupboard / table / market store). Not a carry
+        // OPEN A PIECE OF FURNITURE: with nothing armed and not in a conversation,
+        // dwelling on the furniture the gaze is AIMED at (gazeFurniture — the hover IS
+        // the aim) puts it on the board: its CONTENTS first, then the thing itself.
+        // ONE path for everything with a standing spot (chest / cupboard / table /
+        // chair / market store / walking product animal), stocked or not. Not a carry
         // (fixtures) — a dedicated dwell, so it never touches the carry pickup-dwell.
-        // EMBODIED: the nearest container to the BODY (walk up to look inside).
-        // SPIRIT: whichever container the GAZE rests on, at ANY distance — the
-        // formless observer sees into the room it watches (in the dollhouse the
-        // view is READ-ONLY; see `select`).
-        if (!session.selectedPocketGlyph && !choice && !convo && !container && world) {
-          const me = state.avatars[PLAYER_ID];
-          const gz2 = world.getGaze();
-          const fix = gz2.committedWorld;
-          // A WALKING container (wild product animal, step ④) never gets a
-          // ground fixation at its feet — its body captures the pick. The
-          // HOVER is the aim: a hovered container-avatar is the target
-          // outright, in either mode (the dwell's 1.2 m tolerance absorbs
-          // its grazing walk).
-          const hvAv = gz2.hover?.kind === "avatar" ? state.avatars[gz2.hover.id] : undefined;
-          const hoverBox =
-            hvAv &&
-            session.containers.has(hvAv.id) &&
-            containerCount(session, hvAv.id) > 0 &&
-            // The spirit looks in at any distance; a body must WALK UP.
-            (spiritNow() || (me && Math.hypot(me.x - hvAv.x, me.y - hvAv.y) <= CONVO_RADIUS))
-              ? { id: hvAv.id, x: hvAv.x, y: hvAv.y }
-              : null;
-          const target =
-            hoverBox ??
-            (spiritNow()
-              ? containerAtGaze(session, state, fix)
-              : nearestContainer(session, state, me, true)); // non-empty = openable now
-          const onBox =
-            !!target &&
-            (target.id === hoverBox?.id ||
-              (!!fix && Math.hypot(fix.x - target.x, fix.y - target.y) <= CONVO_FIG_RADIUS));
-          if (target && onBox) {
-            if (openDwell.step({ x: target.x, y: target.y }, dt * 1000).fired) openContainer(session, target.id);
+        // EMBODIED: walk up to look. SPIRIT: at ANY distance — the formless observer
+        // sees into the room it watches (dollhouse view is READ-ONLY; see `select`).
+        // A piece already OPEN holds while the gaze rests on it; aiming at a DIFFERENT
+        // one SWITCHES the board to that one (it used to keep showing the first until a
+        // 1 s leave-dwell on empty ground fired — and never at all while the two sat
+        // within the leave radius of each other, so the board named a thing long since
+        // looked away from). `gazeBox` is also the leave-dwell's "still on one" test.
+        let gazeBox: { id: string; x: number; y: number } | null = null;
+        if (!session.selectedPocketGlyph && !choice && !convo && world) {
+          gazeBox = gazeFurniture(session, state, world.getGaze(), state.avatars[PLAYER_ID], "furniture");
+          const aim = gazeBox && gazeBox.id !== container?.objId ? gazeBox : null;
+          if (aim) {
+            if (openDwellBox && openDwellBox !== aim.id) openDwell.reset(); // a new box, not this one's jitter
+            openDwellBox = aim.id;
+            if (openDwell.step({ x: aim.x, y: aim.y }, dt * 1000).fired) openContainer(session, aim.id);
           } else {
             openDwell.step(null, dt * 1000);
           }
@@ -12055,13 +12204,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             !!fix && Math.hypot(fix.x - px, fix.y - py) <= r;
           const active = choice;
           if (container) {
-            // Container popup open: hold the camera on the box; dwell on empty ground
-            // (fixation off the box) to close it — the same leave gesture as a convo.
+            // Furniture board open: hold the camera on a STOCKED piece (see
+            // presentContainer — a bare naming board neither locks the view nor walks
+            // the body over); dwell on empty ground (fixation off it) to close it —
+            // the same leave gesture as a convo. Resting on ANOTHER piece is not
+            // "away": that's a SWITCH, already dwelling above, and counting it as a
+            // leave would race the two.
             talkDwell.reset();
             const cObj = containerStandpoint(state, container.objId);
             if (cObj) {
-              cvHost.setConversation({ x: cObj.x, y: cObj.y });
-              const g = fix && !onFig(cObj.x, cObj.y, CONVO_FIG_RADIUS) ? { x: fix.x, y: fix.y } : null;
+              cvHost.setConversation(stockedBoard() ? { x: cObj.x, y: cObj.y } : null);
+              const g =
+                fix && !gazeBox && !onFig(cObj.x, cObj.y, CONVO_FIG_RADIUS) ? { x: fix.x, y: fix.y } : null;
               const res = leaveDwell.step(g, dt * 1000);
               progress = res.progress;
               if (res.fired) closeContainer();

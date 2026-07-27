@@ -141,6 +141,86 @@ describe("standPointFor — the same-room gate (the behind-the-house bug)", () =
     });
   });
 
+  // A DINING CHAIR IS TUCKED UNDER ITS TABLE (observed live in the spirit
+  // dollhouse, house h_149): the seat centre sits 1.12 m from the table centre,
+  // INSIDE the table's Chebyshev keep-out (radius 0.8 + body 0.4 = 1.2), so the
+  // seat's own coordinate is not standable and the stand point must come off the
+  // table. WHICH SIDE was the bug: the chair is a PASSTHROUGH fixture, so
+  // standPointFor used to bail to `return raw` and the caller resolved the point
+  // as "inside the table" with the stand-off biased toward the WALKER. A body
+  // approaching from the far side committed to a spot a whole table-width from
+  // the chair — it cut the table's corner getting there and wedged on the
+  // collider, and the arrival fell outside every use gate, so it never sat.
+  // THE SEAT CHOOSES THE SIDE.
+  describe("a seat tucked under a table — the stand point is on the SEAT's side", () => {
+    const bigRoom: BuildingSpec = {
+      id: "A",
+      footprint: { x: 0, y: 0, w: 12, h: 10 },
+      floors: 1,
+      wallThickness: 0.4,
+      doorways: [{ edge: "south", offset: 6, width: 1.4 }],
+    };
+    // Table at (6,5) r0.8; a chair tucked on each of the four sides at 1.12 m.
+    const seats: { name: string; x: number; y: number }[] = [
+      { name: "east", x: 7.12, y: 5 },
+      { name: "west", x: 4.88, y: 5 },
+      { name: "north", x: 6, y: 3.88 },
+      { name: "south", x: 6, y: 6.12 },
+    ];
+    const world = () =>
+      createWorldState(
+        expandWorldBuildings(
+          spec([bigRoom], [
+            fixture("table", 6, 5, 0.8, "table"),
+            ...seats.map((st) => fixture(`chair_${st.name}`, st.x, st.y, 0.22, "chair")),
+          ]),
+        ),
+        "me",
+      );
+
+    it("the seat centre really is blocked by the table (the premise)", () => {
+      const s = world();
+      for (const st of seats) expect(fixturesWalkable(s, { x: st.x, y: st.y }, 0.4)).toBe(false);
+      expect(fixtureCovering(s, { x: 7.12, y: 5 })?.id).toBe("table");
+    });
+
+    it("lands beside the seat from EVERY approach, not on the walker's side", () => {
+      const s = world();
+      // Approach each seat from all four quadrants of the room, including the
+      // far side of the table — the direction that produced the bug.
+      const approaches = [
+        { x: 2, y: 2 },
+        { x: 10, y: 2 },
+        { x: 2, y: 8 },
+        { x: 10, y: 8 },
+      ];
+      for (const st of seats) {
+        for (const from of approaches) {
+          const p = standPointFor(s, `chair_${st.name}`, { x: st.x, y: st.y }, from);
+          expect(fixturesWalkable(s, p, 0.4)).toBe(true); // a body fits — clear of the table
+          expect(sameRoomAs(s, { x: st.x, y: st.y }, p)).toBe(true);
+          // Within arm's reach of ITS OWN seat, from every approach. The bug put
+          // this at ~2.4 m (the opposite table face) for three of four
+          // approaches; the anchor's engage reach for a chair is
+          // 0.22 + 0.4 + 1.6 = 2.22 and the pose gate 0.22 + 2.2 = 2.42, so a
+          // table-width miss silently dropped the claim.
+          expect(Math.hypot(p.x - st.x, p.y - st.y)).toBeLessThan(1.0);
+        }
+      }
+    });
+
+    it("an OPEN chair (no table over it) still stands right on the seat", () => {
+      // The pass-through rule that already worked must not regress: a chair in
+      // the open is walked straight onto.
+      const s = createWorldState(
+        expandWorldBuildings(spec([bigRoom], [fixture("lone", 3, 7, 0.22, "chair")])),
+        "me",
+      );
+      const p = standPointFor(s, "lone", { x: 3, y: 7 }, { x: 8, y: 2 });
+      expect(p).toEqual({ x: 3, y: 7 });
+    });
+  });
+
   it("nearestClearSpot never nudges a room anchor through a wall", () => {
     // A planned point inside a fixture that hugs the WEST wall: the outward
     // (−x) nudge is locally clear but outside — it must be rejected.

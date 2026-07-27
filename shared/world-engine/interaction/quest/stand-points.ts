@@ -248,6 +248,51 @@ export function standPointFor(
 ): { x: number; y: number } {
   let spec = state.spec.objects.find((s) => s.id === objId);
   let center = raw;
+  // A PASS-THROUGH FIXTURE (a chair, a bowl — PASSTHROUGH_FIXTURES) is the piece
+  // being USED and carries no collider, so its own centre IS the stand spot and a
+  // body may stand right on it. But a dining chair is TUCKED UNDER its table: the
+  // seat centre sits inside the table's Chebyshev keep-out (0.8 + 0.22 + 0.1 =
+  // 1.12 < radius + bodyR = 1.2), so that centre is not standable and the caller
+  // must nudge off the TABLE.
+  //
+  // WHICH SIDE of the table it nudges to is the whole bug: this used to fall
+  // straight to `return raw`, so `nearestClearSpot` resolved the point as "inside
+  // the table" with no idea a SEAT was the aim, and `standDirs` biased the
+  // stand-off toward the WALKER. A body approaching from the west therefore
+  // committed to a spot on the table's WEST face — a whole table-width (~2.4 m)
+  // from the chair it was sent to sit on. Two failures followed, both observed
+  // live: the walk cut the table's corner heading for that spot and wedged flush
+  // against the collider ("turns too soon, hits the table, gets stuck"), and the
+  // arrival landed outside every use gate (2.64 m from a chair whose pose gate is
+  // radius + 2.2 = 2.42), so no claim ever formed and the furniture anchor had
+  // nothing to slide onto.
+  //
+  // THE SEAT CHOOSES THE SIDE. Stand just outside the covering piece on the
+  // seat's OWN side — the dominant axis from the covering centre through the
+  // seat, so the spot lands square on a face and never on a corner. Emergent from
+  // the two footprints; no per-kind composite.
+  if (spec?.fixture && PASSTHROUGH_FIXTURES.has(spec.fixture)) {
+    const bodyClearAt = (p: { x: number; y: number }) =>
+      !avoid || bodiesClear(state, p, avoid.selfId, bodyR, avoid.radiusOf);
+    if (standClear(state, raw, bodyR) && bodyClearAt(raw)) return raw; // an open seat — stand on it
+    const cov = fixtureCovering(state, raw, bodyR);
+    if (cov) {
+      const stand = cov.radius + bodyR + 0.22;
+      const dx = raw.x - cov.x;
+      const dy = raw.y - cov.y;
+      const d =
+        Math.abs(dx) >= Math.abs(dy)
+          ? { x: Math.sign(dx) || 1, y: 0 }
+          : { x: 0, y: Math.sign(dy) || 1 };
+      const p = { x: cov.x + d.x * stand, y: cov.y + d.y * stand };
+      if (standClear(state, p, bodyR) && sameRoomAs(state, raw, p) && bodyClearAt(p)) return p;
+      // That face is blocked (a wall behind the chair, a housemate already there)
+      // — fall through to the covering piece's general resolution, still biased
+      // toward the SEAT rather than the walker.
+      return standPointFor(state, cov.id, { x: cov.x, y: cov.y }, raw, bodyR, avoid);
+    }
+    return raw;
+  }
   // AN ITEM SITTING ON/IN A SOLID FIXTURE (a banana ON a table, a bowl of soup
   // on a counter) reports the FIXTURE'S CENTRE as its position — the table
   // blocks a body there exactly as if it were the table itself, so walking to

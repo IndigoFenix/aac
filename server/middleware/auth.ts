@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { userRepository, studentRepository } from "../repositories";
 import type { LicensePermissions } from "@shared/license-permissions";
 import { runWithSupportContext } from "../services/customerSupportService";
-import { resolveAllowedOrigins } from "./security";
+import { resolveAllowedOrigins, resolveDeclaredNativeOrigin } from "./security";
 import { hasAdminSection, type AdminSection } from "@shared/admin-sections";
 import { isAdminIdentity } from "../services/adminAuthService";
 
@@ -264,6 +264,16 @@ export const validateCSRF: RequestHandler = (
     } catch {
       // fall through to rejection
     }
+  }
+
+  // Packaged native clients (iPad CapacitorHttp) send neither header — their
+  // requests come from native code, not a browsing context — so they declare
+  // their origin instead. Only the fixed native origins are accepted here, and
+  // only when nothing more trustworthy was supplied. See NATIVE_ORIGIN_HEADER.
+  if (!candidate) {
+    candidate = resolveDeclaredNativeOrigin(
+      req.headers as Record<string, string | string[] | undefined>,
+    );
   }
 
   if (!candidate) {

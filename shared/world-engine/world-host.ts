@@ -217,10 +217,16 @@ export interface WorldHost {
    *  the screen-space pick), how settled it is (`unsettled`: 0 settled … 1
    *  flicking), and the current CARRY dwell progress (`dwellProgress`: 0 idle …
    *  1 about to fire). The game layer hit-tests committedWorld to detect dwell on
-   *  a figure / empty ground and reads dwellProgress for the dwell indicator. */
+   *  a figure / empty ground and reads dwellProgress for the dwell indicator.
+   *  `picks` says whether this view resolves a screen pick AT ALL (the 2D view
+   *  omits pickScreen): with it, a null `hover` MEANS "the gaze is on nothing",
+   *  and a game layer can trust the hover as the aim instead of guessing from
+   *  fixation proximity. Without it, `hover` is always null and proximity is
+   *  the only pick available. */
   getGaze(): {
     committedWorld: Vec2 | null;
     hover: { kind: "avatar" | "object"; id: string } | null;
+    picks: boolean;
     unsettled: number;
     dwellProgress: number;
   };
@@ -1094,6 +1100,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       return {
         committedWorld: lastCommitted,
         hover: lastHover,
+        picks: !!view.pickScreen,
         unsettled: lastUnsettled,
         dwellProgress: lastDwellProgress,
       };

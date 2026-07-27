@@ -4,7 +4,7 @@
 // A defect here silently re-breaks auth (callers do res.ok / res.json()), and
 // it can't be exercised on the device from here — so pin its behaviour.
 
-import { toResponse } from "./queryClient";
+import { toResponse, nativeOriginHeaders } from "./queryClient";
 
 describe("toResponse (CapacitorHttp adapter)", () => {
   it("round-trips a parsed-JSON body so res.json() returns the object", async () => {
@@ -39,6 +39,23 @@ describe("toResponse (CapacitorHttp adapter)", () => {
     for (const status of [204, 205, 304]) {
       expect(() => toResponse({ status, data: "", headers: {} })).not.toThrow();
       expect(toResponse({ status, data: "", headers: {} }).status).toBe(status);
+    }
+  });
+
+  it("declares the shell's origin so native requests pass the CSRF guard", () => {
+    // CapacitorHttp requests carry no Origin/Referer; without these the server
+    // answers 403 "CSRF: missing Origin/Referer" and login fails on iPad.
+    expect(nativeOriginHeaders("capacitor://localhost")).toEqual({
+      Origin: "capacitor://localhost",
+      "X-Aivota-Native-Origin": "capacitor://localhost",
+    });
+  });
+
+  it("falls back to the capacitor origin when location.origin is opaque", () => {
+    // Some webviews report "null" (or nothing) as the origin of a non-http(s)
+    // scheme; the server only honours a value in its native-origin list.
+    for (const opaque of ["null", "", undefined]) {
+      expect(nativeOriginHeaders(opaque).Origin).toBe("capacitor://localhost");
     }
   });
 

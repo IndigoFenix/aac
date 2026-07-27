@@ -44,12 +44,18 @@ import { standPointFor, standClear, bodiesClear, nearestClearSpot, type BodyAvoi
 import { DEFAULT_BODY_RADIUS_M } from "../../creatures/species.js";
 
 /** How far BEYOND a fixture's solid box (radius + this body's radius) a claiming
- *  body may be and still ENGAGE the anchor. Covers the stand-off gap
- *  `standPointFor` leaves (fixture radius + body radius + 0.22) plus slack, so a
- *  body that arrived at its stand spot beside the piece engages without having to
- *  grind into the collider first. Only a body whose `activity` already NAMES this
- *  fixture (the claim) is ever tested, so an unrelated pass-by never engages. */
-const ENGAGE_MARGIN = 0.6;
+ *  body may be and still ENGAGE the anchor. It must cover the whole legal spread
+ *  of where a walk ENDS, not just the ideal stand spot: `standPointFor` leaves
+ *  (fixture radius + body radius + 0.22), and the one walk primitive then counts
+ *  ARRIVED anywhere inside its arrival tolerance (1.3 m) of that spot — so a body
+ *  that honestly walked its errand can settle a metre and a half out. The old
+ *  0.6 covered the stand spot alone, and every arrival past it left the body
+ *  CLAIMING a bed it never engaged: pinned by its dwell errand, never closer,
+ *  asleep on the floor beside the bed forever (the anchor retries each frame, but
+ *  nothing is left to move the body). Only a body whose `activity` already NAMES
+ *  this fixture (the claim) is ever tested, so an unrelated pass-by never engages
+ *  — the margin can be generous without stealing anyone. */
+const ENGAGE_MARGIN = 1.6;
 
 /** The glide pace (m/s) the slide interpolation targets — a natural walk-on speed,
  *  not a dash. The per-slide DURATION is the distance at this pace, clamped to a
@@ -140,6 +146,28 @@ export function dismountSpot(
  *  point as the end. Only fires when the body's activity NAMES an on-fixture kind
  *  and it is within {@link ENGAGE_MARGIN} of the solid box (the contact handoff).
  *  No-op (returns false) otherwise / if already anchored. */
+/**
+ * THE CONTACT HANDOFF DISTANCE — how close a claiming body must be to `fixtureId`
+ * before {@link engageFurnitureAnchor} will take it and slide it on.
+ *
+ * Exported because it is also the only honest ARRIVAL test for a walk that ends in
+ * USING the piece. The two must never be judged by different numbers: a walk that
+ * declares arrival somewhere the anchor cannot reach leaves the body stopped with
+ * no claim and nothing left to move it — the pursuit is over, the anchor never
+ * engages, and the body stands frozen wherever it happened to be (observed live:
+ * flush against the table it was rounding, 2.6 m from the chair it was sent to).
+ * A dining chair's stand spot is 1.81 m from the seat inside this 2.22 m reach —
+ * 0.41 m of slack — so a walk allowed to stop 1.3 m short misses by a wide margin.
+ */
+export function engageReachFor(
+  state: WorldState,
+  fixtureId: string,
+  bodyR = DEFAULT_BODY_RADIUS_M,
+): number {
+  const spec = state.spec.objects.find((s) => s.id === fixtureId);
+  return (spec?.radius ?? 0.5) + bodyR + ENGAGE_MARGIN;
+}
+
 export function engageFurnitureAnchor(
   state: WorldState,
   avatarId: string,
@@ -150,8 +178,7 @@ export function engageFurnitureAnchor(
   const t = onFixtureTargetOf(state, a.activity?.objId);
   if (!t) return false;
   const bodyR = deps.bodyR ?? DEFAULT_BODY_RADIUS_M;
-  const spec = state.spec.objects.find((s) => s.id === t.fixtureId);
-  const reach = (spec?.radius ?? 0.5) + bodyR + ENGAGE_MARGIN;
+  const reach = engageReachFor(state, t.fixtureId, bodyR);
   if (Math.hypot(a.x - t.center.x, a.y - t.center.y) > reach) return false;
   a.anchor = { fixtureId: t.fixtureId, phase: "sliding-in", from: { x: a.x, y: a.y }, target: t.target, t: 0 };
   return true;

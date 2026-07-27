@@ -650,6 +650,67 @@ describe("round-7 cooking — cook (transform at the stove), serve (deposit on t
   });
 });
 
+// ── A BLOCKED ROW MUST NOT SHADOW A SERVABLE ONE ───────────────────────────
+//
+// The reported field bug: "creatures get stuck with the debugger showing
+// BLOCKED / can't be served here, and they just stand there doing nothing —
+// even when the need could be served anywhere, like playing."
+//
+// `blocked` is a FIRING intent, so ranking it against the actionable rows let
+// ONE unservable row silence everything beneath it. Orrin holding a meal with
+// a full (or missing) table blocked serve:meal at 2.8 — which outranks fun (1)
+// and tidy (1.2), so he never played, never tidied, and never re-decided into
+// anything else. Nothing about standing still un-blocks a block, so it lasted
+// the rest of the session.
+describe("blocked rows surface WITHOUT freezing the body", () => {
+  const serve = serveTemplate("meal", 2);
+  const fun = funTemplate(1 / NEED_FILL_S.fun);
+
+  it("a blocked HIGH row lets a servable LOW row act — and still reports the want", () => {
+    const pick = decideNeeds([serve, fun], (t) =>
+      t.key === "fun"
+        ? { ...empty, meter: 1, carried: 1 }                                  // toy in hand → playable
+        : { ...empty, carried: 1, containers: { serve: stock("table", 2, 0) } }); // table FULL → blocked
+    // It PLAYS…
+    expect(pick?.tpl.key).toBe("fun");
+    expect(pick?.intent).toEqual({ kind: "restHere" });
+    // …and the unmet want is still surfaced for adoption / the beg bubble.
+    expect(pick?.blocked?.tpl.key).toBe("serve:meal");
+    expect(pick?.blocked?.intent).toEqual({ kind: "blocked" });
+  });
+
+  it("nothing servable → the blocked row IS the decision (the genuinely stuck body)", () => {
+    const pick = decideNeeds([serve, fun], (t) =>
+      t.key === "fun"
+        ? { ...empty, meter: 0 }                                              // not firing
+        : { ...empty, carried: 1, containers: { serve: stock("table", 2, 0) } });
+    expect(pick?.tpl.key).toBe("serve:meal");
+    expect(pick?.intent).toEqual({ kind: "blocked" });
+    expect(pick?.blocked?.tpl.key).toBe("serve:meal");
+  });
+
+  it("the surfaced want is the TOP blocked row, not merely the last one seen", () => {
+    // Lonely with nobody home (social, 2) and a meal with nowhere to go
+    // (serve, 2.8): the housemates' adoption rows must read the higher want.
+    const social = socialTemplate(1 / NEED_FILL_S.social);
+    const pick = decideNeeds([social, serve], (t) =>
+      t.key === "social"
+        ? { ...empty, meter: 1 }                                              // alone → blocked
+        : { ...empty, carried: 1, containers: { serve: stock("table", 2, 0) } });
+    expect(pick?.blocked?.tpl.key).toBe("serve:meal");
+    expect(serve.priority).toBeGreaterThan(social.priority);
+  });
+
+  it("no blocked row at all → no `blocked` field (the ordinary case stays clean)", () => {
+    const pick = decideNeeds([serve, fun], (t) =>
+      t.key === "fun"
+        ? { ...empty, meter: 1, carried: 1 }
+        : { ...empty, carried: 1, containers: { serve: stock("table", 0, 2) } });
+    expect(pick?.tpl.key).toBe("serve:meal"); // 2.8 > 1 — an ACTIONABLE row still wins on priority
+    expect(pick?.blocked).toBeUndefined();
+  });
+});
+
 // ── Outstanding-bugs round (family mode): THE STOCKPILE RULE, the CARRY BOUND
 // and the HOUSEHOLD CLAIM. The reported bug: "when food or water is gone, they
 // will travel to get them one at a time, returning to eat them at the table.

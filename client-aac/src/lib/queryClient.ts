@@ -23,6 +23,33 @@ import { pushLog } from "./debug-log";
 // capacitor.config.ts — streaming/EventSource/WebSocket stay on WKWebView.
 const useNativeHttp = getHost() === "capacitor";
 
+// ── iPad CSRF fix ───────────────────────────────────────────────────────────
+// The native request above is issued by URLSession, not by the WKWebView, so it
+// carries NO Origin and NO Referer header — there is no browsing context to
+// attribute it to. The server's CSRF guard rejects Origin-less state-changing
+// requests ("CSRF: missing Origin/Referer"), so login 403'd on iPad as soon as
+// the API layer moved to CapacitorHttp. We therefore declare the origin
+// ourselves on every native request:
+//   Origin                   — used directly if the native stack forwards it
+//   X-Aivota-Native-Origin   — the fallback the server honours when Origin is absent
+// Both are only accepted server-side for the fixed native origins, which no web
+// page can occupy. See NATIVE_ORIGIN_HEADER in server/middleware/security.ts —
+// the value sent here must be listed in that file's NATIVE_APP_ORIGINS.
+const NATIVE_ORIGIN_HEADER = "X-Aivota-Native-Origin";
+
+/** The Capacitor shell's origin, matching `ios.scheme` in capacitor.config.ts.
+ *  Used when `location.origin` is unavailable or opaque ("null"), which some
+ *  webviews report for non-http(s) schemes. */
+const CAPACITOR_ORIGIN = "capacitor://localhost";
+
+/** Headers a native request must add to identify itself. Exported for tests. */
+export function nativeOriginHeaders(
+  locationOrigin: string | undefined = typeof window !== "undefined" ? window.location.origin : undefined,
+): Record<string, string> {
+  const origin = locationOrigin && locationOrigin !== "null" ? locationOrigin : CAPACITOR_ORIGIN;
+  return { Origin: origin, [NATIVE_ORIGIN_HEADER]: origin };
+}
+
 /** Build a standard Response from a CapacitorHttp result so callers keep using
  *  res.ok / res.status / res.json() / res.text() unchanged. Exported for tests. */
 export function toResponse(result: { status: number; data: unknown; headers: Record<string, string> }): Response {
@@ -54,7 +81,7 @@ async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> 
 
   try {
     const { CapacitorHttp } = await import("@capacitor/core");
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...nativeOriginHeaders() };
     new Headers(init.headers ?? {}).forEach((v, k) => { headers[k] = v; });
     // CapacitorHttp takes `data` (object or string); our bodies are JSON strings.
     let data: unknown;

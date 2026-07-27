@@ -988,8 +988,17 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     const g = ground!;
     const { w, h } = provider.viewSize();
 
-    // Camera-anchored streaming, then everything evaluates fresh.
-    _camAbs.copy(camera.position);
+    // STREAM/REBASE ON THE GLIDE'S SURFACE ADDRESS, not the stale camera. The
+    // world has ADVANCED since the camera was posed: on a spinning, orbiting
+    // planet that matrix is a full frame of the sweep (hundreds of metres) off
+    // the surface, and anchoring streaming there fed the chunk LOD an altitude
+    // that bounced by ±the sweep every frame — the tree thrashed
+    // subdivide↔merge, the drawn chunk under the cursor was forever being
+    // rebuilt, and the cursor's cast flapped hit↔MISS (the spark stuck
+    // mid-fade, invisible). `g.loc` is surface-anchored: its world point moves
+    // WITH the sweep, so the anchor sits steadily beside the camera (~a rig
+    // length away — nothing at float32 scale), and everything evaluates fresh.
+    g.geom.surfaceAt(g.loc, _camAbs);
     const nf = provider.rebaseOnCamera(_camAbs);
 
     // Steer from LAST frame's settled aim — the 1-frame gaze latency

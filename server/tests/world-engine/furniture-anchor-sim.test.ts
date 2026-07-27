@@ -148,6 +148,44 @@ describe("claimed collision hands off to the anchor and eases the body ONTO the 
 });
 
 // ---------------------------------------------------------------------------
+// PART A2 — the engage reach must cover WHERE A WALK ACTUALLY ENDS
+// ---------------------------------------------------------------------------
+
+/** The arrival tolerance the one walk primitive counts as "arrived"
+ *  (quest-host COMMAND_ARRIVE / WALK_ARRIVE). A body is legally parked anywhere
+ *  inside this radius of its stand spot, and the stand spot is itself a body
+ *  radius clear of the fixture — so this is the real spread the anchor must
+ *  cover, not the ideal spot. */
+const WALK_ARRIVE_TOLERANCE = 1.3;
+
+describe("engagement covers the whole legal arrival spread, not just the ideal stand spot", () => {
+  // REGRESSION (2026-07-27): the engage margin only covered the stand spot, so a
+  // sleeper that stopped a metre short of it — an ordinary arrival — kept
+  // CLAIMING its bed while the anchor silently refused to engage. Nothing was
+  // left to move the body (the rest dwell pins it where it stands), so it slept
+  // on the FLOOR beside its own bed, forever. Observed live at 2.24 m from a
+  // 0.9 m-radius bed, i.e. barely a step past the stand spot.
+  const cases: Array<{ kind: FixtureKind; radius: number }> = [
+    { kind: "bed", radius: 0.9 },
+    { kind: "privy", radius: 0.55 },
+    { kind: "chair", radius: 0.5 },
+  ];
+  for (const { kind, radius } of cases) {
+    it(`${kind}: a body parked a full arrival tolerance past its stand spot still anchors`, () => {
+      const standOff = radius + WORLD_ENGINE_DEFAULTS.avatarRadius + 0.2;
+      const at = { x: CX, y: CY - (standOff + WALK_ARRIVE_TOLERANCE) };
+      const { state, id, center } = useWorld(kind, radius, 0, { at });
+      // Precondition: this really is the far edge of a legal arrival, not a body
+      // that wandered off — it is beyond the stand spot but inside the tolerance.
+      expect(planarDelta(at, center)).toBeGreaterThan(standOff);
+      const a = driveAnchor(state, id, (b) => b.anchor?.phase === "anchored");
+      expect(a.anchor?.phase).toBe("anchored");
+      expect(planarDelta(a, center)).toBeLessThan(0.15); // on the piece, not beside it
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // PART B — an UNCLAIMED body still collides (the fixture is solid to everyone else)
 // ---------------------------------------------------------------------------
 

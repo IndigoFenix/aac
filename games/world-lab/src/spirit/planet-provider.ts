@@ -76,6 +76,14 @@ export interface PlanetProviderDeps {
    *  world hit, entity snap, dwell), the planet's one spark draws it. Null
    *  where no host is mounted — the bare drawn-world ray then stands in. */
   cursorHost?(): SpiritCursorHost | null;
+  /** OPEN-COUNTRY GROUND PRESENCE (world surface point): park the WILDERNESS
+   *  session's gaze avatar on the glide — mounting the wild chunk under it
+   *  first if none is live here. Called every ground frame the glide stands
+   *  on ground NO town's content band covers, exactly where a town session
+   *  would have parked its own gaze walker: standing on wild ground is the
+   *  same act as standing in a street, so the same entity engine (hover,
+   *  dwell, products, possession) must be under the player on both. */
+  parkWildAvatar?(worldPoint: THREE.Vector3): void;
 }
 
 const _local = new THREE.Vector3();
@@ -423,20 +431,30 @@ export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFram
             return null;
           },
           placeAvatar(loc) {
-            // loc → world → PLAN (town-centre chart) → SIM (plaza
-            // registration) → the live town's hidden gaze walker. The TOWN
-            // does the converting at its own boundary — content, not frame.
+            // IN A TOWN'S CONTENT BAND: loc → world → PLAN (town-centre
+            // chart) → SIM (plaza registration) → the live town's hidden gaze
+            // walker. The TOWN does the converting at its own boundary —
+            // content, not frame.
             const fc = townNow;
-            if (!fc) return;
-            const host = deps.structureHost(fc);
-            const off = deps.townSimOffset(fc);
-            if (!host || !off) return;
-            const p = _sphWorld.copy(loc).multiplyScalar(body.radius + groundHAt(loc))
-              .applyQuaternion(body.orientation).add(body.worldPosition);
-            const centreDir = new THREE.Vector3(fc.city.dir[0], fc.city.dir[1], fc.city.dir[2]).normalize();
-            const tc = createSurfaceChart(body, centreDir, groundHAt(centreDir));
-            const local = tc.fromWorld(p, new THREE.Vector3());
-            host.placeGazeAvatar(local.x + off.x, local.z + off.y);
+            if (fc) {
+              const host = deps.structureHost(fc);
+              const off = deps.townSimOffset(fc);
+              if (!host || !off) return; // approach gap: town known, not live yet
+              const p = _sphWorld.copy(loc).multiplyScalar(body.radius + groundHAt(loc))
+                .applyQuaternion(body.orientation).add(body.worldPosition);
+              const centreDir = new THREE.Vector3(fc.city.dir[0], fc.city.dir[1], fc.city.dir[2]).normalize();
+              const tc = createSurfaceChart(body, centreDir, groundHAt(centreDir));
+              const local = tc.fromWorld(p, new THREE.Vector3());
+              host.placeGazeAvatar(local.x + off.x, local.z + off.y);
+              return;
+            }
+            // OPEN COUNTRY: no town claims this ground — the WILDERNESS layer
+            // parks (mounting the chunk under the glide if none is live).
+            if (deps.parkWildAvatar) {
+              const p = _sphWorld.copy(loc).multiplyScalar(body.radius + groundHAt(loc))
+                .applyQuaternion(body.orientation).add(body.worldPosition);
+              deps.parkWildAvatar(p);
+            }
           },
           drivenBody() {
             // SIM → PLAN → world → loc; the heading crosses charts through a
@@ -624,18 +642,23 @@ export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFram
     },
 
     groundSpark(pointer, select = 0, at) {
-      // STEP 1 — JUST RENDER IT. Where the pointer meets the DRAWN world, a bit
-      // above the ground, in the scene: the spark is PLACED there (no easing,
-      // no dart), full size, depth-tested like every other object standing on
-      // the planet. Movement rules come after this reads right on screen.
+      // Where the pointer meets the DRAWN world, a bit above the ground, in the
+      // scene — depth-tested like every other object standing on the planet.
+      // MOVEMENT is the shared GazeSpark state machine (`setTarget`: easing,
+      // dart-on-jump, hover snap-grow) — the SAME laws the flat quest hosts
+      // run, so the cursor cannot drift apart between a flat region and a
+      // planet. The dart verdict is judged in the PLANET frame
+      // (`cursorWorldJump`): group-local displacement aliases camera motion
+      // into "the target jumped" (the dart-storm bug).
       //
       // `at` is an entity engine's snap point (a creature's head, an object's
       // top) — already where it belongs, so it skips the lift.
       deps.spark.setSelect(select);
       const put = (worldPoint: THREE.Vector3, hovering: boolean): void => {
+        const jumped = cursorWorldJump(worldPoint);
         _cursorWorld.copy(worldPoint);
         toSparkFrame(_cursorWorld);
-        deps.spark.place(_cursorWorld.x, _cursorWorld.y, _cursorWorld.z, hovering);
+        deps.spark.setTarget(_cursorWorld.x, _cursorWorld.y, _cursorWorld.z, hovering, jumped);
       };
       if (at) {
         put(at, true);

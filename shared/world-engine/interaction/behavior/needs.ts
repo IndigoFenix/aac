@@ -433,18 +433,44 @@ export function decideNeed(tpl: NeedTemplate, ctx: NeedCtx): NeedIntent {
  * Across a creature's templates: resolve each, keep the firing ones, act on the highest
  * priority (ties → earlier template). Returns the chosen template + its intent, or null
  * when nothing fires — the caller drives ONE intent at a time, then re-decides.
+ *
+ * ⚠️ A BLOCKED ROW MUST NEVER SHADOW A SERVABLE ONE. `blocked` is a FIRING
+ * intent — the want is real, it just can't be supplied here (no table for the
+ * meal, no oven in the house, nobody home to talk to). Ranking it against the
+ * actionable rows froze the body outright: one unservable row at priority 2.8
+ * silenced fun (1), tidy (1.2) and every other row beneath it, and since a
+ * block is self-sustaining (nothing about standing still un-blocks it) the
+ * creature stood there doing nothing for the rest of the session — the
+ * reported "BLOCKED / can't be served here, and they just stand there".
+ *
+ * So the two rankings are SEPARATE: `intent` is the best thing the body can
+ * actually DO right now, and `blocked` is the top unmet want, returned
+ * alongside for the caller to surface (adoption, the beg bubble, diagnostics).
+ * Only when NOTHING is actionable does the blocked row become the decision —
+ * which is the old behaviour, preserved for the genuinely stuck body.
  */
 export function decideNeeds(
   templates: readonly NeedTemplate[],
   ctxOf: (tpl: NeedTemplate) => NeedCtx,
-): { tpl: NeedTemplate; intent: NeedIntent } | null {
+): {
+  tpl: NeedTemplate;
+  intent: NeedIntent;
+  /** The top FIRING-but-unservable row, whether or not it was chosen to act on. */
+  blocked?: { tpl: NeedTemplate; intent: NeedIntent };
+} | null {
   let best: { tpl: NeedTemplate; intent: NeedIntent } | null = null;
+  let blocked: { tpl: NeedTemplate; intent: NeedIntent } | null = null;
   for (const tpl of templates) {
     const intent = decideNeed(tpl, ctxOf(tpl));
     if (intent.kind === "idle") continue;
+    if (intent.kind === "blocked") {
+      if (!blocked || tpl.priority > blocked.tpl.priority) blocked = { tpl, intent };
+      continue;
+    }
     if (!best || tpl.priority > best.tpl.priority) best = { tpl, intent };
   }
-  return best;
+  if (best) return blocked ? { ...best, blocked } : best;
+  return blocked ? { ...blocked, blocked } : null;
 }
 
 /**
