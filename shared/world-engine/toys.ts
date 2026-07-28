@@ -70,7 +70,13 @@ export interface ToyItemDef {
  * order, the surfacer's ordering) — append, don't reorder.
  */
 export const TOY_ITEMS: readonly ToyItemDef[] = [
-  { head: "ball", materials: ["cloth"], cost: 1, at: "workbench" },
+  // WOOD FIRST, EVERYWHERE, and the reason is supply rather than taste: a town's
+  // stock actually holds wood and stone; CLOTH is currently produced by nothing
+  // (its wool→cloth chain yields none), so a cloth-only recipe is a craft that
+  // can be ordered and can never be finished — the job waits on a material that
+  // will never exist. A carved ball is perfectly ordinary; cloth stays listed as
+  // an alternative so a stuffed one becomes possible the moment the chain runs.
+  { head: "ball", materials: ["wood", "cloth"], cost: 1, at: "workbench" },
   { head: "blocks", materials: ["wood"], cost: 1, at: "workbench" },
   { head: "puzzle", materials: ["wood"], cost: 1, at: "workbench" },
 ] as const;

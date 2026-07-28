@@ -175,6 +175,42 @@ the user lookup, so a disabled account still cannot connect. See
 Anything else that opens a WebSocket from the iPad shell needs the same
 treatment — the cookie will never be there.
 
+## Gotcha: an await before `initialize` can strand the session
+
+Symptom: the socket connects (the server logs `[LiveRelay] New WebSocket
+connection`) but then hears nothing until the client disconnects, and the app
+sits on "connecting" with no error at all.
+
+Cause: `sendInit` in `useLiveSession.ts` does best-effort enrichment *after*
+`ws.onopen` but *before* `wsSend({type:"initialize"})`. Anything there that
+never settles means the server holds an open, silent socket forever.
+
+The real instance: `getCurrentGps()`. `Info.plist` carries no location
+usage-description key (`scripts/ios-configure.mjs` writes Camera, Microphone and
+LocalNetwork only), and in that state iPadOS WKWebView invokes **neither** the
+success nor the error callback. The `timeout` option is honoured by the
+*platform*, so it never fired either — the promise hung indefinitely.
+
+Fixes, both kept:
+
+- `getCurrentGps` now runs its **own** watchdog timer, so "always settles" is
+  our guarantee rather than the platform's (`geolocation.test.ts` covers the
+  no-callback case).
+- Every await in `sendInit` is time-boxed by `settleWithin`, so no future
+  enrichment step can strand the session either.
+
+GPS is **skipped outright on the Capacitor host**: a reading can never succeed
+without the plist key, and adding the key would put an OS permission prompt in
+front of a student who may not be able to answer it. `startGpsWatch` is a no-op
+there too. If iPad location is ever wanted, add
+`NSLocationWhenInUseUsageDescription` in `ios-configure.mjs` and drop both
+guards together.
+
+**Debugging note:** the on-device console is a bounded ring buffer. A
+`console.debug` in a hot effect (the `pressSuggestion` bridge in `home.tsx` was
+one) will evict every other line and leave you blind — that is why the first two
+logs from this investigation showed nothing but one repeating line.
+
 ## Gotcha: Capacitor 8 defaults to SPM, which has no `.xcworkspace`
 
 `cap add ios` in Capacitor 8 defaults to **Swift Package Manager**, whose

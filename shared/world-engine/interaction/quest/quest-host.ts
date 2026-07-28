@@ -8779,8 +8779,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** Last town-day each carpenter house crafted (construction v1). */
   const craftDayOf = new Map<number, number>();
-  /** townClock second before a house may auto-place again (rate limit). */
-  const autoPlaceAfter = new Map<number, number>();
   /** The drag-zone set last pushed to the host (diff-gated). */
   let lastDragKey = "";
 
@@ -8815,7 +8813,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     /** townClock s labor began — unset while inputs are still gathering. */
     laborStart?: number;
     laborS: number;
+    /** townClock s this job has been waiting on hauls it cannot see land —
+     *  the deadlock watchdog's clock (see `CRAFT_HAUL_TIMEOUT_S`). */
+    waitingSince?: number;
   }
+
+  /** How long a craft waits on an in-flight haul before assuming the load is
+   *  lost and re-gathering. Generous — a carrier crossing a town legitimately
+   *  takes a while — but finite, which is the whole point: the job used to wait
+   *  on a vanished haul forever, and an ordered craft simply never happened. */
+  const CRAFT_HAUL_TIMEOUT_S = 90;
 
   /**
    * TEMPORARY DIAGNOSTIC (2026-07-28) — "I ordered one made, it completed, and
@@ -8981,35 +8988,98 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // transit are spoken for END TO END: civic resolution must never read
     // a craft spot's gathered wood as free supply).
     const spotHolder = `craftspot:${hi}`;
+    const spot = session.containerStock.get(job.spotId) ?? {};
+    session.containerStock.set(job.spotId, spot);
+    const consumes = job.consumes;
+    const member = `resident_${hi}_0`;
+    // Units this job has already banked ON the spot (its own reservations).
+    const ownReserved = (head: string): number => {
+      let n = 0;
+      for (const r of session.reservations.holderRows(spotHolder)) {
+        if (r.endpoint === job.spotId && r.glyph === head) n += r.qty;
+      }
+      return n;
+    };
     job.agreements = job.agreements.filter((id) => {
       const a = session.transfers.get(id);
       if (!a || a.status === "done" || a.status === "failed") {
         session.reservations.release(agrHolder(id));
         if (a?.status === "done") {
+          // RESERVE ONLY WHAT ACTUALLY LANDED. This used to reserve the
+          // agreement's full goods unconditionally — but "done" only means the
+          // haul finished, not that the units reached this spot (a refused put,
+          // a replaced errand, a re-routed carrier). Reserving phantom units
+          // then made the job's own bookkeeping claim materials that were not
+          // there, and it could never start. Measure the stack instead.
           for (const [g, n] of Object.entries(a.goods)) {
-            session.reservations.reserve(spotHolder, job.spotId, stackHead(g), n);
+            const head = stackHead(g);
+            const landed = Math.max(0, stackUnits(spot, head) - ownReserved(head));
+            const claim = Math.min(n, landed);
+            if (claim > 0) session.reservations.reserve(spotHolder, job.spotId, head, claim);
           }
         }
         return false;
       }
       return true;
     });
-    const spot = session.containerStock.get(job.spotId) ?? {};
-    session.containerStock.set(job.spotId, spot);
-    const consumes = job.consumes;
-    const member = `resident_${hi}_0`;
     if (job.laborStart === undefined) {
-      // GATHER — what the spot and the in-flight hauls don't yet cover.
-      const missing: Record<string, number> = {};
-      for (const [g, n] of Object.entries(consumes)) {
-        let have = stackUnits(spot, g);
-        for (const id of job.agreements) {
-          const a = session.transfers.get(id);
-          if (a) have += stackUnits(a.goods, g);
+      // ONE SHORTFALL, TWO QUESTIONS. "What do I still need to fetch?" and "can
+      // I start?" used to be computed separately — gather counted in-flight
+      // hauls as covering the bill, START counted only what was physically on
+      // the spot. When a haul went missing between them the job wedged: gather
+      // saw nothing to fetch, START saw nothing to use, and neither branch could
+      // move. They now share this function, so they can never disagree.
+      const shortfallOf = (countLive: boolean): Record<string, number> => {
+        const out: Record<string, number> = {};
+        for (const [g, n] of Object.entries(consumes)) {
+          const head = stackHead(g);
+          // Someone ELSE's claim on this spot is untouchable (the one-
+          // reservation law); our own banked units are exactly what we consume.
+          const othersReserved = Math.max(
+            0,
+            session.reservations.reservedUnits(job.spotId, head) - ownReserved(head),
+          );
+          let have = Math.max(0, stackUnits(spot, head) - othersReserved);
+          if (countLive) {
+            for (const id of job.agreements) {
+              const a = session.transfers.get(id);
+              if (a && (a.status === "pending" || a.status === "moving")) {
+                have += stackUnits(a.goods, head);
+              }
+            }
+          }
+          if (n > have) out[head] = n - have;
         }
-        if (n > have) missing[stackHead(g)] = n - have;
+        return out;
+      };
+      // What is missing REGARDLESS of hauls in flight — the START gate.
+      const shortNow = shortfallOf(false);
+      // What is missing once live hauls land — what still needs FETCHING.
+      let missing = shortfallOf(true);
+      if (!Object.keys(shortNow).length) {
+        job.waitingSince = undefined; // covered — fall through to START
+      } else if (!Object.keys(missing).length) {
+        // Nothing to fetch, yet nothing usable on the spot: hauls are walking.
+        // That is the NORMAL case for as long as a carrier is en route, so it
+        // must not cancel them — but it is also exactly the state the job used
+        // to wedge in forever when a haul was lost. Time-box it: wait, and only
+        // if the wait outlives any plausible walk do we assume the load is gone,
+        // drop the rows and re-gather from scratch.
+        job.waitingSince ??= session.townClock;
+        if (session.townClock - job.waitingSince < CRAFT_HAUL_TIMEOUT_S) return;
+        craftLog("haul-LOST-regather", hi, {
+          produces: job.produces, shortNow, waited: session.townClock - job.waitingSince,
+          agreements: job.agreements.length,
+        });
+        for (const id of job.agreements) session.reservations.release(agrHolder(id));
+        job.agreements = [];
+        job.waitingSince = undefined;
+        craftRetryAt.delete(hi);
+        missing = shortfallOf(true); // re-measure with the dead rows gone
+      } else {
+        job.waitingSince = undefined; // there is real fetching to do
       }
-      if (Object.keys(missing).length) {
+      if (Object.keys(shortNow).length) {
         if (session.townClock < (craftRetryAt.get(hi) ?? -Infinity)) return;
         craftRetryAt.set(hi, session.townClock + SITE_HAUL_RETRY_S);
         const anchor = containerAnchor(session, job.spotId);
@@ -9074,23 +9144,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // law): a civic haul that has spoken for wood ON THIS SPOT must find
       // it when its hauler arrives. The job's OWN banked inputs (the
       // craftspot holder) are exactly what it consumes now.
-      const own = new Map<string, number>();
-      for (const r of session.reservations.holderRows(spotHolder)) {
-        if (r.endpoint === job.spotId) own.set(r.glyph, (own.get(r.glyph) ?? 0) + r.qty);
-      }
-      for (const [g, n] of Object.entries(consumes)) {
-        const head = stackHead(g);
-        const othersReserved = Math.max(
-          0,
-          session.reservations.reservedUnits(job.spotId, head) - (own.get(head) ?? 0),
-        );
-        if (stackUnits(spot, head) - othersReserved < n) {
-          craftLog("start-BLOCKED-reserved", hi, {
-            produces: job.produces, glyph: head, have: stackUnits(spot, head), othersReserved, need: n,
-          });
-          return; // blocked — wait
-        }
-      }
+      // `shortNow` above ALREADY applied this exact rule (it is the same
+      // `shortfallOf(false)`), and we only reach here when it was empty — so
+      // there is no second, divergent gate to wedge against. Re-checking here is
+      // what let the two answers drift apart in the first place.
       session.reservations.release(spotHolder);
       takeGoods(spot, consumes);
       const bench = houseBench(session, hi);
@@ -9115,33 +9172,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (session.townClock >= job.laborStart + job.laborS) {
       stackAdd(spot, job.produces);
       craftJobs.delete(hi);
-      // …AND IT HAS TO ARRIVE SOMEWHERE YOU CAN SEE.
+      // …AND IT HAS TO ARRIVE AS A THING.
       //
-      // The stack deposit above is the CONSERVING half and always runs: it is
-      // what keeps an off-screen house's books straight. But a stack unit
-      // inside a lidded chest is invisible — container contents only render for
-      // pass-through ("on") surfaces — so on its own the deposit means a craft
-      // completes and nothing appears.
+      // MAKING SOMETHING ALWAYS PRODUCES AN ITEM (user law, 2026-07-28) — and
+      // that holds for FURNITURE too. A piece with nowhere to stand is not a
+      // failed craft: it is a chair lying in the room. It exists, it can be
+      // picked up and carried, it does NOT block movement and it cannot be used,
+      // because it is an object rather than a fixture — and PLACING it is a
+      // separate act a creature performs later, never an automatic consequence
+      // of making it.
       //
-      // FURNITURE is *supposed* to have a second half — the auto-place sweep
-      // finds a stored `furn.<kind>` and sends a member to stand it up — but as
-      // of 2026-07-28 that half is not observably working either (user report),
-      // so do NOT read it as the known-good reference. Its every failure exit
-      // runs under `quiet: true`, which turns a refusal into silence; see the
-      // `[craft]` instrumentation.
-      //
-      // For a toy the arrival is direct rather than delegated: when the house is
-      // on screen, one unit becomes a real loose prop on the floor by the bench,
-      // which is where a just-finished thing would actually be. From there the
-      // ordinary machinery takes over — the fun need's `loose` acquire finds it
-      // first, and the tidy chore banks it into a box later.
-      //
-      // Only for what a body can pick up: furniture keeps the stack-then-place
-      // route (you do not leave a wardrobe lying on the workshop floor).
-      const portable = !furnitureKindOfGlyph(job.produces) && !isLargeGlyph(job.produces);
+      // The stack deposit above is the CONSERVING half and always runs: it keeps
+      // an off-screen house's books straight, and it is the "stowed" state. But a
+      // stack unit inside a lidded chest is invisible — container contents only
+      // render for pass-through ("on") surfaces — so on its own the deposit means
+      // a craft completes and nothing whatever appears, which is the bug this
+      // replaces. When the house is on screen the unit becomes a real prop by the
+      // bench, which is where a just-finished thing would actually be.
       const at = houseBench(session, hi) ?? containerAnchor(session, job.spotId);
-      craftLog("done", hi, { produces: job.produces, spot: job.spotId, isShown, portable, hasAnchor: !!at });
-      if (isShown && portable) {
+      craftLog("done", hi, { produces: job.produces, spot: job.spotId, isShown, hasAnchor: !!at });
+      if (isShown) {
         if (at && stackTake(spot, job.produces)) {
           spawnLooseProp(session, job.produces, at.x, at.y);
           craftLog("spawned-loose", hi, { produces: job.produces, x: at.x, y: at.y });
@@ -9203,38 +9253,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           startProgramCraft(session, hi);
         }
       }
-      // AUTO-PLACE: a shown household with stored furniture stands one up.
-      if (!shown(hi)) continue;
-      if ((autoPlaceAfter.get(hi) ?? 0) > session.townClock) continue;
-      let kind: (typeof FURNITURE_ITEMS)[number]["kind"] | null = null;
-      for (const objId of houseContainerKeys(session, hi)) {
-        const stock = session.containerStock.get(objId);
-        if (!stock) continue;
-        for (const g of Object.keys(stock)) {
-          const k = furnitureKindOfGlyph(g);
-          // A stored bench goes up only where none stands (bench-first:
-          // the bootstrap tool is placed before anything else needs it).
-          if (k && (k !== "workbench" || !houseBench(session, hi)) && (stock[g] ?? 0) > 0) {
-            kind = k;
-            break;
-          }
-        }
-        if (kind) break;
-      }
-      if (!kind) continue;
-      const cid = `resident_${hi}_0`;
-      if (!world.state.avatars[avatarIdOf(cid)]) {
-        craftLog("autoplace-NOBODY-HOME", hi, { kind, cid });
-        continue; // nobody home to do it
-      }
-      autoPlaceAfter.set(hi, session.townClock + 45);
-      const placed = handlePlaceOrder(
-        session,
-        cid,
-        { kind: "place", item: { match: { kind } }, at: { relation: "in", anchor: { kind: "home" } } },
-        { quiet: true },
-      );
-      craftLog("autoplace-called", hi, { kind, cid, handled: placed });
+      // AUTO-PLACE IS GONE (user law, 2026-07-28: "Placing furniture is a
+      // separate action, performed by a creature — not automatically").
+      //
+      // It used to run here every 45 s per shown house, standing stored pieces
+      // up on its own. Two things were wrong with it. The design: making a thing
+      // and installing it are different acts, and collapsing them meant a
+      // household silently rearranged itself with nobody deciding to. The
+      // behaviour: every one of its refusal exits ran under `quiet: true`, so
+      // when the placement search returned no candidates — which it does as soon
+      // as a house has no free wall — it said nothing, did nothing, and tried
+      // again forever. A crafted bed simply never appeared, and nothing anywhere
+      // reported why.
+      //
+      // A finished piece is now an ITEM at the moment it is made (stepCraftJob),
+      // so it is visible and carryable without anyone placing it. `handlePlaceOrder`
+      // is unchanged and still serves the SPOKEN order ("put the chair here") —
+      // that is now the only route by which furniture gets installed.
     }
     // CLUTTER drag zones over store/workshop rooms holding furniture stacks.
     const zones: Array<{ x: number; y: number; w: number; h: number; scale: number }> = [];

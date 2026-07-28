@@ -250,7 +250,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
   }, [guessingMode, onGuessingModeChange]);
 
   useEffect(() => {
-    console.debug("[guessing] bridge registering pressSuggestion, type:", typeof pressSuggestion);
+    // NOTE: no logging here — `pressSuggestion`'s identity changes on most
+    // renders, so this effect re-runs constantly. It used to console.debug on
+    // every pass, which flooded the on-device debug ring buffer and evicted the
+    // camera/session lines needed to diagnose anything else on iPad.
     onPressSuggestionReady?.(pressSuggestion ? (key: string) => pressSuggestion(key) : null);
     return () => onPressSuggestionReady?.(null);
   }, [pressSuggestion, onPressSuggestionReady]);

@@ -1316,6 +1316,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   const startGpsWatch = useCallback(() => {
     stopGpsWatch();
+    // iPad has no location usage-description key, so every poll would be a
+    // guaranteed miss — don't run the timer at all. Matches the skip in sendInit.
+    if (getHost() === "capacitor") return;
     const GPS_REFRESH_MS = 120_000;       // ~ monitor cadence
     const GPS_MOVE_THRESHOLD_M = 40;      // ignore sub-40m jitter
     gpsTimerRef.current = setInterval(async () => {
@@ -1418,20 +1421,56 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         // useAuth().user is the full API response: { success, user: { id, ... } }
         // Read from ref in case auth loaded after callback was created
         const sendInit = async () => {
-          // Send cached local state first (if any) for session rebuild
-          try {
-            const encryptionKey = localStorageConfigRef.current?.encryptionKey ?? null;
-            const cachedSnapshot = await loadLatestSnapshot(studentId, encryptionKey);
-            if (cachedSnapshot) {
-              wsSend({ type: "local_state", snapshot: cachedSnapshot });
-              console.log("[useLiveSession] Sent cached local state for session:", cachedSnapshot.sessionId);
+          // NOTHING in this preamble may block `initialize` indefinitely. Both
+          // steps below are best-effort enrichment, but the socket is already
+          // open — if an await never settles the server just sees a silent
+          // connection and the app hangs on "connecting" forever. That is
+          // exactly what iPadOS geolocation did (no Info.plist location key ⇒
+          // neither callback ever fires), so every await here is time-boxed.
+          const settleWithin = async <T,>(
+            label: string,
+            budgetMs: number,
+            work: () => Promise<T>,
+          ): Promise<T | null> => {
+            try {
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              const result = await Promise.race([
+                work(),
+                new Promise<null>((resolve) => {
+                  timer = setTimeout(() => {
+                    console.warn(`[useLiveSession] ${label} exceeded ${budgetMs}ms — continuing without it`);
+                    resolve(null);
+                  }, budgetMs);
+                }),
+              ]);
+              if (timer !== undefined) clearTimeout(timer);
+              return result as T | null;
+            } catch (err) {
+              console.warn(`[useLiveSession] ${label} failed:`, err);
+              return null;
             }
-          } catch (err) {
-            console.warn("[useLiveSession] Failed to load local state:", err);
+          };
+
+          // Send cached local state first (if any) for session rebuild
+          const encryptionKey = localStorageConfigRef.current?.encryptionKey ?? null;
+          const cachedSnapshot = await settleWithin("local state load", 5000, () =>
+            loadLatestSnapshot(studentId, encryptionKey),
+          );
+          if (cachedSnapshot) {
+            wsSend({ type: "local_state", snapshot: cachedSnapshot });
+            console.log("[useLiveSession] Sent cached local state for session:", cachedSnapshot.sessionId);
           }
 
           // Best-effort device location (null if unsupported/denied/timeout).
-          const gps = await getCurrentGps();
+          // Skipped outright on iPad: the shell ships no location
+          // usage-description key, so a reading can never succeed there — asking
+          // would only burn the timeout budget on every session start, and
+          // adding the key would put an OS permission prompt in front of a
+          // student who may not be able to answer it.
+          const gps =
+            getHost() === "capacitor"
+              ? null
+              : await settleWithin("GPS read", 10_000, () => getCurrentGps());
           if (gps) lastGpsSentRef.current = gps;
 
           // Round-trip the prior sessionId on reconnect so the server resumes

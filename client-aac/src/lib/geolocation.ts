@@ -13,9 +13,17 @@ export interface GpsReading {
 }
 
 /**
- * Get a single GPS reading. Resolves `null` (never rejects) on any failure —
- * no geolocation support (e.g. a desktop build without GPS), denied
+ * Get a single GPS reading. Resolves `null` (never rejects) and ALWAYS settles
+ * — no geolocation support (e.g. a desktop build without GPS), denied
  * permission, or timeout.
+ *
+ * The `timeout` option below is honoured by the PLATFORM, which is not enough:
+ * on iOS/iPadOS WKWebView, if Info.plist has no location usage-description key
+ * the request never reaches the platform timer and NEITHER callback ever fires,
+ * so the promise hangs forever. That stranded the whole AAC session — the
+ * caller awaits this before sending `initialize`, so the socket opened and then
+ * sat silent and the app stuck on "connecting". Hence our own watchdog: the
+ * "always settles" contract has to be ours, not the platform's.
  */
 export function getCurrentGps(timeoutMs = 8000): Promise<GpsReading | null> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -23,11 +31,16 @@ export function getCurrentGps(timeoutMs = 8000): Promise<GpsReading | null> {
   }
   return new Promise((resolve) => {
     let settled = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     const done = (value: GpsReading | null) => {
       if (settled) return;
       settled = true;
+      if (watchdog !== undefined) clearTimeout(watchdog);
       resolve(value);
     };
+    // Slack beyond the platform timeout so a working implementation still gets
+    // to report its own timeout/error first; this only catches a total no-show.
+    watchdog = setTimeout(() => done(null), timeoutMs + 2000);
     try {
       navigator.geolocation.getCurrentPosition(
         (pos) =>
