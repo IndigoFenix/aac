@@ -42,7 +42,7 @@ describe("objectMotive — affordance-bound object → motive", () => {
 
   it("maps rest/relief fixtures by their station role", () => {
     expect(objectMotive(obj({ stationKind: "bed" }))).toBe("energy");
-    expect(objectMotive(obj({ stationKind: "privy" }))).toBe("waste");
+    expect(objectMotive(obj({ stationKind: "toilet" }))).toBe("waste");
     expect(objectMotive(obj({ stationKind: "bath" }))).toBe("hygiene");
     expect(objectMotive(obj({ stationKind: "barrel" }))).toBe("thirst");
     expect(objectMotive(obj({ stationKind: "well" }))).toBe("thirst");
@@ -138,12 +138,12 @@ describe("attentionActions — item type × state → the default act", () => {
   });
   const kinds = (i: AttentionTargetInfo) => attentionActions(i).map((a) => a.kind);
 
-  it("meter-gated defaults: food→eat, water→drink, toy→play, bed→sleep, privy→use, bath→wash", () => {
+  it("meter-gated defaults: food→eat, water→drink, toy→play, bed→sleep, toilet→use, bath→wash", () => {
     expect(kinds(info({ properties: ["food"] }))[0]).toBe("eat");
     expect(kinds(info({ isWater: true }))[0]).toBe("drink");
     expect(kinds(info({ affords: ["play"] }))[0]).toBe("play");
     expect(kinds(info({ stationKind: "bed" }))[0]).toBe("sleep");
-    expect(kinds(info({ stationKind: "privy" }))[0]).toBe("use");
+    expect(kinds(info({ stationKind: "toilet" }))[0]).toBe("use");
     expect(kinds(info({ stationKind: "bath" }))[0]).toBe("wash");
     expect(attentionActions(info({ properties: ["food"] }))[0]!.motive).toBe("hunger");
   });

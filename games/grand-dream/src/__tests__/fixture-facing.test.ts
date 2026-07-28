@@ -124,13 +124,13 @@ describe("SEAT_TOP_FRAC — seats sit at plausible human heights", () => {
   it("a chair seat lands near 0.48 m at its standard radius", () => {
     expect(SEAT_TOP_FRAC.chair! * 0.22).toBeCloseTo(0.484, 3);
   });
-  it("a privy seat lands near 0.5 m at its standard radius", () => {
-    expect(SEAT_TOP_FRAC.privy! * 0.5).toBeCloseTo(0.505, 3);
+  it("a toilet seat lands near 0.5 m at its standard radius", () => {
+    expect(SEAT_TOP_FRAC.toilet! * 0.5).toBeCloseTo(0.505, 3);
   });
   it("only the kinds with a real seat surface resolve", () => {
     // A tub/workbench must stay ABSENT — resolveActivityAnchor returns null for
     // them, preserving the crouch-in-place behavior.
-    expect(Object.keys(SEAT_TOP_FRAC).sort()).toEqual(["chair", "privy"]);
+    expect(Object.keys(SEAT_TOP_FRAC).sort()).toEqual(["chair", "toilet"]);
     expect(SEAT_TOP_FRAC.bath).toBeUndefined();
   });
 });

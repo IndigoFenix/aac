@@ -98,6 +98,124 @@ export const PROPERTY_FOR_VERB: Readonly<Record<string, ObjectProperty>> = {
   build: "structure",
 };
 
+// ---------------------------------------------------------------------------
+// Descriptor axes — WHICH descriptors fit WHICH things
+// ---------------------------------------------------------------------------
+//
+// The words used to describe food are not the words used to describe
+// buildings. An AXIS is a semantic dimension (temperature, fill, mood…)
+// grouping the descriptor vocabulary; properties and kinds BIND axes, and a
+// noun's axes rank its modifier rail, its attribute continuations, and the
+// condition vocabulary. Same shape as PROPERTY_FOR_VERB: fixed data about the
+// property vocabulary, context-blind by construction.
+//
+// SCOPE-BREADTH RULE (user law): applicability follows what the GAME models,
+// never real-life plausibility. Places take `possession` at every scale ("my
+// room" and "my city" alike — territory is a core mechanic), and settlements
+// are need-bearing entities (the city HUD tracks hunger/wellbeing), so place
+// nouns carry the mood/bodily axes exactly as creatures do — "city + hungry"
+// is a famine report, not a category error. The family↔civilization analogy
+// lives in this data, not in scripted exceptions.
+
+export type DescriptorAxis =
+  | "possession" // my / your
+  | "bodily" // hungry, thirsty, tired, sick — the need axes
+  | "mood" // happy, sad, bored, lonely
+  | "temperature" // hot / cold / warm
+  | "cleanliness" // clean / dirty
+  | "size" // big / small / long / short…
+  | "age" // new / old
+  | "integrity" // broken
+  | "fill" // full / empty
+  | "quantity" // more / many / counts
+  | "quality"; // good / bad
+
+/** The descriptor vocabulary of each axis. A superset across the two
+ *  descriptor stores — the parser LEXICON's attribute/quantity words AND the
+ *  glyph registry's modifier keys (my/your, empty…) — consumers filter to
+ *  whichever vocabulary they draw from. */
+export const AXIS_WORDS: Readonly<Record<DescriptorAxis, readonly string[]>> = {
+  possession: ["my", "your"],
+  bodily: ["hungry", "thirsty", "tired", "sick", "full"],
+  mood: ["happy", "sad", "bored", "lonely"],
+  temperature: ["hot", "cold", "warm"],
+  cleanliness: ["dirty", "clean"],
+  size: ["big", "small", "long", "short", "tall", "wide", "thin"],
+  age: ["new", "old"],
+  integrity: ["broken"],
+  fill: ["full", "empty", "some", "none"],
+  quantity: ["more", "many", "one", "two", "three", "all", "less", "none"],
+  quality: ["good", "bad"],
+};
+
+/** Verbs whose natural continuation is a DESCRIPTOR list rather than a noun —
+ *  the §3.1 pre-load read for the attribute side: "feel" implies an emotion
+ *  ("i_me + feel + happy"), never a thing. Same fixed-table contract as
+ *  PROPERTY_FOR_VERB; extend here when a new verb implies a word list. */
+export const DESCRIPTOR_AXES_FOR_VERB: Readonly<Record<string, readonly DescriptorAxis[]>> = {
+  feel: ["bodily", "mood"],
+};
+
+/** The axes a PROPERTY switches on, most relevant first — food talks about
+ *  temperature and amount, clothing about cleanliness, containers about fill. */
+export const AXES_FOR_PROPERTY: Readonly<Record<ObjectProperty, readonly DescriptorAxis[]>> = {
+  food: ["temperature", "quantity", "quality", "size"],
+  toy: ["possession", "quality", "integrity", "age"],
+  clothing: ["cleanliness", "possession", "age", "quality"],
+  container: ["fill", "possession", "size"],
+  openable: ["fill"],
+  furniture: ["possession", "size", "integrity", "age"],
+  appliance: ["integrity", "temperature"],
+  device: ["integrity", "quality"],
+  tableware: ["cleanliness", "fill"],
+  instrument: ["possession", "quality"],
+  book: ["possession", "quality", "age"],
+  material: ["quantity", "size"],
+  structure: ["possession", "size", "age", "integrity"],
+};
+
+/** Kind-level fallback/extension — how you describe a THING of that kind when
+ *  no property says otherwise. Core-concept places (town, city, area) have no
+ *  spec properties by law, so this tier is what gives them descriptors at all:
+ *  possession first ("my city"), then the need axes (settlements feel hunger). */
+export const AXES_FOR_KIND: Readonly<
+  Record<"creature" | "place" | "item" | "unknown", readonly DescriptorAxis[]>
+> = {
+  creature: ["bodily", "mood", "possession", "size", "quality"],
+  place: ["possession", "size", "bodily", "mood", "fill", "age"],
+  item: ["possession", "size", "quality", "quantity"],
+  unknown: ["possession", "quality"],
+};
+
+/** A noun's descriptor axes, most relevant first: its properties' axes (in
+ *  property order), then its kind's. Pure; unknown kinds fall back safely. */
+export function descriptorAxesFor(
+  kind: "creature" | "place" | "item" | "unknown",
+  properties: readonly string[],
+): DescriptorAxis[] {
+  const out: DescriptorAxis[] = [];
+  const push = (a: DescriptorAxis) => {
+    if (!out.includes(a)) out.push(a);
+  };
+  for (const p of properties) {
+    if (isObjectProperty(p)) for (const a of AXES_FOR_PROPERTY[p]) push(a);
+  }
+  for (const a of AXES_FOR_KIND[kind] ?? AXES_FOR_KIND.unknown) push(a);
+  return out;
+}
+
+/** The ranked descriptor words for a noun — its axes flattened, deduped. */
+export function descriptorsFor(
+  kind: "creature" | "place" | "item" | "unknown",
+  properties: readonly string[],
+): string[] {
+  const out: string[] = [];
+  for (const a of descriptorAxesFor(kind, properties)) {
+    for (const w of AXIS_WORDS[a]) if (!out.includes(w)) out.push(w);
+  }
+  return out;
+}
+
 /**
  * CORE ENGINE CONCEPTS (user law) — nouns hard-coded into the engine itself
  * rather than authored in a spec: the frame things exist inside (places,

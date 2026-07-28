@@ -90,7 +90,7 @@ describe("circulation as search (§9 slice 4)", () => {
 
   it("reproduces the ladder's taste where the ladder was right", () => {
     // Wide + deep: the bath sits BETWEEN the bedrooms and — since round
-    // 7 ranked through-traffic above affinity (the "why does the privy
+    // 7 ranked through-traffic above affinity (the "why does the toilet
     // open into a bedroom?" playtest fix) — doors from the LIVING room:
     // the partition is wide enough to clear the chests for all three
     // cells, so nobody crosses a bedroom to wash. (The old Jack-and-Jill

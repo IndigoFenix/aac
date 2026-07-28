@@ -76,6 +76,12 @@ describe("footprint queries", () => {
 describe("collision through the expanded shell", () => {
   it("an avatar leaves through the doorway but is blocked by the wall", () => {
     const exitDoor = createWorldState(expandWorldBuildings(spec()), "me");
+    // Declare the crossing, as the host does from the walk route's transit point
+    // — a door opens because a body is walking through it, never because one is
+    // nearby (engine tickDoors). Undeclared, this doorway is as solid as the
+    // wall spans either side of it, which is what the second half asserts.
+    const doorId = (exitDoor.spec.structures ?? []).find((s) => s.kind === "door")!.id;
+    exitDoor.avatars.me.crossingDoorId = doorId;
     steerFor(exitDoor, 16, 40, 5); // south through the doorway (x=16 ∈ [15,17])
     expect(exitDoor.avatars.me.y).toBeGreaterThan(22);
 

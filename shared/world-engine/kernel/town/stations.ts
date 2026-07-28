@@ -36,7 +36,7 @@ import type { ObjectProperty } from "../../object-properties.js";
  *  re-exports this — the 3D fixture meshes and the schema enum follow it). */
 export type StationKind =
   | "chest" | "cupboard" | "table" | "bed" | "chair" | "box"
-  | "barrel" | "bath" | "privy" | "bin" | "bowl" | "oven" | "workbench"
+  | "barrel" | "bath" | "toilet" | "bin" | "bowl" | "oven" | "workbench"
   // The FOOD box: the goods corner raises a refrigerator for the `food` good
   // instead of a generic chest, so the pantry is legible at a glance. The
   // anachronism is deliberate and temporary — tech levels come later.
@@ -69,7 +69,7 @@ export const STATION_PROPERTIES: Readonly<Record<StationKind, readonly ObjectPro
   chair: ["furniture"],
   bed: ["furniture"],
   bath: ["furniture"],
-  privy: ["furniture"],
+  toilet: ["furniture"],
   // The pet's floor dish — a serving vessel, not room furniture.
   bowl: ["tableware"],
 } as const;
@@ -236,12 +236,12 @@ export const CLUSTERS: Readonly<Record<string, ClusterDef>> = {
   communal: { key: "communal", privacy: 0 },
   /** Halls/corridors — pure access, no stations. */
   circulation: { key: "circulation", privacy: 0 },
-  /** Tub + privy gather in one wet cell. minW is the proven tub + privy +
-   *  door-lane floor (round 5b: 2.6 strands the privy). No affinity: the
+  /** Tub + toilet gather in one wet cell. minW is the proven tub + toilet +
+   *  door-lane floor (round 5b: 2.6 strands the toilet). No affinity: the
    *  bath is a HOUSEHOLD room — it doors from the public side (the living
    *  partition or the hall) whenever the geometry allows, and enters
    *  through a bedroom only where the partition's chest clearance leaves
-   *  no other way (round 7 — the playtest's "why does the privy open into
+   *  no other way (round 7 — the playtest's "why does the toilet open into
    *  a bedroom?" parameter fix; authoring `affinity: ["sleep"]` here
    *  brings the en-suite culture back, per town, no code). */
   wet: { key: "wet", privacy: 1, minW: 2.8 },
@@ -288,7 +288,7 @@ export const HOUSE_STATIONS: ReadonlyArray<StationDef> = [
   // living room this rank is what keeps the house washable).
   { key: "bath", kind: "bath", radius: 0.75, openable: false, cluster: "wet",
     cell: { cell: "wet" }, place: { mode: "wallScan", walls: ["side0", "side1", "far"] } },
-  { key: "privy", kind: "privy", radius: 0.5, openable: false, cluster: "wet",
+  { key: "toilet", kind: "toilet", radius: 0.5, openable: false, cluster: "wet",
     cell: { cell: "wet" }, place: { mode: "cornerThenWall", walls: ["side1", "side0", "far"] } },
   // The OVEN — food preparation's station (round 7: the cook's transform
   // works here). Kitchen cluster: in its own cell when the plan afforded
@@ -385,10 +385,18 @@ export const CRAFT_HAND_DAYS = 0.35;
  *  takes a third of the hand labor. */
 export const CRAFT_STATION_FACTOR = 1 / 3;
 
-/** The labor a craft takes, in street-days: hand rate, cut to the station
- *  factor when the crafter works at the recipe's accelerating station. */
+/** The labor a craft takes, in street-days, from the recipe's ACCELERATING
+ *  STATION alone: hand rate, cut to the station factor when the crafter works
+ *  there. Recipe-shape-agnostic on purpose — furniture is no longer the only
+ *  thing the pipeline makes (toys ride the same clock), and the labor rule was
+ *  never about what kind of thing was being made. */
+export function craftLaborDaysFor(at: StationKind | undefined, atStation: boolean): number {
+  return CRAFT_HAND_DAYS * (atStation && at ? CRAFT_STATION_FACTOR : 1);
+}
+
+/** The labor a FURNITURE craft takes — `craftLaborDaysFor` over its recipe. */
 export function craftLaborDays(def: FurnitureItemDef, atStation: boolean): number {
-  return CRAFT_HAND_DAYS * (atStation && def.craft?.at ? CRAFT_STATION_FACTOR : 1);
+  return craftLaborDaysFor(def.craft?.at, atStation);
 }
 
 /**

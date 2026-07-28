@@ -35,6 +35,7 @@
 import * as THREE from "three";
 import { propMaterial, type LitMaterial } from "./materials";
 import { appearanceOf, stateFacetsOf, headOf } from "./variations";
+import { isDollGlyph } from "./toys";
 
 export interface ObjectModel {
   /** Root to add to the scene, position, and YAW (carries `userData.pick`). */
@@ -131,12 +132,16 @@ export const BED_TOP_FRAC = 0.84;
  *
  *    chair — seat box centred at 1.05r, half-height 0.15r → top 1.2r → 2.2r
  *            (≈ 0.48 m at the standard r = 0.22: a chair).
- *    privy — bench seat centred at −0.05r, half-height 0.06r → top 0.01r → 1.01r
+ *    toilet — bench seat centred at −0.05r, half-height 0.06r → top 0.01r → 1.01r
  *            (≈ 0.5 m at r = 0.5: a toilet).
+ *    bath  — NOT a seat you perch on: the bather settles INSIDE the tub, so the
+ *            height is the basin itself. The shell's inner base sits at 0.2r
+ *            (its feet) and the water surface at ~1.12r; 0.4r (≈ 0.3 m at
+ *            r = 0.75) drops the hips into the water without clipping the base.
  *
- *  A kind ABSENT here has no seat the renderer can resolve (a tub, a workbench),
- *  so its body performs the crouch where it stands. */
-export const SEAT_TOP_FRAC: Readonly<Record<string, number>> = { chair: 2.2, privy: 1.01 };
+ *  A kind ABSENT here has no seat the renderer can resolve (a workbench), so its
+ *  body performs the crouch where it stands. */
+export const SEAT_TOP_FRAC: Readonly<Record<string, number>> = { chair: 2.2, toilet: 1.01, bath: 0.4 };
 
 const RECIPES: Record<string, Recipe> = {
   ball: (ctx) => {
@@ -257,7 +262,15 @@ const RECIPES: Record<string, Recipe> = {
     }
   },
 
-  teddy: (ctx) => {
+  // THE PLUSH FIGURE — the stand-in body for a DOLL of something the engine has
+  // no model of (world-engine/toys.ts). A doll is a miniature of a real thing, so
+  // a doll of a car IS the car recipe wearing the `toy` form facet, which shrinks
+  // it; this recipe is what a doll of a CREATURE falls back to, because nothing
+  // here can build a rabbit. It reads as a stuffed animal, which is what a rag
+  // doll of an animal is. Per-species doll bodies want the baked creature mesh
+  // (createBakedCreature) adapted to the ObjectModel contract — see the planning
+  // doc's follow-up; until then every animal doll is this plush shape, tinted.
+  doll: (ctx) => {
     const { r } = ctx;
     const fur = mat(ctx, "#a16207", { roughness: 0.85, tint: true });
     part(ctx, new THREE.SphereGeometry(r * 0.62, 16, 12), fur, [0, -r * 0.25, 0]);
@@ -274,6 +287,32 @@ const RECIPES: Record<string, Recipe> = {
     const dark = mat(ctx, "#1f2937", { roughness: 0.5 });
     part(ctx, new THREE.SphereGeometry(r * 0.07, 8, 6), dark, [-r * 0.16, r * 0.62, r * 0.4]);
     part(ctx, new THREE.SphereGeometry(r * 0.07, 8, 6), dark, [r * 0.16, r * 0.62, r * 0.4]);
+  },
+
+  // A PUZZLE: a flat tray of coloured pieces lying on the floor, one piece set
+  // proud of the rest so it reads as unfinished rather than as a printed board.
+  puzzle: (ctx) => {
+    const { r } = ctx;
+    const tray = mat(ctx, "#a8a29e", { roughness: 0.9, tint: true });
+    part(ctx, new THREE.BoxGeometry(r * 1.7, r * 0.14, r * 1.7), tray, [0, -r * 0.9, 0]);
+    // Four quadrant pieces, each a slightly different shade so the grid reads.
+    const shades = ["#dc2626", "#2563eb", "#facc15", "#16a34a"];
+    const half = r * 0.4;
+    const spots: [number, number][] = [[-half, -half], [half, -half], [-half, half], [half, half]];
+    spots.forEach(([px, pz], i) => {
+      const piece = mat(ctx, shades[i]!, { roughness: 0.6 });
+      // The last piece sits lifted and turned — the one still to go in.
+      const loose = i === spots.length - 1;
+      part(
+        ctx,
+        new THREE.BoxGeometry(r * 0.74, r * 0.12, r * 0.74),
+        piece,
+        [px, -r * 0.77 + (loose ? r * 0.16 : 0), pz],
+        loose ? [0, 0.5, 0] : undefined,
+      );
+      // The knob that makes a puzzle piece a puzzle piece.
+      part(ctx, new THREE.SphereGeometry(r * 0.12, 8, 6), piece, [px + r * 0.37, -r * 0.77, pz]);
+    });
   },
 
   // ---- FIXTURES: archetypal furniture (chest / cupboard / table). ----
@@ -449,30 +488,55 @@ const RECIPES: Record<string, Recipe> = {
     };
   },
 
-  // ---- Sims-mode ROUND 2 stations: bath (hygiene) / privy (waste) /
+  // ---- Sims-mode ROUND 2 stations: bath (hygiene) / toilet (waste) /
   // water barrel (thirst) / trash bin / pet bowl. Same conventions.
 
   "fixture:bath": (ctx) => {
     const { r } = ctx;
-    const tub = mat(ctx, "#d8d2c4", { roughness: 0.55, tint: true });
-    const rim = mat(ctx, "#c4bcaa", { roughness: 0.6 });
-    const water = mat(ctx, "#7db8d4", { roughness: 0.15 });
-    // An open tub: floor slab + four walls, a fat rounded rim, water inside.
-    part(ctx, new THREE.BoxGeometry(r * 1.9, r * 0.16, r * 1.2), tub, [0, -r * 0.9, 0]);
-    const wallH = r * 0.95;
-    const wallY = -r + r * 0.16 + wallH / 2;
-    const sideGeom = new THREE.BoxGeometry(r * 1.9, wallH, r * 0.16);
-    const endGeom = new THREE.BoxGeometry(r * 0.16, wallH, r * 1.2);
-    ctx.disposables.push(sideGeom, endGeom);
-    part(ctx, sideGeom, tub, [0, wallY, r * 0.52]);
-    part(ctx, sideGeom, tub, [0, wallY, -r * 0.52]);
-    part(ctx, endGeom, tub, [r * 0.87, wallY, 0]);
-    part(ctx, endGeom, tub, [-r * 0.87, wallY, 0]);
-    part(ctx, new THREE.BoxGeometry(r * 2.0, r * 0.14, r * 1.3), rim, [0, wallY + wallH / 2, 0]);
-    part(ctx, new THREE.BoxGeometry(r * 1.6, r * 0.04, r * 0.9), water, [0, wallY + wallH * 0.22, 0]);
+    const tub = mat(ctx, "#eae6dc", { roughness: 0.35, tint: true });
+    const rim = mat(ctx, "#d3ccbc", { roughness: 0.45 });
+    const water = mat(ctx, "#7db8d4", { roughness: 0.12 });
+    const chrome = mat(ctx, "#b9c0c8", { roughness: 0.25, metalness: 0.85 });
+    // A CLAWFOOT TUB. The old recipe was a slab and four straight walls, which
+    // at house scale read as a plain open crate — nothing said "bath". What
+    // makes a tub legible is the silhouette: it stands OFF the floor on feet,
+    // its shell is rounded, and it carries taps at one end. Built from those.
+    const OVAL_Z = 0.62; // squashed across Z — a tub is long, not round
+    const FEET_H = r * 0.2;
+    const floorY = -r + FEET_H;
+    const wallH = r * 0.92;
+    const shellY = floorY + wallH / 2;
+    const topY = shellY + wallH / 2;
+    // Four squat FEET, so the tub stands off the floor instead of sitting on it
+    // like a crate.
+    const footGeom = new THREE.CylinderGeometry(r * 0.1, r * 0.13, FEET_H, 10);
+    for (const [fx, fz] of [[0.62, 0.3], [0.62, -0.3], [-0.62, 0.3], [-0.62, -0.3]] as const) {
+      const foot = part(ctx, footGeom.clone(), rim, [r * fx, -r + FEET_H / 2, r * fz]);
+      foot.scale.set(1, 1, 1);
+    }
+    footGeom.dispose();
+    // The SHELL — a wide cylinder squashed along Z. The old recipe was a slab
+    // and four straight walls, which at house scale read as a plain open crate;
+    // a rolled oval body reads as a tub from every angle the camera takes.
+    const body = part(ctx, new THREE.CylinderGeometry(r * 0.95, r * 0.78, wallH, 22), tub, [0, shellY, 0]);
+    body.scale.set(1, 1, OVAL_Z);
+    // WATER inset just proud of the shell's top face, so the surface shows
+    // INSIDE the rim rather than the tub reading as a solid lump.
+    const surface = part(ctx, new THREE.CylinderGeometry(r * 0.82, r * 0.82, r * 0.06, 22), water, [0, topY + r * 0.01, 0]);
+    surface.scale.set(1, 1, OVAL_Z);
+    // The rolled RIM — the single clearest "this is a tub" cue.
+    const rimMesh = part(ctx, new THREE.TorusGeometry(r * 0.93, r * 0.085, 8, 24), rim, [0, topY, 0], [Math.PI / 2, 0, 0]);
+    rimMesh.scale.set(1, OVAL_Z, 1); // pre-rotation Y is the world Z
+    // TAPS at the −X end: a riser, a spout arching in over the water, two
+    // handles either side of it.
+    part(ctx, new THREE.CylinderGeometry(r * 0.05, r * 0.05, r * 0.36, 8), chrome, [-r * 0.86, topY + r * 0.18, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.04, r * 0.04, r * 0.26, 8), chrome, [-r * 0.74, topY + r * 0.34, 0], [0, 0, Math.PI / 2]);
+    for (const hz of [0.2, -0.2]) {
+      part(ctx, new THREE.CylinderGeometry(r * 0.06, r * 0.06, r * 0.05, 8), chrome, [-r * 0.86, topY + r * 0.06, r * hz]);
+    }
   },
 
-  "fixture:privy": (ctx) => {
+  "fixture:toilet": (ctx) => {
     const { r } = ctx;
     const wood = mat(ctx, "#8a6238", { roughness: 0.85, tint: true });
     const seat = mat(ctx, "#a88960", { roughness: 0.8 });
@@ -745,7 +809,8 @@ const EMOJI_TO_KEY: Record<string, string> = {
   "🚗": "car", "🚙": "car", "🏎": "car",
   "🚂": "train", "🚆": "train", "🚋": "train",
   "🧱": "blocks",
-  "🧸": "teddy",
+  "🧸": "doll", "🪆": "doll",
+  "🧩": "puzzle",
   "📦": "crate",
   "🧺": "basket",
   "⛵": "boat", "🚤": "boat", "🛶": "boat",
@@ -753,8 +818,11 @@ const EMOJI_TO_KEY: Record<string, string> = {
 
 const SYMBOL_TO_KEY: Record<string, string> = {
   ball: "ball", apple: "apple", banana: "banana", grape: "grapes", cookie: "cookie",
-  car: "car", train: "train", blocks: "blocks", teddy: "teddy", box: "crate",
+  car: "car", train: "train", blocks: "blocks", box: "crate",
   basket: "basket", boat: "boat",
+  // `teddy` is gone as a WORD (a teddy bear is `bear.toy` now); the plush body it
+  // named lives on as the generic `doll` recipe, which the bare word also uses.
+  doll: "doll", puzzle: "puzzle",
 };
 
 /** Strip emoji variation selectors (U+FE0x), skin-tone modifiers, and ZWJ so a
@@ -774,12 +842,19 @@ function normalizeEmoji(s: string): string {
 function keyFor(iconRef?: string, glyph?: string): string | undefined {
   if (glyph) {
     const head = headOf(glyph).trim().toLowerCase();
+    // THE HEAD'S OWN RECIPE WINS, which is the whole point of the doll design: a
+    // toy car is the CAR model, and the `toy` form facet's scale (variations.ts)
+    // shrinks it — one recipe serves the real thing and its miniature.
     if (SYMBOL_TO_KEY[head]) return SYMBOL_TO_KEY[head];
   }
   if (iconRef) {
     const key = EMOJI_TO_KEY[normalizeEmoji(iconRef)];
     if (key) return key;
   }
+  // A DOLL of something with no model of its own is still a doll, never a bare
+  // sphere wearing an emoji: fall back to the plush figure. Checked LAST so it
+  // can only ever add a model where there wasn't one.
+  if (glyph && isDollGlyph(glyph)) return "doll";
   return undefined;
 }
 

@@ -44,6 +44,7 @@ import {
   paddleController,
   interpretationController,
   videoCaptionController,
+  appDownloadController,
   boardController,
   customAppController,
   deepAnalysisController,
@@ -1217,6 +1218,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/interpretations/:id", requireAuth, (req, res) =>
     interpretationController.deleteInterpretation(req, res)
+  );
+
+  // ============= AAC APP DOWNLOAD ROUTES =============
+  // What the release feeds currently offer (version, size, availability).
+  app.get("/api/app-downloads", requireAuth, (req, res) =>
+    appDownloadController.list(req, res)
+  );
+  // Stable per-platform URL — 302s to the versioned object on the CDN, so the
+  // client never has to know the current installer/.ipa filename.
+  app.get("/api/app-downloads/:platform", requireAuth, (req, res) =>
+    appDownloadController.download(req, res)
   );
 
   // ============= VIDEO CAPTION STUDIO ROUTES =============

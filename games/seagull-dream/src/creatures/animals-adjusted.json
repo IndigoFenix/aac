@@ -1,6 +1,6 @@
 [{
-  "name": "elephant",
   "version": 1,
+  "name": "elephant",
   "spine": {
     "torsoSegments": 6,
     "torsoLengthM": 5,
@@ -26,20 +26,41 @@
   "head": {
     "sizeFrac": 0.851,
     "lengthFrac": 0.96,
+    "braincaseDome": 1,
     "crossSection": 1,
     "facePitch": -0.0629999999999999,
     "faceHeight": 0.1,
+    "foreheadHeight": 0.475,
+    "foreheadLength": 0.13,
+    "foreheadSlope": 0.41,
     "beak": 0,
-    "snoutLengthFrac": 2.5,
+    "snoutLengthFrac": 0.225,
+    "snoutSegments": 2,
     "snoutRadiusFrac": 0.4244,
-    "snoutFlatten": 1.09175,
+    "muzzleSquash": 0,
+    "snoutFlatten": 1.34975,
     "snoutCurve": 0.83,
-    "jawFrac": 0.21,
+    "mouthOpen": 0.5,
+    "jawDepth": 0.365,
+    "jawOffset": -0.27,
+    "mouthVertical": 0,
+    "noseLengthFrac": 2.19,
+    "noseRadiusFrac": 0.36915,
+    "noseHeight": 0.285,
+    "noseSegments": 5,
+    "noseDroop": 1.5,
     "eyePairs": 1,
     "eyeSizeFrac": 0.12,
     "eyeAngle": 1,
     "eyeHeight": 0.35,
-    "eyeBulge": 0.35
+    "eyeBulge": 0.35,
+    "padding": 0.3,
+    "cheek": 0.3,
+    "jowl": 0,
+    "brow": 0.25,
+    "muzzlePad": 0.45,
+    "lips": 0.3,
+    "chin": 0
   },
   "limbGroups": [
     {
@@ -82,12 +103,15 @@
   "posture": {
     "bodyPitch": 0.0655,
     "bodyHeight": 0.84
+  },
+  "outfit": {
+    "garments": []
   }
 },
 
 {
-  "name": "horse",
   "version": 1,
+  "name": "horse",
   "spine": {
     "torsoSegments": 6,
     "torsoLengthM": 1.2,
@@ -102,7 +126,7 @@
     "segments": 4,
     "lengthFrac": 0.3625,
     "radiusFrac": 0.45,
-    "lift": 0.985
+    "lift": 0.895
   },
   "tail": {
     "segments": 7,
@@ -111,22 +135,43 @@
     "droop": -1.2
   },
   "head": {
-    "sizeFrac": 0.683,
+    "sizeFrac": 0.543,
     "lengthFrac": 1.14,
-    "crossSection": 1,
-    "facePitch": -0.558,
+    "braincaseDome": 1,
+    "crossSection": 0.814,
+    "facePitch": -0.585,
     "faceHeight": 0,
+    "foreheadHeight": 0.275,
+    "foreheadLength": 0.75,
+    "foreheadSlope": 0.19,
     "beak": 0,
-    "snoutLengthFrac": 1.1625,
-    "snoutRadiusFrac": 0.777,
-    "snoutFlatten": 0.94125,
-    "snoutCurve": 0.04,
-    "jawFrac": 1,
+    "snoutLengthFrac": 0.875,
+    "snoutSegments": 2,
+    "snoutRadiusFrac": 0.613,
+    "muzzleSquash": 0.4,
+    "snoutFlatten": 1.11325,
+    "snoutCurve": -0.09,
+    "mouthOpen": 0.285,
+    "jawDepth": 0,
+    "jawOffset": 0.1,
+    "mouthVertical": 0,
+    "noseLengthFrac": 0,
+    "noseRadiusFrac": 0.24945,
+    "noseHeight": 0.0825,
+    "noseSegments": 2,
+    "noseDroop": 1.02,
     "eyePairs": 1,
-    "eyeSizeFrac": 0.18,
-    "eyeAngle": 1.311,
-    "eyeHeight": 0.651,
-    "eyeBulge": 0.54
+    "eyeSizeFrac": 0.222,
+    "eyeAngle": 1.06125,
+    "eyeHeight": 0.39,
+    "eyeBulge": 0,
+    "padding": 0.3,
+    "cheek": 0.3,
+    "jowl": 0.2,
+    "brow": 0.25,
+    "muzzlePad": 0.45,
+    "lips": 0.3,
+    "chin": 0
   },
   "limbGroups": [
     {
@@ -169,11 +214,14 @@
   "posture": {
     "bodyPitch": 0.0845,
     "bodyHeight": 0.805
+  },
+  "outfit": {
+    "garments": []
   }
 },
 {
-  "name": "cat",
   "version": 1,
+  "name": "cat",
   "spine": {
     "torsoSegments": 6,
     "torsoLengthM": 0.4,
@@ -199,20 +247,41 @@
   "head": {
     "sizeFrac": 0.683,
     "lengthFrac": 1.14,
+    "braincaseDome": 1,
     "crossSection": 1,
     "facePitch": -0.0269999999999999,
     "faceHeight": -0.09,
+    "foreheadHeight": 0.62,
+    "foreheadLength": 0.24,
+    "foreheadSlope": -0.12,
     "beak": 0,
     "snoutLengthFrac": 0.3875,
+    "snoutSegments": 2,
     "snoutRadiusFrac": 0.7319,
+    "muzzleSquash": 0,
     "snoutFlatten": 1.21,
-    "snoutCurve": -0.69,
-    "jawFrac": 0.63,
+    "snoutCurve": -0.14,
+    "mouthOpen": 0.2325,
+    "jawDepth": 0.05,
+    "jawOffset": -0.03,
+    "mouthVertical": 0,
+    "noseLengthFrac": 0.21,
+    "noseRadiusFrac": 0.1497,
+    "noseHeight": 0.1125,
+    "noseSegments": 2,
+    "noseDroop": 0,
     "eyePairs": 1,
     "eyeSizeFrac": 0.18,
     "eyeAngle": 0.42,
     "eyeHeight": 0.651,
-    "eyeBulge": 0.54
+    "eyeBulge": 0.54,
+    "padding": 0.3,
+    "cheek": 0.3,
+    "jowl": 0.2,
+    "brow": 0.25,
+    "muzzlePad": 0.45,
+    "lips": 0.3,
+    "chin": 0
   },
   "limbGroups": [
     {
@@ -255,11 +324,14 @@
   "posture": {
     "bodyPitch": 0.0655,
     "bodyHeight": 0.82
+  },
+  "outfit": {
+    "garments": []
   }
 },
 {
-  "name": "dog",
   "version": 1,
+  "name": "dog",
   "spine": {
     "torsoSegments": 6,
     "torsoLengthM": 1.7,
@@ -283,22 +355,43 @@
     "droop": 0.528
   },
   "head": {
-    "sizeFrac": 0.739,
+    "sizeFrac": 0.543,
     "lengthFrac": 0.915,
+    "braincaseDome": 1,
     "crossSection": 1,
     "facePitch": -0.342,
     "faceHeight": 0.08,
+    "foreheadHeight": 0.61,
+    "foreheadLength": 0.38,
+    "foreheadSlope": -0.05,
     "beak": 0,
-    "snoutLengthFrac": 0.6875,
-    "snoutRadiusFrac": 0.7606,
-    "snoutFlatten": 1.21,
-    "snoutCurve": -0.82,
-    "jawFrac": 0.84,
+    "snoutLengthFrac": 0.45,
+    "snoutSegments": 2,
+    "snoutRadiusFrac": 0.6581,
+    "muzzleSquash": 0.495,
+    "snoutFlatten": 1.468,
+    "snoutCurve": -0.12,
+    "mouthOpen": 1.14,
+    "jawDepth": 0.11,
+    "jawOffset": 0.1,
+    "mouthVertical": 0,
+    "noseLengthFrac": 0.27,
+    "noseRadiusFrac": 0.4575,
+    "noseHeight": 0.0525,
+    "noseSegments": 2,
+    "noseDroop": 1.5,
     "eyePairs": 1,
     "eyeSizeFrac": 0.18,
     "eyeAngle": 0.582,
     "eyeHeight": 0.651,
-    "eyeBulge": 0.54
+    "eyeBulge": 0.54,
+    "padding": 0.3,
+    "cheek": 0.3,
+    "jowl": 0.2,
+    "brow": 0.25,
+    "muzzlePad": 0.45,
+    "lips": 0.3,
+    "chin": 0
   },
   "limbGroups": [
     {
@@ -341,5 +434,8 @@
   "posture": {
     "bodyPitch": 0.0655,
     "bodyHeight": 0.805
+  },
+  "outfit": {
+    "garments": []
   }
 }]

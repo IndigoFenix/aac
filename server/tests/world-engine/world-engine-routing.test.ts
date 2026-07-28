@@ -80,4 +80,40 @@ describe("routeThroughDoors", () => {
     const to = { x: 9, y: 3 };
     expect(routeThroughDoors(s, { x: 2, y: 3 }, to)).toEqual([to]);
   });
+
+  it("tags BOTH transit points with the doorway they cross", () => {
+    // The tag is what opens the door: whoever steers the body copies the live
+    // waypoint's `doorId` into `AvatarState.crossingDoorId`, and tickDoors swings
+    // only doors somebody is walking through. An untagged pair means a body walks
+    // its crossing without declaring it — and stands at a shut door forever.
+    const s = world(twoRooms(3));
+    const doorId = (s.spec.structures ?? []).find((st) => st.kind === "door")!.id;
+    const pts = routeThroughDoors(s, { x: 2, y: 3 }, { x: 9, y: 3 });
+    expect(pts[0]!.doorId).toBe(doorId);
+    expect(pts[1]!.doorId).toBe(doorId);
+  });
+
+  it("leaves the leg's own endpoint untagged — arriving is not crossing", () => {
+    const s = world(twoRooms(3));
+    const pts = routeThroughDoors(s, { x: 2, y: 3 }, { x: 9, y: 3 });
+    expect(pts[pts.length - 1]!.doorId).toBeUndefined();
+    // …and the same-room case is a bare destination, so nothing is declared for a
+    // walk that crosses no doorway at all.
+    expect(routeThroughDoors(s, { x: 2, y: 3 }, { x: 4, y: 4 })[0]!.doorId).toBeUndefined();
+  });
+
+  it("names each door separately across a chain of rooms", () => {
+    // Three rooms in a row, two doors. A body two doorways from its goal must
+    // declare only the door it is at — so the pairs cannot share one tag.
+    const s = world([
+      { id: "A", footprint: { x: 0, y: 0, w: 6, h: 6 }, floors: 1, wallThickness: 0.4, doorways: [{ edge: "east", offset: 3, width: 2 }] },
+      { id: "B", footprint: { x: 6, y: 0, w: 6, h: 6 }, floors: 1, wallThickness: 0.4, doorways: [{ edge: "west", offset: 3, width: 2 }, { edge: "east", offset: 3, width: 2 }] },
+      { id: "C", footprint: { x: 12, y: 0, w: 6, h: 6 }, floors: 1, wallThickness: 0.4, doorways: [{ edge: "west", offset: 3, width: 2 }] },
+    ]);
+    const pts = routeThroughDoors(s, { x: 2, y: 3 }, { x: 15, y: 3 });
+    const tags = pts.map((p) => p.doorId);
+    expect(tags[tags.length - 1]).toBeUndefined();
+    const crossed = [...new Set(tags.filter((t): t is string => !!t))];
+    expect(crossed).toHaveLength(2); // two distinct doorways on the way
+  });
 });

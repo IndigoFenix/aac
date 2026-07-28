@@ -14,11 +14,12 @@ import {
 } from "@shared/world-engine/interaction/intent/surface-next.js";
 
 const NOUNS: SurfaceNoun[] = [
-  { symbol: "apple", kind: "item", affords: ["eat", "want", "get", "give"] },
-  { symbol: "ball", kind: "item", affords: ["get", "give", "play", "throw", "want"] },
-  { symbol: "clothing", kind: "item", affords: ["wear", "wash", "want", "give"] },
+  { symbol: "apple", kind: "item", affords: ["eat", "want", "get", "give"], properties: ["food"] },
+  { symbol: "ball", kind: "item", affords: ["get", "give", "play", "throw", "want"], properties: ["toy"] },
+  { symbol: "clothing", kind: "item", affords: ["wear", "wash", "want", "give"], properties: ["clothing"] },
+  { symbol: "water", kind: "item", affords: ["drink", "get", "give", "fill", "want"] },
   { symbol: "mara", kind: "creature", affords: ["talk", "help", "hug", "give", "follow"] },
-  { symbol: "bed", kind: "place", affords: ["go", "sleep"] },
+  { symbol: "bed", kind: "place", affords: ["go", "sleep"], properties: ["furniture"] },
   { symbol: "home", kind: "place", affords: ["go"] },
 ];
 
@@ -76,7 +77,7 @@ describe("surfaceNext — continuations", () => {
     const s = surfaceNext(["give", "apple", "to"], ctx());
     expect(s.open).toEqual(["relation-noun"]);
     for (const b of s.buttons) {
-      expect(["mara", "apple", "ball", "clothing", "bed", "home", "i_me", "you"]).toContain(b.symbol);
+      expect(["mara", "apple", "ball", "clothing", "water", "bed", "home", "i_me", "you"]).toContain(b.symbol);
     }
     expect(s.buttons[0]!.symbol).toBe("mara"); // creatures fit "to" best
   });
@@ -132,6 +133,7 @@ describe("surfaceNext — determinism, budget, completeness", () => {
   });
 
   it("completeness follows the frame: verbs with optional objects, transfers need one", () => {
+    expect(surfaceNext(["more"], ctx()).complete).toBe(true); // a bare quantity speaks
     expect(surfaceNext(["you", "sleep"], ctx()).complete).toBe(true);
     expect(surfaceNext(["you", "give"], ctx()).complete).toBe(false);
     expect(surfaceNext(["you", "give", "apple"], ctx()).complete).toBe(true);
@@ -149,6 +151,196 @@ describe("surfaceNext — determinism, budget, completeness", () => {
       for (const b of s.buttons) {
         const frame = parseSentence([...start, b.symbol].join(" + "));
         expect(`${start.join("+")}▸${b.symbol}:${frame.kind}`).not.toContain(":unclear");
+      }
+    }
+  });
+});
+
+// ── The transition layer: who/what came before picks the band ────────────────
+
+describe("surfaceNext — transitions (predict the next word)", () => {
+  it("a speaker subject leads with STATE verbs and keeps feelings a press away", () => {
+    const syms = symbols(["i_me"]);
+    expect(syms[0]).toBe("want"); // the frequency prior breaks the state-verb tie
+    expect(syms).toContain("hungry"); // the reserved attribute slot
+    expect(syms).not.toContain("drop"); // handling directives yield the band
+  });
+
+  it("a listener subject leads with directives, frequency-ordered", () => {
+    const syms = symbols(["you"]);
+    expect(syms.slice(0, 4)).toEqual(["go", "eat", "help", "play"]);
+  });
+
+  it("bulk verb bands surface only synonym-family heads (get, never take)", () => {
+    const syms = symbols(["you"]);
+    expect(syms).toContain("get");
+    expect(syms).not.toContain("take");
+    expect(syms).not.toContain("walk"); // go's family
+  });
+
+  it("a quantity opens NOUNS ('more + water'), food first", () => {
+    const s = surfaceNext(["more"], ctx());
+    expect(s.open[0]).toBe("object");
+    expect(s.buttons[0]?.symbol).toBe("apple");
+    expect(s.buttons.map((b) => b.symbol)).toContain("water");
+  });
+
+  it("a greeting addresses SOMEONE ('hi + mara')", () => {
+    const s = surfaceNext(["hi"], ctx());
+    expect(s.open[0]).toBe("addressee");
+    expect(s.buttons[0]?.symbol).toBe("mara");
+  });
+
+  it("a saturated frame: a SMALL joiner band plus the object's own descriptors", () => {
+    const s = surfaceNext(["i_me", "want", "apple"], ctx());
+    const syms = s.buttons.map((b) => b.symbol);
+    expect(s.buttons.filter((b) => b.role === "connective").length).toBeLessThanOrEqual(3);
+    expect(syms).toContain("and");
+    expect(syms).toContain("hot"); // apple (food) → temperature-axis extension
+  });
+
+  it("'feel' implies a FEELING list — emotions lead, nouns stay away", () => {
+    const s = surfaceNext(["i_me", "feel"], ctx());
+    const syms = s.buttons.map((b) => b.symbol);
+    expect(syms[0]).toBe("hungry");
+    expect(syms).toContain("happy");
+    expect(syms).toContain("sad");
+    for (const b of s.buttons) {
+      expect({ symbol: b.symbol, noun: NOUNS.some((n) => n.symbol === b.symbol) }).toEqual({
+        symbol: b.symbol,
+        noun: false,
+      });
+    }
+  });
+
+  it("common emotions sit right on the i_me board", () => {
+    const syms = symbols(["i_me"]);
+    expect(syms).toContain("hungry");
+    expect(syms).toContain("happy");
+    expect(syms).toContain("sad");
+  });
+
+  it("'play' also offers PLAYMATES (play with mara)", () => {
+    const s = surfaceNext(["you", "play"], ctx());
+    const mara = s.buttons.find((b) => b.symbol === "mara")!;
+    const home = s.buttons.find((b) => b.symbol === "home")!;
+    expect(mara.weight).toBeGreaterThan(home.weight);
+  });
+
+  it("descriptors follow the noun's TYPE: food talks temperature, not mood", () => {
+    const syms = symbols(["apple"]);
+    const hot = syms.indexOf("hot");
+    expect(hot).toBeGreaterThanOrEqual(0);
+    const happy = syms.indexOf("happy");
+    expect(happy === -1 || hot < happy).toBe(true);
+  });
+
+  it("a learned habit (use + pair counts) reshapes the board deterministically", () => {
+    let mem = emptyRecency();
+    for (let i = 0; i < 3; i++) mem = noteUtterance(mem, parseSentence("i_me + want + water"));
+    const s = surfaceNext(["i_me", "want"], ctx({ recency: mem }));
+    expect(s.buttons[0]?.symbol).toBe("water"); // want>water pair + recency + uses
+  });
+});
+
+// ── THE COMPLAINT PIN: everyday sentences never need a category tab ──────────
+
+describe("surfaceNext — basic utterances reachable from the suggested surface", () => {
+  const reachable = (sentence: string[]) => {
+    for (let i = 0; i < sentence.length; i++) {
+      const s = surfaceNext(sentence.slice(0, i), ctx());
+      const next = sentence[i]!;
+      const ok =
+        s.buttons.some((b) => b.symbol === next) ||
+        s.groups.some((g) => g.members.some((m) => m.symbol === next));
+      expect({ after: sentence.slice(0, i).join("+"), next, ok }).toEqual({
+        after: sentence.slice(0, i).join("+"),
+        next,
+        ok: true,
+      });
+    }
+  };
+
+  it("gameplay requests that double as real-life statements", () => {
+    reachable(["i_me", "want", "apple"]);
+    reachable(["you", "go", "home"]);
+    reachable(["more", "water"]);
+    reachable(["i_me", "hungry"]);
+    reachable(["where", "mara"]);
+    reachable(["hi", "mara"]);
+    reachable(["give", "apple", "to", "mara"]);
+  });
+});
+
+// ── Group chips: a few high-probability words + likely subcategories ─────────
+
+describe("surfaceNext — group chips", () => {
+  const MANY: SurfaceNoun[] = [
+    { symbol: "apple", kind: "item", affords: ["eat", "want", "get", "give"], properties: ["food"] },
+    { symbol: "bread", kind: "item", affords: ["eat", "want", "get", "give"], properties: ["food"] },
+    { symbol: "milk", kind: "item", affords: ["drink", "want", "get", "give"], properties: ["food"] },
+    { symbol: "soup", kind: "item", affords: ["eat", "want", "get", "give"], properties: ["food"] },
+    { symbol: "banana", kind: "item", affords: ["eat", "want", "get", "give"], properties: ["food"] },
+    { symbol: "cookie", kind: "item", affords: ["eat", "want", "get", "give"], properties: ["food"] },
+    { symbol: "ball", kind: "item", affords: ["play", "get", "give", "want"], properties: ["toy"] },
+    { symbol: "teddy", kind: "item", affords: ["play", "hug", "want", "get"], properties: ["toy"] },
+    { symbol: "kite", kind: "item", affords: ["play", "want", "get"], properties: ["toy"] },
+    { symbol: "shirt", kind: "item", affords: ["wear", "wash", "want"], properties: ["clothing"] },
+    { symbol: "sock", kind: "item", affords: ["wear", "wash", "want"], properties: ["clothing"] },
+    { symbol: "box", kind: "item", affords: ["open", "shut", "put"], properties: ["container", "openable"] },
+    { symbol: "chest", kind: "item", affords: ["open", "shut", "put"], properties: ["container", "openable"] },
+    { symbol: "mara", kind: "creature", affords: ["talk", "help", "hug", "give"] },
+    { symbol: "tomo", kind: "creature", affords: ["talk", "help", "hug", "give"] },
+    { symbol: "rex", kind: "creature", affords: ["talk", "help", "hug", "give"] },
+    { symbol: "bed", kind: "place", affords: ["go", "sleep"], properties: ["furniture"] },
+    { symbol: "table", kind: "place", affords: ["go", "sit"], properties: ["furniture"] },
+    { symbol: "kitchen", kind: "place", affords: ["go"] },
+    { symbol: "yard", kind: "place", affords: ["go"] },
+  ];
+
+  it("a flooded object slot yields inline words PLUS ranked group chips", () => {
+    const s = surfaceNext(["i_me", "want"], { nouns: MANY, capacity: 8 });
+    expect(s.buttons.length).toBeLessThanOrEqual(8);
+    const food = s.groups.find((g) => g.id === "food");
+    expect(food).toBeDefined();
+    // The chip expands to EVERY food, including what the grid had no room for.
+    expect(food!.members.map((m) => m.symbol)).toEqual(
+      expect.arrayContaining(["apple", "bread", "milk", "soup", "banana", "cookie"]),
+    );
+  });
+
+  it("the verb's pre-load property ranks its chip first ('eat' → [food])", () => {
+    const s = surfaceNext(["you", "eat"], { nouns: MANY, capacity: 4 });
+    expect(s.groups[0]?.id).toBe("food");
+  });
+
+  it("the EMPTY board already offers the library's groups", () => {
+    const s = surfaceNext([], { nouns: MANY });
+    const ids = s.groups.map((g) => g.id);
+    expect(ids).toContain("food");
+    expect(ids).toContain("places");
+  });
+
+  it("groups vanish when the grid already holds every member", () => {
+    const s = surfaceNext(["i_me", "want"], ctx()); // the small library fits inline
+    expect(s.groups).toEqual([]);
+  });
+
+  it("chips are deterministic and noun-order-independent", () => {
+    const a = surfaceNext(["i_me", "want"], { nouns: MANY, capacity: 8 });
+    const b = surfaceNext(["i_me", "want"], { nouns: [...MANY].reverse(), capacity: 8 });
+    expect(b.groups.map((g) => g.id)).toEqual(a.groups.map((g) => g.id));
+    expect(b.groups[0]?.members.map((m) => m.symbol)).toEqual(a.groups[0]?.members.map((m) => m.symbol));
+  });
+
+  it("every group member still parses to a non-unclear frame", () => {
+    for (const start of [[], ["i_me", "want"], ["you", "eat"]] as string[][]) {
+      const s = surfaceNext(start, { nouns: MANY, capacity: 8 });
+      for (const g of s.groups) {
+        for (const m of g.members) {
+          const frame = parseSentence([...start, m.symbol].join(" + "));
+          expect(`${start.join("+")}▸${g.id}/${m.symbol}:${frame.kind}`).not.toContain(":unclear");
+        }
       }
     }
   });

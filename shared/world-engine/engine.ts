@@ -29,6 +29,7 @@ import type {
   Rect,
   StairSpec,
   StructureSpec,
+  TransitPoint,
   Vec2,
   WorldSpec,
 } from "./types.js";
@@ -71,6 +72,23 @@ export interface AvatarState {
    *  take from things ANOTHER opened. Set by the game layer; ABSENT ⇒ true (the
    *  player and every ordinary body). Read by `tickDoors`. */
   canOpen?: boolean;
+  /** THE DOOR THIS BODY IS WALKING THROUGH RIGHT NOW — the id of the door whose
+   *  transit leg is the body's live leg, else null/absent.
+   *
+   *  This is what OPENS a door, and the only thing that does apart from an
+   *  explicit `setDoorOpen`. Doors used to be inferred from geometry every frame
+   *  (anybody straddling or crossing the throat swung it), which meant they
+   *  opened and shut with nobody acting on them. Now a door opens because a body
+   *  whose ROUTE goes through it is walking that leg — `routeThroughDoors` tags
+   *  both transit points of each pair with the door's id, and whoever steers the
+   *  body copies the live point's tag here (world-host: NPC controllers via
+   *  `crossingDoorId()`, and the player's own door-nav).
+   *
+   *  Set on the LEG, not the path: a body two doors ahead in its route hasn't
+   *  reached this one and doesn't open it. Because the near transit point sits
+   *  1.1 m short of the leaf and the swing completes in ~0.12 s, the door is
+   *  always open by the time the body arrives — no waiting, no stall. */
+  crossingDoorId?: string | null;
   /** A one-shot GESTURE for a creature-bodied avatar (e.g. an NPC pointing the
    *  way). Display-only — `tickWorld` never reads it. The renderer's creature
    *  factory fires it once per new `id` (converting the world target into the
@@ -83,7 +101,7 @@ export interface AvatarState {
    *  renderer may ignore it entirely). */
   activity?: AvatarActivity;
   /** FURNITURE-USE ANCHOR — the sim-side state that eases a body ONTO a fixture
-   *  it is using (a bed, a chair, a privy) and back off again. Unlike `activity`
+   *  it is using (a bed, a chair, a toilet) and back off again. Unlike `activity`
    *  (display-only), this DRIVES the sim body: while it is set, the furniture
    *  anchor state machine (interaction/quest/furniture-anchor.ts) owns this
    *  body's movement — the normal steering is skipped and the body is INTERPOLATED
@@ -105,6 +123,15 @@ export interface AvatarState {
    *  renderer lifts the body (and the follow camera) off the ground without a
    *  scene swap. 0 / absent = grounded. */
   altitude?: number;
+  /** WALL-GLIDE CONTACT (`config.wallGlide` bodies only) — the surface normal of
+   *  the last constrained-slide collision, held briefly so steering can walk
+   *  PARALLEL to the face instead of re-accelerating into it every frame (the
+   *  "scrapes along the table" grind). Written by the slide branches in
+   *  `advanceAvatar`; expires at `until` (state.time). `side` holds the chosen
+   *  tangent direction so a head-on approach can't oscillate between the two
+   *  ways around. Transient sim state — never serialized, display never reads
+   *  it. */
+  contact?: { nx: number; ny: number; until: number; side: 1 | -1 };
 }
 
 /** What a body is DOING at its station — the species-agnostic activity set the
@@ -242,20 +269,32 @@ export interface ObjectState {
 /**
  * Live state of a `door` structure. `open` is the eased swing amount, 0 (closed
  * & solid) → 1 (open & passable); `locked` blocks it from ever opening until
- * cleared (by unlockDoor or its key object). Derived locally each tick from
- * avatar positions, so it carries no network identity of its own.
+ * cleared (by unlockDoor or its key object). The swing is EASED locally each
+ * tick toward whether the door should be open, so it carries no network
+ * identity of its own.
+ *
+ * WHAT OPENS A DOOR (the whole rule, mirroring how container lids work — see
+ * `ObjectState.heldOpen`): an ACT, never geometry. Either a body is walking the
+ * transit leg through it (`AvatarState.crossingDoorId`), or something opened it
+ * deliberately (`setDoorOpen` → `pinned`). Standing near a door does nothing;
+ * the door does not read the room.
  */
 export interface DoorState {
   id: string;
   open: number;
   locked: boolean;
-  /** Is the door explicitly HELD open? A body that CAN open doors sets this as
-   *  it comes to pass through (and it eases open); it stays open while any body
-   *  lingers and shuts once all leave — so a graspless creature can follow
-   *  through, and slip through a door another left open, but can never open a
-   *  shut one itself. `pinned` (an "open the door" command) keeps it open with
-   *  nobody near. Absent ⇒ shut. */
+  /** Is the door being held open by a body passing through? Set each tick from
+   *  the bodies whose live leg crosses THIS door — and kept set while any body
+   *  is still physically in the opening, so a graspless follower can slip
+   *  through behind one that can open doors, and a body paused mid-crossing
+   *  doesn't get a leaf swung through it. Absent ⇒ nobody is crossing. */
   held?: boolean;
+  /** Held open by a STANDING INSTRUCTION — `setDoorOpen(state, id, true)`. It
+   *  stays open with nobody near, until `setDoorOpen(state, id, false)` clears
+   *  the pin and lets it shut. That pair is the "open the door" / "close the
+   *  door" action. (To make a door stay shut against passers-by, lock it —
+   *  `lockDoor` — which is what a door nobody may open through actually is.)
+   *  Absent ⇒ no standing instruction: the door follows whoever walks it. */
   pinned?: boolean;
 }
 
@@ -421,6 +460,16 @@ export interface WorldEngineConfig {
   /** Default avatar→door-center distance that triggers opening, when a DoorSpec
    *  omits `openRadius`. Added to half the door's width at runtime. */
   doorOpenMargin: number;
+  /** WALL-GLIDE: when steering would push this body INTO a surface it is
+   *  currently pressed against, steer PARALLEL to the face instead (the
+   *  constrained-slide branches record the contact normal; steering projects
+   *  the desired direction onto the tangent while the contact is fresh).
+   *  Absent/false = the old behaviour, byte-identical: re-accelerate at the
+   *  aim every frame and let the axis-slide zero the blocked component — which
+   *  is the "scrapes along the table" grind. ON for host-driven NPC bodies;
+   *  OFF for the player/spark-driven walker (a tangent override would fight
+   *  the user's own gaze — their aim is authoritative, even into a wall). */
+  wallGlide?: boolean;
 }
 
 export const WORLD_ENGINE_DEFAULTS: WorldEngineConfig = {
@@ -719,6 +768,31 @@ const FACE_SPEED_MIN = 0.15;
  *  desired direction, so no single frame can produce a 180° flip (≈0.5s for a full
  *  reversal at 12 rad/s — still snappy for real turns). */
 const FACE_TURN_RATE = 12;
+/** Seconds a wall-glide contact stays live after its last collision frame. Long
+ *  enough that gliding along a face (which stops feeding the collider) doesn't
+ *  lose the contact mid-face; short enough that the straight at the aim gets
+ *  retried a few times a second — which is also how a glide past a convex
+ *  corner ends. */
+const CONTACT_HOLD_S = 0.3;
+
+/** Record a wall-glide contact on `a` (call BEFORE zeroing the blocked velocity —
+ *  the residual tangential component seeds `side`, the natural way around: it is
+ *  the direction the slide was already carrying the body). A head-on hit with no
+ *  residual keeps the previous side against the same face (no dither), else
+ *  defaults +1 and lets the steering block's sideways-aim rule re-pin it. */
+function recordContact(a: AvatarState, nx: number, ny: number, time: number): void {
+  const prev = a.contact;
+  const along = a.vx * -ny + a.vy * nx; // v · tangent(-ny, nx)
+  const side: 1 | -1 =
+    Math.abs(along) > 1e-3
+      ? along > 0
+        ? 1
+        : -1
+      : prev && prev.nx === nx && prev.ny === ny
+        ? prev.side
+        : 1;
+  a.contact = { nx, ny, until: time + CONTACT_HOLD_S, side };
+}
 
 function advanceAvatar(
   a: AvatarState,
@@ -739,10 +813,39 @@ function advanceAvatar(
     const dx = aim.x - a.x;
     const dy = aim.y - a.y;
     const d = Math.hypot(dx, dy);
-    const dirx = d > 1e-4 ? dx / d : 0;
-    const diry = d > 1e-4 ? dy / d : 0;
+    let dirx = d > 1e-4 ? dx / d : 0;
+    let diry = d > 1e-4 ? dy / d : 0;
     // Distance at which we want to be STOPPED — a hair short of the gaze.
-    const dStop = d - config.aimDeadRadius;
+    let dStop = d - config.aimDeadRadius;
+    // WALL-GLIDE (config.wallGlide bodies): pressed against a surface whose
+    // face the aim points INTO, steer along the face instead. Without this the
+    // steering re-accelerates at the aim every frame, the slide branches below
+    // zero the blocked component every frame, and the net motion is the tiny
+    // tangential residue — the body grinds down the fixture's face. The glide
+    // redirects the WHOLE desired speed along the tangent and runs the normal
+    // approach law on the TANGENTIAL distance to the aim's foot: far foot
+    // (a route corner somewhere past the fixture) → walk the face flat out;
+    // foot underfoot (the aim sits square behind the face — as close as this
+    // body can get) → ease to rest there rather than orbit it. The contact is
+    // short-lived: when it expires the straight at the aim is simply tried
+    // again — past a convex corner that attempt clears and the glide is over;
+    // still blocked, one frame re-records it. `side` pins which way along the
+    // face (seeded from the contact's own slide residue), so a near-head-on
+    // aim can't dither between the two tangents.
+    if (config.wallGlide && a.contact) {
+      const c = a.contact;
+      if (state.time > c.until) {
+        delete a.contact; // stale — the straight gets its retry
+      } else if (dStop > 0 && dirx * c.nx + diry * c.ny < 0) {
+        const tx = -c.ny;
+        const ty = c.nx;
+        const foot = dx * tx + dy * ty; // metres to the aim's foot along the face
+        if (Math.abs(foot) > 0.15) c.side = foot > 0 ? 1 : -1;
+        dirx = tx * c.side;
+        diry = ty * c.side;
+        dStop = Math.abs(foot);
+      }
+    }
     if (dStop <= 0) {
       // Gaze is resting ON (or just off) the avatar: don't chase it — brake to a
       // stop, but turn to face it.
@@ -838,12 +941,25 @@ function advanceAvatar(
       a.x = nx;
       a.y = ny;
     } else if (constraint.walkable({ x: nx, y: a.y }, r)) {
+      // Y blocked, X slides. The blocked axis IS the surface normal here —
+      // walls and fixture keep-outs are axis-aligned boxes — so a wallGlide
+      // body records it (pre-zero, while the velocity still says which face)
+      // for the steering block to walk parallel to next frame.
       a.x = nx;
+      if (config.wallGlide) recordContact(a, 0, a.vy > 0 ? -1 : 1, state.time);
       a.vy = 0;
     } else if (constraint.walkable({ x: a.x, y: ny }, r)) {
       a.y = ny;
+      if (config.wallGlide) recordContact(a, a.vx > 0 ? -1 : 1, 0, state.time);
       a.vx = 0;
     } else {
+      // Corner pocket — both axes blocked. Record against the DOMINANT
+      // component: that is the face the body is chiefly pressing on, and the
+      // glide along it is what walks the body out of the pocket.
+      if (config.wallGlide && (a.vx !== 0 || a.vy !== 0)) {
+        if (Math.abs(a.vx) >= Math.abs(a.vy)) recordContact(a, a.vx > 0 ? -1 : 1, 0, state.time);
+        else recordContact(a, 0, a.vy > 0 ? -1 : 1, state.time);
+      }
       a.vx = 0;
       a.vy = 0;
     }
@@ -1160,6 +1276,40 @@ export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
 function doorOpenRadius(s: DoorSpec, config: WorldEngineConfig): number {
   if (s.openRadius !== undefined) return s.openRadius;
   return Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y) / 2 + config.doorOpenMargin;
+}
+
+/**
+ * ONE DOORWAY, SEVERAL DOOR STRUCTURES.
+ *
+ * A gap between two rooms is realised TWICE — each room lowers its own wall to
+ * its own door leaf (`expandWorldBuildings`), so the boundary between a living
+ * room and a bedroom carries e.g. both `h_0_north_d0` and `h_0_r1_south_d0` on
+ * exactly the same segment. Collision blocks on ANY shut door, so opening one
+ * twin and not the other leaves the gap as solid as a wall.
+ *
+ * This key identifies the DOORWAY rather than the leaf, so an act on one door
+ * lands on every door that IS that doorway. Endpoints are sorted, so the two
+ * rooms describing the same gap in opposite winding still agree, and rounded to
+ * the centimetre so float noise between two independent wall lowerings can't
+ * split one doorway into two.
+ */
+function doorwayKey(s: DoorSpec): string {
+  const q = (n: number) => Math.round(n * 100);
+  const a = `${q(s.a.x)},${q(s.a.y)}`;
+  const b = `${q(s.b.x)},${q(s.b.y)}`;
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** Every door structure that IS the same doorway as `doorId` (including it).
+ *  Empty for an unknown id. See `doorwayKey` for why there is usually a twin. */
+function doorwayPeers(state: WorldState, doorId: string): string[] {
+  const structures = state.spec.structures ?? [];
+  const self = structures.find((s) => s.kind === "door" && s.id === doorId);
+  if (!self || self.kind !== "door") return [];
+  const key = doorwayKey(self);
+  return structures
+    .filter((s): s is Extract<StructureSpec, { kind: "door" }> => s.kind === "door" && doorwayKey(s) === key)
+    .map((s) => s.id);
 }
 
 /**
@@ -1762,19 +1912,27 @@ export function accessibleBuildings(
  * cross a room/building boundary, insert a pair of transit points that LINE UP
  * with the real doorway (its live segment center, so an OFF-CENTRE door is
  * honoured) — one a step short on the near side, one a step past on the far
- * side. An NPC steered through these approaches the door head-on (auto-opening
- * it), passes, and continues, instead of grinding on the wall beside it.
+ * side. An NPC steered through these approaches the door head-on, passes, and
+ * continues, instead of grinding on the wall beside it.
  *
- * Returns the waypoints AFTER `from`, ending at `to`. Same room (or no door
- * chain / an all-locked barrier between them) ⇒ just `[to]` (the straight line;
- * the caller's per-leg timeout copes). Routes only through UNLOCKED doors.
+ * Both points of each pair carry that doorway's `doorId`. That tag is what
+ * eventually OPENS the door: whoever steers a body copies the live waypoint's
+ * tag into `AvatarState.crossingDoorId`, and `tickDoors` swings only the doors
+ * some body is actually walking through. Without the tag a door has no way to
+ * tell a body coming through it from one crossing the room beside it, which is
+ * why this used to be guessed from proximity.
+ *
+ * Returns the waypoints AFTER `from`, ending at `to` (untagged — an endpoint is
+ * not a crossing). Same room (or no door chain / an all-locked barrier between
+ * them) ⇒ just `[to]` (the straight line; the caller's per-leg timeout copes).
+ * Routes only through UNLOCKED doors.
  */
 export function routeThroughDoors(
   state: WorldState,
   from: { x: number; y: number },
   to: { x: number; y: number },
   transit = 1.1,
-): Vec2[] {
+): TransitPoint[] {
   const fromNode = buildingAt(state, from.x, from.y)?.id ?? OUTDOORS;
   const toNode = buildingAt(state, to.x, to.y)?.id ?? OUTDOORS;
   if (fromNode === toNode) return [to];
@@ -1782,6 +1940,8 @@ export function routeThroughDoors(
   // Every unlocked door as an edge between the two rooms it joins, keeping its
   // real center + wall normal (sideA is the +normal side).
   interface DoorEdge {
+    /** The door structure's own id — rides out on the transit points it makes. */
+    id: string;
     a: string;
     b: string;
     mid: Vec2;
@@ -1806,7 +1966,7 @@ export function routeThroughDoors(
     const sideA = buildingAt(state, mid.x + nx * eps, mid.y + ny * eps)?.id ?? OUTDOORS;
     const sideB = buildingAt(state, mid.x - nx * eps, mid.y - ny * eps)?.id ?? OUTDOORS;
     if (sideA === sideB) continue;
-    const edge: DoorEdge = { a: sideA, b: sideB, mid, nx, ny };
+    const edge: DoorEdge = { id: s.id, a: sideA, b: sideB, mid, nx, ny };
     edges.push(edge);
     link(sideA, sideB, edge);
     link(sideB, sideA, edge);
@@ -1839,33 +1999,78 @@ export function routeThroughDoors(
   }
   chain.reverse();
 
-  const pts: Vec2[] = [];
+  const pts: TransitPoint[] = [];
   for (const { from: fromSide, edge } of chain) {
     const nearPlus = edge.a === fromSide; // is the near side on +normal?
     const s = nearPlus ? 1 : -1;
-    pts.push({ x: edge.mid.x + edge.nx * transit * s, y: edge.mid.y + edge.ny * transit * s });
-    pts.push({ x: edge.mid.x - edge.nx * transit * s, y: edge.mid.y - edge.ny * transit * s });
+    // BOTH points carry the tag, so the door is already swinging while the body
+    // walks up to the near point rather than only once it starts the crossing
+    // itself — that is what makes the transit seamless.
+    const near = { x: edge.mid.x + edge.nx * transit * s, y: edge.mid.y + edge.ny * transit * s };
+    const far = { x: edge.mid.x - edge.nx * transit * s, y: edge.mid.y - edge.ny * transit * s };
+    pts.push({ ...near, doorId: edge.id });
+    pts.push({ ...far, doorId: edge.id });
   }
-  pts.push(to);
+  pts.push({ x: to.x, y: to.y });
   return pts;
 }
 
-/** Ease every door toward open (an avatar is within range and it isn't locked)
- *  or shut (nobody near). A locked door opens for an avatar carrying its key
- *  object (which permanently unlocks it). Runs once per tick, before locomotion. */
+/**
+ * Ease every door toward open or shut. Runs once per tick, before locomotion.
+ *
+ * A door opens because someone ACTS on it, never because of who happens to be
+ * standing around — the same rule container lids follow (`ObjectState.heldOpen`).
+ * Two ways it is acted on:
+ *
+ *   • A body is WALKING THROUGH IT: its live route leg is this door's transit,
+ *     so it declared `crossingDoorId`. Only a body that CAN open doors qualifies.
+ *   • A standing instruction: `setDoorOpen` pinned it open.
+ *
+ * Once open it is HELD while ANY body is still physically in the opening — that
+ * is not a second way to open a door, only a refusal to swing a leaf through
+ * someone. It lets a graspless creature (a pet) follow through behind a body
+ * that opened the way, and keeps a body paused mid-crossing from being shut in.
+ *
+ * A locked door opens for a crossing body carrying its key object (which
+ * permanently unlocks it).
+ *
+ * WHAT THIS REPLACED: the open state used to be inferred from geometry every
+ * tick — anybody straddling or moving across the throat swung the door. It was
+ * already narrowed once (from a bare radius circle, which tripped on residents
+ * merely walking past a doorway), but the shape of the bug survived: doors moved
+ * with nobody acting on them, and no action could open one, because there was
+ * nothing for an action to set. `pinned` existed for exactly that and was never
+ * written by anything.
+ */
 function tickDoors(state: WorldState, step: number, config: WorldEngineConfig): void {
   const structures = state.spec.structures;
   if (!structures) return;
   const avatars = Object.values(state.avatars);
+  // A declaration names ONE door structure, but the gap it stands in is usually
+  // two coincident ones (see `doorwayKey`) and a body can only walk through if
+  // BOTH swing. So resolve every declaration to the DOORWAY it means, and match
+  // bodies to doors on that — per body, so a key carried through one doorway
+  // can't turn the lock on another that somebody else happens to be crossing.
+  let wayOfDoor: Map<string, string> | null = null;
+  const declaredWay = new Map<string, string>(); // avatar id → doorway key
+  for (const a of avatars) {
+    if (!a.crossingDoorId) continue;
+    if (!wayOfDoor) {
+      wayOfDoor = new Map();
+      for (const st of structures) if (st.kind === "door") wayOfDoor.set(st.id, doorwayKey(st));
+    }
+    const way = wayOfDoor.get(a.crossingDoorId);
+    if (way) declaredWay.set(a.id, way);
+  }
   for (const s of structures) {
     if (s.kind !== "door") continue;
     const door = state.doors[s.id];
     if (!door) continue;
     const cx = (s.a.x + s.b.x) / 2;
     const cy = (s.a.y + s.b.y) / 2;
-    const radius = doorOpenRadius(s, config);
     // The doorway's own axes: `u` runs ALONG the wall through the opening,
-    // `n` runs ACROSS it (the direction a body travels to pass through).
+    // `n` runs ACROSS it (the direction a body travels to pass through). Used
+    // ONLY for the in-the-opening test below — never to decide who opens it.
     const dxw = s.b.x - s.a.x;
     const dyw = s.b.y - s.a.y;
     const wlen = Math.hypot(dxw, dyw) || 1;
@@ -1873,44 +2078,32 @@ function tickDoors(state: WorldState, step: number, config: WorldEngineConfig): 
     const uy = dyw / wlen;
     const nx = -uy;
     const ny = ux;
-    // A body opens a door only where it is actually TRAVERSING the opening —
-    // not merely passing nearby. The old bare radius circle tripped on any body
-    // within ~2 m of the door CENTRE, so a resident crossing the room beside a
-    // doorway, or shuffling along the wall past it, swung it for no reason. Two
-    // ways to qualify, both gated to the door's THROAT (laterally within the
-    // opening, never off past a jamb):
-    //   • STANDING IN the doorway — physically straddling the door plane (so a
-    //     paused body mid-crossing keeps it open), or
-    //   • MOVING ACROSS it — a velocity component through the plane (walking a
-    //     course that carries it through, opening a step before arrival).
-    // A body ambling parallel to the wall in front of the opening has neither.
     const halfThroat = wlen / 2 + config.avatarRadius + 0.3;
     const inDoorBand = config.avatarRadius + s.thickness / 2 + 0.2;
-    let anyNear = false;
-    let capableNear = false; // a body that CAN open doors is here to work the door
+    const myWay = declaredWay.size ? doorwayKey(s) : "";
+    let inOpening = false; // a body physically in the doorway — don't shut on it
+    let crossingCapable = false; // a body walking this door's transit leg
     for (const a of avatars) {
+      // Crossing THIS doorway — whether the body named this leaf or its twin.
+      const walkingThrough = declaredWay.get(a.id) === myWay && !!myWay;
+      if (walkingThrough && a.canOpen !== false) crossingCapable = true;
       const rx = a.x - cx;
       const ry = a.y - cy;
       const along = rx * ux + ry * uy; // lateral offset within the opening
       const across = rx * nx + ry * ny; // distance across the doorway plane
-      if (Math.abs(along) > halfThroat) continue; // off past a jamb — walking by
-      const throughSpeed = a.vx * nx + a.vy * ny; // signed speed across the plane
-      const straddling = Math.abs(across) <= inDoorBand;
-      const crossing = Math.abs(across) <= radius && Math.abs(throughSpeed) > 0.1;
-      if (!straddling && !crossing) continue;
-      anyNear = true;
-      if (a.canOpen !== false) capableNear = true;
-      if (door.locked && s.keyObjectId && state.objects[s.keyObjectId]?.carriedBy === a.id) {
-        door.locked = false; // the key turns the lock
+      const straddling = Math.abs(along) <= halfThroat && Math.abs(across) <= inDoorBand;
+      if (straddling) inOpening = true;
+      // The key turns the lock for the body bringing it THROUGH — carrying the
+      // key past a door in the next room is not unlocking it.
+      if (
+        door.locked && s.keyObjectId && (walkingThrough || straddling) &&
+        state.objects[s.keyObjectId]?.carriedBy === a.id
+      ) {
+        door.locked = false;
       }
     }
-    // OPENING is a CAPABILITY (not free proximity): only a body that can open
-    // doors works one, and once open it is HELD — it stays open while ANY body
-    // lingers (so a graspless follower keeps it open and can slip through), and
-    // shuts only when everyone has left. A `pinned` door (an "open the door"
-    // command) stays open with nobody near.
-    if (!door.locked && capableNear) door.held = true;
-    else if (!anyNear && !door.pinned) door.held = false;
+    if (!door.locked && crossingCapable) door.held = true;
+    else if (!inOpening && !door.pinned) door.held = false;
     const target = !door.locked && door.held ? 1 : 0;
     if (step > 0) {
       door.open += (target - door.open) * (1 - Math.exp(-config.doorSwingRate * step));
@@ -1930,6 +2123,34 @@ export function unlockDoor(state: WorldState, doorId: string): void {
 export function lockDoor(state: WorldState, doorId: string): void {
   const d = state.doors[doorId];
   if (d) d.locked = true;
+}
+
+/**
+ * OPEN OR CLOSE A DOOR AS AN ACT — the door half of `setOpen` on a container.
+ *
+ * `open: true` pins it open: it swings and STAYS open with nobody near, which is
+ * the whole difference between opening a door and walking through one. `false`
+ * releases the pin, so it shuts unless somebody is crossing it right now (and
+ * never shuts on a body standing in the opening — `tickDoors` holds it for them).
+ *
+ * The swing is still eased, so the leaf animates either way; nothing waits on it.
+ * A LOCKED door refuses to be opened — the caller must `unlockDoor` first (or
+ * bring its key through), so this can't be used to walk past a lock. No-op for
+ * an unknown id.
+ *
+ * Acts on the whole DOORWAY, not one leaf: a room boundary carries a door
+ * structure from each side (`doorwayKey`), and collision blocks on either, so
+ * opening half of one gap leaves it as solid as a wall.
+ */
+export function setDoorOpen(state: WorldState, doorId: string, open: boolean): void {
+  if (!state.doors[doorId]) return;
+  for (const id of doorwayPeers(state, doorId)) {
+    const d = state.doors[id];
+    if (!d) continue;
+    if (open && d.locked) continue;
+    d.pinned = open;
+    d.held = open;
+  }
 }
 
 // ---------------------------------------------------------------------------

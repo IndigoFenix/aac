@@ -32,16 +32,31 @@ import { houseDoorstep } from "./goods";
 import { roadDistance, type TownStreets } from "./streets";
 import type { TownHouse } from "./plan";
 
-/** Street meters beyond which a household counts as UNSERVED. */
+/** Street meters beyond which a household counts as UNSERVED — the
+ *  clock-blind LEGACY radius (a plan built without a WorldScale). A
+ *  scale-aware plan derives it instead (scale.ts `serviceRadiusM`):
+ *  needs that drain faster mean districts small enough to serve everyone. */
 export const NEIGH_CONVENIENT = 120;
 /** Founding mass that opens a stall — a couple dozen households
  *  half-again too far, or fewer truly remote ones. Together with the
  *  convenience radius this sets market density: one stall per rough
  *  walk-ball of ~60–90 households. */
 export const NEIGH_FOUND_MASS = 18;
+/** Founding mass that digs a WELL — civic street furniture, no
+ *  shopkeeper's livelihood behind it, so the bar is a third of a stall's:
+ *  a handful of households past the thirst-cycle walk get their corner
+ *  well long before they'd rate a shop. */
+export const WELL_FOUND_MASS = 6;
 /** Mass cap per household: remoteness makes founding likelier, but a
  *  handful of far-flung stragglers can't open a shop alone. */
 const MASS_CAP = 2;
+
+/** What a service pass founds: how far its clientele may walk (one-way
+ *  street metres) and how much stranded demand opens one point. */
+export interface ServiceFacility {
+  convenientM: number;
+  foundMass: number;
+}
 
 interface Pending {
   house: TownHouse;
@@ -51,7 +66,6 @@ interface Pending {
   w: number;
 }
 
-const massOf = (d: number): number => Math.min(MASS_CAP, d / NEIGH_CONVENIENT - 1);
 const centerOf = (h: TownHouse): { x: number; y: number } => ({ x: h.dx + h.w / 2, y: h.dy + h.h / 2 });
 
 /** Which arm of town a house belongs to: the arterial subtree its street
@@ -69,15 +83,37 @@ function armOf(h: TownHouse): number {
  * source (plaza market, or the hall for market-less towns) — the ONLY
  * pre-existing source considered, because work buildings sit at street
  * tips, which move as the town grows and would break prefix stability.
+ * `convenientM` defaults to the clock-blind legacy radius; a scale-aware
+ * plan passes the derived one (scale.ts `serviceRadiusM`).
  */
 export function foundNeighborhoodMarkets(
   houses: TownHouse[],
   anchor: { x: number; y: number },
   net: TownStreets,
+  convenientM: number = NEIGH_CONVENIENT,
+): TownHouse[] {
+  return foundServicePoints(houses, [anchor], net, { convenientM, foundMass: NEIGH_FOUND_MASS });
+}
+
+/**
+ * THE GENERAL SERVICE PASS — the same demand-founding walk for ANY
+ * facility a need is served at (market stalls on the hunger radius, wells
+ * on the thirst radius): lot order in, per-arm founding mass, the point
+ * lands at the pending lot nearest the mass centroid, and every founded
+ * point immediately serves — self-limiting, prefix-stable, one point per
+ * walk-ball of unserved households. The caller decides what the chosen
+ * lot BECOMES (a stall converts the house; a well stands on its verge).
+ */
+export function foundServicePoints(
+  houses: TownHouse[],
+  anchors: ReadonlyArray<{ x: number; y: number }>,
+  net: TownStreets,
+  facility: ServiceFacility,
 ): TownHouse[] {
   const dist = (a: { x: number; y: number }, b: { x: number; y: number }): number => roadDistance(net, a, b);
   const origin = { x: 0, y: 0 };
-  const sources = [anchor];
+  const massOf = (d: number): number => Math.min(MASS_CAP, d / facility.convenientM - 1);
+  const sources = [...anchors];
   const stalls: TownHouse[] = [];
   // Mass gathers per ARM (arterial subtree) so opposite edges of town
   // never average a stall into the center.
@@ -87,7 +123,7 @@ export function foundNeighborhoodMarkets(
     const hd = houseDoorstep(origin, h);
     let d = Infinity;
     for (const s of sources) d = Math.min(d, dist(hd, s));
-    if (d <= NEIGH_CONVENIENT) continue;
+    if (d <= facility.convenientM) continue;
     const arm = armOf(h);
     let bucket = buckets.get(arm);
     if (!bucket) {
@@ -95,7 +131,7 @@ export function foundNeighborhoodMarkets(
       buckets.set(arm, bucket);
     }
     bucket.push({ house: h, d, w: massOf(d) });
-    if (bucket.reduce((a, p) => a + p.w, 0) < NEIGH_FOUND_MASS) continue;
+    if (bucket.reduce((a, p) => a + p.w, 0) < facility.foundMass) continue;
 
     // Found: convert the pending lot nearest the mass-weighted centroid.
     let sx = 0, sy = 0, sw = 0;
@@ -116,14 +152,14 @@ export function foundNeighborhoodMarkets(
     stalls.push(lot.house);
     const stallDoor = houseDoorstep(origin, lot.house);
     sources.push(stallDoor);
-    // The stall serves its neighborhood NOW: re-measure every pending
+    // The point serves its neighborhood NOW: re-measure every pending
     // household against it and drop the ones it satisfied.
     for (const [k, list] of buckets) {
       buckets.set(k, list.filter(p => {
         if (p.house === lot.house) return false;
         const d2 = dist(houseDoorstep(origin, p.house), stallDoor);
         if (d2 < p.d) { p.d = d2; p.w = massOf(d2); }
-        return p.d > NEIGH_CONVENIENT;
+        return p.d > facility.convenientM;
       }));
     }
   }

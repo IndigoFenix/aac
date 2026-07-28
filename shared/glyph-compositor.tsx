@@ -17,7 +17,12 @@ import {
   type DimensionPattern,
   type AnimatedSpriteFacet,
 } from "./glyph-registry.js";
-import { resolveEmoji, isEmoji, isNonReversibleEmoji } from "./emoji-registry.js";
+import {
+  resolveEmoji,
+  isEmoji,
+  isNonReversibleEmoji,
+  isNonReversibleItem,
+} from "./emoji-registry.js";
 import { buildNumeralGlyph, parseNumeralValue, type NumeralShape } from "./numeral-glyph.js";
 import {
   parseGlyph,
@@ -1493,11 +1498,19 @@ function TenseCornerBadge(props: ToneCornerBadgeProps & { rtl?: boolean }): Reac
 // RTL handling
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Future hook for items that shouldn't be horizontally mirrored in RTL. */
-function isNonReversible(_item: VocabularyItem): boolean {
-  // No items currently flagged as non-reversible. When added, this should
-  // read a `nonReversible: true` field on the registry item.
-  return false;
+/**
+ * True when an item must NOT be horizontally mirrored in RTL. The rule itself
+ * lives in emoji-registry (`isNonReversibleItem`) so that server code and tests
+ * can reach it without importing this React module; this is just the local name
+ * the render paths below read.
+ *
+ * Consulting it per ITEM and not only per emoji matters here: the badge stack
+ * tests item reversibility alone, so before this a `?` badge on a WH-word would
+ * flip in Hebrew the moment such a badge gained bundled art, even though the
+ * emoji path already knew better.
+ */
+function isNonReversible(item: VocabularyItem): boolean {
+  return isNonReversibleItem(item);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

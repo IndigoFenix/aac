@@ -33,6 +33,7 @@ import { CallPanel } from '@/features/call/CallPanel';
 import { DeepAnalysisPanel } from '@/features/DeepAnalysisPanel';
 import { SharesPanel } from '@/features/SharesPanel';
 import { InsuranceBridgePanel } from '@/features/InsuranceBridgePanel';
+import { DownloadsPanel } from '@/features/DownloadsPanel';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
@@ -198,6 +199,8 @@ export function MainLayout() {
         return <InsuranceBridgePanel isOpen={isPanelOpen} />;
       case 'videoCaption':
         return <VideoCaptionPanel isOpen={isPanelOpen} />;
+      case 'downloads':
+        return <DownloadsPanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

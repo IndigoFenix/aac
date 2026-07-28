@@ -227,6 +227,7 @@ export const ko = {
     calendar: "캘린더",
     personChat: "메시지",
     call: "통화",
+    downloads: "앱 다운로드",
   },
 
   // ============================================================================
@@ -2717,6 +2718,51 @@ export const ko = {
   // ============================================================================
   // DEEP ANALYSIS
   // ============================================================================
+  // ============================================================================
+  // APP DOWNLOADS (AAC desktop installer + iPad .ipa)
+  // ============================================================================
+  downloads: {
+    title: "앱 다운로드",
+    subtitle: "{{student}}의 기기에 Aivota AAC 앱을 설치하세요. 기기에 맞는 버전을 선택하세요.",
+    loading: "최신 버전을 확인하는 중…",
+    loadFailed: "최신 버전을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    notPublished: "아직 배포된 빌드가 없습니다.",
+    version: "버전 {version}",
+    released: "{date} 배포",
+    helpNote: "설치에 문제가 있나요? Aivota 지원팀에 문의하고 위에 표시된 버전 번호를 함께 알려 주세요.",
+    windows: {
+      title: "Windows 앱",
+      desc: "Windows 10 또는 11(64비트)용 전체 데스크톱 앱입니다. Tobii 기기를 이용한 시선 추적을 지원합니다.",
+      button: "Windows용 다운로드",
+      installTitle: "설치 방법",
+      step1: "설치 파일을 내려받아 실행합니다. Windows가 게시자를 확인할 수 없다고 경고하면 \"추가 정보\"를 누른 뒤 \"실행\"을 선택하세요.",
+      step2: "설치 마법사를 따라 진행합니다. Aivota AAC가 시작 메뉴에 추가됩니다.",
+      step3: "앱을 열고 {{student}}의 계정으로 로그인합니다.",
+      autoUpdateNote: "Windows 앱은 스스로 업데이트합니다. 설치한 뒤에는 새 버전이 백그라운드에서 내려받아지므로, 이 페이지는 최초 설치나 새 컴퓨터에만 필요합니다.",
+    },
+    ios: {
+      title: "iPad 앱",
+      desc: "같은 앱의 iPadOS 버전입니다. 터치 전용이며 iPad에서는 시선 추적을 사용할 수 없습니다.",
+      button: "iPad용 다운로드(.ipa)",
+      whyNote: "iPad 앱은 아직 App Store에 없어서 Sideloadly라는 무료 도구로 파일에서 설치합니다. iPad가 아니라 Windows 또는 Mac 컴퓨터에서 설치해야 합니다.",
+      installTitle: "Sideloadly로 설치하는 방법",
+      needTitle: "필요한 것:",
+      needComputer: "Windows 또는 Mac 컴퓨터.",
+      needCable: "iPad를 그 컴퓨터에 연결할 USB 케이블.",
+      needAppleId: "Apple ID — 무료 계정으로도 됩니다.",
+      step1: "컴퓨터에 다음 주소에서 Sideloadly를 설치하세요:",
+      step2: "Windows만 해당: Microsoft Store에서 \"Apple 기기\"(또는 iTunes)를 설치한 뒤 컴퓨터를 다시 시작하세요. Sideloadly가 iPad를 인식하려면 필요합니다.",
+      step3: "위의 .ipa 파일을 그 컴퓨터로 내려받으세요.",
+      step4: "iPad를 USB로 연결합니다. iPad가 물어보면 \"신뢰\"를 누르고 암호를 입력하세요.",
+      step5: "Sideloadly를 열고 .ipa 파일을 끌어다 놓은 뒤 iPad를 선택하고 Apple ID를 입력한 다음 Start를 누르세요. 요청되면 암호를 입력합니다.",
+      step6: "iPad에서 설정 → 일반 → VPN 및 기기 관리로 가서 Apple ID를 누르고 \"신뢰\"를 누르세요. 그 전에는 앱이 열리지 않습니다.",
+      step7: "iPad에서 Aivota AAC를 열고 로그인하세요.",
+      expiryWarning: "무료 Apple ID를 쓰면 7일 후 앱이 열리지 않습니다. Sideloadly 단계를 다시 실행하면 갱신됩니다. 유료 Apple Developer 계정을 쓰면 1년으로 늘어납니다.",
+      updateNote: "iPad 앱은 스스로 업데이트할 수 없습니다. 여기에 새 버전이 올라오면 다시 내려받아 같은 방법으로 설치하세요.",
+      limitsNote: "무료 Apple ID 제한: 기기당 앱 약 3개, Apple ID당 기기 약 3대. Sideloadly가 앱 식별자를 바꿀 수 있는데 정상입니다.",
+    },
+  },
+
   deepAnalysis: {
     title: "심층 분석",
     history: "기록",

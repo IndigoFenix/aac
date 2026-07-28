@@ -40,6 +40,7 @@ import {
   Receipt,
   Captions,
   Phone,
+  MonitorDown,
 } from 'lucide-react';
 import { apiUrl } from '@/lib/queryClient';
 import { useState } from 'react';
@@ -187,6 +188,16 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       labelKey: 'nav.videoCaption',
       feature: 'videoCaption' as FeatureType,
       testId: 'nav-video-caption',
+      badge: undefined as string | undefined,
+    }] : []),
+    // App downloads (Windows installer + iPad .ipa) — anyone licensed for the
+    // AAC needs to be able to install it. Deliberately NOT student-scoped, so
+    // unlike AAC Settings it stays available with no student selected.
+    ...(aacEnabled ? [{
+      icon: MonitorDown,
+      labelKey: 'nav.downloads',
+      feature: 'downloads' as FeatureType,
+      testId: 'nav-downloads',
       badge: undefined as string | undefined,
     }] : []),
   ];

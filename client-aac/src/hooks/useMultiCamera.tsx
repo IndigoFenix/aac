@@ -8,6 +8,15 @@ import {
   type ReactNode,
 } from 'react';
 import { useCamera } from '@/hooks/useCamera';
+import { isSingleCameraCaptureOS } from '@/lib/platform';
+
+// One camera only on iOS/iPadOS WebKit — starting a second capture kills the
+// first one's track (which used to ping-pong forever via the track-ended
+// recovery below). Evaluated once; the OS doesn't change under us.
+const SINGLE_CAMERA_ONLY = isSingleCameraCaptureOS(
+  typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  typeof navigator !== 'undefined' ? navigator.maxTouchPoints ?? 0 : 0,
+);
 
 interface CameraStream {
   id: string;
@@ -171,6 +180,11 @@ function useMultiCameraImpl(options?: { autoStart?: boolean }) {
       } else {
         console.log('No cameras available for assignment');
         return;
+      }
+
+      if (SINGLE_CAMERA_ONLY && environmentCamera) {
+        console.log('Single-capture OS (iOS/iPadOS): environment camera disabled, user camera only');
+        environmentCamera = null;
       }
 
       console.log('Auto-assigned cameras:', {
@@ -445,6 +459,13 @@ export function MultiCameraProvider({ children }: { children: ReactNode }) {
   const [elReady, setElReady] = useState(false); // flips once the element is created
   const [cameraDiag, setCameraDiag] = useState<CameraDiagEvent[]>([]);
 
+  // Track-ended recovery throttle. Re-acquisition itself can end tracks (on
+  // iOS a new capture kills the previous one), so an unthrottled recovery
+  // becomes a permanent acquire/kill loop that churns the whole app.
+  const lastRecoveryRef = useRef(0);
+  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const RECOVERY_MIN_INTERVAL_MS = 5000;
+
   const logDiag = useCallback((kind: string, detail?: string) => {
     const ev: CameraDiagEvent = { t: Date.now(), kind, detail };
     console.log(`[SharedCamera] ${kind}${detail ? `: ${detail}` : ''}`);
@@ -502,6 +523,10 @@ export function MultiCameraProvider({ children }: { children: ReactNode }) {
       v.srcObject = null;
       v.remove();
       userVideoRef.current = null;
+      if (recoveryTimerRef.current !== null) {
+        clearTimeout(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -535,9 +560,20 @@ export function MultiCameraProvider({ children }: { children: ReactNode }) {
       v.play().catch(() => {});
     };
     const onEnded = () => {
-      // iOS dropped the capture entirely — re-acquire from scratch.
+      // iOS dropped the capture entirely — re-acquire from scratch, but at
+      // most once per RECOVERY_MIN_INTERVAL_MS (see throttle refs above).
       logDiag('track-ended', track.label);
-      base.autoAssignCameras().catch(() => {});
+      if (recoveryTimerRef.current !== null) return; // recovery already queued
+      const wait = Math.max(
+        0,
+        RECOVERY_MIN_INTERVAL_MS - (Date.now() - lastRecoveryRef.current),
+      );
+      recoveryTimerRef.current = setTimeout(() => {
+        recoveryTimerRef.current = null;
+        lastRecoveryRef.current = Date.now();
+        logDiag('capture-recovery');
+        base.autoAssignCameras().catch(() => {});
+      }, wait);
     };
     track.addEventListener('mute', onMute);
     track.addEventListener('unmute', onUnmute);

@@ -13,7 +13,7 @@ import {
   tickWorld,
   applyRemoteAvatar,
   smoothRemoteAvatars,
-  applyRemoteToy,
+  applyRemoteObject,
   applyPossession,
   WORLD_ENGINE_DEFAULTS,
   type WorldEngineConfig,
@@ -67,10 +67,10 @@ describe("WorldSpec certification", () => {
     expect(res.ok).toBe(false);
   });
 
-  it("rejects a toy placed outside the manifold", () => {
+  it("rejects an object placed outside the manifold", () => {
     const bad = {
       ...socialFieldSpec,
-      toys: [{ ...socialFieldSpec.toys[0], x: 999 }],
+      objects: [{ ...socialFieldSpec.objects[0], x: 999 }],
     };
     const res = certifyWorldSpec(bad);
     expect(res.ok).toBe(false);
@@ -89,10 +89,13 @@ describe("WorldSpec certification", () => {
   });
 
   it("rejects friction at the forbidden endpoints", () => {
+    // Friction lives on the object's `push` tuning, not on the object itself —
+    // 0 would roll forever and 1 would stop dead, so both ends are excluded.
+    const ball = socialFieldSpec.objects[0]!;
     for (const friction of [0, 1]) {
       const res = certifyWorldSpec({
         ...socialFieldSpec,
-        toys: [{ ...socialFieldSpec.toys[0], friction }],
+        objects: [{ ...ball, push: { ...ball.push!, friction } }],
       });
       expect(res.ok).toBe(false);
     }
@@ -112,15 +115,15 @@ describe("avatar locomotion", () => {
 describe("soccer-ball possession", () => {
   it("grabs the ball on touch and dribbles it ahead", () => {
     const s = createWorldState(socialFieldSpec, "local", 2);
-    const events = runUntil(s, { x: 52, y: 30 }, (st) => st.toys.ball.possessedBy === "local");
+    const events = runUntil(s, { x: 52, y: 30 }, (st) => st.objects.ball.possessedBy === "local");
 
-    expect(s.toys.ball.possessedBy).toBe("local");
+    expect(s.objects.ball.possessedBy).toBe("local");
     expect(events.some((e) => e.type === "possession-request")).toBe(true);
 
     // Dribble a touch further and check the ball rides ahead along facing (+x).
     run(s, { x: 52, y: 30 }, 0.2);
     const a = s.avatars.local;
-    const b = s.toys.ball;
+    const b = s.objects.ball;
     expect(b.possessedBy).toBe("local");
     expect(b.x - a.x).toBeGreaterThan(0.5); // carried ahead
     expect(Math.abs(b.y - a.y)).toBeLessThan(0.4);
@@ -128,14 +131,14 @@ describe("soccer-ball possession", () => {
 
   it("kicks: a hard brake while moving releases the ball with forward speed", () => {
     const s = createWorldState(socialFieldSpec, "local", 2);
-    runUntil(s, { x: 52, y: 30 }, (st) => st.toys.ball.possessedBy === "local");
+    runUntil(s, { x: 52, y: 30 }, (st) => st.objects.ball.possessedBy === "local");
     run(s, { x: 52, y: 30 }, 0.3); // reach full speed while dribbling
 
     // One hard-brake tick (aim=null) → kick.
     const events = tickWorld(s, { aim: null }, DT).events;
     expect(events.some((e) => e.type === "possession-released")).toBe(true);
 
-    const b = s.toys.ball;
+    const b = s.objects.ball;
     expect(b.possessedBy).toBeNull();
     expect(b.freeRollOwner).toBe("local");
     expect(Math.hypot(b.vx, b.vy)).toBeGreaterThan(2); // kept real speed
@@ -144,14 +147,14 @@ describe("soccer-ball possession", () => {
 
   it("free-rolls a kicked ball to rest via friction", () => {
     const s = createWorldState(socialFieldSpec, "local", 2);
-    runUntil(s, { x: 52, y: 30 }, (st) => st.toys.ball.possessedBy === "local");
+    runUntil(s, { x: 52, y: 30 }, (st) => st.objects.ball.possessedBy === "local");
     run(s, { x: 52, y: 30 }, 0.3);
     tickWorld(s, { aim: null }, DT); // kick
-    const releaseX = s.toys.ball.x;
+    const releaseX = s.objects.ball.x;
 
     const events = run(s, null, 5); // coast to a stop
-    expect(events.some((e) => e.type === "toy-rest")).toBe(true);
-    const b = s.toys.ball;
+    expect(events.some((e) => e.type === "object-rest")).toBe(true);
+    const b = s.objects.ball;
     expect(Math.hypot(b.vx, b.vy)).toBe(0);
     expect(b.freeRollOwner).toBeNull();
     expect(b.x).toBeGreaterThan(releaseX); // it rolled forward
@@ -159,30 +162,30 @@ describe("soccer-ball possession", () => {
 
   it("blocks the kicker from instantly re-grabbing (cooldown)", () => {
     const s = createWorldState(socialFieldSpec, "local", 2);
-    runUntil(s, { x: 52, y: 30 }, (st) => st.toys.ball.possessedBy === "local");
+    runUntil(s, { x: 52, y: 30 }, (st) => st.objects.ball.possessedBy === "local");
 
     // Simulate the moment just after a kick: the local peer released the ball
     // and is on cooldown for it, while still moving (so the grab speed-gate is
     // satisfied — only the cooldown should hold it off).
     applyPossession(s, "ball", null, s.time);
-    expect(s.toys.ball.lastPossessor).toBe("local");
+    expect(s.objects.ball.lastPossessor).toBe("local");
 
     // Keep the avatar moving with the ball pinned under it. Mid-cooldown it
     // must NOT re-grab; once the cooldown lapses it grabs again.
     const pinAndTick = (seconds: number) => {
       const n = Math.round(seconds / DT);
       for (let i = 0; i < n; i++) {
-        s.toys.ball.x = s.avatars.local.x;
-        s.toys.ball.y = s.avatars.local.y;
+        s.objects.ball.x = s.avatars.local.x;
+        s.objects.ball.y = s.avatars.local.y;
         tickWorld(s, { aim: { x: 52, y: 30 } }, DT);
       }
     };
 
     pinAndTick(WORLD_ENGINE_DEFAULTS.grabCooldown - 0.1);
-    expect(s.toys.ball.possessedBy).toBeNull(); // still on cooldown
+    expect(s.objects.ball.possessedBy).toBeNull(); // still on cooldown
 
     pinAndTick(0.2); // crosses the cooldown boundary
-    expect(s.toys.ball.possessedBy).toBe("local");
+    expect(s.objects.ball.possessedBy).toBe("local");
   });
 });
 
@@ -239,11 +242,11 @@ describe("multiplayer authority", () => {
     expect(s.avatars.local.x).not.toBe(999);
   });
 
-  it("ignores remote toy updates while we own the toy", () => {
+  it("ignores remote object updates while we own the object", () => {
     const s = createWorldState(socialFieldSpec, "local", 2);
-    runUntil(s, { x: 52, y: 30 }, (st) => st.toys.ball.possessedBy === "local");
-    const ownedX = s.toys.ball.x;
-    applyRemoteToy(s, "ball", { x: -5, y: -5 });
-    expect(s.toys.ball.x).toBe(ownedX); // our sim stays authoritative
+    runUntil(s, { x: 52, y: 30 }, (st) => st.objects.ball.possessedBy === "local");
+    const ownedX = s.objects.ball.x;
+    applyRemoteObject(s, "ball", { x: -5, y: -5 });
+    expect(s.objects.ball.x).toBe(ownedX); // our sim stays authoritative
   });
 });

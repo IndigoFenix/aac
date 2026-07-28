@@ -37,7 +37,8 @@ import {
   type RecencyMemory,
   type SurfaceNoun,
 } from "@shared/world-engine/interaction/intent/surface-next";
-import { getVocabularyItem, modifiersFor } from "@shared/glyph-registry";
+import { getVocabularyItem, modifiersFor, type GlyphPos } from "@shared/glyph-registry";
+import { AXIS_WORDS, descriptorAxesFor } from "@shared/world-engine/object-properties";
 import { labImageResolver } from "./glyph-resolver";
 
 // Icon/text sizing mirrors AppMiniBoard's 4-row column, so the buttons read the
@@ -244,6 +245,25 @@ const WORD_LABEL: Record<string, string> = {
   dont_understand: "don't understand",
   in_order_to: "in order to",
 };
+/** Friendly names for surface-next GROUP chips (property + kind clusters). */
+const GROUP_LABEL: Record<string, string> = {
+  food: "food",
+  toy: "toys",
+  clothing: "clothes",
+  container: "containers",
+  openable: "open & shut",
+  furniture: "furniture",
+  appliance: "appliances",
+  device: "devices",
+  tableware: "dishes",
+  instrument: "music",
+  book: "books",
+  material: "materials",
+  structure: "buildings",
+  creatures: "people",
+  places: "places",
+  things: "things",
+};
 const wordLabel = (w: string): string => WORD_LABEL[w] ?? w.replace(/_/g, " ");
 
 /** The parser vocabulary, grouped by lexical category in a friendly order. */
@@ -313,6 +333,7 @@ function SpeakMenu({
   const [words, setWords] = useState<string[]>([]);
   const [seedKind, setSeedKind] = useState<IntentKind | undefined>(undefined);
   const [openCat, setOpenCat] = useState<string | null>(null);
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const sentence = words.join(" + ");
 
   const surfaceNouns: SurfaceNoun[] = useMemo(
@@ -331,14 +352,37 @@ function SpeakMenu({
     [words, surfaceNouns, recency, seedKind],
   );
   // The modifier rail: the ACTIVE head's applicable modifiers (registry-driven,
-  // the AAC pattern) — rendered as CONTROLS that compose onto the head.
+  // the AAC pattern) — rendered as CONTROLS that compose onto the head, RANKED
+  // by the head's DESCRIPTOR AXES (object-properties.ts): food leads with
+  // hot/cold, places with my/your ("my city" — the scope-breadth rule). A game
+  // noun the registry doesn't know falls back to a pos by its kind, so a
+  // learned "city" still gets the place rail instead of no rail at all.
   const lastWord = words[words.length - 1];
   const railMods = useMemo(() => {
     if (!lastWord) return [];
-    const item = getVocabularyItem(lastWord.split(".")[0] ?? lastWord);
-    if (!item) return [];
-    return modifiersFor(item.pos).slice(0, 8);
-  }, [lastWord]);
+    const headSym = lastWord.split(".")[0] ?? lastWord;
+    const item = getVocabularyItem(headSym);
+    const noun = nouns.find((n) => (n.symbol.split(".")[0] ?? n.symbol) === headSym);
+    const KIND_POS: Record<string, GlyphPos> = { creature: "animal", place: "place", item: "noun", unknown: "noun" };
+    const pos = item?.pos ?? (noun ? KIND_POS[noun.kind ?? "unknown"] : undefined);
+    if (!pos) return [];
+    const POS_KIND: Partial<Record<GlyphPos, "creature" | "place" | "item" | "unknown">> = {
+      person: "creature", animal: "creature", place: "place", noun: "item",
+    };
+    const axes = descriptorAxesFor(noun?.kind ?? POS_KIND[pos] ?? "unknown", noun?.properties ?? []);
+    const axisRank = new Map<string, number>();
+    axes.forEach((a, i) => {
+      for (const w of AXIS_WORDS[a]) if (!axisRank.has(w)) axisRank.set(w, i);
+    });
+    return modifiersFor(pos)
+      .slice()
+      .sort(
+        (m1, m2) =>
+          (axisRank.get(m1.key) ?? 99) - (axisRank.get(m2.key) ?? 99) ||
+          m1.modifier!.order - m2.modifier!.order,
+      )
+      .slice(0, 8);
+  }, [lastWord, nouns]);
 
   const tapWord = (w: string) => {
     setWords((cur) => {
@@ -363,6 +407,7 @@ function SpeakMenu({
       return [...cur, w];
     });
     setOpenCat(null);
+    setOpenGroupId(null);
   };
   const play = () => {
     if (!words.length) return;
@@ -440,10 +485,52 @@ function SpeakMenu({
             </section>
           ) : (
             <section className="lab-speak-group">
+              {/* Words first, then GROUP cells — likely subcategories
+                  (surface-next `groups`) rendered INSIDE the list as teal
+                  cards: CONTROLS that expand in place without speaking. An
+                  open group shows a back cell + its full ranked membership. */}
               <div className="lab-speak-grid">
-                {suggestion.buttons.map((b) => (
-                  <WordButton key={b.symbol} symbol={b.symbol} label={b.label} onTap={tapWord} />
-                ))}
+                {(() => {
+                  const activeGroup = suggestion.groups.find((g) => g.id === openGroupId);
+                  if (activeGroup) {
+                    return (
+                      <>
+                        <button className="lab-word lab-group" onClick={() => setOpenGroupId(null)}>
+                          <span className="lab-group-glyph">↩</span>
+                          <span className="lab-word-label">back</span>
+                        </button>
+                        {activeGroup.members.map((b) => (
+                          <WordButton key={b.symbol} symbol={b.symbol} label={b.label} onTap={tapWord} />
+                        ))}
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      {suggestion.buttons.map((b) => (
+                        <WordButton key={b.symbol} symbol={b.symbol} label={b.label} onTap={tapWord} />
+                      ))}
+                      {suggestion.groups.map((g) => (
+                        <button
+                          key={g.id}
+                          className="lab-word lab-group"
+                          title={`${g.members.length} words`}
+                          onClick={() => setOpenGroupId(g.id)}
+                        >
+                          <span className="lab-word-icon">
+                            <LabGlyph
+                              glyph={g.members[0]?.symbol ?? ""}
+                              fallback={g.id}
+                              ariaLabel={GROUP_LABEL[g.id] ?? g.id}
+                              noBackground
+                            />
+                          </span>
+                          <span className="lab-word-label">{GROUP_LABEL[g.id] ?? g.id} ▾</span>
+                        </button>
+                      ))}
+                    </>
+                  );
+                })()}
               </div>
             </section>
           )}

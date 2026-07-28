@@ -9,6 +9,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import {
+  gazeOnCreature,
   resolveFurnitureAim,
   type FurnitureAimGaze,
   type FurnitureAimOpts,
@@ -158,5 +159,68 @@ describe("the no-pick fallback (2D top-down only)", () => {
 
   it("respects the fixation radius", () => {
     expect(resolveFurnitureAim(room(), gaze(null, { x: 0, y: 9 }, false), opts())).toBeNull();
+  });
+});
+
+// ── PEOPLE OBEY THE SAME RULE ───────────────────────────────────────────────
+// The reported bug: hovering furniture near a person started a conversation
+// with the person instead of selecting the furniture. The talk gesture had its
+// own fixation-radius test, so a body within 2.2 m of whatever you were looking
+// at claimed the hover. One pick, one thing.
+describe("gazeOnCreature — a person is aimed at the same way a chest is", () => {
+  // Mara stands at the origin; the chair beside her is 0.4 m away, well inside
+  // the fixation radius that used to decide this.
+  const MARA = { x: 0, y: 0 };
+  const ids = ["npc_mara", "mara"];
+  const av = (id: string) => ({ kind: "avatar" as const, id });
+
+  it("hovering the person IS looking at them", () => {
+    expect(gazeOnCreature(gaze(av("npc_mara"), MARA), ids, MARA, FIX)).toBe(true);
+  });
+
+  it("a poser hovered by its BARE node id counts too", () => {
+    expect(gazeOnCreature(gaze(av("mara"), MARA), ids, MARA, FIX)).toBe(true);
+  });
+
+  it("hovering the CHAIR beside her is looking at the chair — not at her", () => {
+    // The fixation snaps to the hovered chair, 0.4 m off her: the old radius
+    // test said "on Mara" and opened a conversation over the furniture board.
+    expect(gazeOnCreature(gaze(obj("chair"), { x: 0.3, y: 0.4 }), ids, MARA, FIX)).toBe(false);
+  });
+
+  it("hovering an ITEM at her feet is looking at the item", () => {
+    expect(gazeOnCreature(gaze(obj("ball"), { x: 0.4, y: 0.8 }), ids, MARA, FIX)).toBe(false);
+  });
+
+  it("hovering SOMEBODY ELSE standing right next to her is looking at them", () => {
+    expect(gazeOnCreature(gaze(av("npc_bo"), { x: 0.5, y: 0 }), ids, MARA, FIX)).toBe(false);
+  });
+
+  it("bare ground beside her is nobody — a null hover means the gaze is on nothing", () => {
+    expect(gazeOnCreature(gaze(null, { x: 0.5, y: 0 }), ids, MARA, FIX)).toBe(false);
+  });
+
+  it("distance never enters it: hovered across the town still counts", () => {
+    expect(gazeOnCreature(gaze(av("npc_mara"), { x: 400, y: 400 }), ids, { x: 400, y: 400 }, FIX)).toBe(true);
+  });
+
+  it("the no-pick view falls back to the fixation radius, as furniture does", () => {
+    expect(gazeOnCreature(gaze(null, { x: 0.3, y: 0.4 }, false), ids, MARA, FIX)).toBe(true);
+    expect(gazeOnCreature(gaze(null, { x: 0, y: 9 }, false), ids, MARA, FIX)).toBe(false);
+  });
+
+  it("furniture and people can never claim ONE hover between them", () => {
+    // The invariant behind the fix, stated directly: for any single gaze, at
+    // most one of the two resolvers answers.
+    const looks: FurnitureAimGaze[] = [
+      gaze(obj("chair"), { x: 0.3, y: 0.4 }),
+      gaze(av("npc_mara"), MARA),
+      gaze(null, { x: 0.5, y: 0.5 }),
+    ];
+    for (const g of looks) {
+      const furniture = !!resolveFurnitureAim(room(), g, opts());
+      const person = gazeOnCreature(g, ids, MARA, FIX);
+      expect(furniture && person).toBe(false);
+    }
   });
 });

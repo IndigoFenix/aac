@@ -470,6 +470,79 @@ describe("consume with a DINING preference (`at`) — the need templates' satisf
     const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
     expect(planGoal(goal, "bear", dining("mara"))).toBeNull();
   });
+
+  // ── ALREADY SERVED — the food is ON the station it would be carried to ─────
+  // The observed bug: a body told to eat something off the table planned a
+  // PICKUP first, walked to the table, reached for a prop that mirrors a stack
+  // unit and so offers no carry affordance at all, and looped there — while the
+  // SAME food, once loose on the floor, was eaten without trouble.
+  //
+  // A resolver reports an item resting on a solid fixture at that fixture's own
+  // approach point (both nudge off the same edge), so "already served" IS the
+  // two positions coinciding. Nothing kind-specific: emergent from the geometry.
+  const served = (carrier: string | null = null): WorldResolver => ({
+    ...resolver(carrier),
+    itemPosition: () => ({ x: 3, y: 0 }), // the meal sits ON the table
+    diningSpot: (_self, kinds) => (kinds.includes("table") ? { x: 3, y: 0 } : null),
+  });
+
+  it("food already ON the table is eaten where it sits — no pickup leg at all", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    expect(planGoal(goal, "bear", served())).toEqual({
+      steps: [{ kind: "moveTo", pos: { x: 3, y: 0 } }, { kind: "eat", itemId: "apple1" }],
+    });
+  });
+
+  it("…and the plan NEVER contains a pick — that step is the one that could not complete", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    const steps = planGoal(goal, "bear", served())?.steps ?? [];
+    expect(steps.some((s) => s.kind === "pick")).toBe(false);
+  });
+
+  it("standing AT the table already: the whole plan is the eat", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    const there: WorldResolver = { ...served(), arrived: (_s, p) => p.x === 3 && p.y === 0 };
+    expect(planGoal(goal, "bear", there)).toEqual({ steps: [{ kind: "eat", itemId: "apple1" }] });
+  });
+
+  it("food a HAIR off the station is still carried (this is an equality test, not a reach)", () => {
+    // 0.5 m away is a different place — the body picks it up and brings it over.
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    const nearby: WorldResolver = { ...served(), itemPosition: () => ({ x: 3.5, y: 0 }) };
+    expect(planGoal(goal, "bear", nearby)).toEqual({
+      steps: [
+        { kind: "moveTo", pos: { x: 3.5, y: 0 } },
+        { kind: "pick", itemId: "apple1" },
+        { kind: "moveTo", pos: { x: 3, y: 0 } },
+        { kind: "eat", itemId: "apple1" },
+      ],
+    });
+  });
+
+  it("something ALREADY IN HAND at the table still walks and eats (the carry case is untouched)", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    expect(planGoal(goal, "bear", served("bear"))).toEqual({
+      steps: [{ kind: "moveTo", pos: { x: 3, y: 0 } }, { kind: "eat", itemId: "apple1" }],
+    });
+  });
+
+  it("a served meal ANOTHER creature holds is still refused", () => {
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    expect(planGoal(goal, "bear", served("mara"))).toBeNull();
+  });
+
+  it("the pursuit DRIVES the served meal to completion instead of looping", () => {
+    // The failure mode was a pursuit that re-derived the same un-completable
+    // pick every tick. Standing at the table, the next thing to do is the eat,
+    // and it is the LAST step — so the pursuit ends rather than re-planning.
+    const goal: GoalSpec = { kind: "consume", item: { id: "apple1" }, at: ["table"] };
+    const there: WorldResolver = { ...served(), arrived: (_s, p) => p.x === 3 && p.y === 0 };
+    expect(pursue(goal, "bear", there)).toEqual({
+      kind: "act",
+      step: { kind: "eat", itemId: "apple1" },
+      last: true,
+    });
+  });
 });
 
 describe("rest with a dwell length (`dwellS`) — a need's nap vs the commanded-sit default (S2)", () => {

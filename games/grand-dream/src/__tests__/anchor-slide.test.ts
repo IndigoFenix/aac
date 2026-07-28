@@ -5,7 +5,7 @@
  *
  *   • anchorSlideLevel: movement must dissolve the SLIDE with the same dial
  *     that dissolves the pose (animation.ts `1 - clamp01(speed/0.2)`). Without
- *     it a body dragged off mid-activity stayed glued to the privy at full
+ *     it a body dragged off mid-activity stayed glued to the toilet at full
  *     strength while its pose faded, then teleported to the sim body.
  *   • createAnchorLatch: the sim clears `state.activity` the instant a dwell
  *     ends, so the per-frame anchor goes null while the animator is still

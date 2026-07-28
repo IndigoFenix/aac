@@ -449,6 +449,19 @@ export function decideNeed(tpl: NeedTemplate, ctx: NeedCtx): NeedIntent {
  * Only when NOTHING is actionable does the blocked row become the decision —
  * which is the old behaviour, preserved for the genuinely stuck body.
  */
+/** THE BANKING PRIORITY — the effective rank of a deposit row that fired
+ *  because units are ALREADY IN HAND (the put-it-away rule), as opposed to its
+ *  trip. The trip is a chore (shop when comfortable — the row's own low
+ *  priority); the BANK is finishing a haul that is otherwise lost to the
+ *  economy. Observed famine trap: a body drew a restock-sized water haul at
+ *  the well, and the leftover rode its bag for sim-minutes while rest-family
+ *  motives (a 384 s sleep!) outranked provision's 3 every decide — the barrel
+ *  never filled, so the household kept trekking to the well one throat at a
+ *  time. 4.2 banks the haul ABOVE energy (4) but below waste (4.5) — the
+ *  toilet doesn't wait — and below thirst/hunger (the starving body still
+ *  serves itself first). */
+export const BANK_PRIORITY = 4.2;
+
 export function decideNeeds(
   templates: readonly NeedTemplate[],
   ctxOf: (tpl: NeedTemplate) => NeedCtx,
@@ -458,18 +471,49 @@ export function decideNeeds(
   /** The top FIRING-but-unservable row, whether or not it was chosen to act on. */
   blocked?: { tpl: NeedTemplate; intent: NeedIntent };
 } | null {
-  let best: { tpl: NeedTemplate; intent: NeedIntent } | null = null;
+  // ⚠️ THE LIVELOCK INVARIANT, kept STRUCTURAL under the banking boost: a
+  // banked deposit must never outrank a row on THIS creature that ACQUIRES the
+  // same category, or the boost re-opens the take⇄deposit spin (adoption's
+  // carried unit hijacked back into the chest; the dress fetch banked back
+  // into the wardrobe). Floor the boost just under the lowest same-category
+  // acquirer — computed from the member's own row set, so the cook exemption,
+  // adoption rows appearing and vanishing, and per-species sets all stay
+  // correct without hand-maintained constants.
+  const acquirerFloor = (self: NeedTemplate): number | undefined => {
+    const cat = self.item.category;
+    if (!cat) return undefined;
+    let low: number | undefined;
+    for (const t of templates) {
+      if (t === self || t.acquire.length === 0 || t.item.category !== cat) continue;
+      if (low === undefined || t.priority < low) low = t.priority;
+    }
+    return low;
+  };
+  let best: { tpl: NeedTemplate; intent: NeedIntent; prio: number } | null = null;
   let blocked: { tpl: NeedTemplate; intent: NeedIntent } | null = null;
   for (const tpl of templates) {
-    const intent = decideNeed(tpl, ctxOf(tpl));
+    const ctx = ctxOf(tpl);
+    const intent = decideNeed(tpl, ctx);
     if (intent.kind === "idle") continue;
     if (intent.kind === "blocked") {
       if (!blocked || tpl.priority > blocked.tpl.priority) blocked = { tpl, intent };
       continue;
     }
-    if (!best || tpl.priority > best.tpl.priority) best = { tpl, intent };
+    let prio = tpl.priority;
+    if (
+      tpl.satisfy.kind === "deposit" &&
+      ctx.carried > 0 &&
+      (intent.kind === "deposit" || intent.kind === "dropHere")
+    ) {
+      const floor = acquirerFloor(tpl);
+      prio = Math.max(prio, Math.min(BANK_PRIORITY, floor !== undefined ? floor - 0.05 : BANK_PRIORITY));
+    }
+    if (!best || prio > best.prio) best = { tpl, intent, prio };
   }
-  if (best) return blocked ? { ...best, blocked } : best;
+  if (best) {
+    const chosen = { tpl: best.tpl, intent: best.intent };
+    return blocked ? { ...chosen, blocked } : chosen;
+  }
   return blocked ? { ...blocked, blocked } : null;
 }
 
@@ -603,14 +647,14 @@ export function thirstTemplate(rate: number, at: readonly string[] = ["table"]):
 }
 
 /** Waste: rises slowly (the caller also BUMPS it on meals/drinks) and is seen
- *  to at the PRIVY — never "in place" (requireStation): a house without one
+ *  to at the TOILET — never "in place" (requireStation): a house without one
  *  simply surfaces the want. Urgent when it fires: above energy, below food. */
 export function wasteTemplate(rate: number): NeedTemplate {
   return {
     key: "waste",
     item: {},
     drive: { kind: "meter", rate, threshold: 1 },
-    satisfy: { kind: "rest", at: ["privy"], requireStation: true },
+    satisfy: { kind: "rest", at: ["toilet"], requireStation: true },
     acquire: [],
     priority: 4.5,
   };

@@ -78,7 +78,7 @@ describe("composition: the contact part lands ON the use point (pos + yaw), ever
   // the activity that drives it and the render yaw mirror it uses.
   const kinds: Array<{ kind: FixtureKind; activity: AvatarActivity["kind"]; bodyYaw: (f: number | undefined) => number }> = [
     { kind: "chair", activity: "sit", bodyYaw: sitterYaw },
-    { kind: "privy", activity: "sit", bodyYaw: sitterYaw },
+    { kind: "toilet", activity: "sit", bodyYaw: sitterYaw },
     { kind: "bed", activity: "sleep", bodyYaw: bedSleeperYaw },
   ];
 
@@ -238,7 +238,7 @@ describe("sim: the stand spot is on the fixture's use-direction side (open the f
 describe("contract defaults: every fixture kind is covered, derived from its semantics", () => {
   const ALL: FixtureKind[] = [
     "chest", "cupboard", "table", "bed", "chair", "box",
-    "barrel", "bath", "privy", "bin", "bowl", "oven", "workbench", "refrigerator",
+    "barrel", "bath", "toilet", "bin", "bowl", "oven", "workbench", "refrigerator",
   ];
   it("every kind resolves a contract with a sane use point + at least one approach", () => {
     for (const k of ALL) {
@@ -249,7 +249,7 @@ describe("contract defaults: every fixture kind is covered, derived from its sem
     }
   });
   it("seats/bed are on-fixture; containers/appliances are beside (reach)", () => {
-    for (const k of ["chair", "privy", "bed"] as FixtureKind[]) expect(useContractFor(k).onFixture).toBe(true);
+    for (const k of ["chair", "toilet", "bed"] as FixtureKind[]) expect(useContractFor(k).onFixture).toBe(true);
     for (const k of ["chest", "cupboard", "refrigerator", "oven", "workbench", "barrel", "bin"] as FixtureKind[]) {
       expect(useContractFor(k).onFixture).toBe(false);
       expect(useContractFor(k).contactPart).toBe("reach");

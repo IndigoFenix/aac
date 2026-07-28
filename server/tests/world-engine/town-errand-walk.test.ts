@@ -141,6 +141,10 @@ function walkErrand(house: TownHouse, pieceId: string): WalkResult {
           lastSide = side;
         }
       }
+      // Declare the doorway being walked through, exactly as the host does — a
+      // door opens because a body is crossing it, so without this line every
+      // errand through an interior doorway stands at a shut door.
+      body.crossingDoorId = ctrl.crossingDoorId();
       steerAvatar(s, "npc", bent, dt);
       tickWorld(s, { aim: null }, dt); // doors ease; the parked player brakes
       t += dt;

@@ -125,7 +125,7 @@ export const carryTotalOf = (stock: Record<string, number> | undefined, goodKey:
  *  of the kernel" position; town-stations.test.ts pins the two in sync. */
 export const LARGE_KINDS: readonly string[] = [
   "bed", "table", "chair", "chest", "cupboard", "barrel", "box",
-  "bin", "bowl", "bath", "privy", "oven", "refrigerator", "workbench", "shelf",
+  "bin", "bowl", "bath", "toilet", "oven", "refrigerator", "workbench", "shelf",
 ];
 /** Is this stack glyph too large to go in a creature's inventory? */
 export const isLargeGlyph = (glyph: string): boolean => LARGE_KINDS.includes(headOf(glyph));

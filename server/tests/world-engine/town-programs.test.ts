@@ -32,7 +32,7 @@ describe("roomKindOf — furniture defines function (backward)", () => {
     expect(roomKindOf(["bed"])).toBe("bedroom");
     expect(roomKindOf(["oven"])).toBe("kitchen");
     expect(roomKindOf(["bath"])).toBe("bath");
-    expect(roomKindOf(["privy"])).toBe("bath");
+    expect(roomKindOf(["toilet"])).toBe("bath");
     expect(roomKindOf(["workbench"])).toBe("workshop");
     expect(roomKindOf(["table", "chair"])).toBe("living");
     expect(roomKindOf(["barrel"])).toBe("store");

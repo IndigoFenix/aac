@@ -23,6 +23,7 @@ import { classify, INTENT_MOD, parseSentence, posOf, type Gender } from "../lang
 import type { CreatureId } from "../behavior/creatures.js";
 import type { GoalSpec, ItemRef, PlaceRef } from "../behavior/rules.js";
 import { headOf } from "../../variations.js";
+import { spokenMakeable } from "../content/makeable.js";
 
 // ---------------------------------------------------------------------------
 // CREATURE REFERENCE resolution — how a speaker NAMES a target creature
@@ -160,21 +161,21 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
     case "satisfy": {
       // Chore keys speak their ACTIVITY words ("laundry" → "I'll wash the
       // clothing"), never the raw template key; verb-keys stay themselves.
-      const act = NEED_ACTIVITY[goal.need] ?? { verb: goal.need };
+      const act = needActivity(goal.need) ?? { verb: goal.need };
       if (act.object) return phrase({ subject: "i_me", verb: act.verb, object: act.object });
       return { a: act.verb, b: `i_me + ${act.verb}`, c: `i_me + ${act.verb}` };
     }
     case "rest": {
       // The station is the teaching point (level a); the sentence speaks the
       // ACT the station serves (the attention-action vocabulary): a sleep pose
-      // or a bed = "I'll sleep", a bath = "I'll wash", a privy = the bathroom
+      // or a bed = "I'll sleep", a bath = "I'll wash", a toilet = the bathroom
       // trip ("I'll go to the bathroom"); anything else stays the plain rest.
       const where = syms.place(goal.place);
       if (goal.pose === "sleep" || where === "bed") {
         return { a: where, b: "i_me + sleep", c: "i_me + sleep" };
       }
       if (where === "bath") return { a: where, b: "i_me + wash", c: "i_me + wash" };
-      if (where === "privy" || where === "bathroom") {
+      if (where === "toilet" || where === "bathroom") {
         return { a: where, b: "go + to + bathroom", c: "i_me + go + to + bathroom" };
       }
       return { a: where, b: `rest + ${where}`, c: `i_me + rest + ${where}` };
@@ -251,6 +252,15 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       }
       return { a: "build", b: "i_me + build", c: "i_me + build" };
     }
+    case "craft":
+      // A CRAFT is announced with MAKE, never BUILD (user law, 2026-07-28): the
+      // two verbs are interchangeable as ORDERS, but an NPC saying what it is
+      // doing should use the one that fits — you make a toy, you build a house.
+      // The glyph is spoken as its bare word (`furn.chair` → "chair",
+      // `rabbit.toy.material_cloth` → "rabbit"), the same head convention every
+      // other line here follows; a doll's `toy` descriptor can't ride a plain
+      // symbol string, so "make the rabbit" is as close as this shape gets.
+      return phrase({ subject: "i_me", verb: "make", object: spokenMakeable(goal.glyph) });
     case "buildwork":
       // ⑥ standing site work — "I'll build" (the site names no glyph word).
       return { a: "build", b: "i_me + build", c: "i_me + build" };
@@ -322,13 +332,36 @@ export function commandEcho(
 // Goal → live ACTIVITY (the "what is X doing?" answer's world hook)
 // ---------------------------------------------------------------------------
 
-/** Self-care/chore need keys → the activity frame they show as ("laundry" is
- *  washing the clothes). Keys that are already verbs pass through. */
-const NEED_ACTIVITY: Record<string, { verb: string; object?: string }> = {
+/** MOTIVE → ACTIVITY: the frame each need/chore shows as while it is pursued
+ *  ("laundry" is washing the clothes, "energy" is sleeping) — the ONE table,
+ *  read by the commanded goal's echo and by the host's need-template walker
+ *  (its `tplKey`s carry these as prefixes), so a creature describes a want and
+ *  the errand serving it with the same words.
+ *
+ *  Every verb here must RENDER as a verb: "clean" is pinned to the state
+ *  adjective outbound (lang/core POS), so the scrub speaks "wash" — a
+ *  `{verb: "clean"}` frame comes out as "I am clean". */
+export const NEED_ACTIVITY: Record<string, { verb: string; object?: string }> = {
+  hunger: { verb: "eat" },
+  thirst: { verb: "drink" },
+  energy: { verb: "sleep" },
+  waste: { verb: "go", object: "bathroom" },
+  hygiene: { verb: "wash" },
+  fun: { verb: "play" },
+  social: { verb: "talk" },
   laundry: { verb: "wash", object: "clothing" },
   cook: { verb: "cook", object: "food" },
-  clean: { verb: "clean" },
+  clean: { verb: "wash" },
+  tidy: { verb: "put" },
+  dress: { verb: "wear" },
 };
+
+/** The activity a motive KEY reads as. Host template keys are compound
+ *  ("hunger_eat", "laundry_wash") — the motive leads, so a prefix match resolves
+ *  them; no key here is a prefix of another. Undefined = no activity word. */
+export function needActivity(key: string): { verb: string; object?: string } | undefined {
+  return NEED_ACTIVITY[key] ?? Object.entries(NEED_ACTIVITY).find(([k]) => key.startsWith(k))?.[1];
+}
 
 /**
  * The ACTIVITY a goal reads as while being pursued — the same verbs commands
@@ -397,6 +430,8 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
         : { verb: "wash", object: goal.category || "thing" };
     case "build":
       return { verb: "build", ...(goal.structure !== "town" ? { object: goal.structure } : {}) };
+    case "craft":
+      return { verb: "make", object: spokenMakeable(goal.glyph) };
     case "buildwork":
       return { verb: "build" }; // ⑥ standing site work
     case "trade":

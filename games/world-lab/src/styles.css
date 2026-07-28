@@ -356,6 +356,12 @@ input.sf-ctl[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; accen
 }
 .lab-control:hover { background: #2a2310; border-color: #97803a; }
 .lab-control.selected { background: #3a3013; border-style: solid; border-color: #caa94e; color: #f0e0a8; }
+/* GROUP cells (surface-next `groups`): likely SUBCATEGORIES rendered inside
+   the suggestion grid — teal, dashed, so they read as neither amber refiners
+   nor plain word cards. Tapping opens the group in place; it speaks nothing. */
+.lab-word.lab-group { background: #0c1f1c; border: 1px dashed #2a6b62; color: #7fd2c4; }
+.lab-word.lab-group:hover { background: #12302b; border-color: #3c9c8e; }
+.lab-group-glyph { width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
 .lab-typechips, .lab-cattabs {
   display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0;
 }

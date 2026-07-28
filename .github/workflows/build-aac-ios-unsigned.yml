@@ -28,6 +28,12 @@ name: Build AAC iPad (unsigned)
 # Capacitor project generation, or the Xcode compile break, this fails here
 # without needing any Apple account.
 #
+# DISTRIBUTION: with `publish` on (the default), the .ipa is also uploaded to
+# the AAC download feed (s3 → https://updates.aivota.ai/aac/ios/) so clinicians
+# can fetch it themselves from the dashboard's Downloads page instead of it
+# being emailed around. That needs the AWS_ROLE_ARN secret; uncheck `publish`
+# to build without it.
+#
 # Trigger: manual only (workflow_dispatch).
 
 on:
@@ -37,8 +43,14 @@ on:
         description: 'Backend the build talks to (baked as VITE_API_URL)'
         required: false
         default: 'https://aivota-demo-us.onrender.com'
+      publish:
+        description: 'Publish the .ipa to the download feed (clinician Downloads panel)'
+        type: boolean
+        required: false
+        default: true
 
 permissions:
+  id-token: write   # GitHub OIDC -> AWS role assumption (publish step)
   contents: read
 
 concurrency:
@@ -148,6 +160,7 @@ jobs:
           (cd "$RUNNER_TEMP" && zip -qr "$IPA" Payload)
           echo "Built $IPA"
           ls -lh "$IPA"
+          echo "IPA_PATH=$IPA" >> "$GITHUB_ENV"
 
       - name: Upload unsigned .ipa artifact
         uses: actions/upload-artifact@v4
@@ -157,6 +170,33 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # ── Publish to the download feed ─────────────────────────────────────
+      # Puts the .ipa (and a latest.json manifest) in the same S3 bucket the
+      # Windows auto-updater uses, under aac/ios/. Nothing polls it — an .ipa
+      # cannot self-update — but it is what the clinician dashboard's Downloads
+      # panel serves, which replaces emailing the file by hand.
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ inputs.publish }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-actions-aac-ios-release
+          aws-region: il-central-1
+
+      # Same derivation as release-aac.yml — never hardcode the account id.
+      - name: Resolve update bucket
+        if: ${{ inputs.publish }}
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "AAC_UPDATE_BUCKET=aivota-prod-aac-updates-${ACCOUNT}" >> "$GITHUB_ENV"
+          echo "Resolved bucket: aivota-prod-aac-updates-${ACCOUNT}"
+
+      - name: Publish .ipa to download feed
+        if: ${{ inputs.publish }}
+        env:
+          AAC_UPDATE_REGION: il-central-1   # bucket lives in il-central-1, not the script's us-east-1 default
+        run: node scripts/publish-aac-ios.mjs "$IPA_PATH" "$GITHUB_RUN_NUMBER"
+
       - name: Summary
         run: |
           {
@@ -164,7 +204,13 @@ jobs:
             echo ""
             echo "- Version: $(node -p "require('./package.json').version") (build $GITHUB_RUN_NUMBER)"
             echo "- Backend: ${{ inputs.backend_url }}"
+            echo "- Published to download feed: ${{ inputs.publish }}"
             echo ""
+            if [ "${{ inputs.publish }}" = "true" ]; then
+              echo "Clinicians can now get this build from the dashboard's **Downloads**"
+              echo "page (AAC section), which also carries the Sideloadly walkthrough."
+              echo ""
+            fi
             echo "Download the .ipa from this run's artifacts, then install it on a"
             echo "physical iPad with a **free** Apple ID using a sideload tool:"
             echo ""

@@ -292,13 +292,27 @@ export interface VocabularyItem {
   /**
    * True when the item's visual carries a semantic left/right direction
    * (motion verbs like run / walk, pointing gestures, time-flow arrows
-   * for tomorrow / yesterday, palm-orientation for my / your). The
-   * compositor flips horizontally in RTL only for items with this flag —
-   * non-directional artwork (a cat, a cup) stays put because flipping it
-   * would look uncanny without semantic gain. See <DIRECTIONAL_EMOJIS>
-   * for the raw-emoji side of the same rule.
+   * for tomorrow / yesterday, the hand orientation of give / take). A
+   * toward-me / toward-you contrast drawn in DEPTH — my / your, where the
+   * possessor holds the thing in or offers it out — is not directional; the
+   * reading survives a mirror. This declares WHY an item needs bundled art
+   * at all — an emoji can't be flipped, so a directional concept carried by
+   * an emoji reads backwards in Hebrew or Arabic (see
+   * scripts/bundled-icon-priorities.ts, which audits exactly that gap). See
+   * <DIRECTIONAL_EMOJIS> for the raw-emoji side of the same rule.
    */
   directional?: boolean;
+  /**
+   * True when this item's ARTWORK must never be mirrored in RTL, because it
+   * contains a numeral, a letter, or asymmetric punctuation whose mirror image
+   * reads wrong. The inverse of `directional`: that one says a flip is
+   * REQUIRED, this one says a flip is FORBIDDEN, and most items are neither.
+   *
+   * Only needed for bundled art — an item whose canonical EMOJI is already a
+   * digit / keycap / `?` is detected automatically from the emoji itself (see
+   * `isNonReversible` in glyph-compositor.tsx), so it needs no flag here.
+   */
+  nonReversible?: boolean;
   /**
    * True when this key should appear in the prompt's <bundled_icons>
    * list so the AI knows to use the registry key rather than picking
@@ -434,6 +448,22 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐸" },
   { key: "butterfly", tKey: "aac.glyph.butterfly", pos: "animal", categories: ["who"],
     modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🦋" },
+  // The WILD stock the world already speaks about (herds, taming, the hunt) —
+  // registered so a bubble draws them instead of printing the bare word.
+  { key: "deer", tKey: "aac.glyph.deer", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🦌" },
+  { key: "sheep", tKey: "aac.glyph.sheep", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐑" },
+  { key: "ram", tKey: "aac.glyph.ram", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐏" },
+  // The SUPERORDINATES. `animal` is the category word ("an animal is coming"),
+  // `creature` the one the world uses for a made body of any species. Both get
+  // the paw print — a category has no single picture, and the paw is the nearest
+  // honest mark for "some animal" without naming a species.
+  { key: "animal", tKey: "aac.glyph.animal", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐾", exposeToAi: true },
+  { key: "creature", tKey: "aac.glyph.creature", pos: "animal", categories: ["who"],
+    modeChips: { who: ["animals"] }, tone: "comment", emoji: "🐾" },
   { key: "snake", tKey: "aac.glyph.snake", pos: "animal", categories: ["who"],
     modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐍" },
   { key: "turtle", tKey: "aac.glyph.turtle", pos: "animal", categories: ["who"],
@@ -463,9 +493,12 @@ const VOCAB: VocabularyItem[] = [
   { key: "trade", tKey: "aac.glyph.trade", pos: "verb", categories: ["do"],
     modeChips: { do: ["social", "hands"] }, tone: "request", emoji: "🔀", exposeToAi: true,
     composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  // The art for this one now lives at hands/get — receive.png was deleted when
+  // it was redrawn, so the old path resolved to nothing and the button silently
+  // dropped back to its 🙌 emoji. The KEY stays `receive`; only the file moved.
   { key: "receive", tKey: "aac.glyph.receive", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "comment",
-    imagePath: "actions/hands/receive", emoji: "🙌", exposeToAi: true,
+    imagePath: "actions/hands/get", emoji: "🙌", exposeToAi: true,
     composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
   { key: "have", tKey: "aac.glyph.have", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "hands"] }, tone: "comment",
@@ -507,6 +540,24 @@ const VOCAB: VocabularyItem[] = [
   { key: "go", tKey: "aac.glyph.go", pos: "verb", categories: ["do"],
     modeChips: { do: ["common", "body"] }, tone: "request", emoji: "🚶", directional: true, exposeToAi: true,
     imagePath: "actions/body/walk" },
+  // `come` is `go`'s counterpart — motion TOWARD the speaker — and the pair is
+  // the whole point of the bundled art: both emojis are the same walking figure,
+  // so only the artwork distinguishes them. Directional, so RTL flips it and the
+  // figure keeps arriving at the student rather than walking away.
+  { key: "come", tKey: "aac.glyph.come", pos: "verb", categories: ["do"],
+    modeChips: { do: ["common", "body"] }, tone: "request", emoji: "🫴", directional: true, exposeToAi: true,
+    imagePath: "actions/body/come" },
+  { key: "follow", tKey: "aac.glyph.follow", pos: "verb", categories: ["do"],
+    modeChips: { do: ["body", "social"] }, tone: "request", emoji: "👣", directional: true, exposeToAi: true,
+    imagePath: "actions/body/follow" },
+  // enter/exit are the doorway pair. Directional for the same reason as go/come:
+  // the arrow through the door has to point the way the language reads.
+  { key: "enter", tKey: "aac.glyph.enter", pos: "verb", categories: ["do"],
+    modeChips: { do: ["body"] }, tone: "request", emoji: "🚪", directional: true, exposeToAi: true,
+    imagePath: "actions/body/enter" },
+  { key: "exit", tKey: "aac.glyph.exit", pos: "verb", categories: ["do"],
+    modeChips: { do: ["body"] }, tone: "request", emoji: "🚪", directional: true, exposeToAi: true,
+    imagePath: "actions/body/exit" },
   { key: "play", tKey: "aac.glyph.play", pos: "verb", categories: ["do"],
     modeChips: { do: ["common"] }, tone: "request", emoji: "🎮", exposeToAi: true,
     imagePath: "actions/body/play",
@@ -585,7 +636,8 @@ const VOCAB: VocabularyItem[] = [
   { key: "wake_up", tKey: "aac.glyph.wake_up", pos: "verb", categories: ["do"],
     modeChips: { do: ["body"] }, tone: "comment", emoji: "⏰" },
   { key: "read", tKey: "aac.glyph.read", pos: "verb", categories: ["do"],
-    modeChips: { do: ["common", "mental"] }, tone: "comment", emoji: "📖" },
+    modeChips: { do: ["common", "mental"] }, tone: "comment", emoji: "📖",
+    imagePath: "actions/body/read" },
   { key: "write", tKey: "aac.glyph.write", pos: "verb", categories: ["do"],
     modeChips: { do: ["mental"] }, tone: "comment", emoji: "✍️" },
   { key: "draw", tKey: "aac.glyph.draw", pos: "verb", categories: ["do"],
@@ -596,8 +648,28 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { do: ["body"] }, tone: "comment", emoji: "💃" },
   { key: "swim", tKey: "aac.glyph.swim", pos: "verb", categories: ["do"],
     modeChips: { do: ["body"] }, tone: "comment", emoji: "🏊", directional: true },
+  // WASH and TIDY are the two cleaning ACTIONS, and `clean` is neither — it is
+  // the state they arrive at (a modifier, below). Washing scrubs a thing; tidying
+  // puts loose things back where they live. They serve different needs (`clean`
+  // vs `tidy`), so they have to be separately askable.
   { key: "wash", tKey: "aac.glyph.wash", pos: "verb", categories: ["do"],
-    modeChips: { do: ["body"] }, tone: "comment", emoji: "🧼" },
+    modeChips: { do: ["body"] }, tone: "comment", emoji: "🧼", exposeToAi: true,
+    composable: { accepts: ["noun", "animal"], suggestCategories: ["what"] } },
+  { key: "tidy", tKey: "aac.glyph.tidy", pos: "verb", categories: ["do"],
+    modeChips: { do: ["body", "hands"] }, tone: "request", emoji: "🧹", exposeToAi: true,
+    composable: { accepts: ["noun", "place"], suggestCategories: ["what", "where"] } },
+  // HEAT and COOL borrow the hot/cold DESCRIPTOR art on purpose: the act and the
+  // state it produces are the same picture, so a student who has learnt the
+  // `hot` badge reads "heat it" without being taught a second mark. The verbs
+  // already compile to exactly those states (intent-compile TRANSFORM_STATE).
+  { key: "heat", tKey: "aac.glyph.heat", pos: "verb", categories: ["do"],
+    modeChips: { do: ["hands"] }, tone: "request", emoji: "🔥", exposeToAi: true,
+    imagePath: "adjectives/state/hot",
+    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
+  { key: "cool", tKey: "aac.glyph.cool", pos: "verb", categories: ["do"],
+    modeChips: { do: ["hands"] }, tone: "request", emoji: "❄️", exposeToAi: true,
+    imagePath: "adjectives/state/cold",
+    composable: { accepts: ["noun"], suggestCategories: ["what"] } },
   // emoji weak — no good "wearing" emoji; the shirt emoji is the closest
   // stand-in. Composable so "I wore a shirt" reads as wear(shirt).
   { key: "wear", tKey: "aac.glyph.wear", pos: "verb", categories: ["do"],
@@ -653,7 +725,8 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { do: ["social"] }, tone: "feeling", emoji: "😢" },
   // emoji weak — graduation-cap reads "graduate" more than "learn".
   { key: "learn", tKey: "aac.glyph.learn", pos: "verb", categories: ["do"],
-    modeChips: { do: ["mental"] }, tone: "comment", emoji: "🎓", exposeToAi: true },
+    modeChips: { do: ["mental"] }, tone: "comment", emoji: "🎓", exposeToAi: true,
+    imagePath: "actions/body/learn" },
   // emoji weak — raised-hand reads "volunteer" more than "ask".
   { key: "ask", tKey: "aac.glyph.ask", pos: "verb", categories: ["do"],
     modeChips: { do: ["social", "mental"] }, tone: "question", emoji: "🙋", exposeToAi: true },
@@ -666,6 +739,13 @@ const VOCAB: VocabularyItem[] = [
   { key: "thing", tKey: "aac.glyph.thing", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment",
     imagePath: "things/thing", emoji: "📦", exposeToAi: true },
+  // `something` — the UNSPECIFIED thing ("I want something", "something red").
+  // Its art has been sitting at things/something.png unclaimed; the world already
+  // speaks the word, so it was rendering as bare text with the picture right
+  // there on disk.
+  { key: "something", tKey: "aac.glyph.something", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment",
+    imagePath: "things/something", emoji: "❔", exposeToAi: true },
   { key: "cause", tKey: "aac.glyph.cause", pos: "noun", categories: ["what"],
     modeChips: {}, tone: "comment",
     imagePath: "indicators/cause", emoji: "↩️", exposeToAi: true },
@@ -690,8 +770,17 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "clothes"] }, tone: "comment", emoji: "👟" },
 
   // ── Clothing ─────────────────────────────────────────────────────────────
+  // `clothing` is the SUPERORDINATE the world-engine speaks ("I want to wear
+  // clothing", the laundry chore's object). It shares 👕 with `shirt` and `wear`
+  // — a category has no picture of its own, and the shirt is the nearest honest
+  // stand-in until the category gets art. Registered because the alternative is
+  // the word printed as bare text in the bubble.
+  { key: "clothing", tKey: "aac.glyph.clothing", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "clothes"] }, tone: "comment", emoji: "👕", exposeToAi: true },
   { key: "hat", tKey: "aac.glyph.hat", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "clothes"] }, tone: "comment", emoji: "🎩" },
+  { key: "scarf", tKey: "aac.glyph.scarf", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "clothes"] }, tone: "comment", emoji: "🧣" },
   { key: "pants", tKey: "aac.glyph.pants", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "clothes"] }, tone: "comment", emoji: "👖" },
   { key: "socks", tKey: "aac.glyph.socks", pos: "noun", categories: ["what"],
@@ -725,6 +814,16 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🍇" },
   { key: "vegetable", tKey: "aac.glyph.vegetable", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🥦" },
+  // The two SPECIFIC ones the world grows and offers. Each shares its emoji with
+  // the superordinate above (🍇 fruit, 🥦 vegetable) because there is only one
+  // grape and one broccoli emoji — so this pair is a real art candidate: on a
+  // board, "grape" and "fruit" showing the same picture is a distinction the
+  // student cannot see. Registered anyway: a duplicated picture still beats a
+  // word rendered as bare text.
+  { key: "grape", tKey: "aac.glyph.grape", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🍇" },
+  { key: "broccoli", tKey: "aac.glyph.broccoli", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🥦" },
   { key: "ice_cream", tKey: "aac.glyph.ice_cream", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🍦" },
   { key: "sandwich", tKey: "aac.glyph.sandwich", pos: "noun", categories: ["what"],
@@ -755,12 +854,27 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "drink"] }, tone: "comment", emoji: "🥤" },
 
   // ── Toys ─────────────────────────────────────────────────────────────────
+  // TOY is both a NOUN and a MODIFIER, and the modifier is the load-bearing
+  // half: a DOLL is the same head word as the thing it depicts wearing this
+  // descriptor (`rabbit.toy` — see world-engine/toys.ts). So the child asks for
+  // a toy rabbit with the word they already have for a rabbit, and one facet
+  // covers every creature and vehicle the world contains. Registered as a badge
+  // so the compositor draws 🧸 in the host's corner — without a `modifier` facet
+  // a composed `rabbit.toy` would silently render as a plain rabbit (the badge
+  // stack only falls through to the emoji path for keys it can't find at all).
   { key: "toy", tKey: "aac.glyph.toy", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "toys"] }, tone: "comment", emoji: "🧸" },
+    modeChips: { what: ["all", "toys"] }, tone: "comment", emoji: "🧸",
+    exposeToAi: true,
+    modifier: { appliesTo: ["noun", "animal", "person"], transform: "badge", order: 12 } },
+  // DOLL is the bare word for the family ("I want a doll") — kept for a child who
+  // has no particular animal in mind. A doll OF something is `<head>.toy`.
   { key: "doll", tKey: "aac.glyph.doll", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "toys"] }, tone: "comment", emoji: "🪆" },
   { key: "puzzle", tKey: "aac.glyph.puzzle", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "toys"] }, tone: "comment", emoji: "🧩" },
+  // BLOCKS is a plural mass word like `socks` — one block is not a toy, a set is.
+  { key: "blocks", tKey: "aac.glyph.blocks", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "toys"] }, tone: "comment", emoji: "🧱" },
   { key: "crayon", tKey: "aac.glyph.crayon", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "toys"] }, tone: "comment", emoji: "🖍️" },
   { key: "balloon", tKey: "aac.glyph.balloon", pos: "noun", categories: ["what"],
@@ -808,6 +922,29 @@ const VOCAB: VocabularyItem[] = [
   { key: "barrel", tKey: "aac.glyph.barrel", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛢️",
     imagePath: "things/furniture/barrel" },
+  // The BASKET — the carried container (the laundry run's own vessel). Part of
+  // the container silhouette family when its art lands (weave + handle).
+  { key: "basket", tKey: "aac.glyph.basket", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧺" },
+  // THE TOGGLEABLE DEVICES the world already speaks about. They pair with the
+  // `on`/`off` state poles and the turn_on/turn_off verbs, all of which already
+  // ship — these were the only missing half, so "turn on the lamp" had a verb, a
+  // state and no noun to draw.
+  { key: "lamp", tKey: "aac.glyph.lamp", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "💡", exposeToAi: true },
+  { key: "window", tKey: "aac.glyph.window", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🪟", exposeToAi: true },
+  { key: "heater", tKey: "aac.glyph.heater", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🔥" },
+  { key: "generator", tKey: "aac.glyph.generator", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🔋" },
+  { key: "switch", tKey: "aac.glyph.switch", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🎚️" },
+  // The two EMIT effects (a toy's or a device's output — what it makes happen).
+  { key: "bubbles", tKey: "aac.glyph.bubbles", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🫧" },
+  { key: "sparks", tKey: "aac.glyph.sparks", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "✨" },
   // The BIN — the disposal can (the `fixture:bin` model is a lidded trash can;
   // the station affords `throw`). This is the ONE disposal word: the old
   // redundant `garbage` glyph was folded into `bin` (they were the same trash
@@ -824,6 +961,20 @@ const VOCAB: VocabularyItem[] = [
   { key: "sink", tKey: "aac.glyph.sink", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🚰",
     imagePath: "things/furniture/sink" },
+  // The two WET-ROOM stations. No bundled art yet, so they raster their emoji
+  // through the glyph path like any art-less item — registering them is what
+  // makes them show anything at all (the board named them and drew nothing),
+  // and art dropped at things/furniture/{bath,toilet} auto-upgrades both with
+  // no code change. `toilet` is the word the whole system uses now; the old
+  // "privy" was archaic for an AAC vocabulary.
+  { key: "bath", tKey: "aac.glyph.bath", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛁" },
+  { key: "toilet", tKey: "aac.glyph.toilet", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🚽" },
+  // The carpenter's bench — registered for the same reason: it is a fixture the
+  // board can name, and an unregistered word is a button with no icon.
+  { key: "workbench", tKey: "aac.glyph.workbench", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛠️" },
   { key: "soap", tKey: "aac.glyph.soap", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧼" },
   // emoji weak — toilet-paper roll emoji approximates "towel".
@@ -1031,6 +1182,11 @@ const VOCAB: VocabularyItem[] = [
     imagePath: "places/area" },
   { key: "town", tKey: "aac.glyph.town", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment", emoji: "🏘️" },
+  // THE WELL — the town's water source, and a destination residents name every
+  // day ("go to the well", the thirst errand). Its art is the one M3 structure
+  // that DROPS the house shell: a ring and a rope, nothing else.
+  { key: "well", tKey: "aac.glyph.well", pos: "place", categories: ["where"],
+    modeChips: { where: ["places"] }, tone: "comment", emoji: "🪣", exposeToAi: true },
   // BUILDING and ROOM are also CONTAINER FRAMES: the compositor can nest any
   // symbol inside one (`building(farm)`, `room(bed)`) using the `-bg` plates,
   // so a structure's icon is its shell plus whatever the spec declares. Used
@@ -1053,6 +1209,18 @@ const VOCAB: VocabularyItem[] = [
       position: "center",
       filledImagePath: "places/room-bg",
     } },
+  // THE DOOR — the thing between two rooms, and the one fixture in the world a
+  // student can now act on directly: the engine gained an explicit open/close
+  // (`setDoorOpen`), so "open + door" has somewhere to land. Filed under WHERE
+  // beside `room` because a door is named to talk about GOING somewhere, and
+  // cross-listed to WHAT because you also open and shut it.
+  //
+  // The 🚪 emoji is shared with `room`, `enter` and `exit` — all four are the
+  // same doorway seen from a different angle, which is exactly why this one wants
+  // its own art eventually (things/furniture/door). Until then the emoji reads.
+  { key: "door", tKey: "aac.glyph.door", pos: "place", categories: ["where", "what"],
+    modeChips: { where: ["places"], what: ["all", "things"] }, tone: "comment",
+    emoji: "🚪", exposeToAi: true },
 
   // ── Indicators (deictic pointers — cross-listed under WHO and WHAT) ──────
   { key: "that", tKey: "aac.glyph.that", pos: "noun", categories: ["who", "what"],
@@ -1187,17 +1355,20 @@ const VOCAB: VocabularyItem[] = [
     modifier: { appliesTo: ["time", "noun"], transform: "relational", order: 26,
       relation: { arrow: "backward", axis: "sequence", step: -1, maxStack: 4 } } },
 
-  // Possession — reuse the inward-/outward-hand artwork from the take/give
-  // verbs so the directional meaning carries through. `my` (toward speaker)
-  // anchors top-left; `your` (toward addressee) anchors bottom-left. RTL
-  // mirrors the corner side and the image itself.
+  // Possession — dedicated artwork under adjectives/possession. These used to
+  // borrow the take/give hands, which said "an object moving" rather than "an
+  // object BELONGING to someone"; the descriptor art states the possessor
+  // outright — `my` holds the box against the chest, `your` extends it to the
+  // addressee. The axis is toward-me / toward-you (depth), not left/right, so
+  // unlike the take/give verbs these are NOT directional. `my` anchors
+  // top-left, `your` bottom-left; RTL mirrors the corner side.
   { key: "my", tKey: "aac.glyph.my", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment",
-    imagePath: "actions/hands/take", emoji: "🫳", directional: true, exposeToAi: true,
+    imagePath: "adjectives/possession/my", emoji: "🫳", exposeToAi: true,
     modifier: { appliesTo: ["noun", "animal", "person", "place"], transform: "hands", order: 1, corner: "top-left" } },
   { key: "your", tKey: "aac.glyph.your", pos: "modifier", categories: [],
     modeChips: {}, tone: "comment",
-    imagePath: "actions/hands/give", emoji: "🫴", directional: true, exposeToAi: true,
+    imagePath: "adjectives/possession/your", emoji: "🫴", exposeToAi: true,
     modifier: { appliesTo: ["noun", "animal", "person", "place"], transform: "hands", order: 2, corner: "bottom-left" } },
 
   // Gender / number — body-shape variants on a person head. `male`/`female`
@@ -1438,9 +1609,11 @@ const VOCAB: VocabularyItem[] = [
   { key: "ok", tKey: "aac.glyph.ok", pos: "noun", categories: ["chat"],
     modeChips: { chat: ["all", "reply"] }, tone: "social", emoji: "👌", exposeToAi: true },
   { key: "understand", tKey: "aac.glyph.understand", pos: "noun", categories: ["chat"],
-    modeChips: { chat: ["all", "reply"] }, tone: "social", emoji: "💡", exposeToAi: true },
+    modeChips: { chat: ["all", "reply"] }, tone: "social", emoji: "💡", exposeToAi: true,
+    imagePath: "adjectives/feelings/understand" },
   { key: "confused", tKey: "aac.glyph.confused", pos: "noun", categories: ["chat"],
-    modeChips: { chat: ["all", "reply"] }, tone: "feeling", emoji: "😕", exposeToAi: true },
+    modeChips: { chat: ["all", "reply"] }, tone: "feeling", emoji: "😕", exposeToAi: true,
+    imagePath: "adjectives/feelings/confused" },
 
   // Reactions / discourse markers
   { key: "wow", tKey: "aac.glyph.wow", pos: "noun", categories: ["chat"],
@@ -1449,8 +1622,11 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { chat: ["all", "react"] }, tone: "comment", emoji: "😬", exposeToAi: true },
   { key: "oh_no", tKey: "aac.glyph.oh_no", pos: "noun", categories: ["chat"],
     modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "😱", exposeToAi: true },
-  { key: "cool", tKey: "aac.glyph.cool", pos: "noun", categories: ["chat"],
-    modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "😎", exposeToAi: true },
+  // NOTE `cool` is NOT here — it is the TRANSFORM VERB (to cool the food), the
+  // counterpart of `heat`, and lives with the other actions above. It sat in this
+  // reaction row as the slang "cool!" 😎 by mistake, which is why a cooling
+  // sentence used to render as sunglasses. If the slang reaction is wanted back
+  // it needs its OWN key — one word cannot be both.
   { key: "yuck", tKey: "aac.glyph.yuck", pos: "noun", categories: ["chat"],
     modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "🤢", exposeToAi: true },
   { key: "look", tKey: "aac.glyph.look", pos: "noun", categories: ["chat"],

@@ -929,6 +929,25 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     config: trackerConfig(700), // default 300ms; ~halve the rate during a game
   });
 
+  // DLL-based hardware trackers (currently Tobii) need a sidecar process spawned
+  // by the Electron main process. "auto" includes Tobii in its probe order, so we
+  // start the sidecar for both. The sidecar reports if it can't find the DLL.
+  //
+  // Declared BEFORE useEyeGaze because its status is the wake-up signal the gaze
+  // detection loop retries on — the sidecar binds a fresh OS-assigned port on
+  // every restart, and a cold spawn takes long enough that a fixed retry
+  // schedule loses the race.
+  const gazeSidecarDevice =
+    eyegazeSettings.enabled && (eyegazeSettings.provider === "tobii" || eyegazeSettings.provider === "auto")
+      ? "tobii"
+      : null;
+  const { status: gazeSidecarStatus, locateDll: locateGazeDll, openLog: openGazeLog, supported: gazeSidecarSupported } = useGazeSidecar({
+    // null until the profile loads: the default below is "off", and acting on
+    // it tore down a live tracker on every remount. See useGazeSidecar.
+    enabled: userProfile ? eyegazeSettings.enabled : null,
+    device: gazeSidecarDevice,
+  });
+
   // Unified eye gaze service — skip entirely for cursor control mode (mouse provider)
   const isCursorControlMode = eyegazeSettings.provider === "mouse";
   const eyeGaze = useEyeGaze({
@@ -936,18 +955,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     rawFaces,
     preferredProvider: eyegazeSettings.provider,
     smoothingSettings: eyegazeSettings.smoothing,
-  });
-
-  // DLL-based hardware trackers (currently Tobii) need a sidecar process spawned
-  // by the Electron main process. "auto" includes Tobii in its probe order, so we
-  // start the sidecar for both. The sidecar reports if it can't find the DLL.
-  const gazeSidecarDevice =
-    eyegazeSettings.enabled && (eyegazeSettings.provider === "tobii" || eyegazeSettings.provider === "auto")
-      ? "tobii"
-      : null;
-  const { status: gazeSidecarStatus, locateDll: locateGazeDll, openLog: openGazeLog } = useGazeSidecar({
-    enabled: eyegazeSettings.enabled,
-    device: gazeSidecarDevice,
+    sidecarSignal: gazeSidecarStatus
+      ? { sidecarCode: gazeSidecarStatus.sidecarCode, port: gazeSidecarStatus.port }
+      : null,
+    sidecarSupported: gazeSidecarSupported,
   });
 
   // A second copy of the app on the same machine steals the eye-tracker DLL from
@@ -967,14 +978,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     camera: "Camera Eye Tracking",
     mouse: "Cursor Control (External Device)",
   };
+  // Announce every change of provider, not just the first one detected. A
+  // tracker that needs a few seconds to wake now gets picked up whenever it
+  // becomes ready, so the common sequence is "mouse fallback" followed by the
+  // real tracker — and the caretaker needs to see that second one arrive.
   useEffect(() => {
-    if (eyeGaze.activeProvider && !prevProviderRef.current) {
-      const name = PROVIDER_DISPLAY_NAMES[eyeGaze.activeProvider] || eyeGaze.activeProvider;
-      setEyegazeNotification({ name, type: "connected" });
-      const timer = setTimeout(() => setEyegazeNotification(null), 4000);
-      return () => clearTimeout(timer);
-    }
+    const previous = prevProviderRef.current;
     prevProviderRef.current = eyeGaze.activeProvider;
+    if (!eyeGaze.activeProvider || eyeGaze.activeProvider === previous) return;
+    const name = PROVIDER_DISPLAY_NAMES[eyeGaze.activeProvider] || eyeGaze.activeProvider;
+    setEyegazeNotification({ name, type: "connected" });
+    const timer = setTimeout(() => setEyegazeNotification(null), 4000);
+    return () => clearTimeout(timer);
   }, [eyeGaze.activeProvider]);
 
   // Show failure notification when selected provider wasn't detected

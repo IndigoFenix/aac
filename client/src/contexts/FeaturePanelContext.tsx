@@ -47,6 +47,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/shares': 'shares',
   '/insurance-bridge': 'insuranceBridge',
   '/video-caption': 'videoCaption',
+  '/downloads': 'downloads',
 };
 
 // Feature to URL path mapping
@@ -75,6 +76,7 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   shares: '/shares',
   insuranceBridge: '/insurance-bridge',
   videoCaption: '/video-caption',
+  downloads: '/downloads',
 };
 
 // Feature configurations
@@ -277,6 +279,14 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 100,
     isFullScreen: false,
     path: '/video-caption',
+  },
+  downloads: {
+    id: 'downloads',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    isFullScreen: false,
+    path: '/downloads',
   },
 };
 

@@ -1446,10 +1446,11 @@ describe("motive batch — giverMotive presets", () => {
     expect(res.responseGlyph).toContain(`${color}.not`);
   });
 
-  it("play/music/read/wear: category want; WHY answers 'because I want to {verb}'", () => {
+  it("play/read/wear: category want; WHY answers 'because I want to {verb}'", () => {
+    // `music` retired with the instrument pool it drew from — a motive whose pool
+    // is empty can never bind an item.
     const cases = [
       { motive: "play" as const, want: "toy", verb: "play" },
-      { motive: "music" as const, want: "instrument", verb: "play" },
       { motive: "read" as const, want: "book", verb: "read" },
       { motive: "wear" as const, want: "clothing", verb: "wear" },
     ];

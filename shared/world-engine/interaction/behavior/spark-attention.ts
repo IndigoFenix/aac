@@ -36,7 +36,7 @@ export interface ObjectAffordances {
   /** Object properties (propertiesOf): "food", "toy", "clothing"… */
   properties: readonly string[];
   /** The built-world station kind, when the object is a fixture ("bed",
-   *  "privy", "bath", "table", "bowl", "barrel", "well"…); null for a loose prop. */
+   *  "toilet", "bath", "table", "bowl", "barrel", "well"…); null for a loose prop. */
   stationKind: string | null;
   /** Is this a WATER good (drink)? Water is a good key, not an object property,
    *  so it is passed as its own signal. */
@@ -56,7 +56,7 @@ export function objectMotive(a: ObjectAffordances): AttentionMotive | null {
   switch (a.stationKind) {
     case "bed":
       return "energy";
-    case "privy":
+    case "toilet":
       return "waste";
     case "bath":
       return "hygiene";
@@ -181,7 +181,7 @@ export interface AttentionAction {
     | "drink" // drink while thirsty
     | "play" // toy while bored
     | "sleep" // bed while tired
-    | "use" // privy while needing it
+    | "use" // toilet while needing it
     | "wash" // bath while dirty
     | "washItem" // a dirty ITEM → launder it
     | "wear" // clean clothing, any time

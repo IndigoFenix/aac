@@ -83,3 +83,22 @@ const CAPABILITY_MATRIX: Record<NativeHost, Omit<PlatformCapabilities, "host">> 
 export function capabilitiesFor(host: NativeHost): PlatformCapabilities {
   return { host, ...CAPABILITY_MATRIX[host] };
 }
+
+/**
+ * iOS / iPadOS WebKit allows only ONE active camera capture per page.
+ * Acquiring a second camera silently ends the first one's track, so
+ * multi-camera mode must be disabled there (both in the Capacitor shell and
+ * in Safari). This is an OS trait, not a host trait — iPadOS Safari reports
+ * host "web" — hence a UA check rather than a CAPABILITY_MATRIX row.
+ *
+ * iPadOS ships a desktop-class UA ("Macintosh; Intel Mac OS X"), so the
+ * Mac-with-touchscreen combination is the documented way to tell an iPad
+ * from a real Mac.
+ */
+export function isSingleCameraCaptureOS(
+  userAgent: string,
+  maxTouchPoints: number,
+): boolean {
+  if (/iPad|iPhone|iPod/.test(userAgent)) return true;
+  return userAgent.includes("Macintosh") && maxTouchPoints > 1;
+}

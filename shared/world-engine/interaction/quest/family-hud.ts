@@ -36,7 +36,7 @@ export type FamilyStateKey =
   | "asleep" // arrived at the bed, sleeping it off
   | "hungry"
   | "thirsty"
-  | "toilet" // the waste meter fired — needs the privy
+  | "toilet" // the waste meter fired — needs the toilet
   | "tired"
   | "lonely"
   | "dirty" // the hygiene meter fired — wants the bath

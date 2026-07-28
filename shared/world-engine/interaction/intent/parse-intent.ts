@@ -196,7 +196,7 @@ const V = (verb: string, directive = false, transfer = false, implied?: ImpliedR
 /** Speaker-oriented STATE verbs: their subject is the speaker by default and any
  *  entity is the OBJECT, so "apple want" reads "[I] want apple", never "apple wants".
  *  (Semantic override of pure position — matches "apple me eat" = I eat the apple.) */
-const STATE_VERBS = new Set(["want", "need", "have", "like", "feel"]);
+export const STATE_VERBS = new Set(["want", "need", "have", "like", "feel"]);
 
 /** GOAL-directed movement verbs: a person/place after them is the DESTINATION, not
  *  the subject — "come i_me" = "[you] come to me", "follow i_me" = "follow me". */
@@ -263,7 +263,14 @@ export const LEXICON: Record<string, Lex> = {
   pick_up: V("pick_up", true), carry: V("carry", true, false, "to"),
   // Verbs — making (directive)
   make: V("make", true), build: V("build", true), break: V("break", true), fix: V("fix", true),
-  dig: V("dig", true), plant: V("plant", true), cut: V("cut", true), clean: V("clean", true),
+  dig: V("dig", true), plant: V("plant", true), cut: V("cut", true),
+  // `clean` is a DESCRIPTOR, never an action. The two things you actually do are
+  // `wash` (scrub a thing clean) and `tidy` (put things back where they belong),
+  // and they are different acts with different outcomes — collapsing both into
+  // "clean" is what made a command render as "I am clean" (the state adjective;
+  // see NEED_ACTIVITY in intent-lines.ts, which already had to route the scrub
+  // through `wash` to avoid it). `clean` stays as the cleanliness state pole.
+  tidy: V("tidy", true),
   area: V("area", true), // ③ area charters — "area + farm + here"
   // Verbs — transforming (directive)
   heat: V("heat", true), cook: V("cook", true), cool: V("cool", true), wash: V("wash", true),

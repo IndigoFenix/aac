@@ -198,9 +198,9 @@ describe("round-2 basic needs — thirst, waste, hygiene", () => {
     expect(decideNeed(thirst, dry)).toEqual({ kind: "take", from: stock("well", 99), units: 1 });
   });
 
-  it("waste/hygiene REQUIRE their station — no privy/tub means blocked, never 'in place'", () => {
-    expect(decideNeed(waste, { ...empty, meter: 1, stations: [st("privy", "privy")] }))
-      .toEqual({ kind: "restAt", station: st("privy", "privy") });
+  it("waste/hygiene REQUIRE their station — no toilet/tub means blocked, never 'in place'", () => {
+    expect(decideNeed(waste, { ...empty, meter: 1, stations: [st("toilet", "toilet")] }))
+      .toEqual({ kind: "restAt", station: st("toilet", "toilet") });
     expect(decideNeed(waste, { ...empty, meter: 1 })).toEqual({ kind: "blocked" });
     expect(decideNeed(hygiene, { ...empty, meter: 1, stations: [st("bath", "bath")] }))
       .toEqual({ kind: "restAt", station: st("bath", "bath") });
@@ -708,6 +708,80 @@ describe("blocked rows surface WITHOUT freezing the body", () => {
         : { ...empty, carried: 1, containers: { serve: stock("table", 0, 2) } });
     expect(pick?.tpl.key).toBe("serve:meal"); // 2.8 > 1 — an ACTIONABLE row still wins on priority
     expect(pick?.blocked).toBeUndefined();
+  });
+});
+
+// ── THE BANKING PRIORITY (the famine-trap fix) ─────────────────────────────
+//
+// Observed: a body drew a restock-sized water haul at the well, drank one, and
+// the leftover rode its bag for sim-minutes — every decide, a rest-family
+// motive (energy's 384 s sleep) outranked provision's 3, so the barrel never
+// filled and the household kept trekking to the well one throat at a time.
+// A deposit fired by the PUT-IT-AWAY rule (units already in hand) now banks at
+// BANK_PRIORITY, floored under any same-category acquirer on the member (the
+// livelock invariant, enforced structurally instead of by hand-tuned numbers).
+import { BANK_PRIORITY, energyTemplate as energyTpl } from "@shared/world-engine/interaction/behavior/needs.js";
+
+describe("banking a carried haul outranks comfort, never the acquirers", () => {
+  const provisionWater: NeedTemplate = {
+    key: "provision:water",
+    item: { category: "water" },
+    drive: { kind: "stock", container: "home", below: 6 },
+    satisfy: { kind: "deposit", container: "home", upTo: 12 },
+    acquire: [{ kind: "source" }],
+    priority: 3,
+    exclusive: true,
+  };
+  const energyRow = energyTpl(1 / NEED_FILL_S.energy);
+  const bed: StationCandidate = { id: "bed_0", place: P("bed_0"), kind: "bed", waiting: 0 };
+
+  it("the well haul banks BEFORE the nap (the barrel finally fills)", () => {
+    const pick = decideNeeds([energyRow, provisionWater], (t) =>
+      t.key === "energy"
+        ? { ...empty, meter: 1, stations: [bed] }              // dog-tired — the old winner
+        : { ...empty, carried: 4, containers: { home: stock("barrel", 0, 12) } });
+    expect(pick?.tpl.key).toBe("provision:water");
+    expect(pick?.intent).toEqual({ kind: "deposit", into: stock("barrel", 0, 12), units: 4 });
+  });
+
+  it("the TRIP keeps its low priority — comfort still beats a shopping chore", () => {
+    const pick = decideNeeds([energyRow, provisionWater], (t) =>
+      t.key === "energy"
+        ? { ...empty, meter: 1, stations: [bed] }
+        : { ...empty, containers: { home: stock("barrel", 0, 12) }, sources: [stock("well", 99)] });
+    expect(pick?.tpl.key).toBe("energy"); // empty-handed: no boost, 4 > 3
+  });
+
+  it("hunger/thirst still outrank the bank — a starving hauler serves itself first", () => {
+    expect(BANK_PRIORITY).toBeLessThan(hunger.priority);
+    expect(BANK_PRIORITY).toBeLessThan(4.8); // thirst
+    expect(BANK_PRIORITY).toBeLessThan(4.5); // waste — the toilet doesn't wait
+    expect(BANK_PRIORITY).toBeGreaterThan(energyRow.priority);
+  });
+
+  it("LIVELOCK INVARIANT survives the boost: adoption's carried unit is never hijacked", () => {
+    // The adoption row ACQUIRES food (3.5); provision:food's bank must floor
+    // UNDER it, or the boost re-opens the take⇄deposit spin the invariant
+    // section pins above. Same house state as that suite's ctxFor(1).
+    const provisionFood = provisionTemplate("food", 5, 15);
+    const adopt: NeedTemplate = {
+      key: "adopt:pet_0_0|hunger:food",
+      item: { category: "food" },
+      drive: { kind: "stock", container: "recipient", below: 1 },
+      satisfy: { kind: "deposit", container: "recipient", upTo: 1 },
+      acquire: [{ kind: "container", role: "home" }, { kind: "source" }],
+      priority: 3.5,
+    };
+    const d = decideNeeds([provisionFood, adopt], (tpl) => ({
+      ...empty,
+      carried: 1,
+      containers: {
+        home: stock("furn_149_chest_food", 9, 6),
+        ...(tpl.key.startsWith("adopt:") ? { recipient: stock("bowl", 0, 2) } : {}),
+      },
+      sources: [stock("store:food", 8)],
+    }));
+    expect(d?.tpl.key).toBe(adopt.key); // the bowl gets fed, not the chest
   });
 });
 

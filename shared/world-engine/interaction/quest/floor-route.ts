@@ -30,6 +30,10 @@ interface Vec2 {
  *  carries none and is reached by distance. */
 export interface RoutedPoint extends Vec2 {
   arrive?: number;
+  /** Carried through from `routeThroughDoors`: the doorway this point straddles.
+   *  It has to survive the transit-pair refit and the dogleg insertion below, or
+   *  the body walks the crossing without declaring it and the door stays shut. */
+  doorId?: string;
 }
 
 /** The design-default body radius — the fallback when a caller doesn't pass
@@ -133,12 +137,19 @@ export function routeIndoorAware(
   to: Vec2,
   bodyR: number = DEFAULT_BODY_R,
 ): RoutedPoint[] {
-  const legs: RoutedPoint[] = routeThroughDoors(state, from, to).map((p) => ({ x: p.x, y: p.y }));
+  const legs: RoutedPoint[] = routeThroughDoors(state, from, to).map((p) => ({
+    x: p.x,
+    y: p.y,
+    ...(p.doorId ? { doorId: p.doorId } : {}),
+  }));
   for (let i = 0; i + 1 < legs.length; i += 2) {
+    // The refit MOVES the pair but must not lose which door it crosses — the
+    // whole point of the pair is that one doorway.
+    const doorId = legs[i]!.doorId;
     const fixed = adjustTransitPair(state, legs[i]!, legs[i + 1]!, bodyR);
     if (fixed) {
-      legs[i] = { ...fixed[0], arrive: 0.4 };
-      legs[i + 1] = { ...fixed[1], arrive: 0.4 };
+      legs[i] = { ...fixed[0], arrive: 0.4, ...(doorId ? { doorId } : {}) };
+      legs[i + 1] = { ...fixed[1], arrive: 0.4, ...(doorId ? { doorId } : {}) };
     } else {
       legs[i]!.arrive = 0.9;
       legs[i + 1]!.arrive = 0.9;

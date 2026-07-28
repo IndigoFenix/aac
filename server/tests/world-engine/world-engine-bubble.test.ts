@@ -22,7 +22,7 @@ function spec(): WorldSpec {
     manifold: { kind: "flat", width: 20, height: 20 },
     terrain: { kind: "flat" },
     spawns: [{ id: "s", x: 5, y: 5 }],
-    toys: [],
+    objects: [],
     multiplayer: { maxPlayers: 4, authority: "distributed" },
     content: { kind: "sandbox" },
   };

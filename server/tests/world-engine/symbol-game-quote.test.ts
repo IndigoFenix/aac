@@ -91,12 +91,23 @@ describe("symbol resolution & worklist (§6.5)", () => {
   });
 
   it("a queued pool member resolves as `queued`, not `missing` or `resolved`", () => {
+    // Bound to a SYNTHETIC pool rather than a real one. The real pools have very
+    // nearly run out of unregistered members (the Tier B pass registered the
+    // lot), and pinning this to whichever word happens to lack art today is how
+    // the test rots — the behaviour under test is the three-way split itself.
     const a1 = REQUESTING_EXCHANGES.find((e) => e.id === "a1-want-fetch")!;
-    const bound = bindExchange(a1, POOLS, queuedPreferringPicker);
-    // treat→grape (queued); i_me + want ship.
-    expect(bound.binding.treat!.symbol).toBe("grape");
+    const pools = {
+      ...POOLS,
+      treat: {
+        ...POOLS.treat!,
+        members: [{ id: "zzz_unshipped", label: "Unshipped", iconRef: "❓", symbol: "zzz_unshipped", glyphStatus: "queued" as const }],
+      },
+    };
+    expect(getVocabularyItem("zzz_unshipped")).toBeUndefined(); // the premise
+    const bound = bindExchange(a1, pools, queuedPreferringPicker);
+    expect(bound.binding.treat!.symbol).toBe("zzz_unshipped");
     const res = resolveBoundSymbols(bound.prompt);
-    expect(res.queued).toContain("grape");
+    expect(res.queued).toContain("zzz_unshipped");
     expect(res.resolved).toEqual(expect.arrayContaining(["i_me", "want"]));
     expect(res.missing).toEqual([]);
   });
@@ -111,10 +122,18 @@ describe("symbol resolution & worklist (§6.5)", () => {
 
   it("worklist lists not-yet-shipped symbols and excludes shipped ones", () => {
     const work = symbolWorklist(POOLS, REQUESTING_EXCHANGES);
-    // Declared-queued members that genuinely aren't in the registry:
-    expect(work).toEqual(expect.arrayContaining(["grape", "blocks", "bubbles", "broccoli"]));
-    // Nothing on the worklist may actually exist in the registry:
+    // The worklist is DERIVED from the registry, not from the declared
+    // glyphStatus — so it shrinks on its own as art and emoji records ship, and
+    // asserting a fixed membership would just be a list to keep editing. Two
+    // properties hold regardless of how much is left: nothing on it exists, and
+    // every pool member NOT on it does.
     for (const sym of work) expect(getVocabularyItem(sym)).toBeUndefined();
+    const onList = new Set(work);
+    for (const pool of Object.values(POOLS)) {
+      for (const m of pool.members) {
+        if (!onList.has(m.symbol)) expect(getVocabularyItem(m.symbol)).toBeDefined();
+      }
+    }
   });
 });
 

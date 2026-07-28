@@ -10,7 +10,7 @@
 // sibling modules import those directly to avoid cycling through this barrel.
 
 export { capabilities, getHost, __setHostForTests } from "./host";
-export { capabilitiesFor, detectHost } from "./detect";
+export { capabilitiesFor, detectHost, isSingleCameraCaptureOS } from "./detect";
 export type { HostGlobals } from "./detect";
 export type { NativeHost, PlatformCapabilities } from "./types";
 export { getUpdateProvider } from "./update";

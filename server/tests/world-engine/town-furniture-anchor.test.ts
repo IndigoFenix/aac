@@ -1,6 +1,6 @@
 // FURNITURE-USE ANCHORING + slide-in easing (regression suite).
 //
-// A resident that SLEEPS on a bed, SITS on a chair or a privy (toilet), or eats
+// A resident that SLEEPS on a bed, SITS on a chair or a toilet (toilet), or eats
 // at a table must settle ONTO the piece's use-point — never float beside it,
 // sink into it, or teleport on/off. The anchor is display-only (the sim keeps
 // the body standing beside the solid fixture; the renderer slides it on), so
@@ -41,9 +41,9 @@ const frame = (opts: {
 const AXES = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
 
 describe("seat/bed use-points exist for every sittable/sleepable piece", () => {
-  it("a chair and a privy (toilet) both carry a seat-top fraction", () => {
+  it("a chair and a toilet (toilet) both carry a seat-top fraction", () => {
     expect(SEAT_TOP_FRAC.chair).toBeGreaterThan(0);
-    expect(SEAT_TOP_FRAC.privy).toBeGreaterThan(0);
+    expect(SEAT_TOP_FRAC.toilet).toBeGreaterThan(0);
   });
   it("a bed carries a lie-on fraction", () => {
     expect(BED_TOP_FRAC).toBeGreaterThan(0);
@@ -80,13 +80,13 @@ describe("the body settles ON the use-point, centred, and RESTS on a seat (never
   // horizontal offset. The Y is the crux this suite exists for: the anchor names
   // the seat SURFACE, but the body's origin is its FEET, so parking the origin on
   // the surface (the old behaviour) FLOATED a seated body a hip-height above the
-  // chair/privy. A sitter must be DROPPED so its underside rests on the seat and
+  // chair/toilet. A sitter must be DROPPED so its underside rests on the seat and
   // its feet hang toward the floor; a sleeper (its recline re-centres the lying
   // body) keeps its origin ON the mattress. `restsOn` marks the drop cases.
   const cases: Array<{ name: string; kind: AvatarActivity["kind"]; objId: string; restsOn: boolean; anchorOf: (f: number) => Anchor }> = [
     { name: "sleep on a bed", kind: "sleep", objId: "furn_0_bed_0", restsOn: false, anchorOf: (f) => ({ x: 1.0, y: 0.55, z: -0.4, yaw: bedSleeperYaw(f) }) },
     { name: "sit on a chair", kind: "sit", objId: "furn_0_chair_0", restsOn: true, anchorOf: (f) => ({ x: 0.6, y: 0.45, z: 0.3, yaw: sitterYaw(f) }) },
-    { name: "sit on a privy", kind: "sit", objId: "furn_0_privy_0", restsOn: true, anchorOf: (f) => ({ x: -0.5, y: 0.4, z: 0.2, yaw: sitterYaw(f) }) },
+    { name: "sit on a toilet", kind: "sit", objId: "furn_0_toilet_0", restsOn: true, anchorOf: (f) => ({ x: -0.5, y: 0.4, z: 0.2, yaw: sitterYaw(f) }) },
   ];
   for (const c of cases) {
     for (const facing of [0, Math.PI / 2]) {

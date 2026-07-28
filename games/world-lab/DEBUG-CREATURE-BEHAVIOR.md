@@ -217,7 +217,7 @@ NPCs (street walkers, pets) keep the line-of-sight roam.
 
 ## 2. Fixture facing — FIXED
 
-**Symptom.** Chairs backed onto their tables; wardrobes and privies nosed into
+**Symptom.** Chairs backed onto their tables; wardrobes and toilets nosed into
 the wall they stand against.
 
 **Cause.** `facing` is a **game angle** (`atan2` over game x/y) naming where a
@@ -255,15 +255,15 @@ the diner wandered off while the 2s eat rig played. Now
 because the needs loop counts arrival at **1.3** while the controller only
 reaches its point at `ERRAND_ARRIVE` **0.9** (`npc-controller.ts:229`).
 
-### 3.2 Sitting on chairs and privies — FIXED
+### 3.2 Sitting on chairs and toilets — FIXED
 
 `resolveActivityAnchor` was hard-filtered to `kind === "sleep"` on a bed;
 everything else kept whatever yaw the walk controller left. It now also anchors
-`kind: "sit"`, which both cases already emit — the privy/bath via the rest
+`kind: "sit"`, which both cases already emit — the toilet/bath via the rest
 branch of `syncNeedActivities` (`quest-host.ts:2873`), chairs via `commandSit`'s
 pose.
 
-- `SEAT_TOP_FRAC` (`object-models.ts`) = `{ chair: 2.2, privy: 1.01 }`, derived
+- `SEAT_TOP_FRAC` (`object-models.ts`) = `{ chair: 2.2, toilet: 1.01 }`, derived
   from each recipe's own geometry.
 - Kinds **absent** from it (tub, workbench) still return null and crouch in
   place — deliberate, not an oversight.
@@ -299,7 +299,7 @@ edge rather than grinding.
 ### 3.4 Toilet/chair poses use the crouch rig
 
 Known and accepted for now — a generic "use device" pose is future work. The
-privy will now at least be *facing* the right way, which may make the crouch
+toilet will now at least be *facing* the right way, which may make the crouch
 read as more obviously wrong, not less.
 
 ---

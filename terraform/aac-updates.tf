@@ -244,6 +244,21 @@ resource "aws_cloudfront_distribution" "aac_updates" {
     cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
   }
 
+  # Same rule for the iPad feed's `latest.json` (aac/ios/). Nothing polls it
+  # automatically — the .ipa has no auto-updater — but the clinician
+  # dashboard's Downloads panel reads it server-side to resolve the current
+  # build, and a cached manifest would keep handing out the previous .ipa.
+  ordered_cache_behavior {
+    path_pattern           = "*latest*.json"
+    target_origin_id       = "aac-updates-s3"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    # AWS-managed "CachingDisabled" policy.
+    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+  }
+
   restrictions {
     geo_restriction {
       restriction_type = "none"

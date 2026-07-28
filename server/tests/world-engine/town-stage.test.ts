@@ -203,7 +203,7 @@ describe("town-stage: the open town", () => {
     // ...AND stepping inside is what FURNISHES the room: exactly this one
     // house's fixtures stream in (the goods box + cupboard + table for the
     // 1-good town, plus the household stations: 2 beds, 2 chairs, per-member
-    // boxes — and whichever round-2 stations FIT: bath/privy/barrel/bin/bowl) —
+    // boxes — and whichever round-2 stations FIT: bath/toilet/barrel/bin/bowl) —
     // the interior we kept abstracted while outside. This town sells only
     // FOOD, so its goods box is the refrigerator, not a plain chest.
     const kinds = fHome.addObjects.map(o => o.fixture).sort();
@@ -213,7 +213,7 @@ describe("town-stage: the open town", () => {
     expect(kinds.filter(k => k === "bed")).toHaveLength(2);
     expect(kinds.filter(k => k === "chair")).toHaveLength(2);
     // `refrigerator` — the food good's box (the other goods keep plain chests).
-    const ALLOWED = new Set(["bed", "chair", "chest", "cupboard", "table", "box", "bath", "privy", "barrel", "bin", "bowl", "oven", "refrigerator"]);
+    const ALLOWED = new Set(["bed", "chair", "chest", "cupboard", "table", "box", "bath", "toilet", "barrel", "bin", "bowl", "oven", "refrigerator"]);
     for (const k of kinds) expect(ALLOWED.has(k as string)).toBe(true);
     for (const o of fHome.addObjects) {
       expect(o.fixture).toBeDefined();

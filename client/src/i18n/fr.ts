@@ -227,6 +227,7 @@ export const fr = {
     calendar: "Calendrier",
     personChat: "Messages",
     call: "Appel",
+    downloads: "Téléchargements",
   },
 
   // ============================================================================
@@ -2717,6 +2718,51 @@ export const fr = {
   // ============================================================================
   // DEEP ANALYSIS
   // ============================================================================
+  // ============================================================================
+  // APP DOWNLOADS (AAC desktop installer + iPad .ipa)
+  // ============================================================================
+  downloads: {
+    title: "Téléchargements de l'application",
+    subtitle: "Installez l'application Aivota AAC sur l'appareil de communication. Choisissez la version correspondant à l'appareil.",
+    loading: "Recherche de la dernière version…",
+    loadFailed: "Impossible de vérifier la dernière version. Réessayez dans un instant.",
+    notPublished: "Aucune version n'a encore été publiée.",
+    version: "Version {version}",
+    released: "Publiée le {date}",
+    helpNote: "Un problème d'installation ? Contactez le support Aivota en indiquant le numéro de version affiché ci-dessus.",
+    windows: {
+      title: "Application Windows",
+      desc: "L'application de bureau complète pour Windows 10 ou 11 (64 bits). Compatible avec l'oculométrie via un appareil Tobii.",
+      button: "Télécharger pour Windows",
+      installTitle: "Comment l'installer",
+      step1: "Téléchargez le programme d'installation et ouvrez-le. Windows peut signaler un éditeur inconnu : choisissez « Informations complémentaires », puis « Exécuter quand même ».",
+      step2: "Suivez l'installation. Aivota AAC est ajouté au menu Démarrer.",
+      step3: "Ouvrez l'application et connectez-vous avec le compte de l'utilisateur.",
+      autoUpdateNote: "L'application Windows se met à jour toute seule. Une fois installée, les nouvelles versions se téléchargent en arrière-plan : cette page ne sert qu'à la première installation ou à un nouvel ordinateur.",
+    },
+    ios: {
+      title: "Application iPad",
+      desc: "La même application pour iPadOS. Tactile uniquement : l'oculométrie n'est pas disponible sur iPad.",
+      button: "Télécharger pour iPad (.ipa)",
+      whyNote: "L'application iPad n'est pas encore sur l'App Store ; elle s'installe depuis un fichier à l'aide d'un outil gratuit appelé Sideloadly. L'installation se fait depuis un ordinateur Windows ou Mac, pas depuis l'iPad.",
+      installTitle: "Installer avec Sideloadly",
+      needTitle: "Ce qu'il vous faut :",
+      needComputer: "Un ordinateur Windows ou Mac.",
+      needCable: "Un câble USB pour relier l'iPad à cet ordinateur.",
+      needAppleId: "Un identifiant Apple — un compte gratuit suffit.",
+      step1: "Sur l'ordinateur, installez Sideloadly depuis",
+      step2: "Sous Windows uniquement : installez « Apple Devices » (ou iTunes) depuis le Microsoft Store, puis redémarrez l'ordinateur. Sideloadly en a besoin pour voir l'iPad.",
+      step3: "Téléchargez le fichier .ipa ci-dessus sur cet ordinateur.",
+      step4: "Branchez l'iPad en USB. Si l'iPad le demande, touchez « Se fier » et saisissez son code.",
+      step5: "Ouvrez Sideloadly, faites glisser le .ipa dedans, sélectionnez l'iPad, saisissez votre identifiant Apple et appuyez sur Start. Entrez le mot de passe demandé.",
+      step6: "Sur l'iPad, ouvrez Réglages → Général → VPN et gestion de l'appareil, touchez votre identifiant Apple puis « Se fier ». Sans cela, l'application ne s'ouvrira pas.",
+      step7: "Ouvrez Aivota AAC sur l'iPad et connectez-vous.",
+      expiryWarning: "Avec un identifiant Apple gratuit, l'application cesse de s'ouvrir au bout de 7 jours. Refaites les étapes Sideloadly pour la renouveler. Un compte Apple Developer payant porte cette durée à un an.",
+      updateNote: "L'application iPad ne peut pas se mettre à jour seule. Quand une nouvelle version apparaît ici, téléchargez-la et réinstallez-la de la même façon.",
+      limitsNote: "Limites d'un identifiant Apple gratuit : environ 3 applications par appareil et 3 appareils par identifiant. Sideloadly peut modifier l'identifiant de l'application — c'est normal.",
+    },
+  },
+
   deepAnalysis: {
     title: "Analyse approfondie",
     history: "Historique",

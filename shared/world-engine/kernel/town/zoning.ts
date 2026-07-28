@@ -231,6 +231,13 @@ export interface TownGrowthSignals {
   crowding: number;
   /** A commodity's shortage 0..1 (1 − got/need, clamped). */
   shortage(good: string): number;
+  /** SERVICE DEFICIT (needs-aware districts): stranded founding mass for a
+   *  facility TYPE — households living past the need-cycle service radius
+   *  (scale.ts serviceRadiusM) from their nearest standing one, normalized
+   *  0..1 against the founding bar (districts.ts). A real need like a
+   *  shortage: it licenses open ground and turns urgent past the same
+   *  gate. Absent/0 = everyone served. */
+  serviceDeficit?(type: string): number;
 }
 
 /** The slice of an economy BuildingDef the growth step reads (kept
@@ -341,14 +348,18 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     const eco = spec.economy ? input.economyOf(spec.economy) : null;
     let worst = 0;
     for (const g of eco?.sells ?? []) worst = Math.max(worst, input.signals.shortage(g));
+    // SERVICE DEFICIT (needs-aware districts): a stranded quarter is a real
+    // need on the same footing as a shortage — it reorders, licenses open
+    // ground, and turns urgent past the same gate.
+    const svc = input.signals.serviceDeficit?.(spec.type) ?? 0;
     // NEED URGENCY (city-founding): survival builds bypass the bank —
     // a homeless population raises a house, a hungry one a farm, TODAY
     // (materials and the one-per-day tick still gate).
     const urgent =
       spec.role === "house"
         ? input.signals.crowding >= URGENT_CROWDING
-        : worst >= URGENT_SHORTAGE;
-    let score = structureNeedScore(spec, eco, input.signals);
+        : Math.max(worst, svc) >= URGENT_SHORTAGE;
+    let score = Math.max(structureNeedScore(spec, eco, input.signals), svc);
     if (!zone) {
       // TOWN PREFERENCE (city-founding areas): a "town"-shaped charter
       // names a category the whole town favors — LICENSED to rise at rest
@@ -361,8 +372,9 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
         // OPEN GROUND (no charter constrains this town — nations §3c: laws
         // constrain when present, absence is not a freeze): only REAL need
         // builds here — a house for a crowded town, a producer for a real
-        // shortage. Zoned fill-at-rest (markets, workshops) needs a charter.
-        if (spec.role !== "house" && !(eco?.sells ?? []).length) return;
+        // shortage, a SERVICE facility for a stranded quarter. Zoned
+        // fill-at-rest (markets, workshops) needs a charter.
+        if (spec.role !== "house" && !(eco?.sells ?? []).length && svc <= 0) return;
         if (!urgent && score < OPEN_GROWTH_MIN) return;
       }
     }

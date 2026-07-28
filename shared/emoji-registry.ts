@@ -76,6 +76,7 @@ const EXTRA_EMOJIS: Record<string, string> = {
   egg: "🥚",
   fish_food: "🐟",
   fruit: "🍎",
+  grape: "🍇",
   grapes: "🍇",
   ice_cream: "🍦",
   ice_cream_cone: "🍦",
@@ -442,6 +443,33 @@ export function isNonReversibleEmoji(str: string): boolean {
     }
   }
   return false;
+}
+
+/**
+ * True when a VOCABULARY ITEM must not be horizontally mirrored in RTL.
+ *
+ * Two sources, in order:
+ *   1. `nonReversible: true` on the item — the explicit opt-out, for bundled
+ *      ARTWORK that reads wrong mirrored (art containing a numeral, a letter,
+ *      or asymmetric punctuation). Nothing bundled needs it yet; the field is
+ *      the hook for when such art lands.
+ *   2. The item's canonical emoji, via `isNonReversibleEmoji` — digits,
+ *      keycaps, enclosed letterforms, `?` / `!`. An item like `what` (❓) or
+ *      the numeral modifiers carry their text INSIDE the glyph, so mirroring
+ *      yields a reversed question mark rather than a right-to-left one.
+ *
+ * Lives here rather than in the compositor because it is a fact about the
+ * item, not about a render: the compositor must not be the only place that
+ * knows it, and it cannot be imported by server code or tests. Note the
+ * dependency direction — this module already reads the glyph registry, so the
+ * predicate cannot live there without a cycle.
+ */
+export function isNonReversibleItem(item: {
+  nonReversible?: boolean;
+  emoji?: string;
+}): boolean {
+  if (item.nonReversible) return true;
+  return isNonReversibleEmoji(item.emoji ?? "");
 }
 
 // Re-export the pattern check for callers that need to distinguish a

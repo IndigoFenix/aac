@@ -28,3 +28,4 @@ export { shareInviteController, ShareInviteController } from "./shareInviteContr
 export { consentController } from "./consentController";
 export { crmChatController, CrmChatController } from "./crmChatController";
 export { paddleController, PaddleController } from "./paddleController";
+export { appDownloadController, AppDownloadController } from "./appDownloadController";

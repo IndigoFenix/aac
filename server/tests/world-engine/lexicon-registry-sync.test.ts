@@ -20,11 +20,15 @@ const GAME_ONLY = new Set<string>([
   "us",
   // verbs
   // `drop`/`carry` left: they now ship as physical-carry verbs with body art.
-  "come", "follow", "stay", "turn", "get", "bring",
+  // `come`/`follow` left: bundled body art shipped, and both are directional —
+  // the pair with `go` is only distinguishable BY the artwork.
+  "stay", "turn", "get", "bring",
   // `clean` left: it now resolves as the cleanliness STATE adjective.
   // `zone` left: the charter verb is spoken as `area`, which has registry art.
   "break", "fix", "dig", "plant", "cut",
-  "heat", "cook", "fill", "empty", "show", "teach", "fight", "feel", "rest",
+  // `heat` left: it now borrows the `hot` descriptor art — the act and the state
+  // it produces are deliberately the same picture.
+  "cook", "fill", "empty", "show", "teach", "fight", "feel", "rest",
   // connectives
   "then", "so", "therefore", "in_order_to", "until",
   // relations
@@ -86,9 +90,17 @@ describe("ConceptDef bridge — the joined noun library", () => {
     // creature can only ever play if real toys report `play` here. Both the
     // loose-prop scan and the take-from-container draw match on this list —
     // if it empties, creatures silently stop being able to play.
+    //
+    // Asserted over the LIVE pool rather than a hard-coded trio (it used to name
+    // teddy/ball/blocks): the pool is down to the ball while the toy system is
+    // rebuilt, and the invariant that matters is "whatever is in the pool can be
+    // played with, and the pool is never empty" — which survives the membership
+    // changing under it.
     const concepts = buildConcepts();
-    for (const toy of ["teddy", "ball", "blocks"]) {
-      expect(concepts.get(toy)?.affords ?? []).toContain("play");
+    const toys = POOLS.toy!.members;
+    expect(toys.length).toBeGreaterThan(0);
+    for (const toy of toys) {
+      expect(concepts.get(toy.symbol)?.affords ?? []).toContain("play");
     }
   });
 

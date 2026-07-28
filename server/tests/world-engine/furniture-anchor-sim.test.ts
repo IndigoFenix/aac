@@ -5,7 +5,7 @@
 // This suite proves the missing half: getting the SIM BODY legally ONTO the use
 // point so the two agree and the pose settles, and back OFF to a valid spot.
 //
-// The chronic bug: a bed / privy is a SOLID collider when not in use, so a body
+// The chronic bug: a bed / toilet is a SOLID collider when not in use, so a body
 // walking up to sleep/sit collides with its edge and stops a body-radius IN FRONT
 // of it — the animation then plays there. The fix (furniture-anchor.ts): on the
 // contact handoff the anchor eases the body to the use point BYPASSING that one
@@ -117,7 +117,7 @@ function useSideAlignment(kind: FixtureKind, facing: number, center: { x: number
 describe("claimed collision hands off to the anchor and eases the body ONTO the use point", () => {
   const cases: Array<{ kind: FixtureKind; radius: number }> = [
     { kind: "bed", radius: 0.9 }, // solid + torso
-    { kind: "privy", radius: 0.55 }, // solid + pelvis
+    { kind: "toilet", radius: 0.55 }, // solid + pelvis
     { kind: "chair", radius: 0.5 }, // pass-through + pelvis
   ];
   for (const { kind, radius } of cases) {
@@ -167,7 +167,7 @@ describe("engagement covers the whole legal arrival spread, not just the ideal s
   // 0.9 m-radius bed, i.e. barely a step past the stand spot.
   const cases: Array<{ kind: FixtureKind; radius: number }> = [
     { kind: "bed", radius: 0.9 },
-    { kind: "privy", radius: 0.55 },
+    { kind: "toilet", radius: 0.55 },
     { kind: "chair", radius: 0.5 },
   ];
   for (const { kind, radius } of cases) {
@@ -237,12 +237,12 @@ describe("dismount lands the body on a validated spot — every exit path, every
     assertValidDismount(state, done, "bed", 0, center);
   });
 
-  it("a privy dismount lands on its front (its only use side)", () => {
-    const { state, id, center } = useWorld("privy", 0.55, Math.PI / 2);
+  it("a toilet dismount lands on its front (its only use side)", () => {
+    const { state, id, center } = useWorld("toilet", 0.55, Math.PI / 2);
     const a = driveAnchor(state, id, (b) => b.anchor?.phase === "anchored");
     delete a.activity;
     const done = driveAnchor(state, id, (b) => !b.anchor);
-    assertValidDismount(state, done, "privy", Math.PI / 2, center);
+    assertValidDismount(state, done, "toilet", Math.PI / 2, center);
   });
 
   it("a bed with a WALL behind the headboard dismounts to a long side / the foot", () => {
@@ -350,18 +350,18 @@ describe("an anchored body is held out of the separation pass (never shoved off 
 // ---------------------------------------------------------------------------
 
 describe("__questLab_pose() ground truth: anchored bodies read delta ≈ 0 in the pose dump", () => {
-  it("bed / chair / privy all sit dead-on their use point (planar + yaw ~0)", () => {
+  it("bed / chair / toilet all sit dead-on their use point (planar + yaw ~0)", () => {
     // One world, all three on-fixture kinds, each with a resident using it.
     const specs: ObjectSpec[] = [
       fixtureSpec("bed", 15, 15, 0.9, "bed", 0),
       fixtureSpec("chair", 30, 15, 0.5, "chair", Math.PI / 2),
-      fixtureSpec("privy", 45, 15, 0.55, "privy", Math.PI),
+      fixtureSpec("toilet", 45, 15, 0.55, "toilet", Math.PI),
     ];
     const state = createWorldState(expandWorldBuildings(worldSpec(specs)), "me", 0, undefined);
     const seats: Array<{ id: string; oid: string; kind: AvatarState["activity"] }> = [
       { id: "resident_bed", oid: "bed", kind: { kind: "sleep", objId: "bed" } },
       { id: "resident_chair", oid: "chair", kind: { kind: "sit", objId: "chair" } },
-      { id: "resident_privy", oid: "privy", kind: { kind: "sit", objId: "privy" } },
+      { id: "resident_toilet", oid: "toilet", kind: { kind: "sit", objId: "toilet" } },
     ];
     for (const s of seats) {
       const o = state.objects[s.oid]!;

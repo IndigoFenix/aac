@@ -23,37 +23,119 @@ import { GlyphCompositor } from "../glyph-compositor.tsx";
 import type { ImageResolver } from "../glyph-compositor.js";
 import type { GlyphImage } from "./speech-bubble.js";
 import { buildCausalSvg, splitCausalGlyph, svgDims } from "./causal-glyph.js";
+import {
+  canBankSlotAsset,
+  glyphRasterKey,
+  readGlyphRaster,
+  readSlotAsset,
+  slotAssetKey,
+  writeGlyphRaster,
+  writeSlotAsset,
+} from "./glyph-raster-cache.js";
 
 /** Supersample height (px) the SVG rasterizes at — the bubble downsamples it. */
 const RASTER_HEIGHT = 200;
 
 const nullResolver: ImageResolver = () => null;
 
-// asset URL → data URL, cached (an SVG loaded as an <img> can't fetch external
-// hrefs, so every <image> must be inlined as a data URL). null = failed fetch.
+/**
+ * Longest edge (px) a slot's artwork is INLINED at.
+ *
+ * THIS IS THE HOT NUMBER. The composed glyph rasters at RASTER_HEIGHT, and one
+ * slot is at most that tall, so the bundled 500x500 source art carries ~6x more
+ * pixels than can ever reach the screen — and it pays for them on EVERY bubble,
+ * because a fresh SVG (with every slot base64'd into it) is built and decoded per
+ * SENTENCE, and sentences rarely repeat. Shrinking here turns ~90-230 KB of
+ * inlined base64 per icon into ~10-20 KB.
+ *
+ * Sized to the raster height rather than under it: the glyph is downsampled from
+ * here, so anything smaller would show as softness in the bubble.
+ */
+const SLOT_MAX_EDGE = RASTER_HEIGHT;
+
+// asset URL → inlined data URL (shrunk where worthwhile), cached (an SVG loaded
+// as an <img> can't fetch external hrefs, so every <image> must be inlined as a
+// data URL). null = failed fetch.
 const urlToDataUrl = new Map<string, string | null>();
+const slotInflight = new Map<string, Promise<string | null>>();
 // Final composed-glyph SVG data URL, cached per `glyph|rtl`.
 const urlCache = new Map<string, string | null>();
 const inflight = new Map<string, Promise<string | null>>();
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * A data URL of `blob` scaled down to SLOT_MAX_EDGE, or null when shrinking is
+ * not worth it or not possible — the caller then inlines the original bytes.
+ *
+ * Skips SVG entirely: it is resolution-independent and already tiny (the flag
+ * icons), so rasterizing it would trade quality away for nothing.
+ */
+async function shrinkToDataUrl(blob: Blob): Promise<string | null> {
+  if (typeof document === "undefined" || blob.type === "image/svg+xml") return null;
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const img = await decodeImage(objectUrl);
+    const w = img?.naturalWidth ?? 0;
+    const h = img?.naturalHeight ?? 0;
+    if (!img || !w || !h) return null;
+    const scale = SLOT_MAX_EDGE / Math.max(w, h);
+    if (scale >= 1) return null; // already no bigger than we can show
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(w * scale));
+    canvas.height = Math.max(1, Math.round(h * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png"); // lossless — icon art is hard-edged
+  } catch {
+    return null; // tainted canvas or an undecodable blob: inline the original
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 async function fetchAsDataUrl(url: string): Promise<string | null> {
   if (urlToDataUrl.has(url)) return urlToDataUrl.get(url)!;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`status ${res.status}`);
-    const blob = await res.blob();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    urlToDataUrl.set(url, dataUrl);
-    return dataUrl;
-  } catch {
-    urlToDataUrl.set(url, null);
-    return null;
-  }
+  // Two sentences composed at once must not each fetch-and-shrink the same icon.
+  const pending = slotInflight.get(url);
+  if (pending) return pending;
+
+  const work = (async (): Promise<string | null> => {
+    const bankable = canBankSlotAsset(url);
+    const bankKey = slotAssetKey(url, SLOT_MAX_EDGE);
+    if (bankable) {
+      const banked = await readSlotAsset(bankKey);
+      if (banked) {
+        urlToDataUrl.set(url, banked);
+        return banked;
+      }
+    }
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const blob = await res.blob();
+      const dataUrl = (await shrinkToDataUrl(blob)) ?? (await blobToDataUrl(blob));
+      urlToDataUrl.set(url, dataUrl);
+      if (bankable) void writeSlotAsset(bankKey, dataUrl);
+      return dataUrl;
+    } catch {
+      urlToDataUrl.set(url, null);
+      return null;
+    }
+  })().finally(() => slotInflight.delete(url));
+
+  slotInflight.set(url, work);
+  return work;
 }
 
 /** Pull the `<svg>…</svg>` out of the compositor's wrapper-div markup. */
@@ -193,9 +275,72 @@ export interface GlyphImageSource {
    *  (a model-less object), where a background square would read as a card
    *  floating in the scene rather than as the thing itself. */
   glyphIconFor: (glyph: string) => GlyphImage[] | null;
+  /** Start decoding glyphs we KNOW will be asked for, before anything asks. The
+   *  first bubble is text-only for exactly as long as its glyph takes to compose,
+   *  so the fix for "the icon pops in a beat late" is to have composed it already.
+   *  Spread across idle ticks — a cold entry runs React twice, and doing a whole
+   *  vocabulary in one go would drop frames to save a frame. */
+  prewarm: (glyphs: string[], opts?: { bare?: boolean }) => void;
   clear: () => void;
 }
 
+/** Cold glyphs started per idle tick during a prewarm. Two keeps the synchronous
+ *  compositor renders well inside a frame; a warm (cached-raster) entry is only a
+ *  store read plus a PNG decode, so the queue drains fast either way. */
+const PREWARM_PER_TICK = 2;
+
+function onIdle(fn: () => void): void {
+  const ric = (globalThis as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
+  if (ric) ric(fn);
+  else setTimeout(fn, 16);
+}
+
+/** Decode a URL to an image, resolving null on failure. `decode()` (where
+ *  available) forces the bitmap ready NOW, so the bubble's first `drawImage`
+ *  doesn't pay a synchronous decode mid-frame. */
+function decodeImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const done = () => resolve(img);
+      if (typeof img.decode === "function") img.decode().then(done, done);
+      else done();
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+/** PNG bytes of a decoded glyph image at its natural size, or null if the canvas
+ *  route is unavailable. `toBlob` THROWS on a tainted canvas — some WebViews
+ *  taint on an SVG carrying `<foreignObject>` — and a failure here only means we
+ *  compose from scratch again next launch, so it stays silent. */
+async function toPngBytes(img: HTMLImageElement): Promise<ArrayBuffer | null> {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  if (!w || !h || typeof document === "undefined") return null;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/png");
+    });
+    return blob ? await blob.arrayBuffer() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `resolveImage` maps each symbol to its artwork URL (app-specific bundled
+ * assets). `rtl` decides which way composed glyphs read — PASS IT whenever the
+ * caller knows the language, because the default sniffs `document.dir`, and a
+ * game running in its own iframe has a document nobody ever set a direction on.
+ */
 export function createGlyphImageSource(opts: { resolveImage?: ImageResolver; rtl?: () => boolean } = {}): GlyphImageSource {
   const resolveImage = opts.resolveImage ?? nullResolver;
   const rtlFn = opts.rtl ?? (() => typeof document !== "undefined" && document.documentElement.dir === "rtl");
@@ -203,28 +348,74 @@ export function createGlyphImageSource(opts: { resolveImage?: ImageResolver; rtl
   const cache = new Map<string, HTMLImageElement | null>();
   const started = new Set<string>();
 
-  const makeResolver = (noBackground: boolean) => (glyph: string): GlyphImage[] | null => {
-    if (!glyph || !glyph.trim()) return null;
-    const key = `${glyph}|${rtlFn() ? "r" : ""}|${noBackground ? "n" : ""}`;
+  /** Get the glyph ready, cheapest route first: the banked bitmap from a previous
+   *  launch, else the full compose — which we then bank so no later launch pays
+   *  it again. */
+  async function load(key: string, glyph: string, rtl: boolean, noBackground: boolean): Promise<void> {
+    const bankKey = glyphRasterKey(glyph, rtl, noBackground);
+    const png = await readGlyphRaster(bankKey);
+    if (png) {
+      const objectUrl = URL.createObjectURL(new Blob([png], { type: "image/png" }));
+      try {
+        const img = await decodeImage(objectUrl);
+        if (img) {
+          cache.set(key, img);
+          return;
+        }
+      } finally {
+        URL.revokeObjectURL(objectUrl); // the decoded bitmap outlives the URL
+      }
+      // A corrupt record: fall through and recompose rather than show nothing.
+    }
+
+    const url = await rasterizeGlyphToUrl(glyph, { resolveImage, rtl, noBackground });
+    if (!url) return; // `started` keeps it from being retried every frame
+    const img = await decodeImage(url);
+    if (!img) {
+      cache.set(key, null);
+      return;
+    }
+    cache.set(key, img);
+    const bytes = await toPngBytes(img);
+    if (bytes) void writeGlyphRaster(bankKey, bytes);
+  }
+
+  /** The decoded glyph if it is in hand, else null — starting the load once. The
+   *  direction is read HERE and threaded down, so a language switch mid-session
+   *  can never key the lookup one way and compose the other. */
+  const begin = (glyph: string, noBackground: boolean): HTMLImageElement | null => {
+    const rtl = rtlFn();
+    const key = `${glyph}|${rtl ? "r" : ""}|${noBackground ? "n" : ""}`;
     const have = cache.get(key);
-    if (have) return [have];
+    if (have) return have;
     if (started.has(key)) return null; // pending or failed
     started.add(key);
-    rasterizeGlyphToUrl(glyph, { resolveImage, rtl: rtlFn(), noBackground })
-      .then((url) => {
-        if (!url) return;
-        const img = new Image();
-        img.onload = () => cache.set(key, img);
-        img.onerror = () => cache.set(key, null);
-        img.src = url;
-      })
-      .catch(() => {});
+    load(key, glyph, rtl, noBackground).catch(() => {});
     return null;
+  };
+
+  const makeResolver = (noBackground: boolean) => (glyph: string): GlyphImage[] | null => {
+    if (!glyph || !glyph.trim()) return null;
+    const img = begin(glyph, noBackground);
+    return img ? [img] : null;
+  };
+
+  const prewarm = (glyphs: string[], o: { bare?: boolean } = {}): void => {
+    const queue = Array.from(new Set(glyphs.filter((g) => g && g.trim())));
+    let i = 0;
+    const pump = (): void => {
+      for (let n = 0; n < PREWARM_PER_TICK && i < queue.length; n++, i++) {
+        begin(queue[i]!, o.bare ?? false);
+      }
+      if (i < queue.length) onIdle(pump);
+    };
+    if (queue.length) onIdle(pump);
   };
 
   return {
     glyphFor: makeResolver(false),
     glyphIconFor: makeResolver(true),
+    prewarm,
     clear: () => { cache.clear(); started.clear(); },
   };
 }

@@ -5,10 +5,12 @@
 // one" — members whose symbol isn't in the registry yet carry glyphStatus
 // "queued" and land on the §6.5 worklist; they don't block authoring (pillar 5).
 //
-// Member `symbol` keys are verified against shared/glyph-registry.ts at the time
-// of writing: cookie/apple/banana/ball/car/train/boat/rabbit/bear/frog all ship;
-// the rest are queued. The binder is registry-authoritative regardless, so a
-// glyphStatus that drifts from reality is corrected at bind time, not trusted.
+// Member `symbol` keys are verified against shared/glyph-registry.ts. As of the
+// 2026-07-28 Tier B pass every member but `sock` resolves — and `sock` is not
+// waiting on art, it is waiting on a decision: the board already carries `socks`,
+// so one side needs renaming before a record can be added without duplicating a
+// referent. The binder is registry-authoritative regardless, so a glyphStatus
+// that drifts from reality is corrected at bind time, not trusted.
 
 import type { PoolDef } from "@shared/world-engine/interaction/types.js";
 
@@ -20,18 +22,27 @@ export const POOLS: Record<string, PoolDef> = {
       { id: "cookie", label: "Cookie", iconRef: "🍪", symbol: "cookie" },
       { id: "apple", label: "Apple", iconRef: "🍎", symbol: "apple" },
       { id: "banana", label: "Banana", iconRef: "🍌", symbol: "banana" },
-      { id: "grape", label: "Grape", iconRef: "🍇", symbol: "grape", glyphStatus: "queued" },
+      { id: "grape", label: "Grape", iconRef: "🍇", symbol: "grape" },
     ],
   },
+  // THE AUTHORED TOYS (toys-and-song-expansion.md). These are the toys with
+  // their OWN head word and their own model; DOLLS are not listed here and never
+  // will be, because a doll is not a member of a pool — it is the `toy` FORM
+  // facet on whatever creature or vehicle the world already contains
+  // (`rabbit.toy` — world-engine/toys.ts). Enumerating dolls here would mean
+  // re-listing the species registry, which is exactly what the facet avoids.
+  //
+  // Members mirror TOY_ITEMS: the pool is the SPEAKABLE side, toys.ts is the
+  // craftable side, and a test pins them in sync so a toy can never be makeable
+  // but unaskable (or the reverse). `teddy` stays gone — a teddy bear IS
+  // `bear.toy` now, which is the same word a child uses for the animal.
   toy: {
     id: "toy",
     affordance: "graspable",
     members: [
       { id: "ball", label: "Ball", iconRef: "⚽", symbol: "ball" },
-      { id: "car", label: "Toy car", iconRef: "🚗", symbol: "car" },
-      { id: "train", label: "Toy train", iconRef: "🚂", symbol: "train" },
-      { id: "blocks", label: "Blocks", iconRef: "🧱", symbol: "blocks", glyphStatus: "queued" },
-      { id: "teddy", label: "Teddy", iconRef: "🧸", symbol: "teddy", glyphStatus: "queued" },
+      { id: "blocks", label: "Blocks", iconRef: "🧱", symbol: "blocks" },
+      { id: "puzzle", label: "Puzzle", iconRef: "🧩", symbol: "puzzle" },
     ],
   },
   friend: {
@@ -41,23 +52,23 @@ export const POOLS: Record<string, PoolDef> = {
       { id: "rabbit", label: "Rabbit", iconRef: "🐰", symbol: "rabbit" },
       { id: "bear", label: "Bear", iconRef: "🐻", symbol: "bear" },
       { id: "frog", label: "Frog", iconRef: "🐸", symbol: "frog" },
-      { id: "dog", label: "Dog", iconRef: "🐶", symbol: "dog", glyphStatus: "queued" },
+      { id: "dog", label: "Dog", iconRef: "🐶", symbol: "dog" },
     ],
   },
   container: {
     id: "container",
     affordance: "openable",
     members: [
-      { id: "box", label: "Box", iconRef: "📦", symbol: "box", glyphStatus: "queued" },
-      { id: "basket", label: "Basket", iconRef: "🧺", symbol: "basket", glyphStatus: "queued" },
+      { id: "box", label: "Box", iconRef: "📦", symbol: "box" },
+      { id: "basket", label: "Basket", iconRef: "🧺", symbol: "basket" },
     ],
   },
   emit: {
     id: "emit",
     affordance: "repeatable-effect",
     members: [
-      { id: "bubbles", label: "Bubbles", iconRef: "🫧", symbol: "bubbles", glyphStatus: "queued" },
-      { id: "sparks", label: "Sparks", iconRef: "✨", symbol: "sparks", glyphStatus: "queued" },
+      { id: "bubbles", label: "Bubbles", iconRef: "🫧", symbol: "bubbles" },
+      { id: "sparks", label: "Sparks", iconRef: "✨", symbol: "sparks" },
     ],
   },
   vehicle: {
@@ -73,7 +84,7 @@ export const POOLS: Record<string, PoolDef> = {
     id: "reject",
     affordance: "unwanted",
     members: [
-      { id: "broccoli", label: "Broccoli", iconRef: "🥦", symbol: "broccoli", glyphStatus: "queued" },
+      { id: "broccoli", label: "Broccoli", iconRef: "🥦", symbol: "broccoli" },
       { id: "sock", label: "Sock", iconRef: "🧦", symbol: "sock", glyphStatus: "queued" },
     ],
   },
@@ -81,40 +92,37 @@ export const POOLS: Record<string, PoolDef> = {
     id: "device",
     affordance: "toggleable",
     members: [
-      { id: "lamp", label: "Lamp", iconRef: "💡", symbol: "lamp", glyphStatus: "queued" },
-      { id: "window", label: "Window", iconRef: "🪟", symbol: "window", glyphStatus: "queued" },
-      { id: "heater", label: "Heater", iconRef: "🔥", symbol: "heater", glyphStatus: "queued" },
+      { id: "lamp", label: "Lamp", iconRef: "💡", symbol: "lamp" },
+      { id: "window", label: "Window", iconRef: "🪟", symbol: "window" },
+      { id: "heater", label: "Heater", iconRef: "🔥", symbol: "heater" },
     ],
   },
   powerSource: {
     id: "powerSource",
     affordance: "toggleable",
     members: [
-      { id: "generator", label: "Generator", iconRef: "🔋", symbol: "generator", glyphStatus: "queued" },
-      { id: "switch", label: "Switch", iconRef: "🎚️", symbol: "switch", glyphStatus: "queued" },
+      { id: "generator", label: "Generator", iconRef: "🔋", symbol: "generator" },
+      { id: "switch", label: "Switch", iconRef: "🎚️", symbol: "switch" },
     ],
   },
   // -- motive-batch pools (motive-driven-needs.md follow-ups) ------------------
-  instrument: {
-    id: "instrument",
-    affordance: "repeatable-effect",
-    members: [
-      { id: "drum", label: "Drum", iconRef: "🥁", symbol: "drum", glyphStatus: "queued" },
-      { id: "guitar", label: "Guitar", iconRef: "🎸", symbol: "guitar", glyphStatus: "queued" },
-    ],
-  },
+  // The `instrument` pool (drum, guitar) is GONE, together with the `music`
+  // motive it fed: both members were art-less placeholders, and an instrument is
+  // a toy — it belongs to the toy system being built, not to a pool of two words
+  // nothing could play. A motive whose pool is empty can never bind an item, so
+  // leaving `music` behind would have meant a quest that silently never issues.
   reading: {
     id: "reading",
     affordance: "graspable",
-    members: [{ id: "book", label: "Book", iconRef: "📖", symbol: "book", glyphStatus: "queued" }],
+    members: [{ id: "book", label: "Book", iconRef: "📖", symbol: "book" }],
   },
   clothing: {
     id: "clothing",
     affordance: "graspable",
     members: [
-      { id: "hat", label: "Hat", iconRef: "🧢", symbol: "hat", glyphStatus: "queued" },
-      { id: "shirt", label: "Shirt", iconRef: "👕", symbol: "shirt", glyphStatus: "queued" },
-      { id: "scarf", label: "Scarf", iconRef: "🧣", symbol: "scarf", glyphStatus: "queued" },
+      { id: "hat", label: "Hat", iconRef: "🧢", symbol: "hat" },
+      { id: "shirt", label: "Shirt", iconRef: "👕", symbol: "shirt" },
+      { id: "scarf", label: "Scarf", iconRef: "🧣", symbol: "scarf" },
     ],
   },
   disposal: {
@@ -139,13 +147,16 @@ export const KIND_CATEGORY: Record<string, string> = {
   grape: "food",
   broccoli: "food",
   ball: "toy",
+  blocks: "toy",
+  puzzle: "toy",
+  // car/train/boat stay CATEGORISED as toys — a toy car is a toy even though the
+  // speakable member comes from the `vehicle` pool. That dual filing is now
+  // load-bearing rather than incidental: it is precisely what makes them
+  // DEPICTABLE, so `car.toy` is a real doll of a real vehicle. Drum and guitar
+  // are still gone with the instrument pool.
   car: "toy",
   train: "toy",
-  blocks: "toy",
-  teddy: "toy",
   boat: "toy",
-  drum: "instrument",
-  guitar: "instrument",
   book: "book",
   hat: "clothing",
   shirt: "clothing",

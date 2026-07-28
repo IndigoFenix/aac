@@ -45,6 +45,11 @@ export function pickEntity(
   // within pick range always wins over a co-located creature. The carried item is
   // excluded (you can't re-target what you're already holding — picking it as the
   // fixation feeds a placement loop).
+  //
+  // This is the fallback for a view with NO screen pick. The real 3D view
+  // raycasts (render3d `pickScreen`), where depth answers the same question far
+  // more precisely: whichever surface the ray strikes first is the one being
+  // looked at, and only a near-exact tie falls back to preferring the item.
   let bestObj: PickedEntity | null = null;
   let bestObjD = Infinity;
   for (const obj of Object.values(state.objects)) {

@@ -68,7 +68,7 @@ export interface NeedGoalOpts {
   /** Units in the creature's ABSTRACT bag matching the template's item — > 0
    *  keeps the eat on the legacy walker (the bag is invisible to the resolver). */
   carriedMatching: number;
-  /** The motive's dwell length (restDwellFor) — a nap, the privy, the scrub. */
+  /** The motive's dwell length (restDwellFor) — a nap, the toilet, the scrub. */
   restDwellS: number;
   /** Where the body stands now (a restHere doze dwells in place). */
   body: { x: number; y: number };

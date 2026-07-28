@@ -134,13 +134,13 @@ describe("the deixis marker — '.this' names the PARTICULAR instance", () => {
 });
 
 describe("attention-act shapes — the table's spoken intents", () => {
-  it("a bed speaks SLEEP, a bath WASH, a privy the bathroom trip", () => {
+  it("a bed speaks SLEEP, a bath WASH, a toilet the bathroom trip", () => {
     const sleep = goalIntentLine({ kind: "rest", place: { kind: "named", id: "bed" }, pose: "sleep" }, syms)!;
     expect(translateGlyph(asIntent(sleep).c, "en")).toBe("I will sleep.");
     const wash = goalIntentLine({ kind: "rest", place: { kind: "named", id: "bath" } }, syms)!;
     expect(translateGlyph(asIntent(wash).c, "en")).toBe("I will wash.");
-    const privy = goalIntentLine({ kind: "rest", place: { kind: "named", id: "privy" } }, syms)!;
-    expect(translateGlyph(asIntent(privy).c, "en")).toBe("I will go to the bathroom.");
+    const toilet = goalIntentLine({ kind: "rest", place: { kind: "named", id: "toilet" } }, syms)!;
+    expect(translateGlyph(asIntent(toilet).c, "en")).toBe("I will go to the bathroom.");
   });
 
   it("play with a particular toy ('I will play with this ball')", () => {

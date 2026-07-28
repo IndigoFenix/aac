@@ -72,11 +72,30 @@ export class EyeGazeService {
     return null;
   }
 
-  async switchProvider(type: EyeGazeProviderType): Promise<boolean> {
+  /**
+   * Update the preferred provider after construction.
+   *
+   * Needed because the caller builds this service once, on mount, when the
+   * student's settings have not loaded yet — so the constructor value is the
+   * pre-load default ("mouse"), not what the student actually uses. Leaving it
+   * frozen made autoDetectAndStart take its preferred branch with "mouse",
+   * whose probe always succeeds, so a real tracker was never even tried.
+   */
+  setPreferredProvider(preferred: EyeGazeProviderType | "auto") {
+    this.config.preferredProvider = preferred;
+  }
+
+  /**
+   * @param probeTimeoutMs Override the probe budget for this one call. A
+   *   targeted upgrade to a known tracker can afford to wait longer than the
+   *   fast sweep through the priority list, where every miss delays the
+   *   fallback the student is currently relying on.
+   */
+  async switchProvider(type: EyeGazeProviderType, probeTimeoutMs?: number): Promise<boolean> {
     const provider = this.providers.get(type);
     if (!provider) return false;
 
-    const ok = await this.probeWithTimeout(provider);
+    const ok = await this.probeWithTimeout(provider, probeTimeoutMs);
     if (!ok) return false;
 
     // Stop current
@@ -104,6 +123,21 @@ export class EyeGazeService {
 
   getActiveProvider(): EyeGazeProvider | null {
     return this.active;
+  }
+
+  /**
+   * Stop the active provider AND forget it, so the next detection starts clean.
+   *
+   * Callers used to stop the provider directly and leave `active` pointing at
+   * it. Detection then saw a provider that looked active but was not running,
+   * concluded there was nothing to do, and never restarted it — eye tracking
+   * stayed dead after a disable/enable cycle.
+   */
+  deactivate() {
+    if (!this.active) return;
+    this.active.offGaze(this.relay);
+    this.active.stop();
+    this.active = null;
   }
 
   getActiveProviderType(): EyeGazeProviderType | null {
@@ -135,11 +169,12 @@ export class EyeGazeService {
     this.active = provider;
   }
 
-  private probeWithTimeout(provider: EyeGazeProvider): Promise<boolean> {
+  private probeWithTimeout(provider: EyeGazeProvider, timeoutMs?: number): Promise<boolean> {
+    const budget = timeoutMs ?? this.config.probeTimeoutMs;
     return Promise.race([
       provider.probe(),
       new Promise<boolean>((resolve) =>
-        setTimeout(() => resolve(false), this.config.probeTimeoutMs),
+        setTimeout(() => resolve(false), budget),
       ),
     ]);
   }

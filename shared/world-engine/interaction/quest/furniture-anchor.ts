@@ -5,7 +5,7 @@
 // resolveActivityAnchor → creature-model's eased slide onto the use point); this
 // module gets the SIM BODY legally there so the two agree and the pose settles.
 //
-// THE BUG IT FIXES: a bed / privy is a SOLID collider when not in use, so a body
+// THE BUG IT FIXES: a bed / toilet is a SOLID collider when not in use, so a body
 // walking up to sleep/sit COLLIDES with the fixture's edge and stops ~a body-
 // radius in FRONT of it. The renderer's slide then fights the steering: the body
 // keeps trying to reach the fixture, its smoothed speed never falls to zero, the
@@ -13,7 +13,7 @@
 // piece — the chronic "asleep standing in front of the bed" picture.
 //
 // THE FIX (the user's design): when a body that has CLAIMED a fixture for use
-// (its `activity.objId` names an ON-FIXTURE kind — a bed/chair/privy) reaches it,
+// (its `activity.objId` names an ON-FIXTURE kind — a bed/chair/toilet) reaches it,
 // that contact is the HANDOFF. The anchor takes over the body's movement and
 // INTERPOLATES it between fixed endpoints (never velocity/collision physics — the
 // slide is a straight ease from a captured start to a captured end, so it can
@@ -82,7 +82,7 @@ export interface AnchorDeps {
 }
 
 /** The fixture an `activity.objId` names IF it is an ON-FIXTURE kind (a bed /
- *  chair / privy — a body poses ON it), with the plan use point and its centre;
+ *  chair / toilet — a body poses ON it), with the plan use point and its centre;
  *  null for a beside kind (a table / chest — the body stands beside it, no
  *  anchor) or a missing / non-fixture object. */
 function onFixtureTargetOf(

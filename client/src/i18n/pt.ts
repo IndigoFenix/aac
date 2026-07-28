@@ -227,6 +227,7 @@ export const pt = {
     calendar: "Calendário",
     personChat: "Mensagens",
     call: "Chamada",
+    downloads: "Downloads do app",
   },
 
   // ============================================================================
@@ -2717,6 +2718,51 @@ export const pt = {
   // ============================================================================
   // DEEP ANALYSIS
   // ============================================================================
+  // ============================================================================
+  // APP DOWNLOADS (AAC desktop installer + iPad .ipa)
+  // ============================================================================
+  downloads: {
+    title: "Downloads do app",
+    subtitle: "Instale o app Aivota AAC no dispositivo do {{student}}. Escolha a versão correspondente ao dispositivo.",
+    loading: "Verificando a versão mais recente…",
+    loadFailed: "Não foi possível verificar a versão mais recente. Tente novamente em instantes.",
+    notPublished: "Nenhuma versão foi publicada ainda.",
+    version: "Versão {version}",
+    released: "Publicada em {date}",
+    helpNote: "Problemas para instalar? Fale com o suporte da Aivota e informe o número da versão mostrado acima.",
+    windows: {
+      title: "App para Windows",
+      desc: "O app de desktop completo para Windows 10 ou 11 (64 bits). Suporta rastreamento ocular com um dispositivo Tobii.",
+      button: "Baixar para Windows",
+      installTitle: "Como instalar",
+      step1: "Baixe o instalador e abra-o. O Windows pode avisar que o editor é desconhecido — escolha \"Mais informações\" e depois \"Executar assim mesmo\".",
+      step2: "Siga o instalador. O Aivota AAC é adicionado ao menu Iniciar.",
+      step3: "Abra o app e entre com a conta do {{student}}.",
+      autoUpdateNote: "O app de Windows se atualiza sozinho. Depois de instalado, as novas versões são baixadas em segundo plano — esta página só é necessária na primeira instalação ou em um computador novo.",
+    },
+    ios: {
+      title: "App para iPad",
+      desc: "O mesmo app para iPadOS. Apenas toque — o rastreamento ocular não está disponível no iPad.",
+      button: "Baixar para iPad (.ipa)",
+      whyNote: "O app de iPad ainda não está na App Store, então é instalado a partir de um arquivo com uma ferramenta gratuita chamada Sideloadly. A instalação é feita em um computador Windows ou Mac, não no próprio iPad.",
+      installTitle: "Como instalar com o Sideloadly",
+      needTitle: "Você vai precisar de:",
+      needComputer: "Um computador Windows ou Mac.",
+      needCable: "Um cabo USB para conectar o iPad a esse computador.",
+      needAppleId: "Um Apple ID — um gratuito serve.",
+      step1: "No computador, instale o Sideloadly em",
+      step2: "Somente no Windows: instale o \"Apple Devices\" (ou iTunes) na Microsoft Store e reinicie o computador. O Sideloadly precisa dele para enxergar o iPad.",
+      step3: "Baixe o arquivo .ipa acima nesse computador.",
+      step4: "Conecte o iPad por USB. Se o iPad pedir, toque em \"Confiar\" e digite a senha dele.",
+      step5: "Abra o Sideloadly, arraste o .ipa para dentro, escolha o iPad, informe seu Apple ID e pressione Start. Digite a senha quando for solicitada.",
+      step6: "No iPad, abra Ajustes → Geral → VPN e Gerenciamento de Dispositivo, toque no seu Apple ID e toque em \"Confiar\". O app não abrirá antes disso.",
+      step7: "Abra o Aivota AAC no iPad e faça login.",
+      expiryWarning: "Com um Apple ID gratuito, o app para de abrir após 7 dias. Repita os passos do Sideloadly para renová-lo. Uma conta paga de Apple Developer estende isso para um ano.",
+      updateNote: "O app de iPad não se atualiza sozinho. Quando uma nova versão aparecer aqui, baixe-a e instale novamente do mesmo jeito.",
+      limitsNote: "Limites do Apple ID gratuito: cerca de 3 apps por dispositivo e 3 dispositivos por Apple ID. O Sideloadly pode alterar o identificador do app — isso é esperado.",
+    },
+  },
+
   deepAnalysis: {
     title: "Análise profunda",
     history: "Histórico",

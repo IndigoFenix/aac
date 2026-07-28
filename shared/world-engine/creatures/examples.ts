@@ -224,32 +224,136 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       ],
     },
   },
+  // ── LAB-TUNED BODIES ────────────────────────────────────────────────────
+  // The four below were shaped in the creature lab and exported whole, so
+  // unlike the hand-authored examples above they carry every field rather than
+  // "just the parts that matter". That is deliberate: they are TUNED — the
+  // numbers are the result of moving sliders until the animal read right — so
+  // trimming them back to a partial would quietly re-open each dropped field to
+  // whatever clampBlueprint's default happens to be.
+  //
+  // The trunk is the NOSE taken long (its own feature, NOT the muzzle): rooted
+  // near the front of a short jaw, many segments, drooping down. The actual
+  // mouth stays small and separate at the jaw.
   {
     name: "Elephant (trunk)",
     blueprint: {
       version: 1,
-      spine: { torsoLengthM: 2.0, girth: 0.22, girthPeak: 0.5 },
-      neck: { segments: 2, lengthFrac: 0.2, radiusFrac: 0.7, lift: 0.5 },
-      tail: { segments: 5, lengthFrac: 0.7, radiusFrac: 0.2, droop: 0.7 },
-      // The trunk is the NOSE taken long (its own feature, NOT the muzzle):
-      // rooted near the front of a short jaw, many segments, drooping down.
-      // The actual mouth stays small and separate at the jaw.
+      spine: { torsoSegments: 6, torsoLengthM: 5, girth: 0.45, girthPeak: 0.62, frontTaper: 0.255, rearTaper: 0.33, crossSection: 1 },
+      neck: { segments: 2, lengthFrac: 0, radiusFrac: 0.756, lift: -0.005 },
+      tail: { segments: 5, lengthFrac: 0.7, radiusFrac: 0.18775, droop: -1.2 },
       head: {
-        // A big high-domed skull (braincaseDome) on a short deep jaw; the
-        // trunk is the NOSE taken long (its own feature). The actual mouth
-        // stays small and separate at the jaw.
-        sizeFrac: 0.8, braincaseDome: 1.2, facePitch: -0.1, beak: 0.05,
-        foreheadHeight: 0.5, foreheadLength: 0.2, foreheadSlope: 0.15,
-        snoutLengthFrac: 0.5, snoutSegments: 2, snoutRadiusFrac: 0.55, muzzleSquash: 0.7,
-        snoutFlatten: 0.9, mouthOpen: 0.25, jawDepth: 0.28, jawOffset: 0.1,
-        noseLengthFrac: 4.2, noseRadiusFrac: 0.26, noseHeight: 0.05,
-        noseSegments: 7, noseDroop: 0.55,
-        eyePairs: 1, eyeSizeFrac: 0.1, eyeAngle: 1.0, eyeHeight: 0.3, eyeBulge: 0.4,
+        sizeFrac: 0.851, lengthFrac: 0.96, braincaseDome: 1, crossSection: 1, facePitch: -0.063, faceHeight: 0.1,
+        foreheadHeight: 0.475, foreheadLength: 0.13, foreheadSlope: 0.41, beak: 0, snoutLengthFrac: 0.225, snoutSegments: 2,
+        snoutRadiusFrac: 0.4244, muzzleSquash: 0, snoutFlatten: 1.34975, snoutCurve: 0.83, mouthOpen: 0.5, jawDepth: 0.365,
+        jawOffset: -0.27, mouthVertical: 0, noseLengthFrac: 2.19, noseRadiusFrac: 0.36915, noseHeight: 0.285, noseSegments: 5,
+        noseDroop: 1.5, eyePairs: 1, eyeSizeFrac: 0.12, eyeAngle: 1, eyeHeight: 0.35, eyeBulge: 0.35,
+        padding: 0.3, cheek: 0.3, jowl: 0, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
+        chin: 0,
       },
-      posture: { bodyHeight: 0.62 },
+      posture: { bodyPitch: 0.0655, bodyHeight: 0.84 },
+      skin: { baseColor: "#82807d", bellyColor: "#cbcac8", accentColor: "#545454" },
       // Thick pillar legs, plantigrade, knees barely bent.
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.2, stationEnd: 0.85, stance: 0.15, lengthFrac: 0.72, radiusFrac: 0.16, toeCount: 4, footLengthFrac: 0.16, attachHeight: 0.3, restProtraction: 0, restLevation: -0.55, restFlexion: -0.25, toeContrast: 0.1 },
+        {
+          placement: "bilateral", count: 2, stationStart: 0.065, stationEnd: 0.85, sizePeak: 0.915,
+          sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.30075, taper: 0.7075, membrane: 0,
+          attachHeight: 0.165, restProtraction: -1, restLevation: -1, restFlexion: -0.01, flexRange: 0.365,
+          legTwist: 0.06, legBalance: 0, footLengthFrac: 0.324, stance: 0.85, ankleRange: 0.54,
+          toeCount: 4, toeLengthFrac: 0.64, toeSpread: 1.4, toeContrast: 0, opposition: 0,
+          toeCurl: 0.055,
+        },
+      ],
+    },
+  },
+  {
+    name: "Horse",
+    blueprint: {
+      version: 1,
+      spine: { torsoSegments: 6, torsoLengthM: 1.2, girth: 0.36, girthPeak: 0.33, frontTaper: 0.275, rearTaper: 0.44, crossSection: 1 },
+      neck: { segments: 4, lengthFrac: 0.3625, radiusFrac: 0.45, lift: 0.895 },
+      tail: { segments: 7, lengthFrac: 0.855, radiusFrac: 0.3, droop: -1.2 },
+      head: {
+        sizeFrac: 0.543, lengthFrac: 1.14, braincaseDome: 1, crossSection: 0.814, facePitch: -0.585, faceHeight: 0,
+        foreheadHeight: 0.275, foreheadLength: 0.75, foreheadSlope: 0.19, beak: 0, snoutLengthFrac: 0.875, snoutSegments: 2,
+        snoutRadiusFrac: 0.613, muzzleSquash: 0.4, snoutFlatten: 1.11325, snoutCurve: -0.09, mouthOpen: 0.285, jawDepth: 0,
+        jawOffset: 0.1, mouthVertical: 0, noseLengthFrac: 0, noseRadiusFrac: 0.24945, noseHeight: 0.0825, noseSegments: 2,
+        noseDroop: 1.02, eyePairs: 1, eyeSizeFrac: 0.222, eyeAngle: 1.06125, eyeHeight: 0.39, eyeBulge: 0,
+        padding: 0.3, cheek: 0.3, jowl: 0.2, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
+        chin: 0,
+      },
+      posture: { bodyPitch: 0.0845, bodyHeight: 0.805 },
+      skin: { baseColor: "#8a7456", bellyColor: "#cdbfa3", accentColor: "#3d3528" },
+      // ONE toe — the hoof. Long legs, deep flex range, a standing runner.
+      limbGroups: [
+        {
+          placement: "bilateral", count: 2, stationStart: 0.145, stationEnd: 0.85, sizePeak: 1,
+          sizeContrast: 0, lengthFrac: 0.556, radiusFrac: 0.43185, taper: 0.19, membrane: 0,
+          attachHeight: 0.135, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.08, flexRange: 0.55,
+          legTwist: -0.78, legBalance: 0, footLengthFrac: 0.6, stance: 1, ankleRange: 1,
+          toeCount: 1, toeLengthFrac: 0.2, toeSpread: 0.399, toeContrast: 0, opposition: 0,
+          toeCurl: 0.1,
+        },
+      ],
+    },
+  },
+  {
+    name: "Cat",
+    blueprint: {
+      version: 1,
+      spine: { torsoSegments: 6, torsoLengthM: 0.4, girth: 0.2, girthPeak: 0.44, frontTaper: 0.465, rearTaper: 0.44, crossSection: 1.28 },
+      neck: { segments: 4, lengthFrac: 0.05, radiusFrac: 0.45, lift: 0.1 },
+      tail: { segments: 10, lengthFrac: 1.56, radiusFrac: 0.3, droop: -0.168 },
+      head: {
+        sizeFrac: 0.683, lengthFrac: 1.14, braincaseDome: 1, crossSection: 1, facePitch: -0.027, faceHeight: -0.09,
+        foreheadHeight: 0.62, foreheadLength: 0.24, foreheadSlope: -0.12, beak: 0, snoutLengthFrac: 0.3875, snoutSegments: 2,
+        snoutRadiusFrac: 0.7319, muzzleSquash: 0, snoutFlatten: 1.21, snoutCurve: -0.14, mouthOpen: 0.2325, jawDepth: 0.05,
+        jawOffset: -0.03, mouthVertical: 0, noseLengthFrac: 0.21, noseRadiusFrac: 0.1497, noseHeight: 0.1125, noseSegments: 2,
+        noseDroop: 0, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.42, eyeHeight: 0.651, eyeBulge: 0.54,
+        padding: 0.3, cheek: 0.3, jowl: 0.2, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
+        chin: 0,
+      },
+      posture: { bodyPitch: 0.0655, bodyHeight: 0.82 },
+      skin: { baseColor: "#8a7456", bellyColor: "#cdbfa3", accentColor: "#3d3528" },
+      limbGroups: [
+        {
+          placement: "bilateral", count: 2, stationStart: 0.145, stationEnd: 0.85, sizePeak: 1,
+          sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.43185, taper: 0.19, membrane: 0,
+          attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.08, flexRange: 0.55,
+          legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1,
+          toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0,
+          toeCurl: 0.02,
+        },
+      ],
+    },
+  },
+  {
+    name: "Dog",
+    blueprint: {
+      version: 1,
+      spine: { torsoSegments: 6, torsoLengthM: 1.7, girth: 0.258, girthPeak: 0.44, frontTaper: 0.465, rearTaper: 0.75, crossSection: 1.28 },
+      neck: { segments: 4, lengthFrac: 0.1125, radiusFrac: 0.45, lift: 0.1 },
+      tail: { segments: 10, lengthFrac: 0.495, radiusFrac: 0.3, droop: 0.528 },
+      head: {
+        sizeFrac: 0.543, lengthFrac: 0.915, braincaseDome: 1, crossSection: 1, facePitch: -0.342, faceHeight: 0.08,
+        foreheadHeight: 0.61, foreheadLength: 0.38, foreheadSlope: -0.05, beak: 0, snoutLengthFrac: 0.45, snoutSegments: 2,
+        snoutRadiusFrac: 0.6581, muzzleSquash: 0.495, snoutFlatten: 1.468, snoutCurve: -0.12, mouthOpen: 1.14, jawDepth: 0.11,
+        jawOffset: 0.1, mouthVertical: 0, noseLengthFrac: 0.27, noseRadiusFrac: 0.4575, noseHeight: 0.0525, noseSegments: 2,
+        noseDroop: 1.5, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.582, eyeHeight: 0.651, eyeBulge: 0.54,
+        padding: 0.3, cheek: 0.3, jowl: 0.2, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
+        chin: 0,
+      },
+      posture: { bodyPitch: 0.0655, bodyHeight: 0.805 },
+      skin: { baseColor: "#8a7456", bellyColor: "#cdbfa3", accentColor: "#3d3528" },
+      limbGroups: [
+        {
+          placement: "bilateral", count: 2, stationStart: 0.145, stationEnd: 0.61, sizePeak: 1,
+          sizeContrast: 0, lengthFrac: 0.388, radiusFrac: 0.43185, taper: 0.298, membrane: 0,
+          attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.08, flexRange: 0.55,
+          legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1,
+          toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0,
+          toeCurl: 0.02,
+        },
       ],
     },
   },

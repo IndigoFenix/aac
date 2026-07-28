@@ -122,8 +122,9 @@ describe("directions phrases — the five shapes across locales", () => {
   });
 
   it("agrees number + gender in the other locales", () => {
-    // Plural subject → "are".
-    expect(speakDirections("blocks", "far", "west", "en")).toBe("The blocks are far, to the west.");
+    // Plural subject → "are". (`bubbles`, since the toy `blocks` retired with the
+    // rest of the placeholder toys — any pl:true lexeme exercises the agreement.)
+    expect(speakDirections("bubbles", "far", "west", "en")).toBe("The bubbles are far, to the west.");
     // Spanish gendered article + contraction al.
     expect(speakDirections("toy", "close", "west", "es")).toBe("El juguete está cerca, al oeste.");
     // Portuguese "ao".

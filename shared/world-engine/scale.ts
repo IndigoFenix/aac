@@ -212,6 +212,30 @@ export const REST_DWELL_S = restDwellS(DOLLHOUSE_SCALE);
 /** Villager walking pace (m/s) — realistic, groceries in hand (goods.ts). */
 export const ERRAND_WALK_MPS = 1.6;
 
+// ------------------------------------------- needs-aware town construction
+
+/**
+ * Share of ONE fill cycle of the served need a body may spend on the
+ * round-trip errand walk before service breaks down: leave at half-empty,
+ * arrive before the meter fills, be home before the next pang. Past this,
+ * the household "lives on the road" — hungry again mid-commute.
+ */
+export const ERRAND_SHARE = 0.5;
+
+/**
+ * THE DISTRICT SIZER: one-way street metres a service point (market stall,
+ * well) may sit from a household it serves. The same derivation as town
+ * spacing ("a day's walk apart"), one rung down: a district is "a need
+ * cycle's walk across". Faster-draining needs ⇒ smaller radius ⇒ denser
+ * facilities; under REAL_SCALE the radius (~35 km) exceeds any town, so the
+ * whole town is ONE district with one central market and well — the
+ * historical village. Compression shrinks the radius with the clock, never
+ * by a hand-tuned literal.
+ */
+export function serviceRadiusM(scale: WorldScale, need: NeedKey, walkMps: number = ERRAND_WALK_MPS): number {
+  return (walkMps * needFillS(scale, need) * ERRAND_SHARE) / 2;
+}
+
 // --------------------------------------------------------------------- space
 
 /**

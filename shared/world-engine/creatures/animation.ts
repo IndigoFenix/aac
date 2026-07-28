@@ -76,7 +76,18 @@ export type ActionKind =
  *     whole body flat (lying is a root transform, not a solver pose);
  *   • "eat"  — a periodic hand-to-mouth for a handed kind, a bow for the rest;
  *   • "sit"  — a held crouch (the strain engine folds the legs), trunk upright;
- *   • "play" — a light bounce + sway.
+ *   • "play" — down over a spot on the ground in front, working at it: the legs
+ *     fold, the trunk bows forward, and the FRONT bilateral pair paddles a low
+ *     forward point in alternation. Hands if the kind has them, else the same
+ *     front legs it stands on (the dog batting a ball), else — with no usable
+ *     pair at all — the SNOUT, nosing the thing about on the trunk's own pitch.
+ *     That ladder is the whole reason this is limb-group-picked rather than
+ *     keyframed; see `pickFrontGroup`.
+ *     (The pre-2026-07-28 "play" was a light bounce + sway in place. That reads
+ *     as a basic DANCE, not as playing with something, which is why it was
+ *     replaced — and it is the natural starting point for the `dance` activity
+ *     the song/dance chapter adds: bounce at PLAY_BOUNCE_HZ ≈ 1.8 with a ±0.05
+ *     lift and a 0.9 Hz pitch sway.)
  * Unlike an action it has no timeline: the caller holds it set and the animator
  * eases it in/out (`setActivity`).
  */
@@ -85,7 +96,11 @@ export type BodyActivity = "none" | "sleep" | "eat" | "sit" | "play";
 // Activity tuning: blend rate + the rhythm of the periodic ones.
 const ACTIVITY_BLEND_RATE = 2.6; // 1/s → ~0.4 s ease in/out
 const EAT_PERIOD_S = 1.6; // one hand-to-mouth / bow per period
-const PLAY_BOUNCE_HZ = 1.8;
+// PLAY: down at a spot on the ground in front, front limbs working at it.
+const PLAY_PADDLE_HZ = 1.5; // limb strokes per second at the play spot
+const PLAY_CROUCH = 0.5; // legs fold nearly as deep as a sit — the body comes DOWN
+const PLAY_BOW = 0.3; // trunk pitch over the spot (a handless kind bows harder)
+const PLAY_GRIP = 0.35; // a loose paw pushing the thing about, not a grasp
 const SIT_CROUCH = 0.55; // held crouch amount 0..1 (legs fold, trunk stays up)
 const SLEEP_CROUCH = 0.3; // relaxed, slightly-bent legs while lying
 
@@ -164,6 +179,29 @@ export function pickArmGroup(g: Blueprint): number {
 }
 
 /**
+ * The FRONT bilateral limb pair — what a creature paddles a toy with when it has
+ * no hands (toys-and-song-expansion.md: "animals without hands also play by
+ * moving the items with their front legs"). Unlike `pickArmGroup` this does NOT
+ * require the pair to be too short to stand on: a quadruped's front legs ARE
+ * standing legs, and batting a ball with one is exactly what a dog does. Front-
+ * most wins (lowest `stationStart`), longest breaking ties so a stubby vestigial
+ * pair never beats the real forelegs. -1 if the body has no bilateral pair.
+ */
+export function pickFrontGroup(g: Blueprint): number {
+  let best = -1;
+  let bestScore = -Infinity;
+  g.limbGroups.forEach((grp, i) => {
+    if (grp.placement !== "bilateral" || grp.membrane >= 0.55) return;
+    const score = -grp.stationStart + grp.lengthFrac * 0.1;
+    if (score > bestScore) {
+      best = i;
+      bestScore = score;
+    }
+  });
+  return best;
+}
+
+/**
  * The limb a creature POINTS with — anatomy, not a hardcoded "arm". The rule
  * (works for any body the builder makes): "raise and straighten the limb that
  * extends furthest from the body in a neutral stance, NOT counting the ones
@@ -207,6 +245,9 @@ export class CreatureAnimator {
   private readonly legLen: number;
   private readonly handGroup: number;
   private readonly armGroup: number;
+  /** The pair that works a toy at the play spot — hands, else the front legs
+   *  (pickFrontGroup). -1 for a body with no bilateral pair at all. */
+  private readonly playGroup: number;
   /** Chain whose tip is the bite point ("snout", or "jaw" for a snoutless
    *  mouth) — null when the kind has no jaw to grasp with. */
   private readonly mouthChain: string | null;
@@ -260,6 +301,9 @@ export class CreatureAnimator {
     this.legLen = Math.max(0.1, ...legs.map((l) => l.lengthFrac)) * blueprint.spine.torsoLengthM;
     this.handGroup = pickHandGroup(blueprint);
     this.armGroup = pickArmGroup(blueprint);
+    // Hands if it has them, else the front legs it stands on — the play stroke
+    // is the one activity that drives limbs a grasp would refuse.
+    this.playGroup = this.handGroup >= 0 ? this.handGroup : pickFrontGroup(blueprint);
     this.mouthChain = blueprint.head.mouthOpen > 0
       ? (blueprint.head.snoutLengthFrac > 0 ? "snout" : "jaw")
       : null;
@@ -646,9 +690,10 @@ export class CreatureAnimator {
     // bows through bodyPitch — so it fits any body plan the builder makes.
     let actCrouch = 0; // extra crouch 0..1, same channel the reach feedback uses
     let actPitch = 0; // added trunk pitch (negative = bow forward)
-    let actLift = 0; // direct bodyHeight offset (the play bounce)
+    let actLift = 0; // direct bodyHeight offset
     let recline = 0;
     let eatCycle = 0; // 0..1..0 rhythm shared by the bow and the hand-to-mouth
+    let playAmt = 0; // eased strength of the play pose — drives the limb stroke
     switch (this.activity) {
       case "sleep":
         recline = act;
@@ -665,9 +710,24 @@ export class CreatureAnimator {
         actPitch = -(this.handGroup >= 0 ? 0.12 : 0.4) * eatCycle;
         break;
       case "play": {
-        const bounce = Math.abs(Math.sin(this.time * Math.PI * PLAY_BOUNCE_HZ));
-        actLift = 0.05 * act * bounce;
-        actPitch = 0.05 * act * Math.sin(this.time * Math.PI * 2 * 0.9); // sway
+        // DOWN over a spot on the ground in front, not a bounce in place: the
+        // legs fold (the same crouch channel the sit and the reach use) and the
+        // trunk bows forward over the toy. A handless kind must get its
+        // shoulders lower and its head out of the way to work with its front
+        // legs, so it bows harder — the same handed/handless split `eat` makes.
+        actCrouch = PLAY_CROUCH * act;
+        const noLimbs = this.playGroup < 0;
+        actPitch = -PLAY_BOW * (this.handGroup >= 0 ? 1 : 1.6) * act;
+        if (noLimbs) {
+          // NO USABLE LIMB PAIR AT ALL — the body plays with its SNOUT, nosing
+          // the thing about. There is nothing to drive but the head, so the
+          // stroke rides the trunk pitch itself: a rhythmic dip over the spot on
+          // top of the standing bow. Same rhythm as the limb stroke, so a
+          // snout-player and a paw-player read as doing the same thing.
+          actPitch -= PLAY_BOW * 0.5 * act *
+            Math.max(0, Math.sin(this.time * Math.PI * 2 * PLAY_PADDLE_HZ));
+        }
+        playAmt = act;
         break;
       }
       default:
@@ -737,6 +797,34 @@ export class CreatureAnimator {
       pose.limbTargets = [
         { group: this.handGroup, index: 0, side: s, target: lerpV(rest, mouth, ease(eatCycle)), grip: 0.6 },
       ];
+    }
+    // PLAY, with no action running: the front pair WORKS a spot on the ground
+    // just ahead of the feet — each side stroking half a cycle out of phase with
+    // the other, so the thing gets batted between them rather than pawed in
+    // unison. Local frame is restHandOf's (+Z forward, Y up from the feet), and
+    // every target is lerped OUT of the rest pose by the activity's own eased
+    // strength, so starting and stopping play blends like the other activities
+    // instead of snapping the limbs to the ground.
+    if (playAmt > 0.001 && this.action === "none" && this.playGroup >= 0) {
+      const fwd = 0.3 * this.g.spine.torsoLengthM + 0.3 * this.legLen;
+      pose.limbTargets = [];
+      for (const s of [-1, 1] as const) {
+        const stroke = Math.sin(this.time * Math.PI * 2 * PLAY_PADDLE_HZ + (s > 0 ? 0 : Math.PI));
+        const spot = v3(
+          s * 0.18 * this.legLen + 0.05 * this.legLen * stroke,
+          // Just off the ground, lifting on the up-stroke — a paw pushing at a
+          // thing, never sunk through the floor.
+          this.legLen * (0.08 + 0.1 * Math.max(0, stroke)),
+          fwd + 0.1 * this.legLen * stroke,
+        );
+        pose.limbTargets.push({
+          group: this.playGroup,
+          index: 0,
+          side: s,
+          target: lerpV(this.restHandOf(s), spot, playAmt),
+          grip: PLAY_GRIP,
+        });
+      }
     }
 
     return {

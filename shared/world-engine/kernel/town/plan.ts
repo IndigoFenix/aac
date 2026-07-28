@@ -15,10 +15,11 @@ import type { CompiledEconomy } from "../modules/economy/economy";
 import type { TownHost } from "./host";
 import type { BuildingProgram, StationKind } from "./stations";
 import { quantB } from "./approach";
-import { HOUSEHOLD } from "./goods";
+import { HOUSEHOLD, houseDoorstep } from "./goods";
 import { TOWN_DIMS } from "./dimensions";
-import { foundNeighborhoodMarkets } from "./districts";
+import { foundNeighborhoodMarkets, foundServicePoints, WELL_FOUND_MASS } from "./districts";
 import { growStreets, type TownStreets, type Vec2 } from "./streets";
+import { serviceRadiusM, type WorldScale } from "../../scale";
 
 /** Meters per substrate tile — a tile is a square kilometer. */
 export const WORLD_TILE = 1000;
@@ -155,8 +156,28 @@ export interface TownPlan {
   species?: string;
   /** Cultivated patches beyond the houses (farmland biome). */
   fields: TownField[];
+  /** NEIGHBORHOOD WELLS (needs-aware construction): town-local verge
+   *  points founded by the thirst-cycle service pass, beyond the plaza
+   *  well the host always digs. Only a scale-aware plan lays any —
+   *  absent/empty = the clock-blind legacy town (one well on the square). */
+  wells?: Vec2[];
   /** The organic street tree the whole plan hangs off (streets.ts). */
   streets: TownStreets;
+}
+
+/** Where the PLAZA WELL stands, town-local (the host places the world
+ *  object; the service pass anchors its thirst catchments here). */
+export const PLAZA_WELL = { x: 2.5, y: 2.5 } as const;
+
+/** A founded well's spot for its chosen lot: street furniture on the
+ *  verge past the lot's far corner — clear of the doorway and the
+ *  neighbor's frontage. The ONE shape for plan-time wells, the rebuild's
+ *  founded-household pass, and the host's live dig. */
+export function wellVergePoint(h: TownHouse): Vec2 {
+  const d = houseDoorstep({ x: 0, y: 0 }, h);
+  return h.door === "north" || h.door === "south"
+    ? { x: h.dx + h.w + 1.6, y: d.y }
+    : { x: d.x, y: h.dy + h.h + 1.6 };
 }
 
 const HOUSE_COLORS = ["#a8875f", "#9b7a52", "#b5936b", "#8f7350"];
@@ -317,10 +338,11 @@ export function townPlan(
   foundedSlots: readonly number[] = [],
   species?: string,
   ageDays?: number,
+  scale?: WorldScale,
 ): TownPlan {
   // The generator IS the implementation; the sync path just drains it, so
   // the two can never drift (staged output is byte-identical by construction).
-  const gen = townPlanSteps(tri, eco, siteKey, seed, buildUp, housePalette, foundedSlots, species, ageDays);
+  const gen = townPlanSteps(tri, eco, siteKey, seed, buildUp, housePalette, foundedSlots, species, ageDays, scale);
   for (;;) {
     const r = gen.next();
     if (r.done) return r.value;
@@ -351,6 +373,12 @@ export function* townPlanSteps(
    *  through founded deltas. Absent = established (byte-identical legacy
    *  output; far-LOD hosts never pass it). */
   ageDays?: number,
+  /** SPACE-TIME COMPRESSION (scale.ts): sizes the town's SERVICE DISTRICTS —
+   *  market stalls found on the hunger-cycle walk radius, wells on the
+   *  thirst-cycle one (needs-aware construction: faster-draining needs ⇒
+   *  smaller districts). Absent = the clock-blind legacy literals,
+   *  byte-identical output, no neighborhood wells. */
+  scale?: WorldScale,
 ): Generator<string, TownPlan> {
   const city = tri.cities.find(c => c.key === siteKey);
   if (!city) throw new Error(`townPlan: unknown city "${siteKey}"`);
@@ -437,9 +465,29 @@ export function* townPlanSteps(
   const anchor = hasPlazaMarket
     ? { x: 0, y: clear + mkStyle.h + 1.5 } // plaza market doorstep (south)
     : { x: 0, y: -clear - WORK_STYLE.hall.h - 1.5 }; // hall doorstep (north)
-  const stalls = foundNeighborhoodMarkets(houses, anchor, net);
+  // NEEDS-AWARE DISTRICT SIZING: with a declared scale the convenience
+  // radius derives from the served need's fill cycle (the intercity
+  // "day's walk apart" law one rung down) — the street clock shrinks it,
+  // realism grows it past the whole town (one central market, the
+  // historical village). Without a scale: the clock-blind legacy literal.
+  const stalls = scale
+    ? foundNeighborhoodMarkets(houses, anchor, net, serviceRadiusM(scale, "hunger"))
+    : foundNeighborhoodMarkets(houses, anchor, net);
   const stallIdx = new Set(stalls.map(s => s.index));
   const homes = stallIdx.size ? houses.filter(h => !stallIdx.has(h.index)) : houses;
+
+  // WELLS on the thirst radius — same pass, civic founding bar, anchored
+  // at the plaza well every town digs. The chosen lot STAYS a home: its
+  // well is street furniture on the verge past the lot's far corner
+  // (clear of the doorway and the neighbor's frontage).
+  const wells: Vec2[] = [];
+  if (scale) {
+    const wellLots = foundServicePoints(homes, [PLAZA_WELL], net, {
+      convenientM: serviceRadiusM(scale, "thirst"),
+      foundMass: WELL_FOUND_MASS,
+    });
+    for (const h of wellLots) wells.push(wellVergePoint(h));
+  }
 
   // BUILD UP: households the streets couldn't lot become UPPER STOREYS,
   // center-out (land nearest the plaza rises first), up to the knob's
@@ -610,6 +658,7 @@ export function* townPlanSteps(
     // `built` = household capacity PROVIDED: placed lots plus the upper
     // storeys — the growth governor's "can a replan change anything".
     want: houseCount, built: count + extraFloors, houses: homes, works, fields, streets: net,
+    ...(scale ? { wells } : {}),
     ...(species ? { species } : {}),
   };
 }

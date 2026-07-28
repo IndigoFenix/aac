@@ -39,6 +39,23 @@ export function languageFor(locale: string | undefined): GlyphLanguage {
   return LANGUAGES[primary] ?? en;
 }
 
+/** App locales written right-to-left. Wider than the shipped rulesets on purpose:
+ *  Arabic has no glyph ruleset yet (its text falls back to English) but its
+ *  SYMBOLS must still read right-to-left, and direction is a property of the
+ *  script, not of whether we can conjugate in it. */
+const RTL_PRIMARIES: ReadonlySet<string> = new Set(["he", "ar", "fa", "ur"]);
+
+/**
+ * Whether a locale reads right-to-left. THE LOCALE IS THE AUTHORITY, not
+ * `document.dir`: composed glyphs are rendered inside game canvases and iframes
+ * whose own document nobody ever sets a direction on, so sniffing the DOM
+ * silently composes Hebrew left-to-right. Anything that lays symbols out in
+ * order asks this.
+ */
+export function isRtlLocale(locale: string | undefined): boolean {
+  return RTL_PRIMARIES.has((locale ?? "en").toLowerCase().split(/[-_]/)[0]!);
+}
+
 /** Translate one glyph SENTENCE into the locale's proper spoken text. */
 export function translateGlyph(glyph: string, locale: string | undefined, opts?: SpeakOpts): string {
   return translateWith(languageFor(locale), glyph, opts);

@@ -5,7 +5,12 @@
  */
 
 import { describe, it, expect } from "@jest/globals";
-import { isNonReversibleEmoji, resolveEmoji } from "../../shared/emoji-registry.js";
+import {
+  isNonReversibleEmoji,
+  isNonReversibleItem,
+  resolveEmoji,
+} from "../../shared/emoji-registry.js";
+import { getVocabularyItem } from "../../shared/glyph-registry.js";
 
 describe("isNonReversibleEmoji", () => {
   it("flags word/letter/number emoji that read wrong mirrored", () => {
@@ -87,5 +92,54 @@ describe("isNonReversibleEmoji", () => {
     // The compositor's unknown-slot placeholder must stay upright.
     expect(isNonReversibleEmoji("❓")).toBe(true);
     expect(isNonReversibleEmoji(resolveEmoji("face:abc")!)).toBe(false); // 👤 is fine to mirror
+  });
+});
+
+describe("isNonReversibleItem", () => {
+  // The ITEM-level rule the compositor reads. It used to be a stub that always
+  // returned false, so the one render path that consults it alone — the corner
+  // badge stack — mirrored everything in RTL regardless.
+
+  it("honours an explicit nonReversible flag even for mirrorable art", () => {
+    // The forward hook: artwork containing a numeral or a word. Nothing bundled
+    // needs it yet, so this is the only place the flag is exercised.
+    expect(isNonReversibleItem({ nonReversible: true, emoji: "🚶" })).toBe(true);
+  });
+
+  it("infers it from a text-carrying emoji with no flag set", () => {
+    for (const emoji of ["❓", "1️⃣", "🔢", "💯"]) {
+      expect(isNonReversibleItem({ emoji })).toBe(true);
+    }
+  });
+
+  it("leaves ordinary pictographs mirrorable", () => {
+    for (const emoji of ["🚶", "🫴", "🐱", "🚪"]) {
+      expect(isNonReversibleItem({ emoji })).toBe(false);
+    }
+  });
+
+  it("treats an item with no emoji and no flag as mirrorable", () => {
+    // Bundled-art-only items reach here with `emoji` undefined; defaulting to
+    // "do not mirror" would silently freeze every icon in RTL.
+    expect(isNonReversibleItem({})).toBe(false);
+  });
+
+  it("covers the registry entries whose own glyph is text", () => {
+    // The WH-words all wear ❓ and the numeral modifiers wear keycaps, so each
+    // is a badge whose mirror image reads backwards. Asserted through the real
+    // registry so a future emoji change here can't quietly lose the protection.
+    for (const key of ["what", "who", "where", "when", "why", "how", "if", "one", "two", "many"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(isNonReversibleItem(item!)).toBe(true);
+    }
+  });
+
+  it("does not sweep up ordinary vocabulary", () => {
+    for (const key of ["walk", "come", "my", "your", "do", "apple"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(isNonReversibleItem(item!)).toBe(false);
+    }
   });
 });

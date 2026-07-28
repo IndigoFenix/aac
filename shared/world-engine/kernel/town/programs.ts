@@ -49,7 +49,7 @@ export interface StructureProgramDef {
 export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
   { kind: "workshop", requires: ["workbench"], signature: ["workbench"] },
   { kind: "kitchen", requires: ["oven"], signature: ["oven"] },
-  { kind: "bath", requires: ["privy"], signature: ["bath", "privy"] },
+  { kind: "bath", requires: ["toilet"], signature: ["bath", "toilet"] },
   { kind: "bedroom", requires: ["bed"], signature: ["bed"] },
   // Living BEFORE store: a hearth room holds goods chests beside its table,
   // and the table claims it; a chest standing alone is storage.

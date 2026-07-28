@@ -64,7 +64,7 @@ describe("English — questions, states, fragments", () => {
   it("builds where-questions with number agreement", () => {
     expect(en("place#question")).toBe("Where?");
     expect(en("place#question + ball")).toBe("Where is the ball?");
-    expect(en("place#question + blocks")).toBe("Where are the blocks?");
+    expect(en("place#question + bubbles")).toBe("Where are the bubbles?");
     expect(en("place#question + get + ball")).toBe("Where do I get the ball?");
   });
   it("builds the vendor greeting", () => {
@@ -151,7 +151,7 @@ describe("Hebrew — constructions and agreement", () => {
   it("agrees adjectives with noun gender, number, definiteness", () => {
     expect(he("apple + hot.not")).toBe("התפוח לא חם.");
     expect(he("cookie + hot.not")).toBe("העוגייה לא חמה.");
-    expect(he("blocks + big.not")).toBe("הקוביות לא גדולות.");
+    expect(he("bubbles + big.not")).toBe("הבועות לא גדולות.");
     expect(he("i_me + want + apple.hot + in + box")).toBe("אני רוצה את התפוח החם בקופסה.");
   });
   it("builds questions and clue shapes", () => {
@@ -435,13 +435,12 @@ describe("motive batch — stay/escort/preferences/desires/spoilage/categories",
     expect(pt(why)).toBe("Eu quero um brinquedo porque quero brincar.");
   });
 
-  it("renders the category wants (toy/instrument/book/clothes)", () => {
+  it("renders the category wants (toy/book/clothes)", () => {
+    // `instrument` retired with the instrument pool and the `music` motive.
     expect(en("i_me + want + toy")).toBe("I want a toy.");
-    expect(en("i_me + want + instrument")).toBe("I want an instrument.");
     expect(en("i_me + want + book")).toBe("I want a book.");
     expect(en("i_me + want + clothing")).toBe("I want clothes.");
-    expect(he("i_me + want + instrument")).toBe("אני רוצה כלי נגינה.");
-    expect(he("place#question + instrument")).toBe("איפה כלי הנגינה?"); // construct definite
+    expect(he("i_me + want + book")).toBe("אני רוצה ספר.");
     expect(he("i_me + want + clothing")).toBe("אני רוצה בגדים.");
     expect(es("i_me + want + clothing")).toBe("Quiero ropa.");
     expect(pt("i_me + want + book")).toBe("Eu quero um livro.");

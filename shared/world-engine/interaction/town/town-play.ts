@@ -11,7 +11,10 @@
 import { compileEconomy, type CompiledEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { HOUSEHOLD } from "@shared/world-engine/kernel/town/goods.js";
 import { createTownWorld, type TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
-import { FOUNDING_AGE_DAYS, townPlanSteps, type TownHouse, type TownPlan } from "@shared/world-engine/kernel/town/plan.js";
+import {
+  FOUNDING_AGE_DAYS, PLAZA_WELL, townPlanSteps, wellVergePoint, type TownHouse, type TownPlan,
+} from "@shared/world-engine/kernel/town/plan.js";
+import { WELL_FOUND_MASS, foundServicePoints } from "@shared/world-engine/kernel/town/districts.js";
 import { buildTownQuestGame, type TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
 import { createTownStageSteps, type TownStage } from "@shared/world-engine/interaction/town/town-stage.js";
 import { resolveWorkstationRegistry } from "@shared/world-engine/kernel/town/workstations.js";
@@ -21,6 +24,7 @@ import {
   createTownDeltas, seedFoundingWorkshops, type FoundedBuilding, type SerializedTownDeltas, type TownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
 import { resolveStructure, type StructureSpec } from "@shared/world-engine/kernel/town/structures.js";
+import { serviceRadiusM, type WorldScale } from "@shared/world-engine/scale.js";
 
 export interface TownPlayConfig {
   seed: number;
@@ -103,6 +107,12 @@ export interface TownPlayConfig {
    *  furnishes from. Serializable (kind → { placement, room }); folded in at
    *  buildTownScope from the world's culture. Absent = the default placement. */
   architecture?: WorldArchitectureSpec;
+  /** SPACE-TIME COMPRESSION (scale.ts, resolved): sizes the plan's SERVICE
+   *  DISTRICTS — needs-aware construction founds market stalls on the
+   *  hunger-cycle walk radius and wells on the thirst-cycle one, so a
+   *  faster clock lays a denser town. Folded in at buildTownScope from the
+   *  document's `game.scale`. Absent = the clock-blind legacy layout. */
+  scale?: WorldScale;
 }
 
 export interface TownFamilyMember {
@@ -523,10 +533,23 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     deltas.founded().map((b) => b.slot),
     config.species,
     days,
+    config.scale,
   );
   // Founded buildings materialize as work rows (geometry exactly from the
   // deltas; program/jobs from the structure catalog).
   applyFoundedBuildings(plan, deltas.founded(), structures);
+  // FOUNDED HOUSEHOLDS get their service wells too (needs-aware districts):
+  // move-ins joined plan.houses above, so the thirst pass runs once more
+  // over the full set, anchored on the wells already laid — base wells stay
+  // prefix-stable, founded quarters append theirs. The live session digs
+  // the same wells at move-in (quest-host); this is the rebuild's half.
+  if (config.scale && plan.wells) {
+    const more = foundServicePoints(plan.houses, [PLAZA_WELL, ...plan.wells], plan.streets, {
+      convenientM: serviceRadiusM(config.scale, "thirst"),
+      foundMass: WELL_FOUND_MASS,
+    });
+    for (const h of more) plan.wells.push(wellVergePoint(h));
+  }
   // FOUNDED PRODUCERS JOIN THE BOOKS (city-founding): a COMPLETED founded
   // building with an economy row raises its count scalar, exactly as live
   // completion injects it (quest-host stepFoundedConstruction) — a reloaded

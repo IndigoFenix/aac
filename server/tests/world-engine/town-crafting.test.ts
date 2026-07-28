@@ -10,6 +10,7 @@ import {
   CRAFT_HAND_DAYS,
   CRAFT_STATION_FACTOR,
   craftLaborDays,
+  craftLaborDaysFor,
   FURNITURE_ITEMS,
   furnitureGlyph,
   furnitureItemOf,
@@ -45,6 +46,19 @@ describe("craftLaborDays — the station speeds, never gates", () => {
   it("a recipe naming no station is hand-rate regardless of where you stand", () => {
     const def = { kind: "chair" as const, radius: 0.2, openable: false, craft: { consumes: { wood: 1 } } };
     expect(craftLaborDays(def, true)).toBe(CRAFT_HAND_DAYS);
+  });
+
+  // The labor rule was never about WHAT is being made — furniture is no longer
+  // the only thing the pipeline makes (toys ride the same clock), so the rate is
+  // a function of the accelerating station alone. `craftLaborDays` is the
+  // furniture-shaped wrapper over it.
+  it("reads from the STATION alone, so a toy recipe gets the same rule", () => {
+    expect(craftLaborDaysFor("workbench", false)).toBe(CRAFT_HAND_DAYS);
+    expect(craftLaborDaysFor("workbench", true)).toBe(CRAFT_HAND_DAYS * CRAFT_STATION_FACTOR);
+    expect(craftLaborDaysFor(undefined, true)).toBe(CRAFT_HAND_DAYS);
+    // …and the furniture wrapper is exactly that call.
+    const chair = furnitureItemOf("chair")!;
+    expect(craftLaborDays(chair, true)).toBe(craftLaborDaysFor(chair.craft!.at, true));
   });
 });
 

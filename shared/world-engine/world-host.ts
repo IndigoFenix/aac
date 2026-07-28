@@ -50,7 +50,7 @@ import { createDwellTracker } from "./dwell.js";
 import { probesOn } from "./perf-probes.js";
 import { speciesBodyRadius } from "./creatures/species.js";
 import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
-import { WORLD_MAX_NPCS, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type Vec2, type WorldSpec } from "./types.js";
+import { WORLD_MAX_NPCS, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type TransitPoint, type Vec2, type WorldSpec } from "./types.js";
 import type { WorldView } from "./world-view.js";
 import { createGazeInterpreter } from "./gaze-intent.js";
 import { approachAim, pickEntity } from "./interact.js";
@@ -290,10 +290,16 @@ export interface WorldHost {
    *  and a body outside the pad stands instead of blind-roaming (the host
    *  paths it there). Null clears. No-op for an unknown id. */
   setNpcWanderRect(npcId: string, rect: { x: number; y: number; w: number; h: number } | null): void;
-  /** Is that NPC's scripted errand still running (body EN ROUTE)? The pure schedule
-   *  can say "home" while the body is still finishing its walk — this is the body's
-   *  truth, for "where are you going?". False for unknown/errand-less NPCs. */
+  /** Is that NPC's scripted errand still running (the plan is not finished)? True
+   *  through a waypoint's DWELL as well — the errand still owns the body, which is
+   *  what a "is this body busy?" caller wants. False for unknown/errand-less NPCs. */
   npcErrandActive(npcId: string): boolean;
+  /** That NPC's live errand plan, or null when none runs — the body's own truth
+   *  about where it is headed and whether it is walking at all (`dwelling` = it
+   *  is standing out a waypoint, so it is NOT going anywhere). The pure schedule
+   *  can say "home" while a body is still finishing its walk, and can say
+   *  "traveling" while it naps at the bed; this settles both. */
+  npcErrandPath(npcId: string): NpcErrandPath | null;
   /** DEBUG PATHS: start/stop capturing each hosted NPC's steering decision each
    *  frame (see npcPaths). Off by default — the capture allocates per NPC per
    *  frame and a town hosts hundreds, so this is opt-in. */
@@ -431,6 +437,25 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       });
     }
   };
+  // WALL-GLIDE is a STEER-TIME grant, applied only at the host's own
+  // steerAvatar call: a host-driven NPC pressed against a fixture walks
+  // PARALLEL to the face instead of grinding down it (engine.ts wallGlide).
+  // npcConfigs entries stay pure — every other consumer (npcRadiusOf, the
+  // furniture anchor, and above all `drivenConfig`, the spark-CLAIMED body
+  // whose aim is the user's own gaze) reads them glide-free, so the player's
+  // aim stays authoritative even into a wall.
+  const NPC_STEER_DEFAULTS: WorldEngineConfig = { ...WORLD_ENGINE_DEFAULTS, wallGlide: true };
+  const glideConfigs = new WeakMap<WorldEngineConfig, WorldEngineConfig>();
+  const steerConfigOf = (id: string): WorldEngineConfig => {
+    const base = npcConfigs.get(id);
+    if (!base) return NPC_STEER_DEFAULTS;
+    let g = glideConfigs.get(base);
+    if (!g) {
+      g = { ...base, wallGlide: true };
+      glideConfigs.set(base, g);
+    }
+    return g;
+  };
   for (const n of spec.npcs ?? []) {
     npcRadii.set(n.id, n.behavior?.conversationRadius ?? DEFAULT_CONVERSATION_RADIUS);
     npcConfig(n);
@@ -500,7 +525,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       // its own girth).
       const bodyR = (npcConfigs.get(ctrl.npcId) ?? WORLD_ENGINE_DEFAULTS).avatarRadius;
       // FURNITURE-USE ANCHOR (furniture-anchor.ts) — a body USING a fixture it
-      // claimed (asleep on its bed, sat on its chair/privy) is driven by the
+      // claimed (asleep on its bed, sat on its chair/toilet) is driven by the
       // anchor, not the errand steering: it eases ONTO the use point (bypassing
       // that one fixture's collision), pins there, and eases back off to a
       // validated dismount when done. When the anchor owns the frame, skip the
@@ -590,7 +615,13 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
           detoured: !!aim && !!bent && (aim.x !== bent.x || aim.y !== bent.y),
         });
       }
-      steerAvatar(state, ctrl.npcId, bent, dt, npcConfigs.get(ctrl.npcId), deps.constraint);
+      // DECLARE THE DOOR THIS BODY IS WALKING THROUGH. Doors open because a body
+      // is crossing them, not because one is nearby (engine tickDoors), so the
+      // live waypoint's doorway tag has to reach the avatar every frame —
+      // including the null, or a door would stay held open by a body that has
+      // long since finished its transit.
+      self.crossingDoorId = ctrl.crossingDoorId();
+      steerAvatar(state, ctrl.npcId, bent, dt, steerConfigOf(ctrl.npcId), deps.constraint);
       _npcPhase.steer += _pn() - _tSteer; // TEMP
     }
     // EMERGENT BODY SEPARATION (stand-points separateBodies) — locomotion collides
@@ -656,9 +687,15 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // grinding on a wall. Waypoints are followed + consumed; the route is recomputed
   // only when the goal moves (stable while you fixate).
   let navGoal: Vec2 | null = null;
-  let navWaypoints: Vec2[] = [];
+  let navWaypoints: TransitPoint[] = [];
+  /** The doorway the player's LIVE nav waypoint straddles, or null. The player
+   *  opens doors the same way everyone else does — by walking the leg through one
+   *  — and its nav waypoints ARE the transit points, so the live one's tag is the
+   *  declaration. Read (and cleared) at the steering site below. */
+  let navCrossingDoorId: string | null = null;
   const NAV_ARRIVE = 1.0;
   const navThroughDoors = (from: Vec2, dest: Vec2): Vec2 => {
+    navCrossingDoorId = null;
     if (!state.spec.buildings?.length) return dest;
     if (!navGoal || Math.hypot(navGoal.x - dest.x, navGoal.y - dest.y) > 1.5) {
       const route = routeThroughDoors(state, from, dest);
@@ -668,7 +705,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     while (navWaypoints.length && Math.hypot(from.x - navWaypoints[0]!.x, from.y - navWaypoints[0]!.y) < NAV_ARRIVE) {
       navWaypoints.shift();
     }
-    return navWaypoints[0] ?? dest;
+    const next = navWaypoints[0];
+    navCrossingDoorId = next?.doorId ?? null;
+    return next ?? dest;
   };
   // The gaze resting ON a door means "go through it": push the walk target to the
   // door's FAR side (away from the player), which routeThroughDoors then routes to.
@@ -933,6 +972,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       if (aim !== preBend) {
         detourSides.record(PLAYER_DETOUR_KEY, sideOfBend(from, preBend, aim), state.time);
       }
+      me.crossingDoorId = navCrossingDoorId;
+    } else if (me) {
+      // Not walking anywhere (standing, carrying, spirit) — so not crossing
+      // anything. Doors this body was holding open let go, exactly as they would
+      // for an NPC whose errand ended.
+      me.crossingDoorId = null;
     }
     if (stationary) aim = null; // SPIRIT: the avatar never moves
     // POINT override expiry: a directions swivel holds briefly, then reverts to
@@ -1287,6 +1332,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     npcErrandActive(npcId) {
       return npcById.get(npcId)?.hasErrand() ?? false;
+    },
+    npcErrandPath(npcId) {
+      return npcById.get(npcId)?.errandPath() ?? null;
     },
     setPathDebug(on) {
       pathDebug = on;

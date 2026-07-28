@@ -22,7 +22,7 @@ export type { GazeSidecarStatus };
 
 const POLL_INTERVAL_MS = 4000;
 
-export function useGazeSidecar({ enabled, device }: { enabled: boolean; device: string | null }) {
+export function useGazeSidecar({ enabled, device }: { enabled: boolean | null; device: string | null }) {
   const [status, setStatus] = useState<GazeSidecarStatus | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const supported = capabilities().gazeSidecar;
@@ -30,6 +30,15 @@ export function useGazeSidecar({ enabled, device }: { enabled: boolean; device: 
   useEffect(() => {
     const api = getGazeBridge();
     if (!api) return; // no sidecar host — mouse/touch fallback handles everything
+
+    // `null` means the student's settings have not arrived yet — NOT that eye
+    // tracking is off. Those were indistinguishable before, and since the
+    // settings state defaults to disabled before it loads, every mount and
+    // every profile reload issued a stop() that killed a healthy, connected
+    // sidecar. The restart then came back on a fresh OS-assigned port, and the
+    // detection loop had to win that race all over again. Do nothing until we
+    // actually know.
+    if (enabled === null) return;
 
     if (!enabled || !device) {
       api.stop().then((s) => setStatus(s)).catch(() => {});

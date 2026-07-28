@@ -176,7 +176,7 @@ export interface CreatureWorldParams {
   /**
    * MOTIVE-BATCH presets (one param, ten shapes — see GiverMotive): give each
    * giver a flavored want + the WHY that explains it. "hungry"/"lonely" set a
-   * self-CONDITION (cleared on remedy); "likes-*"/"play"/"music"/"read"/"wear"
+   * self-CONDITION (cleared on remedy); "likes-*"/"play"/"read"/"wear"
    * attach a preference/desire WHY fact; "smelly" is an outdoor-garbage
    * placement; "escort" a follow-me presence need. Composes with giverReveal
    * (want/motive) for the condition-driven ones.
@@ -280,7 +280,6 @@ export type GiverMotive =
   | "likes-item" // exact item; WHY "because I like {item}"
   | "likes-color" // wants "something {color}"; WHY "because I like {color}"
   | "play" // wants a toy; WHY "because I want to play"
-  | "music" // wants an instrument; WHY "because I want to play"
   | "read" // wants a book; WHY "because I want to read"
   | "wear" // wants clothing; WHY "because I want to get dressed"
   | "smelly" // smelly food → the OUTDOOR garbage; WHY "because it smells bad"
@@ -290,7 +289,6 @@ export type GiverMotive =
 /** Category/kind targets + WHY verbs for the desire-flavored motives. */
 const MOTIVE_TARGETS: Record<string, { target: FulfillNeedTarget; verb: string; pool: string }> = {
   play: { target: { category: "toy" }, verb: "play", pool: "toy" },
-  music: { target: { category: "instrument" }, verb: "play", pool: "instrument" },
   read: { target: { kind: "book" }, verb: "read", pool: "reading" },
   wear: { target: { category: "clothing" }, verb: "wear", pool: "clothing" },
 };
@@ -301,7 +299,6 @@ const MOTIVE_POOL: Record<string, string | undefined> = {
   "likes-item": "treat",
   "likes-color": "toy",
   play: "toy",
-  music: "instrument",
   read: "reading",
   wear: "clothing",
   smelly: "treat",
@@ -724,7 +721,7 @@ export function buildCreatureQuestWorld(params: CreatureWorldParams = {}): GoalT
     const itemDrawer = drawers[i % drawers.length]!;
     const otherDrawer = drawers[(i + 1) % drawers.length]!;
     // Device mode draws the "item" from the device pool; a motive with its own
-    // pool (hungry → treat, music → instrument…) draws from that instead.
+    // pool (hungry → treat, read → reading…) draws from that instead.
     const item = deviceDrawer ? deviceDrawer.next() : motiveDrawer ? motiveDrawer.next() : itemDrawer.next();
     const giver = friends.next();
     // Lend forces 1 — a borrowed item the giver consumed could never be given
@@ -763,7 +760,7 @@ export function buildCreatureQuestWorld(params: CreatureWorldParams = {}): GoalT
     // (cold → fire) or the item pool (hungry → treat, drawn above).
     const conditionWant = condition ? MOTIVE_WANT[condition] : undefined;
     if (conditionWant?.station) station = conditionWant.station;
-    // Desire-flavored motives (play/music/read/wear): a category/kind target +
+    // Desire-flavored motives (play/read/wear): a category/kind target +
     // the "because I want to {verb}" WHY.
     const desire = motive ? MOTIVE_TARGETS[motive] : undefined;
     // v1 `because` (lack) frame: plain possession givers only; the condition

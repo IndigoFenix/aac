@@ -63,16 +63,28 @@ input.
 
 ### Sideloadly (default, no Apple secrets)
 
-The current delivery path. Run **Actions → Release AAC iPad → Run workflow**
-with `distribution = sideloadly-unsigned`. It builds and archives the app
-unsigned, packages it into `AivotaAAC-unsigned.ipa`, and uploads it as a
+The current delivery path. Run **Actions → Build AAC iPad (unsigned) → Run
+workflow**. It builds and archives the app unsigned, packages it into
+`aivota-aac-ipad-unsigned-v<version>-build<run>.ipa`, and uploads it as a
 workflow artifact. **No App Store Connect setup, no secrets, not even a paid
 developer account** are required on our side.
 
-Send that `.ipa` to the tester. They install it with **Sideloadly**
-(<https://sideloadly.io>) on their own Windows/Mac: it re-signs the `.ipa` with
-*their* Apple ID and installs over USB. This is why the `.ipa` can be unsigned —
-our signature would be stripped and replaced anyway.
+With the workflow's `publish` input left on (the default), it ALSO uploads the
+`.ipa` and a `latest.json` manifest to `s3://…/aac/ios/` — the same bucket the
+Windows auto-updater feeds from, fronted by
+`https://updates.aivota.ai/aac/ios/`. That is what the clinician dashboard's
+**Downloads** page serves, so clinicians fetch the current build themselves
+instead of it being emailed around. Publishing needs the `AWS_ROLE_ARN` secret
+(already present for `release-aac.yml`); uncheck `publish` to build without it.
+The uploader is `scripts/publish-aac-ios.mjs` — the iOS counterpart to
+`publish-aac-release.mjs`. Note there is still **no auto-update**: an `.ipa`
+cannot replace itself, so a new version means sideloading again.
+
+The tester installs it with **Sideloadly** (<https://sideloadly.io>) on their own
+Windows/Mac: it re-signs the `.ipa` with *their* Apple ID and installs over USB.
+This is why the `.ipa` can be unsigned — our signature would be stripped and
+replaced anyway. The Downloads page carries this whole procedure as a numbered
+walkthrough, in all 11 UI languages.
 
 Tester-side caveats:
 

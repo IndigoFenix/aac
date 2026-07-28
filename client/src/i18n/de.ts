@@ -227,6 +227,7 @@ export const de = {
     calendar: "Kalender",
     personChat: "Nachrichten",
     call: "Anruf",
+    downloads: "App-Downloads",
   },
 
   // ============================================================================
@@ -2717,6 +2718,51 @@ export const de = {
   // ============================================================================
   // DEEP ANALYSIS
   // ============================================================================
+  // ============================================================================
+  // APP DOWNLOADS (AAC desktop installer + iPad .ipa)
+  // ============================================================================
+  downloads: {
+    title: "App-Downloads",
+    subtitle: "Installieren Sie die Aivota-AAC-App auf dem Kommunikationsgerät. Wählen Sie die zum Gerät passende Version.",
+    loading: "Neueste Version wird gesucht …",
+    loadFailed: "Die neueste Version konnte nicht abgerufen werden. Bitte versuchen Sie es gleich noch einmal.",
+    notPublished: "Es wurde noch keine Version veröffentlicht.",
+    version: "Version {version}",
+    released: "Veröffentlicht am {date}",
+    helpNote: "Probleme bei der Installation? Wenden Sie sich an den Aivota-Support und nennen Sie die oben angezeigte Versionsnummer.",
+    windows: {
+      title: "Windows-App",
+      desc: "Die vollständige Desktop-App für Windows 10 oder 11 (64 Bit). Unterstützt Eyetracking mit einem Tobii-Gerät.",
+      button: "Für Windows herunterladen",
+      installTitle: "So installieren Sie",
+      step1: "Laden Sie das Installationsprogramm herunter und öffnen Sie es. Windows warnt möglicherweise vor einem unbekannten Herausgeber — wählen Sie „Weitere Informationen“ und dann „Trotzdem ausführen“.",
+      step2: "Folgen Sie dem Installationsprogramm. Aivota AAC wird dem Startmenü hinzugefügt.",
+      step3: "Öffnen Sie die App und melden Sie sich mit dem Konto des Nutzers an.",
+      autoUpdateNote: "Die Windows-App aktualisiert sich selbst. Nach der Installation werden neue Versionen im Hintergrund geladen — diese Seite brauchen Sie nur für die Erstinstallation oder einen neuen Computer.",
+    },
+    ios: {
+      title: "iPad-App",
+      desc: "Dieselbe App für iPadOS. Nur Touch — Eyetracking ist auf dem iPad nicht verfügbar.",
+      button: "Für iPad herunterladen (.ipa)",
+      whyNote: "Die iPad-App ist noch nicht im App Store, sie wird daher aus einer Datei mit dem kostenlosen Werkzeug Sideloadly installiert. Die Installation erfolgt von einem Windows- oder Mac-Computer aus, nicht auf dem iPad selbst.",
+      installTitle: "Installation mit Sideloadly",
+      needTitle: "Sie benötigen:",
+      needComputer: "Einen Windows- oder Mac-Computer.",
+      needCable: "Ein USB-Kabel, um das iPad mit diesem Computer zu verbinden.",
+      needAppleId: "Eine Apple-ID — eine kostenlose genügt.",
+      step1: "Installieren Sie auf dem Computer Sideloadly von",
+      step2: "Nur unter Windows: Installieren Sie „Apple Devices“ (oder iTunes) aus dem Microsoft Store und starten Sie den Computer neu. Sideloadly braucht das, um das iPad zu erkennen.",
+      step3: "Laden Sie die obige .ipa-Datei auf diesen Computer herunter.",
+      step4: "Verbinden Sie das iPad per USB. Wenn das iPad fragt, tippen Sie auf „Vertrauen“ und geben Sie den Code ein.",
+      step5: "Öffnen Sie Sideloadly, ziehen Sie die .ipa hinein, wählen Sie das iPad, geben Sie Ihre Apple-ID ein und drücken Sie Start. Geben Sie das Passwort ein, wenn Sie danach gefragt werden.",
+      step6: "Öffnen Sie auf dem iPad Einstellungen → Allgemein → VPN & Geräteverwaltung, tippen Sie auf Ihre Apple-ID und dann auf „Vertrauen“. Vorher lässt sich die App nicht öffnen.",
+      step7: "Öffnen Sie Aivota AAC auf dem iPad und melden Sie sich an.",
+      expiryWarning: "Mit einer kostenlosen Apple-ID lässt sich die App nach 7 Tagen nicht mehr öffnen. Wiederholen Sie die Sideloadly-Schritte, um sie zu erneuern. Ein kostenpflichtiges Apple-Developer-Konto verlängert das auf ein Jahr.",
+      updateNote: "Die iPad-App kann sich nicht selbst aktualisieren. Wenn hier eine neue Version erscheint, laden Sie sie herunter und installieren Sie sie erneut auf demselben Weg.",
+      limitsNote: "Grenzen der kostenlosen Apple-ID: etwa 3 Apps pro Gerät und 3 Geräte pro Apple-ID. Sideloadly ändert unter Umständen die App-Kennung — das ist normal.",
+    },
+  },
+
   deepAnalysis: {
     title: "Tiefenanalyse",
     history: "Verlauf",

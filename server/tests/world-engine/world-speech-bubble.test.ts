@@ -26,19 +26,30 @@ function state(): WorldState {
 }
 
 describe("avatar speech state", () => {
-  it("stamps say with the current sim time and clears on blank text", () => {
+  // Speech is no longer a field on the avatar: it is one entry in the unified
+  // world-bubble channel, anchored to the avatar and keyed `speech:<id>`, so a
+  // player's utterance and an in-game caption travel the same path. See
+  // world-engine-bubble.test.ts for the channel itself.
+  it("stamps the speech bubble with the current sim time and clears on blank text", () => {
     const s = state();
     s.time = 12.5;
     setAvatarSpeech(s, "me", { text: "hello", glyph: "i_me+want" });
-    expect(s.avatars.me.say).toEqual({ text: "hello", glyph: "i_me+want", at: 12.5 });
+    expect(s.bubbles["speech:me"]).toMatchObject({
+      anchor: { kind: "avatar", id: "me" },
+      text: "hello",
+      glyph: "i_me+want",
+      at: 12.5,
+    });
     setAvatarSpeech(s, "me", { text: "   " });
-    expect(s.avatars.me.say).toBeUndefined();
+    expect(s.bubbles["speech:me"]).toBeUndefined();
   });
 
   it("no-ops for an unknown avatar (a say can race ahead of the first packet)", () => {
     const s = state();
     expect(() => setAvatarSpeech(s, "ghost", { text: "hi" })).not.toThrow();
     expect(s.avatars.ghost).toBeUndefined();
+    // And leaves no orphan bubble anchored to an avatar that never arrived.
+    expect(s.bubbles["speech:ghost"]).toBeUndefined();
   });
 });
 
@@ -53,7 +64,12 @@ describe("say over the wire", () => {
     applyRemoteAvatar(s, { id: "p2", x: 5, y: 5, fx: 1, fy: 0, vx: 0, vy: 0 });
     s.time = 3;
     applyInbound(s, sayMessage("p2", "over here", "go+here"));
-    expect(s.avatars.p2.say).toEqual({ text: "over here", glyph: "go+here", at: 3 });
+    expect(s.bubbles["speech:p2"]).toMatchObject({
+      anchor: { kind: "avatar", id: "p2" },
+      text: "over here",
+      glyph: "go+here",
+      at: 3,
+    });
   });
 
   it("a later position packet does NOT clobber an existing bubble", () => {
@@ -61,7 +77,7 @@ describe("say over the wire", () => {
     applyRemoteAvatar(s, { id: "p2", x: 5, y: 5, fx: 1, fy: 0, vx: 0, vy: 0 });
     applyInbound(s, sayMessage("p2", "stay"));
     applyRemoteAvatar(s, { id: "p2", x: 6, y: 6, fx: 0, fy: 1, vx: 1, vy: 1 });
-    expect(s.avatars.p2.say?.text).toBe("stay");
+    expect(s.bubbles["speech:p2"]?.text).toBe("stay");
   });
 
   it("is NOT part of the per-frame outbound stream (sent once, not every tick)", () => {

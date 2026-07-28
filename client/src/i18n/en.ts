@@ -227,6 +227,7 @@ export const en = {
     calendar: "Calendar",
     personChat: "Messages",
     call: "Call",
+    downloads: "App Downloads",
   },
 
   // ============================================================================
@@ -2717,6 +2718,51 @@ export const en = {
   // ============================================================================
   // DEEP ANALYSIS
   // ============================================================================
+  // ============================================================================
+  // APP DOWNLOADS (AAC desktop installer + iPad .ipa)
+  // ============================================================================
+  downloads: {
+    title: "App Downloads",
+    subtitle: "Install the Aivota AAC app on the {{student}}'s device. Pick the version that matches the device.",
+    loading: "Checking for the latest version…",
+    loadFailed: "Couldn't check for the latest version. Please try again in a moment.",
+    notPublished: "No build has been published yet.",
+    version: "Version {version}",
+    released: "Released {date}",
+    helpNote: "Trouble installing? Contact Aivota support and include the version number shown above.",
+    windows: {
+      title: "Windows app",
+      desc: "The full desktop app for Windows 10 or 11 (64-bit). Supports eye tracking with a Tobii device.",
+      button: "Download for Windows",
+      installTitle: "How to install",
+      step1: "Download the installer and open it. Windows may warn that the publisher is unrecognised — choose \"More info\", then \"Run anyway\".",
+      step2: "Follow the installer. Aivota AAC is added to the Start menu.",
+      step3: "Open the app and sign in with the {{student}}'s account.",
+      autoUpdateNote: "The Windows app updates itself. Once installed, new versions download in the background — you only need this page for a first install or a new computer.",
+    },
+    ios: {
+      title: "iPad app",
+      desc: "The same app for iPadOS. Touch only — eye tracking is not available on iPad.",
+      button: "Download for iPad (.ipa)",
+      whyNote: "The iPad app is not on the App Store yet, so it is installed from a file using a free tool called Sideloadly. You install it from a Windows or Mac computer, not from the iPad itself.",
+      installTitle: "How to install with Sideloadly",
+      needTitle: "What you need:",
+      needComputer: "A Windows or Mac computer.",
+      needCable: "A USB cable to connect the iPad to that computer.",
+      needAppleId: "An Apple ID — a free one works.",
+      step1: "On the computer, install Sideloadly from",
+      step2: "On Windows only: install \"Apple Devices\" (or iTunes) from the Microsoft Store, then restart the computer. Sideloadly needs it to see the iPad.",
+      step3: "Download the .ipa file above onto that computer.",
+      step4: "Connect the iPad by USB. If the iPad asks, tap \"Trust\" and enter its passcode.",
+      step5: "Open Sideloadly, drag the .ipa into it, choose the iPad, enter your Apple ID and press Start. Enter your Apple ID password when asked.",
+      step6: "On the iPad, open Settings → General → VPN & Device Management, tap your Apple ID and tap \"Trust\". The app will not open until you do.",
+      step7: "Open Aivota AAC on the iPad and sign in.",
+      expiryWarning: "With a free Apple ID the app stops opening after 7 days. Repeat the Sideloadly steps to renew it. A paid Apple Developer account extends this to a year.",
+      updateNote: "The iPad app cannot update itself. When a new version appears here, download it and sideload it again.",
+      limitsNote: "Free Apple ID limits: about 3 apps per device and 3 devices per Apple ID. Sideloadly may change the app's identifier — that is expected.",
+    },
+  },
+
   deepAnalysis: {
     title: "Deep Analysis",
     history: "History",

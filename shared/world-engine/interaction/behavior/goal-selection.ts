@@ -499,6 +499,8 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
       return null;
     case "build":
       return null; // civ-scope world order, handled by the town-gen layer, not a body errand
+    case "craft":
+      return null; // house-scoped pipeline work (the craft job) — the host runs it, never a compiled errand
     case "buildwork":
       return null; // ⑥ standing site work — the construction sweep walks + banks it, never a compiled errand
     case "area":

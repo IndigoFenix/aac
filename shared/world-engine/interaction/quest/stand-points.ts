@@ -19,7 +19,7 @@ import { useContractFor, useSideDirs } from "../../furniture-use.js";
 
 /** THE TANGENCY RULE: the furnishing fit rule (kernel placement.ts) packs
  *  stations so their standing spots sit at EXACT wall/fixture clearance — a
- *  privy 1.0 m from the partition puts its stand cardinal at float-0.599…
+ *  toilet 1.0 m from the partition puts its stand cardinal at float-0.599…
  *  from the wall. A planner probing at the full body radius reads every such
  *  generator-legal spot as blocked, exhausts its candidates, and falls back
  *  to an unreachable point — the body then grinds at a wall while the detour

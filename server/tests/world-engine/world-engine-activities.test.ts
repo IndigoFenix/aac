@@ -49,18 +49,60 @@ describe("CreatureAnimator activities — rig-level, species-agnostic", () => {
         expect(anim.currentActivity).toBe("none");
       });
 
-      it("play bounces — bodyHeight oscillates around the settled pose", () => {
+      // PLAY is a body DOWN OVER A SPOT, not a bounce in place
+      // (toys-and-song-expansion.md): the legs fold, the trunk bows forward, and
+      // the front limbs work at something on the ground just ahead.
+      it("play crouches and bows over the play spot", () => {
         const anim = new CreatureAnimator(speciesBlueprint(sp));
+        const base = anim.update(0).posture;
+        anim.setActivity("play");
+        const f = settle(anim, 2);
+        expect(f.posture.bodyHeight).toBeLessThan(base.bodyHeight);
+        // Negative pitch = bowed forward, over the toy.
+        expect(f.posture.bodyPitch).toBeLessThan(base.bodyPitch);
+        expect(anim.currentActivity).toBe("play");
+      });
+
+      it("play works the front limbs at a low spot IN FRONT, in alternation", () => {
+        const anim = new CreatureAnimator(speciesBlueprint(sp));
+        const rest = anim.update(0);
         anim.setActivity("play");
         settle(anim, 2); // blend fully in
-        let min = Infinity;
-        let max = -Infinity;
+        const restY = rest.pose.limbTargets?.[0]?.target.y;
+        let sawPair = false;
+        let minY = Infinity;
+        let maxForward = -Infinity;
+        let maxSideSpread = 0;
         for (let i = 0; i < 60; i++) {
-          const f = anim.update(1 / 30);
-          min = Math.min(min, f.posture.bodyHeight);
-          max = Math.max(max, f.posture.bodyHeight);
+          const lt = anim.update(1 / 30).pose.limbTargets ?? [];
+          if (lt.length !== 2) continue;
+          sawPair = true;
+          for (const t of lt) {
+            minY = Math.min(minY, t.target.y);
+            maxForward = Math.max(maxForward, t.target.z);
+          }
+          // The two sides stroke half a cycle apart, so at almost every instant
+          // they are at DIFFERENT heights — the alternation the plan asks for
+          // ("moving the items"), not a synchronised paw-press.
+          maxSideSpread = Math.max(maxSideSpread, Math.abs(lt[0]!.target.y - lt[1]!.target.y));
         }
-        expect(max - min).toBeGreaterThan(0.02);
+        expect(sawPair).toBe(true); // both front limbs drive, hands or legs
+        expect(maxForward).toBeGreaterThan(0); // the spot is FORWARD (+Z) of the body
+        expect(maxSideSpread).toBeGreaterThan(0);
+        // And the working hands come down near the ground — well below wherever
+        // they hang at rest.
+        if (restY !== undefined) expect(minY).toBeLessThan(restY);
+      });
+
+      it("play releases: the pose blends back out when the activity clears", () => {
+        const anim = new CreatureAnimator(speciesBlueprint(sp));
+        const base = anim.update(0).posture;
+        anim.setActivity("play");
+        settle(anim, 2);
+        anim.setActivity("none");
+        const done = settle(anim, 2);
+        expect(done.posture.bodyHeight).toBeCloseTo(base.bodyHeight, 1);
+        expect(done.pose.limbTargets ?? []).toHaveLength(0);
       });
 
       it("eat rhythm: a handed kind carries a hand to its mouth", () => {

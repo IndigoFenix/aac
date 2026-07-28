@@ -3,7 +3,12 @@
 // Guards the host detection + capability matrix. These run in jest's `node`
 // environment (no jsdom) because detect.ts is pure — globals are passed in.
 
-import { capabilitiesFor, detectHost, type HostGlobals } from "./detect";
+import {
+  capabilitiesFor,
+  detectHost,
+  isSingleCameraCaptureOS,
+  type HostGlobals,
+} from "./detect";
 import type { NativeHost } from "./types";
 
 describe("detectHost", () => {
@@ -100,5 +105,36 @@ describe("capabilitiesFor", () => {
     const first = capabilitiesFor("electron");
     first.gazeSidecar = false;
     expect(capabilitiesFor("electron").gazeSidecar).toBe(true);
+  });
+});
+
+describe("isSingleCameraCaptureOS", () => {
+  it("flags explicit iOS device UAs regardless of touch points", () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
+    expect(isSingleCameraCaptureOS(iphone, 0)).toBe(true);
+    expect(isSingleCameraCaptureOS(iphone, 5)).toBe(true);
+  });
+
+  it("flags iPadOS's desktop-class UA via the Mac-with-touchscreen combination", () => {
+    // What the Capacitor WKWebView on iPad actually reports (from the debug log).
+    const ipadDesktopUa =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+    expect(isSingleCameraCaptureOS(ipadDesktopUa, 5)).toBe(true);
+  });
+
+  it("does not flag a real Mac (no touchscreen)", () => {
+    const macUa =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+    expect(isSingleCameraCaptureOS(macUa, 0)).toBe(false);
+  });
+
+  it("does not flag Windows or Android", () => {
+    const windowsUa =
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0";
+    const androidUa =
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0";
+    expect(isSingleCameraCaptureOS(windowsUa, 10)).toBe(false);
+    expect(isSingleCameraCaptureOS(androidUa, 5)).toBe(false);
   });
 });

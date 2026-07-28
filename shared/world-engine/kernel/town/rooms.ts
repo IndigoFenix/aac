@@ -176,7 +176,7 @@ export function houseMetricsFor(bodyRadius: number): HouseMetrics {
   const streetDoorW = Math.max(2.0, 2.0 + (bodyRadius - 0.4) * 2); // the gaze-steering affordance — keep generous
   // Cell floors come from the CLUSTER REGISTRY (stations.ts) — the wet
   // and sleep clusters own their geometry, this module only reads it.
-  const bathW = CLUSTERS.wet!.minW!; // tub + privy + door lane
+  const bathW = CLUSTERS.wet!.minW!; // tub + toilet + door lane
   const bedMinW = CLUSTERS.sleep!.minW!; // a real sleeping cell's minimum width
   const bedMinD = CLUSTERS.sleep!.minD!; // door swing lane + the 1.8 m double bed
   const bedArea = CLUSTERS.sleep!.cellArea!; // band m² that justify one sleeping cell

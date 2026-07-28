@@ -28,6 +28,7 @@ import {
 } from "@shared/world-engine/interaction/town/town-play.js";
 import { certifyCreatureQuestWorld } from "@shared/world-engine/interaction/quest/creature-quests.js";
 import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan.js";
+import { DOLLHOUSE_SCALE, resolveWorldScale } from "@shared/world-engine/scale.js";
 import { validateFields, type GroupSpec } from "../../kernel/spec-schema.js";
 
 function fail(path: string, msg: string): never {
@@ -302,6 +303,12 @@ export function buildTownScope(settings: GameSettings, label = "game"): BuiltTow
   // its workstations from the resolved placement. The kernel already gated the
   // culture block's shape (parseWorldCultureSpec); this is a pass-through.
   if (settings.culture?.architecture) spec.config.architecture = settings.culture.architecture;
+  // SPACE-TIME COMPRESSION sizes the plan's SERVICE DISTRICTS (needs-aware
+  // construction): faster-draining needs ⇒ smaller walk radius ⇒ denser
+  // markets and wells. A silent doc gets the street clock — the town
+  // scope's documented fallback while goods.ts is hard-paced to the 240 s
+  // day (scale.ts DOLLHOUSE_SCALE).
+  spec.config.scale = settings.scale ? resolveWorldScale(settings.scale) : DOLLHOUSE_SCALE;
 
   const play = buildTownPlay(spec.config);
   // The quest bundle drawn from the town's residents/goods must PROVE itself

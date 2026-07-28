@@ -19,13 +19,13 @@
 //                     four sides; a bed has both long sides + the foot. World
 //                     angles are these rotated by the piece's `facing`.
 //   • contactPart   — which body part must COINCIDE with the use point: a
-//                     seat/privy → the pelvis underside (a real drop onto the
+//                     seat/toilet → the pelvis underside (a real drop onto the
 //                     seat), a bed → the torso centre (the recline re-centres
 //                     it), a table/container/door → a reach point at standing
 //                     height (the body stays standing beside it).
 //
 // Defaults are DERIVED from the kind's semantics (STATION_PROPERTIES — a
-// container/appliance is a front-approached reach; a chair/privy is a seat; a
+// container/appliance is a front-approached reach; a chair/toilet is a seat; a
 // bed is a bunk), so every existing kind gets a contract with no hand-tuning
 // (emergent over scripted). A kind may OVERRIDE any field in USE_CONTRACTS.
 //
@@ -45,7 +45,7 @@ import { BED_TOP_FRAC, SEAT_TOP_FRAC, TABLE_TOP_Y } from "./object-models.js";
 /** Which body part lands ON the use point — selects the body-side vertical
  *  offset the rig applies (the drop/recline), so no fixture needs its own. */
 export type ContactPart =
-  /** The seat/privy: the crouched pelvis underside rests on the surface (a real
+  /** The seat/toilet: the crouched pelvis underside rests on the surface (a real
    *  drop below the surface height — the sitter's feet hang toward the floor). */
   | "pelvis"
   /** The bed: the reclined torso centre lies on the mattress (the recline
@@ -110,17 +110,17 @@ function isReachStation(kind: FixtureKind): boolean {
 
 /**
  * THE DERIVED CONTRACT: what a kind gets purely from its semantics, before any
- * per-kind override. Seats (chair/privy) drop a pelvis onto their seat surface;
+ * per-kind override. Seats (chair/toilet) drop a pelvis onto their seat surface;
  * a bed lies a torso on its mattress; everything a body OPENS or works at
  * (chest, cupboard, refrigerator, oven, workbench, barrel, bin) is a
  * front-approached reach; anything else is a reach from any open side.
  */
 export function defaultContract(kind: FixtureKind): FixtureUseContract {
-  if (kind === "chair" || kind === "privy") {
+  if (kind === "chair" || kind === "toilet") {
     return {
       usePoint: { forward: 0, lateral: 0, up: SEAT_TOP_FRAC[kind] ?? 1.0 },
       // The sitter sits FACING the way the seat faces — the front (0). Solid
-      // seats (a privy) are still approached from the front; a chair is
+      // seats (a toilet) are still approached from the front; a chair is
       // pass-through so the approach is trivial, but the side stays the front.
       useDirections: FRONT_ONLY,
       contactPart: "pelvis",
@@ -132,6 +132,26 @@ export function defaultContract(kind: FixtureKind): FixtureUseContract {
       usePoint: { forward: 0, lateral: 0, up: BED_TOP_FRAC },
       useDirections: BED_SIDES,
       contactPart: "torso",
+      onFixture: true,
+    };
+  }
+  if (kind === "bath") {
+    // YOU GET IN THE BATH. A tub used to take the generic beside-reach — the
+    // same contract as a table — so a body washing ITSELF stood outside the tub
+    // and reached in. It settles INSIDE instead: the use point is the basin
+    // (SEAT_TOP_FRAC bath), and the pelvis contact drops the body into the
+    // water rather than perching it on the rim.
+    //
+    // This does NOT capture a body washing SOMETHING ELSE at the tub, and
+    // deliberately so — that isn't a per-kind distinction to make here. A
+    // laundry scrub runs as a `processStack` dwell, which poses the body where
+    // it stands and names no station, so it never reaches the on-fixture anchor
+    // at all. Only a `rest`-shaped use (hygiene's own restAt) hands the anchor
+    // a station id. The two uses of one tub separate themselves.
+    return {
+      usePoint: { forward: 0, lateral: 0, up: SEAT_TOP_FRAC["bath"] ?? 0.4 },
+      useDirections: FOUR_SIDES, // step in from whichever side the room leaves open
+      contactPart: "pelvis",
       onFixture: true,
     };
   }
@@ -157,7 +177,7 @@ export function defaultContract(kind: FixtureKind): FixtureUseContract {
  * Per-kind OVERRIDES layered onto the derived default. Only what the geometry
  * demands beyond the semantic default lives here — the table's realistic
  * tabletop reach (decoupled from its wide footprint), and nothing else so far.
- * The default already gives chairs/privies/beds/containers the right contract.
+ * The default already gives chairs/toilets/beds/containers the right contract.
  */
 const OVERRIDES: Partial<Record<FixtureKind, Partial<FixtureUseContract>>> = {
   table: {

@@ -5,6 +5,8 @@
  */
 
 import { describe, it, expect } from "@jest/globals";
+import fs from "node:fs";
+import path from "node:path";
 import {
   getVocabularyItem,
   listAllVocabulary,
@@ -325,5 +327,35 @@ describe("glyph registry", () => {
         expect(known.has(p)).toBe(true);
       }
     }
+  });
+});
+
+describe("bundled artwork actually exists on disk", () => {
+  // A dangling imagePath fails SILENTLY: every resolver does
+  // `resolveIconPath(...) ?? fall back to emoji`, so a renamed or deleted PNG
+  // just quietly downgrades the button to its emoji and nobody notices until a
+  // student sees the wrong picture. This caught `receive`, whose art was
+  // redrawn as hands/get.png while the registry still pointed at the deleted
+  // hands/receive.png.
+  const ICON_ROOT = path.resolve(process.cwd(), "attached_assets", "aac-icons");
+  const EXTENSIONS = [".png", ".svg"] as const;
+
+  const claims: Array<[string, string]> = [];
+  for (const v of listAllVocabulary()) {
+    for (const p of [v.imagePath, v.composable?.emptyImagePath, v.composable?.filledImagePath]) {
+      if (p) claims.push([`${v.key} → ${p}`, p]);
+    }
+  }
+
+  it("has artwork to check", () => {
+    // Guards the loop below against a resolution change that empties it — an
+    // all-passing suite over zero cases is the failure mode this class of test
+    // is most prone to.
+    expect(claims.length).toBeGreaterThan(50);
+  });
+
+  it.each(claims)("%s", (_label, imagePath) => {
+    const found = EXTENSIONS.some((ext) => fs.existsSync(path.join(ICON_ROOT, `${imagePath}${ext}`)));
+    expect(found).toBe(true);
   });
 });

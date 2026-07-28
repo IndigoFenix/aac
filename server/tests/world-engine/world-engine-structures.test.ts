@@ -7,15 +7,18 @@ import { describe, it, expect } from "@jest/globals";
 import {
   carryObject,
   createWorldState,
+  expandWorldBuildings,
   makeStructureConstraint,
   pointSegmentDistance,
+  setDoorOpen,
   structuresWalkable,
   tickWorld,
   unlockDoor,
+  WORLD_ENGINE_DEFAULTS,
   type WorldState,
 } from "@shared/world-engine/engine.js";
 import { validateWorldSpec } from "@shared/world-engine/schema.js";
-import type { ObjectSpec, StructureSpec, WorldSpec } from "@shared/world-engine/types.js";
+import type { BuildingSpec, ObjectSpec, StructureSpec, WorldSpec } from "@shared/world-engine/types.js";
 
 function spec(structures: StructureSpec[], objects: ObjectSpec[] = []): WorldSpec {
   return {
@@ -77,66 +80,142 @@ describe("walls block movement", () => {
   });
 });
 
+// A DOOR IS OPENED BY AN ACT, NEVER BY PROXIMITY.
+//
+// Two acts, and nothing else: a body walks the route leg through it (it declares
+// `crossingDoorId`, which routeThroughDoors tags onto both transit points of the
+// pair), or something opens it deliberately (`setDoorOpen`). Standing beside a
+// door, or crossing the room in front of one, does nothing at all — the door
+// does not read the room. This is the same rule container lids follow
+// (`ObjectState.heldOpen`, world-engine-fixtures.test.ts).
+//
+// These tests steer the avatar directly, so they play the part the host plays for
+// real bodies: set `crossingDoorId` while the body is on the crossing, clear it
+// when it isn't.
 describe("doors", () => {
-  it("a closed door blocks, swings open on approach, then is passable", () => {
+  /** Declare (or withdraw) the door this body is walking through — what
+   *  world-host does each frame from the live errand waypoint's tag. */
+  function crossing(state: WorldState, id: string, doorId: string | null): void {
+    state.avatars[id]!.crossingDoorId = doorId;
+  }
+
+  it("a closed door blocks until a body walking through it declares the crossing", () => {
     const s = createWorldState(spec([door()]), "me");
     expect(s.doors.d.open).toBe(0);
     expect(structuresWalkable(s, { x: 10, y: 8 }, 0.4)).toBe(false); // closed = solid
 
-    // Walk into/through the doorway, tracking the peak swing (it reopens + shuts
-    // again once the avatar has walked out the far side past openRadius).
-    let peak = 0;
-    for (let i = 0; i < 240; i++) {
-      tickWorld(s, { aim: { x: 10, y: 20 } }, 1 / 60);
-      peak = Math.max(peak, s.doors.d.open);
-    }
-    expect(peak).toBeGreaterThan(0.5); // it opened
-    expect(s.avatars.me.y).toBeGreaterThan(8); // and the avatar got through
+    // Walk straight at the doorway WITHOUT declaring anything: the door is a wall.
+    steerFor(s, 10, 20, 4);
+    expect(s.doors.d.open).toBe(0);
+    expect(s.avatars.me.y).toBeLessThan(8); // stuck on the near side
+
+    // Now the body is walking this door's transit leg — and gets through.
+    crossing(s, "me", "d");
+    steerFor(s, 10, 20, 4);
+    expect(s.avatars.me.y).toBeGreaterThan(8);
   });
 
-  it("a door closes again once nobody is near", () => {
+  it("shuts again once the body is no longer crossing it", () => {
     const s = createWorldState(spec([door()]), "me");
+    crossing(s, "me", "d");
     steerFor(s, 10, 20, 4); // open it + pass through
     expect(s.doors.d.open).toBeGreaterThan(0.5);
-    steerFor(s, 10, 30, 3); // walk far away
-    expect(s.doors.d.open).toBeLessThan(0.5); // swung shut
+    // The transit leg is done: the host clears the declaration, and the door lets
+    // go — measured after walking clear, so "in the opening" can't hold it.
+    crossing(s, "me", null);
+    steerFor(s, 10, 30, 3);
+    expect(s.doors.d.open).toBeLessThan(0.5);
   });
 
-  it("opens for a body TRAVERSING the doorway, not one passing nearby", () => {
-    // A narrow door at x∈[9,11], y=8, flanked by solid wall either side. A body
-    // to the SIDE, or ambling PARALLEL in front of the opening, must not swing
-    // it; only a body on a course THROUGH it does.
-    const narrow = (): StructureSpec[] => [
+  it("ignores a body that merely walks past the opening", () => {
+    // A narrow door at x∈[9,11], y=8, flanked by solid wall. The body ambles
+    // PARALLEL right in front of the opening for six seconds — under the old
+    // geometric rule this was the bug being chased with ever-tighter throat
+    // tests; now it needs no test of aim or velocity at all, because the body
+    // never claimed to be crossing.
+    const narrow: StructureSpec[] = [
       { kind: "wall", id: "wl", a: { x: 0, y: 8 }, b: { x: 9, y: 8 }, thickness: 1 },
       { kind: "wall", id: "wr", a: { x: 11, y: 8 }, b: { x: 20, y: 8 }, thickness: 1 },
       { kind: "door", id: "d", a: { x: 9, y: 8 }, b: { x: 11, y: 8 }, thickness: 1, openRadius: 3 },
     ];
-
-    // (a) Walking PARALLEL to the wall, passing right in front of the opening
-    // (along y=6.6, from x=2 to x=18) — near the door the whole time, but never
-    // crossing it. The door stays shut.
-    const sPar = createWorldState({ ...spec(narrow()), spawns: [{ id: "s", x: 2, y: 6.6, facing: 0 }] }, "s");
-    let peakPar = 0;
+    const s = createWorldState({ ...spec(narrow), spawns: [{ id: "s", x: 2, y: 6.6, facing: 0 }] }, "s");
+    let peak = 0;
     for (let i = 0; i < 360; i++) {
-      tickWorld(sPar, { aim: { x: 18, y: 6.6 } }, 1 / 60);
-      peakPar = Math.max(peakPar, sPar.doors.d.open);
+      tickWorld(s, { aim: { x: 18, y: 6.6 } }, 1 / 60);
+      peak = Math.max(peak, s.doors.d.open);
     }
-    expect(peakPar).toBeLessThan(0.3); // never opened for a body just passing by
-
-    // (b) The same door, a body walking straight THROUGH it (x≈10, y 2→20).
-    const sThru = createWorldState({ ...spec(narrow()), spawns: [{ id: "s", x: 10, y: 2, facing: 0 }] }, "s");
-    let peakThru = 0;
-    for (let i = 0; i < 360; i++) {
-      tickWorld(sThru, { aim: { x: 10, y: 20 } }, 1 / 60);
-      peakThru = Math.max(peakThru, sThru.doors.d.open);
-    }
-    expect(peakThru).toBeGreaterThan(0.5); // opened for the body going through
-    expect(sThru.avatars.s.y).toBeGreaterThan(8); // and it got across
+    expect(peak).toBe(0); // not "small" — it never moved
   });
 
-  it("a locked door stays solid; unlockDoor lets it open", () => {
+  it("opens BEFORE the body reaches the leaf, so a crossing never stalls", () => {
+    // The no-delay contract. The near transit point sits ~1.1 m short of the
+    // door, and the swing rate clears doorPassThreshold in a fraction of that
+    // walk — so by the time the body is at the leaf the way is already open and
+    // it keeps its stride. If this ever regresses, bodies visibly hitch at every
+    // doorway in the town.
+    const s = createWorldState({ ...spec([door()]), spawns: [{ id: "s", x: 10, y: 6.9, facing: 0 }] }, "s");
+    crossing(s, "s", "d");
+    let ticks = 0;
+    while (ticks < 240 && s.doors.d.open < WORLD_ENGINE_DEFAULTS.doorPassThreshold) {
+      tickWorld(s, { aim: { x: 10, y: 20 } }, 1 / 60);
+      ticks += 1;
+    }
+    expect(s.doors.d.open).toBeGreaterThanOrEqual(WORLD_ENGINE_DEFAULTS.doorPassThreshold);
+    expect(ticks).toBeLessThan(20); // under a third of a second
+    // And the body has not been stopped by the leaf it was walking toward.
+    expect(s.avatars.s.vy).toBeGreaterThan(0);
+  });
+
+  it("does not shut on a body standing in the doorway", () => {
+    // Holding a door open for a body physically in the opening is not a second
+    // way to OPEN one — it is a refusal to swing a leaf through somebody. It is
+    // also what lets a graspless creature follow through behind someone.
+    const s = createWorldState(spec([door()]), "me");
+    crossing(s, "me", "d");
+    steerFor(s, 10, 8, 3); // walk INTO the opening and stop there
+    expect(Math.abs(s.avatars.me.y - 8)).toBeLessThan(1);
+    crossing(s, "me", null); // the leg ended while it stands in the gap
+    steerFor(s, 10, 8, 2);
+    expect(s.doors.d.open).toBeGreaterThan(0.5); // still open — it's standing there
+  });
+
+  it("refuses to open for a body that cannot open doors", () => {
+    // A pet may pass through what somebody else opened, never work one itself.
+    const s = createWorldState(spec([door()]), "me");
+    s.avatars.me.canOpen = false;
+    crossing(s, "me", "d");
+    steerFor(s, 10, 20, 4);
+    expect(s.doors.d.open).toBe(0);
+    expect(s.avatars.me.y).toBeLessThan(8);
+  });
+
+  it("setDoorOpen pins a door open with nobody near, and releases it", () => {
+    // The ACTION half: opening a door is not the same as walking through one —
+    // it stays open afterwards, which is the entire point.
+    const s = createWorldState(spec([door()]), "me");
+    setDoorOpen(s, "d", true);
+    steerFor(s, 10, 2, 2); // stay put, far from the door
+    expect(s.doors.d.open).toBe(1);
+    expect(structuresWalkable(s, { x: 10, y: 8 }, 0.4)).toBe(true);
+
+    setDoorOpen(s, "d", false);
+    steerFor(s, 10, 2, 2);
+    expect(s.doors.d.open).toBe(0);
+  });
+
+  it("setDoorOpen cannot open a LOCKED door", () => {
+    // Otherwise "open the door" would be a way around every lock in the world.
+    const s = createWorldState(spec([door({ locked: true })]), "me");
+    setDoorOpen(s, "d", true);
+    steerFor(s, 10, 2, 2);
+    expect(s.doors.d.open).toBe(0);
+    expect(s.doors.d.pinned).toBeFalsy();
+  });
+
+  it("a locked door stays solid even for a crossing body; unlockDoor lets it open", () => {
     const s = createWorldState(spec([door({ locked: true })]), "me");
     expect(s.doors.d.locked).toBe(true);
+    crossing(s, "me", "d");
     steerFor(s, 10, 20, 4);
     expect(s.doors.d.open).toBe(0); // never opened
     expect(s.avatars.me.y).toBeLessThan(8); // blocked like a wall
@@ -146,13 +225,60 @@ describe("doors", () => {
     expect(s.avatars.me.y).toBeGreaterThan(8); // now passable
   });
 
-  it("carrying the key object unlocks + opens a locked door", () => {
+  it("carrying the key through unlocks + opens a locked door", () => {
     const key: ObjectSpec = { id: "key", x: 10, y: 2, shape: "box", radius: 0.3, interactions: ["carry"] };
     const s = createWorldState(spec([door({ locked: true, keyObjectId: "key" })], [key]), "me");
     carryObject(s, "key", "me"); // the avatar holds the key
+    crossing(s, "me", "d"); // …and is taking it THROUGH this door
     steerFor(s, 10, 20, 4);
     expect(s.doors.d.locked).toBe(false); // the key turned the lock
     expect(s.avatars.me.y).toBeGreaterThan(8); // and we walked through
+  });
+
+  it("opens BOTH leaves of one doorway, so a room boundary is really passable", () => {
+    // A gap between two rooms is realised twice — each room lowers its OWN wall
+    // to its own door leaf — so `expandWorldBuildings` emits two door structures
+    // on the same segment. Collision blocks on either, so a declaration naming
+    // whichever leaf the router picked has to swing the twin as well or the
+    // "open" doorway is still a wall. This is the bug that stalled every routed
+    // errand into another room the moment doors stopped opening by proximity.
+    const rooms: BuildingSpec[] = [
+      { id: "A", footprint: { x: 0, y: 0, w: 6, h: 6 }, floors: 1, wallThickness: 0.4, doorways: [{ edge: "east", offset: 3, width: 2 }] },
+      { id: "B", footprint: { x: 6, y: 0, w: 6, h: 6 }, floors: 1, wallThickness: 0.4, doorways: [{ edge: "west", offset: 3, width: 2 }] },
+    ];
+    const s = createWorldState(
+      expandWorldBuildings({ ...spec([]), buildings: rooms, spawns: [{ id: "s", x: 3, y: 3, facing: 0 }] }),
+      "s",
+    );
+    const leaves = (s.spec.structures ?? []).filter((st) => st.kind === "door").map((st) => st.id);
+    expect(leaves.length).toBe(2); // one doorway, two leaves — the whole point
+
+    // Declare only ONE of them, as the router does.
+    crossing(s, "s", leaves[0]!);
+    steerFor(s, 9, 3, 4);
+    for (const id of leaves) expect(s.doors[id]!.open).toBeGreaterThan(0.5);
+    expect(s.avatars.s.x).toBeGreaterThan(6.5); // and the body is in the next room
+
+    // Same for the deliberate act: pinning one leaf pins the doorway.
+    const s2 = createWorldState(
+      expandWorldBuildings({ ...spec([]), buildings: rooms, spawns: [{ id: "s", x: 3, y: 3, facing: 0 }] }),
+      "s",
+    );
+    setDoorOpen(s2, leaves[0]!, true);
+    steerFor(s2, 3, 3, 1);
+    for (const id of leaves) expect(s2.doors[id]!.open).toBe(1);
+  });
+
+  it("does not turn the lock for a key carried past a door it isn't crossing", () => {
+    // The key opens the door you take it through, not every locked door you own.
+    const key: ObjectSpec = { id: "key", x: 2, y: 2, shape: "box", radius: 0.3, interactions: ["carry"] };
+    const s = createWorldState(
+      { ...spec([door({ locked: true, keyObjectId: "key" })], [key]), spawns: [{ id: "s", x: 2, y: 2, facing: 0 }] },
+      "s",
+    );
+    carryObject(s, "key", "s");
+    steerFor(s, 18, 2, 4); // walk the length of the room, well clear of the doorway
+    expect(s.doors.d.locked).toBe(true);
   });
 });
 

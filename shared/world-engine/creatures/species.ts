@@ -79,6 +79,14 @@ const CATALOGUE: ReadonlyArray<{ id: string; kind: SpeciesKind; example: string;
   { id: "ram", kind: "creature", example: "Ram (curled horns)" },
   { id: "sheep", kind: "creature", example: "Sheep (woolly)" },
   { id: "ungulate", kind: "creature", example: "Ungulate (hooves)" },
+  // The lab-tuned bodies. `dog` matters beyond the menu: it is a `friend` pool
+  // WORD, so until now the one animal a child could most readily ask for had no
+  // body plan behind it. Appended rather than interleaved — registry order is
+  // stable data other derivations index against.
+  { id: "elephant", kind: "creature", example: "Elephant (trunk)" },
+  { id: "horse", kind: "creature", example: "Horse" },
+  { id: "cat", kind: "creature", example: "Cat" },
+  { id: "dog", kind: "creature", example: "Dog" },
   // ── Plants ────────────────────────────────────────────────────────────────
   { id: "oak", kind: "plant", example: "Oak (tree)" },
   { id: "grass", kind: "plant", example: "Grass tuft" },

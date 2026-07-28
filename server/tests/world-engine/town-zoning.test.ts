@@ -243,6 +243,35 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
     expect(deltas.civic.prosperity).toBeGreaterThan(0); // banked, not lost
   });
 
+  it("a STRANDED QUARTER founds its market on open ground — service deficit is a real need (needs-aware districts)", () => {
+    const deltas = createTownDeltas();
+    deltas.stock.wood = 40;
+    deltas.stock.stone = 10;
+    // Deficit at the urgency gate: enough households past the hunger-cycle
+    // walk radius — the market rises TODAY, materials-paid, no bank.
+    const order = foundingGrowthStep(makeInput(deltas, {
+      gain: 0,
+      signals: { crowding: 0, shortage: () => 0, serviceDeficit: (t) => (t === "market" ? 0.6 : 0) },
+    }));
+    expect(order).not.toBeNull();
+    expect(order!.spec.type).toBe("market");
+    expect(order!.zoneOrd).toBe(-1); // open ground — no charter needed
+    expect(deltas.civic.prosperity).toBe(0); // survival paid in materials, never the bank
+  });
+
+  it("a MILD service deficit never sprawls open ground — below the real-need floor it banks like any comfort want", () => {
+    const deltas = createTownDeltas();
+    deltas.stock.wood = 100;
+    deltas.stock.stone = 40;
+    for (let d = 1; d <= 12; d++) {
+      expect(foundingGrowthStep(makeInput(deltas, {
+        day: d,
+        signals: { crowding: 0, shortage: () => 0, serviceDeficit: (t) => (t === "market" ? 0.4 : 0) },
+      }))).toBeNull();
+    }
+    expect(deltas.founded()).toHaveLength(0);
+  });
+
   it("URGENT need founds WITHOUT charters or a banked threshold — a homeless camp raises a house on open ground (city-founding)", () => {
     const deltas = createTownDeltas();
     deltas.stock.wood = 40;

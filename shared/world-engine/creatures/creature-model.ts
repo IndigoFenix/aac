@@ -429,7 +429,7 @@ class DynamicCreatureModel implements CreatureModel {
   /** World-meter drop that lands a SEATED body's underside on the seat surface
    *  the anchor points at: the crouched torso underside (creature-local) scaled
    *  to world. The factory subtracts this from a sit anchor's height and eases
-   *  it in with the same slide level, so the body settles ON the chair/privy
+   *  it in with the same slide level, so the body settles ON the chair/toilet
    *  (feet hanging toward the floor) rather than floating a hip-height above it.
    *  Sleep does not use it (its recline transform re-centres the lying body). */
   get seatDropWorld(): number {
@@ -581,7 +581,7 @@ function mixYaw(a: number, b: number, t: number): number {
  *  level, dissolved by movement with the SAME dial the pose itself uses
  *  (animation.ts: `1 - clamp01(speed / 0.2)`). Without the speed term a body
  *  dragged off mid-activity (a command, the next errand) stayed GLUED to the
- *  bed/privy at full strength while its pose faded, then teleported to
+ *  bed/toilet at full strength while its pose faded, then teleported to
  *  wherever the sim body had walked — the observed to/from-fixture teleport.
  *  Exported for tests. */
 export function anchorSlideLevel(activityLevel: number, speed01: number): number {
@@ -594,7 +594,7 @@ export interface ActivityAnchor {
   z: number;
   yaw: number;
   /** Which body part the anchor's use-point names (the furniture-use contract).
-   *  "pelvis" (a seat/privy) → the crouched hip underside is DROPPED onto the
+   *  "pelvis" (a seat/toilet) → the crouched hip underside is DROPPED onto the
    *  surface (seatDropWorld); "torso" (a bed) → the recline re-centres the lying
    *  body, no drop; "reach"/absent → no drop. Selecting the drop from the
    *  CONTRACT (not `activity === "sit"`) keeps every layer reading one contract. */
@@ -698,7 +698,7 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
         if (dyn) {
           // ONTO THE FURNITURE: the renderer resolved the fixture the activity
           // names (frame.activityAnchor — its top center + its heading): the BED
-          // a sleeper lies on, the CHAIR or PRIVY a sitter takes. Slide the body
+          // a sleeper lies on, the CHAIR or TOILET a sitter takes. Slide the body
           // from where it stands onto the surface and align it to the fixture's
           // axis, synced to the animator's own blend so it settles as it slides
           // on — and slides back off as it wakes/stands. An activity with no
@@ -730,7 +730,7 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
             // its own recline re-centering and takes no drop.
             // The DROP is selected by the anchor's CONTACT part (the use-point
             // contract), not the activity name: only a "pelvis" contact (a
-            // seat/privy) drops the crouched hip underside onto the surface. A
+            // seat/toilet) drops the crouched hip underside onto the surface. A
             // "torso" bed re-centres via its recline (no drop); a "reach" never
             // anchors here. Falls back to the old activity test for a legacy
             // anchor with no contact set.

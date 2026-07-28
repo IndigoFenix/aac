@@ -29,7 +29,7 @@ import { useContractFor } from "../../furniture-use.js";
 // The anchor's own contact-handoff distance — the ONE number a use-walk's arrival
 // is judged by too, so the walk can never stop where the anchor can't reach.
 import { engageReachFor } from "./furniture-anchor.js";
-import type { FixtureKind } from "../../types.js";
+import { fixtureWord, type FixtureKind } from "../../types.js";
 import { certifyGoalTreeGame } from "../../solver/index.js";
 import { buildLogicalWorld, type LogicalWorld } from "../../solver/logical-world.js";
 import { walkGoalTree } from "../../solver/walk.js";
@@ -55,10 +55,12 @@ import {
   workDoorstep,
   type StoreConsumption,
 } from "@shared/world-engine/kernel/town/goods.js";
-import { FOUNDING_AGE_DAYS, type TownHouse } from "@shared/world-engine/kernel/town/plan.js";
+import {
+  FOUNDING_AGE_DAYS, PLAZA_WELL, wellVergePoint, type TownHouse,
+} from "@shared/world-engine/kernel/town/plan.js";
 import {
   ANNEX_ROOM_KIND,
-  craftLaborDays,
+  craftLaborDaysFor,
   FURNITURE_ITEMS,
   furnitureItemOf,
   nextCraftKind,
@@ -202,7 +204,10 @@ import {
   type HouseRoom,
   type HouseShape,
 } from "@shared/world-engine/kernel/town/rooms.js";
-import { roadRoute } from "@shared/world-engine/kernel/town/streets.js";
+import { roadDistance, roadRoute } from "@shared/world-engine/kernel/town/streets.js";
+import {
+  NEIGH_FOUND_MASS, WELL_FOUND_MASS, foundServicePoints,
+} from "@shared/world-engine/kernel/town/districts.js";
 import { IMPORT_ALLOTMENT, RARE_IMPORT_KIND, TRADE_IMPORT_KINDS } from "@shared/world-engine/kernel/town/trade.js";
 import {
   abandonSite,
@@ -295,10 +300,15 @@ import { drinkGlyphs, naturalSourceOf, sourceKillExhausted, sourcesForGood, take
 import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
 import { buildConcepts } from "@shared/world-engine/interaction/content/concepts.js";
 import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
+import {
+  craftRecipeOf,
+  makeableGlyph,
+  spokenMakeable,
+} from "@shared/world-engine/interaction/content/makeable.js";
 import { genderFor } from "@shared/world-engine/interaction/behavior/gender.js";
 import { createGlyphImageSource } from "../../glyph-images.js";
 import type { ImageResolver } from "@shared/glyph-compositor.js";
-import { activityBubbleContent, restDoneBubble } from "@shared/world-engine/interaction/quest/activity-bubble.js";
+import { dwellBubble, dwellBubbleGlyphs, restDoneBubble } from "@shared/world-engine/interaction/quest/activity-bubble.js";
 import { createDwellTracker } from "../../dwell.js";
 import { runWorldHost, type WorldHost } from "../../world-host.js";
 import type { WorldView } from "../../world-view.js";
@@ -329,10 +339,13 @@ import {
   standPointFor,
   type BodyAvoidance,
 } from "./stand-points.js";
-// WHICH FURNITURE THE GAZE AIMS AT (furniture-aim.ts — pure, extracted so tests
-// can pin it): the hover IS the aim, never "whichever piece sits near the
-// fixation", which used to open a chest's neighbour.
-import { resolveFurnitureAim, type FurnitureAimGaze } from "./furniture-aim.js";
+// WHAT THE GAZE AIMS AT (furniture-aim.ts — pure, extracted so tests can pin
+// it): the hover IS the aim, never "whichever thing sits near the fixation",
+// which used to open a chest's neighbour — and, for people, used to start a
+// conversation with whoever stood near the chair you were selecting. ONE rule
+// for furniture and creatures alike, so the two can never claim the same hover.
+import { gazeOnCreature, resolveFurnitureAim, type FurnitureAimGaze } from "./furniture-aim.js";
+import { dwellInteraction, type DwellPhase, type HoverTarget } from "./dwell-interaction.js";
 import { createNpcVoice, speechEstimateMs, type NpcVoice } from "../../npc-voice.js";
 import { resolveLine, SAMPLE_NPC_DIALOGUE } from "../../npc-dialogue.js";
 import {
@@ -398,6 +411,14 @@ import {
   type DerivedCreatures,
   type DialogueAct,
   type GoingDest,
+  type GoingRoom,
+  type ScheduledTrip,
+  type TalkCandidate,
+  pickTalkTarget,
+  roomAt,
+  stepActivity,
+  stepDestination,
+  tripDestination,
   type SyntaxLevel,
   DEFAULT_RELATION,
   decideNeed,
@@ -449,7 +470,7 @@ import {
   type SparkDraw,
   type SparkFocus,
 } from "@shared/world-engine/interaction/behavior/spark-attention.js";
-import { speakDirections, speakerGender, translateGlyph, type Gender } from "@shared/world-engine/interaction/lang/index.js";
+import { isRtlLocale, speakDirections, speakerGender, translateGlyph, type Gender } from "@shared/world-engine/interaction/lang/index.js";
 import { creditDelivery } from "@shared/world-engine/interaction/town/town-quests.js";
 import { buildTownPlay, foundedHouseRow, TOWN_PLAY_STRUCTURES, type TownFamilyMember, type TownFamilyPet, type TownPlay } from "@shared/world-engine/interaction/town/town-play.js";
 import {
@@ -523,7 +544,8 @@ function girthSafeSpawn<
 const CONVO_RADIUS = 7;       // approach distance that raises an NPC's greeting bubble
 const CONVO_FIG_RADIUS = 2.2; // gaze within this of a poser counts as "on" them
 const CONVO_START_MS = 700;   // dwell ON an NPC to begin a conversation
-const CONVO_CANCEL_MS = 1000; // dwell on empty ground (away from the NPC) to leave
+// (CONVO_CANCEL_MS retired with the leave-by-looking-away dwell: a glance off the
+// partner is an INSTRUCTION now, so a conversation ends on CONVO_IDLE_END_S.)
 const TAP_COOLDOWN_S = 1.0;   // after a device tap-toggle, ignore re-picks this long
 // TASK POOL (phase ①a §2) — untargeted orders wait here for a willing taker.
 const TASK_FOCUS_RADIUS = 26;    // the issuer's ATTENTION AREA around their effective position
@@ -533,6 +555,10 @@ const TASK_CLAIM_INTERVAL_S = 1; // claim/expiry sweep cadence (claims are per-s
 // endpoint prefix (a creature's hands as a stock endpoint).
 const TOWN_YARD_ID = TOWN_YARD_EP;
 const POCKET_EP = "pocket:";
+/** A town well's world-object id: the plaza's `well`, plus `well_<n>` for
+ *  each NEIGHBORHOOD well the plan founded (needs-aware construction —
+ *  plan.ts wells on the thirst-cycle walk radius). Same free-draw rules. */
+const isWellId = (id: string): boolean => id === "well" || /^well_\d+$/.test(id);
 /** A founded site pile's endpoint id prefix (pipeline ② — `sitepile:<ord>`
  *  aliases the FoundedBuilding row's live `pile`). */
 const SITE_PILE_EP = "sitepile:";
@@ -606,6 +632,7 @@ import {
   needRate,
   restDwellS,
   constructionGameDays,
+  serviceRadiusM,
   REAL_SCALE,
   type WorldScale,
 } from "@shared/world-engine/scale.js";
@@ -624,12 +651,12 @@ const WASTE_DRINK_BUMP = 0.45; // drinking pushes harder
 const DRINK_GLYPHS = new Set(["water", "juice", "tea", "drink", ...drinkGlyphs()]);
 const FUN_DWELL_S = 7; // seconds playing at the box before the meter clears
 const WASH_DWELL_S = 6; // seconds scrubbing in the bath
-const PRIVY_DWELL_S = 4; // seconds at the privy
+const TOILET_DWELL_S = 4; // seconds at the toilet
 const SIT_DWELL_S = 8; // seconds a commanded "sit" holds the chair
 /**
  * THE PIECE THIS GOAL WILL POSE ON, when it will pose on one at all — the fixture
  * id for a `rest` at a NAMED station whose use-point contract is an on-fixture use
- * (a chair, a bed, a privy: `onFixture`), else null.
+ * (a chair, a bed, a toilet: `onFixture`), else null.
  *
  * The seam exists because such a walk has a different arrival contract from every
  * other: the body does not merely need to be near its stand spot, it needs to be
@@ -645,12 +672,12 @@ function onFixtureUseTargetOf(state: WorldState, goal: GoalSpec): string | null 
   return useContractFor(spec.fixture).onFixture ? spec.id : null;
 }
 /** A rest-shaped step's dwell time, by motive. Action dwells (play, scrub,
- *  privy, cook) are animation-scale and fixed; SLEEP is the one dwell that is
+ *  toilet, cook) are animation-scale and fixed; SLEEP is the one dwell that is
  *  world physics — the scale's sleep fraction of its day. */
 function restDwellFor(tplKey: string, scale: WorldScale): number {
   if (tplKey === "fun") return FUN_DWELL_S;
   if (tplKey === "hygiene") return WASH_DWELL_S;
-  if (tplKey === "waste") return PRIVY_DWELL_S;
+  if (tplKey === "waste") return TOILET_DWELL_S;
   if (tplKey === "laundry") return WASH_DWELL_S; // the scrub at the tub
   if (tplKey.startsWith("cook:")) return COOK_DWELL_S; // the pot at the oven
   return restDwellS(scale);
@@ -2426,26 +2453,56 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // mapped onto the canvas for the world host, which owns the gaze-intent
   // interpreter + camera.
   let lastClient: { x: number; y: number } | null = null;
-  // Lenient dwell trackers for the NPC conversation (start on the NPC / leave
-  // on empty ground). Same eyegaze-tolerant timer as carry.
-  const talkDwell = createDwellTracker({ dwellMs: CONVO_START_MS, tolerance: CONVO_FIG_RADIUS, graceMs: 450 });
-  const leaveDwell = createDwellTracker({ dwellMs: CONVO_CANCEL_MS, tolerance: 2.0, graceMs: 450 });
-  // Drop / put-in-container action dwell for a SELECTED inventory item (separate from
-  // the carry pickup-dwell, which the host owns and this must not touch).
-  const dropDwell = createDwellTracker({ dwellMs: 650, tolerance: 1.2, graceMs: 300 });
-  // OPEN-a-container dwell (bug #5): dwelling on an openable stocked container spills
-  // its goods to grab. Separate from carry/drop dwells, and never runs while carrying.
-  const openDwell = createDwellTracker({ dwellMs: 700, tolerance: 1.2, graceMs: 300 });
-  // Which container that dwell is currently filling FOR. The tracker anchors by
-  // POSITION, and two boxes can stand closer than its jitter tolerance (a chest
-  // beside a table) — so a dwell that already fired on one would swallow the
-  // move to its neighbour. Identity re-anchors it; a momentary loss of the pick
-  // (aim null) leaves it be, so the tracker's own grace still bridges blinks.
-  let openDwellBox: string | null = null;
-  // SOFT CONTROL Phase 2 — between-two-creatures: a deliberate dwell on the gap
-  // between two people prompts them to chat (stepSparkPairChat). Shorter than the
-  // 700 ms talk dwell, longer than a passing glance.
-  const pairDwell = createDwellTracker({ dwellMs: 450, tolerance: 1.5, graceMs: 300 });
+  // TWO DWELLS, NOT FIVE (dwell-interaction.ts). The spark rests on ONE thing;
+  // how LONG it rests is the only other question, so there are exactly two
+  // timers and the table decides what each means. Two lengths deliberately — a
+  // third stops being something a student can perform on purpose.
+  //
+  // Both clocks start when the spark LANDS on a thing (the hover key re-anchors
+  // them below), so these are times-since-arrival, not times-since-anything-else.
+  // SHORT is a glance held on purpose; LONG stays at the conversation dwell this
+  // has always used, so opening a conversation costs exactly what it used to.
+  const SHORT_DWELL_MS = 300;
+  const LONG_DWELL_MS = CONVO_START_MS; // 700
+  // SAME tolerance and grace on both: they time ONE hover, so they must never
+  // disagree about whether that hover is still current. With different values a
+  // creature walking as you watch it could break the short clock while the long
+  // one rode on — the long gesture firing where the short never had.
+  const DWELL_TOLERANCE = CONVO_FIG_RADIUS;
+  const DWELL_GRACE_MS = 450; // bridges a blink without dropping the fill
+  const shortDwell = createDwellTracker({
+    dwellMs: SHORT_DWELL_MS, tolerance: DWELL_TOLERANCE, graceMs: DWELL_GRACE_MS,
+  });
+  const longDwell = createDwellTracker({
+    dwellMs: LONG_DWELL_MS, tolerance: DWELL_TOLERANCE, graceMs: DWELL_GRACE_MS,
+  });
+  // Which HOVER those timers are filling for. They anchor by POSITION, and two
+  // things can stand closer than the jitter tolerance (a chest beside a table),
+  // so a dwell that already fired on one would swallow the move to its
+  // neighbour. Identity re-anchors them; a momentary loss of the pick leaves
+  // them be, so the trackers' own grace still bridges blinks.
+  let dwellKey: string | null = null;
+  // Which phases have already fired for THIS hover, so a held gaze escalates
+  // (short → long) exactly once instead of re-firing every frame.
+  const firedPhases = new Set<DwellPhase>();
+  // Leaving a conversation is NO LONGER a gesture. Under the hover table a
+  // glance off the partner is an INSTRUCTION (ground ⇒ go there, object ⇒ go
+  // interact with that), so it cannot also mean "leave" — the same look would
+  // carry two meanings. A conversation now ends on its own inactivity timeout,
+  // or when a different one begins.
+  const CONVO_IDLE_END_S = 12;
+  let convoIdleS = 0;
+  /** Drop every accumulated dwell fill and its anchor. Called whenever the thing
+   *  the player is engaged with changes underneath the gaze (a board opens, a
+   *  conversation starts or ends, the session resets) — otherwise a fill earned
+   *  against the old context would fire against the new one. */
+  function resetDwells(): void {
+    shortDwell.reset();
+    longDwell.reset();
+    firedPhases.clear();
+    dwellKey = null;
+    convoIdleS = 0;
+  }
   // Conversation dwell progress — fed to the gaze-spark bloom (the selection
   // indicator) via the host's `cursorProgress` dep.
   let convoProgress = 0;
@@ -2702,15 +2759,46 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** ROSTER-seeded presence (household-duties §1 — the duty schedule is common
    *  knowledge): a household body's current place WORD. Idle/at-home residents
    *  and pets read "home"; a worker inside its shift window "work"; a shopper
-   *  mid-errand returns undefined (perceived/told facts may still answer). */
+   *  out on its trip returns undefined (perceived/told facts may still answer).
+   *
+   *  Read off the SITUATION, not off the destination: a body that has stopped
+   *  walking gets no destination (see residentGoing), but it is still exactly
+   *  where its errand put it — a worker standing at its bench is AT work. */
   function presenceWordOf(session: QuestSession, cid: string): string | undefined {
     if (cid.startsWith("pet_")) return "home";
-    if (!session.town || !cid.startsWith("resident_")) return undefined;
-    const going = residentGoing(session, cid);
-    if (!going) return "home";
-    if (going.kind === "home") return "home";
-    if (going.kind === "place") return going.place;
-    return undefined;
+    const sit = residentSituation(session, cid);
+    if (!sit) return undefined;
+    switch (sit.kind) {
+      case "step": {
+        // A live step's business is in the house or out in town; only the
+        // household case is a place this can name.
+        const rooms = houseRoomDestsOf(session, Number(cid.split("_")[1]));
+        return roomAt(rooms, stepDestPos(sit.step)) ? "home" : undefined;
+      }
+      case "scheduled":
+        // A shift is a place in its own right. On a shopping trip, walking back
+        // already counts as home (the schedule's last leg); out at the source,
+        // only a sighting can say.
+        if (sit.trip.kind === "shift") return "work";
+        return sit.trip.phase === "to_home" ? "home" : undefined;
+      case "idle":
+        return "home";
+    }
+  }
+
+  /** The rooms of a resident's own house as DESTINATIONS (going.ts): world rects
+   *  with annex/demolition deltas applied, each carrying the word it answers
+   *  with. The living room and halls carry NO word — their glyph is "home"/"room",
+   *  and "I'm going home" is exactly what a body standing in the house must not
+   *  say. Empty off a town session or for an unknown lot. */
+  function houseRoomDestsOf(session: QuestSession, houseIndex: number): GoingRoom[] {
+    const ctx = residentTownCtx(session, houseIndex); // neighbor-aware center
+    if (!ctx?.house) return [];
+    const delta = session.town?.deltas.get(`h_${ctx.house.index}`);
+    return houseRoomPlan(ctx.center, ctx.house, delta).rooms.map((r) => ({
+      rect: r.rect,
+      ...(r.kind === "living" || r.kind === "hall" ? {} : { word: ROOM_GLYPH[r.kind] }),
+    }));
   }
 
   /** Warm the DIRECTED relations both ways (an exchange, a gift) — the same book
@@ -2734,12 +2822,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // The BODY's truth beats the pure schedule: a shopper's real walk (door transits,
     // detours) lags the clock, so the phase can already read "home" while the body is
-    // still visibly traveling — it IS going somewhere, and the honest answer for a
-    // resident is home. (Wander is a behavior, not an errand — idlers stay un-askable.)
-    if (world?.npcErrandActive(avatarIdOf(cid))) {
-      return cid.startsWith("resident_") ? { kind: "home" } : { kind: "place", place: "there" };
-    }
-    return undefined;
+    // still visibly traveling — it IS going somewhere. (Wander is a behavior, not an
+    // errand — idlers stay un-askable.) WALKING, not merely erranded: an errand
+    // whose current waypoint is being DWELLED out is a body standing still — the
+    // sleeper pinned at its bed, the builder holding its work spot — and "where
+    // are you going?" has no business being asked, let alone answered "home".
+    const path = world?.npcErrandPath(avatarIdOf(cid));
+    if (!path || path.dwelling) return undefined;
+    if (!cid.startsWith("resident_")) return { kind: "place", place: "there" };
+    // A resident's UNLABELED walk (no step, no queued task — a stray host errand):
+    // "home" only when the walk actually ends inside its house and the body is not
+    // in there already; inside, name the room it is crossing to.
+    const rooms = houseRoomDestsOf(session, Number(cid.split("_")[1]));
+    const end = path.points[path.points.length - 1];
+    const destRoom = end ? roomAt(rooms, end) : undefined;
+    const body = world?.state.avatars[avatarIdOf(cid)];
+    const inside = !!body && !!roomAt(rooms, body);
+    if (!destRoom) return inside ? undefined : { kind: "place", place: "there" };
+    if (!inside) return { kind: "home" };
+    return destRoom.word ? { kind: "room", room: destRoom.word } : undefined;
   }
 
   /** The activity VERBS a creature is verifiably doing right now — the honest
@@ -2761,22 +2862,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return verbs.length ? verbs : undefined;
   }
 
-  /** Need-template prefixes → the activity frame their pursuit shows as (the
-   *  founding motives speak their own verbs). Checked in order. */
-  const TPL_ACTIVITY: readonly [string, { verb: string; object?: string }][] = [
-    ["hunger", { verb: "eat" }],
-    ["thirst", { verb: "drink" }],
-    ["energy", { verb: "sleep" }],
-    ["waste", { verb: "go", object: "bathroom" }],
-    ["hygiene", { verb: "wash" }],
-    ["fun", { verb: "play" }],
-    ["social", { verb: "talk" }],
-    ["laundry", { verb: "wash", object: "clothing" }],
-    ["cook", { verb: "cook", object: "food" }],
-    ["clean", { verb: "clean" }],
-    ["tidy", { verb: "clean" }],
-    ["dress", { verb: "wear" }],
-  ];
 
   /** The live ACTIVITY of a creature, object included — the "what is X
    *  doing/eating?" answer (ProjectionOpts.activityOf) and the introspection
@@ -2793,50 +2878,110 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (pursuit) return goalActivity(pursuit.goal, intentLineSyms(session)) ?? undefined;
     const step = session.needStep.get(cid);
     if (step) {
-      const head = step.goodKey ? headOf(step.goodKey) : undefined;
-      if (step.kind === "take") return { verb: "get", ...(head ? { object: head } : {}) };
-      if (step.kind === "deposit") return { verb: "put", ...(head ? { object: head } : {}) };
-      const tpl = TPL_ACTIVITY.find(([p]) => step.tplKey.startsWith(p));
-      if (tpl) return tpl[1];
+      const act = stepActivity(step);
+      if (act) return act;
     }
     const going = creatureGoing(session, cid);
     if (going) {
       if (going.kind === "fetch") return { verb: "get", object: headOf(going.good) };
-      return { verb: "go", object: going.kind === "home" ? "home" : going.place };
+      if (going.kind === "activity") return { verb: going.verb, ...(going.object ? { object: going.object } : {}) };
+      const dest = going.kind === "home" ? "home" : going.kind === "room" ? going.room : going.place;
+      return { verb: "go", object: dest };
     }
     return undefined;
   }
 
-  /** A resident's live DESTINATION from the town goods clock: fetching its good,
-   *  heading home, or (provisioned/idle) not going anywhere. Residents only — the
-   *  ambient crowd is what walks; cast bodies aren't clock-driven. */
-  function residentGoing(session: QuestSession, cid: string): GoingDest | undefined {
-    const town = session.town;
-    if (!town || !cid.startsWith("resident_")) return undefined;
+  /** A live need STEP as an answer to "where are you going?" — the world side of
+   *  going.ts's `stepDestination` (which owns the rules: arrived is not going, a
+   *  body inside its own house is never "going home"). */
+  function liveStepGoing(
+    session: QuestSession,
+    cid: string,
+    houseIndex: number,
+    step: NonNullable<ReturnType<QuestSession["needStep"]["get"]>>,
+  ): GoingDest | undefined {
+    const body = world?.state.avatars[avatarIdOf(cid)];
+    if (!body) return undefined;
+    return stepDestination(
+      { kind: step.kind, tplKey: step.tplKey, goodKey: step.goodKey, at: stepDestPos(step) },
+      { x: body.x, y: body.y, using: !!step.objId && body.anchor?.fixtureId === step.objId },
+      houseRoomDestsOf(session, houseIndex),
+      WALK_ARRIVE,
+    );
+  }
+
+  /** Where a live step ENDS: the fixture's OWN spot, not the stand point beside
+   *  it — a stand point can sit a hair over a room boundary, and the room it
+   *  belongs to is the answer. */
+  function stepDestPos(step: NonNullable<ReturnType<QuestSession["needStep"]["get"]>>): { x: number; y: number } {
+    return (step.objId ? world?.state.objects[step.objId] : undefined) ?? step.pos;
+  }
+
+  /** What a resident is BUSY WITH per the household roster (common knowledge —
+   *  household-duties §1): the live needs step, else the goods clock's shopping
+   *  trip, else a work shift, else nothing. The ONE reading behind both answers
+   *  that depend on it — the destination ("where are you going?", which is
+   *  additionally gated on the body actually walking) and the presence word
+   *  ("where is Mara?", which a body standing still does not change). */
+  type ResidentSituation =
+    | { kind: "step"; step: NonNullable<ReturnType<QuestSession["needStep"]["get"]>> }
+    | { kind: "scheduled"; trip: ScheduledTrip }
+    | { kind: "idle" };
+
+  function residentSituation(session: QuestSession, cid: string): ResidentSituation | undefined {
+    if (!session.town || !cid.startsWith("resident_")) return undefined;
     const houseIndex = Number(cid.split("_")[1]);
     const member = Number(cid.split("_")[2]);
     const house = residentTownCtx(session, houseIndex)?.house; // neighbor-aware
     if (!house) return undefined;
-    // LIVE-driven (needs loop): the destination is whatever the active step is —
-    // fetching its good (a take at a chest/store) or carrying things home.
     const step = session.needStep.get(cid);
-    if (session.liveNeedBodies.has(cid) && step) {
-      return step.kind === "take" ? { kind: "fetch", good: step.goodKey } : { kind: "home" };
-    }
+    if (session.liveNeedBodies.has(cid) && step) return { kind: "step", step };
     const good = residentShopGoods(session, houseIndex, member);
     if (good) {
-      const est = good.errand(house, session.townClock);
-      if (est.phase === "to_source" || est.phase === "at_source") return { kind: "fetch", good: good.good.key };
-      if (est.phase === "to_home") return { kind: "home" };
+      const phase = good.errand(house, session.townClock).phase;
+      if (phase !== "home") return { kind: "scheduled", trip: { kind: "shopping", phase, good: good.good.key } };
     }
-    // A WORKER inside its shift window is commuting to work or standing at it —
-    // "I go to work" answers the whole window (standing there, it reads as
-    // "I'm at work"; the alternative is a dead ask exactly when it's most natural).
     const jd = residentJobDuty(session, houseIndex, member);
     if (jd && inShiftWindow(jd.window, session.townClock, FOOD_DAY_SEC)) {
-      return { kind: "place", place: "work" };
+      return { kind: "scheduled", trip: { kind: "shift" } };
     }
-    return undefined; // home/idle — not going anywhere
+    return { kind: "idle" };
+  }
+
+  /** Speed below which a body is braking or jitter, not traveling (the reasoning
+   *  behind engine.ts's FACE_SPEED_MIN: near a stop the smoothed velocity is
+   *  noise). */
+  const GOING_SPEED_MIN = 0.15;
+
+  /** Is this body VISIBLY on the move — walking an errand leg, or simply moving?
+   *  Undefined means there is no hosted body to ask (off-show), where the
+   *  schedule is all anyone has and is trusted as-is. A DWELLED errand waypoint
+   *  is a body standing still (a shopper at the stall, a worker at its bench). */
+  function bodyWalking(cid: string): boolean | undefined {
+    const id = avatarIdOf(cid);
+    const body = world?.state.avatars[id];
+    if (!body || !world) return undefined;
+    const path = world.npcErrandPath(id);
+    if (path && !path.dwelling) return true;
+    return Math.hypot(body.vx, body.vy) > GOING_SPEED_MIN;
+  }
+
+  /** A resident's live DESTINATION: the live step's, the goods clock's shopping
+   *  trip, or the commute to work. Residents only — the ambient crowd is what
+   *  walks; cast bodies aren't clock-driven. Both branches let the BODY overrule
+   *  the schedule when it can be seen standing still (going.ts: `tripDestination`
+   *  and `stepDestination`). */
+  function residentGoing(session: QuestSession, cid: string): GoingDest | undefined {
+    const sit = residentSituation(session, cid);
+    if (!sit) return undefined;
+    switch (sit.kind) {
+      case "step":
+        return liveStepGoing(session, cid, Number(cid.split("_")[1]), sit.step);
+      case "scheduled":
+        return tripDestination(sit.trip, bodyWalking(cid));
+      case "idle":
+        return undefined;
+    }
   }
 
   /** The player GAVE a resident a stack unit (an accepted offer). The physical unit
@@ -3099,9 +3244,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // reaches the board by being registered, not by being listed here.
       // (Which pieces are actually NEARBY is the CONTEXT board's job.)
       for (const kind of Object.keys(STATION_PROPERTIES) as StationKind[]) {
-        // The privy answers to the BOARD's word ("bathroom" — the resolver
-        // aliases it back to the privy object).
-        const noun = kind === "privy" ? "bathroom" : kind;
+        // The toilet answers to the BOARD's word ("bathroom" — the resolver
+        // aliases it back to the toilet object).
+        const noun = kind === "toilet" ? "bathroom" : kind;
         addRaw(noun, noun);
       }
       addRaw("home", "home");
@@ -3261,8 +3406,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     choice = null;
     presenter.clearBoard();
     world?.setConversation(null);
-    talkDwell.reset();
-    leaveDwell.reset();
+    resetDwells();
     feedPointer();
   }
 
@@ -4429,7 +4573,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (status === "arriving") continue;
         // ARRIVED. REST-shaped needs dwell at the spot before their meter clears
         // (asleep at the bed; playing at the box; scrubbing in the bath; the
-        // privy); everything else applies its elemental effect at once.
+        // toilet); everything else applies its elemental effect at once.
         if (step.kind === "rest") {
           step.dwell = (step.dwell ?? restDwellFor(step.tplKey, session.scale)) - dt;
           if (step.dwell > 0) continue; // sleeping / playing / washing
@@ -4874,9 +5018,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       let act: AvatarActivity | undefined;
       // A rest step's dwell only counts down while the body is AT the spot
       // (arrival range mirrors stepNeeds) — the activity shows exactly then.
-      // Fun plays, the bath and privy SIT (the crouch rig), everything else sleeps.
+      // Fun plays, the bath and toilet SIT (the crouch rig), everything else sleeps.
       // A body the furniture anchor has slid ONTO the step's fixture (asleep on
-      // its bed, sat on its privy) is legitimately "at the spot" even though the
+      // its bed, sat on its toilet) is legitimately "at the spot" even though the
       // pin moved it off `step.pos` (the stand spot) onto the fixture centre — so
       // the activity must persist, or clearing it would release the anchor and the
       // body would slide off and back on forever (the flap the sticky anchorId
@@ -5060,7 +5204,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // DOLLHOUSE members run the full Sims-mode motive set (§3 + round 2): tiredness
     // slept off at a bed, loneliness talked off with a housemate, thirst drunk at
-    // the table from the barrel/well, waste at the privy, grime at the bath, and
+    // the table from the barrel/well, waste at the toilet, grime at the bath, and
     // the tidying chore over loose floor props. Data rows only.
     // WINDOW index — a neighbor's LOCAL index must never match the dollhouse.
     if (session.dollhouse === houseIndex) {
@@ -5542,16 +5686,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         break;
       }
     }
-    // SOURCES: water is drawn free at the town WELL; anything else is a market
-    // buy. Both need grasp (a bucket to work, a purse to pay). A member cooling
-    // off a good (it arrived to an empty shelf) sees no source at all until the
-    // cooldown lapses — no empty-handed loops.
+    // SOURCES: water is drawn free at a town WELL — the plaza's or the
+    // NEAREST neighborhood one (needs-aware construction lays one per
+    // thirst-radius quarter); anything else is a market buy. Both need grasp
+    // (a bucket to work, a purse to pay). A member cooling off a good (it
+    // arrived to an empty shelf) sees no source at all until the cooldown
+    // lapses — no empty-handed loops.
     let sources: StockCandidate[] = [];
     if (grasp) {
       if (goodKey === "water") {
-        const wellId = "well";
-        if (!rc.neighbor && state.objects[wellId]) {
-          sources = [{ id: wellId, place: P(wellId), units: 99 }]; // the well never runs dry
+        if (!rc.neighbor) {
+          const body = state.avatars[cid];
+          const wells: Array<{ id: string; d: number }> = [];
+          for (const [oid, o] of Object.entries(state.objects)) {
+            if (!isWellId(oid)) continue;
+            wells.push({ id: oid, d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0 });
+          }
+          // Nearest-first (the NeedCtx contract); id as the deterministic tie.
+          wells.sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : 1));
+          sources = wells.map((w) => ({ id: w.id, place: P(w.id), units: 99 })); // wells never run dry
         }
       } else {
         const storeId = `store:${goodKey}`;
@@ -5564,10 +5717,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // Stations by the template's SATISFY, generalized by KIND: consume at the
     // named surface containers (table / the pet's bowl — `waiting` counts the
     // good already there); rest at the named dwell stations (bed / box /
-    // bath / privy); a social partner is a HOUSEMATE (people and pets),
+    // bath / toilet); a social partner is a HOUSEMATE (people and pets),
     // nearest-first from live positions.
     let stations: StationCandidate[] = [];
     if (tpl.satisfy.kind === "consume") {
+      // THE STAMPEDE GUARD: a housemate ALREADY acting on this same row (its
+      // pursuit or needStep carries the tplKey) is a diner in flight — a
+      // served meal it is walking to must not also count as "waiting" for
+      // everyone deciding after it. Without this, one banana on the table drew
+      // ALL the hungry (the combine preempts acquisition), the losers churned
+      // at the empty plate, and NOBODY fell through to the market — the
+      // observed famine orbit. Subtracting the in-flight diners sends the
+      // surplus hungry to acquisition, which at a source is a restock-sized
+      // trip: the market run that actually breaks the famine.
+      let inFlight = 0;
+      for (let m2 = 0; m2 < HOUSEHOLD; m2++) {
+        const other = `resident_${houseIndex}_${m2}`;
+        if (other === cid) continue;
+        if (session.pursuits.get(other)?.tplKey === tpl.key || session.needStep.get(other)?.tplKey === tpl.key) {
+          inFlight++;
+        }
+      }
       for (const kind of tpl.satisfy.at ?? ["table"]) {
         const sid = `furn_${houseIndex}_${kind}`;
         if (state.objects[sid]) {
@@ -5577,11 +5747,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const waiting =
             stackTotalOf(session.containerStock.get(sid), goodKey) +
             (goodKey === "food" ? stackTotalOf(session.containerStock.get(sid), "meal") : 0);
-          stations.push({ id: sid, place: P(sid), kind, waiting });
+          stations.push({ id: sid, place: P(sid), kind, waiting: Math.max(0, waiting - inFlight) });
         }
       }
     } else if (tpl.satisfy.kind === "rest" || tpl.satisfy.kind === "transform") {
-      // Dwell stations (bed / box / bath / privy) — a TRANSFORM works at
+      // Dwell stations (bed / box / bath / toilet) — a TRANSFORM works at
       // the same kind of station (the wash at the tub), resolved identically.
       for (const kind of tpl.satisfy.at ?? ["bed"]) {
         const ids = kind === "bed"
@@ -5849,8 +6019,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         console.log(`[needs] ${cid} arrived at ${step.objId} with a FULL inventory (${totalStackUnits(carried)}) — took nothing`);
         return;
       }
-      // The town WELL: water is drawn free — no shelf, no depletion, no purse.
-      if (step.objId === "well") {
+      // A town WELL: water is drawn free — no shelf, no depletion, no purse.
+      if (isWellId(step.objId)) {
         carried["water"] = (carried["water"] ?? 0) + units;
         session.needCarried.set(cid, carried);
         console.log(`[needs] ${cid} drew ${units}× water at the well`);
@@ -6234,6 +6404,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
+  /** LIFTING A UNIT OFF A SURFACE. A prop shown in/on a stocked container is a
+   *  MIRROR of one stack unit, not a thing in its own right: it is spawned with
+   *  no `carry` affordance so the player's gaze-carry can't lift it out from
+   *  under the count (the ledger and the props would drift apart). A CREATURE
+   *  reaching for one therefore met `carryObject` refusing — silently, every
+   *  tick, until the act cap gave up: the observed "told to eat something off
+   *  the table, gets stuck", and why the same food eaten off the FLOOR (a real
+   *  loose prop) works. Reaching for it CONVERTS it instead: the unit leaves the
+   *  stock and the very same object comes back as a loose prop hands can take.
+   *  Same object id and entity, so a plan that already named it still holds. */
+  function unshelveProp(session: QuestSession, objId: string, boxId: string): boolean {
+    const rec = session.smallProps.get(objId);
+    const o = world?.state.objects[objId];
+    const stock = session.containerStock.get(boxId);
+    if (!world || !rec || !o || !stock || !stackTake(stock, rec.glyph)) return false;
+    session.containerStock.set(boxId, stock);
+    world.removeObject(objId);
+    world.addObject({ id: objId, x: o.x, y: o.y, shape: "sphere", radius: 0.3, interactions: ["carry"], glyph: rec.glyph });
+    session.smallProps.set(objId, { ...rec, at: session.townClock }); // `at` re-paces the tidy grace
+    session.needsPropsEpoch++; // loose now — wakes dormant tidy/fun decides
+    return true;
+  }
+
   function ensureResidentCreature(session: QuestSession, residentId: string) {
     let creatures = session.creatures;
     if (!creatures) {
@@ -6429,6 +6622,145 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The live position of a node's embodied NPC, else its layout figure spot.
    *  A resident's node id IS its streamed body id (`resident_*`), so fall back
    *  to a bare-id avatar when there's no `npc_`-prefixed poser. */
+  /** A body the player could open a conversation with. `resident` = a streamed
+   *  townsperson (registered lazily, small talk); otherwise a goal-tree poser or
+   *  an off-tree creature, whose node id it carries. */
+  type TalkTarget = { nodeId: string; pos: { x: number; y: number }; resident: boolean };
+
+  /** IS THE GAZE ON THIS PERSON — the ONE hover rule (furniture-aim.ts), the
+   *  same one the furniture board resolves through. The hovered thing is the
+   *  thing interacted with: hovering the chair beside Mara is looking at the
+   *  chair, so it selects the chair and starts nothing with Mara. A fixation
+   *  RADIUS can't say that — 2.2 m around a body swallows the furniture beside
+   *  it, and did. Position + radius survive only as the fallback for a view
+   *  that resolves no screen pick at all. */
+  function gazeOnTalk(t: TalkTarget): boolean {
+    const gz = world?.getGaze();
+    return !!gz && gazeOnCreature(gz, [avatarIdOf(t.nodeId), t.nodeId], t.pos, CONVO_FIG_RADIUS);
+  }
+
+  /**
+   * WHO the player would talk to right now.
+   *
+   * THE GAZE PICKS THE PARTNER: the talkable body it RESTS on wins — that is
+   * how a crowd is addressed (and how a conversation is handed from one person
+   * to the next; see the SWITCH in the convo step). Proximity only decides when
+   * the gaze is on nobody, which is the approach case: the greeting bubble of
+   * whoever you are walking up to. As a SPIRIT there is no walking, so reach
+   * doesn't apply and only the gaze can choose.
+   *
+   * Naming a target is NOT engaging it — the caller still has to see the gaze
+   * ON them (`gazeOnTalk`) before any dwell runs, so a proximity pick raises a
+   * greeting bubble and nothing more.
+   */
+  function talkTargetOf(
+    session: QuestSession,
+    state: WorldState,
+    me: { x: number; y: number },
+  ): TalkTarget | null {
+    const spirit = spiritNow();
+    const gazedOn = gazeOnTalk;
+    const byId = new Map<string, TalkTarget>();
+    const cands: TalkCandidate[] = [];
+    const add = (t: TalkTarget, questGiver: boolean) => {
+      const dist = Math.hypot(me.x - t.pos.x, me.y - t.pos.y);
+      if (!spirit && dist > CONVO_RADIUS) return;
+      byId.set(t.nodeId, t);
+      cands.push({ id: t.nodeId, dist, questGiver, gazed: gazedOn(t) });
+    };
+    /** Is this tree node one that can be talked to at all, right now? */
+    const talkableNode = (nodeId: string): boolean => {
+      const t = session.ctx.nodeById.get(nodeId)?.type;
+      if (t === "fulfill") return true; // a content creature still serves (vendor)
+      if (t === "choose" || t === "converse") return !session.rState.completed[nodeId];
+      return !!session.creatures?.nodeByCreature.has(nodeId); // off-tree local
+    };
+    for (const f of session.embedding.layout.figures) {
+      if (!talkableNode(f.nodeId)) continue;
+      const t = session.ctx.nodeById.get(f.nodeId)?.type;
+      if (t !== "choose" && t !== "converse" && t !== "fulfill") continue;
+      add({ nodeId: f.nodeId, pos: poserPos(session, f.nodeId) ?? f.pos, resident: false }, true);
+    }
+    // Off-tree creatures (wilderness locals) talk through their fulfill-shaped mind.
+    for (const [cid] of session.creatures?.nodeByCreature ?? []) {
+      if (session.ctx.nodeById.has(cid)) continue; // tree posers handled above
+      if (cid.startsWith("resident_") || cid.startsWith("pet_")) continue; // their own arm below
+      const av = state.avatars[avatarIdOf(cid)];
+      if (av) add({ nodeId: cid, pos: { x: av.x, y: av.y }, resident: false }, true);
+    }
+    // Streamed townsfolk: a "quest-giver with no quest" — same dialogue system.
+    for (const [id, av] of Object.entries(state.avatars)) {
+      if (id.startsWith("resident_")) add({ nodeId: id, pos: { x: av.x, y: av.y }, resident: true }, false);
+    }
+    const pick = pickTalkTarget(cands, { gazeOnly: spirit });
+    return pick ? (byId.get(pick) ?? null) : null;
+  }
+
+  /** The tree/creature node behind a talk target (an off-tree local's node lives
+   *  in the creature book, not the goal tree). */
+  function talkNodeOf(session: QuestSession, nodeId: string) {
+    return session.ctx.nodeById.get(nodeId) ?? session.creatures?.nodeByCreature.get(nodeId);
+  }
+
+  /** The APPROACH greeting a target previews while the player closes in: a
+   *  choose shows its prompt, a converse its entry turn's line, anyone with a
+   *  projected mind their opening line. */
+  function greetGlyphOf(session: QuestSession, target: TalkTarget): string {
+    if (target.resident) ensureResidentCreature(session, target.nodeId); // lazily, on first approach
+    const node = talkNodeOf(session, target.nodeId);
+    if (!target.resident) {
+      if (node?.type === "choose") return node.prompt;
+      if (node?.type === "converse") {
+        const entryTurn = node.turns.find((turn) => turn.id === node.entry);
+        return entryTurn?.lines[entryTurn.lines.length - 1]?.glyph ?? "";
+      }
+      if (node?.type !== "fulfill") return "";
+    }
+    if (!session.creatures) return "";
+    return projectDialogue(
+      session.creatures.world,
+      target.nodeId,
+      PLAYER_CREATURE_ID,
+      "b",
+      creatureProjectionOpts(session, node?.type === "fulfill" ? node.announce : undefined),
+    ).lineGlyph;
+  }
+
+  /** Raise `target`'s approach bubble — the line it would open with, refreshed
+   *  while the player closes in or holds a dwell on them. */
+  function previewGreet(session: QuestSession, target: TalkTarget) {
+    if (!world) return;
+    const greet = greetGlyphOf(session, target);
+    showWorldBubble(world.state, `npc-greet:${target.nodeId}`, {
+      anchor: { kind: "point", x: target.pos.x, y: target.pos.y },
+      text: greet ? npcStatement(greet, creatureGlyph(session, target.nodeId), target.nodeId) : "",
+      glyph: greet || undefined,
+      ttl: 1.5,
+    });
+  }
+
+  /** OPEN the conversation with `target` (its dwell fired): face the camera and
+   *  raise the board — the projected creature dialogue, or the goal tree's own
+   *  choose/converse node. */
+  function openTalk(session: QuestSession, target: TalkTarget) {
+    if (!world) return;
+    clearWorldBubble(world.state, `npc-greet:${target.nodeId}`);
+    world.setConversation({ x: target.pos.x, y: target.pos.y });
+    if (target.resident) ensureResidentCreature(session, target.nodeId);
+    if (target.resident || talkNodeOf(session, target.nodeId)?.type === "fulfill") {
+      openCreatureConvo(target.nodeId);
+    } else {
+      dispatchInput({ type: "touch-figure", nodeId: target.nodeId });
+    }
+  }
+
+  /** LEAVE the open conversation — the creature board closes itself; a goal-tree
+   *  choose/converse is cancelled through the runtime. */
+  function leaveActiveConvo(nodeId: string) {
+    if (convo) closeCreatureConvo();
+    else dispatchInput({ type: "cancel-choice", nodeId });
+  }
+
   function poserPos(session: QuestSession, nodeId: string): { x: number; y: number } | null {
     const live = world?.state.avatars[`npc_${nodeId}`] ?? world?.state.avatars[nodeId];
     if (live) return { x: live.x, y: live.y };
@@ -6538,6 +6870,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             y: p.y,
             ...(isEndpoint ? {} : { arrive: p.arrive ?? 0.9 }),
             ...(isEndpoint && pt.dwell ? { dwell: pt.dwell } : {}),
+            // The doorway tag rides all the way to the follower: while this is
+            // the live waypoint the body declares the crossing, which is what
+            // opens the door (engine: AvatarState.crossingDoorId).
+            ...(p.doorId ? { doorId: p.doorId } : {}),
           });
           origIndexAt.push(isEndpoint ? origIdx : -1);
         });
@@ -6803,6 +7139,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // lid). "on" surfaces and loose props have no lid to work.
         const boxId = at?.containedIn?.objectId;
         if (boxId && session.containers.get(boxId) === "in") openContainerLid(session, cid, boxId);
+        // Taking a MIRROR prop out of its container draws the unit down and
+        // makes the prop carryable (see unshelveProp) — without it the pick is
+        // a silent no-op that loops the pursuit until it gives up.
+        if (boxId) unshelveProp(session, o, boxId);
         carryObject(world.state, o, npcId);
         fireCarryGesture(npcId, "pickup", at);
       }
@@ -6929,6 +7269,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (o) {
         const at = world.state.objects[o];
         fireCarryGesture(npcId, "pickup", at ? { x: at.x, y: at.y } : undefined);
+        // EATEN OFF THE SURFACE (the plated meal, the pet's bowl): the prop is a
+        // MIRROR of one unit of that container's stock, so the meal must leave
+        // the COUNT as well as the tabletop — else the table keeps a phantom
+        // serving that renders nowhere and can never be eaten again. Same draw-
+        // down the needs walker's own consume does when it eats at a station.
+        const shelf = at?.containedIn?.objectId;
+        const stock = shelf ? session.containerStock.get(shelf) : undefined;
+        if (shelf && stock) {
+          stackTake(stock, session.smallProps.get(o)?.glyph ?? "");
+          session.containerStock.set(shelf, stock);
+        }
         removeLooseProp(session, o);
       }
       // THE INGEST EFFECT is bound to the action, not to the need machinery:
@@ -7049,14 +7400,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const state = world.state;
       const body = state.avatars[npcId];
       if (!body) return;
-      const REST_FIXTURES = new Set(["bed", "chair", "box", "bath", "privy"]);
+      const REST_FIXTURES = new Set(["bed", "chair", "box", "bath", "toilet"]);
       const fixtureKindOf = (id: string): string | undefined => {
         const spec = state.spec.objects.find((s) => s.id === id);
         return spec?.fixture && REST_FIXTURES.has(spec.fixture) ? spec.fixture : undefined;
       };
       let stObjId: string | undefined;
       let stKind: string | undefined;
-      // THE GOAL'S OWN STATION first — the bed/chair/privy this rest was for.
+      // THE GOAL'S OWN STATION first — the bed/chair/toilet this rest was for.
       if (step.place.kind === "named" && state.objects[step.place.id]) {
         const k = fixtureKindOf(step.place.id);
         if (k) {
@@ -7102,12 +7453,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.lastDrive.set(npcId, "command");
       showWorldBubble(state, `rest:${cid}`, {
         anchor: { kind: "avatar", id: npcId },
-        // Play shows the registered "play" glyph artwork (not a dice emoji); the
-        // emoji arg is only a fallback if that glyph ever loses its art.
-        ...activityBubbleContent(
-          pose === "play" ? "play" : undefined,
-          pose === "sleep" ? "😴" : pose === "play" ? "🎮" : "🛋️",
-        ),
+        // The STATION names the act (a toilet says toilet, a tub says wash);
+        // with none, the pose does — through its own registered art, never a
+        // stand-in emoji. See dwellBubble.
+        ...dwellBubble(stKind, pose),
         ttl: 2,
       });
       return;
@@ -7533,10 +7882,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const objHead = (glyph: string | undefined) =>
             glyph ? headOf(glyph.split("#")[0]!) : null;
           // Board words that answer to a differently-named object: the AAC
-          // core word "bathroom" IS the privy fixture; "yard" is the
+          // core word "bathroom" IS the toilet fixture; "yard" is the
           // builder's-yard crate (town) / the site stockpile (wilderness).
           const spoken =
-            p.id === "bathroom" ? "privy" : p.id === "yard" ? (session.town ? "yard" : "stock") : p.id;
+            p.id === "bathroom" ? "toilet" : p.id === "yard" ? (session.town ? "yard" : "stock") : p.id;
           const tryObj = (objId: string, head: string | null) => {
             const o = host.state.objects[objId];
             if (!o) return;
@@ -7721,7 +8070,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  place vocabulary (the resolver finds the actual object nearest-first). */
   const PLACE_NOUNS = new Set([
     "home", "bed", "table", "chair", "box", "cupboard", "chest",
-    "bath", "bathroom", "privy", "barrel", "bin", "bowl", "oven", "well", "market", "store",
+    "bath", "bathroom", "toilet", "barrel", "bin", "bowl", "oven", "well", "market", "store",
     "yard", "house", // transfer endpoints (②): the builder's yard, a house
   ]);
 
@@ -8431,8 +8780,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // gates; the first bench is itself hand-made). The clock is the truth;
   // a shown body walks to the bench and renders the work (the jobs law).
   // One job per house; session-lived rows (the craftDayOf pattern).
+  //
+  // The job carries a RECIPE, not a furniture row: furniture was the first thing
+  // the pipeline made but never the only possible one, and a TOY is made exactly
+  // the same way (toys-and-song-expansion.md — real cloth or wood drawn from real
+  // stacks, the same labor clock, the same bench discount, the same honest wait
+  // when an input is missing). Everything below this line is about gathering and
+  // labor; nothing needs to know whether the output is a chair or a toy rabbit.
   interface CraftJob {
-    def: FurnitureItemDef;
+    /** The finished stack glyph one job mints (`furn.chair`, `rabbit.toy`). */
+    produces: string;
+    /** Input glyphs → units the job consumes. */
+    consumes: Record<string, number>;
+    /** The station that SPEEDS the work, and NEVER gates it (the bench law). */
+    at?: StationKind;
+    /** Short provenance label for haul rows and logs (`chair`, `rabbit.toy`). */
+    label: string;
     /** The container the inputs pile into and the finished stack lands in. */
     spotId: string;
     /** Haul agreements feeding the spot (reservations ride their ids). */
@@ -8440,6 +8803,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     /** townClock s labor began — unset while inputs are still gathering. */
     laborStart?: number;
     laborS: number;
+  }
+
+  /** A furniture row as a craft job recipe — the adapter that keeps the
+   *  pipeline's original caller unchanged now that the job is recipe-shaped. */
+  function furnitureCraftRecipe(def: FurnitureItemDef): Pick<CraftJob, "produces" | "consumes" | "at" | "label"> {
+    return {
+      produces: furnitureGlyph(def.kind),
+      consumes: def.craft!.consumes,
+      ...(def.craft!.at ? { at: def.craft!.at } : {}),
+      label: def.kind,
+    };
   }
   const craftJobs = new Map<number, CraftJob>();
   const craftRetryAt = new Map<number, number>();
@@ -8487,7 +8861,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * required furniture is missing from the whole house — not standing, not
    * stored — starts a craft job for it. AUTOMATION IS BENCH-FIRST (the
    * law): a benchless house crafts the workbench before the wanted piece.
-   * Non-craftable stations (oven, privy) arrive with their room's own
+   * Non-craftable stations (oven, toilet) arrive with their room's own
    * generation; missing ROOMS re-rise through nextAnnexWant's program-first
    * ordering, not here.
    */
@@ -8522,7 +8896,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           houseBench(session, hi) || houseStored(session, hi, furnitureGlyph("workbench")) > 0
             ? fdef
             : furnitureItemOf("workbench")!;
-        craftJobs.set(hi, { def: target, spotId: craftSpotOf(session, hi), agreements: [], laborS: 0 });
+        craftJobs.set(hi, {
+          ...furnitureCraftRecipe(target),
+          spotId: craftSpotOf(session, hi),
+          agreements: [],
+          laborS: 0,
+        });
         return;
       }
     }
@@ -8589,7 +8968,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
     const spot = session.containerStock.get(job.spotId) ?? {};
     session.containerStock.set(job.spotId, spot);
-    const consumes = job.def.craft!.consumes;
+    const consumes = job.consumes;
     const member = `resident_${hi}_0`;
     if (job.laborStart === undefined) {
       // GATHER — what the spot and the in-flight hauls don't yet cover.
@@ -8630,7 +9009,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               issuer: member,
               mode: "haul",
               now: session.taskClock,
-              sourceGlyph: `craft:${job.def.kind}`,
+              sourceGlyph: `craft:${job.label}`,
             });
             session.reservations.reserve(agrHolder(a.id), d.endpoint, d.glyph, d.take);
             job.agreements.push(a.id);
@@ -8675,7 +9054,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.reservations.release(spotHolder);
       takeGoods(spot, consumes);
       const bench = houseBench(session, hi);
-      job.laborS = craftLaborDays(job.def, !!bench) * FOOD_DAY_SEC;
+      job.laborS = craftLaborDaysFor(job.at, !!bench) * FOOD_DAY_SEC;
       job.laborStart = session.townClock;
       // A shown crafter walks to the bench (or the store) and DWELLS there
       // for the labor — the body renders the work; the clock stays the
@@ -8693,7 +9072,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // WORK → DONE on the clock: the finished piece stacks at the spot.
     if (session.townClock >= job.laborStart + job.laborS) {
-      stackAdd(spot, furnitureGlyph(job.def.kind));
+      stackAdd(spot, job.produces);
       craftJobs.delete(hi);
     }
   }
@@ -8733,7 +9112,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             hasBench: !!houseBench(session, hi),
             stored: (glyph) => houseStored(session, hi, glyph),
           });
-          if (def) craftJobs.set(hi, { def, spotId: craftSpotOf(session, hi), agreements: [], laborS: 0 });
+          if (def) {
+            craftJobs.set(hi, {
+              ...furnitureCraftRecipe(def),
+              spotId: craftSpotOf(session, hi),
+              agreements: [],
+              laborS: 0,
+            });
+          }
         }
         // PROGRAM FULFILLMENT (④): an unmet ordered room's missing craftable
         // furniture starts a job in ANY house — bench-first (rate-limited).
@@ -8935,25 +9321,37 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.containerOwner.set(objId, vendorOf(g.good.key));
     });
 
-    // THE TOWN WELL — the free water source on the square: no shelf economics,
-    // never runs dry (need takes draw directly; the stocked stack serves the
-    // player's own bucket). Working it needs grasp — a pet can't draw.
-    world!.addObject({
-      id: "well",
-      x: town.stage.center.x + 2.5,
-      y: town.stage.center.y + 2.5,
-      shape: "box",
-      radius: 0.8,
-      fixture: "barrel",
-      openable: false,
-      facing: 0,
-      interactions: [],
-      contains: [{ relation: "in", capacity: 99 }],
-      glyph: "water",
-    });
-    session.containers.set("well", "in");
-    session.containerStock.set("well", { water: 99 });
-    session.containerOwner.set("well", TOWN_SCOPE); // communal at the TOWN tier
+    // THE TOWN WELLS — free water sources: no shelf economics, never run dry
+    // (need takes draw directly; the stocked stack serves the player's own
+    // bucket). Working one needs grasp — a pet can't draw. The plaza well
+    // every town digs, plus one per NEIGHBORHOOD the plan founded past the
+    // thirst-cycle walk radius (needs-aware construction, plan.ts wells).
+    const wellSpots: Array<{ id: string; x: number; y: number }> = [
+      { id: "well", x: town.stage.center.x + PLAZA_WELL.x, y: town.stage.center.y + PLAZA_WELL.y },
+      ...(town.plan.wells ?? []).map((wp, wi) => ({
+        id: `well_${wi + 1}`,
+        x: town.stage.center.x + wp.x,
+        y: town.stage.center.y + wp.y,
+      })),
+    ];
+    for (const ws of wellSpots) {
+      world!.addObject({
+        id: ws.id,
+        x: ws.x,
+        y: ws.y,
+        shape: "box",
+        radius: 0.8,
+        fixture: "barrel",
+        openable: false,
+        facing: 0,
+        interactions: [],
+        contains: [{ relation: "in", capacity: 99 }],
+        glyph: "water",
+      });
+      session.containers.set(ws.id, "in");
+      session.containerStock.set(ws.id, { water: 99 });
+      session.containerOwner.set(ws.id, TOWN_SCOPE); // communal at the TOWN tier
+    }
 
     // THE BUILDER'S YARD (city-expansion ②, the ①b gap): the town's material
     // stock (deltas.stock) standing as a REAL crate beside the hall — the
@@ -9292,7 +9690,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         isWater: isKindOf(prop.glyph, "water"),
       });
     }
-    if (objId === "well") {
+    if (isWellId(objId)) {
       return objectMotive({ affords: [], properties: [], stationKind: "well", isWater: true });
     }
     // Fixtures: `furn_<houseIndex>_<kind>` — strip a trailing instance index
@@ -9520,7 +9918,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         stockLow: false,
       };
     }
-    if (objId === "well") {
+    if (isWellId(objId)) {
       return {
         affords: [], properties: [], stationKind: "well", isWater: true,
         states: [], isClothing: false, unclaimed: false, loose: false, stockLow: false,
@@ -9938,49 +10336,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
-  /** SOFT CONTROL Phase 2 — between two creatures. Resting the gaze on the GAP
-   *  between two nearby townsfolk (not on either one) prompts them to talk to
-   *  each other: a universal "you two, chat" gesture, run through the ordinary
-   *  NPC exchange. Cooldown-gated (runNpcExchange sets it on both), so it can't
-   *  spam. */
-  const PAIR_POINT_RADIUS = 3.2; // both people within this of the gaze point
-  const PAIR_APART_MAX = 4.5; // and close enough to actually talk
-  function stepSparkPairChat(session: QuestSession, state: WorldState, host: WorldHost, dt: number) {
-    if (!session.creatures) {
-      pairDwell.step(null, dt * 1000);
-      return;
-    }
-    const gz = host.getGaze();
-    const pt = gz.committedWorld;
-    // A specific creature under the gaze is the FOCUS gesture, not this one.
-    if (!pt || gz.hover?.kind === "avatar") {
-      pairDwell.step(null, dt * 1000);
-      return;
-    }
-    const near: { cid: string; d: number; x: number; y: number }[] = [];
-    for (const cid of session.creatures.nodeByCreature.keys()) {
-      if (session.party.has(cid)) continue;
-      if ((session.chatCooldown.get(cid) ?? 0) > 0) continue;
-      const av = chatAvatar(state, cid);
-      if (!av) continue;
-      const d = Math.hypot(av.x - pt.x, av.y - pt.y);
-      if (d > PAIR_POINT_RADIUS) continue;
-      near.push({ cid, d, x: av.x, y: av.y });
-    }
-    near.sort((a, b) => a.d - b.d);
-    const a = near[0];
-    const b = near[1];
-    if (!a || !b || Math.hypot(a.x - b.x, a.y - b.y) > PAIR_APART_MAX) {
-      pairDwell.step(null, dt * 1000);
-      return;
-    }
-    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    if (pairDwell.step(mid, dt * 1000).fired) {
-      runNpcExchange(session, a.cid, b.cid);
-      warmRelations(session, a.cid, b.cid, { affinity: 0.03 });
-      console.log(`[spark] pair chat ${a.cid} ↔ ${b.cid}`);
-    }
-  }
+  // "YOU TWO" IS AN ALTERNATION, NOT A MIDPOINT. It used to be a dwell on the
+  // GAP between two townsfolk — built on a misreading of the gesture, and a
+  // proximity radius besides (it had to bail whenever the gaze was actually ON
+  // somebody, which is the exact inverse of the hover law). The real gesture is
+  // looking from one person to the other and back: `stepSparkOsc` already reads
+  // it, and its creature↔creature arm routes A at B through
+  // `performAttentionInteract` — a real `converse` pursuit rather than the canned
+  // exchange this used to fire. Relations warm through the ordinary exchange path
+  // that any conversation runs, so nothing is lost with it gone.
 
   // SOFT CONTROL Phase 3 — the BOARD word press. Pressing a surfaced object word
   // is a DELIBERATE selection: it directs a creature (the ENGAGED one, else the
@@ -10045,16 +10409,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function objectWord(session: QuestSession, objId: string): string {
     const prop = session.smallProps.get(objId);
     if (prop) return prop.glyph;
-    if (objId === "well") return "water";
-    const fm = objId.match(/^furn_\d+_(.+)$/);
-    if (fm) return ((fm[1] ?? "").replace(/_\d+$/, "").split("_")[0]) || "thing"; // chest_food→chest
+    if (isWellId(objId)) return "water";
     const ws = wildSourceOf(session, objId);
     if (ws) return ws.species; // a wild source IS its species (oak, sheep)
-    // Any other FIXTURE is its kind — the spec's own word (chest, table, bed).
-    // Catches the pieces whose ids carry no house prefix: market stalls
-    // (`store:food`), site crates, workshop furniture.
+    // THE SPEC'S FIXTURE KIND IS THE TRUTH, ahead of the id — and ids LIE. The
+    // food container keeps its historical `furn_<n>_chest_food` id while its
+    // kind is `refrigerator` (stations.ts `kindByGood`), so reading the id
+    // called the fridge a "chest": a word the vocabulary doesn't carry, which
+    // is why that button had no icon either. `fixtureWord` then folds the kinds
+    // the vocabulary doesn't distinguish (chest→box, cupboard→cabinet).
     const fx = world?.state.spec.objects.find((o) => o.id === objId)?.fixture;
-    if (fx) return fx;
+    if (fx) return fixtureWord(fx);
+    // A piece with no fixture flag: fall back to the id's own noun.
+    const fm = objId.match(/^furn_\d+_(.+)$/);
+    if (fm) return fixtureWord(((fm[1] ?? "").replace(/_\d+$/, "").split("_")[0]) || "thing");
     return "thing";
   }
 
@@ -10092,6 +10460,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     gz: FurnitureAimGaze,
     me: { x: number; y: number } | undefined,
     want: "furniture" | "container",
+    /** NAMING vs ACTING: reach may veto acting on a thing, but it must never
+     *  decide what the gaze is AIMED at. Pass true to resolve the target the
+     *  spark is over regardless of how far the body stands from it. */
+    ignoreReach = false,
   ): { id: string; x: number; y: number } | null {
     return resolveFurnitureAim(
       {
@@ -10102,8 +10474,53 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         ids: () => session.containers.keys(),
       },
       gz,
-      { want, me, spirit: spiritNow(), reach: CONVO_RADIUS, fixRadius: CONVO_FIG_RADIUS },
+      { want, me, spirit: spiritNow() || ignoreReach, reach: CONVO_RADIUS, fixRadius: CONVO_FIG_RADIUS },
     );
+  }
+
+  /** Inverse of `avatarIdOf`: the creature a hovered BODY belongs to. */
+  function cidOfAvatar(avatarId: string): string {
+    return avatarId.startsWith("npc_") ? avatarId.slice(4) : avatarId;
+  }
+
+  /**
+   * THE ONE HOVER READ (dwell-interaction.ts): what the spark is over this
+   * frame — a creature, a fixture/object, or bare ground. Exactly one answer,
+   * and it is the answer BOTH the dwell interactions and the spark's own
+   * highlight resolve through, so what is lit can never differ from what fires.
+   *
+   * THE SCREEN PICK NAMES THE THING. No candidate list, no radius: a body the
+   * gaze rests on IS the target even if it stands far off or has nothing to say.
+   * That inversion is exactly what made hovering a person fail to start a
+   * conversation — the old talk gesture discarded any body beyond CONVO_RADIUS,
+   * and any node it judged un-talkable, BEFORE it ever consulted the gaze.
+   *
+   * Order is by specificity, never by distance: a body wins over the furniture
+   * it stands among, furniture wins over the floor beneath it, and bare ground
+   * is what is left when the gaze is on nothing at all.
+   */
+  function hoverTargetOf(
+    session: QuestSession,
+    state: WorldState,
+    gz: FurnitureAimGaze,
+    me: { x: number; y: number } | undefined,
+  ): HoverTarget | null {
+    const hv = gz.hover;
+    if (hv?.kind === "avatar" && hv.id !== PLAYER_ID) {
+      const av = state.avatars[hv.id];
+      if (av) return { kind: "creature", id: cidOfAvatar(hv.id), x: av.x, y: av.y };
+    }
+    const fx = gazeFurniture(session, state, gz, me, "furniture", true);
+    if (fx) return { kind: "object", id: fx.id, x: fx.x, y: fx.y };
+    const fix = gz.committedWorld;
+    return fix ? { kind: "ground", x: fix.x, y: fix.y } : null;
+  }
+
+  /** The identity of a hover, for re-anchoring the dwell trackers. Two different
+   *  things must never inherit each other's accumulated fill. */
+  function hoverKeyOf(t: HoverTarget | null): string | null {
+    if (!t) return null;
+    return t.kind === "ground" ? "ground" : `${t.kind}:${t.id}`;
   }
 
   /** OPEN a piece of FURNITURE as a SELECTION POPUP: the thing itself on the board,
@@ -10116,7 +10533,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world || !containerStandpoint(world.state, containerObjId)) return;
     regrowWildStock(session, containerObjId); // ripen before the board is drawn
     container = { objId: containerObjId, items: [] };
-    leaveDwell.reset(); // a SWITCH from another piece must not inherit its leave fill
+    resetDwells(); // a SWITCH from another piece must not inherit its fill
     voice?.cancel();
     presentContainer(session);
   }
@@ -10299,7 +10716,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     container = null;
     presenter.clearBoard();
     world?.setConversation(null);
-    leaveDwell.reset();
+    resetDwells();
   }
 
   /** The wild PRODUCT ANIMAL a container id names (by its body id), or
@@ -10921,8 +11338,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           presenter.clearBoard();
           // Leave the conversation: release the camera + resume steering.
           world?.setConversation(null);
-          talkDwell.reset();
-          leaveDwell.reset();
+          resetDwells();
           feedPointer();
           break;
         case "demonstrate": {
@@ -11117,8 +11533,21 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     };
     // Render composed glyphs in in-world speech bubbles EXACTLY as the response
     // board renders them — same GlyphCompositor + the injected icon resolver.
-    const glyphSource = createGlyphImageSource(
-      deps.resolveImage ? { resolveImage: deps.resolveImage } : {},
+    // DIRECTION COMES FROM THE GAME'S LOCALE, not `document.dir` — the quest
+    // renders inside a game iframe whose document has no direction set, so the
+    // default sniff composed Hebrew glyphs left-to-right while the very same
+    // bubble spoke its text right-to-left.
+    const glyphSource = createGlyphImageSource({
+      ...(deps.resolveImage ? { resolveImage: deps.resolveImage } : {}),
+      rtl: () => isRtlLocale(session.game.meta.locale),
+    });
+    // Compose the bubble vocabulary NOW, while the world is still settling, so a
+    // bubble is never up before its icon: the fixed dwell/rest set, plus the
+    // glyph every model-less object in the scene wears.
+    glyphSource.prewarm(dwellBubbleGlyphs());
+    glyphSource.prewarm(
+      session.embedding.spec.objects.flatMap((o) => (o.glyph ? [o.glyph] : [])),
+      { bare: true },
     );
     const view = (questView = createWorld3DView(
       {
@@ -12055,7 +12484,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             if (!sparkBlocked) {
               stepSparkDirect(session, state);
               stepSparkOsc(session, world, dt);
-              stepSparkPairChat(session, state, world, dt);
             }
           }
           _sp.spark = descendNow() - _sm; _sm = descendNow();
@@ -12145,234 +12573,132 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // UNTARGETED-ORDER TASK POOL (phase ①a §2): expiry, claims, completion.
         stepTaskPool(session, dt);
         simMark("chatter", descendNow() - _bm); _bm = descendNow(); // TEMP
-        // INVENTORY placement: a SELECTED stack (outside conversation) is placed by the
-        // gaze — dwell on the CONTAINER THE GAZE IS ON (empty ones included) puts one
-        // in, dwell on nearby GROUND drops one. Only a real container takes a stack;
-        // a chair is furniture the board can name but nothing you can stow into.
-        // (Selecting a stack WHILE in conversation presents it instead.)
-        if (session.selectedPocketGlyph && !choice && !container && world) {
-          const me = state.avatars[PLAYER_ID];
-          const gz = world.getGaze();
-          const box = gazeFurniture(session, state, gz, me, "container");
-          const fix = gz.committedWorld;
-          const reachGround = !!me && !!fix && Math.hypot(me.x - fix.x, me.y - fix.y) <= CONVO_RADIUS;
-          if (box) {
-            if (dropDwell.step({ x: box.x, y: box.y }, dt * 1000).fired) putSelectedIn(session, box.id);
-          } else if (reachGround) {
-            if (dropDwell.step({ x: fix!.x, y: fix!.y }, dt * 1000).fired) dropSelected(session, fix!.x, fix!.y);
-          } else {
-            dropDwell.step(null, dt * 1000);
-          }
-        } else {
-          dropDwell.step(null, dt * 1000);
-        }
-        // OPEN A PIECE OF FURNITURE: with nothing armed and not in a conversation,
-        // dwelling on the furniture the gaze is AIMED at (gazeFurniture — the hover IS
-        // the aim) puts it on the board: its CONTENTS first, then the thing itself.
-        // ONE path for everything with a standing spot (chest / cupboard / table /
-        // chair / market store / walking product animal), stocked or not. Not a carry
-        // (fixtures) — a dedicated dwell, so it never touches the carry pickup-dwell.
-        // EMBODIED: walk up to look. SPIRIT: at ANY distance — the formless observer
-        // sees into the room it watches (dollhouse view is READ-ONLY; see `select`).
-        // A piece already OPEN holds while the gaze rests on it; aiming at a DIFFERENT
-        // one SWITCHES the board to that one (it used to keep showing the first until a
-        // 1 s leave-dwell on empty ground fired — and never at all while the two sat
-        // within the leave radius of each other, so the board named a thing long since
-        // looked away from). `gazeBox` is also the leave-dwell's "still on one" test.
-        let gazeBox: { id: string; x: number; y: number } | null = null;
-        if (!session.selectedPocketGlyph && !choice && !convo && world) {
-          gazeBox = gazeFurniture(session, state, world.getGaze(), state.avatars[PLAYER_ID], "furniture");
-          const aim = gazeBox && gazeBox.id !== container?.objId ? gazeBox : null;
-          if (aim) {
-            if (openDwellBox && openDwellBox !== aim.id) openDwell.reset(); // a new box, not this one's jitter
-            openDwellBox = aim.id;
-            if (openDwell.step({ x: aim.x, y: aim.y }, dt * 1000).fired) openContainer(session, aim.id);
-          } else {
-            openDwell.step(null, dt * 1000);
-          }
-        } else {
-          openDwell.step(null, dt * 1000);
-        }
-        // ── NPC conversation: approach bubble → dwell-to-talk → camera-face → cancel.
-        const cvHost = world;
+        // ── THE ONE HOVER READ → THE ONE TABLE (dwell-interaction.ts) ─────────
+        // The spark rests on exactly one thing; `hoverTargetOf` says what, and
+        // `dwellInteraction` says what resting there MEANS given how long it has
+        // rested and whether a conversation is running. Nothing else reads the
+        // gaze to decide an interaction, and the SAME target feeds the spark's
+        // own highlight, so what is lit is always what will fire.
         const meAv = state.avatars[PLAYER_ID];
         let progress = 0;
-        if (cvHost && meAv) {
-          const gz = cvHost.getGaze();
-          const fix = gz.committedWorld;
-          const onFig = (px: number, py: number, r: number) =>
-            !!fix && Math.hypot(fix.x - px, fix.y - py) <= r;
+        if (world && meAv) {
+          const gz = world.getGaze();
           const active = choice;
-          if (container) {
-            // Furniture board open: hold the camera on a STOCKED piece (see
-            // presentContainer — a bare naming board neither locks the view nor walks
-            // the body over); dwell on empty ground (fixation off it) to close it —
-            // the same leave gesture as a convo. Resting on ANOTHER piece is not
-            // "away": that's a SWITCH, already dwelling above, and counting it as a
-            // leave would race the two.
-            talkDwell.reset();
+          const partnerCid = active ? active.nodeId : null;
+          const target = hoverTargetOf(session, state, gz, meAv);
+
+          // Re-anchor both timers when the hover moves to a DIFFERENT thing, so
+          // no fill is ever inherited across targets.
+          const key = hoverKeyOf(target);
+          if (key !== dwellKey) {
+            dwellKey = key;
+            shortDwell.reset();
+            longDwell.reset();
+            firedPhases.clear();
+          }
+
+          // Hold the camera on whatever the player is engaged WITH.
+          const partnerPos = partnerCid ? poserPos(session, partnerCid) : null;
+          if (partnerPos) {
+            world.setConversation({ x: partnerPos.x, y: partnerPos.y });
+          } else if (container) {
             const cObj = containerStandpoint(state, container.objId);
-            if (cObj) {
-              cvHost.setConversation(stockedBoard() ? { x: cObj.x, y: cObj.y } : null);
-              const g =
-                fix && !gazeBox && !onFig(cObj.x, cObj.y, CONVO_FIG_RADIUS) ? { x: fix.x, y: fix.y } : null;
-              const res = leaveDwell.step(g, dt * 1000);
-              progress = res.progress;
-              if (res.fired) closeContainer();
-            } else {
-              closeContainer(); // the box streamed away
-            }
-          } else if (active) {
-            // Talking: hold the camera on the poser (LIVE position — the NPC
-            // may have walked an errand); dwell on empty ground to leave.
-            talkDwell.reset();
-            const fig = poserPos(session, active.nodeId);
-            if (fig) {
-              cvHost.setConversation({ x: fig.x, y: fig.y });
-              // The leave target is the fixation when it's NOT resting on the poser.
-              const g = fix && !onFig(fig.x, fig.y, CONVO_FIG_RADIUS) ? { x: fix.x, y: fix.y } : null;
-              const res = leaveDwell.step(g, dt * 1000);
-              progress = res.progress;
-              if (res.fired) {
-                if (convo) closeCreatureConvo();
-                else dispatchInput({ type: "cancel-choice", nodeId: active.nodeId });
-              }
+            if (!cObj) closeContainer(); // it streamed away mid-board
+            else world.setConversation(stockedBoard() ? { x: cObj.x, y: cObj.y } : null);
+          }
+
+          // A SELECTED stack is placed rather than interacted with: the gaze puts
+          // it in the container it rests on, or drops it on ground within reach.
+          // (Selecting a stack WHILE in conversation presents it instead.)
+          if (session.selectedPocketGlyph && !active && !container) {
+            const box = target?.kind === "object" && session.containers.has(target.id!) ? target : null;
+            const spot = target?.kind === "ground" ? target : null;
+            const canDrop = !!spot && Math.hypot(meAv.x - spot.x, meAv.y - spot.y) <= CONVO_RADIUS;
+            const at = box ?? (canDrop ? spot : null);
+            const res = shortDwell.step(at ? { x: at.x, y: at.y } : null, dt * 1000);
+            progress = res.progress;
+            if (res.fired && !firedPhases.has("short")) {
+              firedPhases.add("short");
+              if (box) putSelectedIn(session, box.id!);
+              else if (spot) dropSelected(session, spot.x, spot.y);
             }
           } else {
-            // Find the nearest incomplete choose/converse poser within range.
-            let nearFig: { nodeId: string; pos: { x: number; y: number } } | null = null;
-            let nearD = Infinity;
-            let nearRes: { id: string; pos: { x: number; y: number } } | null = null;
-            let nearResD = Infinity;
-            if (spiritNow()) {
-              // SPIRIT: talk to whoever the gaze RESTS on, at ANY distance (no
-              // walking). Items are picked/placed by the host's distance-free carry.
-              const hv = cvHost.getGaze().hover;
-              const av = hv?.kind === "avatar" ? state.avatars[hv.id] : undefined;
-              if (hv?.kind === "avatar" && av) {
-                if (hv.id.startsWith("npc_")) {
-                  const nodeId = hv.id.slice(4);
-                  const t = session.ctx.nodeById.get(nodeId)?.type;
-                  // A creature that lives OUTSIDE the goal tree (a wilderness
-                  // local) is talkable through its fulfill-shaped mind.
-                  const talkable =
-                    t === "choose" || t === "converse" || t === "fulfill" ||
-                    session.creatures?.nodeByCreature.has(nodeId);
-                  if (talkable && (t !== "choose" && t !== "converse" || !session.rState.completed[nodeId])) {
-                    nearFig = { nodeId, pos: poserPos(session, nodeId) ?? { x: av.x, y: av.y } };
-                    nearD = 0;
+            // Preview who a conversation would open with, before it opens.
+            if (!active && target?.kind === "creature") {
+              const greet = talkTargetOf(session, state, meAv);
+              if (greet && greet.nodeId === target.id) previewGreet(session, greet);
+            }
+            const at = target ? { x: target.x, y: target.y } : null;
+            const shortRes = shortDwell.step(at, dt * 1000);
+            const longRes = longDwell.step(at, dt * 1000);
+            // Report the phase still reaching for something, so the spark's
+            // bloom tracks the gesture the player is actually performing.
+            const pending: DwellPhase | null = !firedPhases.has("short")
+              ? "short"
+              : !firedPhases.has("long")
+                ? "long"
+                : null;
+            progress = pending === "long" ? longRes.progress : shortRes.progress;
+
+            for (const phase of ["short", "long"] as const) {
+              const fired = phase === "short" ? shortRes.fired : longRes.fired;
+              if (!fired || firedPhases.has(phase)) continue;
+              const acts = dwellInteraction(target, phase, { conversingWith: partnerCid });
+              if (!acts.length) continue;
+              firedPhases.add(phase);
+              convoIdleS = 0; // any deliberate act keeps the conversation alive
+              for (const act of acts) switch (act.act) {
+                case "menu":
+                  // Reach VETOES acting (an embodied player walks over); it never
+                  // decided the target.
+                  if (spiritNow() || Math.hypot(meAv.x - target!.x, meAv.y - target!.y) <= CONVO_RADIUS) {
+                    if (act.id !== container?.objId) openContainer(session, act.id);
                   }
-                } else if (hv.id.startsWith("resident_")) {
-                  nearRes = { id: hv.id, pos: { x: av.x, y: av.y } };
-                  nearResD = 0;
+                  break;
+                case "talk": {
+                  const t = talkTargetOf(session, state, meAv);
+                  if (t && t.nodeId === act.id) openTalk(session, t);
+                  break;
                 }
-              }
-            } else {
-              // Nearest incomplete choose/converse/fulfill poser within range.
-              for (const f of session.embedding.layout.figures) {
-                const t = session.ctx.nodeById.get(f.nodeId)?.type;
-                if (t !== "choose" && t !== "converse" && t !== "fulfill") continue;
-                // A content creature (fulfill w/o need completes at start) stays
-                // approachable — its service (vendor) IS the conversation.
-                if (session.rState.completed[f.nodeId] && t !== "fulfill") continue;
-                // LIVE position — an embodied NPC may be off its layout spot.
-                const pos = poserPos(session, f.nodeId) ?? f.pos;
-                const d = Math.hypot(meAv.x - pos.x, meAv.y - pos.y);
-                if (d <= CONVO_RADIUS && d < nearD) { nearD = d; nearFig = { nodeId: f.nodeId, pos }; }
-              }
-              // Off-tree creatures (wilderness locals) are talkable by walking
-              // up, like any fulfill poser — same dwell, same dialogue.
-              if (session.creatures) {
-                for (const [cid] of session.creatures.nodeByCreature) {
-                  if (session.ctx.nodeById.has(cid)) continue; // tree posers handled above
-                  if (cid.startsWith("resident_") || cid.startsWith("pet_")) continue; // their own arm below
-                  const av = state.avatars[avatarIdOf(cid)];
-                  if (!av) continue;
-                  const d = Math.hypot(meAv.x - av.x, meAv.y - av.y);
-                  if (d <= CONVO_RADIUS && d < nearD) { nearD = d; nearFig = { nodeId: cid, pos: { x: av.x, y: av.y } }; }
+                case "switch": {
+                  const t = talkTargetOf(session, state, meAv);
+                  if (t && t.nodeId === act.id && partnerCid) {
+                    leaveActiveConvo(partnerCid);
+                    openTalk(session, t);
+                  }
+                  break;
                 }
-              }
-              // Regular residents (streamed townsfolk) are talkable too — a
-              // "quest-giver with no quest": a friendly greeting on dwell. A
-              // resident only wins when it's closer than any quest poser.
-              for (const [id, av] of Object.entries(state.avatars)) {
-                if (!id.startsWith("resident_")) continue;
-                const d = Math.hypot(meAv.x - av.x, meAv.y - av.y);
-                if (d <= CONVO_RADIUS && d < nearResD) { nearResD = d; nearRes = { id, pos: { x: av.x, y: av.y } }; }
+                case "sendTo":
+                  directCreatureTo(session, act.cid, { x: act.x, y: act.y }, null);
+                  break;
+                case "attendObject":
+                  directCreatureTo(session, act.cid, { x: target!.x, y: target!.y }, act.id);
+                  break;
+                case "attendCreature":
+                  performAttentionInteract(session, act.cid, act.id);
+                  break;
+                case "room":
+                  // NOT IMPLEMENTED — the only cell of the table with nowhere to
+                  // go yet. "Select the room under the point" needs a room
+                  // SURFACE (a board naming the room and what it holds, the way
+                  // `openContainer` does for a fixture), and no such surface
+                  // exists: `roomAt` can name the room from the kernel, but
+                  // nothing presents one. Deliberately inert rather than guessing
+                  // at a presentation — the table already routes here, so wiring
+                  // it up is the only work left.
+                  break;
               }
             }
-            if (nearFig && nearD <= nearResD) {
-              // Off-tree creatures (wilderness locals) resolve their fulfill-
-              // shaped node through the creature book instead of the goal tree.
-              const node =
-                session.ctx.nodeById.get(nearFig.nodeId) ??
-                session.creatures?.nodeByCreature.get(nearFig.nodeId);
-              // Approach bubble (refreshed while in range): a choose shows its
-              // prompt; a converse previews its entry turn's default line.
-              let greet = "";
-              if (node?.type === "choose") greet = node.prompt;
-              else if (node?.type === "converse") {
-                const entryTurn = node.turns.find((turn) => turn.id === node.entry);
-                greet = entryTurn?.lines[entryTurn.lines.length - 1]?.glyph ?? "";
-              } else if (node?.type === "fulfill" && session.creatures) {
-                greet = projectDialogue(
-                  session.creatures.world,
-                  node.id,
-                  PLAYER_CREATURE_ID,
-                  "b",
-                  creatureProjectionOpts(session, node.announce),
-                ).lineGlyph;
-              }
-              showWorldBubble(cvHost.state, `npc-greet:${nearFig.nodeId}`, {
-                anchor: { kind: "point", x: nearFig.pos.x, y: nearFig.pos.y },
-                text: greet ? npcStatement(greet, creatureGlyph(session, nearFig.nodeId), nearFig.nodeId) : "",
-                glyph: greet || undefined,
-                ttl: 1.5,
-              });
-              // Dwell ON the poser → present the choice + face the camera.
-              leaveDwell.reset();
-              const onN = onFig(nearFig.pos.x, nearFig.pos.y, CONVO_FIG_RADIUS);
-              const res = talkDwell.step(onN ? { x: nearFig.pos.x, y: nearFig.pos.y } : null, dt * 1000);
-              progress = res.progress;
-              if (res.fired) {
-                clearWorldBubble(cvHost.state, `npc-greet:${nearFig.nodeId}`);
-                cvHost.setConversation({ x: nearFig.pos.x, y: nearFig.pos.y });
-                if (node?.type === "fulfill") openCreatureConvo(nearFig.nodeId);
-                else dispatchInput({ type: "touch-figure", nodeId: nearFig.nodeId });
-              }
-            } else if (nearRes) {
-              // A resident with no quest: a "quest-giver with no quest". It uses
-              // the SAME dialogue system as everyone else — a needless creature,
-              // so its projected tree is just small talk (hello, requests,
-              // where-is, gifts). Registered lazily on first approach.
-              ensureResidentCreature(session, nearRes.id);
-              const greet = projectDialogue(
-                session.creatures!.world,
-                nearRes.id,
-                PLAYER_CREATURE_ID,
-                "b",
-                creatureProjectionOpts(session),
-              ).lineGlyph;
-              showWorldBubble(cvHost.state, `npc-greet:${nearRes.id}`, {
-                anchor: { kind: "point", x: nearRes.pos.x, y: nearRes.pos.y },
-                text: greet ? npcStatement(greet, creatureGlyph(session, nearRes.id), nearRes.id) : "",
-                glyph: greet || undefined,
-                ttl: 1.5,
-              });
-              // Dwell ON the resident → open the conversation board + face them.
-              leaveDwell.reset();
-              const onN = onFig(nearRes.pos.x, nearRes.pos.y, CONVO_FIG_RADIUS);
-              const res = talkDwell.step(onN ? { x: nearRes.pos.x, y: nearRes.pos.y } : null, dt * 1000);
-              progress = res.progress;
-              if (res.fired) {
-                clearWorldBubble(cvHost.state, `npc-greet:${nearRes.id}`);
-                cvHost.setConversation({ x: nearRes.pos.x, y: nearRes.pos.y });
-                openCreatureConvo(nearRes.id);
-              }
-            } else {
-              talkDwell.reset();
-              leaveDwell.reset();
-            }
+          }
+
+          // A CONVERSATION ENDS ON ITS OWN. Looking away is an instruction now,
+          // not a leave, so idleness is what closes it — reset by any deliberate
+          // act above.
+          if (partnerCid) {
+            convoIdleS += dt;
+            if (convoIdleS > CONVO_IDLE_END_S) leaveActiveConvo(partnerCid);
+          } else {
+            convoIdleS = 0;
           }
         }
         // The dwell-to-select indicator is the gaze SPARK's bloom now (render3d) —
@@ -12985,6 +13311,55 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     );
   }
 
+  /** How close a fixture must stand to a point to BE that point, in metres. A
+   *  directed spot is the stand spot beside the thing, not the thing's own
+   *  centre, so this has to reach across that gap without swallowing the
+   *  neighbouring piece. */
+  const POINT_NAME_REACH_M = 2.0;
+
+  /**
+   * THE WORD FOR A BARE POINT: what a creature sent to a spot should call it.
+   *
+   * The fixture standing there wins ("I will go to the bed") — it is the most
+   * specific true thing, and it is almost always why the point was chosen. Else
+   * the ROOM containing it ("I will go to the bedroom"), read off the speaker's
+   * own house plan. Undefined when neither applies, leaving the caller its
+   * deictic fallback — honest for open ground, which really has no name.
+   */
+  function pointWord(
+    session: QuestSession,
+    speaker: string | undefined,
+    p: { x: number; y: number },
+  ): string | undefined {
+    const state = world?.state;
+    if (!state) return undefined;
+    // The nearest NAMEABLE thing at the point: a placed fixture or a loose prop.
+    let bestId: string | undefined;
+    let bestD = POINT_NAME_REACH_M;
+    for (const o of Object.values(state.objects)) {
+      if (o.carriedBy) continue;
+      const nameable =
+        session.smallProps.has(o.id) || /^furn_\d+_/.test(o.id) || isWellId(o.id);
+      if (!nameable) continue;
+      const d = Math.hypot(o.x - p.x, o.y - p.y);
+      if (d <= bestD) {
+        bestD = d;
+        bestId = o.id;
+      }
+    }
+    if (bestId) {
+      const word = objectWord(session, bestId);
+      if (word && word !== "thing") return word;
+    }
+    // No thing there — name the room, from the SPEAKER's own house (rooms are
+    // only nameable relative to whose home they are).
+    // `houseIndexOfCid` reads the `_<house>_<n>` shape and yields NaN for anyone
+    // who has no household (a wilderness local, the player) — no rooms to name.
+    const houseIndex = speaker ? houseIndexOfCid(speaker) : NaN;
+    if (!Number.isFinite(houseIndex)) return undefined;
+    return roomAt(houseRoomDestsOf(session, houseIndex), p)?.word;
+  }
+
   function intentLineSyms(
     session: QuestSession,
     opts: { deixis?: boolean; speaker?: string } = {},
@@ -12998,16 +13373,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (p.kind === "named") {
           // A world-object id speaks its WORD ("furn_3_bed_0" → "bed", a prop
           // its glyph) — never the raw id.
-          if (session.smallProps.has(p.id) || /^furn_\d+_/.test(p.id) || p.id === "well") {
+          if (session.smallProps.has(p.id) || /^furn_\d+_/.test(p.id) || isWellId(p.id)) {
             return objectWord(session, p.id);
           }
           return p.id;
         }
-        return p.kind === "home"
-          ? "home"
-          : p.kind === "creature"
-            ? creatureReference(session, opts.speaker, p.id)
-            : "there";
+        if (p.kind === "home") return "home";
+        if (p.kind === "creature") return creatureReference(session, opts.speaker, p.id);
+        // A BARE POINT STILL HAS A NAME. "I will go there" is what the deictic
+        // fallback says, and inside a house it says nothing at all — every room
+        // is "there". Name what is actually AT the point: the fixture standing
+        // on it, else the room containing it. "There" is the last resort, for
+        // open ground with nothing to call it.
+        return pointWord(session, opts.speaker, p) ?? "there";
       },
       creature: (cid) => creatureReference(session, opts.speaker, cid),
     };
@@ -14576,7 +14954,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                 ? fdef
                 : furnitureItemOf("workbench")!;
             craftJobs.set(hi, {
-              def: target,
+              ...furnitureCraftRecipe(target),
               spotId: craftSpotOf(session, hi),
               agreements: [],
               laborS: 0,
@@ -14945,6 +15323,47 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
+   * ONE spoken/board MAKE order, end to end — the mobile-item sibling of
+   * `orderBuild`. Resolves the glyph to a pipeline recipe (`craftRecipeOf`:
+   * furniture rows and toys alike) and starts the house's craft job, which then
+   * gathers real inputs off real stacks — hauling them, or waiting honestly when
+   * there are none, which IS the construction chain the plan asks for.
+   *
+   * Returns false when making doesn't apply here at all (no town — the caller
+   * phrases "can't make that here"); true when HANDLED, accepted or refused
+   * aloud. One job per house is the pipeline's existing rule, so a second order
+   * is told it must wait rather than silently replacing the first.
+   */
+  function orderCraft(session: QuestSession, glyph: string, speaker?: string | null): boolean {
+    if (!session.town) return false;
+    const word = spokenMakeable(glyph);
+    const recipe = craftRecipeOf(glyph);
+    if (!recipe) {
+      if (speaker) npcChatBubble(session, speaker, "no");
+      presenter.toast(`💬 can't make "${word}" — we don't know how`, "feedback");
+      return true;
+    }
+    const hi = familyOf(session)?.house ?? session.town.plan.houses[0]?.index;
+    if (hi === undefined) return false;
+    if (craftJobs.get(hi)) {
+      presenter.toast(`💬 already making something — the ${word} waits its turn`, "feedback");
+      return true;
+    }
+    craftJobs.set(hi, {
+      ...recipe,
+      spotId: craftSpotOf(session, hi),
+      agreements: [],
+      laborS: 0,
+    });
+    if (speaker) npcChatBubble(session, speaker, "ok");
+    presenter.toast(
+      `🔨 making a ${word}${houseBench(session, hi) ? "" : " — by hand, no workbench"}`,
+      "feedback",
+    );
+    return true;
+  }
+
+  /**
    * ONE spoken/board build order, end to end. Returns false when building
    * doesn't apply here at all (the caller phrases "can't build here");
    * true when the order was HANDLED — accepted or refused aloud (unknown
@@ -14965,27 +15384,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         : null;
     const spec = resolveStructure(ctx.catalog, structure);
     if (!spec) {
-      // A FURNITURE noun (pipeline ④): "build + chair" is a CRAFT order —
-      // the speaker's house makes the exact piece asked for through the
-      // craft pipeline. Hand-rate without a bench: the player's explicit
-      // ask is never rerouted (bench-first binds AUTOMATION only).
-      const fdef = FURNITURE_ITEMS.find((f) => f.kind === structure && f.craft);
-      if (fdef && session.town) {
-        const hi = familyOf(session)?.house ?? session.town.plan.houses[0]?.index;
-        if (hi !== undefined) {
-          if (craftJobs.get(hi)) {
-            presenter.toast(`💬 already making something — the ${structure} waits its turn`, "feedback");
-            return true;
-          }
-          craftJobs.set(hi, { def: fdef, spotId: craftSpotOf(session, hi), agreements: [], laborS: 0 });
-          if (speakerFor) npcChatBubble(session, speakerFor, "ok");
-          presenter.toast(
-            `🔨 making a ${structure}${houseBench(session, hi) ? "" : " — by hand, no workbench"}`,
-            "feedback",
-          );
-          return true;
-        }
-      }
+      // NOT A STRUCTURE, but MAKEABLE (pipeline ④ + the make/build law): "build
+      // + chair" is a craft order, and so is "build + ball" — the two verbs are
+      // interchangeable, so a `build` that names no structure still reaches the
+      // mobile-item goal instead of dying as "not a structure we know". The
+      // compiler routes most of these to `craft` directly; this arm catches the
+      // ones that arrive as a build order anyway (a scope whose catalog claims
+      // the word, then fails to resolve it). Hand-rate without a bench: the
+      // player's explicit ask is never rerouted (bench-first binds AUTOMATION).
+      const makeable = makeableGlyph(structure);
+      if (makeable && orderCraft(session, makeable, speakerFor)) return true;
       // UNKNOWN STRUCTURE — a NAMED conversational can't (never a silent
       // generic fallback; the workProgram() lesson).
       if (speakerFor) npcChatBubble(session, speakerFor, "no");
@@ -15532,6 +15940,49 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
+   * MARKET SERVICE DEFICIT (needs-aware districts): the stranded founding
+   * mass of households living past the hunger-cycle walk radius (scale.ts
+   * serviceRadiusM) from their nearest standing market — measured in street
+   * metres on the real tree, the districts.ts mass rule (min(2, d/R − 1)
+   * per household), normalized against the stall founding bar. Every
+   * non-vacated market work anchors, INCLUDING one still scaffolding —
+   * a quarter's market under construction already answers its deficit, so
+   * growth never stacks a second one while the first rises. Returns the
+   * mass centroid (world coords) so the candidate ranking steers the new
+   * market INTO the stranded quarter, not onto the plaza.
+   */
+  function marketServiceDeficit(
+    session: QuestSession,
+  ): { deficit: number; at: { x: number; y: number } } | null {
+    const t = session.town;
+    if (!t) return null;
+    const R = serviceRadiusM(session.scale, "hunger");
+    const origin = { x: 0, y: 0 };
+    const anchors = t.plan.works
+      .filter((w) => w.type === "market" && !w.vacated)
+      .map((w) => workDoorstep(origin, w));
+    if (anchors.length === 0) return null; // pre-market hamlet — farm-gate scale
+    let mass = 0;
+    let sx = 0;
+    let sy = 0;
+    for (const h of t.plan.houses) {
+      const d0 = houseDoorstep(origin, h);
+      let d = Infinity;
+      for (const a of anchors) d = Math.min(d, roadDistance(t.plan.streets, d0, a));
+      if (d <= R) continue;
+      const w = Math.min(2, d / R - 1);
+      mass += w;
+      sx += (h.dx + h.w / 2) * w;
+      sy += (h.dy + h.h / 2) * w;
+    }
+    if (mass <= 0) return null;
+    return {
+      deficit: Math.min(1, mass / NEIGH_FOUND_MASS),
+      at: { x: t.stage.center.x + sx / mass, y: t.stage.center.y + sy / mass },
+    };
+  }
+
+  /**
    * NEED-STEERED AUTO-FOUNDING (③ + city-founding), once per credited
    * town day: URGENT need (homeless souls, real shortage) founds at once;
    * otherwise the town banks prosperity off the SAME household signals
@@ -15579,6 +16030,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       t.plan.houses.filter((h) => !session.pooledHouses.has(h.index)).length * HOUSEHOLD +
       cohortPopulation(t.deltas.cohorts);
     const pop = Math.max(t.town.scalar("population"), streetPop);
+    // A stranded quarter (needs-aware districts) is a growth need like a
+    // shortage — and its centroid steers WHERE the answer rises.
+    const svc = marketServiceDeficit(session);
     const order = foundingGrowthStep({
       deltas: ctx.deltas,
       catalog: ctx.catalog,
@@ -15587,6 +16041,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       signals: {
         crowding: houseCount > 0 ? Math.min(2, pop / (houseCount * HOUSEHOLD)) : pop > 0 ? 2 : 0,
         shortage: (good) => townShortage(session, good),
+        serviceDeficit: (type) => (type === "market" && svc ? svc.deficit : 0),
       },
       economyOf: (k) => {
         const w = t.eco.works.find((x) => x.key === k);
@@ -15596,10 +16051,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       countOf: (type) =>
         t.plan.works.filter((w) => w.type === type && !w.vacated).length +
         (houseTypes.has(type) ? t.plan.houses.length : 0),
-      candidatesFor: (spec, zone) =>
-        zone === null
-          ? buildCandidates(ctx, spec)
-          : buildCandidates(ctx, spec).filter((c) => candidateInZone(ctx.zones, zone, c)),
+      candidatesFor: (spec, zone) => {
+        // The service build stands IN the stranded quarter (the `near`
+        // steer) — center-out enumeration would drop it by the plaza and
+        // leave the quarter exactly as far from bread as before.
+        const near = spec.type === "market" && svc ? steeringNear(ctx, svc.at) : undefined;
+        const cands = buildCandidates(ctx, spec, near ? { near } : undefined);
+        return zone === null ? cands : cands.filter((c) => candidateInZone(ctx.zones, zone, c));
+      },
     });
     if (!order) return;
     // The player-order commit's visible half: the plan row the stage
@@ -16249,6 +16708,49 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     t.plan.houses.push(foundedHouseRow(t.plan, admitted, spec));
     townJobsMemo = null; // the roster re-deals around the new household
     presenter.toast(`🏠 a family moves into the new ${spec.label}`, "feedback");
+    // Their water follows them in (needs-aware districts): a household
+    // landing past the thirst radius accrues founding mass NOW, not at
+    // the next rebuild.
+    digServiceWells(session);
+  }
+
+  /**
+   * LIVE WELL DIGGING (needs-aware districts): rerun the thirst service
+   * pass over the standing households, anchored on every well already dug
+   * — a founded quarter gets its water when its people arrive. The rebuild
+   * half is town-play.ts (the same pass after applyFoundedBuildings), so a
+   * reload converges on the same coverage. Scale-blind sessions (no
+   * plan.wells) never dig.
+   */
+  function digServiceWells(session: QuestSession) {
+    const t = session.town;
+    if (!t || !t.plan.wells || !world) return;
+    const lots = foundServicePoints(t.plan.houses, [PLAZA_WELL, ...t.plan.wells], t.plan.streets, {
+      convenientM: serviceRadiusM(session.scale, "thirst"),
+      foundMass: WELL_FOUND_MASS,
+    });
+    for (const h of lots) {
+      const wp = wellVergePoint(h);
+      const wid = `well_${t.plan.wells.length + 1}`;
+      t.plan.wells.push(wp);
+      world.addObject({
+        id: wid,
+        x: t.stage.center.x + wp.x,
+        y: t.stage.center.y + wp.y,
+        shape: "box",
+        radius: 0.8,
+        fixture: "barrel",
+        openable: false,
+        facing: 0,
+        interactions: [],
+        contains: [{ relation: "in", capacity: 99 }],
+        glyph: "water",
+      });
+      session.containers.set(wid, "in");
+      session.containerStock.set(wid, { water: 99 });
+      session.containerOwner.set(wid, TOWN_SCOPE); // communal at the TOWN tier
+      presenter.toast("⛲ the neighborhood digs a well", "feedback");
+    }
   }
 
   /** Per-district rates off the SAME street books individuals project
@@ -16729,7 +17231,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       // Otherwise toggle it as the armed stack for the gaze drop / put placement.
       s.selectedPocketGlyph = s.selectedPocketGlyph === glyph ? null : glyph;
-      dropDwell.reset();
+      resetDwells();
       pushPocket(s);
     },
     selectFamilyMember(id) {
@@ -17068,6 +17570,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           null;
         if (orderBuild(s, goal.structure, sentence, explicitBuilder)) return;
         saySystem(s, CANT_HERE, `💬 "${sentence}" — can't build here`);
+        return;
+      }
+      // "make <thing>" → a CRAFT JOB (toys-and-song-expansion.md): the same
+      // pipeline that makes furniture, pointed at a toy. Real inputs off real
+      // stacks, the labor clock, the bench discount — and when a material is
+      // missing the job's own gather branch hauls it, or waits honestly, which
+      // IS the construction chain the plan asks for.
+      if (goal.kind === "craft") {
+        if (orderCraft(s, goal.glyph, sentence)) return;
+        saySystem(s, CANT_HERE, `💬 "${sentence}" — can't make that here`);
         return;
       }
       // TRIBUTE (nations P3/E5): "bring <good> from <partner>" — a STANDING

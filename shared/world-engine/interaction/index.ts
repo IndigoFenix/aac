@@ -21,6 +21,8 @@ export * from "./behavior/creatures.js";
 export * from "./behavior/facts.js";
 export * from "./dialogue/creature-dialogue.js";
 export * from "./dialogue/creature-converse.js";
+export * from "./dialogue/going.js";
+export * from "./dialogue/talk-target.js";
 export * from "./quest/creature-quests.js";
 export * from "./town/village.js";
 // Deterministic goal/rule/personality system + the concept parser (world-sim).

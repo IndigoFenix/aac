@@ -83,11 +83,11 @@ describe("needPursuitGoals — the clean motives become self-assigned commands (
     ]);
   });
 
-  it("waste/hygiene restAt route the same rest shape (privy, bath)", () => {
+  it("waste/hygiene restAt route the same rest shape (toilet, bath)", () => {
     for (const tpl of [wasteTemplate(0.001), hygieneTemplate(0.001)]) {
-      const st = station("furn_0_privy_0", "privy");
+      const st = station("furn_0_toilet_0", "toilet");
       expect(needPursuitGoals(tpl, { kind: "restAt", station: st }, opts())).toEqual([
-        { kind: "rest", place: { kind: "named", id: "furn_0_privy_0" }, dwellS: 30 },
+        { kind: "rest", place: { kind: "named", id: "furn_0_toilet_0" }, dwellS: 30 },
       ]);
     }
   });

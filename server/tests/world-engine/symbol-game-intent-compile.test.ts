@@ -131,13 +131,13 @@ describe("sequence + binding fallbacks", () => {
   });
 });
 
-describe("round-2 verbs — drink/wash/clean/sit/wake_up, throw-away, hug, help, carry", () => {
+describe("round-2 verbs — drink/wash/tidy/sit/wake_up, throw-away, hug, help, carry", () => {
   it("bare self-care verbs compile to satisfy goals", () => {
     for (const [verb, need] of [
       ["you + drink", "drink"],
       ["you + wash", "wash"],
       ["you + brush_teeth", "brush_teeth"],
-      ["you + clean", "clean"],
+      ["you + tidy", "tidy"],
       ["you + sit", "sit"],
       ["you + wake_up", "wake_up"],
       ["you + wear", "wear"], // round 3 — the change-of-clothes command
@@ -184,15 +184,28 @@ describe("round-2 verbs — drink/wash/clean/sit/wake_up, throw-away, hug, help,
     expect(compile("color + shirt")).not.toMatchObject({ kind: "goal", goal: { kind: "color" } });
   });
 
-  it("wash/clean WITH an object stay transforms (the verb's other life)", () => {
+  it("wash WITH an object stays a transform (the verb's other life)", () => {
+    // `wash` is the ONLY verb that makes a thing clean now — `clean` is the state
+    // it arrives at, not a second way to ask for it.
     expect(compile("wash + cup")).toMatchObject({
       kind: "goal",
       goal: { kind: "transform", item: { match: { kind: "cup" } }, state: "clean" },
     });
-    expect(compile("clean + table")).toMatchObject({
+    expect(compile("wash + table")).toMatchObject({
       kind: "goal",
       goal: { kind: "transform", item: { match: { kind: "table" } }, state: "clean" },
     });
+  });
+
+  it("`clean` is a DESCRIPTOR, not an order", () => {
+    // The bug this closes: a `{verb: "clean"}` frame spoke "I am clean" —
+    // NEED_ACTIVITY had to route the scrub through `wash` to dodge it. Now the
+    // word can only BE that reading: "you + clean" is the statement "you are
+    // clean", a state frame with no verb, not a command that limps.
+    const c = compile("you + clean");
+    expect(c).toMatchObject({ kind: "dialogue" });
+    expect((c as { frame: { kind: string; verb?: string } }).frame.kind).toBe("state");
+    expect((c as { frame: { verb?: string } }).frame.verb).toBeUndefined();
   });
 
   it("throw with no destination → put it in the BIN (throwing away)", () => {
@@ -290,10 +303,15 @@ describe("household chores — verb × category → satisfy", () => {
     });
   });
 
-  it("clean + home/house → the TIDY sweep; clean + clothing → laundry", () => {
-    expect(compile("you + clean + home")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
-    expect(compile("you + clean + house")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
-    expect(compile("you + clean + clothing")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "laundry" } });
+  it("wash and tidy are SEPARATE orders over the same room", () => {
+    // `clean` used to be the verb for both, so the scrub and the put-away could
+    // not be asked for apart. It is a descriptor now: washing a room runs the
+    // `clean` sweep, tidying it runs the `tidy` chore.
+    expect(compile("you + wash + home")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
+    expect(compile("you + wash + house")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
+    expect(compile("you + tidy + home")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "tidy" } });
+    expect(compile("you + tidy + room")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "tidy" } });
+    expect(compile("you + wash + clothing")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "laundry" } });
   });
 
   it("cook/make + food → the COOKING chore (never 'build a food structure')", () => {
@@ -303,8 +321,71 @@ describe("household chores — verb × category → satisfy", () => {
 
   it("bare self-care verbs keep their old readings", () => {
     expect(compile("you + wash")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "wash" } });
-    expect(compile("you + clean")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "clean" } });
+    expect(compile("you + tidy")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "tidy" } });
     expect(compile("make + house")).toMatchObject({ kind: "goal", goal: { kind: "build", structure: "house" } });
+  });
+});
+
+// MAKE vs BUILD (user law, 2026-07-28): the two verbs are INTERCHANGEABLE — both
+// reach both kinds of goal, so a child who reaches for the wrong one still gets
+// the thing — and differ only in PRIORITY: `make` tries the mobile item first,
+// `build` the structure. A word that is only one of the two is reached by both.
+describe("make vs build — interchangeable verbs, opposite priorities", () => {
+  it("make + ANIMAL makes a TOY of that animal, never a building called 'rabbit'", () => {
+    expect(compile("make + rabbit")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "craft", glyph: "rabbit.toy.material_wood" },
+    });
+  });
+
+  it("BUILD reaches the same toy — nothing named `rabbit` is a structure", () => {
+    expect(compile("build + rabbit")).toMatchObject({
+      kind: "goal",
+      goal: { kind: "craft", glyph: "rabbit.toy.material_wood" },
+    });
+  });
+
+  it("make + a structure word still BUILDS — the priority never blocks the other reading", () => {
+    expect(compile("make + house")).toMatchObject({ kind: "goal", goal: { kind: "build", structure: "house" } });
+    expect(compile("build + house")).toMatchObject({ kind: "goal", goal: { kind: "build", structure: "house" } });
+  });
+
+  it("an authored toy and a furniture piece both compile to a craft, either verb", () => {
+    for (const verb of ["make", "build"]) {
+      expect(compile(`${verb} + ball`)).toMatchObject({
+        kind: "goal",
+        goal: { kind: "craft", glyph: "ball.material_cloth" },
+      });
+      expect(compile(`${verb} + chair`)).toMatchObject({
+        kind: "goal",
+        goal: { kind: "craft", glyph: "furn.chair" },
+      });
+    }
+  });
+
+  it("the priority only decides a word that is BOTH — build wins it, make loses it", () => {
+    // No word in the shipped vocabulary is both, so the tie is forced with a
+    // binder that CLAIMS the word is structural (the scope-dependent catalog).
+    const structural: IntentBinder = { ...binder, isStructure: () => true };
+    expect(compile("build + ball", structural)).toMatchObject({
+      kind: "goal",
+      goal: { kind: "build", structure: "ball" },
+    });
+    // `make` keeps the mobile reading even when the word is also a structure —
+    // that IS the priority.
+    expect(compile("make + ball", structural)).toMatchObject({
+      kind: "goal",
+      goal: { kind: "craft", glyph: "ball.material_cloth" },
+    });
+  });
+
+  it("bare 'make' stays unbound — only bare 'build' has a default (the founding seam)", () => {
+    expect(compile("make")).not.toMatchObject({ kind: "goal" });
+    expect(compile("build")).toMatchObject({ kind: "goal", goal: { kind: "build", structure: "town" } });
+  });
+
+  it("a category chore still wins over both readings", () => {
+    expect(compile("you + make + food")).toMatchObject({ kind: "goal", goal: { kind: "satisfy", need: "cook" } });
   });
 });
 

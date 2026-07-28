@@ -227,6 +227,7 @@ export const es = {
     calendar: "Calendario",
     personChat: "Mensajes",
     call: "Llamar",
+    downloads: "Descargas de la app",
   },
 
   // ============================================================================
@@ -2717,6 +2718,51 @@ export const es = {
   // ============================================================================
   // DEEP ANALYSIS
   // ============================================================================
+  // ============================================================================
+  // APP DOWNLOADS (AAC desktop installer + iPad .ipa)
+  // ============================================================================
+  downloads: {
+    title: "Descargas de la app",
+    subtitle: "Instala la app Aivota AAC en el dispositivo del {{student}}. Elige la versión que corresponda al dispositivo.",
+    loading: "Comprobando la última versión…",
+    loadFailed: "No se pudo comprobar la última versión. Inténtalo de nuevo en un momento.",
+    notPublished: "Todavía no se ha publicado ninguna versión.",
+    version: "Versión {version}",
+    released: "Publicada el {date}",
+    helpNote: "¿Problemas para instalar? Contacta con el soporte de Aivota e indica el número de versión que aparece arriba.",
+    windows: {
+      title: "App para Windows",
+      desc: "La app de escritorio completa para Windows 10 u 11 (64 bits). Admite seguimiento ocular con un dispositivo Tobii.",
+      button: "Descargar para Windows",
+      installTitle: "Cómo instalarla",
+      step1: "Descarga el instalador y ábrelo. Windows puede avisar de que el editor es desconocido: elige \"Más información\" y luego \"Ejecutar de todas formas\".",
+      step2: "Sigue el instalador. Aivota AAC se añade al menú Inicio.",
+      step3: "Abre la app e inicia sesión con la cuenta del {{student}}.",
+      autoUpdateNote: "La app de Windows se actualiza sola. Una vez instalada, las versiones nuevas se descargan en segundo plano: esta página solo hace falta para la primera instalación o para un ordenador nuevo.",
+    },
+    ios: {
+      title: "App para iPad",
+      desc: "La misma app para iPadOS. Solo táctil: el seguimiento ocular no está disponible en iPad.",
+      button: "Descargar para iPad (.ipa)",
+      whyNote: "La app de iPad aún no está en la App Store, así que se instala desde un archivo con una herramienta gratuita llamada Sideloadly. Se instala desde un ordenador Windows o Mac, no desde el propio iPad.",
+      installTitle: "Cómo instalarla con Sideloadly",
+      needTitle: "Necesitas:",
+      needComputer: "Un ordenador Windows o Mac.",
+      needCable: "Un cable USB para conectar el iPad a ese ordenador.",
+      needAppleId: "Un Apple ID: uno gratuito sirve.",
+      step1: "En el ordenador, instala Sideloadly desde",
+      step2: "Solo en Windows: instala \"Apple Devices\" (o iTunes) desde Microsoft Store y reinicia el ordenador. Sideloadly lo necesita para detectar el iPad.",
+      step3: "Descarga el archivo .ipa de arriba en ese ordenador.",
+      step4: "Conecta el iPad por USB. Si el iPad lo pide, toca \"Confiar\" e introduce su código.",
+      step5: "Abre Sideloadly, arrastra el .ipa dentro, elige el iPad, introduce tu Apple ID y pulsa Start. Escribe la contraseña cuando te la pida.",
+      step6: "En el iPad, abre Ajustes → General → VPN y gestión de dispositivos, toca tu Apple ID y toca \"Confiar\". La app no se abrirá hasta que lo hagas.",
+      step7: "Abre Aivota AAC en el iPad e inicia sesión.",
+      expiryWarning: "Con un Apple ID gratuito la app deja de abrirse a los 7 días. Repite los pasos de Sideloadly para renovarla. Una cuenta de Apple Developer de pago lo amplía a un año.",
+      updateNote: "La app de iPad no puede actualizarse sola. Cuando aparezca aquí una versión nueva, descárgala e instálala otra vez del mismo modo.",
+      limitsNote: "Límites del Apple ID gratuito: unas 3 apps por dispositivo y 3 dispositivos por Apple ID. Sideloadly puede cambiar el identificador de la app; es normal.",
+    },
+  },
+
   deepAnalysis: {
     title: "Análisis profundo",
     history: "Historial",

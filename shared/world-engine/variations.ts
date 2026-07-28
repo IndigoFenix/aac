@@ -10,9 +10,10 @@
 // A glyph is `head.facet1.facet2…`:
 //   • HEAD       — the KIND (what the thing IS: shirt, chair, apple). Every
 //                  good / affordance / routing / tidy decision keys off the head.
-//   • VARIATIONS — orthogonal DESCRIPTOR dimensions (colour, size, material) that
-//                  make distinct, stackable variants but do NOT change the kind.
-//                  A red shirt and a blue shirt are two variants of one kind.
+//   • VARIATIONS — orthogonal DESCRIPTOR dimensions (form, colour, size, material)
+//                  that make distinct, stackable variants but do NOT change the
+//                  kind. A red shirt and a blue shirt are two variants of one kind;
+//                  a toy rabbit is a variant of `rabbit`, not a kind called "doll".
 //   • STATES     — transient conditions (dirty, hot, open…) a transform adds or
 //                  removes. The mutable facet dimension.
 //
@@ -108,8 +109,38 @@ export const MATERIAL_DIMENSION: VariationDimension = {
   },
 };
 
-/** Every variation dimension, keyed by dimension key. */
+/**
+ * FORM — what a thing is a REPRESENTATION of rather than an instance of. Today
+ * one value: `toy`, the DOLL facet (toys-and-song-expansion.md). A doll is not
+ * its own kind — it is the SAME head word as the thing it depicts, wearing this
+ * descriptor: `rabbit.toy` is a toy rabbit, `car.toy` a toy car. That is what
+ * keeps a doll speakable with a word the child already has, and what lets one
+ * rule cover every creature and vehicle in the spec instead of a hand-written
+ * doll per species.
+ *
+ * The `look` carries the MINIATURISATION, because a doll's whole visual claim is
+ * "the same shape, small": loose item props all spawn at a uniform ~0.3 m radius
+ * regardless of glyph, so without a scale here a toy rabbit would be built at
+ * life size by the very recipe that makes it recognisable. 0.4 of the prop radius
+ * lands a ~24 cm doll — small in the hand, still legible on the floor. Matte
+ * roughness reads as stuffed/carved rather than live.
+ *
+ * FIRST in the dimension order deliberately: form sits immediately after the
+ * head (`rabbit.toy.material_cloth`), so the descriptor that changes WHAT THE
+ * THING IS is never buried behind a colour.
+ */
+export const FORM_DIMENSION: VariationDimension = {
+  key: "form",
+  values: ["toy"],
+  look: {
+    toy: { scale: [0.4, 0.4, 0.4], roughness: 0.9, metalness: 0 },
+  },
+};
+
+/** Every variation dimension, keyed by dimension key. Order is CANONICAL GLYPH
+ *  ORDER (composeGlyph sorts by it) — form, then colour, size, material. */
 export const VARIATION_DIMENSIONS: Record<string, VariationDimension> = {
+  form: FORM_DIMENSION,
   color: COLOR_DIMENSION,
   size: SIZE_DIMENSION,
   material: MATERIAL_DIMENSION,

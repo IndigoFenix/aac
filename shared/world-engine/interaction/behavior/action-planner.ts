@@ -24,6 +24,12 @@ import type { GoalSpec, PlaceRef } from "@shared/world-engine/interaction/behavi
 import type { GoalPlan, GoalStep, WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
 import type { Vec2 } from "../../types.js";
 
+/** When two RESOLVED points are the SAME SPOT (metres). Both sides come from the
+ *  same resolver, which reports an item on a station and the station itself at
+ *  one shared approach point — so this is float slack on an equality test, not a
+ *  proximity radius. */
+const SAME_SPOT_M = 0.01;
+
 // ---------------------------------------------------------------------------
 // Predicates — the state a goal wants TRUE (the "meaning" layer)
 // ---------------------------------------------------------------------------
@@ -127,6 +133,20 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
       if (target.at?.length) {
         const spot = r.diningSpot?.(self, target.at) ?? null;
         if (spot) {
+          // ALREADY SERVED — the meal is ON the station it would be carried to.
+          // A dining leg only makes sense when the food is somewhere ELSE; food
+          // resting on the table (the plated meal, the filled bowl) resolves to
+          // that station's own approach point, so regressing `holding` first
+          // sends the body to lift a plate off the very table it is walking
+          // toward. Worse, a prop shown on a surface is a MIRROR of a stack unit
+          // and offers no carry affordance at all, so that pickup can never
+          // succeed and the plan never advances — the observed "told to eat
+          // something off the table, gets stuck". Walk over and eat it where it
+          // sits, exactly the eat-where-it-lies below.
+          const on = holder === self ? null : r.itemPosition(target.item);
+          if (on && Math.hypot(on.x - spot.x, on.y - spot.y) <= SAME_SPOT_M) {
+            return [...legTo(spot), { kind: "eat", itemId: target.item }];
+          }
           const hold = achieve({ kind: "holding", item: target.item }, self, r);
           if (hold) return [...hold, ...legTo(spot), { kind: "eat", itemId: target.item }];
         }

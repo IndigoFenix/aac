@@ -104,8 +104,14 @@ export type DialogueActKind =
  *  its errand/goal by the world layer (this pure layer only phrases it). */
 export type GoingDest =
   | { kind: "fetch"; good: string } // off to acquire a resource ("going to get food")
-  | { kind: "home" } // heading home ("going home")
-  | { kind: "place"; place: string }; // bound for a named place ("going to the market")
+  | { kind: "home" } // heading home ("going home") — only from OUTSIDE it
+  | { kind: "place"; place: string } // bound for a named place ("going to the market")
+  /** Crossing the house to a ROOM ("going to the bedroom") — the honest answer
+   *  for a body already at home, where "going home" reads as nonsense. */
+  | { kind: "room"; room: string }
+  /** Off to DO something ("I will eat", "I will wash the clothing") — the answer
+   *  when the destination has no name worth speaking but the errand does. */
+  | { kind: "activity"; verb: string; object?: string };
 
 export interface DialogueAct {
   kind: DialogueActKind;
@@ -329,6 +335,19 @@ function goingLine(dest: GoingDest): LeveledGlyphs {
       return { a: "home", b: "go + home", c: "i_me + go + home" };
     case "place":
       return { a: dest.place, b: `go + ${dest.place}`, c: `i_me + go + to + ${dest.place}` };
+    case "room":
+      // Room words are ordinary place nouns, so the movement frame already
+      // speaks them ("I'm going to the bedroom") in every ruleset.
+      return { a: dest.room, b: `go + ${dest.room}`, c: `i_me + go + to + ${dest.room}` };
+    case "activity":
+      // The INTENT form (`.will`) — what the walk is FOR, when the place it
+      // ends at has no word of its own ("I will wash the clothing").
+      return phrase({
+        subject: "i_me",
+        verb: `${dest.verb}.will`,
+        ...(dest.object ? { object: dest.object } : {}),
+        key: dest.verb,
+      });
   }
 }
 /** A creature that isn't going anywhere: "I'm here" (staying put). */

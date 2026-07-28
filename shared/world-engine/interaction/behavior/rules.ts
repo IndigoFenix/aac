@@ -184,6 +184,16 @@ export type GoalSpec =
   // creature weighs the spot by the same rules the house generator obeys.
   | { kind: "place"; item: ItemRef; at: PlacementRef }
   | { kind: "build"; structure: string; cap: number } // cap = max increments per fire (bounds civ-scale orders)
+  // MAKE A MOBILE ITEM (toys-and-song-expansion.md): craft `glyph` through the
+  // construction pipeline's craft job — real inputs off real stacks, the labor
+  // clock, the bench discount, and an honest wait (with a haul, then the
+  // construction chain) when a material is missing. The sibling of `build`:
+  // `build` raises something that STAYS PUT, `craft` makes something you can
+  // pick up. Both verbs reach both goals — "make" and "build" are
+  // interchangeable and differ only in which they try FIRST (intent-compile) —
+  // so a child who says the wrong one still gets the thing. Host-routed like
+  // `build`: the craft is house-scoped work, not a body errand.
+  | { kind: "craft"; glyph: string; cap: number }
   // WORK A CONSTRUCTION SITE (pipeline ⑥): stand at the staged site and
   // BUILD — labor banks only while builders are present, and more of them
   // build faster (capped). `site` = "f:<ord>" (a founded building) or

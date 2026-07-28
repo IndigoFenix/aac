@@ -99,6 +99,11 @@ export interface NpcProximity {
 export interface NpcErrandPoint extends Vec2 {
   dwell?: number;
   arrive?: number;
+  /** Set on the two transit points that straddle a doorway (routeThroughDoors).
+   *  While one of them is the live waypoint, the body is walking through that
+   *  door and the host declares it via `AvatarState.crossingDoorId` — which is
+   *  what opens the door. */
+  doorId?: string;
 }
 
 export interface NpcErrand {
@@ -152,6 +157,12 @@ export interface NpcController {
    *  and a local bend drags the body off its verified corridor (observed: a
    *  bend around the table's wrong side, then fighting the carrot forever). */
   errandLegTight(): boolean;
+  /** The doorway this body is walking through RIGHT NOW — the live errand
+   *  waypoint's `doorId`, or null. The host copies it onto the avatar each frame
+   *  (`AvatarState.crossingDoorId`), and that declaration is the ONLY thing that
+   *  opens a door for a body: a door two legs ahead reports null until the body
+   *  is actually walking its transit. */
+  crossingDoorId(): string | null;
   /** DEBUG: the live errand's waypoints + which leg is being walked, for a path
    *  overlay. Null when no errand runs (the body wanders/idles). Read-only —
    *  the returned `points` is the controller's own array, never mutate it. */
@@ -265,6 +276,13 @@ class BaseController implements NpcController {
   errandLegTight(): boolean {
     const pt = this.errand?.points[this.errandIndex];
     return !!pt && (pt.arrive ?? 1) < 0.8;
+  }
+
+  /** The door this body is walking through on its LIVE leg, or null. The host
+   *  copies it onto the avatar each frame so `tickDoors` opens that door — a
+   *  body with a door later in its route reports null until it gets there. */
+  crossingDoorId(): string | null {
+    return this.errand?.points[this.errandIndex]?.doorId ?? null;
   }
 
   setWanderRect(rect: { x: number; y: number; w: number; h: number } | null): void {

@@ -1,14 +1,21 @@
 // shared/world-engine/interaction/quest/furniture-aim.ts
 //
-// WHICH PIECE OF FURNITURE THE GAZE IS AIMED AT — the one rule the board's
-// object popup (and the put-a-stack-away gesture) resolves its target through,
-// so the board can never name a thing the player isn't looking at.
+// WHAT THE GAZE IS AIMED AT — the one rule every hover gesture resolves its
+// target through, so nothing can ever act on a thing the player isn't looking
+// at. Furniture (`resolveFurnitureAim` — the board's object popup, the
+// put-a-stack-away gesture) and PEOPLE (`gazeOnCreature` — the dwell-to-talk)
+// both live here, deliberately: they are ONE mechanism and must not drift.
 //
 // THE HOVER IS THE AIM. The screen pick under the pixel names the thing;
 // proximity to the fixation point does NOT. In a furnished room a 2.2 m
 // fixation radius reaches two or three pieces at once, and picking the nearest
 // of those is how looking at an EMPTY chest spilled a NEIGHBOUR's contents onto
-// the board, and how looking at a chair beside a cupboard opened the cupboard.
+// the board, how looking at a chair beside a cupboard opened the cupboard, and
+// — once the talk gesture grew its own proximity test — how looking at a chair
+// beside a PERSON started a conversation instead of selecting the chair.
+//
+// The hovered thing is the thing that gets interacted with. One pick names one
+// thing: an item, a piece of furniture, or a creature. Never two at once.
 //
 // WANT: the OPEN gesture accepts any furniture (a piece with no stock still
 // names itself on the board); PUT accepts only a real container — you can't
@@ -83,6 +90,30 @@ export function resolveFurnitureAim(
   if (!at) return null;
   if (!opts.spirit && (!opts.me || Math.hypot(opts.me.x - at.x, opts.me.y - at.y) > opts.reach)) return null;
   return { id, x: at.x, y: at.y };
+}
+
+/**
+ * Is the gaze aimed at THIS creature? The same rule `resolveFurnitureAim`
+ * applies to a chest, applied to a body — so a hover names a person or a piece
+ * of furniture, never both. A creature standing beside a chair used to win the
+ * talk gesture on fixation proximity alone, which made the chair unselectable:
+ * the conversation opened instead.
+ *
+ * `ids` = every id this creature answers to; a goal-tree poser is hovered as
+ * its `npc_`-prefixed body, an off-tree local as its bare node id.
+ *
+ * `at` + `fixRadius` serve the no-pick fallback ONLY (a view whose null hover
+ * doesn't mean "on nothing"), exactly like `nearestToFixation` below.
+ */
+export function gazeOnCreature(
+  gz: FurnitureAimGaze,
+  ids: readonly string[],
+  at: { x: number; y: number },
+  fixRadius: number,
+): boolean {
+  if (gz.picks) return gz.hover?.kind === "avatar" && ids.includes(gz.hover.id);
+  const fix = gz.committedWorld;
+  return !!fix && Math.hypot(fix.x - at.x, fix.y - at.y) <= fixRadius;
 }
 
 /** LAST RESORT, for a view with no screen pick at all (the 2D top-down, whose

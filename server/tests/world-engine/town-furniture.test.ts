@@ -183,18 +183,18 @@ describe("household stations: beds, chairs at the table, a box", () => {
     expect(JSON.stringify(houseFurniture(center, house, goods))).toBe(JSON.stringify(pieces));
   });
 
-  it("round-2 stations (bath / privy / barrel / bin / bowl) fit the typical house", () => {
+  it("round-2 stations (bath / toilet / barrel / bin / bowl) fit the typical house", () => {
     // The 12×10 reference house has wall to spare — every new station lands.
     expect(byKind("bath").map(p => p.id)).toEqual(["furn_0_bath"]);
-    expect(byKind("privy").map(p => p.id)).toEqual(["furn_0_privy"]);
+    expect(byKind("toilet").map(p => p.id)).toEqual(["furn_0_toilet"]);
     expect(byKind("barrel").map(p => p.id)).toEqual(["furn_0_barrel"]);
     expect(byKind("bin").map(p => p.id)).toEqual(["furn_0_bin"]);
     expect(byKind("bowl").map(p => p.id)).toEqual(["furn_0_bowl"]);
     // The barrel opens (a lidded water store — grasp-gated in play); the
-    // tub, privy and bowl don't.
+    // tub, toilet and bowl don't.
     expect(byKind("barrel")[0]!.openable).toBe(true);
     expect(byKind("bin")[0]!.openable).toBe(true);
-    for (const k of ["bath", "privy", "bowl"] as const) expect(byKind(k)[0]!.openable).toBe(false);
+    for (const k of ["bath", "toilet", "bowl"] as const) expect(byKind(k)[0]!.openable).toBe(false);
   });
 
   it("round-5 ROOMS: every piece stays inside ITS room, by role", () => {
@@ -225,7 +225,7 @@ describe("household stations: beds, chairs at the table, a box", () => {
       expect(`${b.id}: ${inRect(b, roomOf(plan.bedrooms[i]!).rect)}`).toBe(`${b.id}: true`);
     });
     const bath = roomOf(plan.bathId!).rect;
-    for (const kind of ["bath", "privy"] as const) {
+    for (const kind of ["bath", "toilet"] as const) {
       for (const p of byKind(kind)) expect(`${p.id}: ${inRect(p, bath)}`).toBe(`${p.id}: true`);
     }
     const bedRects = plan.bedrooms.map(id => roomOf(id).rect);
@@ -389,7 +389,7 @@ describe("household stations: beds, chairs at the table, a box", () => {
         p.x - p.radius >= r.x - 1e-9 && p.x + p.radius <= r.x + r.w + 1e-9 &&
         p.y - p.radius >= r.y - 1e-9 && p.y + p.radius <= r.y + r.h + 1e-9;
       // The merged wet cluster followed its fallback into the COMMUNAL cell…
-      for (const kind of ["bath", "privy"] as const) {
+      for (const kind of ["bath", "toilet"] as const) {
         const p = ps.find(x => x.kind === kind);
         expect(`${door} ${kind}: ${!!p && inRect(p, living)}`).toBe(`${door} ${kind}: true`);
       }
@@ -433,7 +433,7 @@ describe("round-8 axis-aligned facing: corner furniture faces down an axis", () 
   const axisAligned = (facing: number): boolean =>
     Math.min(Math.abs(Math.cos(facing)), Math.abs(Math.sin(facing))) < 1e-6;
 
-  it("chests, the fridge, the privy, the bin and the boxes all face an axis", () => {
+  it("chests, the fridge, the toilet, the bin and the boxes all face an axis", () => {
     let idx = 0;
     for (const door of ["north", "south", "east", "west"] as const) {
       for (let w = 7; w <= 13.01; w += 1.5) {
@@ -447,7 +447,7 @@ describe("round-8 axis-aligned facing: corner furniture faces down an axis", () 
           const pieces = houseFurniture(center, house, goods);
           // Corner/wall kinds that used to face the diagonal centroid.
           for (const p of pieces) {
-            if (["chest", "refrigerator", "privy", "bin", "box"].includes(p.kind)) {
+            if (["chest", "refrigerator", "toilet", "bin", "box"].includes(p.kind)) {
               expect(`${house.index} ${p.id} facing ${p.facing.toFixed(3)}: ${axisAligned(p.facing)}`)
                 .toBe(`${house.index} ${p.id} facing ${p.facing.toFixed(3)}: true`);
             }

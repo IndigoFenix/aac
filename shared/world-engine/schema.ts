@@ -105,7 +105,7 @@ const objectSchema = z
     // FURNITURE (fixtures): static containers along a room's walls — solid
     // (bar the pass-through kinds, types.ts PASSTHROUGH_FIXTURES).
     fixture: z
-      .enum(["chest", "cupboard", "table", "bed", "chair", "box", "barrel", "bath", "privy", "bin", "bowl", "oven", "workbench", "refrigerator"])
+      .enum(["chest", "cupboard", "table", "bed", "chair", "box", "barrel", "bath", "toilet", "bin", "bowl", "oven", "workbench", "refrigerator"])
       .optional(),
     openable: z.boolean().optional(),
     facing: finite.optional(),

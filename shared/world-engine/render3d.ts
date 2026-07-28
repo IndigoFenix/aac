@@ -116,7 +116,7 @@ export const FLOOR_HEIGHT = 3.0;
 //    faces INTO the room") at game angle −θ. The axes are MIRRORED, hence the
 //    negation. Assigning `facing` raw is the bug this replaced: invisible at
 //    facing ≈ 0 or ±π, a full 180° at ±π/2 — chairs backed onto their table,
-//    cupboards and privies nosed into the wall they stand against.
+//    cupboards and toilets nosed into the wall they stand against.
 
 /** THREE yaw that aims a +X-forward fixture recipe at game angle `facing`. */
 export function fixtureYaw(facing: number | undefined): number {
@@ -149,7 +149,7 @@ export function bedSleeperYaw(facing: number | undefined): number {
   return rigYawTo(facing ?? 0);
 }
 
-/** THREE yaw seating a creature rig on a chair/privy of game angle `facing`.
+/** THREE yaw seating a creature rig on a chair/toilet of game angle `facing`.
  *  A seat's front IS where its occupant looks, so the rig's forward simply
  *  takes the fixture's own facing — a chair at its table faces the table, and
  *  the sitter with it. */
@@ -272,9 +272,16 @@ export function dollhousePoseMath(
   out.up.set(0, 1, 0);
   out.fov = DOLLHOUSE_FOV;
 }
-/** Ray-depth (world units) within which a picked OBJECT is treated as "at the same
- *  spot" as a creature and wins the pick — item-priority for co-located entities. */
-const PICK_ITEM_MARGIN = 1.5;
+/** Ray-depth (world units) within which a picked OBJECT counts as COINCIDENT with
+ *  a creature and wins the pick — item-priority for genuinely co-located things.
+ *
+ *  A TIE TOLERANCE, not a grab radius. At 1.5 this was deeper than a body is
+ *  thick, so any prop a creature carried — held at the hands, a third of a metre
+ *  off the chest, and therefore always within the margin — took the pick off the
+ *  person every time they overlapped on screen. The ray already answers "which
+ *  did you look at": whatever it strikes FIRST. This only breaks the tie when
+ *  two surfaces are effectively at the same depth. */
+const PICK_ITEM_MARGIN = 0.12;
 /** Opacity a faded-out plane settles at (roof/slab/storey wall/object of the
  *  OCCUPIED building sitting between the occupant and the camera). */
 const FADE_OPACITY = 0.07;
@@ -306,11 +313,18 @@ function iconStandY(radius: number): number {
  *  render worker. Caller positions the sprite and disposes tex+mat. */
 function makeEmojiSprite(emoji: string): { sprite: THREE.Sprite; tex: THREE.CanvasTexture; mat: THREE.SpriteMaterial } {
   const SIZE = 128;
+  // A THREE.Sprite RAYCASTS ITS WHOLE QUAD — alpha is not consulted. So every
+  // transparent pixel of padding is live pick area, and the glyph used to be
+  // drawn at 96 of 128 px: a quarter of the sprite's width was empty margin that
+  // still swallowed the gaze. Draw the emoji nearer the edges and shrink the
+  // quad to match, so the pick area tracks the INK and the thing stays the size
+  // it was on screen (0.875 × 1.12 ≈ 0.75 × 1.3, the old drawn height).
+  const FILL = 112 / SIZE;
   const canvas = new OffscreenCanvas(SIZE, SIZE);
   const c = canvas.getContext("2d");
   if (c) {
     c.clearRect(0, 0, SIZE, SIZE);
-    c.font = "96px sans-serif";
+    c.font = `${Math.round(SIZE * FILL)}px sans-serif`;
     c.textAlign = "center";
     c.textBaseline = "middle";
     c.fillText(emoji, SIZE / 2, SIZE / 2 + 6);
@@ -319,7 +333,8 @@ function makeEmojiSprite(emoji: string): { sprite: THREE.Sprite; tex: THREE.Canv
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(ICON_SPRITE_H, ICON_SPRITE_H, ICON_SPRITE_H);
+  const h = ICON_SPRITE_H * (96 / 112); // same ink height, smaller quad
+  sprite.scale.set(h, h, h);
   return { sprite, tex, mat };
 }
 
@@ -2560,8 +2575,10 @@ export class World3DRenderer {
     if (!best) return null;
     // A directly-gazed bubble wins (it asks for the shoulder framing).
     if (best.pick.kind === "bubble") return best.pick;
-    // Item priority: an object at ~the same depth as (or nearer than) a creature
-    // wins, so "dwell where an item sits on a creature" engages the item.
+    // Item priority: an object the ray reaches FIRST (or at the same depth as)
+    // a creature wins, so looking straight at a prop engages the prop even when
+    // a body overlaps it. An object the ray reaches only AFTER the creature is
+    // BEHIND them — that is looking at the person, and they keep the pick.
     if (obj && (!av || obj.dist <= av.dist + PICK_ITEM_MARGIN)) return obj.pick;
     return best.pick;
   }
@@ -2909,7 +2926,7 @@ export class World3DRenderer {
 
   /** The scene-space anchor a body's ACTIVITY poses onto: the BED a sleeper lies
    *  on ("sleep" naming a bed), or the SEAT a sitter takes ("sit" naming a chair
-   *  or a privy — SEAT_TOP_FRAC). The body slides onto it and adopts the
+   *  or a toilet — SEAT_TOP_FRAC). The body slides onto it and adopts the
    *  fixture's own heading, so a diner faces the table its chair faces.
    *
    *  Only a fixture present in BOTH the live objects and the spec resolves, and
@@ -2933,7 +2950,7 @@ export class World3DRenderer {
     // this fixture is used ON (a bed, a seat — an anchor slides the body onto
     // it) or BESIDE (a tub, a workbench — no anchor, pose in place). A sleep
     // only anchors a torso-contact piece (a bed); a sit only a pelvis-contact
-    // seat (a chair, a privy).
+    // seat (a chair, a toilet).
     const contract = useContractFor(spec.fixture);
     if (!contract.onFixture) return null;
     if (act.kind === "sleep" && contract.contactPart !== "torso") return null;

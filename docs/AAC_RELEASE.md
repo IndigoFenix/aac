@@ -56,6 +56,22 @@ block-map, and `latest.yml` to the env's S3 prefix.
 env config automatically. Credentials use the standard AWS chain. Locally you can
 put these in the repo-root `.env`.
 
+## Where clinicians get the installer
+
+The clinician dashboard has a **Downloads** page (AAC section in the sidebar,
+`client/src/features/DownloadsPanel.tsx`) that offers both the Windows installer
+and the iPad `.ipa`, with install instructions. It reads
+`GET /api/app-downloads`, which resolves the feeds' manifests server-side
+(`server/services/appDownloadService.ts`).
+
+Nothing extra is needed at release time — publishing to the feed is what makes
+the new version appear there. The server reads the feed at
+`https://updates.aivota.ai/aac/` (override with `AAC_DOWNLOAD_FEED_BASE` to
+point a non-prod server at a different prefix) and memoizes each manifest for
+five minutes, so a fresh publish shows up within that window.
+
+The iPad `.ipa` publishes separately — see [`IPAD_BUILD.md`](./IPAD_BUILD.md).
+
 ## CI
 
 - **Production** — [`release-aac.yml`](../.github/workflows/release-aac.yml).

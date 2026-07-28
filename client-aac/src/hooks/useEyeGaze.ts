@@ -13,6 +13,13 @@ import { WebHIDGazeProvider } from "@/lib/eyegaze/webhid-provider";
 import type { GazeData, GazePoint, EyeGazeProviderType, EyeGazeProviderStatus } from "@/lib/eyegaze/types";
 import { smootherConfigFromSettings, defaultSmoothingSettings, type GazeSmoothingSettings } from "@shared/gaze-smoothing.js";
 import { computePixelsPerDegree, primaryFaceHeightNorm } from "@/lib/eyegaze/viewing-distance";
+import {
+  detectionSatisfied,
+  hardwareReadiness,
+  hardwareSignalKey,
+  shouldAttemptSwitch,
+  type HardwareSignal,
+} from "@/lib/eyegaze/detection-policy";
 
 interface UseEyeGazeOptions {
   enabled: boolean;
@@ -20,7 +27,29 @@ interface UseEyeGazeOptions {
   preferredProvider?: EyeGazeProviderType | "auto";
   /** Per-student smoothing settings (One-Euro + fixation, in visual degrees) for hardware trackers. */
   smoothingSettings?: GazeSmoothingSettings;
+  /**
+   * Live gaze-sidecar status, when the host has one. Used as a wake-up signal:
+   * a new port or a transition to "connected" means retry NOW rather than
+   * waiting out the backoff. Omit on hosts without a sidecar.
+   */
+  sidecarSignal?: HardwareSignal | null;
+  /** Whether this host can spawn a sidecar at all (Electron/Windows only). */
+  sidecarSupported?: boolean;
 }
+
+/**
+ * How often the detection loop re-evaluates. Cheap — it only consults the
+ * policy; actual probes are rate-limited by the backoff inside it.
+ */
+const DETECT_TICK_MS = 1000;
+
+/**
+ * Probe budget for a targeted upgrade to the student's chosen tracker. Longer
+ * than the service default (500ms) because a cold sidecar needs ~1.5s to bind,
+ * and this probe does not delay anything the student is currently using — the
+ * fallback provider stays active until the upgrade actually succeeds.
+ */
+const UPGRADE_PROBE_MS = 2500;
 
 // Samples below this confidence don't move the gaze point. Providers signal
 // "no eyes found" through confidence: camera emits 0 when the face is lost
@@ -45,7 +74,14 @@ interface UseEyeGazeReturn {
   clearCalibration: () => void;
 }
 
-export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto", smoothingSettings }: UseEyeGazeOptions): UseEyeGazeReturn {
+export function useEyeGaze({
+  enabled,
+  rawFaces,
+  preferredProvider = "auto",
+  smoothingSettings,
+  sidecarSignal = null,
+  sidecarSupported = false,
+}: UseEyeGazeOptions): UseEyeGazeReturn {
   // Resolve to a stable default when the caller omits settings.
   const settings = smoothingSettings ?? defaultSmoothingSettings();
   // Track whether auto-detection has finished (prevents premature calibration)
@@ -161,62 +197,127 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto", smoo
     };
     service.onGaze(handler);
 
-    // Auto-detect and start
+    // Detection itself lives in the re-detect loop below, which establishes a
+    // baseline provider and then keeps trying to upgrade to the student's
+    // choice. Kicking off autoDetectAndStart here as well would race it.
     setDetectionDone(false);
-    service.autoDetectAndStart().then((type) => {
-      setActiveProvider(type);
-      setProviderStatuses(service.getAllStatuses());
-      setDetectionDone(true);
-    });
 
     return () => {
       service.offGaze(handler);
-      const active = service.getActiveProvider();
-      if (active) active.stop();
+      // Clear it, don't just stop it: the detection loop below treats a
+      // non-null active provider as "nothing to do", so a stopped-but-still-
+      // referenced provider would never be restarted when gaze is re-enabled.
+      service.deactivate();
       setGazePoint(null);
       setGazeData(null);
       setActiveProvider(null);
     };
   }, [enabled]);
 
-  // Update preferred provider when it changes
+  // ── Detection / re-detection ──
+  //
+  // Establish a baseline provider so the student always has *something* (the
+  // mouse fallback matters: Tobii Computer Control drives the Windows pointer,
+  // and that is a supported setup), then keep trying to upgrade to the tracker
+  // their settings actually name.
+  //
+  // The upgrade loop never gives up. Its predecessor tried twice, 2s apart, and
+  // then latched failedProvider forever, which stranded students on the mouse
+  // whenever the sidecar was still cold — see detection-policy.ts for the field
+  // evidence. Retries now back off but continue, and the backoff resets
+  // whenever the sidecar reports a new port or reaches "connected".
+  const hardwareReady = hardwareReadiness({
+    preferred: preferredProvider,
+    sidecarSupported,
+    signal: sidecarSignal,
+  });
+  const signalKey = hardwareSignalKey(sidecarSignal);
+
   useEffect(() => {
     const service = serviceRef.current;
-    if (!service || !enabled || preferredProvider === "auto") return;
+    if (!service || !enabled) return;
+
+    // Keep the service's notion of "preferred" current: it was constructed on
+    // mount, before the student's settings loaded.
+    service.setPreferredProvider(preferredProvider);
 
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    let lastAttemptAt = 0;
 
-    // Try switching to the preferred provider, with a retry for slow devices
-    const trySwitch = async () => {
-      const ok = await service.switchProvider(preferredProvider);
-      if (cancelled) return;
-      if (ok) {
-        setActiveProvider(preferredProvider);
-        setFailedProvider(null);
+    // Only push a new statuses array when the active provider actually moved:
+    // this loop keeps ticking on a machine with no tracker, and a fresh array
+    // identity every time would re-render the whole page for nothing.
+    let publishedActive: EyeGazeProviderType | null | undefined = undefined;
+    const publish = () => {
+      const active = service.getActiveProviderType();
+      if (active !== publishedActive) {
+        publishedActive = active;
+        setActiveProvider(active);
         setProviderStatuses(service.getAllStatuses());
-        setDetectionDone(true);
-        return;
       }
-
-      // First attempt failed — retry after 2s (device may still be starting)
-      await new Promise((r) => setTimeout(r, 2000));
-      if (cancelled) return;
-
-      const retryOk = await service.switchProvider(preferredProvider);
-      if (cancelled) return;
-      if (retryOk) {
-        setActiveProvider(preferredProvider);
-        setFailedProvider(null);
-      } else {
-        setFailedProvider(preferredProvider);
-      }
-      setProviderStatuses(service.getAllStatuses());
       setDetectionDone(true);
+      return active;
     };
 
-    trySwitch();
-    return () => { cancelled = true; };
-  }, [preferredProvider, enabled]);
+    const tick = async () => {
+      if (cancelled) return;
+
+      // Baseline: whatever answers fastest, so gaze input works at all.
+      if (service.getActiveProviderType() === null) {
+        await service.autoDetectAndStart();
+        if (cancelled) return;
+        publish();
+      }
+
+      const active = service.getActiveProviderType();
+      if (detectionSatisfied(preferredProvider, active)) {
+        setFailedProvider(null);
+        publish();
+        return; // settled — stop ticking
+      }
+
+      const now = Date.now();
+      if (
+        shouldAttemptSwitch({
+          enabled,
+          preferred: preferredProvider,
+          activeProvider: active,
+          hardwareReady,
+          attempts,
+          lastAttemptAt,
+          now,
+        })
+      ) {
+        lastAttemptAt = now;
+        attempts += 1;
+        if (preferredProvider === "auto") {
+          await service.autoDetectAndStart();
+        } else {
+          await service.switchProvider(preferredProvider, UPGRADE_PROBE_MS);
+        }
+        if (cancelled) return;
+
+        const settled = publish();
+        if (detectionSatisfied(preferredProvider, settled)) {
+          setFailedProvider(null);
+          return; // settled — stop ticking
+        }
+        // Surface the miss so the UI can say so, but keep trying: this is a
+        // "not yet", not a verdict.
+        setFailedProvider(preferredProvider === "auto" ? null : preferredProvider);
+      }
+
+      timer = setTimeout(() => { void tick(); }, DETECT_TICK_MS);
+    };
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [preferredProvider, enabled, hardwareReady, signalKey]);
 
   const switchProvider = useCallback(async (type: EyeGazeProviderType): Promise<boolean> => {
     const service = serviceRef.current;

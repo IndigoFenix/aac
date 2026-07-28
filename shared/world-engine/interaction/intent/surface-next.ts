@@ -11,14 +11,44 @@
 // data — concepts.ts), and a recent-utterance memory of the player's OWN
 // words. Pure and RNG-free: same input ⇒ same board, forever.
 //
-// SURFACE CONTRACT (user decision): WORDS (speakable) and CONTROLS (sentence-
-// type chips, category tabs) are separate outputs — the UI renders them
-// visually distinct. Type chips seed `seedKind`; category tabs are the
-// graceful-degradation ladder when the ranked grid can't hold everything.
+// RANKING (three deterministic layers, most specific first):
+//   1. ROLE TIERS — the unfilled slot the word would fill (TIER).
+//   2. TRANSITIONS — bonuses derived from the frame + lexicon metadata: a
+//      speaker subject boosts state verbs and feelings, a listener subject
+//      boosts directives, a quantity opens nouns, a greeting opens addressees,
+//      nouns boost the descriptor AXES their properties bind
+//      (object-properties.ts). Semantics-derived, never phrase pairs.
+//   3. FREQUENCY — a static core-vocabulary prior (CORE_RANK) breaks every
+//      tie, so "want" beats "drop" wherever both are legal. The player's own
+//      habits (RecencyMemory use/pair counts) add small learned bonuses.
+//
+// SURFACE CONTRACT (user decision): WORDS (speakable) and CONTROLS are
+// separate outputs the UI renders visually distinct. Controls come in three
+// forms: sentence-type chips (seed `seedKind`), GROUP chips (`groups` — ranked
+// property/kind clusters that expand in place without consuming a word), and
+// category tabs (the graceful-degradation ladder when all else fails).
+// Synonym families (VERB_FAMILY, one social per act) surface only their
+// canonical head — the full family stays reachable through the tabs.
 
-import { LEXICON, parseSentence, type IntentFrame, type IntentKind, type ParseContext } from "./parse-intent.js";
-import { PROPERTY_FOR_VERB, type ObjectProperty } from "../../object-properties.js";
+import {
+  canonicalVerb,
+  LEXICON,
+  parseSentence,
+  STATE_VERBS,
+  type IntentFrame,
+  type IntentKind,
+  type ParseContext,
+} from "./parse-intent.js";
+import {
+  AXIS_WORDS,
+  DESCRIPTOR_AXES_FOR_VERB,
+  descriptorAxesFor,
+  PROPERTY_FOR_VERB,
+  type DescriptorAxis,
+  type ObjectProperty,
+} from "../../object-properties.js";
 import { headOf } from "../../variations.js";
+import { isMakeable } from "../content/makeable.js";
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -33,6 +63,7 @@ export type SlotNeed =
   | "destination"
   | "relation-noun"
   | "question-focus"
+  | "addressee"
   | "condition"
   | "attribute"
   | "connective"
@@ -59,6 +90,19 @@ export interface SurfaceButton {
   weight: number;
 }
 
+/** A GROUP CONTROL (user decision): a ranked cluster of likely nouns rendered
+ *  as a chip that expands in place — it opens options, it never adds a word.
+ *  `kind` says what clustered it: an object property ("food"), or a noun kind
+ *  ("creatures"/"places"/"things"). Members are the FULL ranked expansion —
+ *  a filter view, so inline words may repeat inside their group. */
+export interface SurfaceGroup {
+  id: string;
+  kind: "property" | "kind";
+  role: SlotNeed;
+  weight: number;
+  members: SurfaceButton[];
+}
+
 /** A sentence-type CONTROL chip (rendered distinct from words) — seeds
  *  `SurfaceContext.seedKind` on the next call. */
 export interface TypeChip {
@@ -78,6 +122,8 @@ export const TYPE_CHIPS: readonly TypeChip[] = [
 export interface SurfaceSuggestion {
   /** Ranked speakable words, ≤ capacity. */
   buttons: SurfaceButton[];
+  /** Ranked group chips — likely subcategories that expand without speaking. */
+  groups: SurfaceGroup[];
   /** Sentence-type controls (empty once composition is underway). */
   typeChips: TypeChip[];
   /** Legal lexical-category tabs — the overflow/fallback ladder. */
@@ -99,13 +145,33 @@ export interface SurfaceSuggestion {
 export interface RecencyMemory {
   mentioned: { symbol: string; at: number }[];
   utterances: number;
+  /** Capped per-head use counts across the player's own utterances — the
+   *  learned word-frequency habit. */
+  uses?: { key: string; n: number }[];
+  /** Capped adjacent-pair counts ("a>b") — the learned bigram habit ("this
+   *  player says want+juice"), boosting b when a was just composed. */
+  pairs?: { key: string; n: number }[];
 }
 
 export const emptyRecency = (): RecencyMemory => ({ mentioned: [], utterances: 0 });
 
 const RECENCY_CAP = 8;
+const USES_CAP = 24;
+const PAIRS_CAP = 32;
 
-/** Record a completed utterance's nouns (call after a successful speak). */
+/** Bump `keys` into a capped count list, deterministically (count desc, then
+ *  key asc — no wall-clock eviction). */
+function bumpCounts(list: { key: string; n: number }[], keys: string[], cap: number): { key: string; n: number }[] {
+  const counts = new Map(list.map((e) => [e.key, e.n] as const));
+  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
+  return [...counts.entries()]
+    .map(([key, n]) => ({ key, n }))
+    .sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : 1))
+    .slice(0, cap);
+}
+
+/** Record a completed utterance (call after a successful speak): mentioned
+ *  nouns, per-word use counts, and adjacent word pairs. */
 export function noteUtterance(mem: RecencyMemory, frame: IntentFrame): RecencyMemory {
   const at = mem.utterances + 1;
   const syms: string[] = [];
@@ -116,7 +182,15 @@ export function noteUtterance(mem: RecencyMemory, frame: IntentFrame): RecencyMe
     ...syms.map((symbol) => ({ symbol, at })),
     ...mem.mentioned.filter((m) => !syms.includes(m.symbol)),
   ].slice(0, RECENCY_CAP);
-  return { mentioned, utterances: at };
+  const heads = frame.raw.map(head).filter(Boolean);
+  const pairKeys: string[] = [];
+  for (let i = 0; i + 1 < heads.length; i++) pairKeys.push(`${heads[i]}>${heads[i + 1]}`);
+  return {
+    mentioned,
+    utterances: at,
+    uses: bumpCounts(mem.uses ?? [], heads, USES_CAP),
+    pairs: bumpCounts(mem.pairs ?? [], pairKeys, PAIRS_CAP),
+  };
 }
 
 export interface SurfaceContext {
@@ -139,24 +213,67 @@ const byCat = (cat: string): string[] => LEX_KEYS.filter((k) => (LEXICON[k] as {
 
 const VERBS = byCat("verb");
 const QUESTIONS = byCat("question");
-const SOCIALS = byCat("social");
 const RELATIONS = byCat("relation");
 const CONNECTIVES = byCat("connective");
 const QUANTITIES = byCat("quantity");
 const ATTRIBUTES = byCat("attribute");
 
+/** SYNONYM COLLAPSE (user decision): bulk verb bands surface only each
+ *  family's canonical head (get, not take; go, not come/walk/run) — the family
+ *  compiles to one primitive, so its members waste grid slots. The full family
+ *  stays reachable through the category tabs, and affordance matching is
+ *  family-aware (a noun affording "take" still boosts "get"). */
+const CANONICAL_VERBS = VERBS.filter((v) => canonicalVerb(v) === v);
+/** One social per act (hi, not hello; ok, not okay) — first per lexicon order. */
+const CANONICAL_SOCIALS = (() => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of byCat("social")) {
+    const act = (LEXICON[s] as { act: string }).act;
+    if (!seen.has(act)) {
+      seen.add(act);
+      out.push(s);
+    }
+  }
+  return out;
+})();
+
 const MOVEMENT = new Set(["go", "come", "walk", "follow", "run", "chase"]);
 /** Verbs whose object is optional (self-care / intransitives) — a bare verb
- *  command is already meaningful ("you sleep", "you stop"). */
+ *  command is already meaningful ("you sleep", "you stop"). Doubles as the
+ *  SELF-ACTIVITY band a speaker subject boosts ("i_me + eat/sleep/play"). */
 const OBJECT_OPTIONAL = new Set([
-  "eat", "drink", "sleep", "rest", "play", "talk", "wash", "clean", "brush_teeth",
+  "eat", "drink", "sleep", "rest", "play", "talk", "wash", "tidy", "brush_teeth",
   "sit", "wake_up", "wear", "stop", "stay", "wait", "run", "walk", "turn", "come", "go", "build", "help", "hug",
 ]);
 /** High-frequency opener verbs (concept-parser.md "core 40"). */
 const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play"];
 
+/** THE FREQUENCY PRIOR: AAC core-vocabulary order (most frequent first). It
+ *  breaks every rank tie — so within any legal band the child's most likely
+ *  words lead, instead of the lexicon's authoring order. Static data; the
+ *  learned layer (RecencyMemory) personalizes on top. */
+const CORE_RANK: readonly string[] = [
+  "want", "go", "more", "eat", "no", "yes", "help", "play", "stop", "drink",
+  "get", "give", "open", "put", "make", "i_me", "you", "this", "that", "here", "there",
+  "need", "like", "have", "feel", "do", "sleep", "wash", "sit", "hug", "talk",
+  "hi", "bye", "thanks", "again", "mine", "ok", "sorry",
+  "where", "what", "who", "why", "how",
+  "and", "then", "because", "but", "when", "if", "or", "so", "until",
+  "to", "in", "on", "with", "for", "from", "under", "near",
+  "big", "small", "hot", "cold", "good", "bad",
+  "hungry", "thirsty", "tired", "happy", "sad", "sick",
+  "one", "two", "three", "many", "all", "less", "none",
+];
+const FREQ = new Map(CORE_RANK.map((w, i) => [w, i] as const));
+const freqRank = (symbol: string): number => FREQ.get(symbol) ?? Number.MAX_SAFE_INTEGER;
+
 const head = (token: string): string => headOf(token.replace(/#\w+/g, ""));
 const lexOf = (token: string) => LEXICON[head(token)];
+const isDirective = (v: string): boolean => {
+  const lx = LEXICON[v];
+  return lx?.cat === "verb" && (lx as { directive: boolean }).directive;
+};
 
 // ---------------------------------------------------------------------------
 // The engine
@@ -169,6 +286,7 @@ const TIER: Record<SlotNeed, number> = {
   condition: 85,
   recipient: 80,
   destination: 80,
+  addressee: 75,
   object: 70,
   verb: 60,
   attribute: 55,
@@ -177,13 +295,37 @@ const TIER: Record<SlotNeed, number> = {
   quantity: 10,
 };
 
+/** Per-role inline quotas (finalize): floods truncate to these, leaving grid
+ *  room for the words that matter. No backfill past a quota — a small board of
+ *  RIGHT buttons beats a full board of joiners (language-expansion.md). */
+const QUOTA: Partial<Record<SlotNeed, number>> = {
+  connective: 3,
+  quantity: 2,
+  attribute: 5,
+};
+
+const MAX_GROUPS = 5;
+
 export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSuggestion {
   const capacity = ctx.capacity ?? 16;
   const nounBy = new Map(ctx.nouns.map((n) => [n.symbol, n] as const));
   const recencyRank = new Map((ctx.recency?.mentioned ?? []).map((m, i) => [m.symbol, i] as const));
+  const usesN = new Map((ctx.recency?.uses ?? []).map((e) => [e.key, e.n] as const));
+  const pairsN = new Map((ctx.recency?.pairs ?? []).map((e) => [e.key, e.n] as const));
 
   const sentence = tokens.join(" + ");
-  const frame: IntentFrame | null = tokens.length ? parseSentence(sentence, ctx.parse ?? {}) : null;
+  // The parse gets an entity classifier from the noun library (unless the host
+  // supplied one) — the same knowledge the buttons rank by, so a bare "bed"
+  // classifies as a place command rather than an opaque mention.
+  const parseCtx: ParseContext = {
+    classifyEntity: (s) => nounBy.get(s)?.kind ?? "unknown",
+    ...(ctx.parse ?? {}),
+  };
+  const frame: IntentFrame | null = tokens.length ? parseSentence(sentence, parseCtx) : null;
+
+  const last = tokens[tokens.length - 1];
+  const lastLex = last !== undefined ? lexOf(last) : undefined;
+  const lastHead = last !== undefined ? head(last) : undefined;
 
   const buttons = new Map<string, SurfaceButton>();
   const open: SlotNeed[] = [];
@@ -192,16 +334,24 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
   let subTab: ObjectProperty | undefined;
   const wants = (property: ObjectProperty) => (n: SurfaceNoun) =>
     (n.properties ?? []).includes(property);
-  /** Add a candidate word for a role; first (highest-tier) role wins a symbol. */
+  /** Words already composed never re-surface — except joiners/quantities,
+   *  which legitimately repeat ("… and … and …"). */
+  const saidHeads = new Set(tokens.map(head));
+  const REPEATABLE = new Set(["connective", "relation", "quantity"]);
+  /** Add a candidate word for a role; first (highest-tier) role wins a symbol.
+   *  Learned layers ride on top: recency band, use counts, last-word pairs. */
   const add = (symbol: string, role: SlotNeed, bonus = 0) => {
     if (buttons.has(symbol)) return;
+    if (saidHeads.has(symbol) && !REPEATABLE.has((LEXICON[symbol] as { cat?: string } | undefined)?.cat ?? "")) return;
     const rec = recencyRank.get(symbol);
     const recBonus = rec !== undefined ? Math.max(0, 3 - rec) : 0;
+    const useBonus = Math.min(2, Math.max(0, (usesN.get(symbol) ?? 0) - 1));
+    const pairBonus = lastHead !== undefined ? Math.min(3, pairsN.get(`${lastHead}>${symbol}`) ?? 0) : 0;
     buttons.set(symbol, {
       symbol,
       ...(nounBy.get(symbol)?.label ? { label: nounBy.get(symbol)!.label! } : {}),
       role,
-      weight: TIER[role] + bonus + recBonus,
+      weight: TIER[role] + bonus + recBonus + useBonus + pairBonus,
     });
   };
   const openRole = (role: SlotNeed) => {
@@ -213,9 +363,34 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     openRole(role);
     for (const n of nounsOf(pred)) add(n.symbol, role, bonus);
   };
-
-  const last = tokens[tokens.length - 1];
-  const lastLex = last !== undefined ? lexOf(last) : undefined;
+  /** Descriptor-axis bonuses (object-properties.ts) for the attribute band:
+   *  the axes bound by the nouns in play (and the subject's animacy) rank the
+   *  descriptor words — food talks temperature, creatures talk feelings.
+   *  `animate: "strong"` (an explicit i_me) lifts the emotion words INTO the
+   *  main band — "i_me + hungry/happy" is a first-page utterance. */
+  const attributeAxisBonus = (namedHeads: string[], animate: false | "weak" | "strong"): Map<string, number> => {
+    const bonus = new Map<string, number>();
+    const applyAxes = (axes: readonly DescriptorAxis[]) => {
+      axes.forEach((axis, i) => {
+        const b = Math.max(1, 6 - i);
+        for (const w of AXIS_WORDS[axis]) if ((bonus.get(w) ?? 0) < b) bonus.set(w, b);
+      });
+    };
+    for (const h of namedHeads) {
+      const n = nounBy.get(h);
+      if (n) applyAxes(descriptorAxesFor(n.kind, n.properties ?? []));
+    }
+    if (animate) applyAxes(descriptorAxesFor("creature", []));
+    if (animate === "strong") {
+      for (const w of [...AXIS_WORDS.bodily, ...AXIS_WORDS.mood]) bonus.set(w, 9);
+    }
+    return bonus;
+  };
+  /** Family-aware affordance test: a noun affording "take" boosts "get". */
+  const affordsVerb = (n: SurfaceNoun, verb: string): boolean => {
+    const want = canonicalVerb(verb);
+    return n.affords.some((a) => canonicalVerb(a) === want);
+  };
 
   // ── Stage: hard-forced continuations ──────────────────────────────────────
   if (lastLex?.cat === "relation") {
@@ -229,18 +404,40 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     return finalize();
   }
 
+  if (lastLex?.cat === "quantity" && !frame?.object) {
+    // A quantity wants the THING it measures ("more + water") — food first
+    // (the everyday "more" is a food request), everything else close behind.
+    addNouns("object", wants("food"), 3);
+    addNouns("object", () => true);
+    return finalize();
+  }
+
   // ── Stage: empty sentence — openers (hybrid words + type chips) ───────────
   if (!frame) {
     const seed = ctx.seedKind;
     openRole("opener");
-    if (!seed || seed === "greet") for (const s of SOCIALS) add(s, "opener", seed ? 6 : 2);
+    if (!seed || seed === "greet") {
+      if (seed) for (const s of CANONICAL_SOCIALS) add(s, "opener", 6);
+      else {
+        add("hi", "opener", 2);
+        add("yes", "opener", 2);
+        add("no", "opener", 2);
+      }
+    }
     if (!seed || seed === "ask") {
-      for (const q of QUESTIONS) add(q, "opener", seed ? 6 : 3);
-      if (seed) addNouns("question-focus", () => true);
+      if (seed) {
+        for (const q of QUESTIONS) add(q, "opener", 6);
+        addNouns("question-focus", () => true);
+      } else {
+        // Two question words carry the unseeded board; the ask chip has the rest.
+        add("where", "opener", 3);
+        add("what", "opener", 3);
+      }
     }
     if (!seed || seed === "request") {
       add("i_me", "opener", seed ? 6 : 4);
       add("want", "opener", seed ? 6 : 4);
+      add("more", "opener", seed ? 6 : 2);
       if (seed) addNouns("object", () => true);
     }
     if (!seed || seed === "state") {
@@ -252,7 +449,7 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     }
     if (!seed || seed === "command") {
       add("you", "opener", seed ? 6 : 4);
-      for (const v of seed ? VERBS : OPENER_VERBS) add(v, "opener", seed ? 3 : 1);
+      for (const v of seed ? CANONICAL_VERBS : OPENER_VERBS) add(v, "opener", seed ? 3 : 1);
       addNouns("opener", (nn) => nn.kind === "creature", seed ? 4 : 2);
     }
     if (!seed || seed === "rule") {
@@ -261,7 +458,16 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     }
     // Recent nouns keep a band on the first page — "things we just talked about".
     for (const m of ctx.recency?.mentioned ?? []) if (nounBy.has(m.symbol)) add(m.symbol, "opener", 3);
-    return finalize(tokens.length === 0);
+    // Group chips over the WHOLE library ([food] [toys] [people]…) stand in
+    // for the nouns the grid can't hold — the first press already offers them.
+    return finalize(tokens.length === 0, true);
+  }
+
+  // ── Stage: a social opener addresses SOMEONE ("hi + mara") ────────────────
+  if ((frame.kind === "greet" || frame.kind === "farewell") && !frame.verb && !frame.object) {
+    addNouns("addressee", (nn) => nn.kind === "creature", 5);
+    add("you", "addressee", 3);
+    return finalize();
   }
 
   // ── Stage: mid-sentence — derive open slots from the partial frame ────────
@@ -282,7 +488,7 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     } else {
       // and/then/but — a fresh clause: verbs + nouns restart.
       openRole("verb");
-      for (const v of VERBS) add(v, "verb", 1);
+      for (const v of CANONICAL_VERBS) add(v, "verb", 1);
       addNouns("object", () => true);
     }
     return finalize();
@@ -305,6 +511,18 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
   }
 
   if (verb && !hasObject && !hasTarget) {
+    // A DESCRIPTOR-LIST verb ("feel") wants a feeling, never a thing — the
+    // emotion axes lead, the rest of the descriptor vocabulary fills the grid.
+    const verbAxes = DESCRIPTOR_AXES_FOR_VERB[verb];
+    if (verbAxes) {
+      openRole("attribute");
+      const bonus = new Map<string, number>();
+      verbAxes.forEach((axis, i) => {
+        for (const w of AXIS_WORDS[axis]) if ((bonus.get(w) ?? 0) < 9 - i) bonus.set(w, 9 - i);
+      });
+      for (const a of ATTRIBUTES) add(a, "attribute", bonus.get(a) ?? 0);
+      return finalize();
+    }
     if (MOVEMENT.has(verb)) {
       // A movement verb wants a DESTINATION.
       addNouns("destination", (nn) => nn.kind === "place", 5);
@@ -319,7 +537,18 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       // rest. Property before affordance is what makes the group predictable.
       subTab = PROPERTY_FOR_VERB[verb];
       if (subTab) addNouns("object", wants(subTab), 7);
-      addNouns("object", (nn) => nn.affords.includes(verb), 6);
+      // MAKE vs BUILD (user law, 2026-07-28): the two verbs are interchangeable,
+      // so each surfaces BOTH lists — they differ only in which leads. `make`
+      // puts MOBILE items (toys, dolls of the animals and vehicles on the board,
+      // furniture) at the front; `build` leads with structures via its
+      // PROPERTY_FOR_VERB row above and offers the mobile ones underneath. This
+      // is the surfacing half of the same rule intent-compile applies to the
+      // parse, so what the builder offers and what the order does agree.
+      if (verb === "make" || verb === "build") {
+        addNouns("object", (nn) => isMakeable(headOf(nn.symbol)), verb === "make" ? 7 : 4);
+      }
+      addNouns("object", (nn) => affordsVerb(nn, verb), 6);
+      if (verb === "play") addNouns("object", (nn) => nn.kind === "creature", 3); // play WITH someone
       addNouns("object", () => true);
       if (verb === "help" || verb === "hug" || verb === "talk") {
         add("i_me", "object", 4);
@@ -343,73 +572,173 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       addNouns("destination", (nn) => nn.kind === "place", 5);
       add("in", "destination", 3);
     }
-    // Joins that extend any complete verb phrase.
+    // Joins that extend any complete verb phrase — plus quantities ("give
+    // apple two") and the object's own descriptors ("give apple hot").
     openRole("connective");
     for (const c of CONNECTIVES) add(c, "connective");
     for (const r of RELATIONS) add(r, "connective");
+    openRole("quantity");
+    for (const q of QUANTITIES) add(q, "quantity");
+    const namedObjects = tokens.map(head).filter((h) => nounBy.has(h));
+    if (namedObjects.length) {
+      openRole("attribute");
+      const axisBonus = attributeAxisBonus(namedObjects, false);
+      for (const a of ATTRIBUTES) add(a, "attribute", axisBonus.get(a) ?? 0);
+    }
   } else if (!verb) {
-    // Nouns/persons without a verb: the nouns' own affordances pick the verbs
-    // (composeNeed reversed) — an apple surfaces eat/get/give, a place go.
+    // Nouns/persons without a verb. The nouns' own affordances pick the verbs
+    // (composeNeed reversed) — an apple surfaces eat/get/give, a place go —
+    // and the SUBJECT picks the band (the transition layer): a speaker
+    // subject leans on state verbs ("i_me + want") and self activities; a
+    // listener subject leans on directives ("you + go"). Frequency breaks
+    // the remaining ties, so "want" leads wherever it is legal.
     const named = tokens.map(head).filter((h) => nounBy.has(h));
     openRole("verb");
     const afforded = new Set<string>();
-    for (const h of named) for (const v of nounBy.get(h)!.affords) afforded.add(v);
-    for (const v of VERBS) add(v, "verb", afforded.has(v) ? 6 : 0);
-    // Attribute continuations make a STATEMENT ("apple + hot", "mara + hungry")
-    // — below the verbs (the noun's own affordances lead).
-    for (const a of ATTRIBUTES) add(a, "attribute");
+    for (const h of named) for (const v of nounBy.get(h)!.affords) afforded.add(canonicalVerb(v));
+    // EXPLICIT subjects only (a defaulted "[i want] ball" subject must not
+    // drag the feelings band onto every bare noun).
+    const speaker = tokens.some((t) => head(t) === "i_me");
+    const listener = !speaker && tokens.some((t) => head(t) === "you");
+    for (const v of CANONICAL_VERBS) {
+      let bonus = afforded.has(v) ? 6 : 0;
+      if (speaker && STATE_VERBS.has(v)) bonus = Math.max(bonus, 4);
+      else if (speaker && OBJECT_OPTIONAL.has(v)) bonus = Math.max(bonus, 3);
+      else if (listener && isDirective(v)) bonus = Math.max(bonus, 2);
+      add(v, "verb", bonus);
+    }
+    // Attribute continuations make a STATEMENT ("apple + hot", "i_me hungry",
+    // "mara + hungry") — ranked by the DESCRIPTOR AXES of what's in play, so
+    // food talks temperature and people (and hungry cities) talk feelings.
+    openRole("attribute"); // reserve slots: "i_me + hungry" must stay a press away
+    const axisBonus = attributeAxisBonus(named, speaker ? "strong" : listener ? "weak" : false);
+    for (const a of ATTRIBUTES) add(a, "attribute", axisBonus.get(a) ?? 0);
     if (named.length && !frame.subject) {
       add("i_me", "opener", 1);
       add("you", "opener", 1);
     }
   } else {
-    // A saturated frame — extensions only: connectives, quantities.
+    // A saturated frame — extensions: joiners, quantities, and the composed
+    // nouns' own DESCRIPTORS ("i_me want apple" + hot/big — the modifier
+    // reading fills what would otherwise be a near-blank board).
     openRole("connective");
     for (const c of CONNECTIVES) add(c, "connective");
     openRole("quantity");
     for (const q of QUANTITIES) add(q, "quantity");
+    const named = tokens.map(head).filter((h) => nounBy.has(h));
+    if (named.length) {
+      openRole("attribute");
+      const axisBonus = attributeAxisBonus(named, false);
+      for (const a of ATTRIBUTES) add(a, "attribute", axisBonus.get(a) ?? 0);
+    }
   }
 
   return finalize();
 
   // ── Budget + verdicts ──────────────────────────────────────────────────────
-  function finalize(showTypeChips = false): SurfaceSuggestion {
-    const ranked = [...buttons.values()].sort((a, b) => {
+  function finalize(showTypeChips = false, poolAllNouns = false): SurfaceSuggestion {
+    // Rank: weight, then the frequency prior, then lexicon order, then symbol.
+    const byRank = (a: SurfaceButton, b: SurfaceButton): number => {
       if (b.weight !== a.weight) return b.weight - a.weight;
+      const af = freqRank(a.symbol);
+      const bf = freqRank(b.symbol);
+      if (af !== bf) return af - bf;
       const ao = lexOrder.get(a.symbol);
       const bo = lexOrder.get(b.symbol);
       if (ao !== undefined && bo !== undefined && ao !== bo) return ao - bo;
       if (ao !== undefined && bo === undefined) return -1;
       if (ao === undefined && bo !== undefined) return 1;
       return a.symbol < b.symbol ? -1 : 1;
-    });
-    // Reserve one representative per open role, then fill by rank.
+    };
+    const ranked = [...buttons.values()].sort(byRank);
+    // Reserve one representative per open role, then fill by rank under the
+    // per-role quotas. No backfill past a quota: fewer, better buttons.
     const chosen: SurfaceButton[] = [];
     const seen = new Set<string>();
+    const roleCount = new Map<SlotNeed, number>();
+    const take = (b: SurfaceButton) => {
+      chosen.push(b);
+      seen.add(b.symbol);
+      roleCount.set(b.role, (roleCount.get(b.role) ?? 0) + 1);
+    };
     for (const role of open) {
       const rep = ranked.find((b) => b.role === role && !seen.has(b.symbol));
-      if (rep && chosen.length < capacity) {
-        chosen.push(rep);
-        seen.add(rep.symbol);
-      }
+      if (rep && chosen.length < capacity) take(rep);
     }
+    // Quotas balance MIXED boards; a single-role board just fills the grid.
+    const applyQuota = open.length > 1;
     for (const b of ranked) {
       if (chosen.length >= capacity) break;
-      if (!seen.has(b.symbol)) {
-        chosen.push(b);
-        seen.add(b.symbol);
-      }
+      if (seen.has(b.symbol)) continue;
+      const quota = applyQuota ? QUOTA[b.role] : undefined;
+      if (quota !== undefined && (roleCount.get(b.role) ?? 0) >= quota) continue;
+      take(b);
     }
-    chosen.sort((a, b) => b.weight - a.weight || (a.symbol < b.symbol ? -1 : 1));
+    chosen.sort(byRank);
     const categories = openCategories();
     return {
       buttons: chosen,
+      groups: buildGroups(seen, poolAllNouns, byRank),
       typeChips: showTypeChips ? [...TYPE_CHIPS] : [],
       categories,
       complete: isComplete(),
       open: [...open].sort((a, b) => TIER[b] - TIER[a]),
       ...(subTab ? { subTab } : {}),
     };
+  }
+
+  /** GROUP CHIPS: cluster this call's candidate nouns by property and kind.
+   *  Pool = every noun offered to `buttons` (pre-truncation); on the empty
+   *  board the whole library pools at just-below-opener weight, so [food] and
+   *  [people] are one press away from the very first screen. A cluster whose
+   *  members all fit inline is skipped — a chip must open something new. */
+  function buildGroups(
+    chosen: Set<string>,
+    poolAllNouns: boolean,
+    byRank: (a: SurfaceButton, b: SurfaceButton) => number,
+  ): SurfaceGroup[] {
+    const cands = new Map<string, SurfaceButton>();
+    for (const b of buttons.values()) {
+      if (nounBy.has(b.symbol)) cands.set(b.symbol, b);
+    }
+    if (poolAllNouns) {
+      for (const n of ctx.nouns) {
+        if (cands.has(n.symbol)) continue;
+        const rec = recencyRank.get(n.symbol);
+        const recBonus = rec !== undefined ? Math.max(0, 3 - rec) : 0;
+        cands.set(n.symbol, {
+          symbol: n.symbol,
+          ...(n.label ? { label: n.label } : {}),
+          role: "opener",
+          weight: TIER.opener - 1 + recBonus,
+        });
+      }
+    }
+    if (cands.size === 0) return [];
+    const clusters = new Map<string, { kind: "property" | "kind"; members: SurfaceButton[] }>();
+    const push = (id: string, kind: "property" | "kind", b: SurfaceButton) => {
+      const c = clusters.get(id) ?? { kind, members: [] };
+      c.members.push(b);
+      clusters.set(id, c);
+    };
+    for (const b of cands.values()) {
+      const n = nounBy.get(b.symbol)!;
+      for (const p of n.properties ?? []) push(p, "property", b);
+      if (n.kind === "creature") push("creatures", "kind", b);
+      else if (n.kind === "place") push("places", "kind", b);
+      else if (n.kind === "item" && !(n.properties ?? []).length) push("things", "kind", b);
+    }
+    const groups: SurfaceGroup[] = [];
+    for (const [id, c] of clusters) {
+      if (c.members.length < 2) continue;
+      if (c.members.every((m) => chosen.has(m.symbol))) continue;
+      const members = [...c.members].sort(byRank);
+      const weight =
+        members[0]!.weight + Math.min(2, members.length * 0.1) + (subTab === id ? 8 : 0);
+      groups.push({ id, kind: c.kind, role: members[0]!.role, weight, members });
+    }
+    groups.sort((a, b) => b.weight - a.weight || (a.id < b.id ? -1 : 1));
+    return groups.slice(0, MAX_GROUPS);
   }
 
   function openCategories(): string[] {
@@ -441,13 +770,16 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       case "ask":
         return !!(frame.question || frame.polar) && !!(frame.object || frame.subject || frame.verb);
       case "state":
-        return !!(frame.object || frame.subject || frame.modifiers.length);
+        // A bare quantity ("more") is a meaningful utterance in its own right.
+        return !!(frame.object || frame.subject || frame.modifiers.length || frame.quantity);
       case "request":
       case "offer":
         return !!frame.object;
       case "command": {
         const v = frame.verb;
-        if (!v) return false;
+        // A classified bare noun ("bed" ⇒ go there) is a verbless command with
+        // an object — the world layer supplies the default verb.
+        if (!v) return !!frame.object;
         if (frame.object || frame.target) return true;
         return OBJECT_OPTIONAL.has(v);
       }

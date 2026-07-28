@@ -24,6 +24,7 @@ import type {
 } from "@shared/world-engine/interaction/behavior/rules.js";
 import { DEFAULT_RULE_PRIORITY } from "@shared/world-engine/interaction/behavior/rules.js";
 import type { IntentFrame, Ref } from "@shared/world-engine/interaction/intent/parse-intent.js";
+import { makeableGlyph } from "@shared/world-engine/interaction/content/makeable.js";
 
 // ---------------------------------------------------------------------------
 // Binder — the world's salience resolver (the one impure input)
@@ -58,6 +59,13 @@ export interface IntentBinder {
    *  {device}" turns it off instead of halting the listener. Absent ⇒ nothing
    *  is a device (legacy: "stop X" is a plain halt). */
   isDevice?(ref?: Ref): boolean;
+  /** Does the ref name a raisable STRUCTURE (the scope's build catalog)? Only
+   *  consulted to break a make/build TIE — a word that is both a structure and a
+   *  mobile item — so absent ⇒ nothing is a structure, and the makeable reading
+   *  wins for both verbs. Scope-dependent by nature (the catalog differs in the
+   *  wilderness, at a founded site and in a town), which is why it lives on the
+   *  binder rather than in a static table. */
+  isStructure?(ref?: Ref): boolean;
 }
 
 export interface DefaultBinderOptions {
@@ -149,19 +157,22 @@ export interface CompileMeta {
 // ---------------------------------------------------------------------------
 
 /** State a transform verb applies (fire→hot, water→cold…). */
+// `wash` is the ONE verb that makes a thing clean — `clean` is not a verb (it is
+// the state this transform arrives AT), and `tidy` moves things without changing
+// any state, so neither belongs here.
 const TRANSFORM_STATE: Record<string, string> = {
-  heat: "hot", cook: "hot", cool: "cold", wash: "clean", clean: "clean", fill: "full", empty: "empty",
+  heat: "hot", cook: "hot", cool: "cold", wash: "clean", fill: "full", empty: "empty",
 };
 // Self-care verbs → a `satisfy` goal the actor's own need machinery serves:
 // eat/drink/sleep/rest the founding motives, play the fun motive (box),
 // talk the social motive (seek a housemate and chat), wash/brush_teeth the
-// hygiene motive (the bath), clean the tidy chore, sit/wake_up body poses,
+// hygiene motive (the bath), tidy the tidy chore, sit/wake_up body poses,
 // wear the dress motive (a change of clothes from the wardrobe).
-// NOTE `wash`/`clean` WITH an object stay transforms ("wash the cup"); the
-// BARE verb is self-care ("you wash") — see compileAction's default arm.
+// NOTE `wash` WITH an object stays a transform ("wash the cup"); the BARE verb
+// is self-care ("you wash") — see compileAction's default arm.
 const SELF_NEEDS = new Set([
   "eat", "drink", "rest", "sleep", "play", "talk",
-  "wash", "clean", "brush_teeth", "sit", "wake_up", "wear",
+  "wash", "tidy", "brush_teeth", "sit", "wake_up", "wear",
 ]);
 // INGEST verbs: a NAMED object is the thing to consume, so the order acts on
 // that specific item (fetch it) rather than raising the abstract need. Bare,
@@ -185,9 +196,14 @@ function pickColorFacet(frame: IntentFrame): string | null {
 // item transform — "wash the clothes" is the LAUNDRY chore (basket → tub),
 // "cook food" the oven chore, "clean the house" the tidy sweep. Lexical
 // data (verb × category → need key), never a scripted phrase.
+//
+// The scrub and the put-away are now SEPARATE orders, because they are separate
+// acts: "wash the room" runs the `clean` sweep, "tidy the room" runs the `tidy`
+// chore that returns loose things to where they live. They used to share the
+// verb `clean`, which meant the two chores could not be asked for apart.
 const CATEGORY_NEEDS: Record<string, Record<string, string>> = {
-  wash: { clothing: "laundry", laundry: "laundry" },
-  clean: { home: "clean", house: "clean", room: "clean", clothing: "laundry" },
+  wash: { clothing: "laundry", laundry: "laundry", home: "clean", house: "clean", room: "clean" },
+  tidy: { home: "tidy", house: "tidy", room: "tidy" },
   cook: { food: "cook", meal: "cook" },
   make: { food: "cook", meal: "cook" },
 };
@@ -441,7 +457,23 @@ export function compileAction(frame: IntentFrame, binder: IntentBinder): GoalSpe
       // the wilderness host founds a site, the civ layer reads it as the
       // settlement order). "make" alone stays unbound.
       if (!s && v === "build") return { kind: "build", structure: "town", cap: quantityCap(frame.quantity) };
-      return s ? { kind: "build", structure: s, cap: quantityCap(frame.quantity) } : null;
+      if (!s) return null;
+      const cap = quantityCap(frame.quantity);
+      // MAKE vs BUILD (user law, 2026-07-28): interchangeable verbs, opposite
+      // PRIORITIES. `build` prioritises what stays put (buildings, rooms);
+      // `make` prioritises what you can pick up. Either verb still REACHES
+      // either goal — a word that is only one of the two is reached by both, so
+      // "build a ball" makes a ball and "make a house" raises a house. The
+      // priority only decides a word that is genuinely both, and the loser is
+      // never a dead end: an unresolvable `build` says so out loud at the host.
+      //
+      // This is also where "make + animal" becomes a TOY of that animal
+      // (toys-and-song-expansion.md): a rabbit is depictable, so the makeable
+      // join answers `rabbit.toy...` and there is nothing to special-case.
+      const mobile = makeableGlyph(s);
+      const structural = binder.isStructure?.(frame.object) ?? false;
+      if (mobile && (v === "make" || !structural)) return { kind: "craft", glyph: mobile, cap };
+      return { kind: "build", structure: s, cap };
     }
     case "trade": {
       // INTERCITY BARTER (⑤): "trade wood with the city" — give-good from the

@@ -39,6 +39,7 @@ import {
   TREAT_KINDS,
 } from "../../kernel/town/goods-kinds.js";
 import { KIND_CATEGORY, POOLS } from "./pools.js";
+import { isDollGlyph } from "../../toys.js";
 import { getSpecies } from "../../creatures/species.js";
 import type { AffordanceTag } from "../types.js";
 
@@ -118,6 +119,15 @@ export function propertiesOf(symbol: string): ObjectProperty[] {
   const cat = CATEGORY_PROPERTIES[KIND_CATEGORY[h] ?? ""];
   if (cat) out.add(cat);
 
+  // 4. THE DOLL FACET — a glyph wearing `toy` IS a toy, whatever its head
+  // (world-engine/toys.ts). This has to be read off the FACET rather than the
+  // head, because a doll's head names the thing it depicts: `rabbit.toy` heads
+  // to `rabbit`, which every rule above correctly reports is a live animal. The
+  // facet is what makes it a plaything, and the fun need selects on exactly this
+  // (`affords: "play"` ← the `toy` property), so without this arm a child's doll
+  // would be invisible to the motive it exists to serve.
+  if (isDollGlyph(symbol)) out.add("toy");
+
   return OBJECT_PROPERTIES.filter((p) => out.has(p));
 }
 
@@ -130,6 +140,10 @@ export const hasProperty = (symbol: string, property: ObjectProperty): boolean =
  *  never by object properties: creatures are who you talk to, not what you
  *  put in a cupboard. The board gives them the person tab. */
 export function isLivingThing(symbol: string): boolean {
+  // A DOLL IS NOT ALIVE, however alive its head word is. `rabbit.toy` heads to a
+  // creature species, so without this the board would file a toy rabbit under
+  // people and the sim would offer to talk to it.
+  if (isDollGlyph(symbol)) return false;
   const h = head(symbol);
   if (getSpecies(h)?.kind === "creature") return true;
   return Object.values(POOLS).some(

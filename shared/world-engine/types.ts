@@ -22,6 +22,14 @@ export interface Vec2 {
   y: number;
 }
 
+/** A waypoint from `routeThroughDoors`. `doorId` is present on the two transit
+ *  points that straddle a doorway and absent on the leg's own endpoint — the
+ *  tag that tells whoever steers the body which door it is walking through, so
+ *  `tickDoors` can open that door and only that door. */
+export interface TransitPoint extends Vec2 {
+  doorId?: string;
+}
+
 /** An axis-aligned rectangle in world units (origin at its min corner). */
 export interface Rect {
   x: number;
@@ -153,9 +161,9 @@ export interface ContainmentSlot {
 export type FixtureKind =
   | "chest" | "cupboard" | "table" | "bed" | "chair" | "box"
   // Sims-mode round 2 stations: the water BARREL (thirst's home container),
-  // the BATH tub (hygiene), the PRIVY (waste), the trash BIN ("throw it
+  // the BATH tub (hygiene), the TOILET (waste), the trash BIN ("throw it
   // away"), and the pet's food BOWL (a floor dish — pets eat what waits there).
-  | "barrel" | "bath" | "privy" | "bin" | "bowl"
+  | "barrel" | "bath" | "toilet" | "bin" | "bowl"
   // Round 7: the OVEN — food preparation's station (the cook's transform
   // turns raw pantry food into hot meals here).
   | "oven"
@@ -172,6 +180,25 @@ export type FixtureKind =
  *  stays solid like a chest. The pet BOWL is ankle-high on the floor —
  *  a solid dish would trip the household. */
 export const PASSTHROUGH_FIXTURES: ReadonlySet<FixtureKind> = new Set<FixtureKind>(["chair", "bowl"]);
+
+/** THE WORD A FIXTURE ANSWERS TO on the board — its own kind, unless the kind
+ *  draws a distinction the VOCABULARY doesn't. The sim keeps `chest` and `box`
+ *  apart (a goods container vs the toy box) but nobody needs two words for
+ *  them, and the `cupboard` kind speaks the vocabulary's `cabinet`.
+ *
+ *  Every value here MUST be a registered glyph key (shared/glyph-registry.ts).
+ *  A kind that speaks a word the registry never heard of is exactly how a
+ *  button ends up labelled but iconless — the `chest`/`cupboard` bug. */
+const FIXTURE_WORD: Readonly<Partial<Record<FixtureKind, string>>> = {
+  chest: "box",
+  cupboard: "cabinet",
+};
+
+/** The vocabulary word for a fixture kind (see {@link FIXTURE_WORD}). Takes a
+ *  bare string so callers holding a spec's untyped `fixture` need no cast. */
+export function fixtureWord(kind: string): string {
+  return FIXTURE_WORD[kind as FixtureKind] ?? kind;
+}
 
 export interface ObjectSpec {
   id: string;

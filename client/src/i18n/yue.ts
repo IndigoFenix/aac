@@ -227,6 +227,7 @@ export const yue = {
     calendar: "日曆",
     personChat: "訊息",
     call: "通話",
+    downloads: "應用程式下載",
   },
 
   // ============================================================================
@@ -2717,6 +2718,51 @@ export const yue = {
   // ============================================================================
   // DEEP ANALYSIS
   // ============================================================================
+  // ============================================================================
+  // APP DOWNLOADS (AAC desktop installer + iPad .ipa)
+  // ============================================================================
+  downloads: {
+    title: "應用程式下載",
+    subtitle: "喺{{student}}部機度安裝 Aivota AAC 應用程式。揀返啱部機嘅版本。",
+    loading: "檢查緊最新版本…",
+    loadFailed: "查唔到最新版本，請稍後再試。",
+    notPublished: "重未發佈過任何版本。",
+    version: "版本 {version}",
+    released: "喺 {date} 發佈",
+    helpNote: "安裝有問題？聯絡 Aivota 支援團隊，記住講埋上面顯示嘅版本號碼。",
+    windows: {
+      title: "Windows 應用程式",
+      desc: "適用於 Windows 10 或 11（64 位元）嘅完整桌面應用程式。可以配合 Tobii 裝置做眼動追蹤。",
+      button: "下載 Windows 版",
+      installTitle: "點樣安裝",
+      step1: "下載安裝檔再開啟佢。Windows 可能話發佈者唔認得——揀「其他資訊」，然後揀「仍要執行」。",
+      step2: "跟住安裝程式做。Aivota AAC 會加入「開始」功能表。",
+      step3: "開啟應用程式，用{{student}}嘅帳戶登入。",
+      autoUpdateNote: "Windows 應用程式會自動更新。裝好之後，新版本會喺背景下載——呢一頁淨係第一次安裝或者換電腦先需要。",
+    },
+    ios: {
+      title: "iPad 應用程式",
+      desc: "同一個應用程式嘅 iPadOS 版本。淨係支援觸控——iPad 上面用唔到眼動追蹤。",
+      button: "下載 iPad 版（.ipa）",
+      whyNote: "iPad 應用程式重未上 App Store，所以要用一個叫 Sideloadly 嘅免費工具由檔案安裝。要喺 Windows 或者 Mac 電腦度裝，唔係喺 iPad 度裝。",
+      installTitle: "用 Sideloadly 安裝",
+      needTitle: "你需要：",
+      needComputer: "一部 Windows 或者 Mac 電腦。",
+      needCable: "一條 USB 線，將 iPad 駁去部電腦。",
+      needAppleId: "一個 Apple ID——免費嗰隻都得。",
+      step1: "喺部電腦度安裝 Sideloadly，網址：",
+      step2: "淨係 Windows 要做：喺 Microsoft Store 裝「Apple 裝置」（或者 iTunes），然後重新開機。Sideloadly 要靠佢先見到 iPad。",
+      step3: "將上面嘅 .ipa 檔下載到部電腦度。",
+      step4: "用 USB 駁住 iPad。如果 iPad 問你，㩒「信任」再輸入密碼。",
+      step5: "開啟 Sideloadly，將 .ipa 拖入去，揀部 iPad，輸入你嘅 Apple ID，然後㩒 Start。跟住輸入密碼。",
+      step6: "喺 iPad 度開「設定」→「一般」→「VPN 與裝置管理」，㩒你個 Apple ID，再㩒「信任」。未做呢步嘅話應用程式開唔到。",
+      step7: "喺 iPad 度開 Aivota AAC 然後登入。",
+      expiryWarning: "用免費 Apple ID 嘅話，個應用程式 7 日之後就開唔到。重做一次 Sideloadly 嘅步驟就可以續期。付費嘅 Apple Developer 帳戶可以延長到一年。",
+      updateNote: "iPad 應用程式唔識自己更新。呢度出咗新版本嘅話，下載返再側載一次。",
+      limitsNote: "免費 Apple ID 限制：每部機大約 3 個應用程式，每個 Apple ID 大約 3 部機。Sideloadly 可能會改咗應用程式嘅識別碼——呢個好正常。",
+    },
+  },
+
   deepAnalysis: {
     title: "深度分析",
     history: "歷史記錄",

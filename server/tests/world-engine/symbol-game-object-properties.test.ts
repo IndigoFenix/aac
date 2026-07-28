@@ -10,7 +10,10 @@
 
 import { describe, it, expect } from "@jest/globals";
 import {
+  AXES_FOR_PROPERTY,
+  AXIS_WORDS,
   CORE_CONCEPTS,
+  descriptorsFor,
   OBJECT_PROPERTIES,
   PROPERTY_FOR_VERB,
   type ObjectProperty,
@@ -64,11 +67,10 @@ describe("propertiesOf — spec-derived, never board-authored", () => {
   });
 
   it("reads the taught vocabulary from the POOLS and the category map", () => {
-    expect(propertiesOf("teddy")).toContain("toy");
+    expect(propertiesOf("ball")).toContain("toy");
     expect(propertiesOf("lamp")).toContain("device"); // toggleable pool
     expect(propertiesOf("basket").sort()).toEqual(["container", "openable"].sort());
     expect(propertiesOf("book")).toContain("book");
-    expect(propertiesOf("drum")).toContain("instrument");
   });
 
   it("returns properties in a stable board order, deduped", () => {
@@ -115,8 +117,8 @@ describe("conformance — every concrete noun is filable", () => {
 
   it("ConceptDef carries the same properties the joiner derives", () => {
     const concepts = buildConcepts();
-    const teddy = concepts.get("teddy")!;
-    expect(teddy.properties).toEqual(propertiesOf("teddy"));
+    const ball = concepts.get("ball")!;
+    expect(ball.properties).toEqual(propertiesOf("ball"));
     // Concepts with no properties omit the field rather than carrying [].
     expect(concepts.get("rabbit")?.properties).toBeUndefined();
   });
@@ -182,5 +184,51 @@ describe("surfaceNext — the verb pre-loads its property group", () => {
     const a = surfaceNext(["you", "eat"], { nouns: NOUNS });
     const b = surfaceNext(["you", "eat"], { nouns: [...NOUNS].reverse() });
     expect(b.buttons.map((x) => x.symbol)).toEqual(a.buttons.map((x) => x.symbol));
+  });
+});
+
+// ── Descriptor axes: the words that fit the THING (object-properties.ts) ─────
+
+describe("descriptor axes — typed, never one flat adjective list", () => {
+  it("food talks temperature before possession; buildings the reverse", () => {
+    const food = descriptorsFor("item", ["food"]);
+    expect(food.indexOf("hot")).toBeGreaterThanOrEqual(0);
+    expect(food.indexOf("hot")).toBeLessThan(food.indexOf("my"));
+    const building = descriptorsFor("place", ["structure"]);
+    expect(building[0]).toBe("my");
+    expect(building).not.toContain("hot");
+  });
+
+  it("SCOPE-BREADTH LAW: places possess at every scale and settlements FEEL", () => {
+    // town/city/area are CORE CONCEPTS — no spec properties — so the kind tier
+    // alone must yield "my city" (territory) and "city hungry" (the city HUD's
+    // famine face): in-game–common combinations surface even where real-life
+    // usage would call them odd. The family↔civilization analogy is data here.
+    const settlement = descriptorsFor("place", []);
+    expect(settlement[0]).toBe("my");
+    expect(settlement).toContain("hungry");
+    expect(settlement).toContain("sad");
+  });
+
+  it("creatures lead with the need axes (hungry before big)", () => {
+    const creature = descriptorsFor("creature", []);
+    expect(creature.indexOf("hungry")).toBeLessThan(creature.indexOf("big"));
+  });
+
+  it("every property binds ≥1 axis and every axis names ≥1 word", () => {
+    for (const p of OBJECT_PROPERTIES) {
+      expect({ p, bound: AXES_FOR_PROPERTY[p].length > 0 }).toEqual({ p, bound: true });
+    }
+    for (const [axis, words] of Object.entries(AXIS_WORDS)) {
+      expect({ axis, named: words.length > 0 }).toEqual({ axis, named: true });
+    }
+  });
+
+  it("the speakable axis words really are LEXICON attributes", () => {
+    // (my/your and the dimension words live only in the glyph registry's
+    // modifier store — the rail's vocabulary — and that is by design.)
+    for (const w of ["hungry", "hot", "big", "broken", "full", "happy", "dirty"]) {
+      expect({ w, cat: (LEXICON[w] as { cat?: string } | undefined)?.cat }).toEqual({ w, cat: "attribute" });
+    }
   });
 });

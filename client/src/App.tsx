@@ -274,6 +274,7 @@ function Router() {
       <Route path="/shares" component={ProtectedDashboard} />
       <Route path="/insurance-bridge" component={ProtectedDashboard} />
       <Route path="/video-caption" component={ProtectedDashboard} />
+      <Route path="/downloads" component={ProtectedDashboard} />
 
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />
