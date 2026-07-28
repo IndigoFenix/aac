@@ -141,10 +141,39 @@ is called directly for the API layer only. Any client code that calls the API
 via a raw `fetch()` instead of the `queryClient.ts` helpers will still hit the
 cookie problem on iPad — route it through `apiRequest`/`fetchWithAuth`.
 
-Not yet verified: the live AI session connects over WebSocket, whose handshake
-also carries the session cookie. If the live session fails to authenticate on
-iPad after login works, it's the same third-party-cookie cause in a channel the
-CapacitorHttp fix doesn't cover — watch the debug console for it.
+## Gotcha: the live session WebSocket can't use the cookie either (CONFIRMED)
+
+Symptom: login and the whole HTTP API work, but the AAC sits on "connecting"
+(then "sleeping" with the error indicator). The debug console shows, on a loop:
+
+```
+[useLiveSession] WebSocket error: { "isTrusted": true }
+[useLiveSession] WebSocket closed: code=1006 reason= intentional=false isInitialized=false
+```
+
+Cause: the CapacitorHttp fix above put the session cookie in the **native**
+(URLSession) cookie store. `new WebSocket(...)` is executed by WKWebView, whose
+cookie jar never received that cookie — so the upgrade request arrives with no
+cookie at all, `authenticateUpgrade` returns null, and the server answers `401`.
+A rejected handshake surfaces to JS only as `error` + close code `1006`, with no
+status, which is why this looks like a network fault rather than an auth one.
+The cookie is `httpOnly`, so JS cannot copy it across; and even in the WKWebView
+jar, ITP would refuse to send a `SameSite=None` cookie cross-site.
+
+Fix: a short-lived **WS ticket**. On the Capacitor host only, the client first
+calls `POST /api/aac/live/ws-ticket` (authenticated HTTP, so it *does* carry the
+native cookie) and appends the result to the handshake as `?ticket=…`.
+`authenticateUpgrade` redeems the ticket, falling through to the normal cookie
+path when there isn't one — every other host is untouched.
+
+The ticket is HMAC-signed with a key derived from `SESSION_SECRET`, lives 60
+seconds, is single-use, and carries only a user id, so it is safe in a URL and
+cannot be exchanged back into a session. It names an identity but does not skip
+the user lookup, so a disabled account still cannot connect. See
+`server/services/realtime/ws-ticket.ts` and `server/tests/ws-ticket.test.ts`.
+
+Anything else that opens a WebSocket from the iPad shell needs the same
+treatment — the cookie will never be there.
 
 ## Gotcha: Capacitor 8 defaults to SPM, which has no `.xcworkspace`
 

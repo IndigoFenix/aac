@@ -1426,6 +1426,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fileUploadController.deleteFileHandler(req, res)
   );
 
+  // ============= LIVE SESSION WS TICKET =============
+  // Mint a short-lived, single-use ticket that authenticates a /ws/live
+  // upgrade. Needed by the iPad (Capacitor) shell only: there the session
+  // cookie lives in the native cookie store, which the WKWebView-issued
+  // WebSocket handshake cannot reach, so the upgrade would arrive anonymous.
+  // requireAuth guarantees the caller already holds a valid session — the
+  // ticket just re-presents that same identity on the handshake.
+  // See server/services/realtime/ws-ticket.ts.
+  app.post("/api/aac/live/ws-ticket", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+      const { mintWsTicket, TICKET_TTL_MS } = await import("./services/realtime/ws-ticket");
+      res.json({ success: true, ticket: mintWsTicket(user.id), expiresInMs: TICKET_TTL_MS });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err?.message ?? "Failed to mint ticket" });
+    }
+  });
+
   // ============= VOICE ROUTES (AAC) =============
   // Transcribe audio to text using Whisper
   app.post("/api/aac/voice/transcribe", optionalAuth, aacUpload.single("audio"), (req, res) =>

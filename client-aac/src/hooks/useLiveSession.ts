@@ -12,6 +12,8 @@ import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
 import { API_BASE_URL } from "@/lib/api-base";
+import { apiRequest } from "@/lib/queryClient";
+import { getHost } from "@/lib/platform";
 import { getCurrentGps, metersBetween, type GpsReading } from "@/lib/geolocation";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 
@@ -1370,7 +1372,33 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       // Append ?test=1 if the page URL has ?test=1 — routes to the MinimalLiveRelay
       // on the server, bypassing tools, system prompt, and state machine.
       const isTestMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test") === "1";
-      const queryString = isTestMode ? "?test=1" : "";
+      const params = new URLSearchParams();
+      if (isTestMode) params.set("test", "1");
+
+      // iPad (Capacitor) only: the session cookie lives in the NATIVE cookie
+      // store (the API layer uses CapacitorHttp to dodge WKWebView's
+      // third-party-cookie rules), so a WKWebView-issued WS handshake carries
+      // no cookie and the server 401s the upgrade — surfacing as a bare 1006
+      // close before onopen. Mint a short-lived single-use ticket over
+      // authenticated HTTP and present it on the handshake instead.
+      // Other hosts keep the cookie path untouched.
+      if (getHost() === "capacitor") {
+        try {
+          const res = await apiRequest("POST", "/api/aac/live/ws-ticket");
+          const body = await res.json();
+          if (body?.ticket) {
+            params.set("ticket", body.ticket);
+          } else {
+            console.warn("[useLiveSession] ws-ticket response had no ticket — trying cookie auth");
+          }
+        } catch (err) {
+          // Fall through to the cookie path; it may still work (e.g. an older
+          // server without the endpoint), and failing here would strand the app.
+          console.warn("[useLiveSession] ws-ticket mint failed, falling back to cookie auth:", err);
+        }
+      }
+
+      const queryString = params.toString() ? `?${params.toString()}` : "";
       let wsUrl: string;
       if (apiBase) {
         // Replace http(s) with ws(s)

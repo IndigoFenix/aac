@@ -75,8 +75,8 @@ Browser ──HTTPS──> ALB / Lambda URL ──> Express
 ### 2.2 AAC live session (student-facing)
 
 ```
-AAC client (browser/Electron)
-  │ WS upgrade
+AAC client (browser/Electron/iPad)
+  │ WS upgrade — authenticated at the boundary (session cookie, or WS ticket on iPad)
   ▼
 Express WS handler ── WebSocket ──> LiveProvider (Gemini Live | OpenAI Realtime)
   │                                                │
@@ -92,6 +92,8 @@ Express WS handler ── WebSocket ──> LiveProvider (Gemini Live | OpenAI R
                                               └──> private schema with accessCtx
 ```
 
+- **Upgrade authentication:** `/ws/live` authenticates before the socket is accepted (`server/services/realtime/ws-auth.ts`); an unauthenticated upgrade gets `401` and the socket is destroyed. Without this, a harvested student UUID would be enough to open a session and exfiltrate PHI through the live model.
+- **WS ticket (iPad only):** the Capacitor shell keeps its session cookie in the native cookie store, which a WKWebView-issued handshake cannot reach, so it presents a ticket minted by `POST /api/aac/live/ws-ticket` (itself session-authenticated). Tickets are HMAC-SHA256 signed with a key derived from `SESSION_SECRET`, TTL 60 s, single-use, and carry only a user id — no PHI, no session id, and not exchangeable back into a session. The user record is still loaded on redemption, so a deleted or disabled account cannot connect. See `server/services/realtime/ws-ticket.ts`.
 - **Provider selection** at session init from `system_settings` `aac_chat` LLM config; provider rows can rotate without code changes.
 - **No raw audio at rest:** PCM frames flow through the live relay only. Transcripts are persisted in `chatSessions`/memory schema after redaction.
 - **Monitor agent:** read-only on PHI; it can write to low-security memory categories (notes, observations) but not to medical records or goals. Gating is in `server/services/memory-schema/aac-memory-schema.ts`.

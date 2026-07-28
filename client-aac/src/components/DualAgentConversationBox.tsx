@@ -218,6 +218,10 @@ export function DualAgentConversationBox({
 
   const hasInitializedRef = useRef(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Consecutive failed connection attempts, for exponential backoff. A flat
+  // retry hammered an unreachable server every ~2.5s forever — each attempt
+  // costs a camera frame capture and buries every other line in the debug log.
+  const retryAttemptsRef = useRef(0);
 
   // Set up board update callbacks
   useEffect(() => {
@@ -245,16 +249,30 @@ export function DualAgentConversationBox({
     }
   }, [isVisible, isInitialized, isLoading, initialize]);
 
-  // Handle initialization errors - allow retry after a delay
+  // A connection that succeeded clears the backoff, so a later blip retries
+  // promptly instead of inheriting a long delay from an earlier outage.
+  useEffect(() => {
+    if (isInitialized) retryAttemptsRef.current = 0;
+  }, [isInitialized]);
+
+  // Handle initialization errors - allow retry with exponential backoff
   useEffect(() => {
     if (error && hasInitializedRef.current && !isInitialized && !isLoading) {
-      console.log("[DualAgentConversationBox] Error detected, will retry:", error);
+      // 2s, 4s, 8s, 16s, 30s, 30s… — still recovers on its own from a server
+      // restart or a dropped network, without hot-looping when it's really down.
+      const attempt = retryAttemptsRef.current;
+      const delay = Math.min(2000 * 2 ** attempt, 30_000);
+      retryAttemptsRef.current = attempt + 1;
+      console.log(
+        `[DualAgentConversationBox] Error detected, retrying in ${delay}ms (attempt ${attempt + 1}):`,
+        error,
+      );
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
       retryTimeoutRef.current = setTimeout(() => {
         hasInitializedRef.current = false;
-      }, 2000);
+      }, delay);
     }
     return () => {
       if (retryTimeoutRef.current) {

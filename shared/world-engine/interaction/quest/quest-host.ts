@@ -8650,6 +8650,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
     if (!sourceBox) {
+      craftLog("place-NO-STOCK", house.index, { kind, glyph, quiet: !!opts?.quiet });
       speakLine(placementVerdictLine(thing, { kind: "cannot", reason: "have-not" })!);
       return true;
     }
@@ -8682,6 +8683,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
     const line = placementVerdictLine(thing, verdict);
     if (line) {
+      // THE SILENT KILLER: under `quiet` (the auto-place sweep) this refusal is
+      // never spoken and never logged — the house simply re-tries every 45 s and
+      // the piece never stands up. Always record the verdict, speak it only when
+      // the order was asked for aloud.
+      craftLog("place-REFUSED", house.index, {
+        kind, verdict: verdict.kind, candidates: candidates.length, failure, quiet: !!opts?.quiet,
+      });
       speakLine(line);
       return true; // refused ALOUD — the order landed (guidance, not RTS)
     }
@@ -8705,7 +8713,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       points,
       onDone: () => {
         const stock = session.containerStock.get(sourceBox!) ?? {};
-        if ((stock[glyph] ?? 0) <= 0) return; // someone took it meanwhile — honest no-op
+        if ((stock[glyph] ?? 0) <= 0) {
+          craftLog("place-STOCK-VANISHED", house.index, { kind, glyph, sourceBox });
+          return; // someone took it meanwhile — honest no-op
+        }
+        craftLog("place-LANDED", house.index, { kind, x: spot.x, y: spot.y, roomId: spot.roomId });
         stackTake(stock, glyph);
         session.containerStock.set(sourceBox!, stock);
         // A brief work reach at the spot marks the assembly (reusing the carry
@@ -8804,6 +8816,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     laborStart?: number;
     laborS: number;
   }
+
+  /**
+   * TEMPORARY DIAGNOSTIC (2026-07-28) — "I ordered one made, it completed, and
+   * nothing appeared", for BOTH furniture and toys. The whole make→arrive chain
+   * lives in this closure with no test seam, and every one of its failure exits
+   * is silent: the auto-place sweep calls handlePlaceOrder with `quiet: true`,
+   * which turns "I can't put that anywhere" into no output at all, and then
+   * re-tries every 45 s forever.
+   *
+   * One tagged line at each decision point, so a single reproduction says which
+   * step stops. Filter the console on `[craft]`. REMOVE once the arrival path is
+   * fixed and covered by a test.
+   */
+  const craftLog = (stage: string, hi: number, detail: Record<string, unknown> = {}) => {
+    console.log(`[craft] ${stage} house=${hi}`, JSON.stringify(detail));
+  };
 
   /** A furniture row as a craft job recipe — the adapter that keeps the
    *  pipeline's original caller unchanged now that the job is recipe-shaped. */
@@ -8985,13 +9013,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (session.townClock < (craftRetryAt.get(hi) ?? -Infinity)) return;
         craftRetryAt.set(hi, session.townClock + SITE_HAUL_RETRY_S);
         const anchor = containerAnchor(session, job.spotId);
-        if (!anchor) return;
+        if (!anchor) {
+          craftLog("gather-NO-ANCHOR", hi, { produces: job.produces, spot: job.spotId, missing });
+          return;
+        }
         const tmp = `craft:${hi}`;
+        const sources = craftMaterialSources(session, hi, anchor, job.spotId);
         const { draws } = resolveMaterials({
           holder: tmp,
           costs: missing,
-          sources: craftMaterialSources(session, hi, anchor, job.spotId),
+          sources,
           ledger: session.reservations,
+        });
+        craftLog("gather", hi, {
+          produces: job.produces, missing, sources: sources.length, draws: draws.length,
         });
         // One visible haul per body — the member carries the first draw when
         // the house is watched; everything else moves as the abstract twin.
@@ -9049,13 +9084,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           0,
           session.reservations.reservedUnits(job.spotId, head) - (own.get(head) ?? 0),
         );
-        if (stackUnits(spot, head) - othersReserved < n) return; // blocked — wait
+        if (stackUnits(spot, head) - othersReserved < n) {
+          craftLog("start-BLOCKED-reserved", hi, {
+            produces: job.produces, glyph: head, have: stackUnits(spot, head), othersReserved, need: n,
+          });
+          return; // blocked — wait
+        }
       }
       session.reservations.release(spotHolder);
       takeGoods(spot, consumes);
       const bench = houseBench(session, hi);
       job.laborS = craftLaborDaysFor(job.at, !!bench) * FOOD_DAY_SEC;
       job.laborStart = session.townClock;
+      craftLog("labor-start", hi, { produces: job.produces, laborS: job.laborS, atBench: !!bench });
       // A shown crafter walks to the bench (or the store) and DWELLS there
       // for the labor — the body renders the work; the clock stays the
       // truth either way.
@@ -9074,6 +9115,40 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (session.townClock >= job.laborStart + job.laborS) {
       stackAdd(spot, job.produces);
       craftJobs.delete(hi);
+      // …AND IT HAS TO ARRIVE SOMEWHERE YOU CAN SEE.
+      //
+      // The stack deposit above is the CONSERVING half and always runs: it is
+      // what keeps an off-screen house's books straight. But a stack unit
+      // inside a lidded chest is invisible — container contents only render for
+      // pass-through ("on") surfaces — so on its own the deposit means a craft
+      // completes and nothing appears.
+      //
+      // FURNITURE is *supposed* to have a second half — the auto-place sweep
+      // finds a stored `furn.<kind>` and sends a member to stand it up — but as
+      // of 2026-07-28 that half is not observably working either (user report),
+      // so do NOT read it as the known-good reference. Its every failure exit
+      // runs under `quiet: true`, which turns a refusal into silence; see the
+      // `[craft]` instrumentation.
+      //
+      // For a toy the arrival is direct rather than delegated: when the house is
+      // on screen, one unit becomes a real loose prop on the floor by the bench,
+      // which is where a just-finished thing would actually be. From there the
+      // ordinary machinery takes over — the fun need's `loose` acquire finds it
+      // first, and the tidy chore banks it into a box later.
+      //
+      // Only for what a body can pick up: furniture keeps the stack-then-place
+      // route (you do not leave a wardrobe lying on the workshop floor).
+      const portable = !furnitureKindOfGlyph(job.produces) && !isLargeGlyph(job.produces);
+      const at = houseBench(session, hi) ?? containerAnchor(session, job.spotId);
+      craftLog("done", hi, { produces: job.produces, spot: job.spotId, isShown, portable, hasAnchor: !!at });
+      if (isShown && portable) {
+        if (at && stackTake(spot, job.produces)) {
+          spawnLooseProp(session, job.produces, at.x, at.y);
+          craftLog("spawned-loose", hi, { produces: job.produces, x: at.x, y: at.y });
+        } else {
+          craftLog("spawn-BLOCKED", hi, { produces: job.produces, hasAnchor: !!at });
+        }
+      }
     }
   }
 
@@ -9148,14 +9223,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       if (!kind) continue;
       const cid = `resident_${hi}_0`;
-      if (!world.state.avatars[avatarIdOf(cid)]) continue; // nobody home to do it
+      if (!world.state.avatars[avatarIdOf(cid)]) {
+        craftLog("autoplace-NOBODY-HOME", hi, { kind, cid });
+        continue; // nobody home to do it
+      }
       autoPlaceAfter.set(hi, session.townClock + 45);
-      handlePlaceOrder(
+      const placed = handlePlaceOrder(
         session,
         cid,
         { kind: "place", item: { match: { kind } }, at: { relation: "in", anchor: { kind: "home" } } },
         { quiet: true },
       );
+      craftLog("autoplace-called", hi, { kind, cid, handled: placed });
     }
     // CLUTTER drag zones over store/workshop rooms holding furniture stacks.
     const zones: Array<{ x: number; y: number; w: number; h: number; scale: number }> = [];
@@ -15355,6 +15434,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       agreements: [],
       laborS: 0,
     });
+    craftLog("ordered", hi, { glyph, produces: recipe.produces, consumes: recipe.consumes, spot: craftSpotOf(session, hi) });
     if (speaker) npcChatBubble(session, speaker, "ok");
     presenter.toast(
       `🔨 making a ${word}${houseBench(session, hi) ? "" : " — by hand, no workbench"}`,
