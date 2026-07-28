@@ -235,7 +235,8 @@ import {
 } from "./agent-flow-logger";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import { smartMergeButtons, sameBoard, type MergeButton } from "./board-merge";
-import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER } from "./speech-party";
+import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER, PARTY_UNKNOWN } from "./speech-party";
+import { assessStudentTranscript, isVerbalAbility, type VerbalAbility } from "@shared/aac/verbal-ability";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
 import { decideIdleTransition, idleThresholdScaleForBand } from "./idle-watchdog";
@@ -1136,6 +1137,10 @@ export class AgentCoordinator {
   /** Cached active-student first-name; treated as a synonym for USER in
    *  transcript speaker/target comparisons. */
   private currentStudentName: string | undefined;
+  /** Structured speech-production capability (students.verbal_ability).
+   *  Cached alongside the names in buildPromptInputs; null = unspecified →
+   *  the attribution trust gate is off (legacy behavior). */
+  private currentVerbalAbility: VerbalAbility | null = null;
   /** Cached active-student FULL name. The Observer routinely tags
    *  transcripts with the full name even though prompts use the first
    *  name, so USER-target matching must accept both. */
@@ -2860,6 +2865,10 @@ export class AgentCoordinator {
     // Cache for downstream speech-party comparisons (routeTranscribed, etc.)
     this.currentStudentName = studentName;
     this.currentStudentFullName = student?.name || undefined;
+    // Structured verbal ability — powers the attribution trust gate
+    // (applyAttributionTrustGate) and the Observer prompt's hard capability line.
+    const rawAbility = (student as any)?.verbalAbility;
+    this.currentVerbalAbility = isVerbalAbility(rawAbility) ? rawAbility : null;
     this.aiName = aiName;
     // Cache the defined-gesture registry for report_gesture resolution.
     this.definedGestures = parseDefinedGestures(student?.aacSettings?.definedGestures);
@@ -2910,6 +2919,7 @@ export class AgentCoordinator {
     return {
       observer: {
         ...base,
+        verbalAbility: this.currentVerbalAbility ?? undefined,
         observerInstructions: sections?.observerInstructions,
         alarmConditions: sections?.alarmConditions,
         perceptionMemory: state.memoryContext,
@@ -4268,6 +4278,11 @@ export class AgentCoordinator {
       return;
     }
 
+    // Attribution trust gate — BEFORE recordEvent so a demoted attribution
+    // never reaches recentEvents (BoardManager context), any agent, the
+    // caption, or the board in its directed form.
+    if (event.type === "transcribed") this.applyAttributionTrustGate(event);
+
     this.recordEvent(event);
     this.logEvent("OBSERVER", event);
 
@@ -4320,6 +4335,72 @@ export class AgentCoordinator {
         this.observer?.sendContextInjection(`[PRIVATE NOTE] (you noted) ${event.note}`);
         return;
     }
+  }
+
+  /**
+   * Attribution trust gate (the "bank" incident fix — see
+   * planning-docs/aac-transcript-attribution-trust.md). A transcript that
+   * attributes speech to the student is only trusted as a genuine user turn
+   * when the student could actually have produced it:
+   *
+   *  - Beyond their structured verbal ability (a sentence from a nonverbal
+   *    student) → the whole who/whom judgment is suspect. Speaker/target are
+   *    stripped to UNKNOWN and the event routes as ambient context.
+   *  - Within ability, but the student is limited-verbal and no fresh voice
+   *    match backs the claim → keep the tentative attribution visible, but
+   *    demote to ambient context (no Speaker turn / board rebuild / caption).
+   *
+   * Students with unspecified or fluent ability are untouched — speech may be
+   * their main channel and voice enrollment can't be assumed. Button presses
+   * never pass through here; they remain ground truth.
+   */
+  private applyAttributionTrustGate(event: TranscribedEvent): void {
+    if (!isVerbalAbility(this.currentVerbalAbility)) return;
+    if (!isUserTarget(event.speaker, this.currentStudentFullName, this.currentStudentName)) return;
+    const demotion = assessStudentTranscript({
+      text: event.text,
+      ability: this.currentVerbalAbility,
+      hasVoiceEvidence: this.hasStudentVoiceEvidence(),
+    });
+    if (!demotion) return;
+    const claimed = `[${event.speaker} to ${event.target}]`;
+    event.attributionDemotion = demotion;
+    if (demotion === "impossible_speech") {
+      // The words may be real (TV, an adult nearby) — the attribution isn't.
+      event.speaker = PARTY_UNKNOWN;
+    }
+    event.target = PARTY_UNKNOWN;
+    event.targetIsUser = false;
+    event.direction = "ambient";
+    flowNote(
+      "COORDINATOR",
+      `Attribution demoted (${demotion}, verbal ability: ${this.currentVerbalAbility}): ` +
+      `${claimed} "${event.text}" → ambient context.`,
+    );
+    if (this.debugMode) {
+      this.send({
+        type: "debug",
+        data: {
+          last_transcript: {
+            speaker: event.speaker,
+            text: event.text,
+            timestamp: Date.now(),
+            demoted: true,
+            reason: demotion,
+          },
+        },
+      });
+    }
+  }
+
+  /** Fresh enrolled-voice match for the student themself — the positive
+   *  evidence that lets a limited-verbal student's within-ability speech keep
+   *  full user-turn standing. */
+  private hasStudentVoiceEvidence(): boolean {
+    if (Date.now() - this.currentIdentifiedVoicesAt > AgentCoordinator.IDENTIFIED_VOICES_TTL_MS) return false;
+    return this.currentIdentifiedVoices.some(
+      (v) => v.matched && isUserTarget(v.name, this.currentStudentFullName, this.currentStudentName),
+    );
   }
 
   /** True when no client audio has been consumed within the hallucination-guard
@@ -4891,7 +4972,14 @@ export class AgentCoordinator {
     // abstracted to "YOU" (no identity-confusion risk; the Speaker prompt
     // keys its reply decision on "[X to YOU]").
     const targetLabel = toDevice ? "YOU" : target;
-    const rendered = `[${event.speaker} to ${targetLabel}] "${event.text}"`;
+    // Demoted attributions (applyAttributionTrustGate) render as ambient
+    // hearsay, not as a "<speaker> to <target>" turn — the Speaker may weave
+    // the words in but must not answer them as anyone's statement.
+    const rendered = event.attributionDemotion === "unverified_student_speech"
+      ? `[HEARD NEAR ${event.speaker} — speaker unverified] "${event.text}"`
+      : event.attributionDemotion === "impossible_speech"
+        ? `[HEARD NEARBY — speaker unknown] "${event.text}"`
+        : `[${event.speaker} to ${targetLabel}] "${event.text}"`;
 
     // Conversation activity — transcripts directed at USER or DEVICE
     // (i.e. someone speaking with the user or the AI) reset the rest

@@ -162,6 +162,14 @@ export interface TranscribedEvent extends BaseEvent {
   /** Legacy field — mirrors `target` for older renderers. Computed by the
    *  parser; do not set when constructing fresh events. */
   direction?: SpeechDirection;
+  /** Set by the Coordinator's attribution trust gate (never by the Observer):
+   *  the transcript claimed the student spoke, but either the utterance
+   *  exceeds their structured verbal ability ("impossible_speech" — speaker
+   *  stripped to UNKNOWN) or the student is limited-verbal and no voice
+   *  evidence backs the claim ("unverified_student_speech"). Demoted events
+   *  route as ambient context only — never a Speaker user turn, board
+   *  rebuild, or caption. See shared/aac/verbal-ability.ts. */
+  attributionDemotion?: import("@shared/aac/verbal-ability").TranscriptDemotion;
 }
 
 /** Same enum as the existing update_context tool's `type` field. */

@@ -14,6 +14,18 @@ export const apiTypeEnum = pgEnum("api_type", [
 
 export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "paused", "closed"]);
 
+// Structured speech-production capability of a student. Unlike the free-text
+// communicationProfile, this is machine-enforced: the AAC coordinator uses it
+// to reject speech transcripts attributed to a student beyond their capability
+// (see server/services/dual-agent + shared/aac/verbal-ability.ts). Null =
+// unspecified → no enforcement (legacy behavior).
+export const verbalAbilityEnum = pgEnum("verbal_ability", [
+  "none",          // does not produce spoken words
+  "vocalizations", // vocalizes (sounds, moans, laughter) but no words
+  "single_words",  // isolated words / two-word combinations at most
+  "fluent",        // spoken sentences are within capability
+]);
+
 export const instituteTypeEnum = pgEnum("institute_type", ["school", "clinic", "family"]);
 
 // IEP/TALA specific enums
@@ -446,6 +458,10 @@ export const students = pgTable("students", {
   // chatMemory jsonb) so the AAC monitor agent's session-time mutations to
   // chatMemory cannot overwrite it.
   communicationProfile: text("communication_profile"),
+  // Clinician-set speech-production capability (see verbalAbilityEnum above).
+  // Kept next to communicationProfile but structured so the coordinator can
+  // enforce it deterministically instead of parsing free text.
+  verbalAbility: verbalAbilityEnum("verbal_ability"),
 
   // Biometric data — references shared biometric_data table.
   biometricDataId: varchar("biometric_data_id"),

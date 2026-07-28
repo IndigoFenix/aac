@@ -9,6 +9,7 @@
 // DEBUG_MESSAGE, debugIntrospectionEnabled.
 
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
+import type { VerbalAbility } from "@shared/aac/verbal-ability";
 import { getLanguageName } from "@shared/language-names";
 import { T } from "../../memory-schema/canonical-terms";
 import type { DefinedGesture } from "../defined-gestures";
@@ -36,6 +37,13 @@ import {
 // ===========================================================================
 
 export interface ObserverPromptConfig extends BaseStudentContext {
+  /** Structured speech-production capability (students.verbal_ability).
+   *  Renders a hard attribution line in <presence> — unlike the free-text
+   *  persona, this is data the clinician set, so the prompt can state it as
+   *  fact. The coordinator ALSO enforces it after the fact
+   *  (applyAttributionTrustGate); this line just helps the Observer get it
+   *  right the first time. */
+  verbalAbility?: VerbalAbility;
   /** From EnhancedPromptSections — OBSERVER-only guidance from the
    *  clinician's prompt (gestures to watch for, what's relevant, what
    *  NOT to transcribe). */
@@ -77,11 +85,29 @@ export interface ObserverPromptConfig extends BaseStudentContext {
   alwaysConservative?: boolean;
 }
 
+/** Hard attribution line from the clinician-set verbal ability. Rendered as
+ *  fact (it's structured data, not a persona guess). `fluent` adds nothing.
+ *  TV/radio/phone speech is the recurring source of misattributed "speech":
+ *  the words are real, the speaker just isn't in the room. */
+function verbalAbilityLine(studentName: string, ability?: VerbalAbility): string {
+  switch (ability) {
+    case "none":
+      return `\n[${studentName}] does NOT produce spoken words. A transcript can NEVER be [${studentName}] speaking — a fluent utterance heard near them is someone else, the TV/radio, or a phone. Attribute accordingly (UNKNOWN if unclear).`;
+    case "vocalizations":
+      return `\n[${studentName}] vocalizes (sounds, laughter) but does NOT produce words. Worded speech is NEVER theirs — attribute it to someone else, the TV/radio, or UNKNOWN.`;
+    case "single_words":
+      return `\n[${studentName}] can produce single words or two-word combinations at most. Longer utterances are NEVER theirs — attribute them to someone else, the TV/radio, or UNKNOWN.`;
+    default:
+      return "";
+  }
+}
+
 export function buildObserverPrompt(config: ObserverPromptConfig): string {
   const {
     studentName, language, aiName, knownContacts, classroom,
     observerInstructions, alarmConditions, perceptionMemory, safetyNotes, gestureOverrides,
     availableBoards, definedGestures, energyBudget, economyModeEnabled, alwaysConservative,
+    verbalAbility,
   } = config;
 
   const languageName = getLanguageName(language);
@@ -141,7 +167,7 @@ ${transcriptionRulesText(studentName, T.button, T.tagPress)}
   - Visible in [PEOPLE PRESENT], OR
   - Audible with a voice clearly attributable to them.
 
-A visible face beats a voice match. If [${studentName}]'s persona says nonverbal/AAC-only, never attribute spoken speech to them.
+A visible face beats a voice match. If [${studentName}]'s persona says nonverbal/AAC-only, never attribute spoken speech to them.${verbalAbilityLine(studentName, verbalAbility)}
 
 The active user and the DEVICE:
   - **The active user** — assume it is [${studentName}] by default (their own device, expected user). Only treat the active user as someone else when another person is positively identified at the device. Refer to them by their REAL name in speaker/target (don't flatten it to a generic word), and set \`targetIsUser: true\` on the transcript whenever speech is directed at them. The name keeps the Speaker from confusing them with others; the flag is what surfaces reply options.

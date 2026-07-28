@@ -581,6 +581,13 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     case "guessing_exited":
       return `[GUESSING EXITED]`;
     case "transcribed": {
+      // Demoted attributions (coordinator trust gate) are ambient hearsay,
+      // not a turn — don't render a "<speaker> to <target>" shape that
+      // could re-promote them into something to build reply buttons for.
+      if (event.attributionDemotion === "unverified_student_speech")
+        return `[HEARD NEAR ${event.speaker} — speaker unverified] "${event.text}"`;
+      if (event.attributionDemotion === "impossible_speech")
+        return `[HEARD NEARBY — speaker unknown] "${event.text}"`;
       const tgt = event.target ?? "AI";
       const label = tgt === "DEVICE" ? "AI" : tgt;
       return `[${event.speaker} to ${label}] "${event.text}"`;
