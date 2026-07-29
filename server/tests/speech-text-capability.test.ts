@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { isCapabilityActive } from "../services/dual-agent/capability-gate.js";
-import { confidenceLabel, buildHeardSpeechTurn } from "../services/dual-agent/speech-text.js";
+import { confidenceLabel, buildHeardSpeechTurn, describeSttConfidence } from "../services/dual-agent/speech-text.js";
 
 describe("isCapabilityActive — master gate", () => {
   it("is active when full-attention is OFF and the client advertised it", () => {
@@ -36,22 +36,45 @@ describe("confidenceLabel", () => {
 
   it("is 'unknown' when no confidence is provided", () => {
     expect(confidenceLabel(undefined)).toBe("unknown");
+    expect(confidenceLabel(NaN)).toBe("unknown");
+  });
+});
+
+describe("describeSttConfidence", () => {
+  it("keeps the raw score in the flow log alongside the band", () => {
+    expect(describeSttConfidence(0.41)).toBe("asr 0.41 (low)");
+    expect(describeSttConfidence(0.92)).toBe("asr 0.92 (high)");
+  });
+
+  it("says so plainly when the model reported no score", () => {
+    expect(describeSttConfidence(undefined)).toBe("asr n/a");
   });
 });
 
 describe("buildHeardSpeechTurn", () => {
-  it("embeds the verbatim text, marks it authoritative, and asks for transcript() routing", () => {
+  it("embeds the verbatim text and asks for transcript() routing", () => {
     const turn = buildHeardSpeechTurn("can I have water", 0.9)!;
     expect(turn).toContain('"can I have water"');
     expect(turn).toContain("confidence: high");
-    expect(turn).toContain("authoritative");
+    expect(turn).toContain("relay them as heard");
     expect(turn).toContain("transcript()");
   });
 
-  it("surfaces low confidence so the Observer treats attribution as uncertain", () => {
-    const turn = buildHeardSpeechTurn("mumble mumble", 0.2)!;
+  // A weak recogniser score is the Observer's cue that the words themselves may
+  // be invented — the recogniser never returns silence, so noise comes back as
+  // a fluent sentence. The turn must SAY so, not just print a band.
+  it("tells the Observer to weigh weak-score words against the scene and drop misfits", () => {
+    const turn = buildHeardSpeechTurn("I am the mother of media", 0.4)!;
     expect(turn).toContain("confidence: low");
-    expect(turn).toContain("uncertain");
+    expect(turn).toContain("never returns silence");
+    expect(turn).toContain("drop it");
+  });
+
+  it("treats an unscored transcript as doubtful too, not as confident", () => {
+    const turn = buildHeardSpeechTurn("mumble mumble")!;
+    expect(turn).toContain("confidence: unknown");
+    expect(turn).toContain("unable to score");
+    expect(turn).not.toContain("relay them as heard");
   });
 
   it("trims and returns null for empty / whitespace text (nothing to route)", () => {

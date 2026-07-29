@@ -51,7 +51,7 @@ export function CallScreenShareIndicator() {
   const { t } = useLanguage();
   if (!screenSharing) return null;
   return (
-    <div className="pointer-events-none fixed top-2 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-rose-600/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg">
+    <div className="pointer-events-none fixed top-safe-2 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-rose-600/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg">
       {t("call.screenSharing")}
     </div>
   );

@@ -244,6 +244,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [utteranceText, setUtteranceText] = useState<string | null>(null);
   const [utteranceConfidence, setUtteranceConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
   const [transcriptConfidence, setTranscriptConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
+  // How clearly the speech-to-text HEARD the words behind `transcription` —
+  // separate from transcriptConfidence (the Observer's read of the utterance).
+  // Drives the caption's fuzziness; null when nothing backs a claim either way.
+  const [transcriptClarity, setTranscriptClarity] =
+    useState<'high' | 'medium' | 'low' | 'unknown' | null>(null);
   const [debugText, setDebugText] = useState<string | null>(null);
 
   // Audio state
@@ -692,6 +697,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "transcript":
           setTranscription(msg.data);
           if (msg.confidence) setTranscriptConfidence(msg.confidence);
+          // Always assign (including null) — a fresh transcript must never
+          // inherit the previous utterance's clarity.
+          setTranscriptClarity((msg as any).asrConfidence ?? null);
           // A routed (authoritative) transcript supersedes the live interim.
           setInterimTranscription(null);
           if (interimFadeTimerRef.current) { clearTimeout(interimFadeTimerRef.current); interimFadeTimerRef.current = null; }
@@ -1694,6 +1702,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: open ? "builder_open" : "builder_close" });
   }, [wsSend]);
 
+  /**
+   * A press on a GAME-owned board (a world-engine game's engine-generated
+   * sidebar options). It is a real student utterance — the server voices it in
+   * the student's voice (when `voice`), logs it, and shares it with the
+   * conversation room — but it never wakes an agent into a turn: the game
+   * itself executes the sentence.
+   */
+  const sendGamePress = useCallback((text: string, glyph?: string, voice?: boolean) => {
+    audioPlayer.clearByTag("utterance");
+    wsSend({ type: "game_press", text, glyph, voice });
+  }, [wsSend, audioPlayer]);
+
   // ── Social trainer ───────────────────────────────────────────────────────
   //
   // The session is server-owned (the peer persona replaces the Speaker
@@ -2189,6 +2209,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     utteranceText,
     utteranceConfidence,
     transcriptConfidence,
+    transcriptClarity,
     debugText,
 
     // Audio state
@@ -2286,6 +2307,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     sendBoardExit,
     sendVoice,
     voiceButtons,
+    sendGamePress,
     playGlyph,
     startRecording: audioRecorder.startRecording,
     stopRecording: audioRecorder.stopRecording as any,

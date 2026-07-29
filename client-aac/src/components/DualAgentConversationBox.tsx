@@ -57,6 +57,19 @@ import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { IdentificationBadge } from "@/components/IdentificationBadge";
 import type { IdentificationResult } from "@/hooks/usePersonIdentification";
 
+/**
+ * Server errors that reconnecting can never clear. Retrying these hammers the
+ * backend and buries the one message that would tell a clinician what to do.
+ * The server sends coded strings ("error:CONSENT_REQUIRED") precisely so the
+ * client can branch without parsing prose.
+ */
+const PERMANENT_ERRORS = ["error:CONSENT_REQUIRED"] as const;
+
+export function isPermanentError(error: string | null | undefined): boolean {
+  if (!error) return false;
+  return PERMANENT_ERRORS.some((code) => error.includes(code));
+}
+
 interface DualAgentConversationBoxProps {
   isVisible: boolean;
   onToggle: () => void;
@@ -137,6 +150,7 @@ export function DualAgentConversationBox({
     snapshotTick,
     transcription,
     interimTranscription,
+    transcriptClarity,
     muteState,
     setMuteState,
     lastModeChange,
@@ -257,6 +271,17 @@ export function DualAgentConversationBox({
 
   // Handle initialization errors - allow retry with exponential backoff
   useEffect(() => {
+    // Some failures are PERMANENT: no amount of reconnecting will clear them,
+    // and hammering the server just hides the real message. Consent is the
+    // live one — a student with no active consent record can never start a
+    // session until a clinician completes the wizard. Surface it and stop.
+    if (isPermanentError(error)) {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+      return;
+    }
     if (error && hasInitializedRef.current && !isInitialized && !isLoading) {
       // 2s, 4s, 8s, 16s, 30s, 30s… — still recovers on its own from a server
       // restart or a dropped network, without hot-looping when it's really down.
@@ -399,7 +424,7 @@ export function DualAgentConversationBox({
   if (!isVisible) return null;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 shadow-lg bg-primary text-white">
+    <div className="fixed top-0 left-0 right-0 z-50 shadow-lg bg-primary text-white pt-safe">
       <div className="px-4 py-2">
           {/* Two-row grid: cave + avatar on left, buttons top-right, text bottom-right */}
           <div className="flex items-stretch gap-3">
@@ -775,10 +800,12 @@ export function DualAgentConversationBox({
                   ) : interimTranscription ? (
                     /* Live rolling STT interim — the device is hearing words
                        RIGHT NOW; grey/tentative until the recognizer commits a
-                       final (it then clears back to the yellow transcript). */
+                       final (it then clears back to the yellow transcript).
+                       Always hazy: an interim is a guess in progress, and the
+                       recognizer routinely rewrites it before committing. */
                     <div className="flex items-center justify-between w-full">
                       <div
-                        className="text-sm text-white/50 italic leading-relaxed flex-1 mr-3"
+                        className="text-sm text-white/50 italic leading-relaxed flex-1 mr-3 caption-unsure"
                       >
                         {interimTranscription}
                       </div>
@@ -786,13 +813,38 @@ export function DualAgentConversationBox({
                   ) : transcription ? (
                     /* Someone spoke to the user (Observer transcript that
                        triggers the Board Manager) — show it in yellow to
-                       distinguish it from the AI's own words (white). */
-                    <div className="flex items-center justify-between w-full">
+                       distinguish it from the AI's own words (white).
+
+                       The words go soft when the speech recognizer wasn't sure
+                       it heard them: it never returns silence, so a poor
+                       recognition still arrives as a crisp, fluent sentence.
+                       Blurring is the honest rendering — the user can see the
+                       device is guessing before replying to something no one
+                       said. `unknown` (model reported no score) stays crisp:
+                       absence of a score is not evidence of a bad one.
+
+                       gap-3, not mr-3: direction-neutral, so the clarity dot
+                       sits after the words in Hebrew/Arabic too. */
+                    <div className="flex items-center justify-between w-full gap-3">
                       <div
-                        className="text-sm text-yellow-300 font-medium leading-relaxed flex-1 mr-3"
+                        className={`text-sm text-yellow-300 font-medium leading-relaxed flex-1 ${
+                          transcriptClarity === 'low' ? 'caption-unsure caption-unsure-low' :
+                          transcriptClarity === 'medium' ? 'caption-unsure' : ''
+                        }`}
+                        title={transcriptClarity && transcriptClarity !== 'unknown'
+                          ? t('status.heardClarity', { level: t(`status.clarity.${transcriptClarity}`) })
+                          : undefined}
                       >
                         {transcription}
                       </div>
+                      {(transcriptClarity === 'low' || transcriptClarity === 'medium') && (
+                        <span
+                          className={`shrink-0 inline-block w-2 h-2 rounded-full align-middle ${
+                            transcriptClarity === 'medium' ? 'bg-amber-400/80' : 'bg-red-400/80'
+                          }`}
+                          aria-label={t('status.heardClarity', { level: t(`status.clarity.${transcriptClarity}`) })}
+                        />
+                      )}
                     </div>
                   ) : currentMessage ? (
                     <div className="flex items-center justify-between w-full">

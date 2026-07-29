@@ -13,9 +13,13 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { getVocabularyItem } from "@shared/glyph-registry.js";
-import { fixtureWord, type FixtureKind } from "@shared/world-engine/types.js";
+import { fixtureKindForWord, fixtureWord, type FixtureKind } from "@shared/world-engine/types.js";
 import { useContractFor } from "@shared/world-engine/furniture-use.js";
 import { dwellBubble, restDoneBubble } from "@shared/world-engine/interaction/quest/activity-bubble.js";
+import { en, es, he, pt, parseSentence } from "@shared/world-engine/interaction/lang/index.js";
+import { baseWord } from "@shared/world-engine/interaction/lang/core.js";
+import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
+import { makeableGlyph, spokenMakeable } from "@shared/world-engine/interaction/content/makeable.js";
 
 /** Every fixture the world can stand in a room. */
 const ALL_FIXTURES = [
@@ -55,6 +59,83 @@ describe("every fixture kind speaks a word the vocabulary carries", () => {
   it("the fridge is NOT called a chest — the id lies, the kind doesn't", () => {
     expect(fixtureWord("refrigerator")).toBe("refrigerator");
     expect(getVocabularyItem("refrigerator")?.imagePath).toBe("things/furniture/refrigerator");
+  });
+});
+
+// THE FOLD IS TWO-WAY OR IT IS A TRAP: the board offers the vocabulary's word,
+// so every machine that only knows KINDS (station properties, craft recipes,
+// the `furn_<n>_cupboard` id tokens the resolver matches) has to be able to
+// walk that word back — otherwise the button says "cabinet" and nothing in the
+// house answers to it.
+describe("the vocabulary word walks back to its fixture kind", () => {
+  it("cabinet IS the cupboard", () => {
+    expect(fixtureKindForWord("cabinet")).toBe("cupboard");
+  });
+
+  it("a word that is ALREADY a kind stays itself — `box` is the toy box", () => {
+    // `chest` also speaks "box", but the toy box owns the word: folding it the
+    // other way would hand the box the chest's lid.
+    expect(fixtureKindForWord("box")).toBe("box");
+    for (const k of ALL_FIXTURES) {
+      if (fixtureWord(k) === k) expect(fixtureKindForWord(k)).toBe(k);
+    }
+  });
+
+  it("the cabinet keeps the cupboard's SPEC properties, not an empty set", () => {
+    expect(propertiesOf("cabinet")).toEqual(propertiesOf("cupboard"));
+    expect(propertiesOf("cabinet")).toEqual(expect.arrayContaining(["furniture", "container", "openable"]));
+  });
+
+  it("`make + cabinet` reaches the cupboard recipe", () => {
+    expect(makeableGlyph("cabinet")).toBe(makeableGlyph("cupboard"));
+    expect(spokenMakeable(makeableGlyph("cabinet")!)).toBe("cabinet");
+  });
+});
+
+// The two kinds the vocabulary folds away must not survive as WORDS anywhere a
+// speaker can reach: not in a lexicon, not as a spoken head. `chest` shipped as
+// an iconless board button and `cupboard` as an untranslated one (no lexicon
+// carried `cabinet`, so Hebrew read the raw English glyph).
+describe("`chest` and `cupboard` are kinds, never words", () => {
+  const LANGS = { en, es, he, pt };
+
+  it("no ruleset's lexicon carries either one", () => {
+    for (const [tag, lang] of Object.entries(LANGS)) {
+      expect({ tag, chest: "chest" in lang.lexicon, cupboard: "cupboard" in lang.lexicon })
+        .toEqual({ tag, chest: false, cupboard: false });
+    }
+  });
+
+  it("every ruleset says the words that REPLACED them", () => {
+    for (const [tag, lang] of Object.entries(LANGS)) {
+      for (const word of ["box", "cabinet"]) {
+        // A missing entry doesn't throw — `baseWord` falls back to the raw
+        // English key, which is the untranslated-button bug itself.
+        expect({ tag, word, listed: word in lang.lexicon }).toEqual({ tag, word, listed: true });
+        expect(baseWord(lang, word).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("a stored piece is SPOKEN as its vocabulary word (`furn.cupboard` → cabinet)", () => {
+    // canonicalToken strips the `furn.` bookkeeping head; the kind it uncovers
+    // must arrive as the word, or the lexicon lookup misses and speech spells
+    // the raw English glyph inside a Hebrew sentence.
+    expect(parseSentence("furn.cupboard")[0]?.head).toBe("cabinet");
+    expect(parseSentence("furn.chest")[0]?.head).toBe("box");
+    expect(parseSentence("furn.chair")[0]?.head).toBe("chair");
+  });
+});
+
+describe("`get` is a button, not a bare label", () => {
+  it("it has artwork — the acquisition family's canonical head had none", () => {
+    // The surfacer offers `get` (CANONICAL_VERBS folds take/fetch onto it), so
+    // this is the one the child actually presses.
+    expect(getVocabularyItem("get")?.imagePath).toBe("actions/hands/take");
+  });
+
+  it("it shares `take`'s art on purpose — one act, two words", () => {
+    expect(getVocabularyItem("get")?.imagePath).toBe(getVocabularyItem("take")?.imagePath);
   });
 });
 

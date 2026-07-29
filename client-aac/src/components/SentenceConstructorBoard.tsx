@@ -56,6 +56,8 @@ import type {
   ConstructionMemoryChipsClient,
 } from "@/hooks/dual-agent-types";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
+import type { BuilderSurface, BuilderWord } from "@shared/games-bridge";
+import type { EngineBuilderBackend } from "@/lib/engine-builder";
 import { SentenceButton } from "@/components/SentenceButton";
 import { Glyph } from "@/components/Glyph";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
@@ -94,6 +96,10 @@ function slotKeyForSelection(item: VocabularyItem): string {
 }
 
 function findPendingPayloadSlot(glyph: ParsedGlyph): number | null {
+  // Argument composition disabled (ENABLE_GLYPH_ARGUMENTS): no slot is ever
+  // "waiting for a payload", so every caller falls through to plain
+  // push/replace and nothing the builder produces can contain parentheses.
+  if (!ENABLE_GLYPH_ARGUMENTS) return null;
   // Walk from most-recent to oldest — the freshly-placed host is usually last.
   for (let i = glyph.slots.length - 1; i >= 0; i--) {
     const slot = glyph.slots[i];
@@ -104,6 +110,83 @@ function findPendingPayloadSlot(glyph: ParsedGlyph): number | null {
 }
 
 const TABS: readonly GlyphCategory[] = ["chat", "who", "do", "what", "where", "when"] as const;
+
+/**
+ * While an engine backend ANSWERS, the builder's tab set IS the engine's
+ * advertised categories (`BuilderSurface.categories`) behind a leading
+ * "all" tab (the pure ranked surface) — the legacy who/do/what/where
+ * taxonomy must never filter, alias or reorder engine content. Icons for
+ * the engine's own ladder; an unknown id (a game's custom tab) gets 🔤.
+ */
+const ENGINE_TAB_ICON: Record<string, string> = {
+  things: "📦",
+  person: "👤",
+  verb: "🤲",
+  attribute: "🎨",
+  quantity: "🔢",
+  relation: "🔗",
+  question: "❓",
+  connective: "➕",
+  social: "💬",
+};
+const ENGINE_ALL_TAB_ICON = "⭐";
+/** Engine category tabs shown per page below the pinned "all" tab. */
+const ENGINE_TABS_PER_PAGE = 6;
+/** Client-side chip id for the person-directory list under the engine's
+ *  "person" tab (real people with photos — content the engine can't serve). */
+const ENGINE_PHOTOS_CHIP = "photos";
+
+/** Cap on engine modifier-rail buttons so the band never overflows. */
+const ENGINE_MODIFIERS_SHOWN = 5;
+
+/**
+ * The engine's descriptor axes (surface.modifiers) include words the AAC's
+ * glyph renderer can't yet visualize as applied modifiers:
+ *   - keys whose registry item has NO `modifier` facet (the feeling words —
+ *     hungry/thirsty/happy/…) apply INVISIBLY: the compositor's badge stack
+ *     only draws canonical modifier transforms or fully-unknown keys, so the
+ *     press seems to do nothing;
+ *   - keys unknown to BOTH the registry and the emoji registry (warm, new,
+ *     old, broken, full, empty, three, less, …) take the unknown-badge path
+ *     and fall all the way to the "•" fallback — a meaningless dot on the
+ *     composed glyph.
+ * Those entries read as broken on device ("mostly emojis, but they just
+ * render as dots"), so they're filtered out of the rail until the compositor
+ * learns to draw them. The rest of the 🎮 rail keeps working. Flip this flag
+ * to surface the full engine rail again (e.g. after a compositor fix).
+ */
+const SHOW_UNRENDERABLE_ENGINE_MODIFIERS = false as boolean;
+
+/** True when applying `key` as a ".modifier" produces a sensible visual:
+ *  a canonical registry modifier transform, or an unknown key the emoji
+ *  registry can badge-render. Everything else is invisible or a "•" dot. */
+function engineModifierRenders(key: string): boolean {
+  const item = getVocabularyItem(key);
+  if (item) return !!item.modifier;
+  return !!resolveEmoji(key);
+}
+
+/**
+ * AI suggestion chips (the ✨ head strip and ✨ modifier strip fed by
+ * suggest_construction_buttons) — hidden for now to reclaim screen space
+ * (user request). The plumbing stays wired (state, handlers, incoming
+ * suggestion consumption) so a flag flip brings them back.
+ */
+const SHOW_AI_SUGGESTION_STRIPS = false as boolean;
+
+/**
+ * Parenthesized-argument composition — a composable HOST taking its payload
+ * in parentheses (`want(apple)`, `eat(cookie)`). Disabled (user request:
+ * "too janky and unintuitive"), and the engine's `tokenizeSentence` splits
+ * only on "+" so it can't parse the form anyway. With the flag off the
+ * builder never routes a press into a pending payload (every press pushes or
+ * replaces a whole slot), never hops tabs to suggest payload fillers, never
+ * advertises a payloadTarget to the AI, and never renders the empty-host
+ * affordance — so no composed string can contain parentheses. All the
+ * plumbing (findPendingPayloadSlot, setPayload routes) stays wired; a flag
+ * flip restores the feature.
+ */
+const ENABLE_GLYPH_ARGUMENTS = false as boolean;
 
 const TAB_ICON: Record<GlyphCategory, string> = {
   chat: "💬",
@@ -165,8 +248,22 @@ export interface ConstructionPerson {
 }
 
 export interface SentenceConstructorBoardProps {
-  /** Called when the user presses Play with the current glyph string. */
-  onPlay?: (glyphString: string) => void;
+  /** Called when the user presses Play with the current glyph string.
+   *  `spokenFallback` is a plain-text rendering of the composed labels — a
+   *  last-resort voicing when an engine executes the sentence but returns no
+   *  spokenText of its own. */
+  onPlay?: (glyphString: string, spokenFallback?: string) => void;
+  /**
+   * Engine-backed word surfacing (stage-3 builder merge, reworked). When
+   * provided AND answering, the ENGINE's taxonomy drives the whole builder:
+   * the tab column becomes "all" (the pure ranked surface) + the engine's
+   * advertised categories, the chip column becomes the engine's group chips
+   * for the active view, the main grid is the engine surface, the modifier
+   * band gains the engine's modifier rail, and the person tab's "photos"
+   * chip merges the engine's present persons/creatures with the directory.
+   * Absent (or not answering) → the legacy registry taxonomy.
+   */
+  engineBuilder?: EngineBuilderBackend | null;
   /** True after Play is pressed, until the interpreted sentence starts being
    *  voiced. Puts the Play button into a waiting state and blocks re-press so
    *  the user sees the interpretation is underway (the host closes the board
@@ -332,6 +429,172 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     return wrapped.slice(0, gridItemsPerPage);
   }, [allGridItems, gridPage, gridNeedsMore, gridItemsPerPage]);
 
+  // ── Engine mode (stage-3 builder merge, reworked) ─────────────────────────
+  // When an engine backend is wired AND answering, the ENGINE's taxonomy is
+  // the builder's: tabs = "all" + the advertised categories, chips = the
+  // active view's group chips, grid = the surface for the current partial
+  // sentence. The registry taxonomy is only the fallback for a null surface
+  // (timeout / no engine) — the escape hatch, never an override.
+  const engineBuilder = props.engineBuilder ?? null;
+  const [engineSurface, setEngineSurface] = useState<BuilderSurface | null>(null);
+  // Advertised engine categories — null until the first surface teaches them.
+  const [engineCategories, setEngineCategories] = useState<string[] | null>(null);
+  // Monotonic sequence so a late response can't clobber a newer one.
+  const engineSeqRef = useRef(0);
+  // key → engine label, remembered from every surface seen, so the Play
+  // fallback text can speak engine words the registry doesn't know.
+  const engineLabelsRef = useRef<Map<string, string>>(new Map());
+
+  // Engine tab/chip selection: `engineCategory` null = the "all" tab (the
+  // pure ranked surfaceNext output — the DEFAULT view after any selection);
+  // `engineChip` = a group id from the active surface's chips, or the
+  // client-side "photos" chip under the person tab.
+  const [engineCategory, setEngineCategory] = useState<string | null>(null);
+  const [engineChip, setEngineChip] = useState<string | null>(null);
+  const [engineTabPage, setEngineTabPage] = useState(0);
+  const enginePhotos = engineCategory === "person" && engineChip === ENGINE_PHOTOS_CHIP;
+
+  const serializedGlyph = useMemo(() => serializeGlyph(glyph), [glyph]);
+
+  // Debounced surface request per builder state change. The engine's taxonomy
+  // IS the builder's while it answers: the selected engine tab/chip is sent
+  // straight through as category/group — never mapped through the legacy tab
+  // scheme. A null answer (timeout / no engine) clears the surface so the
+  // whole builder falls back to the registry — it never hangs on the engine.
+  useEffect(() => {
+    if (!engineBuilder || guessingActive) return;
+    const seq = ++engineSeqRef.current;
+    // The photos person-list needs the engine's NOUN library (kind/present
+    // ride on nouns), which lives under "things".
+    const category = enginePhotos ? "things" : engineCategory ?? undefined;
+    const group = enginePhotos || engineChip == null ? undefined : engineChip;
+    const timer = setTimeout(() => {
+      void engineBuilder.requestSurface(serializedGlyph, category, group).then((surface) => {
+        if (engineSeqRef.current !== seq) return; // stale answer
+        setEngineSurface(surface);
+        if (surface?.categories?.length) setEngineCategories(surface.categories);
+        if (surface) {
+          for (const w of [...surface.buttons, ...(surface.modifiers ?? [])]) {
+            if (w.label) engineLabelsRef.current.set(w.key, w.label);
+          }
+        }
+      });
+    }, 150);
+    return () => clearTimeout(timer);
+    // activeTab/modeChip: while in the legacy FALLBACK (a timed-out surface),
+    // any tab/chip press re-asks the engine so it can win the board back.
+  }, [engineBuilder, guessingActive, enginePhotos, engineCategory, engineChip, serializedGlyph, activeTab, modeChip]);
+
+  // Engine chrome (tabs + chips + grid) renders while the engine ANSWERS; a
+  // null surface (timeout / error) falls the whole builder back to the legacy
+  // registry taxonomy, so content always appears. The legacy tabs never
+  // reassert themselves over engine content.
+  const engineUiActive = engineBuilder != null && engineSurface != null;
+
+  // A game may re-advertise its category set; drop a selection it no longer serves.
+  useEffect(() => {
+    if (engineCategory && engineCategories && !engineCategories.includes(engineCategory)) {
+      setEngineCategory(null);
+      setEngineChip(null);
+    }
+  }, [engineCategories, engineCategory]);
+
+  // Engine category tabs: "all" pinned first, then the advertised categories
+  // (paged with a "…" tab when they overflow the column).
+  const engineTabsNeedMore = (engineCategories?.length ?? 0) > ENGINE_TABS_PER_PAGE;
+  const visibleEngineTabs = useMemo(() => {
+    const ids = engineCategories ?? [];
+    if (ids.length <= ENGINE_TABS_PER_PAGE) return ids;
+    const start = (engineTabPage * ENGINE_TABS_PER_PAGE) % ids.length;
+    const wrapped = [...ids.slice(start), ...ids.slice(0, start)];
+    return wrapped.slice(0, ENGINE_TABS_PER_PAGE);
+  }, [engineCategories, engineTabPage]);
+
+  // Sub-category chips for the active view — the ENGINE's own groups (its
+  // vocabulary-menu hierarchy), localized engine-side. The photos view borrows
+  // the "things" surface, whose groups belong to the noun library, not the
+  // person list — suppressed there.
+  const engineGroupChips = useMemo(
+    () => (engineUiActive && !enginePhotos ? engineSurface?.groups ?? [] : []),
+    [engineUiActive, enginePhotos, engineSurface]
+  );
+
+  const engineGridActive = engineUiActive && !guessingActive && !enginePhotos;
+
+  const engineWords = useMemo(
+    () => (engineGridActive && engineSurface ? engineSurface.buttons : []),
+    [engineGridActive, engineSurface]
+  );
+  const engineNeedsMore = engineWords.length > GRID_CELLS;
+  const engineItemsPerPage = engineNeedsMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
+  const engineGridWords = useMemo(() => {
+    if (engineWords.length === 0) return engineWords;
+    if (!engineNeedsMore) return engineWords.slice(0, GRID_CELLS);
+    const start = (gridPage * engineItemsPerPage) % engineWords.length;
+    const wrapped = [...engineWords.slice(start), ...engineWords.slice(0, start)];
+    return wrapped.slice(0, engineItemsPerPage);
+  }, [engineWords, gridPage, engineNeedsMore, engineItemsPerPage]);
+
+  // A new surface is a new ranked list — restart its paging. Engine mode only
+  // (setGridPage(0) is a no-op-ish reset, but skip it entirely otherwise so
+  // non-engine behavior stays untouched).
+  useEffect(() => {
+    if (engineBuilder) setGridPage(0);
+  }, [engineBuilder, engineSurface]);
+
+  // Engine modifier rail (compose with "." like every other modifier). The
+  // engine computes its rail for the LAST composed word, so it only shows
+  // when that word is the effective active slot — an earlier selected slot
+  // gets the registry rail alone. Capped so the band keeps its geometry.
+  const engineModifierItems = useMemo(() => {
+    if (!engineBuilder || guessingActive) return [] as BuilderWord[];
+    if (effectiveActiveSlot == null || effectiveActiveSlot !== displayedGlyph.slots.length - 1) {
+      return [] as BuilderWord[];
+    }
+    const rail = engineSurface?.modifiers ?? [];
+    const renderable = SHOW_UNRENDERABLE_ENGINE_MODIFIERS
+      ? rail
+      : rail.filter((w) => engineModifierRenders(w.key));
+    return renderable.slice(0, ENGINE_MODIFIERS_SHOWN);
+  }, [engineBuilder, guessingActive, effectiveActiveSlot, displayedGlyph.slots.length, engineSurface]);
+
+  // Engine persons/creatures for the "who → photos" list merge.
+  const enginePersonWords = useMemo(() => {
+    if (!engineBuilder || !engineSurface) return [] as BuilderWord[];
+    return engineSurface.buttons.filter((w) => w.kind === "person" || w.kind === "creature");
+  }, [engineBuilder, engineSurface]);
+
+  // Merged "who → photos" list (engine mode only): everyone PRESENT first —
+  // in-scene engine entities, then camera-seen contacts — then the remaining
+  // engine entities, then the rest of the directory (already alphabetical via
+  // orderedPeople). Paged with the same wrap-around More the main grid uses.
+  type WhoTile =
+    | { type: "engine"; word: BuilderWord }
+    | { type: "person"; person: ConstructionPerson };
+  const mergedWhoTiles = useMemo<WhoTile[] | null>(() => {
+    if (!engineBuilder) return null;
+    const present = new Set(presentPersonIds);
+    const enginePresent = enginePersonWords.filter((w) => w.present);
+    const engineRest = enginePersonWords.filter((w) => !w.present);
+    const peoplePresent = orderedPeople.filter((p) => present.has(p.id));
+    const peopleRest = orderedPeople.filter((p) => !present.has(p.id));
+    return [
+      ...enginePresent.map((word): WhoTile => ({ type: "engine", word })),
+      ...peoplePresent.map((person): WhoTile => ({ type: "person", person })),
+      ...engineRest.map((word): WhoTile => ({ type: "engine", word })),
+      ...peopleRest.map((person): WhoTile => ({ type: "person", person })),
+    ];
+  }, [engineBuilder, enginePersonWords, orderedPeople, presentPersonIds]);
+  const whoTilesNeedMore = (mergedWhoTiles?.length ?? 0) > GRID_CELLS;
+  const whoTilesPerPage = whoTilesNeedMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
+  const pagedWhoTiles = useMemo<WhoTile[]>(() => {
+    if (!mergedWhoTiles) return [];
+    if (!whoTilesNeedMore) return mergedWhoTiles.slice(0, GRID_CELLS);
+    const start = (gridPage * whoTilesPerPage) % mergedWhoTiles.length;
+    const wrapped = [...mergedWhoTiles.slice(start), ...mergedWhoTiles.slice(0, start)];
+    return wrapped.slice(0, whoTilesPerPage);
+  }, [mergedWhoTiles, gridPage, whoTilesNeedMore, whoTilesPerPage]);
+
   // All applicable modifiers for the active slot (full list, before pagination).
   const allModifiers = useMemo(() => {
     if (effectiveActiveSlot == null) return [] as VocabularyItem[];
@@ -469,6 +732,29 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     setModeChip(chipKey);
   }, [guessingActive, onExitGuessing]);
 
+  // Engine tab / chip selection (engine chrome). Same exit-on-pick rule.
+  const handleEngineTabSelect = useCallback((category: string | null) => {
+    if (guessingActive) onExitGuessing?.();
+    setEngineCategory(category);
+    setEngineChip(null);
+  }, [guessingActive, onExitGuessing]);
+
+  const handleEngineChipSelect = useCallback((chipId: string | null) => {
+    if (guessingActive) onExitGuessing?.();
+    setEngineChip((cur) => (cur === chipId ? null : chipId));
+  }, [guessingActive, onExitGuessing]);
+
+  /** Localized engine tab label: client i18n for the engine's fixed ladder;
+   *  an unknown id (a game's custom category) shows as itself. */
+  const engineTabLabel = useCallback(
+    (id: string) => {
+      const key = `construction.engineTabs.${id}`;
+      const translated = t(key);
+      return translated === key ? id : translated;
+    },
+    [t]
+  );
+
   const onTabKey = useCallback(
     (e: React.KeyboardEvent, tab: GlyphCategory) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -511,7 +797,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       setPendingJoin(null);
       // If we just placed a composable host with no payload, hop to the
       // first suggestCategory so the grid surfaces relevant fillers.
-      if (item.composable && item.composable.suggestCategories.length > 0) {
+      // (Part of the argument affordance — gated with it.)
+      if (ENABLE_GLYPH_ARGUMENTS && item.composable && item.composable.suggestCategories.length > 0) {
         const nextTab = item.composable.suggestCategories[0];
         setActiveTab(nextTab);
         setModeChip(defaultModeChip(nextTab));
@@ -544,6 +831,44 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       });
       setActiveSlot(null);
       setPendingJoin(null);
+      // Same default-view rule as engine word presses (no-op outside engine mode).
+      setEngineCategory(null);
+      setEngineChip(null);
+    },
+    [activeSlot, pendingJoin]
+  );
+
+  // Engine-word press (from the engine-fed main grid / person merge): the
+  // BuilderWord.key IS the canonical engine-lexicon word, and the engine's
+  // surface grammar serializes exactly like the builder's, so the key
+  // composes straight into a slot through the same fill/replace logic the
+  // registry grid uses.
+  const handleEngineWordPress = useCallback(
+    (word: BuilderWord) => {
+      if (word.label) engineLabelsRef.current.set(word.key, word.label);
+      const selectionKey = word.key;
+      setGlyph((g) => {
+        if (activeSlot != null && activeSlot < g.slots.length) {
+          return replaceSlot(g, activeSlot, selectionKey);
+        }
+        const pending = findPendingPayloadSlot(g);
+        if (pending != null && word.kind) {
+          // Engine nouns (person/creature/item/place) are noun-like payloads;
+          // composable hosts that accept "noun" take them.
+          const host = getVocabularyItem(g.slots[pending].key);
+          if (host?.composable?.accepts.includes("noun")) {
+            return setPayload(g, pending, selectionKey);
+          }
+        }
+        return pushSlotWithJoin(g, selectionKey, pendingJoin);
+      });
+      setActiveSlot(null);
+      setPendingJoin(null);
+      // Back to the DEFAULT view: after any selection the builder shows the
+      // engine's pure ranked surface for the new partial sentence, never a
+      // lingering category/group filter (the SpeakMenu's own tap rule).
+      setEngineCategory(null);
+      setEngineChip(null);
     },
     [activeSlot, pendingJoin]
   );
@@ -562,8 +887,29 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const handlePlay = useCallback(() => {
     if (displayedGlyph.slots.length === 0) return;
     if (awaitingInterpret) return;  // already interpreting — ignore repeat presses
-    onPlay?.(serializeGlyph(displayedGlyph));
-  }, [displayedGlyph, onPlay, awaitingInterpret]);
+    // Plain-text rendering of the composed heads — engine label → person name
+    // → registry translation → bare key. Only voiced as a last resort (engine
+    // executed the sentence but returned no spokenText).
+    const spokenFallback = displayedGlyph.slots
+      .map((slot) => {
+        const key = slot.key;
+        if (!key) return "";
+        if (key.startsWith("face:")) {
+          return getPersonName?.(key.substring(5).trim()) ?? "";
+        }
+        const engineLabel = engineLabelsRef.current.get(key);
+        if (engineLabel) return engineLabel;
+        const item = getVocabularyItem(key);
+        if (item) {
+          const translated = t(item.tKey);
+          return translated === item.tKey ? key : translated;
+        }
+        return key;
+      })
+      .filter(Boolean)
+      .join(" ");
+    onPlay?.(serializeGlyph(displayedGlyph), spokenFallback || undefined);
+  }, [displayedGlyph, onPlay, awaitingInterpret, getPersonName, t]);
 
   // Help button state machine (per planning-docs/glyph-system.md):
   //   - Slot selected → re-suggest for that slot (excludes current AI strip).
@@ -585,7 +931,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     const builderContext = {
       targetSlot: computeTargetSlot(glyph, activeSlot),
       partialGlyph: serializeGlyph(glyph),
-      category: activeTab,
+      category: engineUiActive ? engineCategory ?? "all" : activeTab,
     };
     console.debug("[guessing/builder] Help → enterGuessing", builderContext, "| fn:", typeof onEnterGuessing);
     if (onEnterGuessing) {
@@ -595,7 +941,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       console.warn("[guessing/builder] onEnterGuessing unavailable; using legacy requestGuessingMode");
       setPendingHelpRequest(true);
     }
-  }, [guessingActive, onEnterGuessing, onExitGuessing, glyph, activeSlot, activeTab]);
+  }, [guessingActive, onEnterGuessing, onExitGuessing, glyph, activeSlot, activeTab, engineUiActive, engineCategory]);
 
   // ── AI strip wiring ──────────────────────────────────────────────────────
   // Send state on every relevant change. The relay forwards it to the live
@@ -700,10 +1046,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   }, [activeTab]);
 
   // Reset grid pagination when the tab or mode-chip changes (different
-  // vocabulary list).
+  // vocabulary list) — engine tab/chip changes included.
   useEffect(() => {
     setGridPage(0);
-  }, [activeTab, modeChip]);
+  }, [activeTab, modeChip, engineCategory, engineChip]);
 
   // Build the combined static + memory chip list for the active tab.
   const allChips = useMemo(() => {
@@ -885,53 +1231,203 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     [activeSlot, pendingJoin]
   );
 
+  // AI suggestion chips are gated off wholesale (SHOW_AI_SUGGESTION_STRIPS) —
+  // the state/handlers above stay wired for when they return.
+  const aiModifierStripVisible =
+    SHOW_AI_SUGGESTION_STRIPS && aiModifierCandidates.length > 0 && effectiveActiveSlot != null;
+
   return (
     <div
       dir={isRTL ? "rtl" : "ltr"}
       className="flex h-full w-full overflow-hidden bg-gray-50 dark:bg-gray-900"
       data-testid="construction-board"
     >
-      {/* Sidebar: vertical tabs */}
+      {/* Sidebar: vertical tabs. While the engine answers, the tab set IS the
+          engine's advertised categories behind a pinned "all" (ranked) tab —
+          the legacy who/do/what/where taxonomy renders only as the fallback
+          when no engine surface is available. */}
       <nav
         aria-label={t("construction.tabsLabel")}
         className="flex flex-col gap-2 p-2 border-e border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 w-28 shrink-0 overflow-hidden"
+        data-testid={engineUiActive ? "engine-tabs" : undefined}
       >
-        {TABS.map((tab) => {
-          const active = tab === activeTab;
-          return (
+        {engineUiActive ? (
+          <>
             <motion.button
-              key={tab}
               data-dwell
+              data-testid="engine-tab-all"
               role="tab"
-              aria-selected={active}
+              aria-selected={engineCategory == null}
               tabIndex={0}
-              onClick={() => handleTabSelect(tab)}
-              onKeyDown={(e) => onTabKey(e, tab)}
+              onClick={() => handleEngineTabSelect(null)}
               whileTap={{ scale: 0.96 }}
               className={[
-                "flex flex-col items-center justify-center gap-1 rounded-xl py-3",
+                "flex flex-col items-center justify-center gap-1 rounded-xl py-2",
                 "border-2 transition-colors",
-                active
+                engineCategory == null
                   ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
                   : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
               ].join(" ")}
             >
-              <span className="text-3xl" aria-hidden>
-                {TAB_ICON[tab]}
+              <span className="text-2xl" aria-hidden>
+                {ENGINE_ALL_TAB_ICON}
               </span>
-              <span className="text-xs font-medium">
-                {t(`construction.tabs.${tab}`)}
-              </span>
+              <span className="text-xs font-medium">{engineTabLabel("all")}</span>
             </motion.button>
-          );
-        })}
+            {visibleEngineTabs.map((cat) => {
+              const active = cat === engineCategory;
+              return (
+                <motion.button
+                  key={cat}
+                  data-dwell
+                  data-testid={`engine-tab-${cat}`}
+                  role="tab"
+                  aria-selected={active}
+                  tabIndex={0}
+                  onClick={() => handleEngineTabSelect(cat)}
+                  whileTap={{ scale: 0.96 }}
+                  className={[
+                    "flex flex-col items-center justify-center gap-1 rounded-xl py-2",
+                    "border-2 transition-colors",
+                    active
+                      ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
+                      : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
+                  ].join(" ")}
+                >
+                  <span className="text-2xl" aria-hidden>
+                    {ENGINE_TAB_ICON[cat] ?? "🔤"}
+                  </span>
+                  <span className="text-xs font-medium truncate w-full text-center">
+                    {engineTabLabel(cat)}
+                  </span>
+                </motion.button>
+              );
+            })}
+            {engineTabsNeedMore && (
+              <motion.button
+                data-dwell
+                data-testid="engine-tab-more"
+                onClick={() => setEngineTabPage((p) => p + 1)}
+                whileTap={{ scale: 0.95 }}
+                className="rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-medium py-2 px-2 flex items-center justify-center"
+              >
+                …
+              </motion.button>
+            )}
+          </>
+        ) : (
+          TABS.map((tab) => {
+            const active = tab === activeTab;
+            return (
+              <motion.button
+                key={tab}
+                data-dwell
+                role="tab"
+                aria-selected={active}
+                tabIndex={0}
+                onClick={() => handleTabSelect(tab)}
+                onKeyDown={(e) => onTabKey(e, tab)}
+                whileTap={{ scale: 0.96 }}
+                className={[
+                  "flex flex-col items-center justify-center gap-1 rounded-xl py-3",
+                  "border-2 transition-colors",
+                  active
+                    ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
+                    : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
+                ].join(" ")}
+              >
+                <span className="text-3xl" aria-hidden>
+                  {TAB_ICON[tab]}
+                </span>
+                <span className="text-xs font-medium">
+                  {t(`construction.tabs.${tab}`)}
+                </span>
+              </motion.button>
+            );
+          })
+        )}
       </nav>
 
-      {/* Second sidebar: mode chips for active tab (static + memory) */}
+      {/* Second sidebar: sub-category chips. Engine mode: the ENGINE's own
+          group chips for the active view (localized engine-side), behind an
+          "all" chip that clears the group filter — plus the client-side
+          "photos" chip under the person tab (the real-people directory).
+          Fallback: the legacy mode chips (static + memory). */}
       <nav
         aria-label={t("construction.tabsLabel")}
         className="flex flex-col gap-2 p-2 border-e border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 w-28 shrink-0 overflow-hidden"
+        data-testid={engineUiActive ? "engine-chips" : undefined}
       >
+        {engineUiActive ? (
+          <>
+            <motion.button
+              data-dwell
+              data-testid="engine-chip-all"
+              onClick={() => handleEngineChipSelect(null)}
+              whileTap={{ scale: 0.95 }}
+              className={[
+                "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
+                engineChip == null
+                  ? "bg-blue-600 border-blue-700 text-white"
+                  : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
+              ].join(" ")}
+            >
+              <span className="text-2xl leading-none" aria-hidden>
+                🔠
+              </span>
+              <span className="truncate w-full text-center">{t("construction.chips.all")}</span>
+            </motion.button>
+            {engineGroupChips.map((chip) => {
+              const active = chip.id === engineChip;
+              return (
+                <motion.button
+                  key={chip.id}
+                  data-dwell
+                  data-testid={`engine-chip-${chip.id}`}
+                  onClick={() => handleEngineChipSelect(chip.id)}
+                  whileTap={{ scale: 0.95 }}
+                  className={[
+                    "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
+                    active
+                      ? "bg-blue-600 border-blue-700 text-white"
+                      : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
+                  ].join(" ")}
+                >
+                  {chip.glyph ? (
+                    <span className="w-8 h-8 flex items-center justify-center" aria-hidden>
+                      <Glyph glyph={chip.glyph} noBackground ariaLabel={chip.label} />
+                    </span>
+                  ) : (
+                    <span className="text-2xl leading-none" aria-hidden>
+                      📂
+                    </span>
+                  )}
+                  <span className="truncate w-full text-center">{chip.label}</span>
+                </motion.button>
+              );
+            })}
+            {engineCategory === "person" && (
+              <motion.button
+                data-dwell
+                data-testid="engine-chip-photos"
+                onClick={() => handleEngineChipSelect(ENGINE_PHOTOS_CHIP)}
+                whileTap={{ scale: 0.95 }}
+                className={[
+                  "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
+                  engineChip === ENGINE_PHOTOS_CHIP
+                    ? "bg-blue-600 border-blue-700 text-white"
+                    : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
+                ].join(" ")}
+              >
+                <span className="text-2xl leading-none" aria-hidden>
+                  📷
+                </span>
+                <span className="truncate w-full text-center">{t("construction.chips.photos")}</span>
+              </motion.button>
+            )}
+          </>
+        ) : (
+          <>
         {visibleChips.map((chip) => {
           const active = chip.key === modeChip;
           const baseStyle = active
@@ -973,6 +1469,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             …
           </motion.button>
         )}
+          </>
+        )}
       </nav>
 
       {/* Main area */}
@@ -988,7 +1486,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               activeSlot={activeSlot}
               ariaLabel={t("construction.glyphPreviewLabel")}
               onSlotPress={handleSlotPress}
-              showEmptyHostSlot
+              showEmptyHostSlot={ENABLE_GLYPH_ARGUMENTS}
             />
           </div>
 
@@ -1070,7 +1568,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             Hidden during guessing mode — the narrowing buttons take the grid
             and modifiers aren't relevant while the user is still picking a head. */}
         {!guessingActive && (
-          (aiModifierCandidates.length > 0 && effectiveActiveSlot != null) ||
+          engineModifierItems.length > 0 ||
+          aiModifierStripVisible ||
           modifierItems.length > 0 ||
           colorOptions.length > 0 ||
           emotionOptions.length > 0 ||
@@ -1079,7 +1578,37 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           (canJoin && joinOptions.length > 0)
         ) && (
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
-            {aiModifierCandidates.length > 0 && effectiveActiveSlot != null && (
+            {/* Engine modifier rail — the game engine's own modifiers for the
+                active head, composed with "." like every other modifier. */}
+            {engineModifierItems.length > 0 && (
+              <div
+                className="flex items-center gap-2 shrink-0"
+                data-testid="engine-modifier-strip"
+              >
+                <span className="self-center text-xl select-none" aria-hidden>
+                  🎮
+                </span>
+                {engineModifierItems.map((m) => (
+                  <EngineModifierButton
+                    key={m.key}
+                    word={m}
+                    active={activeModifierKeys.has(m.key)}
+                    onPress={() => handleAiModifierPress(m)}
+                  />
+                ))}
+              </div>
+            )}
+            {engineModifierItems.length > 0 && (
+              aiModifierStripVisible ||
+              modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0 ||
+              amountOptions.length > 0 || qualityPairs.length > 0 || (canJoin && joinOptions.length > 0)
+            ) && (
+              <div
+                className="self-stretch w-px bg-gray-300 dark:bg-gray-600 shrink-0"
+                aria-hidden
+              />
+            )}
+            {aiModifierStripVisible && (
               <div
                 className="flex items-center gap-2 shrink-0"
                 data-testid="ai-modifier-strip"
@@ -1111,8 +1640,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 ))}
               </div>
             )}
-            {aiModifierCandidates.length > 0
-              && effectiveActiveSlot != null
+            {aiModifierStripVisible
               && (modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0)
               && (
               <div
@@ -1278,7 +1806,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         {/* AI strip — fixed height. Without this, an <img> with a large intrinsic
             size grows the button (and the strip) past its intended ~110px, squeezing
             the grid below. The percentage max-h on the img inside requires a
-            definite parent height to resolve. */}
+            definite parent height to resolve. GATED OFF for now
+            (SHOW_AI_SUGGESTION_STRIPS) — the row's screen space goes to the grid. */}
+        {SHOW_AI_SUGGESTION_STRIPS && (
         <div className="flex items-stretch gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 h-[110px]">
           {/* ✨ marker — gently pulses with a small caption while the AI is
               still finding suggestions, so the strip clearly reads as "working"
@@ -1316,6 +1846,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             disabled={aiCandidates.length === 0 && !aiThinking}
           />
         </div>
+        )}
 
         {/* Main grid — absorbs remaining vertical space. While guessing is
             active the narrowing buttons replace the grid (the resolved concept
@@ -1381,7 +1912,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 </div>
               );
             })()
-          ) : activeTab === "who" && modeChip === "photos" ? (
+          ) : (engineUiActive ? enginePhotos : activeTab === "who" && modeChip === "photos") ? (
             <div
               className="grid gap-2 w-full h-full"
               style={{
@@ -1389,7 +1920,42 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 gridTemplateRows: "repeat(2, minmax(0, 1fr))",
               }}
             >
-              {orderedPeople.length === 0 ? (
+              {mergedWhoTiles ? (
+                // Engine mode: engine persons/creatures merged with the
+                // contact directory — everyone PRESENT first, paged like the
+                // main grid.
+                mergedWhoTiles.length === 0 ? (
+                  <div className="col-span-9 row-span-2 flex items-center justify-center text-sm text-gray-400">
+                    {t("construction.noPeople")}
+                  </div>
+                ) : (
+                  <>
+                    {pagedWhoTiles.map((tile) =>
+                      tile.type === "person" ? (
+                        <PersonButton
+                          key={`p-${tile.person.id}`}
+                          person={tile.person}
+                          faceUrl={getFaceImage?.(tile.person.id) ?? null}
+                          present={presentPersonIds.includes(tile.person.id)}
+                          onPress={() => handlePersonPress(tile.person.id)}
+                        />
+                      ) : (
+                        <EngineWordButton
+                          key={`e-${tile.word.key}`}
+                          word={tile.word}
+                          onPress={() => handleEngineWordPress(tile.word)}
+                        />
+                      )
+                    )}
+                    {whoTilesNeedMore && (
+                      <MoreButton
+                        onPress={() => setGridPage((p) => p + 1)}
+                        testId="who-more"
+                      />
+                    )}
+                  </>
+                )
+              ) : orderedPeople.length === 0 ? (
                 <div className="col-span-9 row-span-2 flex items-center justify-center text-sm text-gray-400">
                   {t("construction.noPeople")}
                 </div>
@@ -1403,6 +1969,32 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                     onPress={() => handlePersonPress(person.id)}
                   />
                 ))
+              )}
+            </div>
+          ) : engineGridActive ? (
+            // Engine-fed main grid: the engine's words for the current view —
+            // the ranked surface on the "all" tab, a category/group listing
+            // otherwise. Same 9×2 geometry + wrap paging as the registry grid.
+            <div
+              className="grid gap-2 w-full h-full"
+              style={{
+                gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
+                gridTemplateRows: "repeat(2, minmax(0, 1fr))",
+              }}
+              data-testid="engine-grid"
+            >
+              {engineGridWords.map((word) => (
+                <EngineWordButton
+                  key={word.key}
+                  word={word}
+                  onPress={() => handleEngineWordPress(word)}
+                />
+              ))}
+              {engineNeedsMore && (
+                <MoreButton
+                  onPress={() => setGridPage((p) => p + 1)}
+                  testId="grid-more"
+                />
               )}
             </div>
           ) : (
@@ -1610,6 +2202,106 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
       <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
         {label}
       </span>
+    </motion.button>
+  );
+}
+
+/**
+ * Main-grid tile for an engine-surfaced word (stage-3 builder merge).
+ * Renders the engine's composed glyph when it carries one, else the
+ * registry's art/emoji for the same key, else an emoji resolved from the
+ * key. Present persons/creatures get the same green "here now" treatment
+ * as the camera-seen contacts in the person list.
+ */
+function EngineWordButton(props: { word: BuilderWord; onPress: () => void }) {
+  const { t, isRTL } = useLanguage();
+  const { word } = props;
+  const item = getVocabularyItem(word.key);
+  const url = item?.imagePath ? resolveIconPath(item.imagePath) : null;
+  const emoji = item?.emoji ?? resolveEmoji(word.key);
+  let label = word.label;
+  if (!label && item) {
+    const translated = t(item.tKey);
+    label = translated === item.tKey ? word.key : translated;
+  }
+  if (!label) label = word.key;
+  return (
+    <motion.button
+      data-dwell
+      data-testid={`engine-word-${word.key}`}
+      onClick={props.onPress}
+      whileTap={{ scale: 0.95 }}
+      className={[
+        "rounded-xl border-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+        word.present
+          ? "border-green-500 bg-green-50 dark:bg-green-900/30"
+          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
+      ].join(" ")}
+      style={{ padding: 5 }}
+      aria-label={label}
+      title={label}
+    >
+      <div className="icon-fill-area">
+        {word.glyph ? (
+          <Glyph glyph={word.glyph} noBackground ariaLabel={label} />
+        ) : url ? (
+          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, emoji)} />
+        ) : (
+          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, emoji ?? "❓")}>
+            {emoji ?? "❓"}
+          </span>
+        )}
+      </div>
+      <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
+        {label}
+      </span>
+    </motion.button>
+  );
+}
+
+/**
+ * Engine modifier-rail button — ModifierButton's 64px footprint, fed by a
+ * BuilderWord instead of a registry item so the engine's glyph renders.
+ */
+function EngineModifierButton(props: {
+  word: BuilderWord;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const { isRTL } = useLanguage();
+  const { word, active } = props;
+  const item = getVocabularyItem(word.key);
+  const url = item?.imagePath ? resolveIconPath(item.imagePath) : null;
+  const emoji = item?.emoji ?? resolveEmoji(word.key);
+  const label = word.label || word.key;
+  return (
+    <motion.button
+      data-dwell
+      data-testid={`engine-modifier-${word.key}`}
+      onClick={props.onPress}
+      aria-pressed={active}
+      whileTap={{ scale: 0.94 }}
+      className={[
+        "w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center overflow-hidden",
+        active
+          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
+          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
+      ].join(" ")}
+      style={{ padding: 6 }}
+      aria-label={label}
+      title={label}
+    >
+      <div className="icon-fill-area">
+        {word.glyph ? (
+          <Glyph glyph={word.glyph} noBackground ariaLabel={label} />
+        ) : url ? (
+          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, emoji)} />
+        ) : (
+          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, emoji ?? "•")}>
+            {emoji ?? "•"}
+          </span>
+        )}
+      </div>
     </motion.button>
   );
 }

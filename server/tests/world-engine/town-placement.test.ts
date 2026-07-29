@@ -18,6 +18,8 @@ import {
   placementCandidates,
   placementFeasible,
   placementScore,
+  seatMountable,
+  toFrame,
   toWorld,
   zoneAt,
   zoneById,
@@ -238,5 +240,220 @@ describe("placementCandidates: the creature's own search", () => {
     // The best spot is genuinely AT the table, not across the room.
     const d = Math.hypot(spots[0]!.x - table.x, spots[0]!.y - table.y);
     expect(d).toBeLessThan(2.5);
+  });
+
+  it("an UNDIRECTED chair search finds the table on its own — never a wall", () => {
+    // "put + chair" names no spot. The chair's habitat is beside its table
+    // (the registry's besideAnchor rule), so the search must derive that
+    // anchor itself — the old wall-scan-only candidates put crafted chairs
+    // flush on the wall nearest the table, behind the seated ones, where the
+    // mount-room rule shows nobody could ever sit on them.
+    const pieces = houseFurniture(center, house, goods);
+    const table = pieces.find((p) => p.kind === "table")!;
+    const ctx = contextFor(house, [...pieces]);
+    const spots = placementCandidates(ctx, { kind: "chair", radius: 0.22 }, 8);
+    expect(spots.length).toBeGreaterThan(0);
+    // The WINNNING spot is at the table, clear of the walls. (Lower-ranked
+    // survivors may sit elsewhere — a chair mountable via a neighbouring
+    // fixture's face is legal, just unnatural — the score orders them out.)
+    const best = spots[0]!;
+    expect(Math.hypot(best.x - table.x, best.y - table.y)).toBeLessThan(2.6); // at the table…
+    const lr = livingRect(center, house);
+    const wallGap = Math.min(best.x - lr.x, lr.x + lr.w - best.x, best.y - lr.y, lr.y + lr.h - best.y);
+    expect(wallGap).toBeGreaterThan(0.5); // …never flush on a wall
+  });
+
+  it("an anchored ring clears the anchor's own tabletop", () => {
+    // "near the table" anchors at the table's CENTRE; the snug ring must
+    // start OUTSIDE its footprint (the old r + 0.35 default rang inside it).
+    const pieces = houseFurniture(center, house, goods);
+    const table = pieces.find((p) => p.kind === "table")!;
+    const ctx = contextFor(house, [...pieces]);
+    const spots = placementCandidates(ctx, {
+      kind: "chair", radius: 0.22, anchor: { x: table.x, y: table.y },
+    }, 8);
+    expect(spots.length).toBeGreaterThan(0);
+    for (const s of spots) {
+      expect(Math.max(Math.abs(s.x - table.x), Math.abs(s.y - table.y)))
+        .toBeGreaterThan(table.radius + 0.22); // fully off the tabletop
+    }
+  });
+});
+
+describe("THE MOUNT-ROOM RULE: a seat is only placeable where a body can sit down", () => {
+  const house = SWEEP[0]!;
+  const lr = livingRect(center, house);
+
+  /** A bare context holding ONE table, `gap` metres of daylight between its
+   *  edge and the living room's east wall. */
+  function tableNearEastWall(gap: number): { ctx: PlacementContext; table: FurniturePiece } {
+    const table: FurniturePiece = {
+      id: "t", kind: "table", radius: 0.8,
+      x: lr.x + lr.w - gap - 0.8, y: lr.y + lr.h / 2, facing: 0, openable: false,
+    };
+    return { ctx: contextFor(house, [table]), table };
+  }
+
+  it("a chair in the dead strip between the table and the wall is INFEASIBLE", () => {
+    // 1.1 m of daylight: the tucked chair itself fits (0.78 m off the wall),
+    // but its mounting spot (table radius + body + 0.22 = 1.42 from the
+    // table centre) lands 0.48 m from the wall — inside the wall band's
+    // 0.6 — so nobody could ever stand there to sit down. This is the exact
+    // live defect: a generated chair 4 cm short of standable behind, whose
+    // sitter parked across the table.
+    const { ctx, table } = tableNearEastWall(1.1);
+    const roomId = zoneAt(ctx, table.x, table.y)!.room.id;
+    const dead = placementFeasible(ctx, roomId, {
+      x: table.x + table.radius + 0.22 + 0.1, y: table.y, radius: 0.22, kind: "chair",
+    });
+    expect(dead).toEqual({ ok: false, reason: "service" });
+    // The table's OPEN face keeps its chair.
+    const open = placementFeasible(ctx, roomId, {
+      x: table.x - table.radius - 0.22 - 0.1, y: table.y, radius: 0.22, kind: "chair",
+    });
+    expect(open).toEqual({ ok: true });
+  });
+
+  it("a wall-flush chair (no table at all) is INFEASIBLE — it can never be mounted", () => {
+    const ctx = contextFor(house, []);
+    const roomId = zoneAt(ctx, lr.x + lr.w / 2, lr.y + lr.h / 2)!.room.id;
+    const v = placementFeasible(ctx, roomId, {
+      x: lr.x + 0.32, y: lr.y + lr.h / 2, radius: 0.22, kind: "chair",
+    });
+    expect(v).toEqual({ ok: false, reason: "service" });
+  });
+
+  it("a SOLID piece in the same strip is untouched by the rule (chest beside the wall stays legal)", () => {
+    const { ctx, table } = tableNearEastWall(2.6);
+    const roomId = zoneAt(ctx, table.x, table.y)!.room.id;
+    const v = placementFeasible(ctx, roomId, {
+      x: lr.x + lr.w - 0.65, y: lr.y + 1.2, radius: 0.55, kind: "chest",
+    });
+    expect(v.ok).toBe(true);
+  });
+
+  it("GENERATOR PARITY: every generated chair, every house in the sweep, is mountable", () => {
+    let idx = 100;
+    for (const door of ["north", "south", "east", "west"] as const) {
+      for (let w = 7; w <= 13.01; w += 1.2) {
+        for (let h = 7; h <= 10.01; h += 1.4) {
+          const sideways = door === "east" || door === "west";
+          const ww = sideways ? h : w;
+          const hh = sideways ? w : h;
+          const hs: TownHouse = { index: idx++, dx: -ww / 2, dy: -hh / 2, w: ww, h: hh, door, color: "#a8875f", floors: 1 };
+          const pieces = houseFurniture(center, hs, goods);
+          const ctx = makePlacementContext(center, hs, houseRoomPlan(center, hs), goods, [...pieces]);
+          for (const c of pieces.filter((p) => p.kind === "chair")) {
+            const z = zoneAt(ctx, c.x, c.y)!;
+            const f = toFrame(ctx, c.x, c.y);
+            expect(`house ${hs.index} ${c.id} mountable: ${seatMountable(ctx, z, f.u, f.v)}`)
+              .toBe(`house ${hs.index} ${c.id} mountable: true`);
+          }
+        }
+      }
+    }
+  });
+});
+
+// ── THE SPOKEN PROXIMITY DISTINCTION. "next to the table" and "near the table"
+// are different orders, and the search now reads them apart: `beside` keeps
+// ONLY the adjacent band around the anchor, `near` keeps the room-scaled
+// vicinity and ranks it by closeness. Without a mode the anchor merely SEEDS
+// candidates and the station's own aesthetics can drag the winner to a wall on
+// the far side of the room — the legacy behaviour, still available.
+
+describe("anchorMode — 'next to' is the adjacent band, 'near' scales with the room", () => {
+  const house = SWEEP[0]!;
+  const plan = houseRoomPlan(center, house);
+  const livingId = plan.rooms[0]!.id;
+
+  /** The living room's own table, as the spoken anchor. */
+  const anchorOf = (ctx: PlacementContext) => {
+    const z = zoneById(ctx, livingId)!;
+    return toWorld(ctx, (z.u0 + z.u1) / 2, (z.v0 + z.v1) / 2);
+  };
+  const dist = (s: { x: number; y: number }, a: { x: number; y: number }) =>
+    Math.hypot(s.x - a.x, s.y - a.y);
+
+  it("beside admits only spots hugging the anchor; unmoded search roams the room", () => {
+    const ctx = contextFor(house, []);
+    const anchor = anchorOf(ctx);
+    const q = { kind: "chair" as const, radius: 0.35, roomId: livingId, anchor };
+    const loose = placementCandidates(ctx, q, 24);
+    const beside = placementCandidates(ctx, { ...q, anchorMode: "beside" as const }, 24);
+    expect(beside.length).toBeGreaterThan(0);
+    expect(beside.length).toBeLessThan(loose.length);
+    // Every survivor is genuinely adjacent — within the snug ring plus slack.
+    const worst = Math.max(...beside.map((s) => dist(s, anchor)));
+    expect(worst).toBeLessThan(1.5);
+    // The unrestricted search reached further than that.
+    expect(Math.max(...loose.map((s) => dist(s, anchor)))).toBeGreaterThan(worst);
+  });
+
+  it("front/behind read the anchor's FACING — disjoint wedges on opposite sides", () => {
+    const ctx = contextFor(house, []);
+    const anchor = anchorOf(ctx);
+    // Face the anchor along +x: "in front" must land x-ward of it, "behind"
+    // the other way — the ±75° wedge guarantees the sign of the displacement.
+    const q = { kind: "chair" as const, radius: 0.35, roomId: livingId, anchor, anchorFacing: 0 };
+    const front = placementCandidates(ctx, { ...q, anchorMode: "front" as const }, 24);
+    const behind = placementCandidates(ctx, { ...q, anchorMode: "behind" as const }, 24);
+    expect(front.length).toBeGreaterThan(0);
+    expect(behind.length).toBeGreaterThan(0);
+    for (const s of front) expect(s.x).toBeGreaterThan(anchor.x);
+    for (const s of behind) expect(s.x).toBeLessThan(anchor.x);
+    // Without a facing the directional mode degrades to `near` — a bare point
+    // has no front, but the order still binds to the vicinity.
+    const noFace = placementCandidates(
+      ctx,
+      { kind: "chair" as const, radius: 0.35, roomId: livingId, anchor, anchorMode: "front" as const },
+      24,
+    );
+    expect(noFace.length).toBeGreaterThanOrEqual(front.length);
+  });
+
+  it("near keeps the vicinity but RANKS by closeness — the winner is the nearest good spot", () => {
+    const ctx = contextFor(house, []);
+    const anchor = anchorOf(ctx);
+    const q = { kind: "chair" as const, radius: 0.35, roomId: livingId, anchor };
+    const loose = placementCandidates(ctx, q, 24);
+    const near = placementCandidates(ctx, { ...q, anchorMode: "near" as const }, 24);
+    expect(near.length).toBeGreaterThan(0);
+    // The proximity factor never promotes a far spot over a near one.
+    expect(dist(near[0]!, anchor)).toBeLessThanOrEqual(dist(loose[0]!, anchor));
+    // `near` is more forgiving than `beside`: it admits strictly more spots.
+    const beside = placementCandidates(ctx, { ...q, anchorMode: "beside" as const }, 24);
+    expect(near.length).toBeGreaterThanOrEqual(beside.length);
+  });
+
+  it("the acceptance radius SCALES with the room, never a fixed metre", () => {
+    // A big house forgives further; a small one is strict. Same anchor role,
+    // same piece — only the room differs.
+    const reachIn = (h: TownHouse): number => {
+      const p = houseRoomPlan(center, h);
+      const ctx = makePlacementContext(center, h, p, goods, []);
+      const id = p.rooms[0]!.id;
+      const z = zoneById(ctx, id)!;
+      const a = toWorld(ctx, (z.u0 + z.u1) / 2, (z.v0 + z.v1) / 2);
+      // No cap — the acceptance RADIUS is what's under test, not the top-N
+      // slice (proximity ranking would otherwise fill any small cap with the
+      // nearest spots in both rooms alike).
+      const spots = placementCandidates(
+        ctx,
+        { kind: "chest", radius: 0.55, roomId: id, anchor: a, anchorMode: "near" },
+        999,
+      );
+      return Math.max(...spots.map((s) => dist(s, a)));
+    };
+    const big = reachIn(mk(90, -8, -7, 16, 14, "south"));
+    const small = reachIn(mk(91, -3.5, -3.5, 7, 7, "south"));
+    expect(big).toBeGreaterThan(small);
+  });
+
+  it("no anchorMode ⇒ the legacy search, unchanged", () => {
+    const ctx = contextFor(house, []);
+    const anchor = anchorOf(ctx);
+    const q = { kind: "chair" as const, radius: 0.35, roomId: livingId, anchor };
+    expect(placementCandidates(ctx, q, 24)).toEqual(placementCandidates(ctx, { ...q }, 24));
   });
 });

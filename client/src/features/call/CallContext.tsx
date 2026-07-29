@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { CallClient, type CallClientEvent, type CallState, type IncomingCall } from "@shared/call/call-client";
-import { parseCallDataMessage, type CallDataMessage, type MirrorQuickButton } from "@shared/call/call-data-messages";
+import { parseCallDataMessage, type CallDataMessage, type MirrorQuickButton, type WorldCommandMessage } from "@shared/call/call-data-messages";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
 import type { BoardButton, ParsedBoardData } from "@shared/schema";
 import type { WorldNetMessage } from "@shared/world-engine/index";
@@ -104,6 +104,11 @@ interface CallContextValue {
   sendNpc: (msg: unknown) => void;
   /** Fan-out of inbound NPC-conversation messages (fed by the CallClient). */
   npcHub: CallNpcHub;
+  /** Fan-out of inbound RELIABLE `world-cmd` data messages for an iframe world
+   *  game (engine "iframe-quest"). The mounted IframeQuestSurface subscribes and
+   *  ferries each command into the game iframe. Handler args: (fromPersonId,
+   *  parsed WorldCommandMessage). */
+  worldCmdHub: CallWorldCmdHub;
   /** Phase 1 position relay: publish the local avatar's position world-wide. */
   publishPresence: (p: WorldPresence) => void;
   /** Phase 1 position relay: inbound positions of everyone in the world. */
@@ -167,6 +172,28 @@ export interface MirroredBoardState {
   at: number;
 }
 
+type WorldCmdHandler = (fromPersonId: string, cmd: WorldCommandMessage) => void;
+
+/** Minimal fan-out for inbound `world-cmd` reliable data messages — same shape
+ *  as CallWorldHub/CallNpcHub, typed to the parsed envelope. One per provider;
+ *  the active IframeQuestSurface subscribes. */
+export class CallWorldCmdHub {
+  private handlers = new Set<WorldCmdHandler>();
+
+  emit(fromPersonId: string, cmd: WorldCommandMessage): void {
+    for (const h of this.handlers) h(fromPersonId, cmd);
+  }
+
+  subscribe(handler: WorldCmdHandler): () => void {
+    this.handlers.add(handler);
+    return () => { this.handlers.delete(handler); };
+  }
+
+  clear(): void {
+    this.handlers.clear();
+  }
+}
+
 const CallContext = createContext<CallContextValue | null>(null);
 
 export function CallProvider({ children }: { children: ReactNode }) {
@@ -204,6 +231,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // One world-message fan-out per provider; the active CallGameSurface subscribes.
   const worldHubRef = useRef(new CallWorldHub());
   const npcHubRef = useRef(new CallNpcHub());
+  // Reliable world-cmd fan-out for iframe world games (engine "iframe-quest").
+  const worldCmdHubRef = useRef(new CallWorldCmdHub());
   // Phase 1 position relay: world-wide avatar positions, fed by `presence` events.
   const presenceChannelRef = useRef(new WorldPresenceChannel());
   // Mirror remoteStreams in a ref so the proximity A/V gate reads it without
@@ -229,6 +258,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     screenStreamIdsRef.current.clear();
     worldHubRef.current.clear();
     npcHubRef.current.clear();
+    worldCmdHubRef.current.clear();
     presenceChannelRef.current.clear();
   }, []);
 
@@ -358,6 +388,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
           setMirroredDwell(m.buttonId);
         } else if (m.k === "board-selection") {
           setMirroredSelection({ buttonId: m.buttonId, at: m.at });
+        } else if (m.k === "world-cmd") {
+          // Reliable command for an iframe world game — fan out to the mounted
+          // IframeQuestSurface, which ferries it into the game iframe.
+          worldCmdHubRef.current.emit(event.personId, m);
         } else if (m.k === "screen-share") {
           if (m.on) {
             screenStreamIdsRef.current.add(m.streamId);
@@ -739,6 +773,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     worldHub: worldHubRef.current,
     sendNpc,
     npcHub: npcHubRef.current,
+    worldCmdHub: worldCmdHubRef.current,
     publishPresence,
     presenceChannel: presenceChannelRef.current,
     getAudibleIds,

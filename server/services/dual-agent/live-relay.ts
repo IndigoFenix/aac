@@ -688,6 +688,7 @@ export type ClientMessage =
   | { type: "user_message"; text: string }
   | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm (ignored in live mode — Gemini hears PCM directly)
   | { type: "button_press"; buttons: string[]; sentences?: Record<string, string>; board?: any }
+  | { type: "game_press"; text: string; glyph?: string; voice?: boolean }  // press on an ENGINE-generated world-engine game board — a REAL student utterance (voiced in the student's voice, logged, published to the group chat) that must NOT wake any agent into a model turn. `text` = the localized spoken sentence, `glyph` = the composed glyph string (informational), `voice` = client wants server student-voice TTS (absent → server falls back to the resolved gameOptions.studentVoice setting). See AgentCoordinator.handleGamePress.
   | { type: "tts_done"; id: string; ok?: boolean }  // client-side TTS (client_tts) finished playing — releases the server's wait so the AI's reply doesn't land on top of the student's own voice
   | { type: "board_exit"; label: string; instruction: string }  // exit button pressed on loaded board
   | { type: "gesture_context"; data: string }
@@ -754,7 +755,9 @@ export type ServerMessage =
   | { type: "board_patch"; data: any }
   | { type: "board"; data: any }
   | { type: "input_glyphs"; data: Array<{ glyph: string; fallback?: string }> }  // experiment (glyphInputTranslation): glyph translation of incoming speech for the header strip — one entry per sentence
-  | { type: "transcript"; data: string; speaker?: string; confidence?: string }
+  // `confidence` = the Observer's read of the utterance; `asrConfidence` = how
+  // clearly the speech-to-text heard the WORDS (drives the caption's fuzziness).
+  | { type: "transcript"; data: string; speaker?: string; confidence?: string; asrConfidence?: "high" | "medium" | "low" | "unknown" }
   | { type: "transcript_interim"; data: string }  // rolling live STT interim ("" clears) — grey caption while the recognizer is still hearing; the routed `transcript` (yellow) stays authoritative
   | { type: "context"; data: string }
   | { type: "emote"; data: string }
@@ -1801,6 +1804,37 @@ export class LiveRelay {
           // it immediately, then (if waking from resting) switches to the awake
           // profile before dispatching to the model — see inside.
           void this.handleButtonPress(msg.buttons, msg.sentences, msg.board, isInterrupt);
+          break;
+        }
+
+        case "game_press": {
+          // LEGACY-path parity for the world-engine game board press (the
+          // active path is AgentCoordinator.handleGamePress). A REAL student
+          // utterance: show it, voice it in the student's voice, persist it,
+          // record it for MLU — but never dispatch a model turn (the game
+          // executes the sentence itself).
+          if (this.paused) break;
+          const gameText = (msg.text || "").trim();
+          if (!gameText) break;
+          this.lastAacInteractionAt = Date.now();
+          this.lastAacActivityAt = Date.now();
+          this.send({ type: "utterance", text: gameText, confidence: "high", noAudioClear: false });
+          if (msg.voice !== false) this.streamStudentUtteranceTts(gameText);
+          if (this.sessionId) {
+            dualAgentService.addPendingMessage(this.sessionId, {
+              role: "user",
+              content: `[GAME PRESS] "${gameText}"`,
+              timestamp: Date.now(),
+            }).catch(err => console.error("[LiveRelay] Failed to persist game press:", err));
+          }
+          if (this.studentId) {
+            recordUtterance({
+              studentId: this.studentId,
+              chatSessionId: this.sessionId,
+              text: gameText,
+              source: "board_press",
+            });
+          }
           break;
         }
 

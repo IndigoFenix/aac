@@ -47,6 +47,55 @@ describe("miniature system — planet compression (space-time-compression.md §5
     expect(me.surfaceAirDensity / re.surfaceAirDensity).toBeCloseTo(1, 6);
   });
 
+  // LAW (settlement-emergence.md §4a): compression scales EVERY body, and
+  // relative scales come out unchanged — compression is presentation. The
+  // distance dials exist so a world can BUY a storybook sky on purpose.
+  it("interplanetary distance is its own dial — big moons are bought, not stumbled into", { timeout: 120000 }, () => {
+    const base = generateSolarSystem({
+      star: SUN, galaxyParams: DEFAULT_GALAXY_PARAMS,
+      centerPosition: new THREE.Vector3(0, 0, 0), faceN: 12, compression: 25,
+    });
+    const near = generateSolarSystem({
+      star: SUN, galaxyParams: DEFAULT_GALAXY_PARAMS,
+      centerPosition: new THREE.Vector3(0, 0, 0), faceN: 12, compression: 25, interplanetary: 100,
+    });
+    const b = base.bodies.find((x) => x.id === "Ap2")!;
+    const n = near.bodies.find((x) => x.id === "Ap2")!;
+    // Same body, four times closer in ⇒ it subtends 4× the angle: the sky
+    // grows without the planet shrinking.
+    expect(n.radius).toBeCloseTo(b.radius, 6);
+    expect(b.orbit!.semiMajorAxis / n.orbit!.semiMajorAxis).toBeCloseTo(4, 9);
+    const apparent = (x: typeof b) => x.radius / x.orbit!.semiMajorAxis;
+    expect(apparent(n) / apparent(b)).toBeCloseTo(4, 6);
+  });
+
+  it("revolution and rotation accelerate the sky, preserving relative ratios", { timeout: 120000 }, () => {
+    const real = sol();
+    const fast = generateSolarSystem({
+      star: SUN, galaxyParams: DEFAULT_GALAXY_PARAMS,
+      centerPosition: new THREE.Vector3(0, 0, 0), faceN: 12, revolution: 30, rotation: 360,
+    });
+    // EVERY orbiting body speeds up by the same factor — the ratio between
+    // two planets' years is exactly what it was.
+    const pairs = real.bodies.filter((b) => b.orbit).map((b) => [b, fast.bodies.find((f) => f.id === b.id)!] as const);
+    expect(pairs.length).toBeGreaterThan(1);
+    for (const [r, f] of pairs) {
+      expect(f.orbit!.period).toBeCloseTo(r.orbit!.period / 30, 3);
+      expect(f.orbit!.semiMajorAxis).toBeCloseTo(r.orbit!.semiMajorAxis, 3); // distance untouched
+    }
+    const ratio = (sys: typeof real) => {
+      const o = sys.bodies.filter((b) => b.orbit);
+      return o[0].orbit!.period / o[1].orbit!.period;
+    };
+    expect(ratio(fast)).toBeCloseTo(ratio(real), 9);
+    // Spin likewise — a slow world stays relatively slow.
+    const spun = real.bodies.map((b) => [b, fast.bodies.find((f) => f.id === b.id)!] as const);
+    for (const [r, f] of spun) {
+      if (Math.abs(r.rotation.rate) < 1e-12) continue;
+      expect(Math.abs(f.rotation.rate / r.rotation.rate)).toBeCloseTo(360, 6);
+    }
+  });
+
   it("the terrain builds at the COMPRESSED radius — the ground is where the body is", { timeout: 120000 }, () => {
     // The invisible-terrain bug: the geography bake once built the surface at
     // the REAL radius around a miniature body, leaving the camera deep inside

@@ -208,18 +208,44 @@ describe("round-2 basic needs — thirst, waste, hygiene", () => {
   });
 });
 
-describe("fun — take a toy out and USE it anywhere (affordance-driven, no play station)", () => {
+describe("fun — get a toy out, SET IT OUT, and play at it (a temporary station)", () => {
   const fun = funTemplate(1 / NEED_FILL_S.fun);
+  /** A play area: a toy set out on the floor that somebody is playing at. The
+   *  host lists these as stations (kind "play") — see isPlayArea. */
+  const area = (id: string): StationCandidate => ({ id, place: P(id), kind: "play", waiting: 0 });
 
   it("the template selects on the `play` AFFORDANCE, not a location", () => {
     // It must never name a station kind: play is a function objects carry, so
-    // there is nothing to require. `use` + `affords:play` is the whole spec.
+    // there is nothing to REQUIRE. The station a use row plays at is not a
+    // fixture the house was built with — it is the toy itself, once set out.
     expect(fun.item).toEqual({ affords: "play" });
     expect(fun.satisfy).toEqual({ kind: "use" });
   });
 
-  it("bored with a toy already in hand → play right here (restHere; the toy makes it play)", () => {
-    expect(decideNeed(fun, { ...empty, meter: 1, carried: 1 })).toEqual({ kind: "restHere" });
+  it("bored with a toy in hand → SET IT OUT here (the toy becomes the play area)", () => {
+    // A toy is not used in the hands: it is put down in open ground and played
+    // at, which is what lets a second body join the same one.
+    expect(decideNeed(fun, { ...empty, meter: 1, carried: 1 })).toEqual({ kind: "setOutHere" });
+  });
+
+  it("a play area already standing → GO AND JOIN IT (station before acquisition)", () => {
+    // THE SOCIAL RULE. Station-first is the whole of "several creatures may use
+    // it at the same time": the second bored body walks to the game already in
+    // progress instead of fetching a second ball of its own.
+    const toy = { id: "small:ball", place: P("small:ball"), units: 1 };
+    const box = stock("box", 2);
+    const ctx = { ...empty, meter: 1, stations: [area("small:teddy")], loose: [toy], containers: { storage: box } };
+    expect(decideNeed(fun, ctx)).toEqual({ kind: "restAt", station: area("small:teddy") });
+  });
+
+  it("…and joining beats setting out a second one, even with a toy in hand", () => {
+    const ctx = { ...empty, meter: 1, carried: 1, stations: [area("small:teddy")] };
+    expect(decideNeed(fun, ctx)).toEqual({ kind: "restAt", station: area("small:teddy") });
+  });
+
+  it("the NEAREST area wins (the ctx lists them nearest-first)", () => {
+    const ctx = { ...empty, meter: 1, stations: [area("small:near"), area("small:far")] };
+    expect(decideNeed(fun, ctx)).toEqual({ kind: "restAt", station: area("small:near") });
   });
 
   it("bored, empty-handed, a toy lying loose → fetch it first", () => {
@@ -254,11 +280,41 @@ describe("fun — take a toy out and USE it anywhere (affordance-driven, no play
     const tidy = tidyTemplate();
     const pick = decideNeeds([fun, tidy], (t) =>
       t.key === "fun"
-        ? { ...empty, meter: 1, carried: 1 } // holding the toy → play it
+        ? { ...empty, meter: 1, carried: 1 } // holding the toy → set it out
         : { ...empty, carried: 0 },          // in use ⇒ not clutter, nothing loose
     );
     expect(pick?.tpl.key).toBe("fun");
-    expect(pick?.intent).toEqual({ kind: "restHere" });
+    expect(pick?.intent).toEqual({ kind: "setOutHere" });
+  });
+
+  it("THE TIDY EXEMPTION, one layer up: a toy SET OUT and in play is not clutter", () => {
+    // The same rule as the carried case, applied to the floor. A live play area
+    // is listed as a STATION and withheld from every loose list (the host's
+    // `inPlay` guard), so the chore has nothing to sweep and the players keep
+    // playing — the game is never tidied out from under them mid-play.
+    const tidy = tidyTemplate();
+    const pick = decideNeeds([fun, tidy], (t) =>
+      t.key === "fun"
+        ? { ...empty, meter: 1, stations: [area("small:teddy")] } // playing at it
+        : { ...empty, loose: [] },                                // in play ⇒ nothing loose to sweep
+    );
+    expect(pick?.tpl.key).toBe("fun");
+    expect(pick?.intent).toEqual({ kind: "restAt", station: area("small:teddy") });
+  });
+
+  it("when the last player stops, the toy IS clutter again — tidy files it away", () => {
+    // THE RETIREMENT, from the chore's side: nobody is playing, so the host
+    // lists no area and the prop reappears in tidy's loose sweep.
+    const tidy = tidyTemplate();
+    const toy = { id: "small:teddy", place: P("small:teddy"), units: 1 };
+    const box = stock("box", 0, 99);
+    const pick = decideNeeds([fun, tidy], (t) =>
+      t.key === "fun"
+        ? { ...empty, meter: 0 }                                        // satisfied — not firing
+        : { ...empty, loose: [toy], containers: { storage: box } },     // no longer in use
+    );
+    expect(pick?.tpl.key).toBe("tidy");
+    expect(pick?.intent).toEqual({ kind: "take", from: toy, units: 1 });
   });
 
   it("once fun is satisfied the toy DOES become clutter — tidy puts it away", () => {
@@ -540,21 +596,26 @@ describe("round-3 clothing — dress (equip), laundry (transform), stow", () => 
   });
 });
 
-// ── Round 7: COOKING — the meal chain (cook = demand-paced transform at the
-// stove; serve = the put-away row for meals; hunger eats what waits). The
-// laundry chain's mirror, so the same seams are tested: the type change as
-// handoff, the station-required block, and the LIVELOCK INVARIANT.
-import { cookTemplate, serveTemplate } from "@shared/world-engine/interaction/behavior/needs.js";
+// ── The MEAL CHAIN, now RITUAL-paced (cook = a transform at the stove; prep =
+// the put-away row that lays the place; hunger eats what waits). The laundry
+// chain's mirror, so the same seams are tested: the type change as handoff, the
+// station-required block, and the LIVELOCK INVARIANT.
+//
+// ⚠️ The BILL replaces the old table cap. `below`/`upTo` here is one portion
+// per head coming to a declared ritual, not a shelf the household must keep
+// topped up forever — so a `ritual` container with no live event resolves to
+// nothing and neither row fires at all. Two heads = a bill of 2.
+import { cookTemplate, ritualPrepTemplate } from "@shared/world-engine/interaction/behavior/needs.js";
 
-describe("round-7 cooking — cook (transform at the stove), serve (deposit on the table)", () => {
+describe("the meal chain — cook (transform at the stove), prep (lay the place)", () => {
   const cook = cookTemplate("food", "meal", 2);
-  const serve = serveTemplate("meal", 2);
+  const prep = ritualPrepTemplate("meal", 2);
   const stove: StationCandidate = { id: "oven", place: P("oven"), kind: "oven", waiting: 0 };
 
-  it("an empty table fires the cook: take ONE raw unit from the pantry first", () => {
+  it("a bill nothing has filled fires the cook: take ONE raw unit from the pantry first", () => {
     const ctx = {
       ...empty,
-      containers: { serve: stock("table", 0, 2), home: stock("pantry", 4) },
+      containers: { ritual: stock("table", 0, 2), home: stock("pantry", 4) },
       stations: [stove],
     };
     expect(decideNeed(cook, ctx)).toEqual({ kind: "take", from: stock("pantry", 4), units: 1 });
@@ -562,47 +623,57 @@ describe("round-7 cooking — cook (transform at the stove), serve (deposit on t
   it("pantry dry → the cook BUYS raw at the market (the acquire fall-through)", () => {
     const ctx = {
       ...empty,
-      containers: { serve: stock("table", 0, 2), home: stock("pantry", 0) },
+      containers: { ritual: stock("table", 0, 2), home: stock("pantry", 0) },
       sources: [stock("store", 5)],
       stations: [stove],
     };
     expect(decideNeed(cook, ctx)).toEqual({ kind: "take", from: stock("store", 5), units: 1 });
   });
   it("carrying raw → process it at the stove", () => {
-    const ctx = { ...empty, carried: 1, containers: { serve: stock("table", 0, 2) }, stations: [stove] };
+    const ctx = { ...empty, carried: 1, containers: { ritual: stock("table", 0, 2) }, stations: [stove] };
     expect(decideNeed(cook, ctx)).toEqual({ kind: "processAt", station: stove });
   });
   it("NO STOVE: blocked with EMPTY hands — never fetch what can't be processed", () => {
-    // (Round 7 walker rule: the transform checks its station BEFORE
-    // acquiring — a stove-less house's cook doesn't stand holding an apple.)
-    const ctx = { ...empty, containers: { serve: stock("table", 0, 2), home: stock("pantry", 4) } };
+    // (The transform checks its station BEFORE acquiring — a stove-less house's
+    // cook doesn't stand holding an apple.)
+    const ctx = { ...empty, containers: { ritual: stock("table", 0, 2), home: stock("pantry", 4) } };
     expect(decideNeed(cook, ctx)).toEqual({ kind: "blocked" });
   });
+  it("NO RITUAL: the role resolves to nothing, so the cook row never fires at all", () => {
+    // The whole point of the change: with no declared event there is no bill,
+    // so nobody cooks "to keep the table stocked". A missing container reads as
+    // empty ⇒ the drive fires ⇒ but acquisition has nowhere to deliver, and the
+    // row blocks instead of running a standing larder errand.
+    const ctx = { ...empty, containers: { home: stock("pantry", 4) }, stations: [stove] };
+    expect(decideNeed(cook, ctx)).toEqual({ kind: "take", from: stock("pantry", 4), units: 1 });
+    // …and the prep row, with nowhere to lay a place, blocks rather than banking.
+    expect(decideNeed(prep, { ...empty, carried: 1 })).toEqual({ kind: "blocked" });
+  });
   it("THE BRAKE: the just-cooked meal in hand counts toward the drive (carriedOf)", () => {
-    // Table 0 + 1 meal in hand + 1 more needed → still fires (below 2)…
+    // Bill 2, place 0 + 1 meal in hand + 1 more needed → still fires…
     const oneShy = {
-      ...empty, carriedOf: 1, containers: { serve: stock("table", 0, 2), home: stock("pantry", 4) },
+      ...empty, carriedOf: 1, containers: { ritual: stock("table", 0, 2), home: stock("pantry", 4) },
       stations: [stove],
     };
     expect(needFires(cook, oneShy)).toBe(true);
-    // …but table 1 + 1 in hand = 2 → the drive stops; serve's turn.
+    // …but 1 laid + 1 in hand = the bill → the drive stops; prep's turn.
     const enough = {
-      ...empty, carriedOf: 1, containers: { serve: stock("table", 1, 1), home: stock("pantry", 4) },
+      ...empty, carriedOf: 1, containers: { ritual: stock("table", 1, 1), home: stock("pantry", 4) },
       stations: [stove],
     };
     expect(decideNeed(cook, enough)).toEqual({ kind: "idle" });
   });
-  it("serve tables the carried meal (and a gift, and a floor meal via loose)", () => {
-    expect(decideNeed(serve, { ...empty, carried: 1, containers: { serve: stock("table", 0, 2) } }))
+  it("prep lays the carried meal (and a gift, and a floor meal via loose)", () => {
+    expect(decideNeed(prep, { ...empty, carried: 1, containers: { ritual: stock("table", 0, 2) } }))
       .toEqual({ kind: "deposit", into: stock("table", 0, 2), units: 1 });
-    const floor = { ...empty, loose: [stock("small:apple.hot", 1)], containers: { serve: stock("table", 0, 2) } };
-    expect(decideNeed(serve, floor)).toEqual({ kind: "take", from: stock("small:apple.hot", 1), units: 1 });
+    const floor = { ...empty, loose: [stock("small:apple.hot", 1)], containers: { ritual: stock("table", 0, 2) } };
+    expect(decideNeed(prep, floor)).toEqual({ kind: "take", from: stock("small:apple.hot", 1), units: 1 });
   });
-  it("a FULL table BLOCKS the serve row (no room) — the meal stays in hand and the want surfaces", () => {
-    // Was idle before the §4 full-container fix: a deposit with nowhere to go
-    // is a surfaced want, not contentment. The meal still stays in hand (a
-    // blocked row banks nothing), where the next hunger firing eats it.
-    expect(decideNeed(serve, { ...empty, carried: 1, containers: { serve: stock("table", 2, 0) } }))
+  it("a FILLED bill BLOCKS the prep row (no room) — the meal stays in hand and the want surfaces", () => {
+    // A deposit with nowhere to go is a surfaced want, not contentment. The
+    // meal stays in hand (a blocked row banks nothing), where the next hunger
+    // firing eats it.
+    expect(decideNeed(prep, { ...empty, carried: 1, containers: { ritual: stock("table", 2, 0) } }))
       .toEqual({ kind: "blocked" });
   });
 
@@ -614,38 +685,39 @@ describe("round-7 cooking — cook (transform at the stove), serve (deposit on t
     // row — the unit reaches the stove, never banks back into the pantry.
     const d = decideNeeds([provisionFood, cook], (tpl) =>
       tpl.key === "cook:food"
-        ? { ...empty, carried: 1, containers: { serve: stock("table", 0, 2) }, stations: [stove] }
+        ? { ...empty, carried: 1, containers: { ritual: stock("table", 0, 2) }, stations: [stove] }
         : { ...empty, carried: 1, containers: { home: stock("pantry", 9, 6) } });
     expect(d?.tpl.key).toBe("cook:food");
     expect(d?.intent).toEqual({ kind: "processAt", station: stove });
   });
 
-  it("THE CHAIN, walker-side: cook takes raw → stove → the TYPE CHANGE hands to serve → the table", () => {
-    const tpls = [cook, serve];
-    // 1. Empty table: cook fetches raw.
+  it("THE CHAIN, walker-side: cook takes raw → stove → the TYPE CHANGE hands to prep → the place", () => {
+    const tpls = [cook, prep];
+    // 1. Bill unfilled: cook fetches raw.
     const fetch = decideNeeds(tpls, (tpl) =>
       tpl.key === "cook:food"
-        ? { ...empty, containers: { serve: stock("table", 0, 2), home: stock("pantry", 3) }, stations: [stove] }
-        : { ...empty, containers: { serve: stock("table", 0, 2) } });
+        ? { ...empty, containers: { ritual: stock("table", 0, 2), home: stock("pantry", 3) }, stations: [stove] }
+        : { ...empty, containers: { ritual: stock("table", 0, 2) } });
     expect(fetch?.tpl.key).toBe("cook:food");
     expect(fetch?.intent).toEqual({ kind: "take", from: stock("pantry", 3), units: 1 });
-    // 2. Raw in hand: to the stove (cook still outranks serve — serve sees no meal).
+    // 2. Raw in hand: to the stove (cook still outranks prep — prep sees no meal).
     const toStove = decideNeeds(tpls, (tpl) =>
       tpl.key === "cook:food"
-        ? { ...empty, carried: 1, containers: { serve: stock("table", 0, 2) }, stations: [stove] }
-        : { ...empty, containers: { serve: stock("table", 0, 2) } });
+        ? { ...empty, carried: 1, containers: { ritual: stock("table", 0, 2) }, stations: [stove] }
+        : { ...empty, containers: { ritual: stock("table", 0, 2) } });
     expect(toStove?.intent).toEqual({ kind: "processAt", station: stove });
     // 3. Cooked: the unit is a MEAL now — cook's carried (raw) is 0 but its
-    //    carriedOf (meal) brakes the drive when the buffer is met; serve's
-    //    carried (meal) is 1 → the deposit walks it to the table.
+    //    carriedOf (meal) brakes the drive when the bill is met; prep's
+    //    carried (meal) is 1 → the deposit walks it to the place.
     const toTable = decideNeeds(tpls, (tpl) =>
       tpl.key === "cook:food"
-        ? { ...empty, carriedOf: 1, containers: { serve: stock("table", 1, 1), home: stock("pantry", 3) }, stations: [stove] }
-        : { ...empty, carried: 1, containers: { serve: stock("table", 1, 1) } });
-    expect(toTable?.tpl.key).toBe("serve:meal");
+        ? { ...empty, carriedOf: 1, containers: { ritual: stock("table", 1, 1), home: stock("pantry", 3) }, stations: [stove] }
+        : { ...empty, carried: 1, containers: { ritual: stock("table", 1, 1) } });
+    expect(toTable?.tpl.key).toBe("prep:meal");
     expect(toTable?.intent).toEqual({ kind: "deposit", into: stock("table", 1, 1), units: 1 });
-    // 4. Table stocked to the buffer: both rows idle — equilibrium, no spin.
-    expect(decideNeeds(tpls, () => ({ ...empty, containers: { serve: stock("table", 2, 0) }, stations: [stove] })))
+    // 4. Bill met: both rows idle — equilibrium, no spin, and no standing
+    //    obligation to cook more once the heads are fed.
+    expect(decideNeeds(tpls, () => ({ ...empty, containers: { ritual: stock("table", 2, 0) }, stations: [stove] })))
       .toBeNull();
   });
 });
@@ -658,55 +730,55 @@ describe("round-7 cooking — cook (transform at the stove), serve (deposit on t
 //
 // `blocked` is a FIRING intent, so ranking it against the actionable rows let
 // ONE unservable row silence everything beneath it. Orrin holding a meal with
-// a full (or missing) table blocked serve:meal at 2.8 — which outranks fun (1)
+// a full (or missing) place blocked the prep row at 2.8 — which outranks fun (1)
 // and tidy (1.2), so he never played, never tidied, and never re-decided into
 // anything else. Nothing about standing still un-blocks a block, so it lasted
 // the rest of the session.
 describe("blocked rows surface WITHOUT freezing the body", () => {
-  const serve = serveTemplate("meal", 2);
+  const prep = ritualPrepTemplate("meal", 2);
   const fun = funTemplate(1 / NEED_FILL_S.fun);
 
   it("a blocked HIGH row lets a servable LOW row act — and still reports the want", () => {
-    const pick = decideNeeds([serve, fun], (t) =>
+    const pick = decideNeeds([prep, fun], (t) =>
       t.key === "fun"
-        ? { ...empty, meter: 1, carried: 1 }                                  // toy in hand → playable
-        : { ...empty, carried: 1, containers: { serve: stock("table", 2, 0) } }); // table FULL → blocked
+        ? { ...empty, meter: 1, carried: 1 }                                   // toy in hand → playable
+        : { ...empty, carried: 1, containers: { ritual: stock("table", 2, 0) } }); // bill FULL → blocked
     // It PLAYS…
     expect(pick?.tpl.key).toBe("fun");
-    expect(pick?.intent).toEqual({ kind: "restHere" });
+    expect(pick?.intent).toEqual({ kind: "setOutHere" });
     // …and the unmet want is still surfaced for adoption / the beg bubble.
-    expect(pick?.blocked?.tpl.key).toBe("serve:meal");
+    expect(pick?.blocked?.tpl.key).toBe("prep:meal");
     expect(pick?.blocked?.intent).toEqual({ kind: "blocked" });
   });
 
   it("nothing servable → the blocked row IS the decision (the genuinely stuck body)", () => {
-    const pick = decideNeeds([serve, fun], (t) =>
+    const pick = decideNeeds([prep, fun], (t) =>
       t.key === "fun"
-        ? { ...empty, meter: 0 }                                              // not firing
-        : { ...empty, carried: 1, containers: { serve: stock("table", 2, 0) } });
-    expect(pick?.tpl.key).toBe("serve:meal");
+        ? { ...empty, meter: 0 }                                               // not firing
+        : { ...empty, carried: 1, containers: { ritual: stock("table", 2, 0) } });
+    expect(pick?.tpl.key).toBe("prep:meal");
     expect(pick?.intent).toEqual({ kind: "blocked" });
-    expect(pick?.blocked?.tpl.key).toBe("serve:meal");
+    expect(pick?.blocked?.tpl.key).toBe("prep:meal");
   });
 
   it("the surfaced want is the TOP blocked row, not merely the last one seen", () => {
     // Lonely with nobody home (social, 2) and a meal with nowhere to go
-    // (serve, 2.8): the housemates' adoption rows must read the higher want.
+    // (prep, 2.8): the housemates' adoption rows must read the higher want.
     const social = socialTemplate(1 / NEED_FILL_S.social);
-    const pick = decideNeeds([social, serve], (t) =>
+    const pick = decideNeeds([social, prep], (t) =>
       t.key === "social"
-        ? { ...empty, meter: 1 }                                              // alone → blocked
-        : { ...empty, carried: 1, containers: { serve: stock("table", 2, 0) } });
-    expect(pick?.blocked?.tpl.key).toBe("serve:meal");
-    expect(serve.priority).toBeGreaterThan(social.priority);
+        ? { ...empty, meter: 1 }                                               // alone → blocked
+        : { ...empty, carried: 1, containers: { ritual: stock("table", 2, 0) } });
+    expect(pick?.blocked?.tpl.key).toBe("prep:meal");
+    expect(prep.priority).toBeGreaterThan(social.priority);
   });
 
   it("no blocked row at all → no `blocked` field (the ordinary case stays clean)", () => {
-    const pick = decideNeeds([serve, fun], (t) =>
+    const pick = decideNeeds([prep, fun], (t) =>
       t.key === "fun"
         ? { ...empty, meter: 1, carried: 1 }
-        : { ...empty, carried: 1, containers: { serve: stock("table", 0, 2) } });
-    expect(pick?.tpl.key).toBe("serve:meal"); // 2.8 > 1 — an ACTIONABLE row still wins on priority
+        : { ...empty, carried: 1, containers: { ritual: stock("table", 0, 2) } });
+    expect(pick?.tpl.key).toBe("prep:meal"); // 2.8 > 1 — an ACTIONABLE row still wins on priority
     expect(pick?.blocked).toBeUndefined();
   });
 });

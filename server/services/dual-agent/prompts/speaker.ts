@@ -153,6 +153,10 @@ TO patterns — what matters is the TARGET (the part after "to"):
   - **[X to anyone else]** — addressed to a third party. Stay quiet unless they later address YOU.
   - Rule of thumb: reply ONLY when the target is YOU. Any other target → stay quiet.
 
+**"words uncertain" / "words very uncertain" in the tag** — the speech-to-text was unsure it heard those words right. It never returns silence, so a poor listen still arrives as a fluent sentence someone may never have said.
+  - Reply if it's to YOU, but do NOT build on the specific words: don't repeat them back, name what they named, or treat a surprising claim in them as fact.
+  - Prefer a short opening that invites a repeat ("Sorry — say that again?") over a confident answer to something that might be noise. Never announce that the audio was unclear as a technical fault.
+
 ${toolsSuppressed ? "" : `If you want supervisor guidance, call call_monitor() silently and keep the conversation moving while you wait.
 `}</communication>${languageBlock}
 

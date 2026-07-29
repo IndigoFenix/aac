@@ -32,10 +32,16 @@ const HIDDEN_FIELDS = new Set(["questCount"]);
  *  gate is `parseWorldScaleSpec`, run by boot. */
 const SCALE_FIELDS: GroupSpec = {
   fields: [
-    { key: "day_length_s", kind: "number", min: 1, max: 86_400, default: 240, label: "Day length (s)" },
+    { key: "rotation", kind: "number", min: 1, max: 86_400, default: 360, label: "Rotation (× real spin)" },
+    { key: "revolution", kind: "number", min: 1, max: 10_000_000, default: 1, label: "Revolution (× real orbit)" },
     { key: "sleep_fraction", kind: "number", min: 0, max: 0.9, default: 0.05, label: "Sleep fraction" },
     { key: "construction", kind: "number", min: 0.01, max: 100_000, default: 180, label: "Construction (s)" },
     { key: "planet_compression", kind: "number", min: 1, max: 10_000, default: 1, label: "Planet compression" },
+    { key: "metabolism", kind: "number", min: 0.01, max: 10_000, default: 1, label: "Metabolism (× real)" },
+    { key: "locomotion", kind: "number", min: 0.01, max: 1_000, default: 1, label: "Locomotion (× real gait)" },
+    { key: "generation", kind: "number", min: 0.01, max: 100_000, default: 1, label: "Generation (× real life)" },
+    { key: "lean_fraction", kind: "number", min: 0, max: 0.9, default: 0.4, label: "Lean season fraction" },
+    { key: "growth_fraction", kind: "number", min: 0, max: 0.9, default: 18 / 70, label: "Growth stage fraction" },
   ],
 };
 

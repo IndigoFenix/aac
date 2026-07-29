@@ -1156,8 +1156,8 @@ export default function UnifiedDebugPanel({
                 )}
 
                 {/* Confidence indicators */}
-                {(ctx.utteranceConfidence || ctx.transcriptConfidence) && (
-                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded flex gap-3">
+                {(ctx.utteranceConfidence || ctx.transcriptConfidence || ctx.transcriptClarity) && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded flex gap-3 flex-wrap">
                     {ctx.utteranceConfidence && (
                       <div className="flex items-center gap-1 text-[10px]">
                         <span className={`w-2 h-2 rounded-full ${
@@ -1174,6 +1174,18 @@ export default function UnifiedDebugPanel({
                           ctx.transcriptConfidence === 'medium' ? 'bg-amber-500' : 'bg-red-500'
                         }`} />
                         <span className="text-gray-500">Transcript: {ctx.transcriptConfidence}</span>
+                      </div>
+                    )}
+                    {/* The recogniser's OWN score for the words — the axis that
+                        separates "misheard" from "misattributed". */}
+                    {ctx.transcriptClarity && (
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <span className={`w-2 h-2 rounded-full ${
+                          ctx.transcriptClarity === 'high' ? 'bg-green-500' :
+                          ctx.transcriptClarity === 'medium' ? 'bg-amber-500' :
+                          ctx.transcriptClarity === 'low' ? 'bg-red-500' : 'bg-gray-400'
+                        }`} />
+                        <span className="text-gray-500">Heard: {ctx.transcriptClarity}</span>
                       </div>
                     )}
                   </div>

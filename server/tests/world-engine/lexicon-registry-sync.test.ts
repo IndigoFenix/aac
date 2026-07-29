@@ -22,17 +22,22 @@ const GAME_ONLY = new Set<string>([
   // `drop`/`carry` left: they now ship as physical-carry verbs with body art.
   // `come`/`follow` left: bundled body art shipped, and both are directional —
   // the pair with `go` is only distinguishable BY the artwork.
-  "stay", "turn", "get", "bring",
+  // `get` left: it ships on `take`'s hand art — one act, two words, and `get`
+  // is the one the surfacer actually offers (its family's canonical head).
+  "stay", "turn", "bring",
   // `clean` left: it now resolves as the cleanliness STATE adjective.
   // `zone` left: the charter verb is spoken as `area`, which has registry art.
-  "break", "fix", "dig", "plant", "cut",
+  // `break` left: it shipped with the actions/hands art beside `build`.
+  "fix", "dig", "plant", "cut",
   // `heat` left: it now borrows the `hot` descriptor art — the act and the state
   // it produces are deliberately the same picture.
   "cook", "fill", "empty", "show", "teach", "fight", "feel", "rest",
   // connectives
   "then", "so", "therefore", "in_order_to", "until",
-  // relations
-  "behind", "front",
+  // relations — `behind` left: it shipped with the places/relational art. The
+  // board words are `behind`/`in_front_of`; `front` stays the ENGINE name for
+  // the relation and `above` a spoken alias of `over` — neither is a button.
+  "front", "above",
   // social
   "bye", "okay", "thanks", "mine", "dont_understand",
   // quantity

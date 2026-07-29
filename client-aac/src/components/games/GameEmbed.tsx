@@ -84,7 +84,7 @@ export interface GameEmbedProps {
    * shows them as the side SENTENCE BUTTONs and, on a press, sends
    * `board_option_selected` back down via this embed's imperative `send`.
    */
-  onBoardOptions?: (options: BoardOption[] | null) => void;
+  onBoardOptions?: (options: BoardOption[] | null, prompt?: string) => void;
 }
 
 const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed(
@@ -187,7 +187,7 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
         }
 
         // Board lock: the game pins (or releases) the AAC response board options.
-        if (msg.type === "set_board_options") onBoardOptions?.(msg.options);
+        if (msg.type === "set_board_options") onBoardOptions?.(msg.options, msg.prompt);
         else if (msg.type === "clear_board_options") onBoardOptions?.(null);
 
         onMessage?.(msg);
@@ -219,9 +219,19 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
     }
   }, [iframeReady, dwell?.dwellTimeMs, gamePayload, initParams]);
 
-  // Forward gaze position into the iframe's local coordinate space at ~30 Hz.
-  // Coordinates produced by the dwell context are page-space; we subtract the
-  // iframe's bounding rect so games see iframe-local pixels.
+  // Forward EYEGAZE position into the iframe's local coordinate space at
+  // ~30 Hz. Coordinates produced by the dwell context are page-space; we
+  // subtract the iframe's bounding rect so games see iframe-local pixels.
+  //
+  // Read the dwell context through a ref so the loop binds ONCE and always
+  // sees the LIVE sample — capturing it in the effect closure re-sent a
+  // FROZEN position between React renders, and under render stalls (the
+  // AAC's camera-ML load) that stale point periodically yanked the game's
+  // aim to wherever the eyes had been. Mouse mode is deliberately NOT
+  // forwarded: a pointer over the iframe already fires native events inside
+  // it, and a forwarded (possibly stale) copy only fights them.
+  const dwellGazeRef = useRef(dwell);
+  dwellGazeRef.current = dwell;
   useEffect(() => {
     if (!forwardGaze) return;
     if (!iframeReady) return;
@@ -234,23 +244,29 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
       const now = performance.now();
       if (now - lastSent < 33) return;
       lastSent = now;
-      const mode = dwell?.mode ?? "off";
-      const pos = dwell?.gazePosition;
+      const d = dwellGazeRef.current;
+      const pos = d?.mode === "eyegaze" ? d.gazePosition : null;
       if (!pos) {
+        // No position at all — a blink or a dropped tracker frame. The game may
+        // hold its last aim through it; we're not asserting a look-away.
         sendToGame(iframe, { type: "gaze", x: -1, y: -1, mode: "off" });
         return;
       }
       const rect = iframe.getBoundingClientRect();
-      sendToGame(iframe, {
-        type: "gaze",
-        x: pos.x - rect.left,
-        y: pos.y - rect.top,
-        mode: mode === "off" ? "off" : mode,
-      });
+      const x = pos.x - rect.left;
+      const y = pos.y - rect.top;
+      // Gaze tracked but OUTSIDE the iframe (sidebar, quick buttons) — still
+      // "off" for the game (never an aim point at its edge), flagged `away` so
+      // a game that cares can drop its aim at once instead of holding it.
+      if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+        sendToGame(iframe, { type: "gaze", x: -1, y: -1, mode: "off", away: true });
+        return;
+      }
+      sendToGame(iframe, { type: "gaze", x, y, mode: "eyegaze" });
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [forwardGaze, iframeReady, dwell?.gazePosition, dwell?.mode]);
+  }, [forwardGaze, iframeReady]);
 
   // Forward AI text back to the game as it streams. We track the last forwarded
   // value so we don't replay the same message; the live session accumulates

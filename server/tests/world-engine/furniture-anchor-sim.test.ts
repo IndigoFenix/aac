@@ -33,7 +33,7 @@ import {
   isFurnitureAnchored,
   dismountSpot,
 } from "@shared/world-engine/interaction/quest/furniture-anchor.js";
-import { standClear, bodiesClear, separateBodies } from "@shared/world-engine/interaction/quest/stand-points.js";
+import { standClear, bodiesClear, separateBodies, standPointFor } from "@shared/world-engine/interaction/quest/stand-points.js";
 import { useContractFor, useSideDirs, useAnchorPlan, furnitureUsePoseDump, type UseDumpWorld } from "@shared/world-engine/furniture-use.js";
 import type { FixtureKind, ObjectSpec, StructureSpec, WorldSpec } from "@shared/world-engine/types.js";
 
@@ -148,39 +148,54 @@ describe("claimed collision hands off to the anchor and eases the body ONTO the 
 });
 
 // ---------------------------------------------------------------------------
-// PART A2 — the engage reach must cover WHERE A WALK ACTUALLY ENDS
+// PART A2 — the engage trigger is the ARRIVAL SPOT, never a ring around the piece
 // ---------------------------------------------------------------------------
 
-/** The arrival tolerance the one walk primitive counts as "arrived"
- *  (quest-host COMMAND_ARRIVE / WALK_ARRIVE). A body is legally parked anywhere
- *  inside this radius of its stand spot, and the stand spot is itself a body
- *  radius clear of the fixture — so this is the real spread the anchor must
- *  cover, not the ideal spot. */
-const WALK_ARRIVE_TOLERANCE = 1.3;
+/** The arrival tolerance a USE-leg walks its stand spot to (quest-host
+ *  USE_LEG_ARRIVE) — with corner-cutting disabled indoors the walk genuinely
+ *  delivers the body this close, so this (plus braking) is the whole spread the
+ *  engage trigger must cover. */
+const USE_LEG_TOLERANCE = 0.45;
 
-describe("engagement covers the whole legal arrival spread, not just the ideal stand spot", () => {
-  // REGRESSION (2026-07-27): the engage margin only covered the stand spot, so a
-  // sleeper that stopped a metre short of it — an ordinary arrival — kept
-  // CLAIMING its bed while the anchor silently refused to engage. Nothing was
-  // left to move the body (the rest dwell pins it where it stands), so it slept
-  // on the FLOOR beside its own bed, forever. Observed live at 2.24 m from a
-  // 0.9 m-radius bed, i.e. barely a step past the stand spot.
+describe("engagement triggers at the arrival spot — covers a use-leg's spread and nothing more", () => {
   const cases: Array<{ kind: FixtureKind; radius: number }> = [
     { kind: "bed", radius: 0.9 },
     { kind: "toilet", radius: 0.55 },
     { kind: "chair", radius: 0.5 },
   ];
+  /** Park the body `past` metres BEYOND the piece's true walk target (the spot
+   *  `standPointFor` steers a use-leg to — a solid piece's stand-off, a free
+   *  pass-through seat's own centre), radially away from the piece. */
+  function parkPastArrivalSpot(state: WorldState, id: string, center: { x: number; y: number }, past: number): void {
+    const a = state.avatars[id]!;
+    const spot = standPointFor(state, "fix", center, { x: CX, y: CY - 6 }, WORLD_ENGINE_DEFAULTS.avatarRadius);
+    const off = { x: spot.x - center.x, y: spot.y - center.y };
+    const len = Math.hypot(off.x, off.y);
+    const dir = len > 1e-6 ? { x: off.x / len, y: off.y / len } : { x: 0, y: -1 };
+    a.x = spot.x + dir.x * past;
+    a.y = spot.y + dir.y * past;
+  }
   for (const { kind, radius } of cases) {
-    it(`${kind}: a body parked a full arrival tolerance past its stand spot still anchors`, () => {
-      const standOff = radius + WORLD_ENGINE_DEFAULTS.avatarRadius + 0.2;
-      const at = { x: CX, y: CY - (standOff + WALK_ARRIVE_TOLERANCE) };
-      const { state, id, center } = useWorld(kind, radius, 0, { at });
-      // Precondition: this really is the far edge of a legal arrival, not a body
-      // that wandered off — it is beyond the stand spot but inside the tolerance.
-      expect(planarDelta(at, center)).toBeGreaterThan(standOff);
+    it(`${kind}: a body parked a use-leg tolerance past its arrival spot still anchors`, () => {
+      const { state, id, center } = useWorld(kind, radius, 0);
+      parkPastArrivalSpot(state, id, center, USE_LEG_TOLERANCE);
       const a = driveAnchor(state, id, (b) => b.anchor?.phase === "anchored");
       expect(a.anchor?.phase).toBe("anchored");
       expect(planarDelta(a, center)).toBeLessThan(0.15); // on the piece, not beside it
+    });
+
+    it(`${kind}: a claiming body far outside the arrival spot is NOT snatched onto the piece`, () => {
+      // REGRESSION (2026-07-28): the old fixture-centre ring (radius + body +
+      // 1.6) spanned the table a dining chair was tucked against — a claiming
+      // body across the tabletop was "in reach", so its walk counted arrived and
+      // it rested in place instead of rounding the table to its seat. The engage
+      // trigger must refuse a body ~1.3 m past the arrival spot: that distance
+      // is for WALKING, not sliding.
+      const { state, id, center } = useWorld(kind, radius, 0);
+      parkPastArrivalSpot(state, id, center, 1.3);
+      const a = state.avatars[id]!;
+      for (let i = 0; i < 30; i++) tickFurnitureAnchor(state, id, 1 / 30, WORLD_ENGINE_DEFAULTS, { bodyR: WORLD_ENGINE_DEFAULTS.avatarRadius });
+      expect(a.anchor).toBeUndefined(); // the walk still owes the last leg
     });
   }
 });

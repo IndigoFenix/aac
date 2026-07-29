@@ -67,6 +67,17 @@
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+/* For FIXED top-anchored elements (toasts, headers) — container padding can't
+   reach them, so they offset themselves below the OS status bar. */
+.top-safe-0 {
+  top: env(safe-area-inset-top, 0px);
+}
+.top-safe-2 {
+  top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+}
 
 /* TYPOGRAPHY.
    These have to be defined HERE. `body { @apply font-sans }` resolves through
@@ -223,8 +234,44 @@
   animation: board-busy-ripple 1.8s linear infinite;
 }
 
+/* Caption clarity — the heard-speech caption is only ever as trustworthy as the
+   speech recogniser that produced it, and a weak recognition still arrives as a
+   crisp, fluent sentence. These classes make that doubt VISIBLE: the words go
+   soft and slightly out of focus, so an unsure transcript reads as unsure
+   instead of as fact. Applied from the recogniser's own score (asrConfidence).
+
+   Seizure safety: this is a slow, low-contrast defocus — no flashing, no
+   brightness swing, no moving highlight. The cycle is 7s (~0.14Hz), orders of
+   magnitude below any photosensitivity threshold, and only `filter` animates. */
+@keyframes caption-haze {
+  0%   { filter: blur(var(--caption-haze-min)); }
+  100% { filter: blur(var(--caption-haze-max)); }
+}
+
+.caption-unsure {
+  --caption-haze-min: 0.3px;
+  --caption-haze-max: 0.9px;
+  filter: blur(var(--caption-haze-min));
+  animation: caption-haze 7s ease-in-out infinite alternate;
+}
+
+/* Weakest band — more defocus, and the colour drops back so the sentence
+   stops presenting itself as something the user should act on. */
+.caption-unsure-low {
+  --caption-haze-min: 0.6px;
+  --caption-haze-max: 1.6px;
+  opacity: 0.75;
+}
+
 /* Accessibility improvements */
 @media (prefers-reduced-motion: reduce) {
+  /* Keep the doubt legible without the drift — the blur still reads as "not
+     sure", it just holds still. */
+  .caption-unsure {
+    animation: none;
+    filter: blur(var(--caption-haze-max));
+  }
+
   .symbol-item {
     transition: none;
   }

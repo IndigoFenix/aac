@@ -494,6 +494,138 @@ describe("TOWN — dwell descent and blended structure zoom", () => {
   });
 });
 
+/**
+ * THE CORNER TURNTABLE (shared/world-engine/spirit/corner-orbit.ts).
+ *
+ * Every focus the ladder can hold — a structure, a district, a city, a whole
+ * region — is circled by the SAME law: park the spark in a screen CORNER.
+ * Lower-left / upper-right wind the azimuth UP (the camera goes
+ * counter-clockwise over an east/north chart); upper-left / lower-right wind it
+ * DOWN. The vertical half is what picks the direction, so the pins below are on
+ * the SIGNS: a side-only law (the bug) reads as a plausible orbit until you
+ * notice the far rim spins the wrong way under your gaze.
+ */
+describe("ORBIT — the screen corners circle whatever is framed", () => {
+  const frame = { x: 500, y: 480, w: 12, h: 10 };
+  /** ndc → the mock's 800×600 pointer. */
+  const at = (ndcX: number, ndcY: number): typeof CENTRE => {
+    const x = ((ndcX + 1) / 2) * 800;
+    const y = ((1 - ndcY) / 2) * 600;
+    return { x, y, clientX: x, clientY: y };
+  };
+  const LOWER_LEFT = at(-0.95, -0.85);
+  const UPPER_RIGHT = at(0.95, 0.85);
+  const UPPER_LEFT = at(-0.95, 0.85);
+  const LOWER_RIGHT = at(0.95, -0.85);
+  /** Same screen side, ON the crossover row — the direction ramps to nothing. */
+  const MID_LEFT = at(-0.95, 0);
+
+  /**
+   * Turn a TOWN/DISTRICT/REGION framing with `pointer` and report the azimuth
+   * swept. A flat town-scope world has no flight rig underneath, so the camera
+   * IS the orbit pose every frame (nothing to blend against) and its azimuth
+   * reads straight off the position: the mock chart is east=+x / north=+z with
+   * the focus at the origin, and the orbit starts at az 0 (no wrap to unpick).
+   */
+  const townSweep = (pointer: typeof CENTRE, frames = 60): number => {
+    const w = mockWorld("town", false);
+    const ladder = createSpiritLadder({
+      provider: w.provider, ceiling: "town",
+      start: { level: "town", town: {} },
+    });
+    const azOf = (): number => {
+      const p = w.provider.camera.position;
+      return Math.atan2(-p.z, -p.x); // the orbit's own azimuth (camera sits opposite)
+    };
+    run(ladder, null, 2); // pose the camera once, gaze-free
+    const before = azOf();
+    run(ladder, pointer, frames);
+    expect(ladder.level).toBe("town"); // orbiting never changed rung
+    return azOf() - before;
+  };
+
+  it("a town/district: lower-left and upper-right wind the SAME way", () => {
+    const ll = townSweep(LOWER_LEFT);
+    const ur = townSweep(UPPER_RIGHT);
+    expect(ll).toBeGreaterThan(0.1);
+    expect(ur).toBeGreaterThan(0.1);
+    expect(ur).toBeCloseTo(ll, 6);
+  });
+
+  it("…and upper-left / lower-right wind the other way", () => {
+    const ul = townSweep(UPPER_LEFT);
+    const lr = townSweep(LOWER_RIGHT);
+    expect(ul).toBeLessThan(-0.1);
+    expect(lr).toBeCloseTo(ul, 6);
+    expect(ul).toBeCloseTo(-townSweep(LOWER_LEFT), 6);
+  });
+
+  it("a side gaze level with the focus holds still (the crossover eases to nothing)", () => {
+    expect(townSweep(MID_LEFT, 120)).toBeCloseTo(0, 9);
+  });
+
+  it("the centre stays for aiming — no orbit inside the dead zone", () => {
+    expect(townSweep(CENTRE, 120)).toBeCloseTo(0, 9);
+  });
+
+  it("a LOWER corner orbits instead of exiting the rung (the bottom strip is bottom-CENTRE)", () => {
+    // Same world/ceiling as the bottom-dwell exit pin: BOTTOM leaves for
+    // flight, the corner beside it must not — a rung change out from under a
+    // half-finished circle is the whole reason the strip is centre-only.
+    const corner = mockWorld("flight", true);
+    const ladder = createSpiritLadder({
+      provider: corner.provider, ceiling: "flight",
+      start: { level: "town", town: {} },
+    });
+    run(ladder, LOWER_LEFT, 600);
+    expect(ladder.level).toBe("town");
+
+    const centre = mockWorld("flight", true);
+    const exiting = createSpiritLadder({
+      provider: centre.provider, ceiling: "flight",
+      start: { level: "town", town: {} },
+    });
+    run(exiting, BOTTOM, 600);
+    expect(exiting.level).toBe("flight");
+  });
+
+  /** Descend to the dollhouse, then sweep it — the SAME corners, one rung down. */
+  const structureSweep = (pointer: typeof CENTRE, frames = 60): number => {
+    const w = mockWorld("flight", true);
+    const ladder = createSpiritLadder({
+      provider: w.provider, ceiling: "flight",
+      start: { level: "town", town: {} },
+    });
+    w.setPicks(
+      { kind: "district", x: 50, z: 30, radius: 120 },
+      { kind: "building", x: 55, z: 33, radius: 14, frame },
+    );
+    run(ladder, CENTRE, 600); // town → district → structure, blend arrived
+    expect(ladder.level).toBe("structure");
+    // The mock's dollhouse pose rides a 20 m circle about (100, 100).
+    const azOf = (): number => {
+      const p = w.provider.camera.position;
+      return Math.atan2(p.z - 100, p.x - 100);
+    };
+    const before = azOf();
+    run(ladder, pointer, frames);
+    expect(ladder.level).toBe("structure");
+    return azOf() - before;
+  };
+
+  it("a structure obeys the same corner law (one code source, every object)", () => {
+    const ll = structureSweep(LOWER_LEFT);
+    const ur = structureSweep(UPPER_RIGHT);
+    const ul = structureSweep(UPPER_LEFT);
+    const lr = structureSweep(LOWER_RIGHT);
+    expect(ll).toBeGreaterThan(0.1);
+    expect(ur).toBeCloseTo(ll, 6);
+    expect(ul).toBeCloseTo(-ll, 6);
+    expect(lr).toBeCloseTo(-ll, 6);
+    expect(structureSweep(MID_LEFT, 120)).toBeCloseTo(0, 9);
+  });
+});
+
 describe("GROUND — the glide between town and structure", () => {
   const frame = { x: 500, y: 480, w: 12, h: 10 };
 

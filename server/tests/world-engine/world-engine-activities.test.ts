@@ -8,9 +8,15 @@
 // plus headless THREE groups, like world-engine-pointing.test.ts.
 
 import { describe, it, expect } from "@jest/globals";
+import * as THREE from "three";
 import { CreatureAnimator, type BodyActivity } from "@shared/world-engine/creatures/animation.js";
 import { speciesBlueprint } from "@shared/world-engine/creatures/species.js";
-import { createCreatureAvatarFactory } from "@shared/world-engine/creatures/creature-model.js";
+import {
+  createCreatureAvatarFactory,
+  createDynamicCreature,
+  reclinePitch,
+  reclineSeat,
+} from "@shared/world-engine/creatures/creature-model.js";
 import type { AvatarFrame } from "@shared/world-engine/render3d.js";
 import type { AvatarActivity } from "@shared/world-engine/engine.js";
 
@@ -156,6 +162,123 @@ describe("CreatureAnimator activities — rig-level, species-agnostic", () => {
     settle(anim, 2);
     expect(anim.currentActivity).toBe("play");
   });
+});
+
+// LYING DOWN is a root transform, and it has to work for a body plan that is
+// already HORIZONTAL: a fixed quarter-turn lays a person on their back but
+// stands a horse on its tail. The rule is "put the BACK on the ground", which
+// for any rest spine pitch p is a turn of p − π about the body's X axis.
+describe("recline — the back goes to the ground for any posture", () => {
+  /** The body's dorsal (back) direction for a spine pitched at `p`, turned by
+   *  the recline's root pitch: where the creature's back ends up pointing. */
+  const dorsalAfter = (p: number, pitch: number): THREE.Vector3 =>
+    new THREE.Vector3(0, Math.cos(p), -Math.sin(p)).applyAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+
+  // A rough body's skin: a slab standing on the plane, deeper at the front than
+  // the back, so its AABB corners are demonstrably NOT on the body.
+  const skin = [0, 0, 0, 0, 0, 0.4, 0, 1, -0.5, 0, 1, 0.1, 0, 0.5, -0.2];
+  const verts = skin.length / 3;
+  const lowest = (angle: number, seatY: number): number => {
+    let low = Infinity;
+    for (let i = 0; i < verts; i++) {
+      const v = new THREE.Vector3(0, skin[i * 3 + 1], skin[i * 3 + 2])
+        .applyAxisAngle(new THREE.Vector3(1, 0, 0), angle);
+      low = Math.min(low, v.y + seatY);
+    }
+    return low;
+  };
+
+  it("standing (recline 0) moves nothing", () => {
+    for (const p of [0.08, 0.85, 1.386]) {
+      expect(reclinePitch(p, 0)).toBeCloseTo(0, 6);
+      const seat = reclineSeat(skin, verts, 0);
+      expect(seat.y).toBeCloseTo(0, 6);
+      expect(seat.z).toBeCloseTo(0, 6);
+    }
+  });
+
+  it("lands the back facing straight down from UPRIGHT, HORIZONTAL and between", () => {
+    // 1.386 = a person; 0.0845 = a horse; 0.85 = a raptor's slant.
+    for (const p of [1.386, 0.85, 0.3, 0.0845, -0.2]) {
+      expect(dorsalAfter(p, reclinePitch(p, 1)).y).toBeCloseTo(-1, 6);
+    }
+  });
+
+  it("a horizontal body rolls the whole way over — it is NOT stood on its tail", () => {
+    const pitch = reclinePitch(0.0845, 1);
+    // The old fixed −π/2 left a horizontal spine VERTICAL. The spine must end
+    // flat: its axis (0, sin p, cos p) has no height left after the turn.
+    const spine = new THREE.Vector3(0, Math.sin(0.0845), Math.cos(0.0845))
+      .applyAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+    expect(spine.y).toBeCloseTo(0, 6);
+    expect(Math.abs(pitch)).toBeGreaterThan(Math.PI / 2); // well past the old quarter-turn
+  });
+
+  it("eases in — half a recline is half the turn", () => {
+    expect(reclinePitch(1.386, 0.5)).toBeCloseTo(reclinePitch(1.386, 1) / 2, 6);
+  });
+
+  it("rests the lying body ON the surface and centres it where it stood", () => {
+    const restLow = Math.min(...Array.from({ length: verts }, (_, i) => skin[i * 3 + 1]));
+    const zs = Array.from({ length: verts }, (_, i) => skin[i * 3 + 2]);
+    const restMid = (Math.min(...zs) + Math.max(...zs)) / 2;
+    // Upright, horizontal, and the DIAGONAL between — where a rotated bounding
+    // box would hang the body off a corner that holds no geometry, floating it.
+    for (const p of [1.386, 0.85, 0.0845]) {
+      const pitch = reclinePitch(p, 1);
+      const seat = reclineSeat(skin, verts, pitch);
+      expect(lowest(pitch, seat.y)).toBeCloseTo(restLow, 6); // on it, not sunk in it
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      for (let i = 0; i < verts; i++) {
+        const v = new THREE.Vector3(0, skin[i * 3 + 1], skin[i * 3 + 2])
+          .applyAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+        minZ = Math.min(minZ, v.z + seat.z);
+        maxZ = Math.max(maxZ, v.z + seat.z);
+      }
+      // Centred fore/aft where the STANDING body already was — the offsets are
+      // differences against the un-turned pose, so recline 0 shifts nothing.
+      expect((minZ + maxZ) / 2).toBeCloseTo(restMid, 6);
+    }
+  });
+});
+
+describe("a sleeping body lies down on the surface it sleeps on", () => {
+  /** Vertex-exact world bounds of the drawn body after `seconds` of `activity`
+   *  (`precise`, or three unions the mesh's own AABB rotated corner-wise —
+   *  which for a reclined body is a box full of air). */
+  const bodyBox = (species: string, activity: BodyActivity, seconds: number): THREE.Box3 => {
+    const model = createDynamicCreature(species, { heightM: 1.7 });
+    for (let t = 0; t < seconds; t += 1 / 30) model.update(1 / 30, { activity });
+    model.object.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model.object, true);
+    model.dispose();
+    return box;
+  };
+
+  // human_cute is upright; horse is horizontal with a HIGH neck and a raised
+  // tail — the two ends that used to drive through the floor. cat carries a
+  // long tail and a low slung body.
+  for (const sp of ["human_cute", "horse", "cat"]) {
+    it(`${sp}: down along the ground, and nothing through it`, () => {
+      const box = bodyBox(sp, "sleep", 2);
+      const size = box.getSize(new THREE.Vector3());
+      // Lying, not standing and not balancing on its tail: the body reaches
+      // much further along the ground than it does up from it.
+      expect(size.y).toBeLessThan(size.z * 0.6);
+      // And it rests ON the surface — the neck, tail or back never sink
+      // through it (only the breathing bob dips, a couple of centimetres).
+      expect(box.min.y).toBeGreaterThan(-0.05);
+      expect(box.min.y).toBeLessThan(0.05);
+    });
+
+    it(`${sp}: stands unchanged when it is not sleeping`, () => {
+      const box = bodyBox(sp, "none", 1);
+      const size = box.getSize(new THREE.Vector3());
+      expect(size.y).toBeGreaterThan(size.z * 0.25); // still up on its legs
+      expect(Math.abs(box.min.y)).toBeLessThan(0.05); // feet on the ground
+    });
+  }
 });
 
 describe("creature avatar factory — the activity channel end-to-end", () => {

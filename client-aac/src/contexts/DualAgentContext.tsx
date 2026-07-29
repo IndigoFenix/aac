@@ -74,6 +74,8 @@ interface DualAgentContextType {
   utteranceText: string | null;
   utteranceConfidence: 'high' | 'medium' | 'low' | null;
   transcriptConfidence: 'high' | 'medium' | 'low' | null;
+  /** Recogniser clarity for `transcription` — see dual-agent-types. */
+  transcriptClarity: 'high' | 'medium' | 'low' | 'unknown' | null;
   debugText: string | null;
 
   // Audio state
@@ -128,6 +130,9 @@ interface DualAgentContextType {
   debugSetBudget: (percent: number) => void;
   sendBoardExit: (label: string, instruction: string) => void;
   voiceButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
+  /** A press on a game-owned (engine-generated) board: voice + log + share it
+   *  as a real utterance WITHOUT waking any agent — the game executes it. */
+  sendGamePress?: (text: string, glyph?: string, voice?: boolean) => void;
   /** Send a sentence-builder glyph to the AI for interpretation via the `interpret` tool. */
   playGlyph?: (glyphString: string) => void;
   startVoiceRecording: () => Promise<void>;
@@ -1426,6 +1431,7 @@ function ProviderShell({
     utteranceText: agent.utteranceText,
     utteranceConfidence: agent.utteranceConfidence,
     transcriptConfidence: agent.transcriptConfidence,
+    transcriptClarity: agent.transcriptClarity,
     debugText: agent.debugText,
 
     audioEnabled: agent.audioEnabled,
@@ -1460,6 +1466,7 @@ function ProviderShell({
     debugSetBudget,
     sendBoardExit,
     voiceButtons,
+    sendGamePress: agent.sendGamePress,
     playGlyph: agent.playGlyph,
     startVoiceRecording: agent.startRecording,
     stopVoiceRecording,

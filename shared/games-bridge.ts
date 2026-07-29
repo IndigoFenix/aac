@@ -24,6 +24,52 @@ export interface BoardOption {
   spokenText?: string;
 }
 
+/**
+ * One word the game engine's surfacer offers the AAC sentence builder. `key`
+ * is the canonical engine-lexicon word — composing sentences out of keys keeps
+ * them parseable by the game's own engine. `glyph` is a renderable composed
+ * glyph string (same grammar the board buttons use).
+ */
+export interface BuilderWord {
+  key: string;
+  label: string;
+  glyph?: string;
+  /** Engine category bucket, e.g. "who" | "do" | "what" | "where". */
+  category?: string;
+  /** Noun kind when the word is a noun ("person" | "creature" | "item" | "place"). */
+  kind?: string;
+  /** For persons/creatures: present in the current scene (prioritize + badge). */
+  present?: boolean;
+}
+
+/** A sub-category chip within the active category (e.g. the engine lexicon's
+ *  word groups). `id` is echoed back as `builder_state.group`. */
+export interface BuilderGroup {
+  id: string;
+  /** Localized display label (the engine's lang layer renders it). */
+  label: string;
+  /** Optional glyph/emoji face for the chip. */
+  glyph?: string;
+}
+
+/** The engine's answer to a `builder_state`: what the sentence builder should
+ *  offer for the current partial sentence. */
+export interface BuilderSurface {
+  /** Ranked main-grid words. */
+  buttons: BuilderWord[];
+  /** Modifier rail for the active head (compose onto it with "."). */
+  modifiers?: BuilderWord[];
+  /** Category chips the game can serve (send builder_state.category to filter).
+   *  These ARE the builder's tab set while an engine drives it — the client
+   *  must not substitute its own category scheme. */
+  categories?: string[];
+  /** Sub-category chips for the ACTIVE category (send builder_state.group to
+   *  filter within it). Mirrors the engine's own vocabulary-menu hierarchy. */
+  groups?: BuilderGroup[];
+  /** True when the current sentence already parses as complete/sayable. */
+  complete?: boolean;
+}
+
 // ── Platform → Game ─────────────────────────────────────────────────────────
 
 export type PlatformMessage = BridgeMessageBase & (
@@ -61,9 +107,18 @@ export type PlatformMessage = BridgeMessageBase & (
   | { type: "ai_response"; requestId: string; ok: boolean; text?: string; data?: unknown; error?: string }
   /**
    * Gaze position in **iframe-local pixel coordinates** (already converted by
-   * the platform). `mode === "off"` means no gaze data is being produced.
+   * the platform). `mode === "off"` means no usable position for the game (the
+   * coordinates are then -1,-1) — treat it as "not pointing at anything".
+   *
+   * `away` splits the two reasons a position is missing, for games that want to
+   * react differently (optional — ignoring it keeps "off" behavior):
+   *   away: true  — gaze IS tracked, the person is just looking somewhere else
+   *                 on the screen (the AAC's sidebar, a video tile). A KNOWN
+   *                 look-away: drop any aim at once.
+   *   away absent — no data at all (blink, dropped frames, tracker lost). Not
+   *                 a look-away, so a game may hold its last aim briefly.
    */
-  | { type: "gaze"; x: number; y: number; mode: "off" | "eyegaze" | "mouse" }
+  | { type: "gaze"; x: number; y: number; mode: "off" | "eyegaze" | "mouse"; away?: boolean }
   /**
    * Hands the game its content payload (e.g. a goal-tree game definition).
    * Games that accept payloads must validate them and keep running their
@@ -75,9 +130,54 @@ export type PlatformMessage = BridgeMessageBase & (
   /**
    * The student pressed one of the options the game pinned via `set_board_options`.
    * `id` is the option's id. Sent only while options are locked; clearing them
-   * stops further reports.
+   * stops further reports. `voiced` is true when the platform already voiced the
+   * press (student-voice TTS or local speech) — the game must then NOT voice it
+   * itself, only execute it. Absent/false means the game owns the voicing.
    */
-  | { type: "board_option_selected"; id: string }
+  | { type: "board_option_selected"; id: string; voiced?: boolean }
+  /**
+   * A composed glyph SENTENCE the student produced OUTSIDE the game — an
+   * LLM-authored board button or the sentence builder — forwarded so it can take
+   * effect in-world. The game parses it with its OWN (vendored) engine — parse
+   * authority lives game-side so the platform's lexicon version can never
+   * disagree with the game's. An unparsable sentence simply has no in-game
+   * effect (the student still said it). The game answers with `glyph_result`.
+   * `voiced` as on `board_option_selected`.
+   */
+  | { type: "glyph_input"; glyph: string; requestId?: string; voiced?: boolean }
+  /**
+   * The AAC sentence builder asking the game's engine what to offer for the
+   * current partial sentence. `glyph` is the partial composed sentence (may be
+   * empty), `category` an optional tab filter (one of the game's advertised
+   * `BuilderSurface.categories`). The game answers with a correlated
+   * `builder_surface`. Fired per builder change — games should answer from the
+   * pure surfacer, no world mutation.
+   */
+  | { type: "builder_state"; requestId: string; glyph: string; category?: string; group?: string }
+  /**
+   * Multiplayer session identity for a world-engine game running inside a call.
+   * `selfId` is this participant's stable network id (personId); `role` is
+   * "owner" when this iframe must run the authoritative sim (and stream world
+   * state), "follower" when it must freeze its sim and replicate. Re-sent on
+   * every roster/ownership change — a role FLIP means the game should reboot
+   * its world (deterministic from its bundled spec, so a reboot is cheap).
+   * Never sent for solo play: no `world_session` = single-player, sim your own.
+   */
+  | { type: "world_session"; selfId: string; role: "owner" | "follower"; peers?: Array<{ id: string; name?: string }> }
+  /**
+   * Inbound world-state packets from peer `fromId`, ferried verbatim from the
+   * call mesh's UNRELIABLE "world" channel. `msgs` is an engine-versioned
+   * payload (WorldNetMessage[]) the platform never inspects — the game's own
+   * (vendored) engine applies it and must tolerate unknown message kinds.
+   */
+  | { type: "world_data"; fromId: string; msgs: unknown[] }
+  /**
+   * Inbound RELIABLE game command from peer `fromId` (a follower's board press
+   * or built sentence, a claim notice, …), ferried from the call's reliable
+   * data channel. Opaque to the platform; the game drops commands not meant
+   * for its role.
+   */
+  | { type: "world_cmd"; fromId: string; cmd: unknown }
   | { type: "request_close" }
 );
 
@@ -133,6 +233,73 @@ export type GameMessage = BridgeMessageBase & (
    */
   | { type: "set_board_options"; options: BoardOption[]; prompt?: string }
   | { type: "clear_board_options" }
+  /**
+   * Parse verdict for a `glyph_input`, correlated by `requestId` when one was
+   * given. `parsed:false` = the game's engine couldn't make a sentence of it
+   * (no in-game effect happened). The platform uses this to decide whether an
+   * LLM interpretation pass is still needed (builder flow) — so games should
+   * answer promptly and unconditionally. `spokenText` is the engine's own
+   * natural-language rendering of the sentence (its lang layer), for the
+   * platform to voice when it skips the LLM.
+   */
+  | { type: "glyph_result"; glyph: string; parsed: boolean; requestId?: string; spokenText?: string }
+  /** Correlated answer to `builder_state`. */
+  | { type: "builder_surface"; requestId: string; surface: BuilderSurface }
+  /**
+   * The game's ambient HUD state (family members present, pocket contents,
+   * status line, …) for the PLATFORM to render beside its own board — the
+   * in-iframe side panel is hidden when embedded, freeing that screen edge
+   * for video-chat tiles. Deliberately generic sections so games can evolve
+   * what they surface without a bridge change (the client is a display
+   * engine). Re-sent whole on every change; empty `sections` clears it.
+   */
+  | {
+      type: "world_hud";
+      sections: Array<{
+        id: string;
+        /** Localized section title (optional — compact strips may omit it). */
+        title?: string;
+        /**
+         * How the section wants to READ (the game knows what its data means;
+         * the platform just draws it):
+         *   "chips" — one dense inline row of small icon+number chips (a
+         *             city/status ribbon; the top strip).
+         *   "cards" — a box per entry, icon over name (creatures/people).
+         *   "items" — a compact icon grid with count badges (inventory).
+         * Absent = "cards".
+         */
+        layout?: "chips" | "cards" | "items";
+        items: Array<{
+          id: string;
+          label: string;
+          /** Engine glyph key (renders via the glyph system when resolvable). */
+          glyph?: string;
+          /** Emoji/char face fallback. */
+          emoji?: string;
+          /** Small secondary line (activity, mood, …). */
+          note?: string;
+          /** Stack count for pocket-style items. */
+          count?: number;
+          /** Highlighted (e.g. the currently addressed family member). */
+          active?: boolean;
+          /** Present but not HERE (away working/shopping) — drawn faded. */
+          dim?: boolean;
+        }>;
+      }>;
+    }
+  /**
+   * Outbound world-state packets for the call mesh's UNRELIABLE "world"
+   * channel (owner: avatar/creature bodies + speech; any peer: its own spark).
+   * The platform fans them out verbatim — engine-versioned, never inspected.
+   */
+  | { type: "world_data"; msgs: unknown[] }
+  /**
+   * Outbound RELIABLE game command for the call's reliable data channel. When
+   * `toId` is set only that peer should act on it (receivers drop others');
+   * absent = every peer. Used for follower→owner command relay and rare
+   * events (spark→body claims), never for per-frame state.
+   */
+  | { type: "world_cmd"; cmd: unknown; toId?: string }
   | { type: "request_close" }
 );
 

@@ -50,6 +50,13 @@ export const GAMES: GameEntry[] = [
     gradient: "from-emerald-600 to-green-900",
   },
   {
+    id: "dollhouse",
+    name: "Dollhouse",
+    description: "Watch over a living house as a friendly spirit. A small family goes about its day inside — talk to them and tell them what to do with sentence buttons, by gaze, touch, or mouse.",
+    emoji: "🏠",
+    gradient: "from-rose-500 to-purple-900",
+  },
+  {
     id: "seagull-dream",
     name: "Seagull Dream",
     description: "Fly a seagull over a tiny world. Look up to take off, look down to land. Hands-free 3D exploration.",

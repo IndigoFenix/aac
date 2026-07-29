@@ -36,10 +36,12 @@ import {
 import {
   craftRecipeOf,
   depictableHeads,
+  drawnMakeable,
   isMakeable,
   makeableGlyph,
   spokenMakeable,
 } from "@shared/world-engine/interaction/content/makeable.js";
+import { FURNITURE_ITEMS } from "@shared/world-engine/kernel/town/stations.js";
 import { POOLS } from "@shared/world-engine/interaction/content/pools.js";
 import { isLivingThing, propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
 import { foodGlyphs } from "@shared/world-engine/products.js";
@@ -57,11 +59,15 @@ describe("the `toy` form facet", () => {
   it("miniaturises: the SAME recipe renders small when it wears the facet", () => {
     const real = appearanceOf("car");
     const toy = appearanceOf("car.toy");
+    // Loose item props spawn at a uniform ~0.35 m radius, so without a scale
+    // here a "toy" car would be built life-size by the very recipe that makes it
+    // recognisable. The PROPERTY is what matters — smaller than the real thing,
+    // but not so small it reads as a speck on the floor. The exact figure is a
+    // legibility judgement that has already moved once (0.4 → 0.75), so pin the
+    // band rather than the number.
     expect(toy.scale[0]).toBeLessThan(real.scale[0]);
-    expect(toy.scale).toEqual([0.4, 0.4, 0.4]);
-    // Loose item props spawn at a uniform ~0.3 m radius, so without a scale here
-    // a "toy" car would be built life-size by the very recipe that makes it
-    // recognisable. This is the assertion that keeps a doll doll-sized.
+    expect(toy.scale[0]).toBeGreaterThan(real.scale[0] * 0.5);
+    expect(new Set(toy.scale).size).toBe(1); // uniform — a doll is not squashed
   });
 
   it("is a VARIATION, never a state — a doll is what a thing IS, not a condition", () => {
@@ -147,8 +153,22 @@ describe("what a toy is MADE of", () => {
 
 describe("the makeable join — what `make <word>` produces", () => {
   it("an authored toy, in its default material", () => {
-    expect(makeableGlyph("ball")).toBe("ball.material_cloth");
+    // DERIVED from the row, not hard-coded: which material a toy defaults to is
+    // a supply decision that moves (ball was cloth until the town turned out to
+    // produce none), and a test that pins the answer just breaks when it does.
+    // What must hold is that the default is the row's FIRST material.
+    for (const t of TOY_ITEMS) {
+      expect(makeableGlyph(t.head)).toBe(`${t.head}.${materialFacetOf(t.materials[0]!)}`);
+    }
     expect(makeableGlyph("blocks")).toBe("blocks.material_wood");
+  });
+
+  it("every default material is one a town can actually supply", () => {
+    // The failure this pins: a recipe whose material nothing produces can be
+    // ordered and can NEVER finish — the craft job waits on it forever. `wood`
+    // is the one toy material with a live supply today.
+    for (const t of TOY_ITEMS) expect(t.materials[0]).toBe("wood");
+    expect(DOLL_RECIPE.materials[0]).toBe("wood");
   });
 
   it("make + ANIMAL is a toy of that animal (the plan's rule)", () => {
@@ -174,6 +194,32 @@ describe("the makeable join — what `make <word>` produces", () => {
     expect(spokenMakeable("furn.chair")).toBe("chair"); // NOT "furn"
     expect(spokenMakeable("rabbit.toy.material_cloth")).toBe("rabbit");
     expect(spokenMakeable("ball.material_cloth")).toBe("ball");
+  });
+
+  it("a stored piece speaks the VOCABULARY's word for its kind, like a standing one", () => {
+    // types.ts FIXTURE_WORD — the sim keeps chest/box and cupboard/cabinet
+    // apart, the board does not.
+    expect(spokenMakeable("furn.chest")).toBe("box");
+    expect(spokenMakeable("furn.cupboard")).toBe("cabinet");
+  });
+
+  it("draws a furniture stack as its own word, and everything else as ITSELF", () => {
+    // The container/inventory icon: `furn.` has no artwork behind it, so a
+    // stored piece draws as the piece; a coloured garment keeps its colour.
+    expect(drawnMakeable("furn.chair")).toBe("chair");
+    expect(drawnMakeable("furn.chest")).toBe("box");
+    expect(drawnMakeable("shirt.color_red")).toBe("shirt.color_red");
+    expect(drawnMakeable("apple.hot")).toBe("apple.hot");
+    expect(drawnMakeable("rabbit.toy.material_cloth")).toBe("rabbit.toy.material_cloth");
+  });
+
+  it("every craftable piece draws a glyph the registry has artwork for", () => {
+    // The `chest`/`cupboard` bug: a label with no icon is a kind speaking a
+    // word the vocabulary never heard of.
+    const iconless = FURNITURE_ITEMS.filter((f) => f.craft)
+      .map((f) => drawnMakeable(`furn.${f.kind}`))
+      .filter((drawn) => !getVocabularyItem(drawn));
+    expect(iconless).toEqual([]);
   });
 });
 

@@ -1,0 +1,298 @@
+/* Dollhouse — trimmed from world-lab/src/styles.css: the stage + board panel
+   styles the quest host and board island expect, minus the lab's form/debug
+   chrome. Class names are kept identical so the ported components match. */
+
+* { box-sizing: border-box; margin: 0; }
+
+html, body {
+  height: 100%;
+  background: #05070f;
+  color: #cfd6e4;
+  font: 14px/1.4 system-ui, sans-serif;
+  overflow: hidden;
+}
+
+#layout {
+  display: flex;
+  height: calc(100% - 22px);
+}
+/* Embedded in the platform: the debug status bar is hidden, the stage takes
+   the full height. */
+body.embedded #layout { height: 100%; }
+body.embedded #statusbar { display: none; }
+
+#view { flex: 1; position: relative; min-width: 0; }
+#view canvas { display: block; }
+
+/* Debug-only status line (world-lab keeps it in the header; here a slim
+   bottom strip, standalone only). */
+#statusbar {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: #0b0f1c;
+  border-top: 1px solid #1c2438;
+}
+#status {
+  color: #8b94a8;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#status.error { color: #ff8686; }
+
+/* ── The playable stage (quest host) ─────────────────────────────────────── */
+
+.quest-root { position: absolute; inset: 0; overflow: hidden; display: flex; }
+/* `display: flex` etc. would beat the hidden attribute — never let an unseen
+   overlay blanket the stage and swallow the pointer. */
+.quest-root [hidden] { display: none !important; }
+
+.quest-stage { flex: 1; position: relative; min-width: 0; }
+.quest-canvas { width: 100%; height: 100%; display: block; }
+
+.quest-objectives {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px; pointer-events: none;
+}
+.quest-chip {
+  background: rgba(11, 15, 28, 0.75); border: 1px solid #263453;
+  border-radius: 8px; padding: 4px 8px; font-size: 18px;
+}
+.quest-chip.locked { opacity: 0.55; }
+
+.quest-satchel {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(11, 15, 28, 0.75); border-radius: 8px; padding: 4px 10px;
+  font-size: 18px; pointer-events: none;
+}
+.quest-satchel:empty { display: none; }
+
+.quest-toast {
+  position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
+  background: rgba(11, 15, 28, 0.85); border: 1px solid #3a4f7d;
+  border-radius: 8px; padding: 6px 14px; pointer-events: none;
+}
+
+.quest-win {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  background: rgba(5, 7, 15, 0.72); text-align: center;
+}
+.quest-win-burst { font-size: 64px; }
+.quest-win-title { font-size: 22px; }
+.quest-replay {
+  background: #141b2e; color: #cfd6e4; border: 1px solid #3a4f7d;
+  border-radius: 10px; padding: 8px 16px; font: inherit; cursor: pointer;
+}
+
+/* The response-board panel — the REAL <BoardButtonVisual> in a React island.
+   Fixed width, always mounted (empty between conversations) like the in-app
+   side board, so the stage never resizes as the board opens/closes. */
+.quest-boardpanel {
+  width: 28rem; flex: 0 0 auto; height: 100%;
+  background: #0b0f1c; border-left: 1px solid #1c2438;
+  display: flex; flex-direction: column;
+}
+.quest-boardpanel-inner { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px; }
+
+/* ── Family strip: dollhouse member chips — a state EMOJI + a name. A tap
+   ADDRESSES that member (spoken commands go to it); selected = gold ring. ── */
+.lab-family {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 6px 8px; overflow-x: auto;
+  border-bottom: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-family:empty { display: none; }
+.lab-family-chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 3.4rem; padding: 4px 6px;
+  background: #141b2e; border: 2px solid #263453; border-radius: 10px;
+  color: #cfd6e4; font: inherit; cursor: pointer;
+}
+.lab-family-chip.selected { border-color: #f2c14e; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.4); }
+/* Not in the world right now (out working/shopping/walking) — dimmed, not gone. */
+.lab-family-chip.away { opacity: 0.5; border-style: dashed; }
+/* The state icon is a composed glyph (GlyphCompositor fills its box), so it
+   needs explicit dimensions instead of a font size. */
+.lab-family-emoji { width: 1.9rem; height: 1.9rem; display: inline-flex; }
+.lab-family-name { font-size: 0.72rem; opacity: 0.85; white-space: nowrap; }
+
+/* ── City strip: per-district cohort chips (④ city HUD). ── */
+.lab-city {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 5px 8px; overflow-x: auto;
+  border-bottom: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-city:empty { display: none; }
+.lab-city-chip {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 5px;
+  padding: 3px 8px;
+  background: #141b2e; border: 2px solid #263453; border-radius: 10px;
+  color: #cfd6e4; font-size: 0.8rem; white-space: nowrap;
+}
+.lab-city-chip.total { border-color: #3d517e; background: #182238; }
+.lab-city-glyph { width: 1.4rem; height: 1.4rem; display: inline-flex; }
+.lab-city-pop { font-variant-numeric: tabular-nums; }
+.lab-city-well { width: 1.1rem; height: 1.1rem; display: inline-flex; }
+.lab-city-stock { display: inline-flex; align-items: center; gap: 2px; opacity: 0.9; font-variant-numeric: tabular-nums; }
+.lab-city-stock.short { color: #e88a7a; }
+.lab-city-stock-glyph { width: 1.1rem; height: 1.1rem; display: inline-flex; }
+
+/* ── Pocket strip: pocketed small items, hover/tap to select ── */
+.lab-pocket {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 6px 8px; overflow-x: auto;
+  border-top: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-pocket:empty { display: none; }
+.lab-pocket-item {
+  position: relative;
+  flex: 0 0 auto; width: 3rem; height: 3rem; padding: 4px;
+  background: #141b2e; border: 2px solid #263453; border-radius: 10px; cursor: pointer;
+}
+.lab-pocket-item.selected { border-color: #f2c14e; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.4); }
+/* Stack count badge — items are fungible stacks, so an entry shows how many are held. */
+.lab-pocket-count {
+  position: absolute; right: -3px; bottom: -3px; min-width: 1.1rem; padding: 0 3px;
+  font-size: 0.72rem; font-weight: 700; line-height: 1.2rem; text-align: center;
+  color: #0a0e19; background: #f2c14e; border-radius: 999px;
+}
+
+/* ── Footer: always-present response affordances (Yes / No / More / Speak) ── */
+.lab-footer {
+  flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; padding: 8px; border-top: 1px solid #1c2438; background: #0a0e19;
+}
+.lab-footer-btn {
+  background: #141b2e; color: #cfd6e4; border: 1px solid #263453;
+  border-radius: 8px; padding: 10px 6px; font: inherit; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.lab-footer-btn:hover { background: #1b2540; }
+.lab-footer-btn:disabled { opacity: 0.4; cursor: default; }
+.lab-footer-btn.lab-yes { border-color: #2e6b3e; color: #8fe0a5; }
+.lab-footer-btn.lab-no { border-color: #6b2e2e; color: #e08f8f; }
+.lab-footer-btn.lab-speak { border-color: #3a4f8a; color: #a9c1ff; }
+
+/* ── Speak menu: the parser vocabulary with glyph icons ── */
+.lab-speak-overlay {
+  position: fixed; inset: 0; z-index: 50; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(3, 6, 15, 0.7); backdrop-filter: blur(2px);
+}
+.lab-speak-panel {
+  width: min(56rem, 94vw); height: min(80vh, 46rem);
+  display: flex; flex-direction: column;
+  background: #0b0f1c; border: 1px solid #263453; border-radius: 12px; overflow: hidden;
+}
+.lab-speak-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid #1c2438; font-weight: 600;
+}
+.lab-speak-compose {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border-bottom: 1px solid #1c2438;
+}
+.lab-speak-sentence {
+  flex: 1; min-height: 2em; padding: 6px 8px; border-radius: 8px;
+  background: #060a14; border: 1px solid #1c2438; font-size: 15px;
+}
+.lab-dim { color: #5b667e; }
+.lab-speak-scroll { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.lab-speak-group { margin-bottom: 14px; }
+.lab-speak-group h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #7c88a2; margin-bottom: 6px;
+}
+.lab-speak-grid {
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+}
+.lab-word {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: #10182b; border: 1px solid #22304e; border-radius: 8px;
+  padding: 6px 4px; cursor: pointer; color: #cfd6e4; font: inherit;
+}
+.lab-word:hover { background: #182541; border-color: #34477a; }
+.lab-word-icon { width: 100%; aspect-ratio: 1; display: block; }
+.lab-word-label { font-size: 11px; text-align: center; line-height: 1.1; }
+
+/* CONTROLS (language-expansion.md dual surface): sentence-type chips, category
+   tabs and the modifier rail are REFINERS, not spoken words — rendered as flat
+   amber-tinted pills, visually distinct from the card-like word buttons. */
+.lab-control {
+  background: #1f1a0c; border: 1px dashed #6b5a26; border-radius: 999px;
+  color: #d8c27a; padding: 4px 10px; font: inherit; font-size: 12px;
+  cursor: pointer; line-height: 1.2;
+}
+.lab-control:hover { background: #2a2310; border-color: #97803a; }
+.lab-control.selected { background: #3a3013; border-style: solid; border-color: #caa94e; color: #f0e0a8; }
+/* GROUP cells (surface-next `groups`): likely SUBCATEGORIES rendered inside
+   the suggestion grid — teal, dashed, so they read as neither amber refiners
+   nor plain word cards. Tapping opens the group in place; it speaks nothing. */
+.lab-word.lab-group { background: #0c1f1c; border: 1px dashed #2a6b62; color: #7fd2c4; }
+.lab-word.lab-group:hover { background: #12302b; border-color: #3c9c8e; }
+.lab-group-glyph { width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
+.lab-typechips, .lab-cattabs {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0;
+}
+.lab-cattabs { padding: 8px 0 2px; }
+.lab-modrail { display: flex; gap: 6px; padding: 8px 12px 0; overflow-x: auto; }
+.lab-mod { width: 2.6rem; height: 2.6rem; padding: 3px; border-radius: 10px; flex: 0 0 auto; }
+.lab-mod-icon { width: 100%; height: 100%; display: block; }
+.lab-footer-btn.lab-speak.ready { box-shadow: 0 0 0 2px #3fae6a inset; }
+.quest-boardpanel-prompt {
+  color: #cfd6e4; font-size: 15px; text-align: center;
+  min-height: 1.4em; margin-bottom: 8px;
+}
+.quest-boardpanel-grid { flex: 1; display: grid; gap: 8px; min-height: 0; }
+
+/* Minimal Tailwind-utility shim for the shared BoardButtonVisual, plus the
+   AAC icon-fill primitives (client-aac/src/index.css) — so the game renders the
+   REAL board buttons without pulling Tailwind in. The class list mirrors
+   BoardButtonVisual's markup exactly. */
+.quest-boardpanel .flex { display: flex; }
+.quest-boardpanel .flex-col { flex-direction: column; }
+.quest-boardpanel .items-center { align-items: center; }
+.quest-boardpanel .justify-center { justify-content: center; }
+.quest-boardpanel .rounded-xl { border-radius: 0.75rem; }
+.quest-boardpanel .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+.quest-boardpanel .border { border-width: 1px; border-style: solid; }
+.quest-boardpanel .board-btn-border { border-color: #d1d5db; }
+.quest-boardpanel .min-h-0 { min-height: 0; }
+.quest-boardpanel .min-w-0 { min-width: 0; }
+.quest-boardpanel .overflow-hidden { overflow: hidden; }
+.quest-boardpanel .relative { position: relative; }
+.quest-boardpanel .w-full { width: 100%; }
+.quest-boardpanel .shrink-0 { flex-shrink: 0; }
+.quest-boardpanel .font-medium { font-weight: 500; }
+.quest-boardpanel .text-center { text-align: center; }
+.quest-boardpanel .text-gray-800 { color: #1f2937; }
+.quest-boardpanel .leading-tight { line-height: 1.25; }
+.quest-boardpanel .line-clamp-2 {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.quest-boardpanel .icon-fill-area {
+  flex: 1 1 0; min-height: 0; min-width: 0; width: 100%;
+  container-type: size; display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.quest-boardpanel .icon-fill-emoji { line-height: 1; font-size: 92cqmin; }
+.quest-boardpanel .icon-fill-img { width: 100%; height: 100%; object-fit: contain; }
+
+/* ── Loading veil — a compositor-driven spinner that keeps turning even
+   while a synchronous build lump freezes the main thread (CSS transform
+   animations run off-thread in Chromium). ─────────────────────────────── */
+.lab-veil {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; background: rgba(7, 11, 22, 0.62); backdrop-filter: blur(2px);
+  color: #dbe4f0; font: 13px ui-monospace, Menlo, monospace;
+}
+.lab-veil.hidden { display: none; }
+.lab-spin {
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 4px solid rgba(148, 179, 222, 0.25); border-top-color: #8fc1ff;
+  animation: lab-spin-rot 0.9s linear infinite;
+}
+@keyframes lab-spin-rot { to { transform: rotate(360deg); } }

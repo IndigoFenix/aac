@@ -107,6 +107,9 @@ describe("conformance — every concrete noun is filable", () => {
     // pocket it.
     const furniture = Object.keys(STATION_PROPERTIES).filter((k) => propertiesOf(k).includes("furniture"));
     expect(furniture.filter((k) => !isLargeGlyph(k))).toEqual([]);
+    // A STORED piece stacks under `furn.<kind>` — the bookkeeping prefix must
+    // not smuggle it past the size rule (a boxed chair is still a chair).
+    expect(furniture.filter((k) => !isLargeGlyph(`furn.${k}`))).toEqual([]);
   });
 
   it("every station kind declares what it is", () => {

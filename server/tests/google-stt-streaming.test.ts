@@ -41,8 +41,8 @@ describe('createStreamingSession rotation/recovery', () => {
   });
 
   const chunk = (label: string) => Buffer.from(label);
-  const finalEvent = (transcript: string) => ({
-    results: [{ isFinal: true, alternatives: [{ transcript }] }],
+  const finalEvent = (transcript: string, confidence?: number) => ({
+    results: [{ isFinal: true, alternatives: [{ transcript, ...(confidence === undefined ? {} : { confidence }) }] }],
   });
 
   it('recovers from a terminal stream error on the next write, replaying the tail', () => {
@@ -104,7 +104,7 @@ describe('createStreamingSession rotation/recovery', () => {
 
     now += 241_000; // past the soft-rotate threshold
     streams[0].emit('data', finalEvent('hello'));
-    expect(onFinal).toHaveBeenCalledWith('hello');
+    expect(onFinal).toHaveBeenCalledWith('hello', undefined);
     expect(streams).toHaveLength(2);
     expect(streams[1].written).toHaveLength(0); // nothing re-heard
 
@@ -128,9 +128,31 @@ describe('createStreamingSession rotation/recovery', () => {
     streams[0].emit('data', { results: [{ isFinal: false, alternatives: [{ transcript: 'sweet pot' }] }] });
     streams[0].emit('data', finalEvent('sweet potato'));
     expect(onInterim.mock.calls.map((c) => c[0])).toEqual(['swee', 'sweet pot']);
-    expect(onFinal).toHaveBeenCalledWith('sweet potato');
+    expect(onFinal).toHaveBeenCalledWith('sweet potato', undefined);
     const done = session.end();
     await expect(done).resolves.toBe('sweet potato'); // interims never accumulate
+  });
+
+  // The recogniser's own score is the only signal that separates "she said it"
+  // from "the decoder invented a fluent sentence out of room noise". It was
+  // being dropped here and replaced downstream with a hard-coded 0.9, which is
+  // what let a mis-decode reach the board as high-confidence speech.
+  it('passes the recogniser confidence through with each final phrase', () => {
+    const onFinal = jest.fn();
+    const session = createStreamingSession({ onFinal });
+    streams[0].emit('data', finalEvent('I am the mother of media', 0.41));
+    expect(onFinal).toHaveBeenCalledWith('I am the mother of media', 0.41);
+    void session;
+  });
+
+  it('reports a missing or 0.0 confidence as undefined, never as a low score', () => {
+    const onFinal = jest.fn();
+    createStreamingSession({ onFinal });
+    // Google uses 0.0 for "no confidence available" — treating that as "very
+    // low" would blur every caption from a model that simply omits the field.
+    streams[0].emit('data', finalEvent('hello', 0));
+    streams[0].emit('data', finalEvent('again'));
+    expect(onFinal.mock.calls.map((c) => c[1])).toEqual([undefined, undefined]);
   });
 
   it('accumulates finals across rotations and rejects writes after end()', async () => {

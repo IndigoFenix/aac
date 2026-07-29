@@ -150,6 +150,10 @@ interface CallContextValue {
   sendNpc: (msg: unknown) => void;
   /** Fan-out of inbound NPC-conversation messages (fed by the CallClient). */
   npcHub: CallNpcHub;
+  /** Fan-out of inbound RELIABLE iframe-game commands (`world-cmd` data
+   *  messages) — a follower's relayed sentence, a spark claim. The ferry
+   *  component routes them into the game iframe. */
+  worldCmdHub: CallNpcHub;
   /** Phase 1 position relay: publish the local avatar's position world-wide. */
   publishPresence: (p: WorldPresence) => void;
   /** Phase 1 position relay: inbound positions of everyone in the world. */
@@ -205,6 +209,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // Inbound world-message fan-out for the mounted CallGameSurface.
   const worldHubRef = useRef(new CallWorldHub());
   const npcHubRef = useRef(new CallNpcHub());
+  // Inbound reliable iframe-game commands (world-cmd envelopes) — fan out to
+  // the game ferry. Reuses the generic NPC hub shape (fromPersonId + unknown).
+  const worldCmdHubRef = useRef(new CallNpcHub());
   // Phase 1 position relay: world-wide avatar positions, fed by `presence` events.
   const presenceChannelRef = useRef(new WorldPresenceChannel());
   // Mirror remoteStreams in a ref so the proximity A/V gate reads it without
@@ -235,6 +242,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     pendingGameRef.current = null;
     worldHubRef.current.clear();
     npcHubRef.current.clear();
+    worldCmdHubRef.current.clear();
     presenceChannelRef.current.clear();
   }, []);
 
@@ -357,6 +365,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // device to share its screen (screen-request).
         const m = parseCallDataMessage(event.message);
         if (m?.k === "facilitator-press") setFacilitatorPress(m);
+        else if (m?.k === "world-cmd") worldCmdHubRef.current.emit(event.personId, m);
         else if (m?.k === "board-dwell") setPeerDwellId(m.buttonId);
         else if (m?.k === "screen-request") {
           if (m.on) {
@@ -700,6 +709,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     worldHub: worldHubRef.current,
     sendNpc,
     npcHub: npcHubRef.current,
+    worldCmdHub: worldCmdHubRef.current,
     publishPresence,
     presenceChannel: presenceChannelRef.current,
     getAudibleIds,

@@ -159,6 +159,13 @@ export interface TranscribedEvent extends BaseEvent {
    *  name-matching `target` against the student name. */
   targetIsUser?: boolean;
   confidence: "high" | "medium" | "low";
+  /** Set by the Coordinator (never by the Observer): how clearly the SPEECH
+   *  RECOGNISER heard the words — a separate axis from `confidence`, which is
+   *  the Observer's read of the utterance. Stamped from the [HEARD SPEECH] turn
+   *  behind this transcript; undefined when no STT turn backs it (e.g. pulled
+   *  audio). Drives the "words uncertain" marker every agent sees and the
+   *  caption's fuzziness. See speech-text.ts `clarityTag`. */
+  asrConfidence?: "high" | "medium" | "low" | "unknown";
   /** Legacy field — mirrors `target` for older renderers. Computed by the
    *  parser; do not set when constructing fresh events. */
   direction?: SpeechDirection;

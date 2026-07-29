@@ -132,7 +132,7 @@ import {
 import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities, ProcessingActivity } from "./live-relay";
 import { ProcessingIndicators } from "./processing-indicators";
 import { isCapabilityActive } from "./capability-gate";
-import { buildHeardSpeechTurn } from "./speech-text";
+import { buildHeardSpeechTurn, clarityTag, confidenceLabel, describeSttConfidence } from "./speech-text";
 import { transcribeSegments, createStreamingSession, type SttStreamSession } from "../voice/google-stt-service";
 import { fuseSpeakerLikelihood, renderSpeakerLikelihood, type LipFace, type IdentifiedFaceLite, type VoiceCandidate, type SpeakerLikelihood } from "@shared/aac/speaker-fusion";
 import { renderSceneForObserver, type SceneSnapshot, type IdentifiedForScene } from "@shared/aac/scene-state";
@@ -240,6 +240,14 @@ import { assessStudentTranscript, isVerbalAbility, type VerbalAbility } from "@s
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
 import { decideIdleTransition, idleThresholdScaleForBand } from "./idle-watchdog";
+import {
+  resolveGameOptions,
+  classifyGameContext,
+  shouldForwardGameContext,
+  runGamePress,
+  type GameOptions,
+} from "./game-options";
+import { recordUtterance } from "../insurance/utteranceLogger";
 
 // ---------------------------------------------------------------------------
 // Defaults — Board Manager is hardcoded to a fast model for the MVP. Move
@@ -557,6 +565,8 @@ function clientMsgSummary(msg: ClientMessage): string {
       return `label="${msg.label}" instruction="${(msg.instruction || "").slice(0, 80)}${(msg.instruction || "").length > 80 ? "…" : ""}"`;
     case "glyph_press":
       return `glyph="${msg.glyph}"`;
+    case "game_press":
+      return `text="${msg.text.slice(0, 80)}${msg.text.length > 80 ? "…" : ""}"${msg.glyph ? ` glyph="${msg.glyph}"` : ""}${msg.voice !== undefined ? ` voice=${msg.voice}` : ""}`;
     case "guessing_state":
       return `(legacy) keys=[${msg.suggestionKeys?.join(", ") ?? ""}] custom=${msg.customFacts?.length ?? 0} rejected=${msg.rejectedFacts?.length ?? 0}${msg.origin ? ` origin=${msg.origin}` : ""}`;
     case "guessing_enter":
@@ -698,6 +708,8 @@ interface Acoustic { pitchHz: number | null; voiced: number; formantDispersion?:
 /** Per-clip speech sync state (see AgentCoordinator.pendingSpeech). */
 interface PendingSpeechEntry {
   text?: string;
+  /** Recognizer confidence for `text` (0..1), undefined = model reported none. */
+  confidence?: number;
   voice?: { embedding: number[]; quality?: number };
   lipActivity?: LipFace[];
   acoustic?: Acoustic;
@@ -1045,6 +1057,15 @@ export class AgentCoordinator {
    *  was given, so each transcript carries a "this exchange cost −N% (speaker …)"
    *  note. Reset on each injectHeardSpeech. */
   private drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
+
+  /** Recogniser score of the most recent [HEARD SPEECH] (undefined = the model
+   *  reported none), with the time it landed. The Observer routes a transcript
+   *  a beat later, so this is what tells the caption how clearly the words were
+   *  heard. Stale entries are ignored — see `currentAsrConfidenceLabel`. */
+  private lastAsrConfidence: { value: number | undefined; at: number } | null = null;
+  /** Past this, the held score belongs to an earlier utterance and must not be
+   *  attached to a fresh transcript (an Observer turn is a few seconds at most). */
+  private static readonly ASR_CONFIDENCE_TTL_MS = 30_000;
 
   /** The Observer's AWAKE compression window. Economize sessions use a tighter
    *  tier (Phase 5.1) to cut the per-turn re-billing of the running context.
@@ -1540,8 +1561,19 @@ export class AgentCoordinator {
       // Re-deliver via the normal client-message dispatch path so we don't
       // duplicate handleInitialize logic. Errors propagate via sendError.
       this.handleClientMessage(initialMessage).catch(err => {
-        console.error("[AgentCoordinator] initial message processing failed:", err);
-        this.sendError(`init failed: ${(err as Error).message}`);
+        const error = err instanceof Error ? err : new Error(String(err));
+        // Consent-gate rejections are PERMANENT — retrying cannot fix them, and
+        // the raw message is a developer string. Emit the same coded error the
+        // legacy relay does so the client can say what's actually wrong and
+        // stop reconnecting. (This mapping was missed when the coordinator took
+        // over from live-relay.ts, so the AAC just spun forever.)
+        if (error.name === "ConsentGateError" || /consent[_ ]required/i.test(error.message)) {
+          console.warn("[AgentCoordinator] Initialize blocked by consent gate:", error.message);
+          this.sendError("error:CONSENT_REQUIRED");
+          return;
+        }
+        console.error("[AgentCoordinator] initial message processing failed:", error);
+        this.sendError(`init failed: ${error.message}`);
       });
     }
   }
@@ -2066,6 +2098,16 @@ export class AgentCoordinator {
       case "button_press":
         await this.handleButtonPress(msg);
         return;
+      case "game_press":
+        // A press on an ENGINE-generated game board (world-engine, e.g. the
+        // Dollhouse). A REAL student utterance — voiced, logged, published to
+        // the group chat — but it must NOT wake any agent into a model turn
+        // (the game executes the sentence itself; gameplay conserves cost).
+        // Deliberately NOT in SLEEP_WAKING_MSG_TYPES: a game press works fine
+        // against torn-down agents (TTS is agent-independent) and rebuilding
+        // the Live agents for it would defeat the cost conservation.
+        await this.handleGamePress(msg);
+        return;
       case "tts_done":
         // Client-side TTS finished playing — release the waiter in
         // streamStudentTts so the press can proceed to Speaker.
@@ -2226,19 +2268,43 @@ export class AgentCoordinator {
         // startSocialPeerSession self-guards against double starts.
         void this.startSocialPeerSession("client_launch");
         return;
-      case "context_injection":
+      case "context_injection": {
         // The client reads board buttons aloud with its own (client-side) TTS
         // during hold-to-highlight and audio-scan. Echo-suppress it exactly like
         // the server-voiced student TTS: forward the [OWN_SPEECH] note to the
         // Observer so it disregards hearing the readout through the mic instead
         // of transcribing it as a fresh user statement. Context injections don't
-        // fire an Observer turn, so this never provokes a response. Only the
-        // OWN_SPEECH echo note is honored here — other context_injection text
-        // stays ignored on this path, as before.
-        if (typeof msg.text === "string" && msg.text.startsWith("[OWN_SPEECH]")) {
+        // fire an Observer turn, so this never provokes a response.
+        if (typeof msg.text !== "string") return;
+        if (msg.text.startsWith("[OWN_SPEECH]")) {
           this.observer?.sendContextInjection(msg.text);
+          return;
         }
+        // Embedded-game bridge context ([GAME OBSERVATION] = passive state,
+        // [GAME REQUEST] = active ask), forwarded by the client's GameEmbed.
+        // Gated by the per-student gameOptions.useAi setting: observations
+        // obey the full gate ("off", or "energy" while the budget is in the
+        // low band, drop them); an active [GAME REQUEST] is dropped only when
+        // "off". Forwarded as PASSIVE Observer context — never a turn.
+        const gameKind = classifyGameContext(msg.text);
+        if (gameKind) {
+          const options = this.resolveSessionGameOptions();
+          const lowBand = this.lowBandActive();
+          if (!shouldForwardGameContext(gameKind, options, lowBand)) {
+            flowNote(
+              "COORDINATOR",
+              `[GAME ${gameKind.toUpperCase()}] dropped — gameOptions.useAi=${options.useAi}` +
+              (options.useAi === "energy" && lowBand ? " and the budget is in the low band" : "") + ".",
+            );
+            return;
+          }
+          this.noteEngagementActivity();
+          this.observer?.sendContextInjection(msg.text);
+          return;
+        }
+        // Other context_injection text stays ignored on this path, as before.
         return;
+      }
       default:
         // Many client message types (focus_frame, page_navigate, etc.) are
         // handled by the legacy path but aren't part of the MVP routing
@@ -3168,6 +3234,57 @@ export class AgentCoordinator {
       sentence,
       role: this.pressedButtonRole(label),
       addressee: this.pressedButtonAddressee(label),
+    });
+  }
+
+  /** Resolve the per-student game options from the session's cached student
+   *  (the joined `{ ...student, aacSettings }` shape the Monitor holds —
+   *  aac_settings is a SEPARATE joined table, never read via a raw students
+   *  query). Falls back to the defaults when the cache isn't up yet. */
+  private resolveSessionGameOptions(): GameOptions {
+    const student = this.sessionId
+      ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent.getStudent?.()
+      : undefined;
+    return resolveGameOptions((student as any)?.aacSettings);
+  }
+
+  /**
+   * A press on an ENGINE-generated world-engine game board (Dollhouse). The
+   * orchestration lives in game-options.ts (runGamePress) so it's testable
+   * without this class's import graph; this method just wires the deps to the
+   * same chokepoints handleButtonPress uses. NO agent turn is ever routed —
+   * no Speaker, no BoardManager, no board rebuild; at most a passive Observer
+   * context note gated by gameOptions.useAi. The repeat-press guard is
+   * intentionally not reused (game presses are naturally rate-limited, and
+   * the guard is entangled with Speaker/BoardManager busy state).
+   */
+  private async handleGamePress(msg: Extract<ClientMessage, { type: "game_press" }>): Promise<void> {
+    const options = this.resolveSessionGameOptions();
+    await runGamePress(msg, {
+      options,
+      lowBandActive: () => this.lowBandActive(),
+      sendUtterance: (text) => {
+        flowOutput("COORDINATOR", "ws_send_utterance", text);
+        this.send({ type: "utterance", text, confidence: "high", noAudioClear: false });
+      },
+      // Same chokepoint as handleButtonPress — voice identity, mute handling
+      // and the conversation-room publish all behave identically (the room
+      // publish happens INSIDE streamStudentTts, so no double publish).
+      streamStudentTts: (text) => this.streamStudentTts(text, "game_press"),
+      publishToRoom: (text) => this.publishUtteranceToRoom(text, false),
+      appendUserLog: (content) => this.appendToConversationLog("user", content),
+      recordUtterance: (text) => {
+        if (!this.studentId) return;
+        recordUtterance({
+          studentId: this.studentId,
+          chatSessionId: this.sessionId,
+          text,
+          source: "board_press",
+        });
+      },
+      injectObserverContext: (text) => this.observer?.sendContextInjection(text),
+      noteEngagement: () => this.noteEngagementActivity(),
+      note: (m) => flowNote("COORDINATOR", m),
     });
   }
 
@@ -4278,6 +4395,14 @@ export class AgentCoordinator {
       return;
     }
 
+    // Stamp the recogniser's clarity onto the event BEFORE recordEvent, so
+    // every consumer reads the same story: the Speaker's turn, the Board
+    // Manager's <recent_events> line, the session snapshot and the caption.
+    // Held on the event rather than looked up per consumer — recentEvents
+    // outlive the hold, and a line rendered later must not silently acquire a
+    // newer utterance's clarity.
+    if (event.type === "transcribed") event.asrConfidence = this.currentAsrConfidenceLabel();
+
     // Attribution trust gate — BEFORE recordEvent so a demoted attribution
     // never reaches recentEvents (BoardManager context), any agent, the
     // caption, or the board in its directed form.
@@ -4462,6 +4587,7 @@ export class AgentCoordinator {
     // returns nothing — so "did the audio reach the server?" is answerable.
     flowInput("CLIENT", "speech_audio", `→STT ${seconds.toFixed(1)}s ${(buf.length / 1024).toFixed(0)}KB lang=${msg.language ?? "?"}${msg.lipActivity?.length ? ` lips=${msg.lipActivity.length}` : ""}`);
     let text = "";
+    let confidence: number | undefined;
     try {
       // Inject session context (known names + on-screen vocab) as phrase hints so
       // STT biases toward the words actually likely here — the proper nouns and
@@ -4469,13 +4595,14 @@ export class AgentCoordinator {
       const speechContexts = await this.buildSpeechContexts().catch(() => undefined);
       // Short conversational turns → the short-utterance model (more accurate +
       // lower latency than latest_long on turn-sized clips).
-      const { segments } = await transcribeSegments(buf, { languageHint: msg.language, speechContexts, model: "latest_short" });
-      text = segments.map(s => s.text).join(" ").replace(/\s+/g, " ").trim();
+      const result = await transcribeSegments(buf, { languageHint: msg.language, speechContexts, model: "latest_short" });
+      text = result.segments.map(s => s.text).join(" ").replace(/\s+/g, " ").trim();
+      confidence = result.confidence;
       // Bill the actual speech duration (cheap — only the clip, not wall-clock).
       if (this.sessionId && this.studentId && seconds > 0) {
         void dualAgentService.trackSttUsage(this.sessionId, this.studentId, this.userId, seconds);
       }
-      flowNote("COORDINATOR", text ? `STT transcribed: "${text.slice(0, 160)}"` : `STT empty — no speech recognized in ${seconds.toFixed(1)}s clip`);
+      flowNote("COORDINATOR", text ? `STT transcribed (${describeSttConfidence(confidence)}): "${text.slice(0, 160)}"` : `STT empty — no speech recognized in ${seconds.toFixed(1)}s clip`);
       runInSessionContext(this.sessionId || "?", this.debugMode, () => {
         logLiveSession("SPEECH_AUDIO → STT", `lang=${msg.language ?? "?"} ${seconds.toFixed(1)}s → "${text.slice(0, 120)}"`);
       });
@@ -4492,11 +4619,11 @@ export class AgentCoordinator {
     // clipId) and updates [VOICES HEARD] + learning in the BACKGROUND. Neither
     // blocks the other. With no clipId, do both inline from this message.
     if (!msg.clipId) {
-      this.doFastSpeechRead(text, msg.acoustic, msg.lipActivity, undefined);
+      this.doFastSpeechRead(text, confidence, msg.acoustic, msg.lipActivity, undefined);
       if (msg.voiceDescriptor) await this.doSlowSpeechRead(msg.voiceDescriptor, msg.acoustic, msg.lipActivity);
       return;
     }
-    this.recordSpeechText(msg.clipId, text, msg.lipActivity, msg.acoustic, msg.voiceDescriptor);
+    this.recordSpeechText(msg.clipId, text, confidence, msg.lipActivity, msg.acoustic, msg.voiceDescriptor);
   }
 
   /** A clip's STT text (+ pitch + lip) arrived — fire the FAST read immediately;
@@ -4505,19 +4632,21 @@ export class AgentCoordinator {
   private recordSpeechText(
     clipId: string,
     text: string,
+    confidence: number | undefined,
     lipActivity: LipFace[] | undefined,
     acoustic: Acoustic | undefined,
     inlineVoice?: { embedding: number[]; quality?: number },
   ): void {
     const e = this.pendingSpeech.get(clipId) ?? {};
     e.text = text;
+    e.confidence = confidence;
     // Merge, don't clobber: the streaming path delivers lip/acoustic separately
     // (speech_meta) BEFORE the transcript, so only overwrite when provided.
     if (lipActivity !== undefined) e.lipActivity = lipActivity;
     if (acoustic !== undefined) e.acoustic = acoustic;
     if (inlineVoice) e.voice = inlineVoice;
     this.pendingSpeech.set(clipId, e);
-    if (text && !e.fastDone) { e.fastDone = true; this.doFastSpeechRead(text, e.acoustic, e.lipActivity, clipId); }
+    if (text && !e.fastDone) { e.fastDone = true; this.doFastSpeechRead(text, e.confidence, e.acoustic, e.lipActivity, clipId); }
     if (e.voice && !e.slowDone) { e.slowDone = true; void this.doSlowSpeechRead(e.voice, e.acoustic, e.lipActivity); }
     this.cleanupOrReap(clipId, e);
   }
@@ -4528,7 +4657,7 @@ export class AgentCoordinator {
     const e = this.pendingSpeech.get(clipId) ?? {};
     e.voice = voice;
     this.pendingSpeech.set(clipId, e);
-    if (e.text && !e.fastDone) { e.fastDone = true; this.doFastSpeechRead(e.text, e.acoustic, e.lipActivity, clipId); }
+    if (e.text && !e.fastDone) { e.fastDone = true; this.doFastSpeechRead(e.text, e.confidence, e.acoustic, e.lipActivity, clipId); }
     if (!e.slowDone) { e.slowDone = true; void this.doSlowSpeechRead(voice, e.acoustic, e.lipActivity); }
     this.cleanupOrReap(clipId, e);
   }
@@ -4550,6 +4679,7 @@ export class AgentCoordinator {
    *  [SPEAKER LIKELIHOOD] from pitch + lip-sync — no embedding required. */
   private doFastSpeechRead(
     text: string,
+    confidence: number | undefined,
     acoustic: Acoustic | undefined,
     lipActivity: LipFace[] | undefined,
     clipId: string | undefined,
@@ -4559,7 +4689,7 @@ export class AgentCoordinator {
     // then inject. Always inject even if the line is empty/failed.
     void this.buildFastSpeakerLikelihood(acoustic, lipActivity)
       .catch(() => "")
-      .then(line => this.injectHeardSpeech(text, 0.9, undefined, clipId, "speech_audio", line || undefined));
+      .then(line => this.injectHeardSpeech(text, confidence, undefined, clipId, "speech_audio", line || undefined));
   }
 
   /** SLOW tier (background): the full voice embedding. Refresh [VOICES HEARD] +
@@ -4778,7 +4908,7 @@ export class AgentCoordinator {
   /** A phrase finalized mid-stream — inject it as a [HEARD SPEECH] turn NOW.
    *  Speaker attribution rides on [VOICES HEARD] (from the parallel voice
    *  embedding) rather than waiting for an end-of-speech fusion. */
-  private onSttStreamFinal(streamId: string, segment: string): void {
+  private onSttStreamFinal(streamId: string, segment: string, confidence?: number): void {
     const s = this.sttStreams.get(streamId);
     const text = (segment || "").trim();
     if (!text) return;
@@ -4787,8 +4917,8 @@ export class AgentCoordinator {
     // to the last routed yellow transcript; if this phrase is user-targeted a
     // fresh one follows once the Observer routes it).
     this.send({ type: "transcript_interim", data: "" });
-    flowNote("COORDINATOR", `STT stream final [${streamId.slice(0, 8)}] → "${text.slice(0, 120)}"`);
-    this.injectHeardSpeech(text, 0.9, undefined, streamId, "stt_stream");
+    flowNote("COORDINATOR", `STT stream final [${streamId.slice(0, 8)}] (${describeSttConfidence(confidence)}) → "${text.slice(0, 120)}"`);
+    this.injectHeardSpeech(text, confidence, undefined, streamId, "stt_stream");
   }
 
   private async endSttStream(streamId: string, acoustic?: Acoustic, lipActivity?: LipFace[]): Promise<void> {
@@ -4810,7 +4940,9 @@ export class AgentCoordinator {
     flowNote("COORDINATOR", `STT stream end: chunks=${s.chunks} ${seconds.toFixed(1)}s fired=${s.firedAny}${text && !s.firedAny ? ` → "${text.slice(0, 120)}"` : ""}`);
     // If the recognizer never emitted a mid-stream final (short clip / it only
     // finalized at close), inject the full transcript now as the fallback.
-    if (!s.firedAny && text) this.injectHeardSpeech(text, 0.9, undefined, streamId, "stt_stream");
+    // No confidence to pass: the recognizer only committed at close, so no
+    // per-phrase score ever reached us. Undefined = "unknown", never a default.
+    if (!s.firedAny && text) this.injectHeardSpeech(text, undefined, undefined, streamId, "stt_stream");
     // Stash the lip/acoustic evidence so the parallel voice embedding
     // (voice_descriptors[streamId] → slow read) can still do the lip-confirmed
     // gallery correction. The transcript itself already fired above.
@@ -4925,6 +5057,10 @@ export class AgentCoordinator {
     // (request_audio) if the text isn't enough. Clears any stale pending pull.
     this.lastSpeechClipId = clipId ?? null;
     this.pendingAudioPullClipId = null;
+    // Hold the recogniser's own score so the transcript the Observer routes
+    // back can be captioned with how clearly the words were HEARD — a separate
+    // axis from the Observer's confidence in who said it (routeTranscribedInner).
+    this.lastAsrConfidence = { value: confidence, at: Date.now() };
 
     // Refresh speaker attribution from this segment's voice embedding so the
     // next [VOICES HEARD] block — and the Observer's judgment — is current.
@@ -4975,11 +5111,15 @@ export class AgentCoordinator {
     // Demoted attributions (applyAttributionTrustGate) render as ambient
     // hearsay, not as a "<speaker> to <target>" turn — the Speaker may weave
     // the words in but must not answer them as anyone's statement.
+    // A weak recogniser score rides in the tag as well, so the Speaker knows
+    // the WORDS may be wrong before it answers them (the attribution markers
+    // above are about WHO — an unrelated axis; both can apply at once).
+    const clarity = clarityTag(event.asrConfidence);
     const rendered = event.attributionDemotion === "unverified_student_speech"
-      ? `[HEARD NEAR ${event.speaker} — speaker unverified] "${event.text}"`
+      ? `[HEARD NEAR ${event.speaker} — speaker unverified${clarity}] "${event.text}"`
       : event.attributionDemotion === "impossible_speech"
-        ? `[HEARD NEARBY — speaker unknown] "${event.text}"`
-        : `[${event.speaker} to ${targetLabel}] "${event.text}"`;
+        ? `[HEARD NEARBY — speaker unknown${clarity}] "${event.text}"`
+        : `[${event.speaker} to ${targetLabel}${clarity}] "${event.text}"`;
 
     // Conversation activity — transcripts directed at USER or DEVICE
     // (i.e. someone speaking with the user or the AI) reset the rest
@@ -5059,6 +5199,11 @@ export class AgentCoordinator {
         data: event.text,
         speaker: event.speaker,
         confidence: event.confidence,
+        // How clearly the WORDS were heard, straight from the recogniser —
+        // distinct from `confidence` (the Observer's read of the utterance).
+        // The caption blurs on a weak score so the user can see that the
+        // device is unsure rather than being handed a crisp wrong sentence.
+        asrConfidence: event.asrConfidence,
       });
 
       // An external statement aimed at the user just landed — in facilitator
@@ -5068,6 +5213,17 @@ export class AgentCoordinator {
       this.clearFacilitatorBidTimer();
       this.invokeBoardManager([event]);
     }
+  }
+
+  /** Coarse label for the recogniser score behind the transcript being routed
+   *  now. Returns undefined when nothing recent backs it (a stale hold, or a
+   *  transcript with no STT turn behind it at all — e.g. one the Observer
+   *  produced from pulled audio), so the client shows no claim either way. */
+  private currentAsrConfidenceLabel(): "high" | "medium" | "low" | "unknown" | undefined {
+    const held = this.lastAsrConfidence;
+    if (!held) return undefined;
+    if (Date.now() - held.at > AgentCoordinator.ASR_CONFIDENCE_TTL_MS) return undefined;
+    return confidenceLabel(held.value);
   }
 
   private enqueueContextUpdate(event: ContextUpdateEvent): void {

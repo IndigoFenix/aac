@@ -103,9 +103,23 @@ describe("glyph registry", () => {
     expect(getVocabularyItem("fragrant")!.modifier?.pairKey).toBe("smelly");
     expect(getVocabularyItem("tasty")!.modifier?.pairKey).toBe("yucky");
     expect(getVocabularyItem("yucky")!.modifier?.pairKey).toBe("tasty");
-    // The existing on-preposition gained a state icon but stays a connector.
+    // The on-preposition stays a connector; the SPATIAL reading owns its art
+    // now (the places/relational set) — the state icon lives on `off` alone.
     expect(getVocabularyItem("on")!.pos).toBe("connector");
-    expect(getVocabularyItem("on")!.imagePath).toBe("adjectives/state/on");
+    expect(getVocabularyItem("on")!.imagePath).toBe("places/relational/on");
+    // The relational set: the facing pair is new, the rest gained artwork.
+    for (const key of ["behind", "in_front_of", "next_to", "under", "over", "in"]) {
+      const item = getVocabularyItem(key);
+      expect(item).toBeDefined();
+      expect(item!.pos).toBe("connector");
+      expect(item!.exposeToAi).toBe(true);
+    }
+    expect(getVocabularyItem("behind")!.imagePath).toBe("places/relational/behind");
+    expect(getVocabularyItem("in_front_of")!.imagePath).toBe("places/relational/in_front_of");
+    // break/return joined the verb set with the new hands/motion art.
+    expect(getVocabularyItem("break")!.imagePath).toBe("actions/hands/break");
+    expect(getVocabularyItem("return")!.imagePath).toBe("motion/return");
+    expect(getVocabularyItem("build")!.imagePath).toBe("actions/hands/build");
   });
 
   it("gender modifiers apply to person via the gender_body transform", () => {

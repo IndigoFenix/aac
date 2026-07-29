@@ -24,7 +24,7 @@ interface GoalTreeQuestPlayerProps {
   /** Ref to the embed so the host can push `board_option_selected` to the game. */
   gameRef?: Ref<GameEmbedHandle>;
   /** Fired when the game locks/releases the response board (see GameEmbed). */
-  onBoardOptions?: (options: BoardOption[] | null) => void;
+  onBoardOptions?: (options: BoardOption[] | null, prompt?: string) => void;
 }
 
 /** Suppress identical [GAME] lines repeated within this window. */

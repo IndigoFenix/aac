@@ -13,6 +13,8 @@
 // Advisory only — it never blocks input.
 
 import { useCallback, useEffect, useState } from "react";
+// Deep import — pure identity-color module, never the world-engine barrel.
+import { colorHexForId } from "@shared/world-engine/peer-colors";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useCall } from "@/contexts/CallContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -61,19 +63,26 @@ export function GroupChatHeader({ hidden }: { hidden?: boolean } = {}) {
     [focused, sendConversationFocus],
   );
 
-  // During a game, peers render as avatars IN the world — the floating face row at
-  // the top is redundant (and overlaps the game), so hide it. Same when the call
-  // has been pulled into the big-video window (the faces are in that layout).
-  if (activeGame || hidden || peers.length === 0) return null;
+  // During a social-world game, peers render as avatars IN the world — the
+  // floating face row at the top is redundant (and overlaps the game), so hide
+  // it. Same when the call has been pulled into the big-video window (the faces
+  // are in that layout). An iframe-quest game (shared dollhouse) is the
+  // EXCEPTION: peers appear in-world only as spark lights, so this row is the
+  // student's live view of them — and the gaze target that flips the sidebar
+  // to the social board (data-board-focus below).
+  const iframeQuest = activeGame?.engine === "iframe-quest";
+  if ((activeGame && !iframeQuest) || hidden || peers.length === 0) return null;
 
   const myTurn = !!floor?.holder && floor.holder === selfPersonId;
 
   return (
     <div
-      className="fixed top-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1 px-4 pt-2 pb-3 pointer-events-none"
+      className="fixed top-safe-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1 px-4 pt-2 pb-3 pointer-events-none"
       aria-label={t("call.groupChat.peopleInChat")}
     >
-      <div className="flex items-end gap-3">
+      {/* data-board-focus: gazing at a peer's live video flips the in-game
+          sidebar to the LLM communication board (see home's SidebarFocusSensor). */}
+      <div className="flex items-end gap-3" data-board-focus="social">
         {peers.map((p) => {
           const initial = (p.name ?? "?").trim().charAt(0).toUpperCase();
           const isFocused = focused === p.personId;
@@ -106,7 +115,14 @@ export function GroupChatHeader({ hidden }: { hidden?: boolean } = {}) {
             >
               <div
                 className={`relative overflow-hidden rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg ring-4 transition ${ring}`}
-                style={{ width: "min(13vw, 72px)", height: "min(13vw, 72px)" }}
+                style={{
+                  width: "min(13vw, 72px)",
+                  height: "min(13vw, 72px)",
+                  // In the shared dollhouse, each peer's spark light carries a
+                  // stable color — the same color rims their face here so the
+                  // student can match lights to people.
+                  ...(iframeQuest ? { boxShadow: `0 0 0 3px ${colorHexForId(p.personId)}` } : {}),
+                }}
               >
                 {hasVideo && stream ? (
                   <PeerVideo stream={stream} />

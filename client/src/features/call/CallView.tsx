@@ -14,6 +14,7 @@ import type { CallGame } from "@shared/realtime-events";
 import type { BoardButton } from "@shared/schema";
 import { useCall } from "./CallContext";
 import { fetchSocialGameOptions } from "./api";
+import IframeQuestSurface, { colorForPeerId } from "./IframeQuestSurface";
 
 /** Resolve a backend ws:// URL, honoring VITE_API_URL (the clinician dev server
  *  doesn't proxy /ws). Mirrors usePersonChatSocket / CallContext. */
@@ -30,8 +31,10 @@ function resolveCallWsUrl(path: string): string {
 }
 
 /** One remote participant's video tile for the in-game people sidebar. `gain` is
- *  the proximity volume (1 = in the circle; <1 = fading at the edge). */
-function PeerVideoTile({ stream, name, gain, muted }: { stream: MediaStream; name: string | null; gain: number; muted?: boolean }) {
+ *  the proximity volume (1 = in the circle; <1 = fading at the edge).
+ *  `borderColor` tints the tile's ring — during an iframe world game it matches
+ *  the peer's in-game color so faces map to avatars. */
+function PeerVideoTile({ stream, name, gain, muted, borderColor }: { stream: MediaStream; name: string | null; gain: number; muted?: boolean; borderColor?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const attach = useCallback((el: HTMLVideoElement | null) => {
     ref.current = el;
@@ -44,7 +47,10 @@ function PeerVideoTile({ stream, name, gain, muted }: { stream: MediaStream; nam
   useEffect(() => { if (ref.current) ref.current.volume = gain; }, [gain]);
   useEffect(() => { if (ref.current) ref.current.muted = !!muted; }, [muted]);
   return (
-    <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/60">
+    <div
+      className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/60"
+      style={borderColor ? { border: `2px solid ${borderColor}` } : undefined}
+    >
       {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live WebRTC peer feed */}
       <video ref={attach} autoPlay playsInline className="h-full w-full object-cover" />
       {name && (
@@ -326,6 +332,7 @@ export function CallView() {
                   name={participants.find((p) => p.personId === pid)?.name ?? null}
                   gain={peerGains.get(pid) ?? 1}
                   muted={outputMuted}
+                  borderColor={game.engine === "iframe-quest" ? colorForPeerId(pid) : undefined}
                 />
               ))
             )}
@@ -384,8 +391,13 @@ export function CallView() {
 
           {/* Social-game surface — fills the main area when a game is attached
               (the call panel IS the game panel). Peers are in the sidebar; "End
-              game" detaches it back to plain video. */}
-          {isActive && game && (
+              game" detaches it back to plain video. An iframe world game
+              (engine "iframe-quest") mounts its packaged game locally instead
+              of the in-page world canvas. */}
+          {isActive && game && game.engine === "iframe-quest" && (
+            <IframeQuestSurface game={game} onExit={stopGame} />
+          )}
+          {isActive && game && game.engine !== "iframe-quest" && (
             <CallGameSurface
               game={game}
               selfPersonId={selfPersonId}

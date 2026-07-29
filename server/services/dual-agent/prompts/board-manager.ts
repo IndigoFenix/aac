@@ -11,6 +11,7 @@
 
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import type { AgentEvent } from "../agent-events";
+import { clarityTag } from "../speech-text";
 import { getLanguageName } from "@shared/language-names";
 import { type LanguageLevel, languageLevelDirective } from "@shared/aac-language-level";
 import type { PermittedWebsite } from "@shared/schema";
@@ -156,6 +157,10 @@ The TARGET label on the incoming tagged event decides whether to build a board a
     - \`[Mom to Dad]\` — Mom talking to Dad while [${studentName}] is in the room.
     - \`[AI to Mom]\` — the AI is responding to Mom; [${studentName}] isn't being addressed.
     - These are ambient observations unless [${studentName}] shows interest in interjecting.
+
+**"words uncertain" / "words very uncertain" in the tag** — the speech-to-text wasn't sure it heard those words. It never returns silence, so weak audio comes back as a fluent sentence nobody said.
+  - Still build reply ${T.button}s (someone probably DID speak), but keep them GENERAL — "what?", "say it again", "yes", "no", "I don't understand" — plus whatever the ongoing topic already supports.
+  - Do NOT anchor the board to specifics that appear ONLY in those words. A name, place, or topic that arrives once, uncertain, and fits nothing else in <recent_events> is the likeliest thing to have been misheard — a ${T.button} naming it invites a press that CONFIRMS something that was never said.
 
 **FOLLOW-UPS and REPLIES are different boards.** Don't mix them. If you just produced one and now you're invoked for the other, the new board should answer the new beat — overlap is fine, but the FRAMING is different.
 
@@ -581,16 +586,20 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     case "guessing_exited":
       return `[GUESSING EXITED]`;
     case "transcribed": {
+      // A weak speech-recogniser score rides in the tag: building a board
+      // around words that were never said is how a mis-decode becomes a
+      // phantom topic the user then CONFIRMS with a press.
+      const clarity = clarityTag(event.asrConfidence);
       // Demoted attributions (coordinator trust gate) are ambient hearsay,
       // not a turn — don't render a "<speaker> to <target>" shape that
       // could re-promote them into something to build reply buttons for.
       if (event.attributionDemotion === "unverified_student_speech")
-        return `[HEARD NEAR ${event.speaker} — speaker unverified] "${event.text}"`;
+        return `[HEARD NEAR ${event.speaker} — speaker unverified${clarity}] "${event.text}"`;
       if (event.attributionDemotion === "impossible_speech")
-        return `[HEARD NEARBY — speaker unknown] "${event.text}"`;
+        return `[HEARD NEARBY — speaker unknown${clarity}] "${event.text}"`;
       const tgt = event.target ?? "AI";
       const label = tgt === "DEVICE" ? "AI" : tgt;
-      return `[${event.speaker} to ${label}] "${event.text}"`;
+      return `[${event.speaker} to ${label}${clarity}] "${event.text}"`;
     }
     case "context_update":
       return `[CONTEXT] ${event.updateType}: ${event.key} — ${event.description}${event.relevance ? ` (relevance: ${event.relevance})` : ""}`;

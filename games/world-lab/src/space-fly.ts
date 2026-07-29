@@ -95,10 +95,20 @@ export function createSpaceFlight(
   seed: number,
   faceN = 12,
   bakeGeography?: import("@shared/world-engine/space/celestial-body").GeographyBaker,
-  opts: { canFly?: boolean; species?: string; compression?: number } = {},
+  opts: {
+    canFly?: boolean; species?: string;
+    // The universe-wide compression dials (scale.ts). Absent distance dials
+    // fall back to `compression` inside createWorld — uniform shrink.
+    compression?: number; interplanetary?: number; interstellar?: number;
+    revolution?: number; rotation?: number;
+  } = {},
 ): SpaceFlight {
   const world = createWorld(seed, DEFAULT_GALAXY_PARAMS, faceN, bakeGeography, {
     ...(opts.compression ? { compression: opts.compression } : {}),
+    ...(opts.interplanetary ? { interplanetary: opts.interplanetary } : {}),
+    ...(opts.interstellar ? { interstellar: opts.interstellar } : {}),
+    ...(opts.revolution ? { revolution: opts.revolution } : {}),
+    ...(opts.rotation ? { rotation: opts.rotation } : {}),
   });
   const player = createPlayer(world, { canFly: opts.canFly });
   const rig = createFlightCamera();

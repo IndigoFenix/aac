@@ -16,8 +16,10 @@ export interface NamedWorld {
   world: TreeWorld;
 }
 
-/** Street-clock physics — a compressed day so needs/building move at demo pace. */
-const STREET_CLOCK = { day_length_s: 240, sleep_fraction: 0.05, construction: 180 };
+/** Street-clock physics — the planet spins 360× (a 240 s day) so needs and
+ *  building move at demo pace. Compression is declared as a MULTIPLIER over
+ *  the real anchor, never as an absolute (scale.ts `WorldScale.rotation`). */
+const STREET_CLOCK = { rotation: 360, sleep_fraction: 0.05, construction: 180 };
 
 export const TEST_WORLDS: NamedWorld[] = [
   {
@@ -30,7 +32,7 @@ export const TEST_WORLDS: NamedWorld[] = [
       // and box. This is the town → structure → creature/item tree.
       tree: {
         kind: "town",
-        params: { seed: 7, days: 220, syntax: "b", locale: "en" },
+        params: { seed: 12, days: 220, syntax: "b", locale: "en" },
         contains: [{
           kind: "structure",
           focus: true,
@@ -40,10 +42,7 @@ export const TEST_WORLDS: NamedWorld[] = [
             { kind: "creature", params: { name: "Orrin", outfit: 1, likes: ["banana"] } },
             { kind: "creature", params: { name: "Pip", species: "frog_person", outfit: 0, likes: ["grape"] } },
             { kind: "creature", params: { name: "Biscuit", pet: true, species: "dog", likes: ["apple"] } },
-            { kind: "item", params: { glyph: "apple", at: "floor" } },
             { kind: "item", params: { glyph: "ball", at: "floor" } },
-            { kind: "item", params: { glyph: "teddy", at: "box" } },
-            { kind: "item", params: { glyph: "shirt.color_blue.dirty", at: "floor" } },
           ],
         }],
       },

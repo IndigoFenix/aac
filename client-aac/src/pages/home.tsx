@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UserX, Eye, EyeOff, Play, Copy } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
@@ -9,7 +9,6 @@ import QuickActions from "@/components/QuickActions";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 
-import ChatLog from "@/components/ChatLog";
 import ProfileSetup from "@/components/ProfileSetup";
 import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
 import { ConversationBox } from "@/components/ConversationBox";
@@ -40,6 +39,7 @@ import { useFaceImageCache } from "@/hooks/useFaceImageCache";
 import { usePeopleDirectory } from "@/hooks/usePeopleDirectory";
 import { setFaceImageResolver } from "@/lib/glyph-images";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
+import { SentenceButton } from "@/components/SentenceButton";
 import BinaryChoiceOverlay from "@/components/BinaryChoiceOverlay";
 import AlarmOverlay from "@/components/AlarmOverlay";
 import { DeviceManagerModal } from "@/components/DeviceManager";
@@ -52,7 +52,14 @@ import GameEmbed from "@/components/games/GameEmbed";
 import GoalTreeQuestPlayer from "@/components/games/GoalTreeQuestPlayer";
 import { symbolBasicsGame } from "@shared/world-engine/solver/lessons/symbol-basics";
 import { type GameEmbedHandle } from "@/components/games/GameEmbed";
-import type { BoardOption } from "@shared/games-bridge";
+import { CallWorldGameFerry, type WorldGameFerrySenders } from "@/components/games/CallWorldGameFerry";
+import { WorldHudStrip, type WorldHudSections } from "@/components/WorldHudStrip";
+import type { BoardOption, GameMessage } from "@shared/games-bridge";
+import {
+  createBridgeBuilderBackend,
+  createLocalBuilderBackend,
+  type BridgeBuilderBackend,
+} from "@/lib/engine-builder";
 
 /** Build a one-page response board from a game's locked options, laid out 2×4 so
  *  2–4 choices read large. Each option's id is preserved as the button id so a
@@ -78,6 +85,69 @@ function lockedBoardFrom(options: BoardOption[]): ParsedBoardData {
     ],
   };
 }
+/**
+ * While a world-engine game owns the sidebar there is only ONE sidebar, shared
+ * by two boards: the game's ENGINE-generated options (default) and the LLM
+ * communication board. Where the student rests their gaze decides which shows —
+ * resting on another person's live video (any element marked
+ * `data-board-focus="social"`) flips to the LLM board; resting anywhere else
+ * (the game) flips back. Hysteresis so a passing glance doesn't flap the board.
+ */
+function useSidebarBoardFocus(
+  active: boolean,
+  dwell: { gazePosition: { x: number; y: number } | null; mode: string } | null,
+): "game" | "social" {
+  const [focus, setFocus] = useState<"game" | "social">("game");
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+  // The dwell context value changes identity every sample — read it through a
+  // ref so the hysteresis interval below isn't torn down per gaze frame.
+  const dwellRef = useRef(dwell);
+  dwellRef.current = dwell;
+
+  useEffect(() => {
+    if (!active) {
+      setFocus("game");
+      return;
+    }
+    const SOCIAL_MS = 400; // sustained gaze on a video before the LLM board takes over
+    const GAME_MS = 300;   // sustained gaze back in-game before the engine board returns
+    let socialSince = 0;
+    let gameSince = 0;
+    const interval = window.setInterval(() => {
+      const d = dwellRef.current;
+      const pos = d?.gazePosition;
+      if (!pos || d?.mode === "off") return; // no signal — hold the current board
+      const el = document.elementFromPoint(pos.x, pos.y);
+      if (!el) return; // outside the window — hold
+      const now = performance.now();
+      const onSocial = !!el.closest('[data-board-focus="social"]');
+      if (onSocial) {
+        gameSince = 0;
+        if (!socialSince) socialSince = now;
+        if (focusRef.current !== "social" && now - socialSince >= SOCIAL_MS) setFocus("social");
+      } else {
+        socialSince = 0;
+        if (!gameSince) gameSince = now;
+        if (focusRef.current !== "game" && now - gameSince >= GAME_MS) setFocus("game");
+      }
+    }, 100);
+    return () => window.clearInterval(interval);
+  }, [active]);
+
+  return active ? focus : "game";
+}
+
+/** Runs the sidebar-focus decision INSIDE the dwell provider (Home's own body
+ *  is outside it) and reports flips up to Home. Renders nothing. */
+function SidebarFocusSensor({ active, onChange }: { active: boolean; onChange: (f: "game" | "social") => void }) {
+  const dwell = useEyeTrackingDwell();
+  const focus = useSidebarBoardFocus(active, dwell);
+  useEffect(() => {
+    onChange(focus);
+  }, [focus, onChange]);
+  return null;
+}
 import BrowserApp from "@/components/apps/BrowserApp";
 import type { PermittedWebsite } from "@shared/schema";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
@@ -97,7 +167,7 @@ import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
 import { useSignLanguagePhrase } from "@/hooks/useSignLanguagePhrase";
 import { isValidSignLanguageCode, isValidLanguageCode } from "@/i18n";
 import { serializeGestureContext, describeFaceForScene, describeHandForScene } from "@/lib/gestureContextSerializer";
-import { EyeTrackingDwellProvider, type SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
+import { EyeTrackingDwellProvider, useEyeTrackingDwell, type SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 import type { RestSpace } from "@shared/button-shape";
 import DwellOverlay from "@/components/DwellOverlay";
 import HoldHighlightOverlay from "@/components/HoldHighlightOverlay";
@@ -131,10 +201,11 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
+  onGamePressReady?: (fn: ((text: string, glyph?: string, voice?: boolean) => void) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/dual-agent-types").BoardPatch | null) => void;
   onSymbolUpdateChange?: (data: { buttonLabel: string; symbolPath: string } | null) => void;
@@ -178,7 +249,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
    *  close exactly when the interpreted sentence starts. */
   onVoicingStudentChange?: (voicing: boolean) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, processing, voicingStudent } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, sendGamePress, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, processing, voicingStudent } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -213,6 +284,17 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onDetec
     }
     return () => onPlayGlyphReady(null);
   }, [playGlyph, onPlayGlyphReady]);
+
+  // sendGamePress: voice/log a game-board press without waking an agent.
+  useEffect(() => {
+    if (!onGamePressReady) return;
+    if (sendGamePress) {
+      onGamePressReady((text: string, glyph?: string, voice?: boolean) => sendGamePress(text, glyph, voice));
+    } else {
+      onGamePressReady(null);
+    }
+    return () => onGamePressReady(null);
+  }, [sendGamePress, onGamePressReady]);
 
   useEffect(() => {
     onDetectionChange?.(videoCaptureEnabled || voiceEnabled);
@@ -372,7 +454,8 @@ function renderAppContent(
   permittedWebsites?: PermittedWebsite[],
   sendContextOnlyToAi?: (text: string) => void,
   gameRef?: React.Ref<GameEmbedHandle>,
-  onBoardOptions?: (options: BoardOption[] | null) => void,
+  onBoardOptions?: (options: BoardOption[] | null, prompt?: string) => void,
+  onGameMessage?: (msg: GameMessage) => void,
 ): React.ReactNode {
   if (!activeApp) return null;
   if (activeApp.appId === "youtube") {
@@ -439,6 +522,19 @@ function renderAppContent(
       />
     );
   }
+  if (activeApp.appId === "dollhouse") {
+    return (
+      <GameEmbed
+        ref={gameRef}
+        gameId="dollhouse"
+        src="/games/dollhouse/"
+        forwardGaze
+        onBoardOptions={onBoardOptions}
+        onMessage={onGameMessage}
+        onClose={dismissApp}
+      />
+    );
+  }
   if (activeApp.appId === "browser" && activeApp.appData?.url) {
     return (
       <BrowserApp
@@ -491,7 +587,6 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Disable periodic camera detection calls (detect-person, analyze-image) to focus on chat
   const DISABLE_PERIODIC_DETECTION = true;
 
-  const [showChatLog, setShowChatLog] = useState(false);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [showDeviceManager, setShowDeviceManager] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
@@ -685,7 +780,12 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [gameHost, setGameHost] = useState<HTMLDivElement | null>(null);
   // Trailing-side host for the other people in the call (opposite the buttons).
   const [peopleHost, setPeopleHost] = useState<HTMLDivElement | null>(null);
-  const gameActive = activeSocialGame != null;
+  // An "iframe-quest" call game (e.g. the shared Dollhouse) does NOT use the
+  // social-game layout — it renders through the normal ACTIVE-APP path (the
+  // dollhouse embed with its engine sidebar/builder wiring), with the call
+  // ferry moving world state between the iframe and the mesh.
+  const iframeQuestGame = activeSocialGame?.engine === "iframe-quest" ? activeSocialGame : null;
+  const gameActive = activeSocialGame != null && !iframeQuestGame;
   // Big-video mode: while in a plain call (no game) the student can pull the
   // people they're talking to into a large window — the same reflow as a game
   // (board buttons pushed to the side). `callInfo` is lifted out of CallProvider
@@ -696,7 +796,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Button id the clinician is hovering on their mirror — highlighted on the
   // student's real board so they see the clinician's "cursor".
   const [peerCursorId, setPeerCursorId] = useState<string | null>(null);
-  const videoLargeActive = callInfo.active && callInfo.hasRemote && !gameActive && videoLarge;
+  // Big-video is also blocked while an iframe-quest game (shared dollhouse) is
+  // attached — it renders through the app-content branch, and unmounting that
+  // branch would kill the game iframe (resetting the world if we're the owner).
+  const videoLargeActive = callInfo.active && callInfo.hasRemote && !gameActive && !iframeQuestGame && videoLarge;
   // Reset the toggle when the call ends so the next call starts in small mode.
   useEffect(() => { if (!callInfo.active) setVideoLarge(false); }, [callInfo.active]);
   // While a social game is on screen, the (WebGL) renderer competes with the
@@ -749,11 +852,91 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     gameLockedBoardRef.current = board;
     setGameLockedBoard(board);
   }, []);
+  // ONE sidebar, two boards: while a world-engine game owns it, gaze decides
+  // whether the engine options ("game") or the LLM board ("social") shows.
+  const [sidebarBoardFocus, setSidebarBoardFocus] = useState<"game" | "social">("game");
+  // Per-player game options (appConfig.gameOptions — see AAC Settings "Game
+  // options"). studentVoice: voice game presses with the student's server
+  // (cloned) voice when a session is live; default true.
+  const gameOptions = (userProfile?.aacSettings?.appConfig as
+    | { gameOptions?: { useAi?: "on" | "energy" | "off"; studentVoice?: boolean } }
+    | undefined)?.gameOptions ?? {};
+  const gameVoiceServer = aiSessionActive && gameOptions.studentVoice !== false;
+  const gameVoiceServerRef = useRef(gameVoiceServer);
+  gameVoiceServerRef.current = gameVoiceServer;
+  // Which active apps run on the (vendored) world-engine — their embeds accept
+  // glyph_input and push engine boards onto the sidebar.
+  const worldEngineGameActive = activeApp?.appId === "dollhouse";
+  const worldEngineGameActiveRef = useRef(worldEngineGameActive);
+  worldEngineGameActiveRef.current = worldEngineGameActive;
+  // In-game Exit is a guarded affordance: pressing it (with the sentence
+  // builder closed) opens a glyph yes/no confirmation instead of dismissing
+  // the app outright. Cleared whenever the active app changes.
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  useEffect(() => { setShowExitConfirm(false); }, [activeApp]);
+  // ── Sentence-builder engine backends (stage-3 builder merge) ──────────────
+  // In-game: the builder asks the embedded game's engine what to offer
+  // (builder_state → builder_surface over the embed bridge) and Play executes
+  // through it (glyph_input → glyph_result). Out-of-game: the LIVE engine's
+  // pure surfacer runs locally over the DEFAULT game objects; play() is null
+  // there, so Play always takes the LLM interpret path.
+  const builderBridgeRef = useRef<BridgeBuilderBackend | null>(null);
+  if (!builderBridgeRef.current) {
+    builderBridgeRef.current = createBridgeBuilderBackend((msg) => gameEmbedRef.current?.send(msg));
+  }
+  const localBuilderBackend = useMemo(
+    () => createLocalBuilderBackend({ locale: currentLanguage }),
+    [currentLanguage]
+  );
+  const engineBuilderBackend = worldEngineGameActive ? builderBridgeRef.current : localBuilderBackend;
+  // ── Shared dollhouse in a call (stage-4 multiplayer) ──────────────────────
+  // Outbound half of the call ferry (filled by CallWorldGameFerry, which lives
+  // inside CallProvider). The embed's world traffic goes out through it; when
+  // it's null (no iframe-quest call game) the messages just drop — the game is
+  // solo and sends nothing anyway.
+  const callWorldSendersRef = useRef<WorldGameFerrySenders | null>(null);
+  const stopCallGameFnRef = useRef<(() => void) | null>(null);
+  // ONE embed message handler: builder answers into the bridge backend's
+  // pending-request maps + world traffic out to the call ferry. Stable
+  // identity so GameEmbed's listener effect doesn't re-bind per render.
+  const handleWorldGameMessage = useCallback((msg: GameMessage) => {
+    builderBridgeRef.current?.handleGameMessage(msg);
+    if (msg.type === "world_data") callWorldSendersRef.current?.sendWorldData(msg.msgs);
+    else if (msg.type === "world_cmd") callWorldSendersRef.current?.sendWorldCmd(msg.cmd, msg.toId);
+    else if (msg.type === "world_hud") setWorldHud(msg.sections.length ? msg.sections : null);
+  }, []);
+  // The game's ambient HUD (family present, pocket, …) — shown above the
+  // button sidebar while the game runs; its in-iframe panel is hidden.
+  const [worldHud, setWorldHud] = useState<WorldHudSections | null>(null);
+  // Keep the local dollhouse app in step with the call's iframe-quest game:
+  // game attached (by anyone in the call) → launch the app; game detached →
+  // close the app; the STUDENT closing the app → detach the game for the call
+  // (the call itself continues — matching "anyone can end the game").
+  const iframeQuestGameId = iframeQuestGame?.appId ?? null;
+  const prevIframeQuestRef = useRef<string | null>(null);
+  const activeAppIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevIframeQuestRef.current;
+    prevIframeQuestRef.current = iframeQuestGameId;
+    if (iframeQuestGameId === "dollhouse" && prev !== iframeQuestGameId) {
+      if (activeAppIdRef.current !== "dollhouse") launchAppFnRef.current?.("dollhouse");
+    } else if (!iframeQuestGameId && prev && activeAppIdRef.current === prev) {
+      dismissAppRef.current?.();
+    }
+  }, [iframeQuestGameId]);
+  useEffect(() => {
+    const prev = activeAppIdRef.current;
+    activeAppIdRef.current = activeApp?.appId ?? null;
+    if (prev === "dollhouse" && !activeApp && prevIframeQuestRef.current === "dollhouse") {
+      stopCallGameFnRef.current?.();
+    }
+  }, [activeApp]);
   // Drop any lock when the app/game closes.
   useEffect(() => {
     if (!activeApp) {
       gameLockedBoardRef.current = null;
       setGameLockedBoard(null);
+      setWorldHud(null);
     }
   }, [activeApp]);
   // When a game ends, close the "Play with friends" launcher app if it was open,
@@ -814,6 +997,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const cancelAlarmRef = useRef<(() => void) | null>(null);
   const voiceFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
+  const sendGamePressFnRef = useRef<((text: string, glyph?: string, voice?: boolean) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const pressSuggestionRef = useRef<((suggestionKey: string) => void) | null>(null);
   const pressNarrowRef = useRef<((dimension: string, value: string, sourceText?: string) => void) | null>(null);
@@ -1347,7 +1531,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
   // Initialize gesture handling
   useGestures({
-    onCornerTap: () => setShowChatLog(true),
+    // NO onCornerTap. It used to open a legacy ChatLog panel, and because
+    // useGestures listens on `document` without checking the event target, ANY
+    // quick tap landing in the bottom-right 100x100px opened it — including
+    // taps on real board buttons that happen to sit there. The panel then
+    // covered the screen with an empty state (its endpoint,
+    // /api/aac/conversation/history, was never implemented on the server, so it
+    // could never show anything) and its only exit was a small unlabelled X
+    // with no dwell support — i.e. a dead end for an eye-gaze user.
     onSwipeRight: () => setShowConversation(!showConversation),
   });
 
@@ -1527,11 +1718,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Handle AAC board button click — send immediately to server
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
     // A game has the board locked to its options → this press is the student
-    // answering its puzzle on the real board. Route it to the game instead of the
-    // AI press flow (teaches the button board; the game judges correctness).
+    // answering on the real board. It is a REAL utterance: voice it (student's
+    // server voice via game_press when configured; else AppMiniBoard's local
+    // speech — its suppressLocalSpeech mirrors gameVoiceServer), log it, and
+    // share it with the room — but never wake an agent. Then hand the id to
+    // the game, which executes the sentence.
     const locked = gameLockedBoardRef.current;
     if (locked && locked.pages[0]?.buttons.some((b) => b.id === button.id)) {
-      gameEmbedRef.current?.send({ type: "board_option_selected", id: button.id });
+      sendGamePressFnRef.current?.(spokenText, button.glyph, gameVoiceServerRef.current);
+      gameEmbedRef.current?.send({ type: "board_option_selected", id: button.id, voiced: true });
       return;
     }
 
@@ -1619,6 +1814,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     // glyph translation (no Board Manager round-trip for a button-sourced line).
     setGameSelfSpeech({ text: spokenText, glyph: button.glyph, at: Date.now() });
 
+    // While a world-engine game is embedded, an LLM-authored button can carry
+    // an in-game effect: forward its glyph sentence to the game, whose OWN
+    // (vendored) engine parses it. Unparsable = no in-game effect — the
+    // student still said it, and the normal AI press flow below continues.
+    if (worldEngineGameActiveRef.current && (button.sentence || button.glyph)) {
+      gameEmbedRef.current?.send({
+        type: "glyph_input",
+        glyph: (button.sentence || button.glyph)!,
+        voiced: true,
+      });
+    }
+
     const sentences = button.sentence ? { [spokenText]: button.sentence } : undefined;
 
     if (voiceFnRef.current) {
@@ -1632,6 +1839,44 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       setRecentButtonPresses([]);
     } else {
       speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+    }
+  }, [speak, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
+
+  // Sentence-builder Play. While a world-engine game is embedded, try the
+  // game's OWN engine first (glyph_input → glyph_result): a parsed sentence
+  // has already been executed in-world, so we just voice/log it as a game
+  // press and close the builder — no LLM interpret. Unparsed / timed-out /
+  // no game → today's exact LLM interpret path (playGlyphFnRef), unchanged.
+  const handleBuilderPlay = useCallback(async (glyphString: string, spokenFallback?: string) => {
+    // Put the Play button into its waiting state for the whole decision —
+    // engine round-trip (≤1.5s) included.
+    setInterpretAwaiting(true);
+    if (worldEngineGameActiveRef.current && builderBridgeRef.current) {
+      const result = await builderBridgeRef.current.play(glyphString).catch(() => null);
+      if (result?.parsed) {
+        // The game executed + voiced-nothing (glyph_input was sent voiced:true)
+        // — voice/log here: student server voice when configured, local TTS
+        // otherwise, mirroring the locked-board game-press flow.
+        const text = result.spokenText || spokenFallback || glyphString;
+        sendGamePressFnRef.current?.(text, glyphString, gameVoiceServerRef.current);
+        if (!gameVoiceServerRef.current) {
+          speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+        }
+        setInterpretAwaiting(false);
+        setShowConstructionBoard(false);
+        return;
+      }
+      // parsed:false or timeout → fall through to the LLM interpret path.
+    }
+    if (playGlyphFnRef.current) {
+      playGlyphFnRef.current(glyphString);
+      // interpretAwaiting stays true — the builder closes when the
+      // interpreted sentence starts being voiced (see the effect above).
+    } else {
+      console.warn("[home] playGlyph unavailable, falling back to direct TTS");
+      speak(glyphString, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+      setInterpretAwaiting(false);
+      setShowConstructionBoard(false);
     }
   }, [speak, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
 
@@ -1988,7 +2233,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       clearCalibrationData={eyeGaze.clearCalibration}
     >
     <BoardAudioProvider language={currentLanguage} voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}>
-    <div className="h-dvh flex flex-col relative overflow-hidden bg-bg-soft pb-safe">
+    <div className="h-dvh flex flex-col relative overflow-hidden bg-bg-soft pb-safe pt-safe">
       {/* Eyegaze Provider Detection Notification */}
       <AnimatePresence>
         {eyegazeNotification && (
@@ -1997,7 +2242,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -60, opacity: 0 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className={`fixed top-2 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium ${
+            className={`fixed top-safe-2 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium ${
               eyegazeNotification.type === "connected"
                 ? "bg-blue-600 text-white"
                 : "bg-amber-500 text-white"
@@ -2028,7 +2273,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               exit={{ y: -60, opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               style={{ zIndex: 2147483647 }}
-              className="fixed top-2 left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-red-600 text-white"
+              className="fixed top-safe-2 left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-red-600 text-white"
             >
               <Copy className="w-4 h-4 shrink-0" />
               <span className="truncate">
@@ -2057,8 +2302,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -60, opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              style={{ zIndex: 2147483646 }}
-              className={`fixed ${duplicateRunning ? "top-16" : "top-2"} left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-amber-500 text-white`}
+              style={{
+                zIndex: 2147483646,
+                // Below the duplicate-instance banner when both show; both
+                // offsets clear a notched device's OS status bar.
+                top: duplicateRunning
+                  ? "calc(env(safe-area-inset-top, 0px) + 4rem)"
+                  : "calc(env(safe-area-inset-top, 0px) + 0.5rem)",
+              }}
+              className="fixed left-1/2 -translate-x-1/2 max-w-[90vw] px-4 py-2 rounded-full shadow-lg flex items-center gap-3 text-sm font-medium bg-amber-500 text-white"
             >
               <EyeOff className="w-4 h-4 shrink-0" />
               <span className="truncate">
@@ -2092,9 +2344,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       {/* Main 3-Section Board Layout */}
       <main
         className={`flex-1 flex flex-col relative ${
-          gameActive ? 'pt-0' : showConversation ? 'pt-24' : 'pt-4'
+          gameActive || worldEngineGameActive ? 'pt-0' : showConversation ? 'pt-24' : 'pt-4'
         }`}
-        style={!gameActive && glyphStripActive ? { paddingTop: `calc(6rem + ${GLYPH_STRIP_REM}rem)` } : undefined}
+        style={!gameActive && !worldEngineGameActive && glyphStripActive ? { paddingTop: `calc(6rem + ${GLYPH_STRIP_REM}rem)` } : undefined}
       >
         {/* Audio Feedback Indicator */}
         <AnimatePresence>
@@ -2131,7 +2383,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           aria-hidden={!serverProcessing.board}
           className="absolute left-0 right-0 z-10 pointer-events-none transition-opacity duration-500"
           style={{
-            opacity: serverProcessing.board ? 1 : 0,
+            // During a world-engine game the bar renders INSIDE the sidebar
+            // column instead (this full-width copy would cut across the game).
+            opacity: serverProcessing.board && !worldEngineGameActive ? 1 : 0,
             top: gameActive
               ? 0
               : glyphStripActive
@@ -2164,16 +2418,6 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Camera Status Indicator */}
-        <motion.div
-          className="absolute top-4 left-4 opacity-60 z-20"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.6 }}
-          transition={{ delay: 1 }}
-        >
-          <i className="fas fa-camera text-accent text-lg" />
-        </motion.div>
 
         {/* Enter big-video mode — only in a plain call (no game) with someone on
             the line. Pulls the people you're talking to into a large window. */}
@@ -2235,6 +2479,55 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               setTestAlarm(null);
             }}
           />
+
+          {/* World-game exit confirmation — the same glyph yes/no visual
+              language as the binary-choice overlay (big dwell-selectable
+              SENTENCE BUTTONs with the yes/no SYMBOLs and their default
+              green/red coloring). Yes → dismiss the app through the normal
+              dismiss path; No → just close the popup. data-dwell-trap keeps
+              gaze from falling through to the game underneath. */}
+          <AnimatePresence>
+            {showExitConfirm && worldEngineGameActive && (
+              <motion.div
+                data-dwell-trap
+                className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <div className="flex flex-col items-center gap-5">
+                  <div className="rounded-2xl bg-white/90 px-6 py-3 shadow-lg dark:bg-gray-800/90">
+                    <span className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                      {t("quickActions.exitConfirm")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center gap-4">
+                    <SentenceButton
+                      variant="overlay"
+                      button={{ label: t("quickActions.yes"), glyph: "yes" }}
+                      ariaLabel={t("quickActions.yes")}
+                      overlaySize={{ button: "min(28vw, 240px)", icon: "min(17vw, 150px)" }}
+                      extraButtonProps={{ "data-dwell": "exit-confirm-yes", "data-testid": "exit-confirm-yes" }}
+                      onClick={() => {
+                        setShowExitConfirm(false);
+                        dismissAppRef.current();
+                      }}
+                    />
+                    <SentenceButton
+                      variant="overlay"
+                      button={{ label: t("quickActions.no"), glyph: "no" }}
+                      ariaLabel={t("quickActions.no")}
+                      overlaySize={{ button: "min(28vw, 240px)", icon: "min(17vw, 150px)" }}
+                      overlayEntranceDelay={0.05}
+                      extraButtonProps={{ "data-dwell": "exit-confirm-no", "data-testid": "exit-confirm-no" }}
+                      onClick={() => setShowExitConfirm(false)}
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {showAppsBoard && (
             // Static apps page — same dwell-trap pattern as the sentence
@@ -2336,35 +2629,20 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 getFaceImage={resolveFaceImage}
                 getPersonName={peopleDirectory.getName}
                 presentPersonIds={presentPersonIds}
-                onPlay={(glyphString) => {
-                  // Hand the composed glyph to the AI. The relay sends it as
-                  // a [GLYPH PRESS] turn; the AI calls interpret(sentence)
-                  // with a natural-language reading, which streams the
-                  // student-voice TTS and records the sentence as the
-                  // student's turn. The AI then responds normally.
-                  // Routed through playGlyphFnRef because the function lives
-                  // on DualAgentContext, which DualAgentBridge consumes —
-                  // not directly accessible from this Home component. Falls
-                  // back to direct TTS only if the bridge hasn't wired up yet.
-                  if (playGlyphFnRef.current) {
-                    playGlyphFnRef.current(glyphString);
-                    // Don't close yet: interpretation takes a beat (Board
-                    // Manager LLM turn → interpret() → first TTS chunk). Keep
-                    // the builder open with the Play button in a waiting state
-                    // and close it exactly when the interpreted sentence starts
-                    // being voiced (see the interpretAwaiting effect below).
-                    setInterpretAwaiting(true);
-                  } else {
-                    console.warn("[home] playGlyph unavailable, falling back to direct TTS");
-                    speak(glyphString, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
-                    setShowConstructionBoard(false);
-                  }
+                engineBuilder={engineBuilderBackend}
+                onPlay={(glyphString, spokenFallback) => {
+                  // Engine short-circuit first (in-game), then the AI
+                  // interpret path — see handleBuilderPlay. The Play button's
+                  // waiting state covers the whole decision; the builder
+                  // closes when the sentence is voiced (or engine-executed).
+                  void handleBuilderPlay(glyphString, spokenFallback);
                 }}
                 awaitingInterpret={interpretAwaiting}
                 onClose={() => { setInterpretAwaiting(false); setShowConstructionBoard(false); }}
               />
             </div>
           )}
+          <SidebarFocusSensor active={!!gameLockedBoard} onChange={setSidebarBoardFocus} />
           {gameActive ? (
             <>
               {/* Game mode: the main board's 8 communication buttons in 2 cols ×
@@ -2385,8 +2663,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               {/* Game window — the game surface is portaled in here. */}
               <div ref={setGameHost} className="flex-1 min-w-0 h-full relative" />
               {/* Nearby people — opposite the button sidebar. Constant width so
-                  the game window doesn't jump as people come and go. */}
-              <div ref={setPeopleHost} className="h-full flex-shrink-0 w-32" />
+                  the game window doesn't jump as people come and go. Marked as
+                  a "social" gaze surface for the sidebar board switch. */}
+              <div ref={setPeopleHost} data-board-focus="social" className="h-full flex-shrink-0 w-32" />
             </>
           ) : videoLargeActive ? (
             <>
@@ -2405,7 +2684,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 busyButtonId={busyButton?.id ?? null}
                 busyPhase={busyButton?.phase ?? null}
               />
-              <div ref={setVideoHost} className="flex-1 min-w-0 h-full relative" />
+              <div ref={setVideoHost} data-board-focus="social" className="flex-1 min-w-0 h-full relative" />
             </>
           ) : (
             <>
@@ -2437,21 +2716,64 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               : null;
             return (
               // When a game locks the board, its options take over the side
-              // SENTENCE BUTTONs (2 cols so 2–4 choices read large).
-              <AppMiniBoard
-                board={gameLockedBoard ?? sidebarBoard}
-                columns={gameLockedBoard ? 2 : 1}
-                onButtonClick={handleBoardButtonClick}
-                language={currentLanguage}
-                voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
-                // While locked, voice the student's pick (teach the board) even
-                // during an AI session, which normally suppresses local speech.
-                suppressLocalSpeech={gameLockedBoard ? false : aiSessionActive}
-                getFaceImage={resolveFaceImage}
-                highlightButtonId={peerCursorId}
-                busyButtonId={busyButton?.id ?? null}
-                busyPhase={busyButton?.phase ?? null}
-              />
+              // SENTENCE BUTTONs (2 cols so 2–4 choices read large). ONE
+              // sidebar, two boards: gaze on another person's live video flips
+              // it to the LLM communication board; gaze back in-game returns
+              // the engine options (SidebarFocusSensor). While a world-engine
+              // game runs, its ambient HUD (world_hud) stacks above the board
+              // in the same column.
+              <div className="flex h-full flex-shrink-0 flex-col">
+                {/* Board-building ripple — during a game it lives at the top of
+                    the sidebar column (the full-width copy across the board
+                    region is hidden then). Same always-rendered/opacity-only
+                    pattern so the pulse never remounts mid-animation. */}
+                {worldEngineGameActive && (
+                  <div
+                    role="status"
+                    aria-label={t("processing.updatingBoard")}
+                    aria-hidden={!serverProcessing.board}
+                    className="flex-shrink-0 pointer-events-none transition-opacity duration-500"
+                    style={{ opacity: serverProcessing.board ? 1 : 0 }}
+                  >
+                    <div className="h-[7px] w-full board-busy-ripple" />
+                  </div>
+                )}
+                {worldEngineGameActive && worldHud && <WorldHudStrip sections={worldHud} />}
+                {/* min-h-0 wrapper: AppMiniBoard is h-full; without this it
+                    refuses to shrink and crushes the HUD strip above to a
+                    zero-height sliver. */}
+                <div className="min-h-0 flex-1">
+                <AppMiniBoard
+                  board={
+                    worldEngineGameActive || gameLockedBoard
+                      ? sidebarBoardFocus === "social"
+                        ? prebuiltBoardData || boardData
+                        : gameLockedBoard
+                      : sidebarBoard
+                  }
+                  // During a world-engine game the sidebar is ALWAYS the 2-col
+                  // game panel — even with no options yet (an empty grid keeps
+                  // its width). A width flap here resizes the game iframe and
+                  // shifts every gaze coordinate mid-fixation.
+                  columns={worldEngineGameActive || gameLockedBoard ? 2 : 1}
+                  onButtonClick={handleBoardButtonClick}
+                  language={currentLanguage}
+                  voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+                  // Engine board: local speech only when the server (student
+                  // voice) isn't voicing the press — game_press mirrors this.
+                  // LLM board: normal AI-session suppression.
+                  suppressLocalSpeech={
+                    (worldEngineGameActive || gameLockedBoard) && sidebarBoardFocus !== "social"
+                      ? gameVoiceServer
+                      : aiSessionActive
+                  }
+                  getFaceImage={resolveFaceImage}
+                  highlightButtonId={peerCursorId}
+                  busyButtonId={busyButton?.id ?? null}
+                  busyPhase={busyButton?.phase ?? null}
+                />
+                </div>
+              </div>
             );
           })()}
           {/* App content — replaces board when an app is active.
@@ -2469,6 +2791,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 (text) => sendContextOnlyFnRef.current?.(text),
                 gameEmbedRef,
                 handleBoardOptions,
+                handleWorldGameMessage,
               )}
             </div>
           ) : boardMode === 'ai' ? (
@@ -2588,6 +2911,21 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 }
               }
             } else if (action === "exit") {
+              // World-engine game: Exit is guarded. While the sentence
+              // builder overlay is open it closes ONLY the builder (back to
+              // the game — never the game itself); otherwise it opens the
+              // glyph yes/no confirmation, and only a "Yes" there dismisses
+              // the app (in a call that also detaches the call game via the
+              // normal dismiss lifecycle).
+              if (worldEngineGameActive) {
+                if (showConstructionBoard) {
+                  setInterpretAwaiting(false);
+                  setShowConstructionBoard(false);
+                } else {
+                  setShowExitConfirm(true);
+                }
+                return;
+              }
               // "Exit" = close the active app
               dismissAppRef.current();
             } else if (action === "guess") {
@@ -2671,6 +3009,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           isGuessingMode={isGuessingMode}
           inSentenceBuilder={showConstructionBoard}
           onSpeak={() => setShowConstructionBoard((s) => !s)}
+          worldEngineGame={worldEngineGameActive}
         />
 
         {/* Pause Overlay — covers board and quick actions when paused */}
@@ -2723,13 +3062,6 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Chat Log */}
-      <ChatLog 
-        isOpen={showChatLog}
-        onClose={() => setShowChatLog(false)}
-        studentId={studentId}
-      />
 
       {/* Profile Setup */}
       <ProfileSetup
@@ -2792,6 +3124,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onModeChange={setMuteStateFromCtx}
             onVoiceReady={(fn) => { voiceFnRef.current = fn; }}
             onPlayGlyphReady={(fn) => { playGlyphFnRef.current = fn; }}
+            onGamePressReady={(fn) => { sendGamePressFnRef.current = fn; }}
             onBoardPatchChange={setBoardPatchData}
             onSymbolUpdateChange={setSymbolUpdateData}
             onAiButtonPressChange={setAiButtonPressData}
@@ -2826,7 +3159,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onSocialFaceChange={setSocialFace}
           />
           <DualAgentConversationBox
-            isVisible={showConversation && !gameActive}
+            isVisible={showConversation && !gameActive && !worldEngineGameActive}
             glyphStripActive={glyphStripActive}
             onToggle={() => setShowConversation(!showConversation)}
             selectedSymbols={selectedSymbols}
@@ -2876,6 +3209,16 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           <SocialGameReporter onChange={setActiveSocialGame} />
           <SocialWorldOverlay host={gameHost} selfSpeech={gameSelfSpeech} />
           <SocialWorldPeople host={peopleHost} />
+          {/* Shared-dollhouse call ferry: moves the iframe's world traffic
+              over the call transports and keeps its owner/follower role
+              current. Renders nothing; inert unless an iframe-quest game is
+              attached to the call. */}
+          <CallWorldGameFerry
+            gameId="dollhouse"
+            embedRef={gameEmbedRef}
+            sendersRef={callWorldSendersRef}
+            stopGameRef={stopCallGameFnRef}
+          />
           {/* Call-video: lift call activity to home; mirror the board to the
               clinician; apply consent-gated facilitator presses; and (when the
               student pulls the call into the big window) render the people they
@@ -2908,6 +3251,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 isGuessingMode,
                 inSentenceBuilder: showConstructionBoard,
                 showSpeakSlot: true,
+                worldEngineGame: worldEngineGameActive,
               },
               t,
               direction === "rtl",
@@ -2999,16 +3343,6 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               exit={{ opacity: 0 }}
             >
               <p>🗣️ Swipe right for conversation</p>
-            </motion.div>
-            
-            <motion.div
-              className="absolute bottom-4 right-4 text-text-secondary text-xs cursor-pointer"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowChatLog(true)}
-            >
-              <p>💬 Tap here for chat history</p>
             </motion.div>
           </>
         )}

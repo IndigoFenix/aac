@@ -174,12 +174,19 @@ describe("stop {device} turns the active thing off", () => {
   });
 });
 
-describe("play with a partner is a social act", () => {
-  it("'play + with + dog' → socialAct play toward the partner", () => {
-    expect(goalOf("play + with + dog")).toEqual({ kind: "socialAct", target: "dog", act: "play" });
+describe("play with a partner is the SAME motive, shared", () => {
+  // ONE behavior model: playing together is the fun motive with company, which
+  // routes it through the play ritual — not a second, disjoint "social act"
+  // that zeroed both meters where the bodies stood.
+  it("'play + with + dog' → the fun motive, marked with the partner", () => {
+    expect(goalOf("play + with + dog")).toEqual({
+      kind: "satisfy",
+      need: "play",
+      with: { kind: "creatures", ids: ["dog"] },
+    });
   });
 
-  it("bare 'play' stays the fun self-care motive", () => {
+  it("bare 'play' stays the SOLO fun motive — no company, no marker", () => {
     expect(goalOf("play")).toEqual({ kind: "satisfy", need: "play" });
   });
 });

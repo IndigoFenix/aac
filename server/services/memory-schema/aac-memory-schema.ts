@@ -77,10 +77,14 @@ function buildBundledIconsBlock(): string {
   // modifiers.
   const connectors: string[] = [];
   const spatialJoins: string[] = [];
+  // Spatial words that are NOT compositor joins (they keep their own slot so
+  // their relational artwork shows in the sentence) but still belong in the
+  // spatial section of the prompt, not among the logical connectors.
+  const SPATIAL_SLOT_KEYS = new Set(["next_to", "behind", "in_front_of"]);
   for (const v of listAllVocabulary()) {
     if (!v.exposeToAi) continue;
     if (v.pos === "connector") {
-      (SPATIAL_RELATIONS.has(v.key) ? spatialJoins : connectors).push(v.key);
+      (SPATIAL_RELATIONS.has(v.key) || SPATIAL_SLOT_KEYS.has(v.key) ? spatialJoins : connectors).push(v.key);
       continue;
     }
     if (v.pos === "modifier" && v.categories.length === 0) {
@@ -179,7 +183,7 @@ function buildBundledIconsBlock(): string {
     lines.push("");
     lines.push("SPATIAL RELATIONS — forward-binding joins (like connectors) for where/how A relates to B; render as an arrow A→B (consume no slot):");
     lines.push(`  ${spatialJoins.sort().join(", ")}`);
-    lines.push("  Use as `A + relation + B`: `go+to+🏫` (go to school), `🐈+under+🪑` (cat under chair), `💧+in+🥤` (water in a cup), `🐦+over+🌳` (bird over a tree).");
+    lines.push("  Use as `A + relation + B`: `go+to+🏫` (go to school), `🐈+under+🪑` (cat under chair), `💧+in+🥤` (water in a cup), `🐦+over+🌳` (bird over a tree), `put+🪑+next_to+table` (right against it), `⚽+behind+📦` / `⚽+in_front_of+📦` (relative to which way the thing faces).");
   }
 
   lines.push("</bundled_icons>");

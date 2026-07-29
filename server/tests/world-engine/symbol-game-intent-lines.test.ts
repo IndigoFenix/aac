@@ -51,6 +51,95 @@ describe("goalIntentLine — GoalSpec → the announcement glyphs", () => {
     );
   });
 
+  // ── A PLACEMENT NAMES ITS ANCHOR. `place` was the one transfer shape that
+  // dropped its endpoint while fetch/give/putIn all spoke theirs, so an obeyed
+  // order and a misheard one sounded identical ("I'll put the chair"). The
+  // spoken join is the BOARD WORD for the relation — `beside` says `next_to`.
+
+  it("place names WHERE: 'I'll put the chair next to the table'", () => {
+    const line = goalIntentLine(
+      { kind: "place", item: { match: { kind: "chair" } }, at: { relation: "beside", anchor: { kind: "named", id: "table" } } },
+      syms,
+    )!;
+    expect(line.a).toBe("chair");
+    expect(line.b).toBe("chair + next_to + table");
+    expect(line.c).toBe("put + chair + next_to + table");
+    // The same 4-slot shape putIn uses — the subject drops and `.will` carries
+    // the first person.
+    expect(asIntent(line).c).toBe("put.will + chair + next_to + table");
+    expect(translateGlyph(asIntent(line).c, "en")).toBe("I will put the chair next to the table.");
+  });
+
+  it("near stays near — the two proximity relations are never collapsed", () => {
+    const near = goalIntentLine(
+      { kind: "place", item: { match: { kind: "chair" } }, at: { relation: "near", anchor: { kind: "named", id: "table" } } },
+      syms,
+    )!;
+    expect(near.c).toBe("put + chair + near + table");
+    expect(translateGlyph(asIntent(near).c, "en")).toBe("I will put the chair near the table.");
+  });
+
+  it("a containment placement speaks its room ('in the kitchen')", () => {
+    const line = goalIntentLine(
+      { kind: "place", item: { match: { kind: "chair" } }, at: { relation: "in", anchor: { kind: "named", id: "kitchen" } } },
+      syms,
+    )!;
+    expect(line.c).toBe("put + chair + in + kitchen");
+  });
+
+  it("a POINT anchor names nothing, so the line stays bare (the gaze 'here')", () => {
+    const line = goalIntentLine(
+      { kind: "place", item: { match: { kind: "chair" } }, at: { relation: "at", anchor: { kind: "point", x: 3, y: 4 } } },
+      syms,
+    )!;
+    expect(line.c).toBe("i_me + put + chair");
+    // Even a NAMED relation drops when the anchor is a bare point — there is
+    // no thing for "near" to hold onto.
+    const nearPoint = goalIntentLine(
+      { kind: "place", item: { match: { kind: "chair" } }, at: { relation: "near", anchor: { kind: "point", x: 3, y: 4 } } },
+      syms,
+    )!;
+    expect(nearPoint.c).toBe("i_me + put + chair");
+  });
+
+  it("a relation the lang layer cannot SAY stays silent rather than degrading", () => {
+    // `on` is a device-state adjective (core.ts DEVICE_STATE wins over the
+    // preposition) and `at` has no lexeme — speaking either would drop the
+    // sentence to the telegraphic gloss. Better a bare line.
+    for (const relation of ["on", "at"] as const) {
+      const line = goalIntentLine(
+        { kind: "place", item: { match: { kind: "chair" } }, at: { relation, anchor: { kind: "named", id: "table" } } },
+        syms,
+      )!;
+      expect(`${relation}:${line.c}`).toBe(`${relation}:i_me + put + chair`);
+    }
+  });
+
+  it("the vertical + facing relations earned lexemes and now speak (front as in_front_of)", () => {
+    for (const [relation, join] of [
+      ["under", "under"],
+      ["over", "over"],
+      ["behind", "behind"],
+      ["front", "in_front_of"],
+    ] as const) {
+      const line = goalIntentLine(
+        { kind: "place", item: { match: { kind: "chair" } }, at: { relation, anchor: { kind: "named", id: "table" } } },
+        syms,
+      )!;
+      expect(line.c).toBe(`put + chair + ${join} + table`);
+    }
+    const behind = goalIntentLine(
+      { kind: "place", item: { match: { kind: "chair" } }, at: { relation: "behind", anchor: { kind: "named", id: "table" } } },
+      syms,
+    )!;
+    expect(translateGlyph(asIntent(behind).c, "en")).toBe("I will put the chair behind the table.");
+    const front = goalIntentLine(
+      { kind: "place", item: { match: { kind: "chair" } }, at: { relation: "front", anchor: { kind: "named", id: "table" } } },
+      syms,
+    )!;
+    expect(translateGlyph(asIntent(front).c, "en")).toBe("I will put the chair in front of the table.");
+  });
+
   it("every goal kind yields a speakable line (no silent arm)", () => {
     const goals: GoalSpec[] = [
       { kind: "fetch", item: { match: { kind: "wood" } } },

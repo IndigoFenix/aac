@@ -345,3 +345,58 @@ describe("surfaceNext — group chips", () => {
     }
   });
 });
+
+// ── THE PLACEMENT RELATIONS. "put + chair + …" wants a destination, and a
+// piece of FURNITURE takes one relative to what already stands there: `next_to`
+// (the adjacent spot), `near` (the vicinity), `on` (a surface) — as against
+// `in` for a container. They were only ever reachable through the generic
+// relation band, where the connective quota buried them under and/then/because,
+// so there was no way to SAY the thing the placement search could already do.
+
+describe("placement destinations — the relation band a furniture object opens", () => {
+  const NOUNS_P: SurfaceNoun[] = [
+    { symbol: "chair", kind: "item", affords: ["get", "put"], properties: ["furniture"] },
+    { symbol: "table", kind: "place", affords: ["go", "put"], properties: ["furniture"] },
+    { symbol: "box", kind: "place", affords: ["go", "put"], properties: ["container"] },
+    { symbol: "apple", kind: "item", affords: ["eat", "put"], properties: ["food"] },
+  ];
+
+  it("'put + chair' offers in / on / near / next_to in the destination slot", () => {
+    const s = surfaceNext(["you", "put", "chair"], { nouns: NOUNS_P });
+    const syms = s.buttons.map((b) => b.symbol);
+    for (const w of ["in", "on", "near", "next_to"]) expect(syms).toContain(w);
+    for (const w of ["near", "next_to"]) {
+      expect(s.buttons.find((b) => b.symbol === w)!.role).toBe("destination");
+    }
+  });
+
+  it("the ADJACENT word outranks the vicinity one (a placed piece usually means beside)", () => {
+    const s = surfaceNext(["you", "put", "chair"], { nouns: NOUNS_P });
+    const w = (sym: string) => s.buttons.find((b) => b.symbol === sym)!.weight;
+    expect(w("next_to")).toBeGreaterThan(w("near"));
+  });
+
+  it("a non-furniture object keeps the plain containment band (put + apple)", () => {
+    const s = surfaceNext(["you", "put", "apple"], { nouns: NOUNS_P });
+    const dest = s.buttons.filter((b) => b.role === "destination").map((b) => b.symbol);
+    expect(dest).toContain("in");
+    expect(dest).not.toContain("next_to");
+  });
+
+  it("a dangling relation forces the anchor noun (the relation-noun slot)", () => {
+    for (const rel of ["near", "next_to"]) {
+      const s = surfaceNext(["you", "put", "chair", rel], { nouns: NOUNS_P });
+      expect(s.buttons.map((b) => b.symbol)).toContain("table");
+      expect(s.buttons.every((b) => b.role === "relation-noun")).toBe(true);
+    }
+  });
+
+  it("both relations still parse to a bound placement frame", () => {
+    for (const rel of ["near", "next_to"]) {
+      const frame = parseSentence(`you + put + chair + ${rel} + table`);
+      expect(frame.kind).toBe("command");
+      expect(frame.relation).toBe(rel === "next_to" ? "beside" : "near");
+      expect(frame.target).toEqual({ kind: "entity", symbol: "table", modifiers: [] });
+    }
+  });
+});

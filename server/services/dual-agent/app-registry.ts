@@ -189,6 +189,19 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     // not an opt-in extra. Clinicians can disable it per-student via appConfig.
     enabledByDefault: false,
   },
+  {
+    id: "dollhouse",
+    name: "Dollhouse",
+    description:
+      "Opens the Dollhouse — a living 3D house the student watches as a friendly spirit. A small family " +
+      "(Mara, Orrin, Pip and their dog Biscuit) lives inside with real needs and routines; the student talks " +
+      "to them and tells them what to do using AAC sentence buttons, and they respond in the world. " +
+      "Use open_app(\"dollhouse\") when the student wants to play with the dollhouse, the little family, " +
+      "or asks to play house.",
+    icon: "🏠",
+    // The first shipped world-engine game — on by default for every student.
+    enabledByDefault: true,
+  },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
 ];

@@ -30,6 +30,21 @@ export interface SttSegment {
 export interface SttResult {
   segments: SttSegment[];
   language: string;
+  /** Recognizer confidence for the clip, 0..1 — the LOWEST confidence across
+   *  the result alternatives (one bad stretch makes the whole clip doubtful).
+   *  `undefined` when the model reported none; see `normalizeSttConfidence`. */
+  confidence?: number;
+}
+
+/** Google reports "no confidence available" as a missing field OR a literal
+ *  0.0, and both must stay distinguishable from a genuinely LOW score —
+ *  otherwise every transcript from a model that omits confidence would be
+ *  treated as garbage. Returns undefined ("unknown") for both, so callers can
+ *  fall back rather than claim certainty in either direction. */
+export function normalizeSttConfidence(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+  if (raw <= 0 || raw > 1) return undefined;
+  return raw;
 }
 
 export interface SttOptions {
@@ -369,6 +384,8 @@ export async function transcribeSegments(
   };
 
   const allWords: TimedWord[] = [];
+  // Lowest per-result confidence across the whole clip — see SttResult.
+  let minConfidence: number | undefined;
   for (let c = 0; c < boundaries.length - 1; c++) {
     const start = boundaries[c];
     const slice = pcm.subarray(start, boundaries[c + 1]);
@@ -380,6 +397,8 @@ export async function transcribeSegments(
     for (const result of response.results || []) {
       const alt = result.alternatives?.[0];
       if (!alt) continue;
+      const conf = normalizeSttConfidence(alt.confidence);
+      if (conf !== undefined) minConfidence = minConfidence === undefined ? conf : Math.min(minConfidence, conf);
       const words = alt.words || [];
       if (words.length > 0) {
         for (const w of words) {
@@ -397,7 +416,7 @@ export async function transcribeSegments(
   }
 
   allWords.sort((a, b) => a.startMs - b.startMs);
-  return { segments: wordsToSegments(allWords), language: languageCode };
+  return { segments: wordsToSegments(allWords), language: languageCode, confidence: minConfidence };
 }
 
 // ============================================================================
@@ -409,8 +428,12 @@ export interface SttStreamOptions extends SttOptions {
   onInterim?: (text: string) => void;
   /** Called with each FINAL phrase the moment the recognizer's endpointer
    *  commits it — mid-stream, before the client even declares silence. Lets the
-   *  caller respond as speech comes in rather than waiting for the full clip. */
-  onFinal?: (text: string) => void;
+   *  caller respond as speech comes in rather than waiting for the full clip.
+   *  `confidence` is the recognizer's own 0..1 score for THIS phrase, or
+   *  undefined when the model reported none (see `normalizeSttConfidence`) —
+   *  never substitute a default for it: a fabricated score is exactly what let
+   *  noise-decoded sentences through as "high confidence". */
+  onFinal?: (text: string, confidence?: number) => void;
   /** Called with the gRPC stream error (so callers can log the real cause
    *  instead of silently getting an empty transcript). */
   onError?: (message: string) => void;
@@ -521,7 +544,8 @@ export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSe
       if (!transcript) return;
       if (result.isFinal) {
         finalText = finalText ? `${finalText} ${transcript}` : transcript;
-        opts.onFinal?.(transcript); // commit this phrase now, mid-stream
+        // commit this phrase now, mid-stream — with the recognizer's own score
+        opts.onFinal?.(transcript, normalizeSttConfidence(result.alternatives?.[0]?.confidence));
         // Natural pause — rotate an aging stream here (nothing in flight)
         // rather than mid-word at the hard cap. The just-transcribed audio is
         // dropped from the tail so the fresh stream doesn't re-hear it.

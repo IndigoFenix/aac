@@ -63,6 +63,52 @@ describe('"area" parses + compiles as a directive verb', () => {
   });
 });
 
+// ── "area" IS ONE WORD WITH ONE MEANING — the ③ charter verb. It was briefly
+// tempting to re-read "put + chair + AREA + table" as "near the table", since
+// the board had no proximity word and composers improvised with the place word
+// they had. The vocabulary was the bug, not the parser: `next_to` and `near`
+// are speakable now (see the placement tests), so `area` keeps its one job.
+// These assertions PIN that — the charter, the local area, and the harmless
+// way a stray `area` composes inside a verb phrase.
+
+describe("area keeps its single charter meaning wherever it appears", () => {
+  it("the ③ charter parses and compiles unchanged", () => {
+    for (const sentence of ["area + farm + here", "area + house + there", "area + farm"]) {
+      const frame = parseSentence(sentence);
+      expect(frame.verb).toBe("area");
+      expect(frame.relation).toBeUndefined();
+      expect(frame.bound).toBeUndefined();
+    }
+    const compiled = compile("area + farm + here");
+    expect(compiled.kind).toBe("goal");
+    if (compiled.kind === "goal") expect(compiled.goal).toEqual({ kind: "area", category: "farm" });
+  });
+
+  it("a BARE area still means the local area — never a spatial relation", () => {
+    expect(compile("area").kind).toBe("unbound");
+    const here = parseSentence("area + here");
+    expect(here.verb).toBe("area");
+    expect(here.relation).toBeUndefined();
+  });
+
+  it("area inside a put sentence binds NOTHING — the verb composition drops it", () => {
+    // "you + put + chair + area + table": `put` wins the composition and its
+    // implied "in" takes the trailing noun. `area` never becomes a relation.
+    const frame = parseSentence("you + put + chair + area + table");
+    expect(frame.verb).toBe("put");
+    expect(frame.object).toEqual({ kind: "entity", symbol: "chair", modifiers: [] });
+    expect(frame.target).toEqual({ kind: "entity", symbol: "table", modifiers: [] });
+    expect(frame.relation).toBe("in");
+    expect(frame.bound).toBeUndefined();
+  });
+
+  it('"area + none" still CLEARS, in a clause of its own', () => {
+    const none = compile("area + none + here");
+    expect(none.kind).toBe("goal");
+    if (none.kind === "goal") expect(none.goal).toEqual({ kind: "area", category: null });
+  });
+});
+
 describe("the area goal is host-routed world policy", () => {
   it("compileGoal returns null (no body errand — the build pattern)", () => {
     const goal: GoalSpec = { kind: "area", category: "farm" };

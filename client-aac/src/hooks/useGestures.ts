@@ -5,6 +5,16 @@ interface GestureHandlers {
   onSwipeRight?: () => void;
   onSwipeUp?: () => void;
   onSwipeDown?: () => void;
+  /**
+   * Fires for ANY quick tap inside the bottom-right 100x100px.
+   *
+   * HAZARD — read before wiring this up: the listeners below are on
+   * `document` and do NOT inspect the event target, so this also fires when
+   * the student taps a real board button that happens to sit in that corner.
+   * The handler's UI then lands on top of whatever the button did. That is
+   * exactly how a student got trapped on a dead full-screen panel, so it is
+   * deliberately left unwired. If you need it, check the target first.
+   */
   onCornerTap?: () => void;
 }
 

@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src/**/*", "engine/**/*"],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    "noEmit": true,
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "paths": {
+      "@shared/world-engine/*": ["engine/world-engine/*"],
+      "@shared/world-engine": ["engine/world-engine/index.ts"],
+      "@shared/glyph-compositor.tsx": ["engine/glyph-compositor.tsx"],
+      "@shared/glyph-compositor": ["engine/glyph-compositor.ts"],
+      "@shared/glyph-registry": ["engine/glyph-registry.ts"],
+      "@shared/emoji-registry": ["engine/emoji-registry.ts"],
+      "@shared/numeral-glyph": ["engine/numeral-glyph.ts"],
+      "@shared/prng": ["engine/prng.ts"],
+      "@shared/*": ["../../shared/*"],
+      "@client-shared/*": ["../../client-shared/src/*"]
+    }
+  }
+}

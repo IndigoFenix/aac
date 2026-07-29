@@ -2,7 +2,13 @@
 // boundary planning and sentence-aware segment grouping. These run without the
 // Google STT API (the SpeechClient is only constructed lazily on a real call).
 
-import { planSilenceAwareChunks, wordsToSegments } from '../services/voice/google-stt-service';
+import {
+  planSilenceAwareChunks,
+  wordsToSegments,
+  transcribeSegments,
+  normalizeSttConfidence,
+  __setSttClientForTests,
+} from '../services/voice/google-stt-service';
 
 const SAMPLE_RATE = 16000;
 const FRAME_BYTES = 2; // mono 16-bit
@@ -88,5 +94,50 @@ describe('wordsToSegments', () => {
     const words = [w('a', 0, 2000), w('b', 2000, 4000), w('c', 4000, 6000), w('d', 6000, 8000)];
     const segs = wordsToSegments(words);
     expect(segs.length).toBeGreaterThan(1);
+  });
+});
+
+// The recogniser's confidence is the only per-clip signal that a transcript may
+// be a fluent invention rather than something anyone said. It was being dropped
+// on the floor here, so a mis-decode reached the AAC board indistinguishable
+// from a clean one. See project_stt_fluent_misrecognition.
+describe('transcribeSegments — confidence reporting', () => {
+  afterEach(() => __setSttClientForTests(null));
+
+  const fakeClient = (results: any[]) => {
+    __setSttClientForTests({ recognize: async () => [{ results }] } as any);
+  };
+
+  const alt = (transcript: string, confidence?: number) => ({
+    alternatives: [{ transcript, ...(confidence === undefined ? {} : { confidence }) }],
+  });
+
+  it('reports the LOWEST confidence across results — one bad stretch taints the clip', async () => {
+    fakeClient([alt('I am the mother of', 0.88), alt('media', 0.34)]);
+    const r = await transcribeSegments(makePcm(2, []));
+    expect(r.confidence).toBeCloseTo(0.34);
+  });
+
+  it('is undefined when the model reported no usable score', async () => {
+    fakeClient([alt('hello'), alt('again', 0)]);
+    const r = await transcribeSegments(makePcm(2, []));
+    expect(r.confidence).toBeUndefined();
+  });
+});
+
+describe('normalizeSttConfidence', () => {
+  it('keeps real scores', () => {
+    expect(normalizeSttConfidence(0.42)).toBe(0.42);
+    expect(normalizeSttConfidence(1)).toBe(1);
+  });
+
+  // Google writes 0.0 for "not available"; reading that as "almost certainly
+  // wrong" would flag every transcript from a model that omits the field.
+  it('treats absent / 0.0 / out-of-range values as unknown, not as low', () => {
+    expect(normalizeSttConfidence(0)).toBeUndefined();
+    expect(normalizeSttConfidence(undefined)).toBeUndefined();
+    expect(normalizeSttConfidence(NaN)).toBeUndefined();
+    expect(normalizeSttConfidence(1.5)).toBeUndefined();
+    expect(normalizeSttConfidence('0.9')).toBeUndefined();
   });
 });

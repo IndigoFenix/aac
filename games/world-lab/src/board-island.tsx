@@ -196,7 +196,7 @@ function PocketStrip({ items, onSelect }: { items: PocketEntry[]; onSelect: (gly
           title={it.label}
           onClick={() => onSelect(it.glyph)}
         >
-          <LabGlyph glyph={it.glyph} fallback={it.label} ariaLabel={it.label} noBackground />
+          <LabGlyph glyph={it.icon ?? it.glyph} fallback={it.label} ariaLabel={it.label} noBackground />
           {it.count > 1 && <span className="lab-pocket-count">{it.count}</span>}
         </button>
       ))}

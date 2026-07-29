@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import {
+  addLocalAvatar,
   createWorldState,
   expandWorldBuildings,
   routeThroughDoors,
@@ -17,6 +18,7 @@ import {
 import {
   fixtureCovering,
   nearestClearSpot,
+  playRingSpot,
   sameRoomAs,
   standClear,
   standPointFor,
@@ -131,6 +133,58 @@ describe("standPointFor — the same-room gate (the behind-the-house bug)", () =
       expect(fixtureCovering(s, { x: 2, y: 8 })).toBeNull();
     });
 
+    // THE PLAY RING — a thing SET OUT ON THE FLOOR is used from all around, not
+    // from a declared front at its edge. This is what lets one toy serve several
+    // players at once; the sides are never assigned, they fall out of the
+    // ordinary crowding rule, which is why a second player lands elsewhere on
+    // the ring instead of fused with the first.
+    describe("playRingSpot — players gather AROUND a floor station", () => {
+      const roomWorld = () => createWorldState(expandWorldBuildings(spec([bigRoom])), "me");
+      const at = { x: 6, y: 5 };
+      const stand = (s: WorldState, id: string, x: number, y: number) => {
+        (s.avatars as unknown as Record<string, unknown>)[id] = { id, x, y, fx: 1, fy: 0, floor: 0 };
+      };
+
+      it("stands OFF the toy, not on it — and within arm's reach of it", () => {
+        const s = roomWorld();
+        const p = playRingSpot(s, at, { x: 3, y: 5 });
+        const d = Math.hypot(p.x - at.x, p.y - at.y);
+        expect(d).toBeGreaterThan(0.4); // clear of the game
+        expect(d).toBeLessThan(1.3); // …and inside the needs arrival tolerance
+        expect(standClear(s, p)).toBe(true);
+        expect(sameRoomAs(s, at, p)).toBe(true);
+      });
+
+      it("joins from the side you came in on", () => {
+        const s = roomWorld();
+        const west = playRingSpot(s, at, { x: 2, y: 5 });
+        const east = playRingSpot(s, at, { x: 10, y: 5 });
+        expect(west.x).toBeLessThan(at.x);
+        expect(east.x).toBeGreaterThan(at.x);
+      });
+
+      it("a second player takes a DIFFERENT side — the crowding rule spreads them", () => {
+        // Both approach from the same direction, so without the avoidance they
+        // would pick the identical spot and read as one fused body.
+        const s = roomWorld();
+        const first = playRingSpot(s, at, { x: 2, y: 5 }, 0.4, { selfId: "a" });
+        stand(s, "a", first.x, first.y);
+        const second = playRingSpot(s, at, { x: 2, y: 5 }, 0.4, { selfId: "b" });
+        expect(Math.hypot(second.x - first.x, second.y - first.y)).toBeGreaterThanOrEqual(0.8);
+        // …and the joiner is still AT the game, not shoved out of it.
+        expect(Math.hypot(second.x - at.x, second.y - at.y)).toBeLessThan(1.3);
+      });
+
+      it("a ring with every side blocked still yields a spot (termination over fidelity)", () => {
+        // Wedge the station into a corner: no candidate can satisfy everything,
+        // and the chooser must still answer rather than spin.
+        const s = roomWorld();
+        const corner = { x: 0.45, y: 0.45 };
+        const p = playRingSpot(s, corner, { x: 6, y: 5 });
+        expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
+      });
+    });
+
     it("nearestClearSpot nudges an item-on-a-BIG-table off the table box (girth-aware)", () => {
       // A radius-1.2 table: the old fixed 0.9/1.6 sweep can't clear its 1.6 box
       // and fell back to the blocked centre — the fixture-aware branch scales.
@@ -207,6 +261,27 @@ describe("standPointFor — the same-room gate (the behind-the-house bug)", () =
           expect(Math.hypot(p.x - st.x, p.y - st.y)).toBeLessThan(1.0);
         }
       }
+    });
+
+    it("a housemate CROWDING the mount spot never flips the stand point to another face", () => {
+      // REGRESSION (2026-07-29, observed live): the seat-side spot was
+      // structurally clear but a housemate stood on it at decision time, so the
+      // avoid check failed and the search fell through to the table's GENERAL
+      // resolution — which committed the NORTH face for a SOUTH-side chair. The
+      // sitter walked around the table, the engage trigger rightly refused the
+      // wrong side, and it dined standing. For a seat the mount side is not
+      // negotiable: crowding is a SOFT preference (bodies move, walls don't).
+      const s = world();
+      const st = seats.find((x) => x.name === "south")!;
+      // The mount spot for the south chair: the table's south face stand-off.
+      const mount = { x: 6, y: 5 + 0.8 + 0.4 + 0.22 };
+      addLocalAvatar(s, "crowder", mount.x, mount.y, 0);
+      const p = standPointFor(s, "chair_south", { x: st.x, y: st.y }, { x: 6, y: 2 }, 0.4, {
+        selfId: "sitter",
+      });
+      // Still the seat's own side — near its chair, never a table-width away.
+      expect(Math.hypot(p.x - st.x, p.y - st.y)).toBeLessThan(1.0);
+      expect(p.y).toBeGreaterThan(5); // south of the table centre, with the seat
     });
 
     it("an OPEN chair (no table over it) still stands right on the seat", () => {

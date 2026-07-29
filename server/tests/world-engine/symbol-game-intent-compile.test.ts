@@ -75,6 +75,18 @@ describe("command compilation — imperative → GoalSpec", () => {
     expect(c).toMatchObject({ kind: "goal", goal: { kind: "goTo", place: { kind: "named", id: "market" } } });
   });
 
+  // ── RETURN is the going-BACK verb (motion/return on the board): bare it
+  // means home; a named place makes it an ordinary go.
+  it("bare 'return' → goHome", () => {
+    const c = compile("return");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "goHome" } });
+  });
+
+  it("return to market → an ordinary goTo", () => {
+    const c = compile("return + to + market");
+    expect(c).toMatchObject({ kind: "goal", goal: { kind: "goTo", place: { kind: "named", id: "market" } } });
+  });
+
   it("give ball to bear → a give goal with a match item + recipient", () => {
     const c = compile("give + ball + to + bear");
     expect(c.kind).toBe("goal");
@@ -288,6 +300,61 @@ describe("placement compilation (construction v1) — the relation is preserved"
     const c = compile("put + chair + in + box");
     expect(c).toMatchObject({ kind: "goal", goal: { kind: "putIn" } });
   });
+
+  // ── THE PROXIMITY PAIR, and they are not synonyms. The workstation registry
+  // already drew this line for itself (`besideAnchor`); the board can now say
+  // it. `next_to` compiles to `beside` — the ADJACENT spot; `near` to the
+  // room-scaled vicinity. The placement search reads them apart.
+
+  it("you put chair next_to table → a place goal with relation BESIDE", () => {
+    const c = compileIntent(parseSentence("you + put + chair + next_to + table"), furn, { id: "p5" });
+    expect(c.kind).toBe("goal");
+    if (c.kind !== "goal") return;
+    expect(c.goal).toEqual({
+      kind: "place",
+      item: { match: { kind: "chair" } },
+      at: { relation: "beside", anchor: { kind: "named", id: "table" } },
+    });
+    expect(c.actor).toBe("bear");
+  });
+
+  it("you put chair near table → the same place goal with relation NEAR", () => {
+    const c = compileIntent(parseSentence("you + put + chair + near + table"), furn, { id: "p6" });
+    expect(c.kind).toBe("goal");
+    if (c.kind !== "goal") return;
+    expect(c.goal).toEqual({
+      kind: "place",
+      item: { match: { kind: "chair" } },
+      at: { relation: "near", anchor: { kind: "named", id: "table" } },
+    });
+  });
+
+  it("next_to places even a non-furniture item, like every spatial relation", () => {
+    const c = compileIntent(parseSentence("put + ball + next_to + tree"), furn, { id: "p7" });
+    expect(c).toMatchObject({
+      kind: "goal",
+      goal: { kind: "place", at: { relation: "beside", anchor: { kind: "named", id: "tree" } } },
+    });
+  });
+
+  // ── THE FACING PAIR rides the same seam: the board words `in_front_of` /
+  // `behind` compile to the engine relations `front` / `behind`, and the
+  // placement search reads them against the anchor's facing (AnchorMode).
+  it("put chair in_front_of table → a place goal with relation FRONT", () => {
+    const c = compileIntent(parseSentence("put + chair + in_front_of + table"), furn, { id: "p8" });
+    expect(c).toMatchObject({
+      kind: "goal",
+      goal: { kind: "place", at: { relation: "front", anchor: { kind: "named", id: "table" } } },
+    });
+  });
+
+  it("put chair behind table → a place goal with relation BEHIND", () => {
+    const c = compileIntent(parseSentence("put + chair + behind + table"), furn, { id: "p9" });
+    expect(c).toMatchObject({
+      kind: "goal",
+      goal: { kind: "place", at: { relation: "behind", anchor: { kind: "named", id: "table" } } },
+    });
+  });
 });
 
 // ── Verb × object-CATEGORY dispatch (language-expansion.md phase 2): household
@@ -354,7 +421,7 @@ describe("make vs build — interchangeable verbs, opposite priorities", () => {
     for (const verb of ["make", "build"]) {
       expect(compile(`${verb} + ball`)).toMatchObject({
         kind: "goal",
-        goal: { kind: "craft", glyph: "ball.material_cloth" },
+        goal: { kind: "craft", glyph: "ball.material_wood" },
       });
       expect(compile(`${verb} + chair`)).toMatchObject({
         kind: "goal",
@@ -375,7 +442,7 @@ describe("make vs build — interchangeable verbs, opposite priorities", () => {
     // that IS the priority.
     expect(compile("make + ball", structural)).toMatchObject({
       kind: "goal",
-      goal: { kind: "craft", glyph: "ball.material_cloth" },
+      goal: { kind: "craft", glyph: "ball.material_wood" },
     });
   });
 

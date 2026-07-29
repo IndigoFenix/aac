@@ -7,15 +7,26 @@
 // tangency-blocked stand points, the corner-cut door wedge, the furniture-
 // blind transits, the mid-room U-trap, the brake-stalled tight arrivals, and
 // the early-turn carrot freeze. If it goes red, read that list first.
+//
+// It now also walks the PRODUCTION locomotion — wall-glide granted to the NPC
+// and withheld on a tight routed leg, as world-host does — and pins CORRIDOR
+// FIDELITY beside arrival: a body may not end up closer to a fixture than its
+// own plan ever went, nor stray far off the planned line. Arrival alone let a
+// body reach the chest by grinding round the table it was routed around; the
+// law is that it walks the corridor the router measured. See
+// indoor-corner-cut.test.ts for the isolated statement of that law.
 import { describe, it, expect } from "@jest/globals";
 import {
   addLocalAvatar,
+  buildingAt,
   createWorldState,
   expandWorldBuildings,
   steerAvatar,
   structuresWalkable,
   fixturesWalkable,
   tickWorld,
+  WORLD_ENGINE_DEFAULTS,
+  type WorldEngineConfig,
   type WorldState,
 } from "@shared/world-engine/engine.js";
 import {
@@ -23,6 +34,7 @@ import {
   createNpcController,
   detourAim,
   sideOfBend,
+  type NpcErrandPoint,
 } from "@shared/world-engine/npc-controller.js";
 import { standClear, standPointFor } from "@shared/world-engine/interaction/quest/stand-points.js";
 import { routeIndoorAware } from "@shared/world-engine/interaction/quest/floor-route.js";
@@ -45,6 +57,72 @@ interface WalkResult {
    *  corner cluster) — production's stall watch gives up and applies the
    *  effect in place (termination over fidelity), so arrival isn't owed. */
   walledIn: boolean;
+  /** Worst clearance the ROUTE itself keeps from a solid fixture, and the worst
+   *  the BODY actually kept. The route's figure is the whole budget: a follower
+   *  that ends up closer than its plan ever went is standing on ground the
+   *  planner never certified — the corner-cut, measured. */
+  planClear: number;
+  bodyClear: number;
+  /** Worst distance from the walked plan — the other half of the law. */
+  maxDev: number;
+}
+
+/** The mover's collision radius throughout this harness (the engine default —
+ *  the girth the router plans at, floor-route planGeom `plan`). */
+const BODY_R = 0.4;
+/** The host's NPC steer config: wall-glide granted (world-host steerConfigOf). */
+const NPC_GLIDE: WorldEngineConfig = { ...WORLD_ENGINE_DEFAULTS, wallGlide: true };
+
+/** How much room is left between the body's collision square and the nearest
+ *  SOLID fixture's keep-out. Measured by probe, not by geometry, so it counts
+ *  exactly the fixtures locomotion collides with (pass-through kinds — a chair,
+ *  a bowl — are invisible to it, as they should be). 0 = the body's edge is
+ *  touching the furniture; the constraint makes anything below that impossible,
+ *  which is why a cut shows up as clearance SPENT rather than as overlap. */
+function fixtureClearance(s: WorldState, p: { x: number; y: number }): number {
+  const CAP = 0.6; // beyond a body-and-a-half of room there is nothing to report
+  if (fixturesWalkable(s, p, BODY_R + CAP, 0)) return CAP;
+  let lo = 0;
+  let hi = CAP;
+  for (let k = 0; k < 8; k++) {
+    const mid = (lo + hi) / 2;
+    if (fixturesWalkable(s, p, BODY_R + mid, 0)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** How far `p` strayed from the walked plan (its entry point + every routed
+ *  point). The corridor is measured in centimetres, so this is the other half of
+ *  the law: even where a plan happens to run through open floor, a body that has
+ *  left its line by half a metre is no longer walking the route that was checked. */
+function distToPlan(p: { x: number; y: number }, poly: { x: number; y: number }[]): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < poly.length; i++) {
+    const a = poly[i]!;
+    const b = poly[i + 1]!;
+    const bx = b.x - a.x;
+    const by = b.y - a.y;
+    const len2 = bx * bx + by * by;
+    const t = len2 < 1e-9 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * bx + (p.y - a.y) * by) / len2));
+    best = Math.min(best, Math.hypot(p.x - (a.x + bx * t), p.y - (a.y + by * t)));
+  }
+  return best;
+}
+
+/** The plan's own worst clearance — densely sampled, because the corridor the
+ *  planner certified is the whole polyline, not just its vertices. */
+function planClearance(s: WorldState, poly: { x: number; y: number }[]): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < poly.length; i++) {
+    const a = poly[i]!;
+    const b = poly[i + 1]!;
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.05));
+    for (let k = 0; k <= n; k++) {
+      best = Math.min(best, fixtureClearance(s, { x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n }));
+    }
+  }
+  return best;
 }
 
 /** Walk ONE errand exactly the way the live host does. */
@@ -111,13 +189,30 @@ function walkErrand(house: TownHouse, pieceId: string): WalkResult {
   let lastSide: 1 | -1 | 0 = 0;
   let switches = 0;
   let stand = { x: obj.x, y: obj.y };
+  let planClear = Infinity;
+  let bodyClear = Infinity;
+  let maxDev = 0;
   // Up to 3 attempts — quest-host's stall watch does the same: when a walk
   // ends short, the stand point is RE-PICKED from where the body actually
   // stands and the errand re-routed.
   for (let attempt = 0; attempt < 3; attempt++) {
     const from = { x: body.x, y: body.y };
     stand = standPointFor(s, pieceId, { x: obj.x, y: obj.y }, from);
-    ctrl.setErrand({ points: routeIndoorAware(s, from, stand) });
+    // quest-host doorRouteErrand's point construction, verbatim — a point the
+    // router placed INSIDE a building is `tight` (no corner-cutting indoors),
+    // and that flag is what vetoes both steer-time shortcuts below. Routing
+    // without it walks a plan production never issues.
+    const routed = routeIndoorAware(s, from, stand);
+    const plan: NpcErrandPoint[] = routed.map((p, i) => ({
+      x: p.x,
+      y: p.y,
+      ...(buildingAt(s, p.x, p.y) ? { tight: true } : {}),
+      ...(i === routed.length - 1 ? {} : { arrive: p.arrive ?? 0.9 }),
+      ...(p.doorId ? { doorId: p.doorId } : {}),
+    }));
+    ctrl.setErrand({ points: plan });
+    const poly = [from, ...plan.map((p) => ({ x: p.x, y: p.y }))];
+    planClear = Math.min(planClear, planClearance(s, poly));
     let done = false;
     for (let f = 0; f < 30 * 60; f++) {
       const aim = ctrl.computeAim({
@@ -131,8 +226,11 @@ function walkErrand(house: TownHouse, pieceId: string): WalkResult {
         radius: 0.4,
       });
       let bent = aim;
-      // The world-host detour block, verbatim: never on a tight routed leg.
-      if (aim && !ctrl.errandLegTight()) {
+      // The world-host steering block, verbatim: ONE reading of the tight veto,
+      // and it gates BOTH steer-time shortcuts — the local aim bend here and the
+      // engine's wall glide at steerAvatar below.
+      const legTight = ctrl.errandLegTight();
+      if (aim && !legTight) {
         bent = detourAim({ x: body.x, y: body.y }, aim, walk, 0.4, mem.prefer("npc", t));
         if (bent !== aim) {
           const side = sideOfBend({ x: body.x, y: body.y }, aim, bent);
@@ -145,19 +243,26 @@ function walkErrand(house: TownHouse, pieceId: string): WalkResult {
       // door opens because a body is crossing it, so without this line every
       // errand through an interior doorway stands at a shut door.
       body.crossingDoorId = ctrl.crossingDoorId();
-      steerAvatar(s, "npc", bent, dt);
+      // PRODUCTION LOCOMOTION. The host grants wall-glide to every NPC it steers
+      // (world-host steerConfigOf) and withholds it on a tight routed leg. This
+      // harness once steered with the bare defaults — glide-free — so it walked a
+      // body production does not run, and could not see the glide dragging a body
+      // off its corridor and along the furniture it was routed around.
+      steerAvatar(s, "npc", bent, dt, legTight ? WORLD_ENGINE_DEFAULTS : NPC_GLIDE);
       tickWorld(s, { aim: null }, dt); // doors ease; the parked player brakes
       t += dt;
+      bodyClear = Math.min(bodyClear, fixtureClearance(s, body));
+      maxDev = Math.max(maxDev, distToPlan(body, poly));
       if (!ctrl.hasErrand()) {
         done = true;
         break;
       }
     }
     if (done && Math.hypot(stand.x - body.x, stand.y - body.y) <= 1.3) {
-      return { arrived: true, switches, t, walledIn: false };
+      return { arrived: true, switches, t, walledIn: false, planClear, bodyClear, maxDev };
     }
   }
-  return { arrived: false, switches, t, walledIn: !standClear(s, stand) };
+  return { arrived: false, switches, t, walledIn: !standClear(s, stand), planClear, bodyClear, maxDev };
 }
 
 describe("furnished-house errands ARRIVE (the anti-wedge, anti-flip pin)", () => {
@@ -173,6 +278,7 @@ describe("furnished-house errands ARRIVE (the anti-wedge, anti-flip pin)", () =>
     it(`every furniture errand in the ${house.w}×${house.h} ${house.door}-door house arrives without flip-thrash`, () => {
       const pieces = houseFurniture(center, house, [{ key: "food", slot: 0 }, { key: "cloth", slot: 1 }]);
       const failures: string[] = [];
+      const cuts: string[] = [];
       let worstSwitches = 0;
       for (const piece of pieces) {
         if (piece.kind === "chair" || piece.kind === "bowl") continue; // passthrough
@@ -182,9 +288,26 @@ describe("furnished-house errands ARRIVE (the anti-wedge, anti-flip pin)", () =>
         // stall watch gives up and applies the effect in place. It still must
         // TERMINATE, which reaching this line proves (the walk loop is bounded).
         if (!r.arrived && !r.walledIn) failures.push(`${piece.id} (t=${r.t.toFixed(1)}s, switches=${r.switches})`);
+        // NO CORNER-CUTTING INDOORS. The route's own worst clearance is the
+        // entire budget the follower may spend — every routed indoor point is
+        // `tight`, meaning "walk this line exactly, the ground either side is
+        // the furniture I routed you around". A body that ends up closer to a
+        // fixture than its own plan ever went has cut a corner, whichever
+        // shortcut did it (the aim bend, the wall glide, or the carrot's
+        // lookahead chording across the routed vertices). The 5 cm slack is
+        // locomotion's discretisation — one frame at walking pace.
+        // The 10 cm slack is the follower's TRACKING error — a body steering a
+        // 5 m/s line at 60 Hz sits a few centimetres off it — not a licence to
+        // cut: the shortcuts this pins spent 0.13 m of a 0.20 m budget (the
+        // carrot chording a dogleg) and half a metre of line (the wall glide).
+        if (r.bodyClear < r.planClear - 0.1) {
+          cuts.push(`${piece.id} (body ${r.bodyClear.toFixed(3)} < plan ${r.planClear.toFixed(3)})`);
+        }
+        if (r.maxDev > 0.3) cuts.push(`${piece.id} strayed ${r.maxDev.toFixed(3)} m off its plan`);
         worstSwitches = Math.max(worstSwitches, r.switches);
       }
       expect(failures).toEqual([]);
+      expect(cuts).toEqual([]);
       // FLIP-THRASH pin: a healthy walk changes detour shoulder at most a
       // couple of times; the old dither flipped every few frames.
       expect(worstSwitches).toBeLessThanOrEqual(3);

@@ -67,7 +67,9 @@ function PeerTile({ stream, name, gain }: { stream: MediaStream; name: string | 
 export function SocialWorldPeople({ host }: { host: HTMLElement | null }) {
   const { activeGame, remoteStreams, contacts, peerGains } = useCall();
   const { t } = useLanguage();
-  if (!activeGame || !host) return null;
+  // iframe-quest games (shared Dollhouse) render through the active-app path,
+  // not the social-game layout — this panel's host doesn't even exist then.
+  if (!activeGame || activeGame.engine === "iframe-quest" || !host) return null;
   const nameFor = (personId: string) => contacts.find((c) => c.personId === personId)?.name ?? null;
   // In a conversation-circle game the panel shows only the student's CIRCLE
   // (in-range peers); everyone else still exists as an avatar in the world.
@@ -128,7 +130,9 @@ export function SocialWorldOverlay({ host, selfSpeech }: { host: HTMLElement | n
 
   useEffect(() => { if (showInvite) refreshContacts(); }, [showInvite, refreshContacts]);
 
-  if (!activeGame || !host) return null;
+  // iframe-quest games mount their own embed via the active-app path; the
+  // canvas surface here is only for "aivota-world" (SocialWorldCanvas) games.
+  if (!activeGame || activeGame.engine === "iframe-quest" || !host) return null;
   return createPortal(
     <>
       <CallGameSurface

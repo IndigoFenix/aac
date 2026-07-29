@@ -390,6 +390,11 @@ export interface UseDualAgentReturn {
   utteranceText: string | null;
   utteranceConfidence: 'high' | 'medium' | 'low' | null;
   transcriptConfidence: 'high' | 'medium' | 'low' | null;
+  /** How clearly the speech recogniser heard the words behind `transcription`
+   *  (its own score, not the Observer's judgment). Weak scores blur the
+   *  caption — the recogniser never returns silence, so an unsure result still
+   *  arrives as a fluent sentence and must not look like a certain one. */
+  transcriptClarity: 'high' | 'medium' | 'low' | 'unknown' | null;
   debugText: string | null;
 
   // Audio state
@@ -507,6 +512,12 @@ export interface UseDualAgentReturn {
   sendBoardExit: (label: string, instruction: string) => void;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
   voiceButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
+  /**
+   * A press on a GAME-owned board (world-engine sidebar options). Voiced in
+   * the student's voice (when `voice`), logged, and shared with the
+   * conversation room — but never wakes an agent; the game executes it.
+   */
+  sendGamePress: (text: string, glyph?: string, voice?: boolean) => void;
   /**
    * Send a composed glyph from the sentence builder. The AI converts it to
    * natural language via the `interpret` tool — the relay does NOT TTS the

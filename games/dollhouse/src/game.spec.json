@@ -1,0 +1,70 @@
+{
+  "engine": "aivota-world",
+  "engineVersion": 1,
+  "uses": [],
+  "packs": [],
+  "game": {
+    "scope": "town",
+    "world": {
+      "seed": 12,
+      "days": 220,
+      "syntax": "b",
+      "locale": "en"
+    },
+    "initial_focus": {
+      "type": "house"
+    },
+    "entities": {
+      "creatures": {
+        "mode": "all",
+        "list": [
+          {
+            "name": "Mara",
+            "outfit": 16,
+            "likes": [
+              "apple"
+            ]
+          },
+          {
+            "name": "Orrin",
+            "outfit": 1,
+            "likes": [
+              "banana"
+            ]
+          },
+          {
+            "name": "Pip",
+            "species": "frog_person",
+            "outfit": 0,
+            "likes": [
+              "grape"
+            ]
+          },
+          {
+            "name": "Biscuit",
+            "pet": true,
+            "species": "dog",
+            "likes": [
+              "apple"
+            ]
+          }
+        ]
+      },
+      "objects": {
+        "mode": "some",
+        "list": [
+          {
+            "glyph": "ball",
+            "at": "floor"
+          }
+        ]
+      }
+    },
+    "avatar": "spirit",
+    "scale": {
+      "rotation": 360,
+      "sleep_fraction": 0.05,
+      "construction": 180
+    }
+  }
+}

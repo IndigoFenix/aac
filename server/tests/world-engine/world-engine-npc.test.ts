@@ -280,6 +280,59 @@ describe("detourAim: the planner must not fight the body", () => {
 });
 
 // ---------------------------------------------------------------------------
+// NO CORNER-CUTTING INDOORS (errandLegTight)
+//
+// The host bends a body's aim around local obstacles (`detourAim`) — good on
+// open ground, ruinous on a planned indoor route, whose corridors are measured
+// in centimetres. `errandLegTight()` is the veto, and it used to be INFERRED
+// from the waypoint's arrival radius.
+//
+// THE OBSERVED BUG: `doorRouteErrand` deliberately gives its ENDPOINT no
+// `arrive` (the caller's exact spot and dwell must survive), so the endpoint
+// read as arrive = 1 ⇒ not tight — and the bend switched on for the one leg
+// that actually threads the furniture. A resident sent to her clothes chest
+// planned a correct route round her own dining table, committed to the final
+// leg, and the bend then aimed her across the table: she pinned on its west
+// face at the collider boundary and re-routed 50+ times without moving a
+// millimetre in x. The router now marks every point it places INSIDE a
+// building `tight`, and the flag is authoritative over the heuristic.
+// ---------------------------------------------------------------------------
+describe("errandLegTight — a routed indoor leg is never corner-cut", () => {
+  const ctrl = () => createNpcController({ id: "t", x: 0, y: 0, behavior: { movement: "stationary" } });
+
+  it("REGRESSION: an endpoint with NO arrive is tight when the router marked it", () => {
+    const c = ctrl();
+    c.setErrand({ points: [{ x: 5, y: 0, tight: true }] });
+    expect(c.errandLegTight()).toBe(true);
+  });
+
+  it("…and without the mark that same endpoint reads free-roam (the old bug, pinned)", () => {
+    const c = ctrl();
+    c.setErrand({ points: [{ x: 5, y: 0 }] });
+    expect(c.errandLegTight()).toBe(false);
+  });
+
+  it("tightness follows the LIVE leg — free outdoors, tight once inside", () => {
+    // A walk home: street legs may bend, the leg past the threshold may not.
+    const c = ctrl();
+    c.setErrand({ points: [{ x: 5, y: 0, arrive: 1.2 }, { x: 9, y: 0, tight: true }] });
+    expect(c.errandLegTight()).toBe(false); // leg 0 — outdoors
+    c.setErrand({ points: [{ x: 9, y: 0, tight: true }] }); // …now on the indoor leg
+    expect(c.errandLegTight()).toBe(true);
+  });
+
+  it("the legacy arrive heuristic still holds for legs nobody tagged", () => {
+    const c = ctrl();
+    c.setErrand({ points: [{ x: 5, y: 0, arrive: 0.5 }] });
+    expect(c.errandLegTight()).toBe(true);
+  });
+
+  it("no errand at all is not tight (nothing to hold the line for)", () => {
+    expect(ctrl().errandLegTight()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Transport
 // ---------------------------------------------------------------------------
 
@@ -471,5 +524,75 @@ describe("runWorldHost NPC brain hooks", () => {
     for (let i = 0; i < 3; i++) { clock += 16; pending?.(clock); }
     expect(prox[prox.length - 1]?.some((n) => n.npcId === "npc_theo")).toBe(true);
     host.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wander with unreachable ground (the stuck-indoors fix)
+// ---------------------------------------------------------------------------
+
+describe("wander when every roam candidate is unreachable", () => {
+  // A body shut INSIDE a small walkable pocket (a just-built room) whose
+  // tether home lies far outside it. The old fallback blind-aimed at home —
+  // through the wall — and the body ground there forever, repicking the
+  // same doomed aim after every stuck-detection reset. Now it must STAND:
+  // any aim it does produce has to be ground it can actually reach.
+  it("never aims at far-away unreachable home; stands instead", () => {
+    const ctrl = createNpcController({
+      id: "stray",
+      x: 0,
+      y: 0,
+      behavior: { movement: "wander", home: { x: 50, y: 0 }, wanderRadius: 6 },
+    });
+    const self = makeAvatar("stray", 0, 0);
+    const pocket = (p: { x: number; y: number }) => Math.hypot(p.x, p.y) < 3;
+    const rng = makeRng(3);
+    for (let t = 0; t < 120; t += 0.5) {
+      const aim = ctrl.computeAim({
+        self,
+        humans: [],
+        now: t,
+        width: 200,
+        height: 60,
+        rng,
+        walkable: (p) => pocket(p),
+        radius: 0.5,
+      });
+      if (aim) {
+        // Reachable ground only — never the blind cross-map aim at home.
+        expect(dist(aim, self)).toBeLessThan(5);
+        expect(pocket(aim)).toBe(true);
+      }
+    }
+  });
+
+  it("still roams home-ward when home IS reachable (open ground unchanged)", () => {
+    const ctrl = createNpcController({
+      id: "roamer",
+      x: 10,
+      y: 30,
+      behavior: { movement: "wander", home: { x: 40, y: 30 }, wanderRadius: 8 },
+    });
+    const self = makeAvatar("roamer", 10, 30);
+    const rng = makeRng(5);
+    let sawAim = false;
+    for (let t = 0; t < 60 && !sawAim; t += 0.5) {
+      const aim = ctrl.computeAim({
+        self,
+        humans: [],
+        now: t,
+        width: 80,
+        height: 60,
+        rng,
+        walkable: () => true,
+        radius: 0.5,
+      });
+      if (aim) {
+        sawAim = true;
+        // Open ground: the roam still draws in the home disc as ever.
+        expect(dist(aim, { x: 40, y: 30 })).toBeLessThan(8.5);
+      }
+    }
+    expect(sawAim).toBe(true);
   });
 });

@@ -22,6 +22,8 @@ import {
   hygieneTemplate,
   laundryTemplate,
   provisionTemplate,
+  ritualAttendTemplate,
+  ritualPrepTemplate,
   socialTemplate,
   thirstTemplate,
   unloadTemplate,
@@ -184,6 +186,25 @@ describe("needPursuitGoals — the stack motives route their take/deposit legs (
     expect(needPursuitGoals(tpl, { kind: "processAt", station: station("furn_0_oven_0", "oven") }, opts({ restDwellS: 5 }))).toEqual([
       { kind: "processUnits", at: { kind: "named", id: "furn_0_oven_0" }, category: "food", add: "hot", dwellS: 5, tplKey: "cook:food" },
     ]);
+  });
+
+  it("prep: laying the ritual's place is an ordinary putUnits haul", () => {
+    const tpl = ritualPrepTemplate("meal", 2);
+    expect(needPursuitGoals(tpl, { kind: "deposit", into: at("furn_0_table"), units: 1 }, opts())).toEqual([
+      { kind: "putUnits", into: { kind: "named", id: "furn_0_table" }, category: "meal", units: 1, tplKey: "prep:meal" },
+    ]);
+  });
+
+  it("attend rides the pursuit — a rest at the CLAIMED seat, by name", () => {
+    // The station the caller offers is already narrowed to this body's own
+    // claim, so the goal names that chair — and going through the pursuit is
+    // what gets the on-fixture arrival contract that lands a body somewhere the
+    // furniture anchor can seat it (the legacy stand point picked the far side
+    // of the table).
+    const tpl = ritualAttendTemplate("meal", "chair");
+    expect(
+      needPursuitGoals(tpl, { kind: "restAt", station: station("furn_0_chair_1", "chair") }, opts({ restDwellS: 2.5 })),
+    ).toEqual([{ kind: "rest", place: { kind: "named", id: "furn_0_chair_1" }, dwellS: 2.5 }]);
   });
 
   it("unload routes both answers: putUnits (put it away) and dropUnits (put it down)", () => {

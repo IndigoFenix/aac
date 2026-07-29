@@ -17,6 +17,14 @@ interface QuickActionsProps {
   onSpeak?: () => void;
   /** When true, the Speak button renders as a Back button. */
   inSentenceBuilder?: boolean;
+  /**
+   * In-game chrome (a world-engine game is the active app): Speak takes the
+   * first track, sized and aligned to the button SIDEBAR above it (the board
+   * it opens), and Yes / No / Exit share the rest of the bar — Exit last, in
+   * the lower corner at the reading-direction end. "More" and "Guess" are
+   * dropped (the AI board they feed isn't in front of the student).
+   */
+  worldEngineGame?: boolean;
 }
 
 /** A serialized quick-action button for the call board-mirror (read-only). */
@@ -31,15 +39,23 @@ export interface QuickActionMirror {
 /** Build the quick-action row descriptor (same decisions as the rendered row),
  *  for streaming to a clinician's mirrored view. Pure — no JSX. */
 export function quickActionsMirror(
-  opts: { boardMode: "ai" | "db"; hasActiveApp?: boolean; currentTier?: "home" | "context" | "latest"; isGuessingMode?: boolean; inSentenceBuilder?: boolean; showSpeakSlot?: boolean },
+  opts: { boardMode: "ai" | "db"; hasActiveApp?: boolean; currentTier?: "home" | "context" | "latest"; isGuessingMode?: boolean; inSentenceBuilder?: boolean; showSpeakSlot?: boolean; worldEngineGame?: boolean },
   t: (k: string) => string,
   isRTL: boolean,
 ): QuickActionMirror[] {
-  const { boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, inSentenceBuilder = false, showSpeakSlot = true } = opts;
+  const { boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, inSentenceBuilder = false, showSpeakSlot = true, worldEngineGame = false } = opts;
   const out: QuickActionMirror[] = [];
-  out.push(boardMode === "ai"
-    ? { id: "more", label: t("quickActions.more"), emoji: "➕", color: "#E5E7EB" }
-    : { id: "back", label: t("quickActions.back"), emoji: "◀", color: "#E5E7EB" });
+  // In-game, Speak leads the row (under the sidebar board it opens).
+  if (worldEngineGame && showSpeakSlot) {
+    out.push(inSentenceBuilder
+      ? { id: "speak", label: t("quickActions.back"), emoji: isRTL ? "▶" : "◀", color: "#E5E7EB" }
+      : { id: "speak", label: t("quickActions.speak"), emoji: "💬", color: "#FEF3C7" });
+  }
+  if (!worldEngineGame) {
+    out.push(boardMode === "ai"
+      ? { id: "more", label: t("quickActions.more"), emoji: "➕", color: "#E5E7EB" }
+      : { id: "back", label: t("quickActions.back"), emoji: "◀", color: "#E5E7EB" });
+  }
   out.push({ id: "yes", label: t("quickActions.yes"), emoji: "✓", color: "#D1FAE5" });
   out.push({ id: "no", label: t("quickActions.no"), emoji: "✗", color: "#FEE2E2" });
   out.push(
@@ -47,10 +63,10 @@ export function quickActionsMirror(
     : isGuessingMode || currentTier === "home" ? { id: "home", label: t("quickActions.back"), emoji: "↩️", color: "#C4B5FD" }
     : currentTier === "context" ? { id: "home", label: t("quickActions.home"), emoji: "🏠", color: "#DBEAFE" }
     : { id: "home", label: t("quickActions.board"), emoji: "📋", color: "#E0E7FF" });
-  if (boardMode === "ai" && !hasActiveApp && !inSentenceBuilder) {
+  if (boardMode === "ai" && !hasActiveApp && !inSentenceBuilder && !worldEngineGame) {
     out.push({ id: "guess", label: t("quickActions.guess"), emoji: "🔍", color: isGuessingMode ? "#C4B5FD" : "#EDE9FE", active: isGuessingMode });
   }
-  if (showSpeakSlot) {
+  if (showSpeakSlot && !worldEngineGame) {
     out.push(inSentenceBuilder
       ? { id: "speak", label: t("quickActions.back"), emoji: isRTL ? "▶" : "◀", color: "#E5E7EB" }
       : { id: "speak", label: t("quickActions.speak"), emoji: "💬", color: "#FEF3C7" });
@@ -58,7 +74,7 @@ export function quickActionsMirror(
   return out;
 }
 
-export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, onSpeak, inSentenceBuilder = false }: QuickActionsProps) {
+export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false, onSpeak, inSentenceBuilder = false, worldEngineGame = false }: QuickActionsProps) {
   const { t, isRTL } = useLanguage();
 
   const quickActions: Array<{ id: "yes" | "no"; labelKey: string; color: string }> = [
@@ -101,8 +117,17 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
   // (the builder has its own Word Finder button). Click toggles entry/exit
   // based on isGuessingMode (single source of truth from the server).
   const showGuessSlot =
-    boardMode === "ai" && !hasActiveApp && !inSentenceBuilder;
-  const columns = 4 + (showSpeakSlot ? 1 : 0) + (showGuessSlot ? 1 : 0);
+    boardMode === "ai" && !hasActiveApp && !inSentenceBuilder && !worldEngineGame;
+  const showMoreSlot = !worldEngineGame;
+  // In-game the bar is FOUR tracks: Speak first at the sidebar's own width, so
+  // it sits directly under the board it opens (28rem board − the bar's 0.5rem
+  // padding on each side = 27rem, which lines its edges up with the board
+  // buttons), then Yes / No / Exit sharing the rest — Exit last, in the lower
+  // corner at the reading-direction end (the grid mirrors with dir in RTL).
+  const columns = worldEngineGame ? 4 : 4 + (showSpeakSlot ? 1 : 0) + (showGuessSlot ? 1 : 0);
+  const gridTemplateColumns = worldEngineGame
+    ? `27rem repeat(3, minmax(0, 1fr))`
+    : `repeat(${columns}, minmax(0, 1fr))`;
   const speakLabel = inSentenceBuilder ? t("quickActions.back") : t("quickActions.speak");
   // Back arrow points opposite reading direction (away from "forward") —
   // ▶ in RTL so it still reads as "go back", ◀ in LTR.
@@ -119,13 +144,38 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
     "h-full flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border overflow-hidden";
   const labelClass = "text-xs font-semibold text-center leading-tight line-clamp-2 shrink-0";
 
+  // Speak (opens the sentence builder) / Back (closes it). Rendered FIRST in
+  // the in-game row and last everywhere else — grid auto-placement never walks
+  // backwards, so a Speak that trails Yes/No in the DOM would be pushed onto a
+  // second row rather than into the leading track.
+  const speakButton = showSpeakSlot ? (
+    <motion.button
+      data-dwell
+      data-testid="quick-speak"
+      onClick={onSpeak}
+      className={`${btnClass} border-gray-200 dark:border-gray-600`}
+      style={{ backgroundColor: speakColor }}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+    >
+      <div className="icon-fill-area"><span className="icon-fill-emoji">{speakIcon}</span></div>
+      <span className={`${labelClass} text-gray-800`}>
+        {speakLabel}
+      </span>
+    </motion.button>
+  ) : null;
+
   return (
     <div
       className="grid gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 shrink-0"
-      style={{ ...rowStyle, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      style={{ ...rowStyle, gridTemplateColumns }}
     >
-      {/* 1st button: More (AI mode) or Back (DB mode) */}
-      {boardMode === 'ai' ? (
+      {/* In-game, Speak leads the row in the sidebar-wide first track. */}
+      {worldEngineGame && speakButton}
+
+      {/* 1st button: More (AI mode) or Back (DB mode). Dropped from the
+          in-game (world-engine) chrome. */}
+      {showMoreSlot && (boardMode === 'ai' ? (
         <motion.button
           data-dwell
           onClick={() => onAction("more", t("quickActions.more"))}
@@ -151,7 +201,7 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
             {t("quickActions.back")}
           </span>
         </motion.button>
-      )}
+      ))}
 
       {/* Yes and No buttons */}
       {quickActions.map((action) => (
@@ -171,12 +221,18 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
         </motion.button>
       ))}
 
-      {/* 4th button: Home / Back / Board / Exit */}
+      {/* 4th button: Home / Back / Board / Exit. During a world-engine game
+          (endButton is always Exit there — an app is active) it's pinned into
+          the last grid track so it sits in the lower corner of the screen. */}
       <motion.button
         data-dwell
+        data-testid="quick-end"
         onClick={() => onAction(endButton.id, t(endButton.labelKey))}
         className={`${btnClass} border-gray-200 dark:border-gray-600`}
-        style={{ backgroundColor: endButton.color }}
+        style={{
+          backgroundColor: endButton.color,
+          ...(worldEngineGame ? { gridColumnStart: columns } : {}),
+        }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
@@ -211,23 +267,9 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
         </motion.button>
       )}
 
-      {/* Speak (opens sentence builder) / Back (closes it) */}
-      {showSpeakSlot && (
-        <motion.button
-          data-dwell
-          data-testid="quick-speak"
-          onClick={onSpeak}
-          className={`${btnClass} border-gray-200 dark:border-gray-600`}
-          style={{ backgroundColor: speakColor }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <div className="icon-fill-area"><span className="icon-fill-emoji">{speakIcon}</span></div>
-          <span className={`${labelClass} text-gray-800`}>
-            {speakLabel}
-          </span>
-        </motion.button>
-      )}
+      {/* Speak (opens sentence builder) / Back (closes it) — trailing slot
+          outside a world-engine game, where it leads the row instead. */}
+      {!worldEngineGame && speakButton}
     </div>
   );
 }

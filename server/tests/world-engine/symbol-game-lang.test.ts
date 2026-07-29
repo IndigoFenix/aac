@@ -706,3 +706,113 @@ describe("one vocabulary — LEXICON-derived symbols render with grammar, not gl
     expect(en("i_me + want + eat")).toBe("I want to eat.");
   });
 });
+
+// ── THE PROXIMITY PAIR is first-class vocabulary now (construction v1's
+// placement relations). Neither had a POS entry or a lexeme: every sentence
+// carrying one fell to the telegraphic gloss, and in he/es/pt it spoke the
+// literal English word. They are NOT synonyms — `next_to` is the adjacent
+// spot, `near` the vicinity — and each language keeps them apart its own way.
+
+describe("near / next_to — the proximity pair speaks in every ruleset", () => {
+  it("frames as a proper placement sentence, not a gloss", () => {
+    expect(en("you + put + chair + near + table")).toBe("You put the chair near the table.");
+    expect(he("you + put + chair + near + table")).toBe("אתה שם את הכיסא קרוב לשולחן.");
+    expect(es("you + put + chair + near + table")).toBe("Pones la silla cerca de la mesa.");
+    expect(pt("you + put + chair + near + table")).toBe("Você põe a cadeira perto da mesa.");
+  });
+
+  it("next_to renders as the ADJACENT phrase, distinct from near in every ruleset", () => {
+    expect(en("you + put + chair + next_to + table")).toBe("You put the chair next to the table.");
+    expect(he("you + put + chair + next_to + table")).toBe("אתה שם את הכיסא ליד השולחן.");
+    expect(es("you + put + chair + next_to + table")).toBe("Pones la silla al lado de la mesa.");
+    expect(pt("you + put + chair + next_to + table")).toBe("Você põe a cadeira ao lado da mesa.");
+    for (const t of [en, he, es, pt]) {
+      expect(t("you + put + chair + next_to + table")).not.toBe(t("you + put + chair + near + table"));
+    }
+  });
+
+  it("the verbless fragment reads as a LOCATIVE clue (like in/on), never a directional dash", () => {
+    expect(en("chair + near + table")).toBe("The chair is near the table.");
+    expect(en("chair + next_to + table")).toBe("The chair is next to the table.");
+    expect(he("chair + next_to + table")).toBe("הכיסא ליד השולחן.");
+    expect(es("chair + next_to + table")).toBe("La silla está al lado de la mesa.");
+    expect(pt("chair + near + table")).toBe("A cadeira está perto da mesa.");
+  });
+
+  // ── The VERTICAL pair (under/over) and the FACING pair (behind/in_front_of)
+  // joined the proximity pair as first-class placement relations: POS entries
+  // plus lexemes in every ruleset, so the sentence frames instead of degrading
+  // to the telegraphic gloss.
+  it("under / behind / in_front_of frame as proper placement sentences in every ruleset", () => {
+    expect(en("you + put + ball + under + table")).toBe("You put the ball under the table.");
+    expect(en("you + put + ball + behind + table")).toBe("You put the ball behind the table.");
+    expect(en("you + put + ball + in_front_of + table")).toBe("You put the ball in front of the table.");
+    expect(es("you + put + ball + behind + table")).toBe("Pones la pelota detrás de la mesa.");
+    expect(pt("you + put + ball + behind + table")).toBe("Você põe a bola atrás da mesa.");
+    expect(he("you + put + ball + behind + table")).toBe("אתה שם את הכדור מאחורי השולחן.");
+  });
+
+  it("their verbless fragments read as LOCATIVE clues too", () => {
+    expect(en("ball + behind + table")).toBe("The ball is behind the table.");
+    expect(en("ball + in_front_of + table")).toBe("The ball is in front of the table.");
+    expect(es("ball + under + table")).toBe("La pelota está debajo de la mesa.");
+    expect(pt("ball + under + table")).toBe("A bola está debaixo da mesa.");
+    // Hebrew: "מתחת ל" ends in the clitic ל — it fuses with the article.
+    expect(he("ball + under + table")).toContain("מתחת לשולחן");
+  });
+
+  it("a Hebrew preposition fuses only its CLITIC letter", () => {
+    // "קרוב ל" ends in a clitic — it swallows the article ("קרוב לשולחן").
+    expect(he("chair + near + table")).toContain("קרוב לשולחן");
+    // "ליד" is a whole word — it keeps its space and the article.
+    expect(he("chair + next_to + table")).toContain("ליד ה");
+    expect(he("ball + in + box")).toBe("הכדור בקופסה."); // the bare clitic still fuses
+  });
+  it("the placement ANNOUNCEMENT carries the anchor through the going-to future", () => {
+    // The `.will` intent shape a creature actually speaks when it accepts a
+    // "put the chair next to the table" order (intent-lines.ts `place`).
+    expect(en("put.will + chair + next_to + table")).toBe("I will put the chair next to the table.");
+    expect(he("put.will + chair + next_to + table")).toBe("אני הולך לשים את הכיסא ליד השולחן.");
+    expect(es("put.will + chair + next_to + table")).toBe("Voy a poner la silla al lado de la mesa.");
+    expect(pt("put.will + chair + next_to + table")).toBe("Eu vou pôr a cadeira ao lado da mesa.");
+    expect(en("put.will + chair + near + table")).toBe("I will put the chair near the table.");
+    expect(he("put.will + chair + near + table")).toBe("אני הולך לשים את הכיסא קרוב לשולחן.");
+    expect(es("put.will + chair + near + table")).toBe("Voy a poner la silla cerca de la mesa.");
+    expect(pt("put.will + chair + near + table")).toBe("Eu vou pôr a cadeira perto da mesa.");
+  });
+});
+
+describe("MANNER — an adverbial that modifies HOW, in every frame and language", () => {
+  // `together` is peeled off before classification and appended after
+  // rendering (core.ts translateWith), so no ruleset needs a case for it and
+  // every sentence shape gets manner for free.
+  it("appends to a plain clause, inside the sentence punctuation", () => {
+    expect(en("we + eat + together")).toBe("We eat together.");
+    expect(he("we + eat + together")).toBe("אנחנו אוכלים ביחד.");
+    expect(es("we + eat + together")).toBe("Comemos juntos.");
+    expect(pt("we + eat + together")).toBe("Nós comemos juntos.");
+  });
+  it("survives a NEGATED clause — the no-gathering line", () => {
+    expect(en("we + sleep.not + together")).toBe("We don't sleep together.");
+    expect(he("we + sleep.not + together")).toBe("אנחנו לא ישנים ביחד.");
+    expect(es("we + sleep.not + together")).toBe("No dormimos juntos.");
+    expect(pt("we + sleep.not + together")).toBe("Nós não dormimos juntos.");
+  });
+  it("survives an INFINITIVE frame (want + to + V)", () => {
+    expect(en("i_me + want + play + together")).toBe("I want to play together.");
+    expect(he("i_me + want + play + together")).toBe("אני רוצה לשחק ביחד.");
+  });
+  it("a BARE manner word is still just the word — never an empty clause", () => {
+    expect(en("together")).toBe("together");
+    expect(he("together")).toBe("ביחד");
+  });
+  it("a 'we' subject conjugates as FIRST PERSON PLURAL in the romance rulesets", () => {
+    // Only `fight` carried a v1p before (the taboo line was the sole "we + V"
+    // consumer), so every other activity verb fell back to the 1sg form —
+    // "Como." for "we eat". The activity verbs now carry theirs.
+    expect(es("we + eat")).toBe("Comemos.");
+    expect(es("we + sleep.not")).toBe("No dormimos.");
+    expect(pt("we + wash.not")).toBe("Nós não lavamos.");
+    expect(pt("we + play")).toBe("Nós brincamos.");
+  });
+});

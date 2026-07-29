@@ -1,6 +1,8 @@
 /**
  * English translations for AAC client
  */
+// Two-line pad matching the sibling locales' `import type` header, so the
+// i18n validator sees identical keys on identical lines across all files.
 export const en = {
   app: {
     name: "Aivota AAC",
@@ -334,6 +336,18 @@ export const en = {
       when: "When",
       chat: "Chat",
     },
+    engineTabs: {
+      all: "Suggested",
+      things: "Things",
+      person: "People",
+      verb: "Actions",
+      attribute: "Descriptions",
+      quantity: "Amounts",
+      relation: "Links",
+      question: "Questions",
+      connective: "Joiners",
+      social: "Social",
+    },
     chips: {
       all: "All",
       people: "People",
@@ -410,6 +424,9 @@ export const en = {
       under: "Under",
       over: "Over",
       through: "Through",
+      next_to: "Next to",
+      behind: "Behind",
+      in_front_of: "In front of",
       i_me: "I",
       you: "You",
       we: "We",
@@ -425,6 +442,7 @@ export const en = {
       want: "Want",
       give: "Give",
       take: "Take",
+      get: "Get",
       put: "Put",
       trade: "Trade",
       receive: "Receive",
@@ -442,6 +460,7 @@ export const en = {
       follow: "Follow",
       enter: "Enter",
       exit: "Exit",
+      return: "Return",
       play: "Play",
       eat: "Eat",
       drink: "Drink",
@@ -567,6 +586,7 @@ export const en = {
       learn: "Learn",
       ask: "Ask",
       build: "Build",
+      break: "Break",
       chase: "Chase",
       hat: "Hat",
       pants: "Pants",
@@ -751,6 +771,7 @@ export const en = {
       finished: "Finished",
       with: "With",
       for: "For",
+      together: "Together",
       instead: "Instead",
       before: "Before",
       after: "After",
@@ -809,6 +830,12 @@ export const en = {
       wakingUp: "Waking up...",
     },
     sleeping: "Sleeping...",
+    heardClarity: "Heard with {level} clarity",
+    clarity: {
+      high: "high",
+      medium: "medium",
+      low: "low",
+    },
   },
 
   quickActions: {
@@ -829,6 +856,7 @@ export const en = {
     maybe: "Maybe",
     neitherOfThese: "Neither of these",
     guess: "Find word",
+    exitConfirm: "Do you want to exit?",
   },
 
   silentMode: {
@@ -852,6 +880,7 @@ export const en = {
       musical_microbes: "Musical Microbes",
       social_world: "Play with friends",
       symbol_learning: "Learn Symbols",
+      dollhouse: "Dollhouse",
     },
   },
 
@@ -963,6 +992,7 @@ export const en = {
     PARSE_ERROR: "An error occurred while processing the response.",
     UNEXPECTED_ERROR: "An unexpected error occurred.",
     INIT_FAILED: "Failed to initialize session.",
+    CONSENT_REQUIRED: "Sessions cannot start until this student's consent form is complete. Ask a clinician to finish the consent wizard.",
     MESSAGE_REQUIRED: "Message is required.",
     MESSAGE_FAILED: "Failed to process message.",
     NO_AUDIO: "No audio file provided.",

@@ -21,7 +21,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { avatarKind, loadWorldManifest, type GameSettings, type LoadedWorld , focusLevel } from "@shared/world-engine/kernel/manifest";
-import { resolveWorldScale, type WorldScale } from "@shared/world-engine/scale";
+import { resolveWorldScale, type WorldScale, type WorldScaleSpec } from "@shared/world-engine/scale";
 import { getShadingMode, setShadingMode } from "@shared/world-engine/materials";
 import { ECONOMY_MODULE } from "@shared/world-engine/kernel/modules/economy/index";
 import { createSpaceFlight, type SpaceFlight, type FlightCity } from "./space-fly";
@@ -2293,6 +2293,28 @@ let rootLoaded: LoadedWorld | null = null;
 function docSessionScale(): WorldScale | undefined {
   return rootLoaded?.game?.scale ? resolveWorldScale(rootLoaded.game.scale) : undefined;
 }
+
+/**
+ * The universe-wide compression dials a space boot forwards (scale.ts): body
+ * size, the two distance scales, and the spin/orbit time factors. LAW: these
+ * scale EVERY body, not just the home world — relative scales come out
+ * unchanged, so compression reads as presentation. Only non-unity dials are
+ * emitted, so an undeclared world boots byte-identically at real scale.
+ */
+function spaceScaleOpts(scaleSpec: WorldScaleSpec | null | undefined): {
+  compression?: number; interplanetary?: number; interstellar?: number;
+  revolution?: number; rotation?: number;
+} {
+  if (!scaleSpec) return {};
+  const s = resolveWorldScale(scaleSpec);
+  return {
+    ...(s.planetCompression > 1 ? { compression: s.planetCompression } : {}),
+    ...(s.interplanetary > 1 ? { interplanetary: s.interplanetary } : {}),
+    ...(s.interstellar > 1 ? { interstellar: s.interstellar } : {}),
+    ...(s.revolution !== 1 ? { revolution: s.revolution } : {}),
+    ...(s.rotation !== 1 ? { rotation: s.rotation } : {}),
+  };
+}
 let currentReboot: () => void = () => {};
 
 function clearWorld(): void {
@@ -2372,15 +2394,15 @@ function bootSolarFlight(game: GameSettings): void {
   // (~dozens), not a token handful.
   const w = game.world as { seed?: number; questCount?: number };
   const galaxySeed = (w.seed ?? 1337) >>> 0;
-  // PLANET COMPRESSION (game.scale.planet_compression): a declared miniature
-  // profile shrinks every materialized system — radii ÷ s, orbits ÷ s, surface
-  // gravity preserved (space-time-compression.md §5). Default: real scale.
-  const compression = game.scale?.planet_compression ?? 1;
+  // COMPRESSION (game.scale): a declared miniature profile shrinks every
+  // materialized system AND its sky — radii, orbits, star separations, spin
+  // and orbital periods, relative scales preserved (space-time-compression.md
+  // §5 + settlement-emergence.md §4a). Default: real scale.
   geoBaker = createGeologyBaker();
   flight = createSpaceFlight(scene, galaxySeed, 48, geoBaker.bake, {
     canFly: game.canFly,
     species: game.avatarSpecies,
-    ...(compression > 1 ? { compression } : {}),
+    ...spaceScaleOpts(game.scale),
   });
   // Quest certification rides the geology worker (pure JSON both ways) —
   // the founding pipeline's last main-thread lump goes off-thread.
@@ -3035,13 +3057,12 @@ function bootSpiritWorld(game: GameSettings): void {
   setSpaceMode(true);
   const ws = game.world as { seed?: number; questCount?: number };
   const galaxySeed = (ws.seed ?? 1337) >>> 0;
-  // PLANET COMPRESSION rides the spirit route too (the miniature demo with
+  // COMPRESSION rides the spirit route too (the miniature demo with
   // avatar: "spirit" boots here, not bootSolarFlight).
-  const compression = game.scale?.planet_compression ?? 1;
   geoBaker = createGeologyBaker();
   flight = createSpaceFlight(scene, galaxySeed, 48, geoBaker.bake, {
     canFly: game.canFly, species: game.avatarSpecies,
-    ...(compression > 1 ? { compression } : {}),
+    ...spaceScaleOpts(game.scale),
   });
   const certifyBaker = geoBaker;
   cityTowns = createCityTownLoader({

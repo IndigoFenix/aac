@@ -9,14 +9,16 @@
 import type { CallGame } from "@shared/realtime-events";
 import { WORLD_APP_TYPE } from "@shared/world-engine/types";
 import { certifyWorldSpec } from "@shared/world-engine/index";
-import { DEFAULT_SOCIAL_GAME } from "@shared/social-world/default-game";
+import { DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME } from "@shared/social-world/default-game";
 import { customAppRepository } from "../../repositories/customAppRepository";
 
 /** Engine types whose apps are multiplayer (selectable as a social game). */
 const MULTIPLAYER_TYPES = [WORLD_APP_TYPE];
 
 export async function listSocialGameOptions(instituteId: string): Promise<CallGame[]> {
-  const options: CallGame[] = [DEFAULT_SOCIAL_GAME];
+  // Built-ins first: the default world, then the Dollhouse iframe game (every
+  // participant mounts /games/dollhouse/ locally; no spec travels with it).
+  const options: CallGame[] = [DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME];
 
   const apps = await customAppRepository.listMultiplayerAppsForInstitute(instituteId, MULTIPLAYER_TYPES);
   for (const app of apps) {

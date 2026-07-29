@@ -101,13 +101,29 @@ export interface ScreenRequestMessage {
   at: number;
 }
 
+/** A RELIABLE command for an iframe world game shared by the call (engine
+ *  "iframe-quest") — a follower's board press / built sentence relayed to the
+ *  sim-owner peer, or a rare event like a spark→body claim. `cmd` is an
+ *  engine-versioned payload the platform ferries into the game iframe
+ *  verbatim (`world_cmd` bridge message) and never inspects. `toId` narrows
+ *  delivery: receivers whose personId differs drop the message. */
+export interface WorldCommandMessage {
+  k: "world-cmd";
+  /** The game the command belongs to (CallGame.appId, e.g. "dollhouse"). */
+  gameId: string;
+  cmd: unknown;
+  toId?: string;
+  at: number;
+}
+
 export type CallDataMessage =
   | BoardMirrorMessage
   | BoardDwellMessage
   | BoardSelectionMessage
   | FacilitatorPressMessage
   | ScreenShareMessage
-  | ScreenRequestMessage;
+  | ScreenRequestMessage
+  | WorldCommandMessage;
 
 /** Narrow an unknown data-channel payload to a CallDataMessage, or null. Keeps
  *  the receivers (both CallContexts) from having to trust the wire. */
@@ -162,6 +178,17 @@ export function parseCallDataMessage(raw: unknown): CallDataMessage | null {
     case "screen-request": {
       const v = raw as Partial<ScreenRequestMessage>;
       return { k: "screen-request", on: !!v.on, at: typeof v.at === "number" ? v.at : 0 };
+    }
+    case "world-cmd": {
+      const v = raw as Partial<WorldCommandMessage>;
+      if (typeof v.gameId !== "string" || v.cmd === undefined) return null;
+      return {
+        k: "world-cmd",
+        gameId: v.gameId,
+        cmd: v.cmd,
+        toId: typeof v.toId === "string" ? v.toId : undefined,
+        at: typeof v.at === "number" ? v.at : 0,
+      };
     }
     default:
       return null;

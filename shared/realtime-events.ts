@@ -68,8 +68,15 @@ export type CallSignal = Record<string, unknown>;
 export interface CallGame {
   /** custom_apps.id, or a built-in app id (e.g. "social_world"). */
   appId: string;
-  /** Engine discriminator that decides how the client renders it (e.g. "social_world"). */
+  /**
+   * Engine discriminator that decides how the client renders it.
+   * "aivota-world" = the in-page SocialWorldCanvas surface; "iframe-quest" = a
+   * packaged iframe game (vendored world-engine) every participant mounts
+   * locally via `src`, with world state ferried over the games bridge.
+   */
   engine: string;
+  /** iframe-quest only: the game's iframe path (e.g. "/games/dollhouse/"). */
+  src?: string;
   /** For built-in world-engine specs; defaults to "social-field". */
   worldSpecKey?: string;
   /** Certified WorldSpec for a CUSTOM world app (travels with the game so every

@@ -2598,6 +2598,65 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
 
+              {/* Dollhouse */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🏠</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appDollhouse')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appDollhouseDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.dollhouse?.enabled ?? true}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, dollhouse: { ...prev.dollhouse, enabled: checked } }))
+                  }
+                />
+              </div>
+
+              {/* Game options — how world-engine games (Dollhouse, …) use the
+                  live AI and the student's voice. Stored in appConfig.gameOptions. */}
+              <div className="pt-4 mt-4 border-t space-y-4">
+                <div>
+                  <Label className="text-sm font-semibold">{t('aacSettings.gameOptions')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('aacSettings.gameOptionsDesc')}</p>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.gameUseAi')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.gameUseAiDesc')}</p>
+                  </div>
+                  <Select
+                    value={appConfig.gameOptions?.useAi ?? "energy"}
+                    onValueChange={(v) =>
+                      setAppConfig(prev => ({ ...prev, gameOptions: { ...prev.gameOptions, useAi: v } }))
+                    }
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="on">{t('aacSettings.gameUseAiOn')}</SelectItem>
+                      <SelectItem value="energy">{t('aacSettings.gameUseAiEnergy')}</SelectItem>
+                      <SelectItem value="off">{t('aacSettings.gameUseAiOff')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.gameStudentVoice')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.gameStudentVoiceDesc')}</p>
+                  </div>
+                  <Switch
+                    checked={appConfig.gameOptions?.studentVoice ?? true}
+                    onCheckedChange={(checked) =>
+                      setAppConfig(prev => ({ ...prev, gameOptions: { ...prev.gameOptions, studentVoice: checked } }))
+                    }
+                  />
+                </div>
+              </div>
+
               {/* Social Trainer's enable toggle lives in its own customization
                   section above (it surfaces as "Practice friend" on the home
                   board, not the Apps page). */}
