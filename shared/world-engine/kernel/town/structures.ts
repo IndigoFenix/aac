@@ -41,6 +41,14 @@ export interface StructureSpec {
    * word, because "build building farm" is not a sentence.
    */
   frame?: "building" | "room";
+  /**
+   * The INNER SYMBOL planted over the frame, when it differs from `glyph`.
+   * A structure's name and its picture are separate jobs: the name is what a
+   * resident says ("farm"), the symbol is what the lexicon can draw
+   * (`grain`). Absent = the word doubles as the symbol, which is right
+   * whenever the word IS drawable (`workshop`, `home`).
+   */
+  symbol?: string;
   /** Short display label (toasts, debug panels). */
   label: string;
   /** Dwelling vs staffed work building. Both raise through the work-interior
@@ -155,10 +163,17 @@ export function spendCosts(
 
 /**
  * The DISPLAY glyph for a structure: its symbol nested in the container frame
- * its spec declares (`building(farm)`), or the bare symbol when it declares
+ * its spec declares (`building(grain)`), or the bare symbol when it declares
  * none. Boards and option lists render this; TTS and the parser keep
  * `spec.glyph`, which is the actual word.
+ *
+ * The nested symbol is `spec.symbol` when the row declares one, else the word
+ * itself. They diverge whenever a structure's NAME is not a drawable symbol —
+ * "farm" is a word the lexicon has no picture for, while `grain` is a picture
+ * with no ambition to be the name. Before the split, every such row rendered
+ * its plate around a ❓.
  */
 export function structureDisplayGlyph(spec: StructureSpec): string {
-  return spec.frame ? `${spec.frame}(${spec.glyph})` : spec.glyph;
+  const symbol = spec.symbol ?? spec.glyph;
+  return spec.frame ? `${spec.frame}(${symbol})` : symbol;
 }

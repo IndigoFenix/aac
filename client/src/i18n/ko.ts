@@ -2505,6 +2505,8 @@ export const ko = {
     buttonSizeBalanced: "균형 (기본)",
     buttonSizeSmIcon: "작은 아이콘, 큰 텍스트",
     buttonSizeMinIcon: "아이콘과 글자 크기가 같음",
+    thoroughStartup: "철저한 세션 시작",
+    thoroughStartupDesc: "변경 사항이 없을 때 저장된 계획을 재사용하는 대신, 세션을 시작할 때마다 AI의 세션 계획을 처음부터 다시 생성합니다. 시작은 느리지만 항상 완전히 최신 상태입니다.",
     singleGlyphButtons: "단일 기호 버튼",
     singleGlyphButtonsDesc: "AI가 생성하는 버튼을 하나의 기호나 구문으로 제한합니다. 의사소통 초보자에게 유용합니다.",
     glyphInputTranslation: "음성의 글리프 변환",

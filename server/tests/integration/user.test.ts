@@ -6,8 +6,17 @@
  */
 
 import { describe, it, expect, afterEach } from '@jest/globals';
-import { truncateAll } from '../helpers/db.js';
-import { userService, userRepository } from '../helpers/factories.js';
+import { eq } from 'drizzle-orm';
+import { truncateAll, db } from '../helpers/db.js';
+import { userService, userRepository, makeUser } from '../helpers/factories.js';
+import { personRepository } from '../../repositories/personRepository.js';
+import {
+  users,
+  persons,
+  personChatRooms,
+  personChats,
+  personChatRoomParticipants,
+} from '@shared/schema';
 
 describe('User integration', () => {
   afterEach(truncateAll);
@@ -96,6 +105,47 @@ describe('User integration', () => {
         'whatever',
       );
       expect(result).toBeNull();
+    });
+  });
+
+  describe('deleteUser', () => {
+    it('removes the person facet: rooms they created survive creator-nulled; their messages and persons row go', async () => {
+      const target = await makeUser();
+      const other = await makeUser();
+      const targetPerson = await personRepository.getOrCreateForUser(target.id);
+      const otherPerson = await personRepository.getOrCreateForUser(other.id);
+
+      // Room the target user created, with a message from each side.
+      const [room] = await db.insert(personChatRooms).values({
+        instituteId: 'inst-delete-user-test', isDirect: false, createdByPersonId: targetPerson.id,
+      } as any).returning();
+      await db.insert(personChatRoomParticipants).values([
+        { roomId: room.id, personId: targetPerson.id },
+        { roomId: room.id, personId: otherPerson.id },
+      ] as any);
+      await db.insert(personChats).values({
+        roomId: room.id, senderPersonId: targetPerson.id, body: 'from target',
+      } as any);
+      const [otherMsg] = await db.insert(personChats).values({
+        roomId: room.id, senderPersonId: otherPerson.id, body: 'from other',
+      } as any).returning();
+
+      const ok = await userRepository.deleteUser(target.id);
+      expect(ok).toBe(true);
+
+      // User + their persons row are gone.
+      expect((await db.select().from(users).where(eq(users.id, target.id))).length).toBe(0);
+      expect((await db.select().from(persons).where(eq(persons.id, targetPerson.id))).length).toBe(0);
+      // The room survives with the creator nulled; only the other member remains.
+      const [roomRow] = await db.select().from(personChatRooms).where(eq(personChatRooms.id, room.id));
+      expect(roomRow).toBeDefined();
+      expect(roomRow.createdByPersonId).toBeNull();
+      const remaining = await db.select().from(personChatRoomParticipants)
+        .where(eq(personChatRoomParticipants.roomId, room.id));
+      expect(remaining.map((p) => p.personId)).toEqual([otherPerson.id]);
+      // The target's message is gone; the other member's survives.
+      const msgs = await db.select().from(personChats).where(eq(personChats.roomId, room.id));
+      expect(msgs.map((m) => m.id)).toEqual([otherMsg.id]);
     });
   });
 

@@ -196,14 +196,18 @@ describe("live-harvest regrow (dueHarvestRegrowth / armHarvestRegrow)", () => {
 });
 
 describe("embodiment rule — bodyHeightM is the data flip", () => {
-  it("a plant with bodyHeightM stands as a grown flora body; oak/rock stay boxes", () => {
+  it("a plant with bodyHeightM stands as a grown flora body; minerals stay boxes", () => {
     const apple = appleTree();
     expect(wildFeatureEmbodied(apple)).toBe(true);
     expect(wildFeatureContainerId(apple)).toBe("flora:apple_tree:wild:apple_tree_0");
+    // OAK embodied (one tree authority, 2026-07-30): a wild oak stands as a
+    // real grown body — the same species the flora streaming field renders,
+    // so a session twin materializing under a suppressed scenery instance IS
+    // the same tree. Still purely the bodyHeightM data flip, never a name rule.
     const oak: WildernessFeature = { id: "wild:oak_0", species: "oak", x: 0, y: 0, stock: { wood: 3 } };
     const rock: WildernessFeature = { id: "wild:rock_0", species: "rock", x: 0, y: 0, stock: { stone: 1 } };
-    expect(wildFeatureEmbodied(oak)).toBe(false);
-    expect(wildFeatureContainerId(oak)).toBe("wild:oak_0"); // the box keeps its own id
+    expect(wildFeatureEmbodied(oak)).toBe(true);
+    expect(wildFeatureContainerId(oak)).toBe("flora:oak:wild:oak_0");
     expect(wildFeatureEmbodied(rock)).toBe(false); // minerals never embody
   });
 });

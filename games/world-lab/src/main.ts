@@ -38,7 +38,8 @@ import { createSurfaceChart, type SurfacePoint } from "@shared/world-engine/spac
 import { OWNS_MATERIAL_STATE } from "@shared/world-engine/space/space-sky";
 import { bootLivingTown, bootStructure, bootTownEmbedded, bootWildernessQuest, type QuestBoot, type EmbeddedTown, type SharedBoard, type BoardHandlers } from "./quest-boot";
 import { bootWilderness, faunaForBiome, wildMixForBiome, WILD_SIDE, type WildernessGround } from "./wilderness-boot";
-import { createFloraField, type FloraField } from "./flora-field";
+import { createFloraField, floraTreesNear, FLORA_TREE_SPECIES, type FloraField } from "./flora-field";
+import { makeFeature, wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness";
 import { createTradeRoads, type TradeRoads, type TownSpliceSpec } from "./trade-roads";
 import { createRiverRibbons, type RiverRibbons } from "./river-ribbons";
 import {
@@ -631,6 +632,7 @@ function snapshotLiveFoundedSite(): void {
 function disposeWilderness(): void {
   if (embedWild) traceWalk(`disposeWilderness (groundedIn=${groundedIn})`);
   snapshotLiveFoundedSite();
+  clearFloraTwins(); // every twin dies with its session — all scenery again
   embedWild?.dispose();
   embedWild = null;
   if (wildRoot) { wildRoot.parent?.remove(wildRoot); wildRoot = null; }
@@ -732,7 +734,13 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
           {
             seed: (cell * 2654435761) >>> 0,
             fauna: faunaForBiome(biome),
-            wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0),
+            // ONE TREE AUTHORITY: the flora field's streamed trees become
+            // this session's interactive features (syncFloraTwins) — the
+            // biome mix must not scatter a SECOND, unrelated population of
+            // the same species. Everything the field doesn't render (rocks,
+            // fruit plants, animals) still comes from the mix.
+            wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0)
+              .filter(m => m.species !== FLORA_TREE_SPECIES),
             spirit: spirit !== null,
             ...(docSessionScale() ? { scale: docSessionScale() } : {}),
             // Nearby planet cities as trade partners for a site FOUNDED out
@@ -1610,6 +1618,85 @@ function maybeHandoffGround(): void {
   }
 }
 
+// ── FLORA TWINS (one tree authority) ────────────────────────────────────────
+// The streamed flora field DRAWS the planet's trees; the wilderness session
+// makes the near ones REAL: every streamed tree within WILD_TWIN_R of the
+// player (walker or glide) materializes as an ordinary wilderness feature at
+// its exact spot — hover/jump-on/products/felling through the same engine
+// code a flat region runs — and its scenery instance hides (setTwinHidden).
+// Walk away and an untouched twin releases back to scenery; a part-harvested
+// one stays standing (its state must not evaporate); a FELLED one keeps its
+// instance hidden for the rest of the mount, so the tree you cut down does
+// not respawn behind you as scenery.
+const WILD_TWIN_R = 80;
+/** instance key (`face:tx:ty:i`) → live feature id. */
+const wildTwins = new Map<string, string>();
+/** Instances whose feature was consumed (felled) — hidden for the mount. */
+const wildTwinFelled = new Set<string>();
+function twinRng(instKey: string): () => number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < instKey.length; i++) {
+    h ^= instKey.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let a = h >>> 0; // mulberry32 — the scatter convention
+  return () => {
+    a += 0x6d2b79f5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function clearFloraTwins(): void {
+  if (!wildTwins.size && !wildTwinFelled.size) return;
+  wildTwins.clear();
+  wildTwinFelled.clear();
+  flora?.setTwinHidden(new Set());
+}
+function syncFloraTwins(playerWorld: THREE.Vector3): void {
+  const q = embedWild?.quest;
+  if (!q || !wildAnchor || !flora || !wildPoint || floraBodyId !== wildPoint.body.id) {
+    clearFloraTwins(); // no session (or another body's field) — all scenery
+    return;
+  }
+  const sess = q.session;
+  const w = sess.wilderness;
+  if (!w) return;
+  const near = floraTreesNear(wildPoint.body, playerWorld, WILD_TWIN_R);
+  const nearKeys = new Set(near.map(t => t.key));
+  wildAnchor.updateWorldMatrix(true, false);
+  // STAND UP trees entering the radius (world → chunk-sim coords; stock
+  // rolled off the instance key, so a re-entry re-rolls the same tree).
+  for (const t of near) {
+    if (wildTwins.has(t.key) || wildTwinFelled.has(t.key)) continue;
+    const local = wildAnchor.worldToLocal(t.world);
+    const id = `wild:${FLORA_TREE_SPECIES}_${t.key}`;
+    const f = makeFeature(id, FLORA_TREE_SPECIES, { x: local.x, y: local.z }, twinRng(t.key));
+    if (q.addWildFeature(f)) wildTwins.set(t.key, id);
+  }
+  // RELEASE / FELL bookkeeping for standing twins.
+  for (const [instKey, id] of wildTwins) {
+    const f = w.features.find(g => g.id === id);
+    if (!f) {
+      // Gone from the session = consumed (fellIfConsumed) — scenery stays
+      // hidden where the stump would be.
+      wildTwins.delete(instKey);
+      wildTwinFelled.add(instKey);
+      continue;
+    }
+    if (nearKeys.has(instKey)) continue;
+    // Out of range: release back to scenery — unless MUTATED (part-taken
+    // stock or an armed regrow clock); that state stays standing.
+    const live = sess.containerStock.get(wildFeatureContainerId(f));
+    const untouched =
+      !f.regrowAt && !!live &&
+      Object.keys({ ...live, ...f.stock }).every(k => (live[k] ?? 0) === (f.stock[k] ?? 0));
+    if (untouched && q.removeWildFeature(id)) wildTwins.delete(instKey);
+  }
+  flora.setTwinHidden(new Set([...wildTwins.keys(), ...wildTwinFelled]));
+}
+
 /** Drive the world-fixed flora streamer: tiles load around the ground point
  *  under the player whenever we're low over a baked walkable body — airborne
  *  (forests visible on approach) or grounded (impostors resolve near the
@@ -1624,6 +1711,7 @@ function driveFlora(dt: number, playerWorld: THREE.Vector3): void {
   if (!body || !body.walkable || !body.geography || nb.altitude > FLORA_ALT_M) return;
   if (floraBodyId !== body.id) {
     flora?.dispose();
+    clearFloraTwins(); // twin keys are per-field; a fresh field starts clean
     flora = createFloraField(renderer, body);
     floraBodyId = body.id;
   }
@@ -1634,6 +1722,9 @@ function driveFlora(dt: number, playerWorld: THREE.Vector3): void {
     playerWorld,
     liveViz ? { world: liveViz.mesh.getWorldPosition(_wildPos), r: 600 } : undefined,
   );
+  // The near trees BECOME entities (and their scenery hides) — the same
+  // ground point drives both, so the swap tracks the player exactly.
+  syncFloraTwins(playerWorld);
 }
 
 // ── INTERCITY ROADS + CARAVANS (planet/routes.ts + trade-roads.ts) ─────────

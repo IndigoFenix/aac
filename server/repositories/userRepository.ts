@@ -4,6 +4,13 @@ import {
   inviteCodes,
   creditTransactions,
   passwordResetTokens,
+  persons,
+  personChatRooms,
+  personChats,
+  personChatRoomParticipants,
+  personChatPushTokens,
+  callSessions,
+  callParticipants,
   type User,
   type InsertUser,
 } from "@shared/schema";
@@ -183,6 +190,26 @@ export class UserRepository {
       await db
         .delete(passwordResetTokens)
         .where(eq(passwordResetTokens.userId, id));
+
+      // Person facet (person-chat + calls). Users get a persons row
+      // auto-provisioned on creation; without this cleanup the users delete
+      // below fails on persons_user_id_users_id_fk. Rooms the user created
+      // survive for their other members with the creator nulled
+      // (createdByPersonId is write-only provenance — nothing reads it);
+      // the user's own messages, call rows, and memberships are removed.
+      const person = await personRepository.getByUserId(id);
+      if (person) {
+        await db.update(personChatRooms)
+          .set({ createdByPersonId: null })
+          .where(eq(personChatRooms.createdByPersonId, person.id));
+        await db.delete(personChats).where(eq(personChats.senderPersonId, person.id));
+        await db.delete(callParticipants).where(eq(callParticipants.personId, person.id));
+        await db.delete(callSessions).where(eq(callSessions.initiatedByPersonId, person.id));
+        await db.delete(personChatRoomParticipants).where(eq(personChatRoomParticipants.personId, person.id));
+        await db.delete(persons).where(eq(persons.id, person.id));
+      }
+      // Push tokens are user-keyed (device delivery targets) — FK to users.
+      await db.delete(personChatPushTokens).where(eq(personChatPushTokens.userId, id));
 
       // Finally delete the user
       await db.delete(users).where(eq(users.id, id));

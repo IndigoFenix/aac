@@ -267,32 +267,77 @@ export const TOWN_PLAY_ECONOMY: EconomyDoc = {
  */
 export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
   {
+    // `symbol` on the next three rows: "house" / "farm" / "market" are WORDS
+    // the glyph lexicon has no picture for, so each names the symbol that
+    // stands for it — the dwelling, the crop, the coin. Without them the plate
+    // framed a ❓.
     type: "house", glyph: "house", label: "house", role: "house",
-    frame: "building",
+    frame: "building", symbol: "home",
     footprint: { w: 9, d: 8 },
     program: { sleepCells: 2, wet: true, kitchen: true },
     jobs: 0, costs: { wood: 6 }, buildDays: 1, color: "#a8875f", default: true,
   },
   {
     type: "farm", glyph: "farm", label: "farm", role: "work",
-    frame: "building",
+    frame: "building", symbol: "grain",
     footprint: { w: 18, d: 12 },
     program: { store: true }, economy: "farm",
     jobs: 2, costs: { wood: 8 }, buildDays: 2, color: "#7d9c53", default: true,
   },
   {
     type: "market", glyph: "market", label: "market", role: "work",
-    frame: "building",
+    frame: "building", symbol: "money",
     footprint: { w: 14, d: 10 },
     program: {}, // an open hall — the stalls ARE the floor
     jobs: 2, costs: { wood: 10, stone: 4 }, buildDays: 2, color: "#c9803a", default: true,
   },
   {
     type: "workshop", glyph: "workshop", label: "workshop", role: "work",
-    frame: "building",
+    frame: "building", symbol: "workbench",
     footprint: { w: 10, d: 8 },
     program: { store: true },
     jobs: 2, costs: { wood: 6, stone: 2 }, buildDays: 1.5, color: "#8a7fae", default: true,
+  },
+  // ── THE PLACE-MAKING BUILDINGS ──────────────────────────────────────
+  // Each is one row: a footprint, a program, and the STATION that makes it
+  // what it is (`stations` — the seam workExtraStationDefs already served,
+  // now with fixtures to put through it). The room its fixture stands in
+  // derives the room kind, and the room derives the building's character, so
+  // "a building with an anvil in it" and "a smithy" are the same fact
+  // reached from either direction.
+  //
+  // Not `default: true` on all four: the SMITHY and the WEAVER ride the
+  // existing craft economy and ship, while the TEMPLE and the LIBRARY are
+  // civic buildings with no economic half yet (no `economy` key, no goods
+  // flow) — they are catalog rows a world doc can unlock, which is what
+  // `default: false` means.
+  {
+    type: "smithy", glyph: "smithy", label: "smithy", role: "work",
+    frame: "building", symbol: "anvil",
+    footprint: { w: 11, d: 9 },
+    program: { store: true }, stations: ["anvil"],
+    jobs: 2, costs: { wood: 6, stone: 6 }, buildDays: 2, color: "#6f6b66", default: true,
+  },
+  {
+    type: "weaver", glyph: "weaver", label: "weaver", role: "work",
+    frame: "building", symbol: "loom",
+    footprint: { w: 10, d: 9 },
+    program: { store: true }, stations: ["loom"],
+    jobs: 2, costs: { wood: 8 }, buildDays: 1.5, color: "#a97fa2", default: true,
+  },
+  {
+    type: "library", glyph: "library", label: "library", role: "work",
+    frame: "building", symbol: "shelf",
+    footprint: { w: 12, d: 10 },
+    program: {}, stations: ["shelf"], // an open reading hall
+    jobs: 1, costs: { wood: 10, stone: 4 }, buildDays: 2, color: "#7f93ae", default: false,
+  },
+  {
+    type: "temple", glyph: "temple", label: "temple", role: "work",
+    frame: "building", symbol: "altar",
+    footprint: { w: 13, d: 11 },
+    program: {}, stations: ["altar"], // the hall IS the room
+    jobs: 1, costs: { wood: 8, stone: 12 }, buildDays: 3, color: "#c8bfa4", default: false,
   },
   {
     // THE EMPTY SHELL (pipeline ⑤b): a building with NO role — completes

@@ -544,7 +544,11 @@ export const aacSettings = pgTable("aac_settings", {
   chatAgentPrompt: jsonb("chat_agent_prompt").$type<string[]>(), // CUSTOM list (caretaker-requested behaviors)
   autoAacPrompt: jsonb("auto_aac_prompt").$type<string[]>(), // AUTO list (AI-generated student notes)
   modelOverride: text("model_override"), // AI model override (e.g., 'chatgpt5')
-  startupMode: integer("startup_mode").default(0), // DEPRECATED: no behavioral effect — startup is always thorough. Kept (selectable/saveable) for settings compatibility.
+  // Startup mode: 0 = quick (default) — reuse cached session-plan sections from
+  // aac_session_plans when their input hashes still match, regenerating only
+  // stale groups; 1 = thorough — regenerate every group fresh each session
+  // (still written back to the cache). See server/services/dual-agent/session-plan.ts.
+  startupMode: integer("startup_mode").default(0),
 
   // Voice settings
   voiceType: text("voice_type"), // AI voice: 'auto', 'man', 'woman', 'boy', 'girl'
@@ -729,6 +733,26 @@ export const aacSettings = pgTable("aac_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_aac_settings_student_id").on(table.studentId),
+]);
+
+// Cached AAC session-plan sections (the thorough-startup enhancer's output),
+// one row per student. Each group column holds { hash, sections, generatedAt }
+// (situations holds an ARRAY of such entries, one per weekday/day-part/schedule
+// slot, LRU-capped) — see PlanGroupEntry in
+// server/services/dual-agent/session-plan.ts. The hash encodes every input the
+// group's prompt consumed, so a stale group is detected by recomputing the
+// hash at session start; content is DERIVED data (regenerable at any time from
+// the student record), so erasure follows the student row like other PHI.
+export const aacSessionPlans = pgTable("aac_session_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull().unique(),
+  identity: jsonb("identity"), // PlanGroupEntry | null
+  situations: jsonb("situations").default([]), // PlanGroupEntry[] (LRU-capped)
+  goals: jsonb("goals"), // PlanGroupEntry | null
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_aac_session_plans_student_id").on(table.studentId),
 ]);
 
 // =============================================================================
@@ -2128,7 +2152,10 @@ export const personChatRooms = pgTable("person_chat_rooms", {
   instituteId: varchar("institute_id").notNull(),
   name: text("name"),
   isDirect: boolean("is_direct").default(false).notNull(),
-  createdByPersonId: varchar("created_by_person_id").references(() => persons.id).notNull(),
+  // Nullable: write-only provenance (nothing reads it). Erasure of the creator
+  // nulls it on surviving rooms so shared rooms outlive their creator — see
+  // studentErasureService / userRepository.deleteUser.
+  createdByPersonId: varchar("created_by_person_id").references(() => persons.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
 }, (table) => [

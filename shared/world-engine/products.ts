@@ -67,6 +67,12 @@ const CATALOGUE: NaturalSource[] = [
   {
     species: "oak",
     kind: "plant",
+    // EMBODIED (one tree authority): a wild oak stands as a real grown body —
+    // the same species blueprint the flora streaming field renders, so a
+    // session twin materializing under a suppressed flora instance is the
+    // same tree. Height matches the field's OAK_H. The box `feature` stays
+    // as the fallback presentation for sources that lose their body.
+    bodyHeightM: 4.6,
     feature: { icon: "🌳", radiusM: 0.7 },
     products: [
       {

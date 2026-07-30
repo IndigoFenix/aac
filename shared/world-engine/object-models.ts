@@ -636,6 +636,125 @@ const RECIPES: Record<string, Recipe> = {
     part(ctx, new THREE.BoxGeometry(r * 0.7, r * 0.04, r * 0.16), iron, [r * 0.25, slabTop + r * 0.14, -r * 0.05]);
   },
 
+  // ── THE PLACE-MAKING FIXTURES ─────────────────────────────────────────
+  // The four stations that make a room a forge / shrine / weaving room /
+  // study (stations.ts). No emissive fire on any of them: a forge's glow and
+  // an altar's candles are exactly the bright-moving-highlight class we keep
+  // out of a child's field of view, and none of these pieces needs light to
+  // read as itself. The oven's static ember is the one existing exception and
+  // it stays the exception.
+
+  "fixture:anvil": (ctx) => {
+    const { r } = ctx;
+    // A smith's anvil on its stump: the classic waisted body with the horn
+    // reaching out over the FRONT (+x), set on a sawn log.
+    const iron = mat(ctx, "#3a3936", { roughness: 0.5, metalness: 0.45 });
+    const face = mat(ctx, "#55534e", { roughness: 0.35, metalness: 0.5 });
+    const log = mat(ctx, "#6b4d2b", { roughness: 0.9, tint: true });
+    const stumpTop = -r * 0.15;
+    // The stump — a squat log with a couple of tools leaning on it.
+    part(ctx, new THREE.CylinderGeometry(r * 0.62, r * 0.7, r * 1.5, 14), log, [0, -r * 0.9, 0]);
+    // The anvil: waisted base, narrow throat, broad face.
+    part(ctx, new THREE.BoxGeometry(r * 0.95, r * 0.18, r * 0.8), iron, [0, stumpTop + r * 0.09, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.5, r * 0.28, r * 0.45), iron, [0, stumpTop + r * 0.32, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.25, r * 0.22, r * 0.62), face, [0, stumpTop + r * 0.57, 0]);
+    // The HORN, tapering forward off the face; the square heel behind it.
+    part(ctx, new THREE.ConeGeometry(r * 0.28, r * 0.6, 12), face,
+      [r * 0.88, stumpTop + r * 0.57, 0], [0, 0, -Math.PI / 2]);
+    part(ctx, new THREE.BoxGeometry(r * 0.2, r * 0.2, r * 0.5), face, [-r * 0.7, stumpTop + r * 0.57, 0]);
+    // A hammer resting on the face and a pair of tongs hung off the stump.
+    part(ctx, new THREE.CylinderGeometry(r * 0.05, r * 0.05, r * 0.5, 8), log,
+      [-r * 0.1, stumpTop + r * 0.7, r * 0.18], [Math.PI / 2, 0, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.14, r * 0.14, r * 0.3), iron, [-r * 0.1, stumpTop + r * 0.72, -r * 0.1]);
+    part(ctx, new THREE.BoxGeometry(r * 0.06, r * 0.9, r * 0.05), iron, [-r * 0.55, -r * 0.6, r * 0.5], [0.2, 0, 0.25]);
+  },
+
+  "fixture:altar": (ctx) => {
+    const { r } = ctx;
+    // A stone altar table: a plinth, a broad slab, a runner of cloth over it,
+    // and two unlit candles. Deliberately UNMARKED by any tradition — no
+    // symbol is carved on it, because the world's cultures are authored, and a
+    // shrine's meaning belongs to the people who gather at it, not the mesh.
+    const stone = mat(ctx, "#a9a49a", { roughness: 0.85 });
+    const shadowStone = mat(ctx, "#8d887e", { roughness: 0.9 });
+    const cloth = mat(ctx, "#9c3f4a", { roughness: 0.95, tint: true });
+    const wax = mat(ctx, "#e8e0cc", { roughness: 0.8 });
+    const top = r * 0.5;
+    part(ctx, new THREE.BoxGeometry(r * 0.9, r * 1.4, r * 1.3), shadowStone, [0, -r * 0.25, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.5, r * 0.18, r * 1.8), stone, [0, top, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.1, r * 0.26, r * 1.9), stone, [0, -r * 0.95, 0]);
+    // The cloth runner hanging over the FRONT edge (+x).
+    part(ctx, new THREE.BoxGeometry(r * 0.7, r * 0.03, r * 1.5), cloth, [r * 0.3, top + r * 0.11, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.03, r * 0.55, r * 1.5), cloth, [r * 0.74, top - r * 0.16, 0]);
+    // Two candle stubs at the back corners — wax only, never a flame.
+    for (const cz of [-0.55, 0.55] as const) {
+      part(ctx, new THREE.CylinderGeometry(r * 0.09, r * 0.1, r * 0.45, 10), wax,
+        [-r * 0.4, top + r * 0.32, r * cz]);
+    }
+  },
+
+  "fixture:loom": (ctx) => {
+    const { r } = ctx;
+    // An upright warp-weighted loom: two posts, a top beam, the warp running
+    // down it, and finished cloth rolled at the bottom. Faces +x (the weaver
+    // stands at the front and works the shed).
+    const frame = mat(ctx, "#7a5a34", { roughness: 0.85, tint: true });
+    const beam = mat(ctx, "#5f451f", { roughness: 0.85 });
+    const warp = mat(ctx, "#d8cba9", { roughness: 0.95 });
+    const web = mat(ctx, "#b3765a", { roughness: 0.95, tint: true });
+    for (const pz of [-0.8, 0.8] as const) {
+      part(ctx, new THREE.BoxGeometry(r * 0.18, r * 2.6, r * 0.18), frame, [0, r * 0.3, r * pz]);
+      part(ctx, new THREE.BoxGeometry(r * 0.7, r * 0.14, r * 0.14), frame, [r * 0.25, -r * 0.95, r * pz]);
+    }
+    part(ctx, new THREE.CylinderGeometry(r * 0.12, r * 0.12, r * 1.8, 10), beam,
+      [0, r * 1.55, 0], [Math.PI / 2, 0, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.1, r * 0.1, r * 1.7, 10), beam,
+      [0, r * 0.15, 0], [Math.PI / 2, 0, 0]);
+    // The warp threads — a few representative strands, not a full sley.
+    for (const tz of [-0.62, -0.32, 0, 0.32, 0.62] as const) {
+      part(ctx, new THREE.BoxGeometry(r * 0.03, r * 1.3, r * 0.03), warp, [0, r * 0.85, r * tz]);
+    }
+    // The woven web growing at the bottom, and its roll.
+    part(ctx, new THREE.BoxGeometry(r * 0.06, r * 0.7, r * 1.5), web, [0, -r * 0.3, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.19, r * 0.19, r * 1.5, 12), web,
+      [0, -r * 0.78, 0], [Math.PI / 2, 0, 0]);
+  },
+
+  "fixture:shelf": (ctx) => {
+    const { r } = ctx;
+    // Open shelving against a wall (front +x): uprights, three boards, and a
+    // row of books and boxes standing on them. The OPEN case is the point —
+    // this is the container you can read the contents of at a glance, which is
+    // what makes it a library's fixture and a market's display both.
+    const wood = mat(ctx, "#7d5a35", { roughness: 0.85, tint: true });
+    const board = mat(ctx, "#96703f", { roughness: 0.8 });
+    const back = mat(ctx, "#5d4426", { roughness: 0.9 });
+    const bookMats = [
+      mat(ctx, "#7a3b3b", { roughness: 0.9 }),
+      mat(ctx, "#39566b", { roughness: 0.9 }),
+      mat(ctx, "#5c6b39", { roughness: 0.9 }),
+      mat(ctx, "#6b5539", { roughness: 0.9 }),
+    ];
+    for (const sz of [-0.92, 0.92] as const) {
+      part(ctx, new THREE.BoxGeometry(r * 0.6, r * 2.8, r * 0.16), wood, [0, r * 0.4, r * sz]);
+    }
+    part(ctx, new THREE.BoxGeometry(r * 0.08, r * 2.8, r * 1.85), back, [-r * 0.3, r * 0.4, 0]);
+    const levels = [-0.85, 0.05, 0.95, 1.75] as const;
+    for (const ly of levels) {
+      part(ctx, new THREE.BoxGeometry(r * 0.6, r * 0.09, r * 1.85), board, [0, r * ly, 0]);
+    }
+    // Books leaning on the lower two shelves; a box on the top one.
+    let pick = 0;
+    for (const ly of [levels[0], levels[1]] as const) {
+      for (let i = 0; i < 5; i++) {
+        const h = 0.45 + ((i * 7) % 3) * 0.08;
+        part(ctx, new THREE.BoxGeometry(r * 0.36, r * h, r * 0.12), bookMats[pick++ % bookMats.length]!,
+          [r * 0.02, r * (ly + 0.045 + h / 2), r * (-0.66 + i * 0.33)]);
+      }
+    }
+    part(ctx, new THREE.BoxGeometry(r * 0.42, r * 0.4, r * 0.5), wood, [0, r * (levels[2] + 0.25), -r * 0.4]);
+  },
+
   crate: (ctx) => {
     const { r } = ctx;
     part(ctx, new THREE.BoxGeometry(r * 1.7, r * 1.7, r * 1.7), mat(ctx, "#b98a4b", { roughness: 0.85, tint: true }), [0, -r * 0.15, 0]);

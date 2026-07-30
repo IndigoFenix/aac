@@ -157,6 +157,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Server-announced asleep/superseded state. While true, STT capture sends
+  // are suppressed (the server refuses the streams anyway — see the asleep
+  // gate in AgentCoordinator.startSttStream); a deliberate press wakes the
+  // server, which announces "awake" and reopens the gate.
+  const serverAsleepRef = useRef(false);
   // Periodic GPS refresh (location context). Re-queried on the monitor cadence;
   // only re-sent when the device has moved meaningfully.
   const gpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -907,8 +912,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "sleep_state_change":
           // AI invoked sleep() or end_session() — route to the engagement state machine.
           if (msg.data?.state) {
+            serverAsleepRef.current = msg.data.state === "asleep" || msg.data.state === "hibernation";
             onSleepStateChangeRef.current?.(msg.data.state, msg.data.source ?? "ai");
           }
+          break;
+
+        case "session_superseded":
+          // A newer session for this student took over (another window or
+          // device). Treat like asleep — stop uploading STT audio; a
+          // deliberate press on this window steals the session back
+          // server-side, which re-announces "awake".
+          console.warn("[useLiveSession] Session superseded by another window/device:", msg.data?.reason);
+          serverAsleepRef.current = true;
           break;
 
         case "set_fidelity":
@@ -1422,6 +1437,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       if (isTestMode) console.log("[useLiveSession] TEST MODE — using minimal relay");
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+      // Fresh connection starts awake — don't carry a stale asleep gate from a
+      // previous session into the new one (it would mute STT until the first
+      // sleep_state_change).
+      serverAsleepRef.current = false;
 
       ws.onopen = () => {
         console.log("[useLiveSession] WebSocket connected");
@@ -1990,11 +2009,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Streaming STT (Web-Speech-like): open a session, stream VAD-gated PCM during
   // speech, finalize at speech-end (carrying the acoustic + lip evidence).
+  // Suppressed while the server says asleep/superseded — the server refuses
+  // (and used to bill) these streams; ambient audio never wakes a session.
   const sendSttStreamStart = useCallback((streamId: string, language?: string) => {
+    if (serverAsleepRef.current) return;
     wsSend({ type: "stt_stream_start", streamId, language });
   }, [wsSend]);
   const sendSttStreamChunk = useCallback((streamId: string, data: string) => {
     if (!data) return;
+    if (serverAsleepRef.current) return;
     wsSend({ type: "stt_stream_chunk", streamId, data });
   }, [wsSend]);
   const sendSttStreamEnd = useCallback((streamId: string, meta?: {

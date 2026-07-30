@@ -26,6 +26,8 @@ const ALL_FIXTURES = [
   "chest", "cupboard", "table", "bed", "chair", "box",
   "barrel", "bath", "toilet", "bin", "bowl",
   "oven", "workbench", "refrigerator",
+  // The place-making stations — each the signature fixture of a room kind.
+  "anvil", "altar", "loom", "shelf",
 ] as const;
 
 // COMPILE-TIME EXHAUSTIVENESS: adding a FixtureKind without listing it here is

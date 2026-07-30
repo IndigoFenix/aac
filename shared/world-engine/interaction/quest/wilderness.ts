@@ -148,8 +148,10 @@ const CREATURE_ICONS = ["🐰", "🐻", "🐸", "🐶"] as const;
  *  stock (the tree IS its wood), harvest products rolled as the standing
  *  bearing AND its capacity ceiling. Deterministic — killStockOf rolls
  *  first, then harvestStockOf (kill-only species consume no extra rolls,
- *  so legacy oak/rock scatters stay byte-identical). */
-function makeFeature(id: string, species: string, p: { x: number; y: number }, rng: () => number): WildernessFeature {
+ *  so legacy oak/rock scatters stay byte-identical). Exported for LIVE
+ *  additions (flora twins: a host materializes a feature at a streamed
+ *  tree's exact spot, rolling its stock off a per-placement seed). */
+export function makeFeature(id: string, species: string, p: { x: number; y: number }, rng: () => number): WildernessFeature {
   const kill = killStockOf(species, rng);
   const cap = harvestStockOf(species, rng);
   const f: WildernessFeature = { id, species, x: p.x, y: p.y, stock: { ...kill, ...cap } };

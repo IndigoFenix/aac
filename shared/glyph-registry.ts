@@ -997,6 +997,29 @@ const VOCAB: VocabularyItem[] = [
   // board can name, and an unregistered word is a button with no icon.
   { key: "workbench", tKey: "aac.glyph.workbench", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛠️" },
+  // The ANVIL — the smith's fixture, and the inner symbol of every metalworking
+  // place: `building(anvil)` is the smithy, `room(anvil)` the forge-room. Named
+  // as the FIXTURE (not "smithy") because the framing supplies the place; one
+  // word serves both shells. See CONTAINER FRAMES at `building` / `room`.
+  { key: "anvil", tKey: "aac.glyph.anvil", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "⚒️",
+    imagePath: "things/furniture/anvil" },
+  // The LOOM and the SHELF — the weaver's and the reader's fixtures, the other
+  // two place-making stations. No bundled art yet, so they raster their emoji
+  // like `bath` and `toilet` did; art at things/furniture/{loom,shelf}
+  // auto-upgrades them with no code change.
+  { key: "loom", tKey: "aac.glyph.loom", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧵" },
+  { key: "shelf", tKey: "aac.glyph.shelf", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📚" },
+  // The ALTAR — the fixture a house of worship is built around, and the one
+  // word here that names a place's PURPOSE rather than a tool. 🙏 per the
+  // user's call: it is the one glyph in the set that reads across traditions
+  // without picking one (⛩️/✝️/🕌 each name a single faith; an altar is the
+  // furniture they share). Filed under things because it IS furniture — the
+  // temple is `building(altar)`, which is where the meaning lands.
+  { key: "altar", tKey: "aac.glyph.altar", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🙏" },
   { key: "soap", tKey: "aac.glyph.soap", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧼" },
   // emoji weak — toilet-paper roll emoji approximates "towel".
@@ -1023,6 +1046,12 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "💊" },
   { key: "flower", tKey: "aac.glyph.flower", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🌸" },
+  // GRAIN — the staple crop, and the inner symbol of the places that hold and
+  // process it: `building(grain)` reads granary / mill, `room(grain)` the
+  // pantry. The 🌾 emoji is the sheaf, not the field, so it stays the THING.
+  { key: "grain", tKey: "aac.glyph.grain", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🌾",
+    imagePath: "things/plants/grain" },
   { key: "camera", tKey: "aac.glyph.camera", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📷" },
   { key: "computer", tKey: "aac.glyph.computer", pos: "noun", categories: ["what"],

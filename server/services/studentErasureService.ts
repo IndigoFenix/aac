@@ -26,6 +26,7 @@ import {
   studentClassrooms,
   studentContacts,
   aacSettings,
+  aacSessionPlans,
   biometricData,
   medicalRecords,
   functionalReports,
@@ -65,6 +66,12 @@ import {
   aacUtteranceEvents,
   lettersOfMedicalNecessity,
   clinicianActivityIntervals,
+  persons,
+  personChatRooms,
+  personChats,
+  personChatRoomParticipants,
+  callSessions,
+  callParticipants,
 } from "@shared/schema";
 import { eq, and, lte, isNotNull, isNull, inArray, sql } from "drizzle-orm";
 import { activityLogService } from "./activityLogService";
@@ -422,6 +429,40 @@ export class StudentErasureService {
       await tx.delete(instituteStudents).where(eq(instituteStudents.studentId, studentId));
       await tx.delete(userStudents).where(eq(userStudents.studentId, studentId));
       await tx.delete(aacSettings).where(eq(aacSettings.studentId, studentId));
+      await tx.delete(aacSessionPlans).where(eq(aacSessionPlans.studentId, studentId));
+
+      // -------- Person facet (person-chat + calls) --------
+      // createStudent auto-provisions a persons row for every student (the
+      // person-chat identity). Without this block the students delete below
+      // fails on persons_student_id_students_id_fk, which silently broke
+      // hard-delete for every student. The student's conversational trail is
+      // their personal data under Art. 17:
+      //   - DIRECT rooms they created go entirely (roomId cascades wipe those
+      //     rooms' messages, participants, and call sessions — a 1:1 chat the
+      //     student initiated is anchored on them);
+      //   - GROUP rooms they created survive for the other members with the
+      //     creator nulled (createdByPersonId is write-only provenance —
+      //     nothing reads it);
+      //   - messages they SENT into surviving rooms are deleted;
+      //   - their call-participation rows and calls they initiated are deleted
+      //     (callId cascade removes the other participants' rows of those calls);
+      //   - finally the persons row itself. Push tokens are user-keyed, not
+      //     person-keyed, so none exist for a student facet.
+      const [personRow] = await tx.select({ id: persons.id }).from(persons).where(eq(persons.studentId, studentId));
+      if (personRow) {
+        const personId = personRow.id;
+        await tx.delete(personChatRooms).where(
+          and(eq(personChatRooms.createdByPersonId, personId), eq(personChatRooms.isDirect, true)),
+        );
+        await tx.update(personChatRooms)
+          .set({ createdByPersonId: null })
+          .where(eq(personChatRooms.createdByPersonId, personId));
+        await tx.delete(personChats).where(eq(personChats.senderPersonId, personId));
+        await tx.delete(callParticipants).where(eq(callParticipants.personId, personId));
+        await tx.delete(callSessions).where(eq(callSessions.initiatedByPersonId, personId));
+        await tx.delete(personChatRoomParticipants).where(eq(personChatRoomParticipants.personId, personId));
+        await tx.delete(persons).where(eq(persons.id, personId));
+      }
 
       // -------- Biometric data — one-to-one via students.biometricDataId --------
       // Pull the row we're about to drop so we can also delete the linked

@@ -2505,6 +2505,8 @@ export const zh = {
     buttonSizeBalanced: "平衡（默认）",
     buttonSizeSmIcon: "较小图标，较大文字",
     buttonSizeMinIcon: "图标与文字同样大小",
+    thoroughStartup: "彻底会话启动",
+    thoroughStartupDesc: "每次开始会话时都从头重新生成 AI 的会话计划，而不是在没有变化时重用已保存的计划。启动较慢，但计划始终完全最新。",
     singleGlyphButtons: "单符号按钮",
     singleGlyphButtonsDesc: "将AI生成的按钮限制为单个符号或短语。适合初学交流者。",
     glyphInputTranslation: "语音符号翻译",

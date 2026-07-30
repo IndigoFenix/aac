@@ -240,6 +240,7 @@ import {
   wildFeatureEmbodied,
   type WildernessContent,
   type WildernessCreature,
+  type WildernessFeature,
   type WildernessParams,
   type WildSource,
 } from "./wilderness.js";
@@ -1554,6 +1555,17 @@ export interface QuestHost3D {
    *  while the external-cursor opt-out is on — WORLD coords into `out`, null
    *  when there is none (no gaze, opt-out off, or no 3D view yet). */
   cursorWorld(out: THREE.Vector3): { hovering: boolean; select: number } | null;
+  /** FLORA TWINS (one tree authority): materialize a wilderness feature in
+   *  the LIVE session — a streamed scenery tree the player nears becomes a
+   *  real gatherable entity at its exact spot (the host that streams the
+   *  scenery hides that instance). No-op (false) without a wilderness
+   *  session or when the id already stands. */
+  addWildFeature(f: WildernessFeature): boolean;
+  /** Release a live wilderness feature back to scenery: remove its stand-in
+   *  (box object or embodied body), its container maps and its scatter
+   *  record. False when no such feature stands (e.g. already felled — the
+   *  caller keeps its scenery instance hidden then). */
+  removeWildFeature(id: string): boolean;
   /** SPIRIT LADDER: the render camera (null before the session starts). */
   readonly camera: THREE.PerspectiveCamera | null;
   /** DIAGNOSTICS: one-line snapshot — the view's cutaway pass + this
@@ -14896,45 +14908,50 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  a real mind. The feature's face and girth come from its natural source
    *  (products.ts), never a kind switch. The player walker starts at the
    *  centre clearing. */
+  /** Stand ONE wilderness feature in the live world (the per-feature body of
+   *  the seeding loop, extracted so flora twins can materialize live). A
+   *  GROWN BODY where the registry declares one (step ④: bodyHeightM on a
+   *  plant — the orchard blueprints carry their fruit visibly): a rooted
+   *  flora body, exactly the town-orchard convention; the container rides
+   *  the body (containerStandpoint). Everything else keeps the placeholder
+   *  box. */
+  function spawnWildFeature(session: QuestSession, f: WildernessFeature) {
+    if (!world) return;
+    const src = naturalSourceOf(f.species);
+    const key = wildFeatureContainerId(f);
+    if (wildFeatureEmbodied(f)) {
+      world.addNpc({
+        id: key,
+        x: f.x,
+        y: f.y,
+        species: f.species,
+        behavior: { movement: "wander", wanderRadius: 0, home: { x: f.x, y: f.y }, speed: 0, conversationRadius: 3 },
+      });
+    } else {
+      world.addObject({
+        id: f.id,
+        x: f.x,
+        y: f.y,
+        shape: "box",
+        radius: src?.feature?.radiusM ?? 0.6,
+        fixture: "chest",
+        openable: true,
+        facing: 0,
+        interactions: [],
+        contains: [{ relation: "in", capacity: 12 }],
+        iconRef: src?.feature?.icon ?? "🌳",
+        glyph: Object.keys(f.stock)[0],
+      });
+    }
+    session.containers.set(key, "in");
+    session.containerStock.set(key, { ...f.stock });
+    session.containerOwner.set(key, null); // nature is nobody's
+  }
+
   function seedWilderness(session: QuestSession) {
     const w = session.wilderness;
     if (!w || !world) return;
-    for (const f of w.features) {
-      const src = naturalSourceOf(f.species);
-      const key = wildFeatureContainerId(f);
-      // A GROWN BODY where the registry declares one (step ④: bodyHeightM
-      // on a plant — the orchard blueprints carry their fruit visibly): a
-      // rooted flora body, exactly the town-orchard convention; the
-      // container rides the body (containerStandpoint). Everything else
-      // keeps the placeholder box.
-      if (wildFeatureEmbodied(f)) {
-        world.addNpc({
-          id: key,
-          x: f.x,
-          y: f.y,
-          species: f.species,
-          behavior: { movement: "wander", wanderRadius: 0, home: { x: f.x, y: f.y }, speed: 0, conversationRadius: 3 },
-        });
-      } else {
-        world.addObject({
-          id: f.id,
-          x: f.x,
-          y: f.y,
-          shape: "box",
-          radius: src?.feature?.radiusM ?? 0.6,
-          fixture: "chest",
-          openable: true,
-          facing: 0,
-          interactions: [],
-          contains: [{ relation: "in", capacity: 12 }],
-          iconRef: src?.feature?.icon ?? "🌳",
-          glyph: Object.keys(f.stock)[0],
-        });
-      }
-      session.containers.set(key, "in");
-      session.containerStock.set(key, { ...f.stock });
-      session.containerOwner.set(key, null); // nature is nobody's
-    }
+    for (const f of w.features) spawnWildFeature(session, f);
     for (const c of w.creatures) {
       // PRODUCT ANIMAL (step ④ hunting/husbandry): a walking natural source.
       // Its yield rides the ONE container path — the body id keys the stock
@@ -19877,6 +19894,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
     cursorWorld(out) {
       return questView?.externalCursorWorld?.(out) ?? null;
+    },
+    addWildFeature(f) {
+      const s = sess;
+      const w = s?.wilderness;
+      if (!s || !w || !world) return false;
+      if (w.features.some((g) => g.id === f.id)) return false;
+      w.features.push(f);
+      spawnWildFeature(s, f);
+      return true;
+    },
+    removeWildFeature(id) {
+      const s = sess;
+      const w = s?.wilderness;
+      if (!s || !w || !world) return false;
+      const fi = w.features.findIndex((f) => f.id === id);
+      if (fi < 0) return false;
+      const f = w.features[fi]!;
+      const key = wildFeatureContainerId(f);
+      // Mirror fellIfConsumed's teardown — same stand-in, same maps — but
+      // unconditionally: this is a RELEASE back to scenery, not a felling.
+      if (container?.objId === key) closeContainer();
+      if (world.state.objects[key]) world.removeObject(key);
+      else if (world.state.avatars[key]) world.removeNpc(key);
+      w.features.splice(fi, 1);
+      s.containers.delete(key);
+      s.containerStock.delete(key);
+      s.containerOwner.delete(key);
+      return true;
     },
     get camera() {
       return questView?.camera ?? null;

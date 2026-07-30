@@ -262,6 +262,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [languageLevel, setLanguageLevel] = useState(DEFAULT_LANGUAGE_LEVEL_INT);
+  // startupMode: false = 0 (quick — cached session plan), true = 1 (thorough — regenerate every session)
+  const [thoroughStartup, setThoroughStartup] = useState(false);
   const [singleGlyphButtons, setSingleGlyphButtons] = useState(false);
   const [glyphInputTranslation, setGlyphInputTranslation] = useState(false);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
@@ -378,6 +380,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setLanguageLevel(aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT);
+      setThoroughStartup((aac?.startupMode ?? 0) === 1);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
@@ -429,6 +432,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalUseLocalTts = aac?.useLocalTts ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalLanguageLevel = aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT;
+      const originalThoroughStartup = (aac?.startupMode ?? 0) === 1;
       const originalSingleGlyphButtons = aac?.singleGlyphButtons ?? false;
       const originalGlyphInputTranslation = aac?.glyphInputTranslation ?? false;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
@@ -473,6 +477,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         useLocalTts !== originalUseLocalTts ||
         iconTextRatio !== originalIconTextRatio ||
         languageLevel !== originalLanguageLevel ||
+        thoroughStartup !== originalThoroughStartup ||
         singleGlyphButtons !== originalSingleGlyphButtons ||
         glyphInputTranslation !== originalGlyphInputTranslation ||
         eyegazeEnabled !== originalEyegazeEnabled ||
@@ -497,7 +502,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -518,6 +523,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useLocalTts?: boolean;
       iconTextRatio: number;
       languageLevel: number;
+      startupMode: number;
       singleGlyphButtons: boolean;
       glyphInputTranslation: boolean;
       eyegazeEnabled: boolean;
@@ -578,6 +584,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useLocalTts,
       iconTextRatio,
       languageLevel,
+      startupMode: thoroughStartup ? 1 : 0,
       singleGlyphButtons,
       glyphInputTranslation,
       eyegazeEnabled,
@@ -628,6 +635,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setLanguageLevel(aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT);
+      setThoroughStartup((aac?.startupMode ?? 0) === 1);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
@@ -974,6 +982,24 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                     </Button>
                   )}
                 </div>
+              </div>
+
+              {/* Startup mode — quick (cached session plan) vs thorough (fresh every session) */}
+              <div className="flex items-center justify-between border-t pt-4">
+                <div className="flex-1 pr-4">
+                  <Label htmlFor="thorough-startup" className="text-sm font-medium">
+                    {t('aacSettings.thoroughStartup')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('aacSettings.thoroughStartupDesc')}
+                  </p>
+                </div>
+                <Switch
+                  id="thorough-startup"
+                  checked={thoroughStartup}
+                  onCheckedChange={setThoroughStartup}
+                  data-testid="switch-thorough-startup"
+                />
               </div>
             </CardContent>
           </CollapsibleSection>

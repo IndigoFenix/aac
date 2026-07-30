@@ -125,6 +125,10 @@ export interface EnhancedPromptSections {
   persona?: string;
   sessionGoals?: string;
   gestureOverrides?: string;
+  /** LEGACY single-agent example dialogues. The session-plan enhancer no
+   *  longer generates these two (only the legacy Interactive prompt consumed
+   *  them, and it falls back to its static examples) — the fields remain so
+   *  old persisted sessions still deserialize. */
   interactModeExamples?: string;
   assistModeExamples?: string;
   sentenceInterpretationExamples?: string;

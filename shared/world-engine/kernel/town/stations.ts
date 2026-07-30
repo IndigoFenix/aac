@@ -40,7 +40,19 @@ export type StationKind =
   // The FOOD box: the goods corner raises a refrigerator for the `food` good
   // instead of a generic chest, so the pantry is legible at a glance. The
   // anachronism is deliberate and temporary — tech levels come later.
-  | "refrigerator";
+  | "refrigerator"
+  // ── THE PLACE-MAKING STATIONS ─────────────────────────────────────────
+  // Four fixtures whose whole job is to MAKE A ROOM WHAT IT IS. Each one is
+  // the signature piece of a room kind the town could name but never build
+  // (programs.ts): an anvil makes a forge, an altar a shrine, a loom a weaving
+  // room, a shelf a study. They arrive as a set because the room vocabulary
+  // they unlock is the point — furniture defines function, so a new kind of
+  // place starts as a new thing standing in a room.
+  //
+  // They reach a building through `StructureSpec.stations` (the seam
+  // workExtraStationDefs was written for), NOT through WORK_STATIONS: a row
+  // there stands in EVERY work building, and only the smithy wants the anvil.
+  | "anvil" | "altar" | "loom" | "shelf";
 
 /**
  * WHAT EACH STATION KIND *IS* — the spec-side authority for object properties
@@ -72,6 +84,20 @@ export const STATION_PROPERTIES: Readonly<Record<StationKind, readonly ObjectPro
   toilet: ["furniture"],
   // The pet's floor dish — a serving vessel, not room furniture.
   bowl: ["tableware"],
+  // The smith's transform — metal in, tools out. `appliance` is what earns it
+  // the front-approached reach contract (furniture-use.ts derives the contract
+  // from these properties), which is exactly how a body works an anvil.
+  anvil: ["furniture", "appliance"],
+  // The weaver's transform — thread in, cloth out.
+  loom: ["furniture", "appliance"],
+  // Open shelving: it holds things where you can SEE them, which is why a
+  // library's shelf and a market's display are the same fixture. A container
+  // that never closes — `openable` stays false on its rows.
+  shelf: ["furniture", "container"],
+  // The altar is the one station here that TRANSFORMS nothing and HOLDS
+  // nothing. It is plain furniture on purpose: what happens at it is what the
+  // people gathered there are doing, not a mechanic the fixture owns.
+  altar: ["furniture"],
 } as const;
 
 /** Walls of a cell, in the house's door-local frame: `far` faces the
@@ -266,6 +292,24 @@ export const CLUSTERS: Readonly<Record<string, ClusterDef>> = {
    *  a household that built theirs later). The bench + wood store need a
    *  real working floor. */
   workshop: { key: "workshop", privacy: 1, minW: 3.0, minD: 3.0 },
+  // ── THE PLACE-MAKING CLUSTERS ────────────────────────────────────────
+  // The room kinds the four new stations name. All privacy 1: each is a
+  // room you ENTER for its purpose — never a through-room (privacy 0) and
+  // never a sleeping soul's own retreat (2).
+  /** The FORGE — hot work needs the workshop's floor and then some: a smith
+   *  swings, and the fire wants clearance the bench never did. */
+  forge: { key: "forge", privacy: 1, minW: 3.2, minD: 3.2 },
+  /** The WEAVING room — a loom is LONG, so the floor is asymmetric: it wants
+   *  a run of wall more than it wants depth. */
+  weaving: { key: "weaving", privacy: 1, minW: 3.2, minD: 2.8 },
+  /** The STUDY — shelves along the walls and a lane to read in. A storeroom's
+   *  floors, because that is geometrically what it is (the difference is that
+   *  you can see what's on the shelves). */
+  study: { key: "study", privacy: 1, minW: 2.4, minD: 2.4 },
+  /** The SHRINE — the smallest of the four. A household shrine is a niche;
+   *  a temple's is the whole hall, and the hall is the BUILDING's floor, not
+   *  this cluster's. */
+  shrine: { key: "shrine", privacy: 1, minW: 2.2, minD: 2.2 },
 } as const;
 
 /**
@@ -519,6 +563,15 @@ export const WORK_PROGRAMS: Readonly<Record<string, BuildingProgram>> = {
   /** Prospective content: an inn is a dwelling program multiplied —
    *  proven through the solver today, staged when the economy grows one. */
   inn: { sleepCells: 6, wet: true, kitchen: true, store: true },
+  // The PLACE-MAKING programs. The smithy and the weaver keep a stock band
+  // (metal and thread arrive as goods and wait); the temple and the library
+  // stay OPEN halls for the same reason the market does — the floor IS the
+  // point. Their defining fixture arrives through `StructureSpec.stations`,
+  // so the room it stands in DERIVES the kind (programs.ts) with no program
+  // field per room type.
+  smithy: { store: true },
+  library: {},
+  temple: {},
 } as const;
 
 /** The program of a work type — unregistered types get the generic

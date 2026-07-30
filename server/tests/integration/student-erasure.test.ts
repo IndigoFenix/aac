@@ -23,6 +23,7 @@ import {
 import { runStudentErasureSweep } from '../../services/studentErasureCron.js';
 import { runActivityLogRetentionCheck } from '../../services/activityLogRetentionCron.js';
 import { s3Service } from '../../services/storage/s3-service.js';
+import { personRepository } from '../../repositories/personRepository.js';
 import {
   students,
   userStudents,
@@ -36,6 +37,12 @@ import {
   aacUtteranceEvents,
   lettersOfMedicalNecessity,
   clinicianActivityIntervals,
+  persons,
+  personChatRooms,
+  personChats,
+  personChatRoomParticipants,
+  callSessions,
+  callParticipants,
 } from '@shared/schema';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -277,6 +284,91 @@ describe('student erasure', () => {
       expect(
         (await db.select().from(clinicianActivityIntervals).where(eq(clinicianActivityIntervals.id, interval.id))).length,
       ).toBe(0);
+    });
+
+    it('erases the person facet: direct rooms deleted, group rooms creator-nulled, messages/calls/persons removed', async () => {
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+      // createStudent fires person provisioning fire-and-forget; resolve both
+      // facets deterministically (getOrCreate is idempotent on the unique index).
+      const studentPerson = await personRepository.getOrCreateForStudent(student.id);
+      const ownerPerson = await personRepository.getOrCreateForUser(owner.id);
+
+      // A room the STUDENT created — both participants, a message, and a call.
+      const [studentRoom] = await db.insert(personChatRooms).values({
+        instituteId: 'inst-erasure-test', isDirect: true, createdByPersonId: studentPerson.id,
+      } as any).returning();
+      await db.insert(personChatRoomParticipants).values([
+        { roomId: studentRoom.id, personId: studentPerson.id },
+        { roomId: studentRoom.id, personId: ownerPerson.id },
+      ] as any);
+      await db.insert(personChats).values({
+        roomId: studentRoom.id, senderPersonId: studentPerson.id, body: 'hi from student',
+      } as any);
+      const [call] = await db.insert(callSessions).values({
+        roomId: studentRoom.id, instituteId: 'inst-erasure-test', initiatedByPersonId: studentPerson.id,
+      } as any).returning();
+      await db.insert(callParticipants).values({ callId: call.id, personId: ownerPerson.id } as any);
+
+      // A room someone ELSE created — the student sent one message into it.
+      const [ownerRoom] = await db.insert(personChatRooms).values({
+        instituteId: 'inst-erasure-test', isDirect: false, createdByPersonId: ownerPerson.id,
+      } as any).returning();
+      await db.insert(personChatRoomParticipants).values([
+        { roomId: ownerRoom.id, personId: ownerPerson.id },
+        { roomId: ownerRoom.id, personId: studentPerson.id },
+      ] as any);
+      const [studentMsg] = await db.insert(personChats).values({
+        roomId: ownerRoom.id, senderPersonId: studentPerson.id, body: 'student in owner room',
+      } as any).returning();
+      const [ownerMsg] = await db.insert(personChats).values({
+        roomId: ownerRoom.id, senderPersonId: ownerPerson.id, body: 'owner message',
+      } as any).returning();
+
+      // A GROUP room the STUDENT created — must survive for its other members.
+      const [studentGroupRoom] = await db.insert(personChatRooms).values({
+        instituteId: 'inst-erasure-test', isDirect: false, createdByPersonId: studentPerson.id,
+      } as any).returning();
+      await db.insert(personChatRoomParticipants).values([
+        { roomId: studentGroupRoom.id, personId: studentPerson.id },
+        { roomId: studentGroupRoom.id, personId: ownerPerson.id },
+      ] as any);
+      await db.insert(personChats).values({
+        roomId: studentGroupRoom.id, senderPersonId: studentPerson.id, body: 'group msg from student',
+      } as any);
+
+      await studentErasureService.softDeleteStudent(student.id, owner.id, null);
+      await db
+        .update(students)
+        .set({ scheduledHardDeleteAt: new Date(Date.now() - ONE_DAY_MS) })
+        .where(eq(students.id, student.id));
+      const result = await runStudentErasureSweep();
+      expect(result.failed).toEqual([]);
+      expect(result.hardDeleted).toBe(1);
+
+      // Student-created room + everything in it is gone (cascade).
+      expect((await db.select().from(personChatRooms).where(eq(personChatRooms.id, studentRoom.id))).length).toBe(0);
+      expect((await db.select().from(callSessions).where(eq(callSessions.id, call.id))).length).toBe(0);
+      // The student's message in the OTHER room is gone; the owner's survives.
+      expect((await db.select().from(personChats).where(eq(personChats.id, studentMsg.id))).length).toBe(0);
+      expect((await db.select().from(personChats).where(eq(personChats.id, ownerMsg.id))).length).toBe(1);
+      // The other person's room survives with only them still in it.
+      expect((await db.select().from(personChatRooms).where(eq(personChatRooms.id, ownerRoom.id))).length).toBe(1);
+      const remaining = await db.select().from(personChatRoomParticipants)
+        .where(eq(personChatRoomParticipants.roomId, ownerRoom.id));
+      expect(remaining.map((p) => p.personId)).toEqual([ownerPerson.id]);
+      // The GROUP room the student created survives with the creator nulled
+      // and the student's message + membership scrubbed.
+      const [groupRow] = await db.select().from(personChatRooms).where(eq(personChatRooms.id, studentGroupRoom.id));
+      expect(groupRow).toBeDefined();
+      expect(groupRow.createdByPersonId).toBeNull();
+      expect((await db.select().from(personChats).where(eq(personChats.roomId, studentGroupRoom.id))).length).toBe(0);
+      const groupRemaining = await db.select().from(personChatRoomParticipants)
+        .where(eq(personChatRoomParticipants.roomId, studentGroupRoom.id));
+      expect(groupRemaining.map((p) => p.personId)).toEqual([ownerPerson.id]);
+      // The student's persons row is gone; the owner's persists.
+      expect((await db.select().from(persons).where(eq(persons.studentId, student.id))).length).toBe(0);
+      expect((await db.select().from(persons).where(eq(persons.id, ownerPerson.id))).length).toBe(1);
     });
 
     it('writes a student_erasure_completed audit log', async () => {

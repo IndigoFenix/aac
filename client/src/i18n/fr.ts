@@ -2505,6 +2505,8 @@ export const fr = {
     buttonSizeBalanced: "Équilibré (par défaut)",
     buttonSizeSmIcon: "Icônes plus petites, texte plus grand",
     buttonSizeMinIcon: "Icône et texte de même taille",
+    thoroughStartup: "Démarrage de séance approfondi",
+    thoroughStartupDesc: "Reconstruit le plan de séance de l'IA à chaque démarrage, au lieu de réutiliser le plan enregistré quand rien n'a changé. Démarrage plus lent, mais toujours entièrement à jour.",
     singleGlyphButtons: "Boutons à un seul symbole",
     singleGlyphButtonsDesc: "Limite les boutons générés par l'IA à un seul symbole ou expression. Utile pour les communicateurs débutants.",
     glyphInputTranslation: "Traduction des paroles en symboles",

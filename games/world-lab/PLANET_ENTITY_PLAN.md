@@ -280,11 +280,41 @@ it is wide but mechanical once ownership is right.
     laws run identically on flat regions and planets (browser-verified:
     idle→shrink→dart→grow on a pointer jump; `rep` owner + head-snap hover
     on a wild creature in open country).
-  REMAINING for full parity (the user's tree complaint): the flora FIELD's
-  trees are render-only scenery — only the session's own wildMix scatter is
-  interactive, and the two populations are unrelated. One tree authority
-  (session scatter = flora placements, flora suppressed inside the live
-  chunk) is the next slice.
+  **SLICE 1.6 — ONE TREE AUTHORITY (2026-07-30 — SHIPPED; live browser
+  check pending, blocked by a parallel session's reload churn).** The flora
+  FIELD's streamed trees and the session's interactive scatter were two
+  unrelated populations ("trees behave as walls"). Now ONE scatter function
+  decides what grows where and the near trees ARE entities:
+  - flora-field.ts: the per-tile deterministic scatter extracted into
+    `tileScatterOf` (pure, cached) — `buildTile` renders from it and
+    `floraTreesNear(body, world, r)` exposes the SAME placements with stable
+    instance keys (`face:tx:ty:i`). `FloraField.setTwinHidden(keys)` zero-
+    scales individual instances (billboard + near-real meshes, diffed by
+    tile).
+  - products.ts: oak gets `bodyHeightM: 4.6` (matches the field's OAK_H) —
+    a wild oak now stands EMBODIED as a real grown flora body (the registry's
+    own "step ④ closes this" note; fellIfConsumed already removes bodies).
+    Test pin updated: `wildFeatureEmbodied(oak)` is now true.
+  - quest-host.ts: `addWildFeature` / `removeWildFeature` — the per-feature
+    seeding body extracted (`spawnWildFeature`) so a feature can materialize
+    or release LIVE; removal mirrors fellIfConsumed's teardown.
+  - render3d.ts updateSpark: hovering a `flora:`/`fauna:`-bodied avatar
+    snaps the spark to its species' registry height (the humanoid head
+    constant put it inside a 4.6 m trunk).
+  - main.ts `syncFloraTwins` (from driveFlora, ~4 Hz, walker AND glide):
+    streamed trees within WILD_TWIN_R (80 m) of the player materialize as
+    features at their exact spots (stock rolled off the instance key —
+    deterministic re-entry) and their scenery instances hide; leaving the
+    radius releases UNTOUCHED twins back to scenery, MUTATED ones stay
+    standing, FELLED ones keep their instance hidden for the mount. The
+    biome wildMix stops scattering its own oaks on the planet path
+    (`FLORA_TREE_SPECIES` filter) — no second population.
+  KNOWN SOFT EDGES: twin height is the registry constant while flora
+  instances vary ±25 % (a subtle resize at the 80 m boundary); a felled
+  tree returns as pristine scenery only after the whole chunk unmounts (no
+  wild-mutation persistence layer yet); cube-face-edge tiles can key
+  differently between the field's focus face and the twin enumeration
+  (rare double/hole at face seams).
 
 - **2 ◻ Live-anchor rebase parity.** Give the embedded town the same
   floating-origin/rebase treatment the wilderness has (`WorldHost.rebase` +

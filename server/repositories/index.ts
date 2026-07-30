@@ -22,3 +22,4 @@ export { shareInviteRepository, ShareInviteRepository } from "./shareInviteRepos
 export { crmRepository, CrmRepository } from "./crmRepository";
 export { studentDeviceRepository, StudentDeviceRepository } from "./studentDeviceRepository";
 export { locationRepository, LocationRepository } from "./locationRepository";
+export { aacSessionPlanRepository, AacSessionPlanRepository } from "./aacSessionPlanRepository";

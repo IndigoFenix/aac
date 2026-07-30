@@ -591,7 +591,7 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "startupMode",
       type: "string",
       title: "Startup Mode",
-      description: "Deprecated — no behavioral effect; startup is always thorough. Kept for settings compatibility.",
+      description: "Session startup mode: 0 = quick (default; reuses cached session-plan sections when the student's data/schedule haven't changed — fastest startup), 1 = thorough (regenerates the full session plan fresh every session).",
     },
     // Privacy
     allowReadProgress: {

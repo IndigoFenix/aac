@@ -2505,6 +2505,8 @@ export const yue = {
     buttonSizeBalanced: "平衡（預設）",
     buttonSizeSmIcon: "細啲圖示，大啲文字",
     buttonSizeMinIcon: "圖示同文字一樣大",
+    thoroughStartup: "徹底課堂啟動",
+    thoroughStartupDesc: "每次開始課堂都由頭重新生成 AI 嘅課堂計劃，而唔係喺冇變化嗰陣重用已儲存嘅計劃。開始會慢啲，但計劃永遠係最新。",
     singleGlyphButtons: "單符號按鈕",
     singleGlyphButtonsDesc: "將AI生成嘅按鈕限制為單一符號或短語。啱啱開始學溝通嘅人士適用。",
     glyphInputTranslation: "語音符號翻譯",

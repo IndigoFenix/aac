@@ -120,90 +120,50 @@ function dirOfUV(face: number, u: number, v: number, out: THREE.Vector3): THREE.
   return out.normalize();
 }
 
-// ── Per-tile state ──────────────────────────────────────────────────────────
+// ── The scatter authority (pure, deterministic) ─────────────────────────────
+// ONE function decides what grows where: the render field builds its instanced
+// meshes from it, and the wilderness session derives its interactive FLORA
+// TWINS from it — the tree you see IS the entity you touch. Anything that
+// changes this function changes both in lockstep.
 interface Placement { x: number; z: number; y: number; yaw: number; v: number }
-interface Tile {
-  group: THREE.Group;
-  /** Tile centre in BODY-LOCAL coords (distance tests). */
-  center: THREE.Vector3;
+interface TileScatter {
+  /** Tile-centre body-local unit direction + ground height there. */
+  dir: THREE.Vector3;
+  h0: number;
+  /** Tile frame (UP → dir) — placements are tile-local in this frame. */
+  quat: THREE.Quaternion;
   placements: Map<string, Placement[]>;
-  billboards: THREE.InstancedMesh[];
-  real: THREE.InstancedMesh[] | null;
-  near: boolean;
 }
+/** The one TWINNABLE species — what the wilderness session materializes and
+ *  the field suppresses per instance. Grass stays pure scenery. */
+export const FLORA_TREE_SPECIES = "oak";
+const UP = new THREE.Vector3(0, 1, 0);
 
-export interface FloraField {
-  /** Stream tiles around `focusWorld` (the surface point under the player);
-   *  tiles within NEAR_R of `nearWorld` swap impostors for real geometry.
-   *  `exclude` skips tiles near a live town anchor (its own flora rules). */
-  ensure(focusWorld: THREE.Vector3, nearWorld: THREE.Vector3 | null, exclude?: { world: THREE.Vector3; r: number }): void;
-  dispose(): void;
-}
-
-export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialBody): FloraField | null {
+/** Deterministic per-tile scatter, cached (pure function of body + tile).
+ *  Null = open water at the tile centre. */
+const scatterCache = new Map<string, TileScatter | null>();
+function tileScatterOf(body: CelestialBody, face: number, tx: number, ty: number): TileScatter | null {
+  const cacheKey = `${body.id}:${face}:${tx}:${ty}`;
+  const hit = scatterCache.get(cacheKey);
+  if (hit !== undefined) return hit;
   const geo = body.geography;
-  if (!geo || !body.walkable) return null;
+  if (!geo) return null; // not cached — geography may still be baking
   const surface = geo.surface;
   const R = body.radius;
   const seed = (geo.spec?.geology?.seed ?? 1) >>> 0;
-  const uTile = TILE_M / R; // face-plane tile step (exact at face centre)
-  const tiles = new Map<string, Tile>();
-  const _local = new THREE.Vector3();
-  const _near = new THREE.Vector3();
-  const _excl = new THREE.Vector3();
-  const _dir = new THREE.Vector3();
-  const _m = new THREE.Matrix4();
-  const _q = new THREE.Quaternion();
-  const _p = new THREE.Vector3();
-  const _s = new THREE.Vector3();
-  const UP = new THREE.Vector3(0, 1, 0);
-
-  /** Instance a species' placements with either representation's sizing. */
-  const buildMesh = (
-    placements: Placement[],
-    geomHeightM: number,
-    targetH: number,
-    geometry: THREE.BufferGeometry,
-    material: THREE.Material,
-  ): THREE.InstancedMesh => {
-    const mesh = new THREE.InstancedMesh(geometry, material, placements.length);
-    for (let i = 0; i < placements.length; i++) {
-      const pl = placements[i];
-      const s = (targetH / geomHeightM) * pl.v;
-      _q.setFromAxisAngle(UP, pl.yaw);
-      _m.compose(_p.set(pl.x, pl.y, pl.z), _q, _s.set(s, s, s));
-      mesh.setMatrixAt(i, _m);
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    // Instances spread across the tile — the geometry's own bounding sphere
-    // would cull them wrongly.
-    mesh.frustumCulled = false;
-    return mesh;
-  };
-
-  const buildTile = (face: number, tx: number, ty: number, key: string): void => {
-    const dir = dirOfUV(face, (tx + 0.5) * uTile, (ty + 0.5) * uTile, _dir).clone();
-    const h0raw = surface.heightAt([dir.x, dir.y, dir.z]);
-    if (h0raw < 0) {
-      // Open water — an empty tile entry so we don't re-test every pass.
-      tiles.set(key, { group: new THREE.Group(), center: dir.multiplyScalar(R), placements: new Map(), billboards: [], real: null, near: false });
-      return;
-    }
+  const uTile = TILE_M / R;
+  const dir = dirOfUV(face, (tx + 0.5) * uTile, (ty + 0.5) * uTile, new THREE.Vector3());
+  const h0raw = surface.heightAt([dir.x, dir.y, dir.z]);
+  let result: TileScatter | null = null;
+  if (h0raw >= 0) {
     const cell = geo.grid.topo.cellAt ? geo.grid.topo.cellAt([dir.x, dir.y, dir.z]) : 0;
     const biomeRaw = geo.grid.fields.biome ? geo.grid.fields.biome[cell] : 0;
     const biome = Math.max(0, Math.min(3, Math.round(biomeRaw)));
     const h0 = Math.max(0, h0raw);
-
-    const group = new THREE.Group();
-    group.name = `flora:${key}`;
-    group.position.copy(dir).multiplyScalar(R + h0);
-    group.quaternion.setFromUnitVectors(UP, dir);
-    body.group.add(group);
-    group.updateWorldMatrix(true, false);
-
+    const quat = new THREE.Quaternion().setFromUnitVectors(UP, dir);
     // Tile-local terrain (the same tangent-walk sampler towns use).
-    const east = new THREE.Vector3(1, 0, 0).applyQuaternion(group.quaternion);
-    const north = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion);
+    const east = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+    const north = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
     const _g = new THREE.Vector3();
     const dirAt = (x: number, z: number): [number, number, number] => {
       _g.copy(dir).multiplyScalar(R).addScaledVector(east, x).addScaledVector(north, z).normalize();
@@ -214,7 +174,6 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
       return (h - h0) - (x * x + z * z) / (2 * R);
     };
     const waterAt = (x: number, z: number): boolean => surface.heightAt(dirAt(x, z)) < 0;
-
     // Deterministic scatter — a pure function of the tile address + the seed.
     const rng = mulberry(hashTile(face, tx, ty, seed));
     const half = TILE_M / 2;
@@ -233,17 +192,180 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
     const placements = new Map<string, Placement[]>();
     placements.set("oak", scatter(OAK_COUNT[biome]));
     placements.set("grass", scatter(GRASS_COUNT[biome]));
+    result = { dir, h0, quat, placements };
+  }
+  scatterCache.set(cacheKey, result);
+  if (scatterCache.size > 512) {
+    for (const k of scatterCache.keys()) {
+      scatterCache.delete(k);
+      if (scatterCache.size <= 384) break;
+    }
+  }
+  return result;
+}
 
-    const billboards: THREE.InstancedMesh[] = [];
-    for (const [species, pls] of placements) {
+/** A streamed TREE near a world point — its stable instance key
+ *  (`face:tx:ty:i`, the suppression/twin address) and its WORLD position.
+ *  The same placements the field renders; a caller materializing session
+ *  twins from this list hides exactly these instances (setTwinHidden). */
+export interface FloraTreeRef { key: string; world: THREE.Vector3 }
+const _ftnLocal = new THREE.Vector3();
+export function floraTreesNear(body: CelestialBody, world: THREE.Vector3, r: number): FloraTreeRef[] {
+  const geo = body.geography;
+  if (!geo || !body.walkable) return [];
+  const R = body.radius;
+  const uTile = TILE_M / R;
+  body.group.updateWorldMatrix(true, false);
+  const local = body.group.worldToLocal(_ftnLocal.copy(world));
+  const rl = local.length();
+  if (rl < 1e-3) return [];
+  const dir = local.clone().divideScalar(rl);
+  const face = faceOf(dir);
+  const { u, v } = faceUV(face, dir);
+  const ctx = Math.floor(u / uTile);
+  const cty = Math.floor(v / uTile);
+  const reach = Math.ceil(r / TILE_M) + 1;
+  const out: FloraTreeRef[] = [];
+  for (let dx = -reach; dx <= reach; dx++) {
+    for (let dy = -reach; dy <= reach; dy++) {
+      const tx = ctx + dx;
+      const ty = cty + dy;
+      const sc = tileScatterOf(body, face, tx, ty);
+      if (!sc) continue;
+      const pls = sc.placements.get(FLORA_TREE_SPECIES) ?? [];
+      for (let i = 0; i < pls.length; i++) {
+        const pl = pls[i]!;
+        const p = new THREE.Vector3(pl.x, pl.y, pl.z)
+          .applyQuaternion(sc.quat)
+          .addScaledVector(sc.dir, R + sc.h0);
+        body.group.localToWorld(p);
+        if (p.distanceTo(world) <= r) out.push({ key: `${face}:${tx}:${ty}:${i}`, world: p });
+      }
+    }
+  }
+  return out;
+}
+
+// ── Per-tile state ──────────────────────────────────────────────────────────
+interface Tile {
+  /** Tile address (`face:tx:ty`) — prefix of its instances' twin keys. */
+  key: string;
+  group: THREE.Group;
+  /** Tile centre in BODY-LOCAL coords (distance tests). */
+  center: THREE.Vector3;
+  placements: Map<string, Placement[]>;
+  billboards: THREE.InstancedMesh[];
+  real: THREE.InstancedMesh[] | null;
+  near: boolean;
+  /** The TREE meshes (billboard + near-real) — the suppression rewrite
+   *  targets; geomH is each mesh's un-scaled geometry height. */
+  oak: { mesh: THREE.InstancedMesh; geomH: number }[];
+}
+
+export interface FloraField {
+  /** Stream tiles around `focusWorld` (the surface point under the player);
+   *  tiles within NEAR_R of `nearWorld` swap impostors for real geometry.
+   *  `exclude` skips tiles near a live town anchor (its own flora rules). */
+  ensure(focusWorld: THREE.Vector3, nearWorld: THREE.Vector3 | null, exclude?: { world: THREE.Vector3; r: number }): void;
+  /** SUPPRESS individual tree instances (twin keys `face:tx:ty:i` from
+   *  floraTreesNear) — the wilderness session stands a real gatherable
+   *  entity there, so the scenery copy must not also draw. Declarative:
+   *  pass the full current set; instances leaving it re-appear. */
+  setTwinHidden(hidden: ReadonlySet<string>): void;
+  dispose(): void;
+}
+
+export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialBody): FloraField | null {
+  const geo = body.geography;
+  if (!geo || !body.walkable) return null;
+  const R = body.radius;
+  const uTile = TILE_M / R; // face-plane tile step (exact at face centre)
+  const tiles = new Map<string, Tile>();
+  const _local = new THREE.Vector3();
+  const _near = new THREE.Vector3();
+  const _excl = new THREE.Vector3();
+  const _dir = new THREE.Vector3();
+  const _m = new THREE.Matrix4();
+  const _q = new THREE.Quaternion();
+  const _p = new THREE.Vector3();
+  const _s = new THREE.Vector3();
+  /** Session-twinned instances (`face:tx:ty:i`) drawn at zero scale — the
+   *  wilderness session stands the real entity there (setTwinHidden). */
+  let twinHidden: ReadonlySet<string> = new Set();
+
+  /** Write a mesh's instance matrices; `hiddenAt` scales an instance to ~0. */
+  const writeMatrices = (
+    mesh: THREE.InstancedMesh,
+    placements: Placement[],
+    geomHeightM: number,
+    targetH: number,
+    hiddenAt?: (i: number) => boolean,
+  ): void => {
+    for (let i = 0; i < placements.length; i++) {
+      const pl = placements[i]!;
+      const s = hiddenAt?.(i) ? 1e-6 : (targetH / geomHeightM) * pl.v;
+      _q.setFromAxisAngle(UP, pl.yaw);
+      _m.compose(_p.set(pl.x, pl.y, pl.z), _q, _s.set(s, s, s));
+      mesh.setMatrixAt(i, _m);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+
+  /** Instance a species' placements with either representation's sizing. */
+  const buildMesh = (
+    placements: Placement[],
+    geomHeightM: number,
+    targetH: number,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    hiddenAt?: (i: number) => boolean,
+  ): THREE.InstancedMesh => {
+    const mesh = new THREE.InstancedMesh(geometry, material, placements.length);
+    writeMatrices(mesh, placements, geomHeightM, targetH, hiddenAt);
+    // Instances spread across the tile — the geometry's own bounding sphere
+    // would cull them wrongly.
+    mesh.frustumCulled = false;
+    return mesh;
+  };
+
+  /** The tile's tree-hiding mask — reads the CURRENT twin set at write time. */
+  const oakHiddenAt = (tileKey: string) => (i: number): boolean => twinHidden.has(`${tileKey}:${i}`);
+
+  const buildTile = (face: number, tx: number, ty: number, key: string): void => {
+    // The shared scatter authority — the exact placements a session twin
+    // derives from (floraTreesNear), so suppression keys line up 1:1.
+    const sc = tileScatterOf(body, face, tx, ty);
+    if (!sc) {
+      // Open water — an empty tile entry so we don't re-test every pass.
+      const dir = dirOfUV(face, (tx + 0.5) * uTile, (ty + 0.5) * uTile, _dir).clone();
+      tiles.set(key, { key, group: new THREE.Group(), center: dir.multiplyScalar(R), placements: new Map(), billboards: [], real: null, near: false, oak: [] });
+      return;
+    }
+    const group = new THREE.Group();
+    group.name = `flora:${key}`;
+    group.position.copy(sc.dir).multiplyScalar(R + sc.h0);
+    group.quaternion.copy(sc.quat);
+    body.group.add(group);
+    group.updateWorldMatrix(true, false);
+
+    const tile: Tile = {
+      key, group, center: sc.dir.clone().multiplyScalar(R + sc.h0),
+      placements: sc.placements, billboards: [], real: null, near: false, oak: [],
+    };
+    for (const [species, pls] of sc.placements) {
       if (!pls.length) continue;
       const a = speciesAssets(renderer, species);
-      const mesh = buildMesh(pls, a.impostor.heightM, species === "oak" ? OAK_H : GRASS_H, a.billboardGeom, a.billboardMat);
+      const isTree = species === FLORA_TREE_SPECIES;
+      const mesh = buildMesh(
+        pls, a.impostor.heightM, isTree ? OAK_H : GRASS_H, a.billboardGeom, a.billboardMat,
+        isTree ? oakHiddenAt(key) : undefined,
+      );
       mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
       group.add(mesh);
-      billboards.push(mesh);
+      tile.billboards.push(mesh);
+      if (isTree) tile.oak.push({ mesh, geomH: a.impostor.heightM });
     }
-    tiles.set(key, { group, center: dir.clone().multiplyScalar(R + h0), placements, billboards, real: null, near: false });
+    tiles.set(key, tile);
   };
 
   const setNear = (tile: Tile, near: boolean): void => {
@@ -254,10 +376,15 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
       for (const [species, pls] of tile.placements) {
         if (!pls.length) continue;
         const a = speciesAssets(renderer, species);
-        const mesh = buildMesh(pls, a.realHeightM, species === "oak" ? OAK_H : GRASS_H, a.realGeom, a.realMat);
+        const isTree = species === FLORA_TREE_SPECIES;
+        const mesh = buildMesh(
+          pls, a.realHeightM, isTree ? OAK_H : GRASS_H, a.realGeom, a.realMat,
+          isTree ? oakHiddenAt(tile.key) : undefined,
+        );
         mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
         tile.group.add(mesh);
         tile.real.push(mesh);
+        if (isTree) tile.oak.push({ mesh, geomH: a.realHeightM });
       }
     }
     for (const m of tile.billboards) m.visible = !near;
@@ -314,6 +441,22 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
         const d = tile.center.distanceTo(focusLocal);
         if (d > UNLOAD_R) { disposeTile(tile, key); continue; }
         setNear(tile, nearLocal !== null && tile.center.distanceTo(nearLocal) < NEAR_R);
+      }
+    },
+    setTwinHidden(hidden) {
+      // Diff old vs new, group changed instance keys by TILE, rewrite only
+      // the loaded tiles that actually changed (a matrix write per tree —
+      // tiles hold ≤ dozens, this is nothing).
+      const changedTiles = new Set<string>();
+      const tileOf = (instKey: string): string => instKey.slice(0, instKey.lastIndexOf(":"));
+      for (const k of twinHidden) if (!hidden.has(k)) changedTiles.add(tileOf(k));
+      for (const k of hidden) if (!twinHidden.has(k)) changedTiles.add(tileOf(k));
+      twinHidden = hidden;
+      for (const tKey of changedTiles) {
+        const tile = tiles.get(tKey);
+        if (!tile || !tile.oak.length) continue;
+        const pls = tile.placements.get(FLORA_TREE_SPECIES) ?? [];
+        for (const o of tile.oak) writeMatrices(o.mesh, pls, o.geomH, OAK_H, oakHiddenAt(tKey));
       }
     },
     dispose() {

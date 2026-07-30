@@ -32,7 +32,7 @@ import { shouldSuppressEmergency, DEFAULT_EMERGENCY_ALARM_FRAME_WINDOW_MS } from
 import { SpeakerAgent, type SpeakerOutputEvent } from "./speaker-agent";
 import { getContactById, listCallableContacts, resolveContactPersonId } from "../call/callContacts";
 import { isPersonOnline } from "../realtime/room-registry";
-import { registerLiveSession, unregisterLiveSession, type LiveSessionHandle } from "./live-session-registry";
+import { registerLiveSession, unregisterLiveSession, shouldStealFrom, type LiveSessionHandle } from "./live-session-registry";
 import { personRepository } from "../../repositories/personRepository";
 import { resolveAddressee } from "./addressee";
 import { getPeerFacePhotoDataUrl } from "./peer-photo";
@@ -133,6 +133,7 @@ import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceW
 import { ProcessingIndicators } from "./processing-indicators";
 import { isCapabilityActive } from "./capability-gate";
 import { buildHeardSpeechTurn, clarityTag, confidenceLabel, describeSttConfidence } from "./speech-text";
+import { decideGuessingEnter } from "./guessing-enter-policy";
 import { transcribeSegments, createStreamingSession, type SttStreamSession } from "../voice/google-stt-service";
 import { fuseSpeakerLikelihood, renderSpeakerLikelihood, type LipFace, type IdentifiedFaceLite, type VoiceCandidate, type SpeakerLikelihood } from "@shared/aac/speaker-fusion";
 import { renderSceneForObserver, type SceneSnapshot, type IdentifiedForScene } from "@shared/aac/scene-state";
@@ -804,6 +805,14 @@ export class AgentCoordinator {
    *  see wakeFromSleep(). Without this, presses hit a null Speaker and the
    *  AI goes permanently silent until re-initialize. */
   private asleep = false;
+  /** A newer live session for the same student took over (see
+   *  live-session-registry supersede). The session is held inert — asleep,
+   *  STT refused — until a DELIBERATE input steals it back. Ambient audio
+   *  must never flip this; only SLEEP_WAKING_MSG_TYPES do. */
+  private superseded = false;
+  /** STT stream-open requests refused while asleep/superseded — counted so
+   *  the wake path can log one summary line instead of per-refusal spam. */
+  private sttRefusedWhileAsleep = 0;
   /** Single-flight guard for wakeFromSleep so concurrent user actions
    *  (rapid presses, press + frame) don't trigger overlapping rebuilds. */
   private wakePromise: Promise<void> | null = null;
@@ -1488,6 +1497,10 @@ export class AgentCoordinator {
    *  slot when guessing ends. */
   private guessingOrigin: "conversation" | "builder" = "conversation";
   private guessingBuilderContext: { targetSlot: number | null; partialGlyph: string; category: string } | null = null;
+  /** When the word-finder entry opener was last voiced (epoch ms). Drives the
+   *  re-entry cooldown in `decideGuessingEnter` so dwell-toggle bursts don't
+   *  make the Speaker repeat the identical opener. */
+  private lastGuessingEntryVoicedAt = 0;
 
   // Cached prompts + tool configs — reused by profile transitions so we
   // don't have to walk back through buildPromptInputs on every switch.
@@ -1737,6 +1750,31 @@ export class AgentCoordinator {
     } catch (err) {
       console.warn("[AgentCoordinator] session summary generation failed:", (err as Error).message);
     }
+
+    // Session-plan refresh: the final Monitor pass above just rewrote
+    // Student_Notes, which almost always stales the cached identity group.
+    // Regenerate stale groups NOW — inside the close lifecycle, while the
+    // host is still alive — so the NEXT session's startup hits the cache
+    // instead of paying the planning wait. The rolling session summary rides
+    // along to enrich the next session_goals with continuity. Quick-mode
+    // gating lives inside thoroughStartup's cache READ; the refresh always
+    // writes so a startupMode flip starts warm.
+    const monitor = cache?.monitorAgent;
+    if (monitor?.refreshSessionPlanAfterWrapup && this.studentId) {
+      try {
+        const usage = await monitor.refreshSessionPlanAfterWrapup(cache?.state?.sessionSummary);
+        if (usage) {
+          await dualAgentService.trackHttpUsage(
+            sessionId, this.studentId, this.userId ?? undefined,
+            usage.provider, usage.model,
+            usage.promptTokens, usage.completionTokens,
+            usage.cachedTokens ?? 0, "session-plan-refresh", usage.cacheCreationTokens ?? 0,
+          );
+        }
+      } catch (err) {
+        console.warn("[AgentCoordinator] session-plan refresh failed (non-fatal):", (err as Error).message);
+      }
+    }
   }
 
   /**
@@ -1771,10 +1809,24 @@ export class AgentCoordinator {
     }
   }
 
+  /** Run a timer-driven callback inside this session's logging context.
+   *  Timer callbacks carry no ambient AsyncLocalStorage context, so their
+   *  flowNotes were silently dropped from session_debug_logs — the watchdog's
+   *  rest/sleep transitions were invisible in session forensics (the 07-20
+   *  runaway showed 562 wake attempts and zero rests; the rests happened but
+   *  never persisted). */
+  private inSessionLogContext(fn: () => void): void {
+    if (this.sessionId) {
+      runInSessionContext(this.sessionId, this.debugMode, fn);
+    } else {
+      fn();
+    }
+  }
+
   private startIdleWatchdog(): void {
     this.stopIdleWatchdog();
     this.idleWatchdogTimer = setInterval(
-      () => this.maybeIdleTransition(),
+      () => this.inSessionLogContext(() => this.maybeIdleTransition()),
       AgentCoordinator.IDLE_WATCHDOG_INTERVAL_MS,
     );
   }
@@ -1930,6 +1982,23 @@ export class AgentCoordinator {
     // a null Speaker (silent no-op) and the AI never talks again until a
     // re-initialize — see wakeFromSleep(). Ambient streaming (frames/audio)
     // and control messages don't wake; only deliberate user input does.
+    // Steal-back: a deliberate input on a SUPERSEDED window means the user is
+    // actually using THIS one — take the student registration back and force
+    // the other session inert. Ambient audio/frames never reach here (not in
+    // SLEEP_WAKING_MSG_TYPES), so windows only trade ownership on real use.
+    if (this.superseded && AgentCoordinator.SLEEP_WAKING_MSG_TYPES.has(msg.type)
+        && this.studentId && this.liveHandle) {
+      flowNote("COORDINATOR", `Deliberate input "${msg.type}" on a superseded session — taking the student session back.`);
+      this.superseded = false;
+      const displaced = registerLiveSession(this.studentId, this.liveHandle);
+      if (displaced && shouldStealFrom(displaced, this.liveHandle)) {
+        try { displaced.supersede(`user resumed on another window (session ${this.sessionId})`); } catch (err) {
+          console.warn("[AgentCoordinator] supersede on steal-back failed:", err);
+        }
+      }
+      // Fall through — the asleep gate below rebuilds the agents.
+    }
+
     if (this.asleep && AgentCoordinator.SLEEP_WAKING_MSG_TYPES.has(msg.type)) {
       flowNote("COORDINATOR", `User action "${msg.type}" arrived while asleep — rebuilding agents before routing.`);
       await this.wakeFromSleep();
@@ -2362,6 +2431,7 @@ export class AgentCoordinator {
     //    "planningSession" stage is emitted from inside the Monitor right
     //    before its (slow) thorough-startup enhancer LLM call.
     this.send({ type: "startup_progress", stage: "checkingNotes" });
+    const startupT0 = Date.now();
     const state = await dualAgentService.initializeSession(
       msg.studentId,
       this.authedUser.id,
@@ -2373,6 +2443,7 @@ export class AgentCoordinator {
       msg.gps,
       (stage) => this.send({ type: "startup_progress", stage }),
     );
+    const startupTInit = Date.now();
     this.sessionId = state.sessionId;
     this.studentId = state.studentId;
     this.userId = state.userId;
@@ -2384,11 +2455,25 @@ export class AgentCoordinator {
     if (this.sessionWasResumed) {
       console.log(`[AgentCoordinator] Resumed session ${this.sessionId} (reconnect) — startup greeting suppressed`);
     }
-    // Register so a clinician action (e.g. AAC reload) can reach this session.
+    // Register so a clinician action (e.g. AAC reload) can reach this session,
+    // and so a student never runs TWO billing sessions at once: if another live
+    // session already holds this student, it is superseded (goes inert, WS kept
+    // open — see live-session-registry for why we never close its socket).
+    this.superseded = false;
     if (this.studentId) {
       if (this.liveHandle) unregisterLiveSession(this.studentId, this.liveHandle);
-      this.liveHandle = { requestReload: () => this.requestReload() };
-      registerLiveSession(this.studentId, this.liveHandle);
+      this.liveHandle = {
+        requestReload: () => this.requestReload(),
+        supersede: (reason) => this.handleSuperseded(reason),
+        isClassroom: !!state.classroomId,
+      };
+      const displaced = registerLiveSession(this.studentId, this.liveHandle);
+      if (displaced && shouldStealFrom(displaced, this.liveHandle)) {
+        flowNote("COORDINATOR", "Another live session was already open for this student — superseding it (this connection wins).");
+        try { displaced.supersede(`a new session (${this.sessionId}) connected for the same student`); } catch (err) {
+          console.warn("[AgentCoordinator] supersede of displaced session failed:", err);
+        }
+      }
     }
     this.classroomId = state.classroomId ?? null;
     this.muteState = state.muteState;
@@ -2640,6 +2725,7 @@ export class AgentCoordinator {
     // 7. Connect Observer + Speaker in parallel. If either fails, tear down.
     //    This is the final pre-ready wait (Live WS handshakes) → "wakingUp".
     this.send({ type: "startup_progress", stage: "wakingUp" });
+    const startupTWake = Date.now();
     try {
       const agentStarts: Promise<void>[] = [];
       if (this.observer) {
@@ -2670,6 +2756,9 @@ export class AgentCoordinator {
         }));
       }
       await Promise.all(agentStarts);
+      // Per-stage startup timing — the session-plan cache work targets the
+      // session-init stage; this line makes regressions visible in the logs.
+      flowNote("COORDINATOR", `Startup timings: session-init(plan)=${startupTInit - startupT0}ms, config+prompts=${startupTWake - startupTInit}ms, live-connect=${Date.now() - startupTWake}ms, total=${Date.now() - startupT0}ms`);
     } catch (err) {
       const detail = (err as Error).message || String(err);
       console.error("[AgentCoordinator] agent connect failed:", err);
@@ -2783,6 +2872,14 @@ export class AgentCoordinator {
       flowSystemPrompt("SPEAKER", speakerPrompt);
       flowSystemPrompt("BOARD_MGR", boardManagerPrompt);
     });
+
+    // Superseded mid-initialize (another connection for this student raced in
+    // AFTER our registry entry was displaced): the agents just built above
+    // must not keep billing. Re-run the inert teardown now that they exist.
+    if (this.superseded) {
+      flowNote("COORDINATOR", "Initialize completed on an already-superseded session — tearing agents back down.");
+      this.enterSleep();
+    }
 
     // 8. Announce ready to client.
     this.state = "ready";
@@ -3854,6 +3951,19 @@ export class AgentCoordinator {
   private handleGuessingEnter(
     msg: Extract<ClientMessage, { type: "guessing_enter" }>,
   ): void {
+    const decision = decideGuessingEnter({
+      activeOrigin: this.guessingState ? this.guessingOrigin : null,
+      incomingOrigin: msg.builderContext ? "builder" : "conversation",
+      lastEntryVoicedAt: this.lastGuessingEntryVoicedAt,
+      now: Date.now(),
+    });
+    if (decision === "ignore_duplicate") {
+      // Dwell/toggle re-fire while the word-finder is already open — keep the
+      // engine (and any narrowing progress) instead of resetting to the top
+      // menu and re-voicing the opener.
+      flowNote("COORDINATOR", "guessing_enter ignored — word-finder already active (dwell/toggle re-fire).");
+      return;
+    }
     void this.wakeForGuessingIntent("guessing_enter", async () => {
       // Seed from what we know about the student: their interests (from monitor
       // memory) personalize the first board + the AI's guesses; their age keeps
@@ -3884,7 +3994,13 @@ export class AgentCoordinator {
         this.guessingBuilderContext = null;
         await this.applyConversationSeedToGuessingEngine();
       }
-      this.refreshGuessingSnapshot(/* firstEntry */ true);
+      const silent = decision === "enter_silent";
+      if (silent) {
+        flowNote("COORDINATOR", "guessing re-entered within opener cooldown — entering silently (no repeated opener).");
+      } else {
+        this.lastGuessingEntryVoicedAt = Date.now();
+      }
+      this.refreshGuessingSnapshot(/* firstEntry */ true, { suppressSpeaker: silent });
     });
   }
 
@@ -4023,7 +4139,7 @@ export class AgentCoordinator {
    * This is the ONLY path that updates `this.guessingState` —
    * everything else reads it as a derived view of `guessingEngineState`.
    */
-  private refreshGuessingSnapshot(firstEntry: boolean): void {
+  private refreshGuessingSnapshot(firstEntry: boolean, opts?: { suppressSpeaker?: boolean }): void {
     if (!this.guessingEngineState) return;
     const inj = buildGuessingInjection(this.guessingEngineState);
     this.guessingState = {
@@ -4044,7 +4160,7 @@ export class AgentCoordinator {
         timestamp: Date.now(),
       });
       this.send({ type: "guessing_mode", active: true });
-      this.broadcastGuessingStateToAgents();
+      this.broadcastGuessingStateToAgents(opts);
       return;
     }
 
@@ -4117,14 +4233,19 @@ export class AgentCoordinator {
    *  text dump) because native-audio models that see structured tags in
    *  their input often echo those tags verbatim in voiced speech.
    */
-  private broadcastGuessingStateToAgents(): void {
+  private broadcastGuessingStateToAgents(opts?: { suppressSpeaker?: boolean }): void {
     if (!this.guessingState) return;
     const s = this.guessingState;
-    const muted = this.muteState === "muted";
-    const directive = muted
-      ? `[GUESSING STATE — muted, do not speak]`
-      : this.buildSpeakerGuessingDirective(s);
-    this.speakerRespond(directive);
+    // A cooldown re-entry stays silent: the opener is still hanging in the
+    // air from seconds ago, and repeating it verbatim reads as the device
+    // being stuck. The board still updates; only the voiced turn is skipped.
+    if (!opts?.suppressSpeaker) {
+      const muted = this.muteState === "muted";
+      const directive = muted
+        ? `[GUESSING STATE — muted, do not speak]`
+        : this.buildSpeakerGuessingDirective(s);
+      this.speakerRespond(directive);
+    }
     // Observer gets a brief one-liner — it doesn't need to ask, just to
     // know we're in word-finder mode so its environment scanning frames
     // detected objects as candidate referents.
@@ -4854,6 +4975,19 @@ export class AgentCoordinator {
 
   private startSttStream(streamId: string, language?: string): void {
     if (this.sttStreams.has(streamId)) return;
+    // Sleep gate: while asleep (or superseded) there is no Observer to act on
+    // a transcript and no wake path that ambient audio may take — but before
+    // this gate the coordinator still opened a BILLED Google stream for every
+    // VAD burst, all night if need be (the 07-20 runaway billed ~4h of STT per
+    // session AFTER the agents were torn down). Refuse the stream instead;
+    // deliberate input wakes the session and streams resume.
+    if (this.asleep || this.superseded) {
+      this.sttRefusedWhileAsleep++;
+      if (this.sttRefusedWhileAsleep === 1) {
+        flowNote("COORDINATOR", `STT stream refused while ${this.superseded ? "superseded" : "asleep"} — further refusals counted, summarized on wake.`);
+      }
+      return;
+    }
     try {
       const session = createStreamingSession({
         languageHint: language,
@@ -4861,7 +4995,10 @@ export class AgentCoordinator {
         speechContexts: this.buildSpeechContextsSync(),
         // Commit each phrase the MOMENT the recognizer finalizes it (mid-stream),
         // rather than waiting for the client's end-of-speech. Web-Speech-like.
-        onFinal: (seg) => this.onSttStreamFinal(streamId, seg),
+        // The second arg is the recognizer's own confidence — dropping it here
+        // silently disarms every downstream clarity gate (all finals read
+        // "asr n/a"), so it must be forwarded even though TS won't complain.
+        onFinal: (seg, asrConfidence) => this.onSttStreamFinal(streamId, seg, asrConfidence),
         // Live caption: rolling interims → grey client text, so words are on
         // screen ~1s after they're spoken even when the endpointer sits on the
         // final (continuous room noise starves it). No extra STT cost.
@@ -4891,6 +5028,15 @@ export class AgentCoordinator {
     if (now - s.interimLoggedAt >= AgentCoordinator.STT_INTERIM_LOG_MS) {
       s.interimLoggedAt = now;
       flowNote("COORDINATOR", `STT interim [${streamId.slice(0, 8)}] → "${t.slice(-80)}"`);
+    }
+  }
+
+  /** One summary line for the STT streams refused during the sleep that just
+   *  ended, so the flow log shows the gate worked without per-refusal spam. */
+  private noteSttRefusalsOnWake(): void {
+    if (this.sttRefusedWhileAsleep > 0) {
+      flowNote("COORDINATOR", `Refused ${this.sttRefusedWhileAsleep} STT stream(s) while asleep — none were billed.`);
+      this.sttRefusedWhileAsleep = 0;
     }
   }
 
@@ -5047,7 +5193,12 @@ export class AgentCoordinator {
   ): void {
     const text = (rawText || "").trim();
     if (!text) return;
-    this.noteEngagementActivity();
+    // Deliberately NO noteEngagementActivity here: at this point the words are
+    // unattributed room audio — the recognizer fires on TVs, phone calls, and
+    // its own inventions. Counting that as engagement kept noisy-room sessions
+    // out of rest/sleep indefinitely (the 07-20 runaway stayed hot for 90 min
+    // of a phone call). routeTranscribed stamps engagement AFTER the Observer
+    // attributes the speech, and only for USER/DEVICE-directed turns.
     // Heard speech counts as audio input for the Observer hallucination guard
     // (which keys on lastAudioInputAt — normally bumped by raw PCM, suppressed
     // under STT). Without this, the guard would discard the very transcripts STT
@@ -5081,13 +5232,14 @@ export class AgentCoordinator {
     const energyNote = this.buildTranscriptEnergyNote();
     const turn = [baseTurn, extraContext, energyNote].filter(Boolean).join("\n");
 
-    // Wake from resting on heard speech, mirroring routeTranscribed's gate —
-    // otherwise the lightweight resting Observer won't act on it.
-    if (this.sessionProfile === "resting") {
-      flowNote("COORDINATOR", `${source} arrived while resting — waking before routing.`);
-      void this.transitionToProfile("awake").then(() => this.observer?.sendUserTurn(turn));
-      return;
-    }
+    // NO wake here: the Observer runs unchanged across awake ↔ resting (since
+    // 2026-06-03 — the "lightweight resting Observer" this path used to wake
+    // for no longer exists), so it can receive and judge this turn in resting.
+    // If it routes the speech as USER/DEVICE-directed, routeTranscribed's gate
+    // wakes the session. Waking HERE — before attribution — meant every TV
+    // line and recognizer invention bounced the session awake (562 attempts in
+    // the 07-20 runaway) in direct contradiction of the idle-watchdog contract
+    // that ambient audio never wakes.
     this.observer?.sendUserTurn(turn);
   }
 
@@ -5568,12 +5720,12 @@ export class AgentCoordinator {
     const remaining = AgentCoordinator.REST_DEBOUNCE_MS - elapsed;
     if (this.pendingRestTimer) clearTimeout(this.pendingRestTimer);
     flowNote("COORDINATOR", `Rest request deferred ~${Math.round(remaining / 1000)}s (last activity ${Math.round(elapsed / 1000)}s ago).${reason ? ` (${reason})` : ""}`);
-    this.pendingRestTimer = setTimeout(() => {
+    this.pendingRestTimer = setTimeout(() => this.inSessionLogContext(() => {
       this.pendingRestTimer = null;
       if (this.sessionProfile === "resting") return;
       flowNote("COORDINATOR", "Deferred rest timer expired — entering rest.");
       void this.transitionToProfile("resting");
-    }, remaining);
+    }), remaining);
   }
 
   private routeEngagementChange(event: EngagementChangeEvent): void {
@@ -5612,6 +5764,28 @@ export class AgentCoordinator {
         this.enterSleep();
         return;
     }
+  }
+
+  /**
+   * A newer live session for the same student registered — hold THIS one
+   * inert instead of racing it. Agents torn down, STT refused (the asleep /
+   * superseded gate in startSttStream), WS deliberately kept open so deployed
+   * clients don't auto-reconnect into a steal ping-pong. A deliberate input on
+   * this window steals the registration back (see the dispatcher gate).
+   * Called from the NEW coordinator's context, so the flowNote is wrapped to
+   * land in THIS session's debug log.
+   */
+  private handleSuperseded(reason: string): void {
+    if (this.state === "closing" || this.state === "closed" || this.superseded) return;
+    this.inSessionLogContext(() => {
+      flowNote("COORDINATOR", `Session superseded — ${reason}. Going inert until deliberate input on this window.`);
+      this.superseded = true;
+      this.send({ type: "session_superseded", data: { reason } });
+      // Old clients don't know session_superseded; the asleep announcement
+      // drives their existing sleep UI + the new capture gate.
+      this.send({ type: "sleep_state_change", data: { state: "asleep", source: "system" } });
+      this.enterSleep();
+    });
   }
 
   /**
@@ -5671,7 +5845,18 @@ export class AgentCoordinator {
   private async transitionToProfile(target: "awake" | "resting"): Promise<void> {
     if (this.sessionProfile === target) return;
     if (!this.observer) {
-      console.warn(`[AgentCoordinator] transitionToProfile(${target}): observer missing`);
+      // Previously a console.warn only — invisible in session logs, so the
+      // 07-20 runaway's 562 failed wakes left no trace in session_debug_logs.
+      // An observer-less session is effectively asleep: log loudly and, for a
+      // wake request, self-heal through the wakeFromSleep rebuild (single-
+      // flight; on failure `asleep` stays true so the next attempt retries).
+      // Superseded sessions stay down — only the dispatcher's steal-back gate
+      // may revive those.
+      flowNote("COORDINATOR", `transitionToProfile(${target}) with no Observer — ${this.superseded ? "session superseded; staying down" : this.asleep ? "asleep" : "agents lost unexpectedly"}.`);
+      if (target === "awake" && !this.superseded && this.state === "ready") {
+        this.asleep = true;
+        await this.wakeFromSleep();
+      }
       return;
     }
     // Defensive: never rest over an active social session — the Speaker
@@ -5908,6 +6093,7 @@ export class AgentCoordinator {
       this.asleep = false;
       this.speakerSpeaking = false;
       this.noteEngagementActivity();
+      this.noteSttRefusalsOnWake();
       this.primeFreshObserver();
       this.observer.sendContextInjection(
         `[ENERGY] Nearly out of budget — running board-only to conserve. Keep monitoring for safety; the AI voice is paused until it recovers.`,
@@ -5969,6 +6155,11 @@ export class AgentCoordinator {
     this.asleep = false;
     this.speakerSpeaking = false;
     this.noteEngagementActivity();
+    this.noteSttRefusalsOnWake();
+    // Announce the wake — the board-only wake branch already does; without
+    // this the client's asleep gate (which stops VAD/STT capture) never
+    // reopens after a full wake.
+    this.send({ type: "sleep_state_change", data: { state: "awake", source: "ai" } });
     runInSessionContext(this.sessionId!, this.debugMode, () => {
       logLiveSession("WAKE_FROM_SLEEP_DONE", "Observer + Speaker rebuilt");
     });

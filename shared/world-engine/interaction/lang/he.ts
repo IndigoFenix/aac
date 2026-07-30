@@ -215,7 +215,15 @@ const L: Record<string, Lexeme> = {
   bin: { w: "פח", g: "m" },
   bowl: { w: "קערה", g: "f" },
   oven: { w: "תנור", g: "m" },
+  anvil: { w: "סדן", g: "m" },
+  loom: { w: "נול", g: "m" },
+  shelf: { w: "מדף", g: "m" },
+  altar: { w: "מזבח", g: "m" },
   well: { w: "באר", g: "f" },
+  smithy: { w: "נפחייה", g: "f" },
+  weaver: { w: "אריגה", g: "f" },
+  library: { w: "ספריה", g: "f" },
+  temple: { w: "מקדש", g: "m" },
   food: { w: "אוכל", g: "m", mass: true },
   // TOY is a NOUN used attributively, never an adjective: Hebrew says
   // "מכונית צעצוע" (a construct pair), not "מכונית צעצועה". Without invariant

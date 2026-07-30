@@ -127,12 +127,20 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
   // A single, unmodified SYMBOL can be rendered nearly full-bleed — there are
   // no badges/arrows/payload that need the slot's rim. This is the case that
   // otherwise leaves a single emoji/image floating in a too-small box.
+  //
+  // A CONTAINER FRAME carrying a payload (`building(bread)`, `room(bed)`)
+  // counts as one symbol for this purpose: the shell plate IS the art and the
+  // payload sits inside it, not on the rim where the badges go. Without this a
+  // bakery button drew a small plate adrift in a large cell.
   const firstSlot = parsed.slots[0];
+  const firstIsContainerFrame =
+    !!firstSlot?.payload
+    && !!(firstSlot && getVocabularyItem(firstSlot.key)?.composable?.filledImagePath);
   const fillBoost =
     fillSlot &&
     parsed.slots.length === 1 &&
     (firstSlot?.modifiers?.length ?? 0) === 0 &&
-    !firstSlot?.payload;
+    (!firstSlot?.payload || firstIsContainerFrame);
   const tone = dominantToneFamily(parsed);
   const bg = TONE_COLORS[tone];
 
@@ -495,6 +503,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           resolveImage={resolveImage}
           onImageError={onImageError}
           showEmptyHostSlot={showEmptyHostSlot}
+          hostSize={mainSize}
         />
       )}
 
@@ -592,10 +601,17 @@ interface PayloadOverlayProps {
   onImageError?: (url: string) => void;
   /** Show the empty-payload affordance (dashed ring) — construction only. */
   showEmptyHostSlot?: boolean;
+  /**
+   * Edge length the HOST symbol renders at (SlotGroup's `mainSize`, which
+   * already folds in fillBoost and the shrink modifier). A container frame
+   * sizes its payload from this so the inner symbol tracks the plate at every
+   * fill level; other hosts keep the fixed slot-relative fraction.
+   */
+  hostSize?: number;
 }
 
 function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
-  const { slot, host, layout, rtl, resolveImage, onImageError, showEmptyHostSlot } = props;
+  const { slot, host, layout, rtl, resolveImage, onImageError, showEmptyHostSlot, hostSize } = props;
   const composable = host.composable;
   if (!composable) return null;
 
@@ -608,7 +624,17 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
   //   - "center"       → dead center (default)
   // Non-center positions all mirror their horizontal anchor under RTL
   // so the payload stays in step with the host image's own flip.
-  const size = SLOT_UNIT * 0.45;
+  // A CONTAINER FRAME (building/room) is a BACKDROP, not a pocket: the plate
+  // exists to say "this is a place" and the symbol planted over it says which
+  // place. So its payload is sized off the HOST — 0.75 of the plate's own edge —
+  // rather than the fixed 45% a pocket-style host (want/eat/say) gives the
+  // little thing it carries. Falls back to the fixed fraction when the caller
+  // passes no host size.
+  const isContainerFrame = !!composable.filledImagePath && !!slot.payload;
+  const size =
+    isContainerFrame && hostSize
+      ? hostSize * 0.75
+      : SLOT_UNIT * 0.45;
   let cx: number;
   let cy: number;
   if (composable.position === "upper") {
@@ -663,13 +689,18 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
 
   return (
     <g>
-      {/* Subtle white pad so the payload reads cleanly over the host. */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={size / 2 + 2}
-        fill="rgba(255,255,255,0.75)"
-      />
+      {/* Subtle white pad so the payload reads cleanly over the host. Skipped
+          for a container frame: at 0.75 of the plate the pad would white out
+          the shell's own interior — the very art that names it a place — and
+          the plates already read as pale backdrops. */}
+      {!isContainerFrame && (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={size / 2 + 2}
+          fill="rgba(255,255,255,0.75)"
+        />
+      )}
       {url ? (
         <image
           href={url}

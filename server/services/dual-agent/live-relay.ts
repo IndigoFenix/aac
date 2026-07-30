@@ -804,6 +804,7 @@ export type ServerMessage =
   | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
   | { type: "voices_identified"; data: IdentifiedVoiceWire[] } // Server-side voice matching results
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
+  | { type: "session_superseded"; data: { reason: string } }  // a newer session for the same student took over — this one is inert until deliberate input steals it back
   | { type: "false_wake_report"; data: { reason: string } }   // AI flagged the recent wake from Asleep as a false alarm
   | { type: "alarm"; data: { level: "alert" | "emergency"; reason: string } }  // Observer raised a caretaker alarm: "alert" = short attention nudge, "emergency" = rising urgent alarm with on-screen cancel
   | { type: "construction_suggestions"; data: ConstructionSuggestionsWire }  // AI's response to a construction_state injection — populates the AI strip

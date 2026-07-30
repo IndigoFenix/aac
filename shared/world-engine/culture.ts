@@ -25,6 +25,10 @@ import type { RitualCall, RitualStation, RitualTemplate } from "./interaction/be
  *  gate names the allowed values without a runtime kernel dependency. */
 const PLACEMENT_MODES = ["in_room", "own_room", "own_building"] as const;
 
+/** The container frames a room program's icon may draw on (programs.ts
+ *  RoomProgramDef.frame) — the private/communal choice, gated by shape here. */
+const ROOM_FRAMES: readonly string[] = ["room", "building", "none"];
+
 /** How a culture DRESSES (`game.culture.dress`) — the garment kinds its people
  *  wear and the colour palette they wear them in. A SELECTION from the garment
  *  vocabulary (creatures/clothing.ts): residents wear these, stores stock these,
@@ -49,6 +53,11 @@ export interface WorldRoomProgramSpec {
   kind: string;
   requires: string[];
   signature?: string[];
+  /** Inner symbol for the kind's icon (programs.ts RoomProgramDef.symbol). */
+  symbol?: string;
+  /** Container frame the icon draws on — how a culture declares that a
+   *  function it shares is a BUILDING where another keeps it a room. */
+  frame?: "room" | "building" | "none";
 }
 
 /** An authored STRUCTURE PROGRAM (`architecture.buildings[i]`, pipeline ④):
@@ -228,9 +237,9 @@ export function parseWorldArchitectureSpec(raw: unknown, path: string): WorldArc
     if (r.rooms.length > 16) fail(`${path}.rooms`, "at most 16 room programs");
     out.rooms = r.rooms.map((v, i) => {
       const p = `${path}.rooms[${i}]`;
-      if (!isObj(v)) fail(p, "expected an object ({ kind, requires, signature? })");
+      if (!isObj(v)) fail(p, "expected an object ({ kind, requires, signature?, symbol?, frame? })");
       const vr = v as Record<string, unknown>;
-      const allowedR = ["kind", "requires", "signature"];
+      const allowedR = ["kind", "requires", "signature", "symbol", "frame"];
       for (const kk of Object.keys(vr)) {
         if (!allowedR.includes(kk)) fail(`${p}.${kk}`, `unknown field (allowed: ${allowedR.join(", ")})`);
       }
@@ -240,6 +249,16 @@ export function parseWorldArchitectureSpec(raw: unknown, path: string): WorldArc
         requires: parseWords(vr.requires, `${p}.requires`, 8),
       };
       if ("signature" in vr) spec.signature = parseWords(vr.signature, `${p}.signature`, 8);
+      if ("symbol" in vr) {
+        if (typeof vr.symbol !== "string" || !vr.symbol.trim()) fail(`${p}.symbol`, "expected a non-empty symbol word");
+        spec.symbol = vr.symbol.trim();
+      }
+      if ("frame" in vr) {
+        if (typeof vr.frame !== "string" || !ROOM_FRAMES.includes(vr.frame)) {
+          fail(`${p}.frame`, `expected one of ${ROOM_FRAMES.join(" | ")}`);
+        }
+        spec.frame = vr.frame as WorldRoomProgramSpec["frame"];
+      }
       return spec;
     });
   }

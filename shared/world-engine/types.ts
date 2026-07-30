@@ -172,7 +172,11 @@ export type FixtureKind =
   | "workbench"
   // The FOOD box — the goods corner raises this for the `food` good in place
   // of a generic chest (anachronism deliberate; tech levels come later).
-  | "refrigerator";
+  | "refrigerator"
+  // The PLACE-MAKING stations (stations.ts): the signature fixture of a room
+  // kind the town can now name — an ANVIL makes a forge, an ALTAR a shrine, a
+  // LOOM a weaving room, a SHELF a study. Each speaks its own name.
+  | "anvil" | "altar" | "loom" | "shelf";
 
 /** Fixture kinds a walker passes THROUGH: no collision footprint. A chair
  *  is knee-high and tucked right against the table — making it solid

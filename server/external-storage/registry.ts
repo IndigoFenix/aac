@@ -33,6 +33,11 @@ export const SENSITIVE_FIELDS: Record<string, TableTierConfig> = {
     core: ["aiName"],
     log: ["elevenlabsApiKey", "chatAgentPrompt", "autoAacPrompt", "knownPeople"],
   },
+  // Cached session-plan sections — derived from chatMemory + the AAC prompts
+  // (both log-tier above), so the cache follows the same tier.
+  aac_session_plans: {
+    log: ["identity", "situations", "goals"],
+  },
   user_students: {
     log: ["chatMemory"],
   },
@@ -138,6 +143,7 @@ export const OWNERSHIP_MAP: Record<string, OwnershipResolver> = {
   // Student-owned (via studentId)
   student_contacts: (r) => r.studentId ? { type: "student", id: r.studentId as string } : null,
   aac_settings: (r) => r.studentId ? { type: "student", id: r.studentId as string } : null,
+  aac_session_plans: (r) => r.studentId ? { type: "student", id: r.studentId as string } : null,
   user_students: (r) => r.studentId ? { type: "student", id: r.studentId as string } : null,
   medical_records: (r) => r.studentId ? { type: "student", id: r.studentId as string } : null,
   functional_reports: (r) => r.studentId ? { type: "student", id: r.studentId as string } : null,

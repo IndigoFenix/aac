@@ -36,6 +36,7 @@ import type { RenderIntent, ScreenPick, WorldView, WorldViewDeps } from "./world
 import { cornerOrbitDelta } from "./spirit/corner-orbit.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
 import { buildObjectModel, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
+import { naturalSourceOf } from "./products.js";
 import { useContractFor, useAnchorWorld, type ContactPart } from "./furniture-use.js";
 import {
   getShadingMode, propMaterial, roadMaterial, structureMaterial, terrainMaterial, type LitMaterial,
@@ -2858,9 +2859,16 @@ export class World3DRenderer {
     // so it never sticks to the carried item or the person being spoken to.
     const av = cur.hoverKind === "avatar" && cur.hoverId ? state.avatars[cur.hoverId] : undefined;
     if (av) {
+      // Species-bodied natural sources (`flora:<species>:…` rooted plants,
+      // `fauna:<species>:…` product animals) hover at THEIR height from the
+      // registry — the humanoid head constant put the spark inside a 4.6 m
+      // oak's trunk. Everyone else keeps the head snap.
+      const m = /^(?:flora|fauna):([^:]+):/.exec(av.id);
+      const bodyH = m ? naturalSourceOf(m[1]!)?.bodyHeightM : undefined;
       this.placeCursor(
         av.x,
-        BUBBLE.headY + av.floor * FLOOR_HEIGHT + standHeightAt(state, av.x, av.y) + 0.15,
+        (bodyH !== undefined ? bodyH + 0.2 : BUBBLE.headY + 0.15) +
+          av.floor * FLOOR_HEIGHT + standHeightAt(state, av.x, av.y),
         av.y,
         true, // hovering a creature
         select,

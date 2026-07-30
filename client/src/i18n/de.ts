@@ -2505,6 +2505,8 @@ export const de = {
     buttonSizeBalanced: "Ausgeglichen (Standard)",
     buttonSizeSmIcon: "Kleinere Symbole, größerer Text",
     buttonSizeMinIcon: "Symbol und Text gleich groß",
+    thoroughStartup: "Gründlicher Sitzungsstart",
+    thoroughStartupDesc: "Erstellt den Sitzungsplan der KI bei jedem Sitzungsstart neu, statt den gespeicherten Plan zu verwenden, wenn sich nichts geändert hat. Langsamerer Start, aber immer vollständig aktuell.",
     singleGlyphButtons: "Einzelsymbol-Tasten",
     singleGlyphButtonsDesc: "Beschränkt KI-generierte Tasten auf je ein Symbol oder eine Phrase. Hilfreich für Kommunikationsanfänger.",
     glyphInputTranslation: "Glyphen-Übersetzung der Sprache",

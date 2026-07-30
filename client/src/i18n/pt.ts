@@ -2505,6 +2505,8 @@ export const pt = {
     buttonSizeBalanced: "Equilibrado (padrão)",
     buttonSizeSmIcon: "Ícones menores, texto maior",
     buttonSizeMinIcon: "Ícone e texto do mesmo tamanho",
+    thoroughStartup: "Início de sessão completo",
+    thoroughStartupDesc: "Reconstrói o plano de sessão da IA do zero sempre que uma sessão começa, em vez de reutilizar o plano salvo quando nada mudou. Início mais lento, mas sempre totalmente atualizado.",
     singleGlyphButtons: "Botões de símbolo único",
     singleGlyphButtonsDesc: "Restringe os botões gerados pela IA a um único símbolo ou frase. Útil para comunicadores iniciantes.",
     glyphInputTranslation: "Tradução da fala em símbolos",

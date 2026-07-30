@@ -2505,6 +2505,8 @@ export const he = {
     buttonSizeBalanced: "מאוזן (ברירת מחדל)",
     buttonSizeSmIcon: "אייקונים קטנים יותר, טקסט גדול יותר",
     buttonSizeMinIcon: "סמל וטקסט באותו גודל",
+    thoroughStartup: "הכנת מפגש יסודית",
+    thoroughStartupDesc: "בונה מחדש את תוכנית המפגש של ה-AI בכל התחלת מפגש, במקום להשתמש בתוכנית השמורה כשלא השתנה דבר. איטי יותר בהתחלה, אך תמיד מעודכן לגמרי.",
     singleGlyphButtons: "כפתורים עם סמל בודד",
     singleGlyphButtonsDesc: "הגבל את הכפתורים שהבינה המלאכותית יוצרת לסמל או ביטוי בודד. מתאים למתקשרים בתחילת דרכם.",
     glyphInputTranslation: "תרגום דיבור לסמלים",

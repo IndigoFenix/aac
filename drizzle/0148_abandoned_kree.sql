@@ -1,0 +1,1 @@
+ALTER TABLE "person_chat_rooms" ALTER COLUMN "created_by_person_id" DROP NOT NULL;

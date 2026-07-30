@@ -2505,6 +2505,8 @@ export const ar = {
     buttonSizeBalanced: "متوازن (افتراضي)",
     buttonSizeSmIcon: "رموز أصغر، نص أكبر",
     buttonSizeMinIcon: "الرمز والنص بنفس الحجم",
+    thoroughStartup: "بدء جلسة شامل",
+    thoroughStartupDesc: "إعادة بناء خطة جلسة الذكاء الاصطناعي من الصفر عند بدء كل جلسة، بدلاً من استخدام الخطة المحفوظة عندما لا يتغير شيء. أبطأ عند البدء، لكنه دائماً محدّث بالكامل.",
     singleGlyphButtons: "أزرار برمز واحد",
     singleGlyphButtonsDesc: "تقييد الأزرار التي ينشئها الذكاء الاصطناعي برمز أو عبارة واحدة لكل زر. مفيد للمبتدئين في التواصل.",
     glyphInputTranslation: "ترجمة الكلام إلى رموز",

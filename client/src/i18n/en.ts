@@ -2505,6 +2505,8 @@ export const en = {
     buttonSizeBalanced: "Balanced (default)",
     buttonSizeSmIcon: "Smaller icons, larger text",
     buttonSizeMinIcon: "Icon and text the same size",
+    thoroughStartup: "Thorough Session Startup",
+    thoroughStartupDesc: "Rebuild the AI's session plan from scratch every time a session starts, instead of reusing the saved plan when nothing has changed. Slower to start, but always fully fresh.",
     singleGlyphButtons: "Single-Symbol Buttons",
     singleGlyphButtonsDesc: "Constrain AI-generated buttons to a single symbol or phrase each. Useful for early communicators.",
     glyphInputTranslation: "Glyph Input Translation",
