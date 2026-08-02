@@ -1,6 +1,6 @@
 {
   "name": "aivota-aac",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "type": "module",
   "main": "dist-electron/main.js",
   "license": "MIT",
@@ -58,6 +58,7 @@
     "electron:build": "npm run voice:model && node scripts/prepare-client-models.mjs && cross-env ELECTRON_BUILD=1 vite build --config vite.config.aac.ts --mode electron && npm run electron:build-main",
     "electron:package": "npm run electron:build && npm run build:sidecar && electron-builder",
     "electron:package:win": "npm run electron:build && npm run build:sidecar && electron-builder --win",
+    "icons:web": "node scripts/generate-web-icons.mjs",
     "ios:build": "node scripts/prepare-client-models.mjs && cross-env NATIVE_BUILD=1 vite build --config vite.config.aac.ts --mode ios",
     "ios:sync": "cap sync ios && node scripts/ios-configure.mjs",
     "ios:prepare": "npm run ios:build && npm run ios:sync",

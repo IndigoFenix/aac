@@ -13,13 +13,16 @@
 //
 // Idempotent: safe to run repeatedly on the same project.
 //
+// Two things are applied here: Info.plist keys, and the app icon.
+//
 // Usage notes:
 //   --project <dir>   root of the generated iOS project (default: ios/App)
 //   --check           verify without writing; exit 1 if changes are needed
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import * as plist from "plist";
+import sharp from "sharp";
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");
@@ -88,6 +91,49 @@ const REQUIRED_KEYS = {
 const ATS_KEY = "NSAppTransportSecurity";
 const ATS_VALUE = { NSAllowsLocalNetworking: true };
 
+/**
+ * App icon.
+ *
+ * The Capacitor template does not ship a usable AppIcon, and `ios/` is
+ * regenerated from that template on every build — so without this step the
+ * iPad app shipped with no icon at all (blank tile on the home screen and in
+ * TestFlight). App Store Connect also rejects a build whose icon is missing or
+ * carries an alpha channel, so this is a release blocker, not cosmetics.
+ *
+ * SOURCE IS SHARED WITH WINDOWS ON PURPOSE. This reads the very file
+ * electron-builder.yml points `win.icon` at, so the two shells cannot drift
+ * apart the way the website's icon set did. Repointing one repoints both.
+ */
+const ICON_SOURCE = path.join("electron", "resources", "icon.png");
+
+/** Apple's required app-icon size. Xcode derives every smaller variant. */
+const ICON_SIZE = 1024;
+
+/**
+ * The artwork is transparent and runs to within ~1% of its left and right
+ * edges, so it gets two treatments the Windows .ico doesn't need:
+ *
+ *   - flattened onto white. iOS forbids alpha in an app icon; it would be
+ *     composited onto black, which the dark purple body sinks into.
+ *   - inset, so the outer frills clear the squircle mask iOS applies.
+ */
+const ICON_INSET = 0.88;
+const ICON_BG = { r: 255, g: 255, b: 255, alpha: 1 };
+
+/** Xcode 14+ single-size app icon: one 1024 image, all variants derived. */
+const ICON_FILENAME = "AppIcon-512@2x.png";
+const ICON_CONTENTS = {
+  images: [
+    {
+      filename: ICON_FILENAME,
+      idiom: "universal",
+      platform: "ios",
+      size: "1024x1024",
+    },
+  ],
+  info: { author: "xcode", version: 1 },
+};
+
 function fail(message) {
   console.error(`[ios-configure] ERROR: ${message}`);
   process.exit(1);
@@ -135,14 +181,80 @@ if (JSON.stringify(existingAts) !== JSON.stringify(mergedAts)) {
 
 if (changes.length === 0) {
   console.log(`[ios-configure] ${infoPlistPath} already up to date.`);
-  process.exit(0);
+} else if (!checkOnly) {
+  writeFileSync(infoPlistPath, `${plist.build(parsed)}\n`, "utf8");
+  console.log(`[ios-configure] updated ${infoPlistPath}`);
+  for (const key of changes) console.log(`  - ${key}`);
 }
 
-if (checkOnly) {
-  console.error(`[ios-configure] --check failed; these keys need updating: ${changes.join(", ")}`);
+// ── App icon ───────────────────────────────────────────────────────────────
+
+if (!existsSync(ICON_SOURCE)) {
+  fail(
+    `app icon source not found at ${ICON_SOURCE}.\n` +
+    `  This is the same file electron-builder.yml ships as the Windows icon; ` +
+    `if it moved, update ICON_SOURCE here and win.icon there together.`,
+  );
+}
+
+const iconSetDir = path.join(projectDir, "App", "Assets.xcassets", "AppIcon.appiconset");
+const iconPath = path.join(iconSetDir, ICON_FILENAME);
+const contentsPath = path.join(iconSetDir, "Contents.json");
+
+const inner = Math.round(ICON_SIZE * ICON_INSET);
+const rendered = await sharp({
+  create: { width: ICON_SIZE, height: ICON_SIZE, channels: 4, background: ICON_BG },
+})
+  .composite([
+    {
+      input: await sharp(ICON_SOURCE)
+        .resize(inner, inner, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .png()
+        .toBuffer(),
+      gravity: "centre",
+    },
+  ])
+  .flatten({ background: ICON_BG })
+  .removeAlpha() // App Store Connect rejects an app icon with an alpha channel
+  .png()
+  .toBuffer();
+
+const desiredContents = `${JSON.stringify(ICON_CONTENTS, null, 2)}\n`;
+
+// sharp is deterministic for a given input and settings, so comparing bytes is
+// a real up-to-date test rather than a mere existence check — which is what
+// makes --check able to catch a stale icon.
+const iconCurrent =
+  existsSync(iconPath) &&
+  readFileSync(iconPath).equals(rendered) &&
+  existsSync(contentsPath) &&
+  readFileSync(contentsPath, "utf8") === desiredContents;
+
+if (iconCurrent) {
+  console.log(`[ios-configure] ${iconPath} already up to date.`);
+} else if (!checkOnly) {
+  mkdirSync(iconSetDir, { recursive: true });
+
+  // Drop any images the template left behind. Once Contents.json names only
+  // ours, the rest are unassigned children and Xcode warns about them.
+  for (const entry of readdirSync(iconSetDir)) {
+    if (entry !== ICON_FILENAME && entry.toLowerCase().endsWith(".png")) {
+      rmSync(path.join(iconSetDir, entry));
+      console.log(`  - removed stale ${entry}`);
+    }
+  }
+
+  writeFileSync(iconPath, rendered);
+  writeFileSync(contentsPath, desiredContents, "utf8");
+  console.log(`[ios-configure] wrote ${iconPath} (${ICON_SIZE}x${ICON_SIZE}, opaque)`);
+}
+
+if (checkOnly && (changes.length > 0 || !iconCurrent)) {
+  if (changes.length > 0) {
+    console.error(`[ios-configure] --check failed; these keys need updating: ${changes.join(", ")}`);
+  }
+  if (!iconCurrent) {
+    console.error(`[ios-configure] --check failed; app icon is missing or stale.`);
+  }
   process.exit(1);
 }
-
-writeFileSync(infoPlistPath, `${plist.build(parsed)}\n`, "utf8");
-console.log(`[ios-configure] updated ${infoPlistPath}`);
-for (const key of changes) console.log(`  - ${key}`);

@@ -11,7 +11,24 @@
       name="description"
       content="Professional clinical dashboard for SLP practitioners with AI-powered AAC tools and workflow management"
     />
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <!--
+      Icons. All of these are generated together by scripts/generate-web-icons.mjs
+      (npm run icons:web) from attached_assets/aivota_icon.png — do not hand-edit
+      the files in client/public.
+
+      Declaring the whole set matters: a browser TAB uses rel="icon", but Chrome's
+      "create shortcut" / install path does not. Without a manifest it falls back
+      to icon candidates it collects itself (the implicit /favicon.ico, an
+      auto-probed /apple-touch-icon.png) and prefers an exact pixel-size match
+      over downscaling a big PNG — which is how a stale .ico kept supplying the
+      old logo to desktop shortcuts long after the tab icon was updated.
+    -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
