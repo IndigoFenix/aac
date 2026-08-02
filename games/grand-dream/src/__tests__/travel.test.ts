@@ -25,7 +25,7 @@ function makeGrid(cols: number, rows: number, heightAt: (x: number, y: number) =
       const i = y * cols + x;
       grid.fields.height[i] = heightAt(x, y);
       grid.fields.river[i] = 0;
-      grid.fields.people[i] = 0;
+      grid.fields.forage[i] = 0;
     }
   }
   return grid;
@@ -175,7 +175,7 @@ describe("chokepoints — a mountain range pierced by one pass", () => {
 
   it("founding with the traffic weight places a site at/adjacent to the pass", () => {
     const grid = makeGrid(cols, rows, heightAt);
-    for (let i = 0; i < grid.topo.n; i++) grid.fields.people[i] = 2; // uniformly crowded
+    for (let i = 0; i < grid.topo.n; i++) grid.fields.forage[i] = 2; // uniformly crowded
     const hubs = [at(3, 5), at(3, 15), at(27, 5), at(27, 15)];
     grid.fields.traffic = travelTraffic(grid, hubs, OPTS);
     const sites = findFoundingSites(grid, {

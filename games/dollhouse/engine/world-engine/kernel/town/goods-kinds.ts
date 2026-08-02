@@ -130,6 +130,17 @@ export const LARGE_KINDS: readonly string[] = [
   // piece reaches the stack vocabulary as the word it is spoken by, and a
   // cabinet is no more pocketable than the cupboard it names.
   "cabinet",
+  // The work-station furniture (stations.ts STATION_PROPERTIES): an anvil, a
+  // loom, an altar and a stonecutter's slab are rooms' worth of iron, timber
+  // and dressed stone, not pocket goods — every furniture-property station must
+  // appear here (the size-registries-agree conformance test).
+  "anvil", "loom", "altar", "stonecutter",
+  // The DOOR LEAF (construction phase 5) — furniture you HAUL. A leaf is a slab
+  // of block the height of a doorway; a body carries it to the opening in its
+  // hands and hangs it there. Nothing about being flat makes it pocketable, and
+  // it carries the `furniture` property like every kind above, so the
+  // size-registries-agree test demands this row too.
+  "door",
 ];
 /** Is this stack glyph too large to go in a creature's inventory? A STORED
  *  furniture piece stacks under `furn.<kind>` (stations.ts furnitureGlyph), so

@@ -29,7 +29,12 @@ import {
   type FoundingGrowthInput,
   type ZoneCharter,
 } from "@shared/world-engine/kernel/town/zoning.js";
-import { resolveStructure, type StructureSpec } from "@shared/world-engine/kernel/town/structures.js";
+import {
+  resolveStructure,
+  structureCosts,
+  type StructureSpec,
+} from "@shared/world-engine/kernel/town/structures.js";
+import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import { foundSite, siteTownConfig } from "@shared/world-engine/interaction/town/founding.js";
 import { buildTownPlay, TOWN_PLAY_STRUCTURES } from "@shared/world-engine/interaction/town/town-play.js";
 
@@ -38,6 +43,12 @@ const KEY = "millbrook";
 
 const HOUSE = resolveStructure(TOWN_PLAY_STRUCTURES, "house")!;
 const FARM = resolveStructure(TOWN_PLAY_STRUCTURES, "farm")!;
+/** A builder's yard deep enough to found a REAL building. Phase 6 derives a
+ *  structure's blocks from its footprint (a farm is 272) and the growth twin
+ *  mills 2 wood to the block, so the old two-figure yards covered nothing.
+ *  Generous on purpose: what this file is about is WHERE growth chooses to
+ *  build and whether it is licensed to, never a tight budget. */
+const YARD_WOOD = 2000;
 
 /** TOWN_PLAY district lookup (farm's BuildingDef files under "farm"). */
 const districtOf = (key: string): string | null => (key === "farm" ? "farm" : null);
@@ -211,7 +222,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
 
   it("prosperity banks (capped) and a crossed threshold founds INSIDE the zone, spending yard stock", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 40;
+    deltas.stock.wood = YARD_WOOD;
     deltas.stock.stone = 10;
     const zone = deltas.addZone({ x: 0, y: 0, r: 10_000, category: "farm", issuer: "p" });
 
@@ -228,14 +239,15 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
     expect(deltas.founded()[0]!.type).toBe("farm");
     expect(zoneAt(deltas.zones(), deltas.founded()[0]!.dx + deltas.founded()[0]!.w / 2,
       deltas.founded()[0]!.dy + deltas.founded()[0]!.h / 2)?.ord).toBe(zone.ord);
-    // Real materials spent; the bank paid its threshold.
-    expect(deltas.stock.wood).toBe(40 - FARM.costs.wood!);
+    // Real materials spent — the twin MILLS IMPLICITLY (phase 3): a block
+    // bill over a wood-only yard draws raws at the 2:1 refinement ratio.
+    expect(deltas.stock.wood).toBe(YARD_WOOD - structureCosts(FARM)[BLOCK_GLYPH]! * 2);
     expect(deltas.civic.prosperity).toBeLessThan(FOUNDING_PROSPERITY_THRESHOLD);
   });
 
   it("an unzoned CONTENT town never auto-founds — need is the license, open ground never sprawls at rest", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 100;
+    deltas.stock.wood = YARD_WOOD;
     for (let d = 1; d <= 20; d++) {
       expect(foundingGrowthStep(makeInput(deltas, { day: d }))).toBeNull();
     }
@@ -245,7 +257,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
 
   it("a STRANDED QUARTER founds its market on open ground — service deficit is a real need (needs-aware districts)", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 40;
+    deltas.stock.wood = YARD_WOOD;
     deltas.stock.stone = 10;
     // Deficit at the urgency gate: enough households past the hunger-cycle
     // walk radius — the market rises TODAY, materials-paid, no bank.
@@ -261,7 +273,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
 
   it("a MILD service deficit never sprawls open ground — below the real-need floor it banks like any comfort want", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 100;
+    deltas.stock.wood = YARD_WOOD;
     deltas.stock.stone = 40;
     for (let d = 1; d <= 12; d++) {
       expect(foundingGrowthStep(makeInput(deltas, {
@@ -274,7 +286,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
 
   it("URGENT need founds WITHOUT charters or a banked threshold — a homeless camp raises a house on open ground (city-founding)", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 40;
+    deltas.stock.wood = YARD_WOOD;
     deltas.stock.stone = 10;
     const order = foundingGrowthStep(makeInput(deltas, {
       gain: 0,
@@ -290,7 +302,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
 
   it("a REAL shortage founds the producer on open ground; real-but-calm need waits for the bank", () => {
     const hungry = createTownDeltas();
-    hungry.stock.wood = 40;
+    hungry.stock.wood = YARD_WOOD;
     const order = foundingGrowthStep(makeInput(hungry, {
       gain: 0,
       signals: { crowding: 0, shortage: (g) => (g === "food" ? 0.9 : 0) },
@@ -299,7 +311,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
     // Crowding 1.0 (houses exactly full) is real need but not urgent:
     // open-ground growth then waits for the banked threshold.
     const calm = createTownDeltas();
-    calm.stock.wood = 100;
+    calm.stock.wood = YARD_WOOD;
     calm.stock.stone = 20;
     const sig = { crowding: 1.0, shortage: () => 0 };
     expect(foundingGrowthStep(makeInput(calm, { gain: 0, signals: sig }))).toBeNull();
@@ -311,7 +323,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
     // Two zones — one house, one farm — and enough banked prosperity.
     const build = (signals: { crowding: number; food: number }) => {
       const deltas = createTownDeltas();
-      deltas.stock.wood = 100;
+      deltas.stock.wood = YARD_WOOD;
       deltas.stock.stone = 20;
       deltas.civic.prosperity = FOUNDING_PROSPERITY_THRESHOLD;
       deltas.addZone({ x: 0, y: 0, r: 10_000, category: "house", issuer: "p" });
@@ -333,7 +345,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
 
   it("the economy cap gates (the pasture-charter pattern: count < by × rate)", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 100;
+    deltas.stock.wood = YARD_WOOD;
     deltas.civic.prosperity = FOUNDING_PROSPERITY_THRESHOLD;
     deltas.addZone({ x: 0, y: 0, r: 10_000, category: "farm", issuer: "p" });
     // farmland 30 × 1/60 = 0.5 ⇒ not even one farm is chartered.
@@ -356,7 +368,7 @@ describe("zone-steered auto-expansion (foundingGrowthStep)", () => {
   it("deterministic replay: the same serialized store grows the same building", () => {
     const grow = () => {
       const deltas = createTownDeltas();
-      deltas.stock.wood = 60;
+      deltas.stock.wood = YARD_WOOD;
       deltas.stock.stone = 12;
       deltas.addZone({ x: 0, y: 0, r: 10_000, category: "farm", issuer: "p" });
       let order = null;
@@ -468,7 +480,7 @@ describe("town preference steers growth (laws steer, need builds)", () => {
 
   it("a preferred category rises at rest on OPEN ground once banked — a license, not a ground charter", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 40;
+    deltas.stock.wood = YARD_WOOD;
     deltas.stock.stone = 10;
     deltas.addZone({ x: 0, y: 0, r: 0, shape: "town", category: "market", issuer: "p" });
     const days = Math.ceil(FOUNDING_PROSPERITY_THRESHOLD / FOUNDING_PROSPERITY_DAILY_CAP);
@@ -484,7 +496,7 @@ describe("town preference steers growth (laws steer, need builds)", () => {
 
   it("clearing the preference returns the content town to rest (never sprawls)", () => {
     const deltas = createTownDeltas();
-    deltas.stock.wood = 100;
+    deltas.stock.wood = YARD_WOOD;
     deltas.stock.stone = 20;
     deltas.addZone({ x: 0, y: 0, r: 0, shape: "town", category: "market", issuer: "p" });
     deltas.addZone({ x: 0, y: 0, r: 0, shape: "town", category: null, issuer: "p" });

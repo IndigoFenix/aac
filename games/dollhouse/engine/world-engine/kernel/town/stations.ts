@@ -31,6 +31,10 @@
  */
 
 import type { ObjectProperty } from "../../object-properties.js";
+// The one VALUE import (phase 6): furniture is priced by the same bill module
+// the walls are, so a bed and the room it stands in cannot disagree about what
+// a block is. Pure arithmetic — the layering note above still holds.
+import { blockCosts, furnitureBlocks } from "./block-bill.js";
 
 /** Every furniture/fixture kind a station can raise (FurniturePiece.kind
  *  re-exports this — the 3D fixture meshes and the schema enum follow it). */
@@ -40,7 +44,38 @@ export type StationKind =
   // The FOOD box: the goods corner raises a refrigerator for the `food` good
   // instead of a generic chest, so the pantry is legible at a glance. The
   // anachronism is deliberate and temporary — tech levels come later.
-  | "refrigerator";
+  | "refrigerator"
+  // ── THE PLACE-MAKING STATIONS ─────────────────────────────────────────
+  // Four fixtures whose whole job is to MAKE A ROOM WHAT IT IS. Each one is
+  // the signature piece of a room kind the town could name but never build
+  // (programs.ts): an anvil makes a forge, an altar a shrine, a loom a weaving
+  // room, a shelf a study. They arrive as a set because the room vocabulary
+  // they unlock is the point — furniture defines function, so a new kind of
+  // place starts as a new thing standing in a room.
+  //
+  // They reach a building through `StructureSpec.stations` (the seam
+  // workExtraStationDefs was written for), NOT through WORK_STATIONS: a row
+  // there stands in EVERY work building, and only the smithy wants the anvil.
+  | "anvil" | "altar" | "loom" | "shelf"
+  // The MASONRY bench (construction phase 5). One of the set above in every
+  // respect — a stonecutter makes a masonry the way an anvil makes a forge, and
+  // it reaches a building down the same `StructureSpec.stations` seam. Listed
+  // apart only because those four shipped together and this one is the trade
+  // the block chain was always waiting on (products.ts: stone refines to block,
+  // and until now it did so at a carpenter's bench).
+  | "stonecutter"
+  // ── THE DOOR LEAF ─────────────────────────────────────────────────────
+  // construction-structures.md's law read precisely: "Doorways are part of the
+  // wall, but the doors themselves should be constructed as furniture pieces."
+  // The DOORWAY is generated geometry (a gap in a wall run, engine.ts
+  // edgeStructures); the LEAF that swings in it is a piece of furniture — cut
+  // from a block, carried, and hung.
+  //
+  // It is the ONE kind here pinned to an OPENING rather than a floor spot, so
+  // it appears in no CLUSTERS row, no HOUSE/WORK_STATIONS row, and no room
+  // signature (programs.ts). A door tells you nothing about what a room is FOR:
+  // let it into a signature and every room derives as a doorway.
+  | "door";
 
 /**
  * WHAT EACH STATION KIND *IS* — the spec-side authority for object properties
@@ -72,6 +107,32 @@ export const STATION_PROPERTIES: Readonly<Record<StationKind, readonly ObjectPro
   toilet: ["furniture"],
   // The pet's floor dish — a serving vessel, not room furniture.
   bowl: ["tableware"],
+  // The smith's transform — metal in, tools out. `appliance` is what earns it
+  // the front-approached reach contract (furniture-use.ts derives the contract
+  // from these properties), which is exactly how a body works an anvil.
+  anvil: ["furniture", "appliance"],
+  // The weaver's transform — thread in, cloth out.
+  loom: ["furniture", "appliance"],
+  // Open shelving: it holds things where you can SEE them, which is why a
+  // library's shelf and a market's display are the same fixture. A container
+  // that never closes — `openable` stays false on its rows.
+  shelf: ["furniture", "container"],
+  // The altar is the one station here that TRANSFORMS nothing and HOLDS
+  // nothing. It is plain furniture on purpose: what happens at it is what the
+  // people gathered there are doing, not a mechanic the fixture owns.
+  altar: ["furniture"],
+  // The mason's transform — rough stone in, dressed block out. `appliance` for
+  // exactly the anvil's reason: it is what earns the front-approached reach
+  // contract (furniture-use.ts derives the contract from these properties), and
+  // a slab is worked from the side you stand at, never reached around.
+  stonecutter: ["furniture", "appliance"],
+  // The door LEAF — plain furniture, and deliberately NOT `container`/
+  // `openable`. A door swinging is the DOORWAY mechanic (state.doors,
+  // tickDoors, setDoorOpen), not the lid rule that eases a chest open when a
+  // body stands beside it; the two only look alike from outside. Its registry
+  // rows keep `openable: false` so the board never files a door under the
+  // openable sub-tab and offers an act the container machinery cannot honour.
+  door: ["furniture"],
 } as const;
 
 /** Walls of a cell, in the house's door-local frame: `far` faces the
@@ -266,6 +327,32 @@ export const CLUSTERS: Readonly<Record<string, ClusterDef>> = {
    *  a household that built theirs later). The bench + wood store need a
    *  real working floor. */
   workshop: { key: "workshop", privacy: 1, minW: 3.0, minD: 3.0 },
+  // ── THE PLACE-MAKING CLUSTERS ────────────────────────────────────────
+  // The room kinds the four new stations name. All privacy 1: each is a
+  // room you ENTER for its purpose — never a through-room (privacy 0) and
+  // never a sleeping soul's own retreat (2).
+  /** The FORGE — hot work needs the workshop's floor and then some: a smith
+   *  swings, and the fire wants clearance the bench never did. */
+  forge: { key: "forge", privacy: 1, minW: 3.2, minD: 3.2 },
+  /** The WEAVING room — a loom is LONG, so the floor is asymmetric: it wants
+   *  a run of wall more than it wants depth. */
+  weaving: { key: "weaving", privacy: 1, minW: 3.2, minD: 2.8 },
+  /** The STUDY — shelves along the walls and a lane to read in. A storeroom's
+   *  floors, because that is geometrically what it is (the difference is that
+   *  you can see what's on the shelves). */
+  study: { key: "study", privacy: 1, minW: 2.4, minD: 2.4 },
+  /** The SHRINE — the smallest of the four. A household shrine is a niche;
+   *  a temple's is the whole hall, and the hall is the BUILDING's floor, not
+   *  this cluster's. */
+  shrine: { key: "shrine", privacy: 1, minW: 2.2, minD: 2.2 },
+  /** The MASONRY (construction phase 5) — the stonecutter's room, and the
+   *  widest floor in the table. Stone arrives rough and leaves as block, so
+   *  unlike the forge (where the work is all at the anvil) the bench needs a
+   *  STOCK LANE down one side: a stack waiting to be cut and a stack already
+   *  cut, neither of them in the mason's swing. Hence the forge's clearance in
+   *  width plus that lane, and no more depth than the forge — a mason works
+   *  across the slab, not around it. */
+  masonry: { key: "masonry", privacy: 1, minW: 3.6, minD: 3.2 },
 } as const;
 
 /**
@@ -431,19 +518,93 @@ export function furnitureKindOfGlyph(glyph: string): StationKind | null {
   return FURNITURE_ITEMS.some((f) => f.kind === kind) ? (kind as StationKind) : null;
 }
 
-export const FURNITURE_ITEMS: ReadonlyArray<FurnitureItemDef> = [
-  { kind: "chair", radius: 0.22, openable: false, craft: { at: "workbench", consumes: { wood: 1 } } },
-  { kind: "table", radius: 0.8, openable: false, craft: { at: "workbench", consumes: { wood: 2 } } },
-  { kind: "bed", radius: 0.65, openable: false, craft: { at: "workbench", consumes: { wood: 2 } } },
-  { kind: "chest", radius: 0.55, openable: true, craft: { at: "workbench", consumes: { wood: 1 } } },
-  { kind: "cupboard", radius: 0.6, openable: true, craft: { at: "workbench", consumes: { wood: 2 } } },
-  { kind: "box", radius: 0.45, openable: false, craft: { at: "workbench", consumes: { wood: 1 } } },
-  { kind: "bin", radius: 0.35, openable: true, craft: { at: "workbench", consumes: { wood: 1 } } },
-  { kind: "barrel", radius: 0.4, openable: true, craft: { at: "workbench", consumes: { wood: 1 } } },
+// Furniture consumes BLOCKS since construction phase 3 (decision 3: one
+// natural→artificial path — a bed and a wall are made of the same stuff, at
+// the same refinement ratio). Head-paid, so any material's block covers the
+// bill; toys stay on raw wood (a whittled ball is smaller than a block).
+//
+// SIZED BY THE PIECE since phase 6: every row used to cost ONE block, which
+// said a dining table and a waste bin are the same amount of timber. The bill
+// now comes off the piece's own footprint radius (block-bill.ts
+// `furnitureBlocks`) — the catalog's rule, applied one scale down, and for the
+// same reason: a new station kind gets an honest bill the moment it declares a
+// radius, with nobody guessing a number for it.
+const FURNITURE_ROWS: ReadonlyArray<Omit<FurnitureItemDef, "craft">> = [
+  { kind: "chair", radius: 0.22, openable: false },
+  { kind: "table", radius: 0.8, openable: false },
+  { kind: "bed", radius: 0.65, openable: false },
+  { kind: "chest", radius: 0.55, openable: true },
+  { kind: "cupboard", radius: 0.6, openable: true },
+  { kind: "box", radius: 0.45, openable: false },
+  { kind: "bin", radius: 0.35, openable: true },
+  { kind: "barrel", radius: 0.4, openable: true },
   /** The bootstrap tool: the FIRST bench is hand-made (slow); an existing
    *  bench speeds making the next, like everything else. */
-  { kind: "workbench", radius: 0.7, openable: false, craft: { at: "workbench", consumes: { wood: 2 } } },
+  { kind: "workbench", radius: 0.7, openable: false },
+  /** The DOOR LEAF (construction phase 5) — the law's furniture piece. Cut at
+   *  a bench, stacked as `furn.door`, carried to a doorway and HUNG there
+   *  rather than set on a floor spot. The radius is the leaf's own half-width,
+   *  not a footprint it claims — a hung door collides as part of the wall run,
+   *  and a loose one is a slab you haul — but it is still what the leaf is made
+   *  OF, so it prices the leaf like every other row. `openable: false` because
+   *  what a door does is the doorway's mechanic, never the chest lid's
+   *  (STATION_PROPERTIES says why). */
+  { kind: "door", radius: 0.5, openable: false },
 ] as const;
+
+/**
+ * THE PIECES YOU CANNOT MAKE, WHICH ARE STILL PIECES.
+ *
+ * An oven is furniture. It stands in a room, it can be in your way, it can be
+ * taken apart and carried to a better corner, and when it is off its feet it is
+ * an oven lying on its side. The only thing it is NOT is something a household
+ * cuts at a workbench: these arrive with their building, either from the goods
+ * corner (the refrigerator) or down `StructureSpec.stations`
+ * (workExtraStationDefs — the place-making set), and giving any of them a craft
+ * row would put the automated crafter to work turning out stone benches two at
+ * a time, forever. So they declare geometry and no recipe.
+ *
+ * 🚨 Splitting the list is the fix for a real class of bug: `FURNITURE_ITEMS`
+ * means "a piece of furniture", and the CRAFTABLE subset is `f.craft`. Reading
+ * the craftable catalogue as the definition of furniture is what made a
+ * deconstructed oven render as a question mark (no def ⇒ no archetype ⇒ a bare
+ * `furn.oven` glyph the artwork registry has never heard of) and what made an
+ * ordered oven un-placeable (handlePlaceOrder refuses a kind it can't find, so
+ * the outline stood on the floor and nobody ever came). The barrel and the
+ * cupboard worked because you can make those.
+ *
+ * Radii are each kind's own, from the row that raises it: the goods corner for
+ * the refrigerator, the CLUSTERS rows for the wet and kitchen stations, and
+ * workExtraStationDefs' default for the place-making five.
+ */
+const FIXTURE_ROWS: ReadonlyArray<Omit<FurnitureItemDef, "craft">> = [
+  { kind: "refrigerator", radius: 0.55, openable: true },
+  { kind: "oven", radius: 0.6, openable: false },
+  { kind: "bath", radius: 0.75, openable: false },
+  { kind: "toilet", radius: 0.5, openable: false },
+  { kind: "bowl", radius: 0.25, openable: false },
+  // The place-making five (workExtraStationDefs' proto default).
+  { kind: "anvil", radius: 0.6, openable: false },
+  { kind: "altar", radius: 0.6, openable: false },
+  { kind: "loom", radius: 0.6, openable: false },
+  { kind: "shelf", radius: 0.6, openable: false },
+  { kind: "stonecutter", radius: 0.6, openable: false },
+] as const;
+
+/**
+ * EVERY PIECE OF FURNITURE THERE IS. The craftable rows carry a bench recipe
+ * DERIVED from their own radius — the rows declare geometry, this declares that
+ * furniture is cut from blocks at a workbench, and the two never drift apart.
+ * The fixture rows carry no recipe, which is the ONLY thing that distinguishes
+ * them: every consumer that means "craftable" already asks `f.craft`.
+ */
+export const FURNITURE_ITEMS: ReadonlyArray<FurnitureItemDef> = [
+  ...FURNITURE_ROWS.map((r) => ({
+    ...r,
+    craft: { at: "workbench" as StationKind, consumes: blockCosts(furnitureBlocks(r.radius)) },
+  })),
+  ...FIXTURE_ROWS,
+];
 
 export const furnitureItemOf = (kind: StationKind): FurnitureItemDef | undefined =>
   FURNITURE_ITEMS.find((f) => f.kind === kind);
@@ -519,6 +680,23 @@ export const WORK_PROGRAMS: Readonly<Record<string, BuildingProgram>> = {
   /** Prospective content: an inn is a dwelling program multiplied —
    *  proven through the solver today, staged when the economy grows one. */
   inn: { sleepCells: 6, wet: true, kitchen: true, store: true },
+  // The PLACE-MAKING programs. The smithy and the weaver keep a stock band
+  // (metal and thread arrive as goods and wait); the temple and the library
+  // stay OPEN halls for the same reason the market does — the floor IS the
+  // point. Their defining fixture arrives through `StructureSpec.stations`,
+  // so the room it stands in DERIVES the kind (programs.ts) with no program
+  // field per room type.
+  smithy: { store: true },
+  library: {},
+  temple: {},
+  // The MASONRY (construction phase 5). `{ store: true }` is also what
+  // `workProgram` hands an UNREGISTERED type, so this row changes nothing
+  // today — it is here because for a masonry the stock band is the whole
+  // trade, not a convenience: rough stone arrives and waits, cut block piles
+  // up and waits, and a masonry that silently became an open hall (the way an
+  // unlisted type would the day someone changed that default) would be a
+  // quarry yard with a bench in it. Written down so it cannot drift.
+  masonry: { store: true },
 } as const;
 
 /** The program of a work type — unregistered types get the generic

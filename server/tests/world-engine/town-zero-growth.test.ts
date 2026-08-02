@@ -13,7 +13,7 @@ import {
   TOWN_PLAY_STRUCTURES,
 } from "@shared/world-engine/interaction/town/town-play.js";
 import { foundingOptions } from "@shared/world-engine/kernel/town/construction.js";
-import { resolveStructure, spendCosts } from "@shared/world-engine/kernel/town/structures.js";
+import { resolveStructure, spendCostsChain } from "@shared/world-engine/kernel/town/structures.js";
 import { FOOD_DAY_SEC } from "@shared/world-engine/kernel/town/goods.js";
 
 describe("a founded site's town starts at ZERO buildings", () => {
@@ -46,10 +46,17 @@ describe("a founded site's town starts at ZERO buildings", () => {
   });
 });
 
+/** A frontier pile deep enough to found several REAL buildings. Phase 6
+ *  derives a structure's blocks from its footprint (a cottage is 120, a farm
+ *  272) and the chain mills 2 wood to the block, so the old two-figure yards
+ *  covered nothing. Generous on purpose: what these tests are about is the
+ *  GROWTH decision, never the arithmetic of a tight budget. */
+const YARD_WOOD = 2000;
+
 describe("building-by-building growth through founded deltas", () => {
   it("founding a house then a farm grows the town 0 → 1 → 2 buildings, deterministically", () => {
     const site = foundSite({ seed: 77, at: { x: 100, y: 100 }, key: "outpost" });
-    site.stock.wood = 40;
+    site.stock.wood = YARD_WOOD;
     site.stock.stone = 10;
 
     const grow = (type: string) => {
@@ -64,7 +71,9 @@ describe("building-by-building growth through founded deltas", () => {
         claimedSlots: new Set(founded.map((b) => b.slot)),
       })[0]!;
       expect(c).toBeDefined();
-      expect(spendCosts(spec, site.stock)).toBe(true);
+      // Phase 3: block bills over a raw-wood site stock — the chain spend
+      // mills implicitly at 2:1.
+      expect(spendCostsChain(spec, site.stock)).toBe(true);
       const b = site.deltas.foundBuilding(c, 0, spec.buildDays);
       site.deltas.completeFounding(b.ord);
       return b;
@@ -97,14 +106,14 @@ describe("building-by-building growth through founded deltas", () => {
 describe("visible construction on the stage (board words change the world)", () => {
   it("an ordered building stands as a marked SITE (no walls), then completes into doored rooms + furniture on the clock", () => {
     const site = foundSite({ seed: 77, at: { x: 100, y: 100 }, key: "outpost" });
-    site.stock.wood = 40;
+    site.stock.wood = YARD_WOOD;
     site.stock.stone = 10;
     const spec = resolveStructure(TOWN_PLAY_STRUCTURES, "workshop")!;
     const c = foundingOptions({
       seed: site.seed, key: site.key, footprint: spec.footprint, type: spec.type,
       occupied: [], claimedSlots: new Set(),
     })[0]!;
-    spendCosts(spec, site.stock);
+    spendCostsChain(spec, site.stock);
     site.deltas.foundBuilding(c, 0, spec.buildDays); // NOT completed — mid-build
     const play = buildTownPlay(siteTownConfig(site));
     const at = {
@@ -143,7 +152,7 @@ describe("visible construction on the stage (board words change the world)", () 
 
   it("a build committed MID-SESSION registers live (the deltas version bump)", () => {
     const site = foundSite({ seed: 77, at: { x: 100, y: 100 }, key: "outpost" });
-    site.stock.wood = 40;
+    site.stock.wood = YARD_WOOD;
     const play = buildTownPlay(siteTownConfig(site));
     const center = play.stage.center;
     play.stage.frame({ x: center.x, y: center.y }, 1); // settle the empty town
@@ -155,7 +164,7 @@ describe("visible construction on the stage (board words change the world)", () 
       footprint: spec.footprint, type: spec.type,
       occupied: [], claimedSlots: new Set(),
     })[0]!;
-    expect(spendCosts(spec, play.deltas.stock)).toBe(true);
+    expect(spendCostsChain(spec, play.deltas.stock)).toBe(true);
     const b = play.deltas.foundBuilding(c, 0, spec.buildDays);
     play.plan.works.push({
       type: spec.type, dx: b.dx, dy: b.dy, w: b.w, h: b.h, door: b.door,

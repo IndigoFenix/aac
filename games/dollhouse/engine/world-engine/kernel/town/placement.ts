@@ -205,11 +205,33 @@ function zoneOf(ctx: PlacementContext, room: HouseRoom): Zone {
     const f = toFrame(ctx, at.x, at.y);
     const half = d.width / 2 + 0.1;
     // A door on the HOUSE PERIMETER is the street door (deep swing —
-    // the gaze-steering porch); interior doors keep a walking lane.
+    // the gaze-steering porch); interior doors keep a walking lane. The
+    // base footprint alone can't decide: an ANNEX's shared door sits
+    // exactly ON that boundary and was misread as a street door — a
+    // porch-deep corridor carved out of the untouched host room (the
+    // furniture-jump amplifier). A door that TWO plan rooms record is
+    // interior by construction; the shared-door test overrides.
     const EPS = 1e-3;
-    const perimeter =
+    const onBase =
       Math.abs(at.y - ctx.y0) < EPS || Math.abs(at.y - ctx.y1) < EPS ||
       Math.abs(at.x - ctx.x0) < EPS || Math.abs(at.x - ctx.x1) < EPS;
+    let doorRooms = 0;
+    if (onBase) {
+      for (const rr of ctx.plan.rooms) {
+        for (const dd of rr.doorways) {
+          const aa =
+            dd.edge === "north" ? { x: rr.rect.x + dd.offset, y: rr.rect.y }
+            : dd.edge === "south" ? { x: rr.rect.x + dd.offset, y: rr.rect.y + rr.rect.h }
+            : dd.edge === "west" ? { x: rr.rect.x, y: rr.rect.y + dd.offset }
+            : { x: rr.rect.x + rr.rect.w, y: rr.rect.y + dd.offset };
+          if (Math.abs(aa.x - at.x) < 0.05 && Math.abs(aa.y - at.y) < 0.05) {
+            doorRooms++;
+            break; // count each ROOM once
+          }
+        }
+      }
+    }
+    const perimeter = onBase && doorRooms < 2;
     // Depths re-derive from the design body (exactly the documented
     // arithmetic: wall band (0.2+R) + a body's berth (R) + the lane) —
     // byte-identical to the historical 2.2 / 1.5 at the people default.

@@ -298,9 +298,9 @@ export function borderTowns(
   });
 
   // ── BUDGET: density semantics, exactly the region tier's rescale ─────────
-  const parentPeople = built.grid.fields.people;
-  const childPeople = prep.grid.fields.people;
-  if (parentPeople && childPeople) {
+  const parentForage = built.grid.fields.forage;
+  const childForage = prep.grid.fields.forage;
+  if (parentForage && childForage) {
     const groups = new Map<number, number[]>();
     for (let i = 0; i < n; i++) {
       const parent = cellAt(dirs[i]!);
@@ -310,10 +310,10 @@ export function borderTowns(
     }
     for (const [parent, children] of groups) {
       let sum = 0;
-      for (const i of children) sum += childPeople[i]!;
+      for (const i of children) sum += childForage[i]!;
       if (sum <= 0) continue;
-      const scale = (parentPeople[parent]! * children.length) / sum;
-      for (const i of children) childPeople[i]! *= scale;
+      const scale = (parentForage[parent]! * children.length) / sum;
+      for (const i of children) childForage[i]! *= scale;
     }
     prep.sites = findFoundingSites(prep.grid, founding);
   }
@@ -335,7 +335,7 @@ export function borderTowns(
         - Math.max(0, parentHeight[parent]! - SEA_HEIGHT)) * thermalM;
       childTempC[i] = parentTempC[parent]! - LAPSE_C_PER_M * dElevM;
     }
-    applyClimate(prep.grid, { rain: childRain, tempC: childTempC }, { people: "iceOnly" });
+    applyClimate(prep.grid, { rain: childRain, tempC: childTempC }, { forage: "iceOnly" });
     const ice = prep.grid.fields.ice;
     prep.sites = findFoundingSites(prep.grid, founding).filter(s => ice[s.cell]! < 1);
   }

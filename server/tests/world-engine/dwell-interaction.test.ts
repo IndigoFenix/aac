@@ -151,3 +151,81 @@ describe("the invariants that make the rules consistent", () => {
     expect(dwellInteraction(t, "short", alone)).toEqual(dwellInteraction(t, "short", alone));
   });
 });
+
+describe("build mode (⑦ — the ground answers the build word)", () => {
+  const onSpot = { conversingWith: null, building: true, buildSpot: "lot:12" };
+  const offSpot = { conversingWith: null, building: true, buildSpot: null };
+
+  it("LONG on a lit spot chooses it — the spark is over the GROUND", () => {
+    // Walls and floors are ground: the point the pick lands on is inside the
+    // footprint, and the spot resolved from it is what a settled look means.
+    expect(dwellInteraction(ground(), "long", onSpot)).toEqual([{ act: "buildSpot", id: "lot:12" }]);
+  });
+
+  it("LONG off every spot LETS THE CHOSEN ONE GO — open ground is an answer", () => {
+    expect(dwellInteraction(ground(), "long", offSpot)).toEqual([{ act: "buildSpot", id: null }]);
+  });
+
+  it("leaves the SHORT glance alone — a fixture still names itself", () => {
+    expect(dwellInteraction(object("chest_1"), "short", onSpot)).toEqual([
+      { act: "menu", id: "chest_1" },
+    ]);
+  });
+
+  it("NEVER turns a thing into a place — the hovered object stays the target", () => {
+    // THE FLICKER BUG. Build mode used to claim every non-creature hover, so a
+    // chest standing on a lit plot answered BOTH cells: the short rest opened
+    // its board, the long rest selected the plot under it — and since each of
+    // those releases the other, the board flipped between the two for as long
+    // as the player looked. One hover, one rule.
+    expect(dwellInteraction(object("chest_1"), "long", onSpot)).toEqual([]);
+    const acts = [
+      ...dwellInteraction(object("chest_1"), "short", onSpot),
+      ...dwellInteraction(object("chest_1"), "long", onSpot),
+    ];
+    expect(acts.map((a) => a.act)).toEqual(["menu"]);
+  });
+
+  it("never turns a PERSON into a spot", () => {
+    // Someone standing on a plot is still someone.
+    expect(dwellInteraction(creature("mara"), "long", onSpot)).toEqual([{ act: "talk", id: "mara" }]);
+  });
+
+  it("means nothing extra with the build word DOWN", () => {
+    expect(
+      dwellInteraction(ground(), "long", { conversingWith: null, buildSpot: "lot:12" }),
+    ).toEqual([{ act: "room", x: 5, y: 6 }]);
+    expect(dwellInteraction(ground(), "long", alone)).toEqual([{ act: "room", x: 5, y: 6 }]);
+  });
+
+  it("outranks the send-partner instruction while a conversation runs", () => {
+    // The build word is a mode the player entered on purpose; inside it a
+    // settled look at a plot is about the plot, not about where a partner goes.
+    expect(
+      dwellInteraction(ground(), "long", {
+        conversingWith: "mara", building: true, buildSpot: "bld:h_3",
+      }),
+    ).toEqual([{ act: "buildSpot", id: "bld:h_3" }]);
+  });
+
+  it("ONE CHANNEL: no hover ever answers as both a thing and a place", () => {
+    // The invariant behind the fix — whatever else changes about build mode,
+    // a single hover must never produce a spot act AND a thing act, in any
+    // phase, with or without a conversation running. That is what made two
+    // selections chase each other around the board.
+    for (const t of [creature("mara"), object("chest_1"), ground()]) {
+      for (const p of ["short", "long"] as const) {
+        for (const partner of [null, "bram"]) {
+          const acts = dwellInteraction(t, p, {
+            conversingWith: partner,
+            building: true,
+            buildSpot: "bld:h_3",
+          });
+          const place = acts.filter((a) => a.act === "buildSpot").length;
+          const thing = acts.filter((a) => a.act !== "buildSpot").length;
+          expect(Math.min(place, thing)).toBe(0);
+        }
+      }
+    }
+  });
+});

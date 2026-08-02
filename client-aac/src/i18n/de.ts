@@ -641,6 +641,7 @@ export const de: Translations = {
       cabinet: "Schrank",
       barrel: "Fass",
       basket: "Korb",
+      satchel: "Tasche",
       lamp: "Lampe",
       window: "Fenster",
       heater: "Heizung",

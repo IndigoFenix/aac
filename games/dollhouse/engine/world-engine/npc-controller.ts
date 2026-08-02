@@ -43,6 +43,10 @@ export interface NpcControlCtx {
    * NPC stops AIMING into buildings instead of merely bouncing off their walls.
    */
   walkable?: (p: Vec2, radius: number) => boolean;
+  /** The body's walk speed (its config's steerMaxSpeed) — the clock anchor's
+   *  pace derives from it (× CLOCK_SCHEDULE_RATE). Defaults to the engine's
+   *  design speed when absent. */
+  maxSpeed?: number;
   /**
    * The mover's COLLISION radius (its config's avatarRadius). Planner probes
    * must test walkability at the SAME radius locomotion collides at: the
@@ -119,6 +123,16 @@ export interface NpcErrand {
   onArrive?: (index: number) => void;
   /** Fired after the last point's onArrive; the errand then clears. */
   onDone?: () => void;
+  /** CLOCK-DRIVEN (clock-path-dodging.md): the schedule is the authority. A
+   *  clock ANCHOR advances along the polyline at CLOCK_SCHEDULE_RATE × the
+   *  body's walk speed and the body rides it — free to dodge within
+   *  CLOCK_BUBBLE_R of the anchor (the host reads `clockState()` for the
+   *  dodge strength and the separation exemption). Forced further out than
+   *  the bubble ⇒ the errand DEMOTES to a normal physics walk (the ONE
+   *  disruption predicate); the errand itself continues either way. */
+  clocked?: boolean;
+  /** Fired once if a clocked errand is forced out of its bubble (demoted). */
+  onClockLost?: () => void;
 }
 
 /** TEMP (view-distance-lod-tiers.md): wander waypoint-pick counter — picks
@@ -174,6 +188,12 @@ export interface NpcController {
    *  overlay. Null when no errand runs (the body wanders/idles). Read-only —
    *  the returned `points` is the controller's own array, never mutate it. */
   errandPath(): NpcErrandPath | null;
+  /** LIVE CLOCK-MODE state (clock-path-dodging.md), or null when the body is
+   *  not riding a clock anchor (no errand, unclocked errand, or demoted).
+   *  `scale` is the dodge strength: 1 near the anchor, fading to 0 as the
+   *  body nears the bubble edge — the shrink-to-pass-through rule. The host
+   *  uses non-null to exempt the body from separateBodies shoving. */
+  clockState(): { scale: number } | null;
   /** CHART REBASE (planet-mounted ground): the sim's tangent chart moved under
    *  the world (floating-origin re-anchor) — re-express every sim point this
    *  controller remembers (home, wander waypoint, errand polyline) through
@@ -190,6 +210,19 @@ export const DEFAULT_CONVERSATION_RADIUS = 8;
  *  UNBOUNDED manifold — open ground has no rect to confine it, but presence
  *  motion is local by design, so a default tether stands in. */
 export const UNBOUNDED_WANDER_RADIUS = 30;
+
+// ── CLOCK-PATH BUBBLE (clock-path-dodging.md, pinned decisions) ────────────
+/** The clock anchor's speed as a fraction of the body's walk speed — the
+ *  slack budget that lets a clocked walker detour and catch back up. ALSO the
+ *  space-time playback rate: they are the same number on purpose (pinned
+ *  decision 4 — one constant, shared). */
+export const CLOCK_SCHEDULE_RATE = 0.8;
+/** How far a clocked body may stray from its anchor before it is FORCED OUT
+ *  (demoted to a physics walk) — the one disruption predicate. */
+export const CLOCK_BUBBLE_R = 2.5;
+/** How far past the anchor the carrot may lead — the body rides this close
+ *  behind the schedule (matches the pursuit LOOKAHEAD). */
+const CLOCK_AHEAD = 1.1;
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -276,6 +309,17 @@ class BaseController implements NpcController {
   private errandGainAt = -1;
   /** When ≥ 0, standing at the current waypoint until this time (dwell). */
   private errandDwellUntil = -1;
+  /** CLOCK MODE (clock-path-dodging.md): is this errand riding an anchor? */
+  private clockOn = false;
+  /** The anchor's arc position along the polyline (entry-based, like
+   *  errandArcBase) and the sim time it last advanced. */
+  private clockArc = 0;
+  private clockNow = -1;
+  /** Cumulative arc at each vertex (entry-based; built on the first aim
+   *  frame beside errandEntry). Rebase-invariant — the map is rigid. */
+  private clockArcAt: number[] | null = null;
+  /** Cached dodge strength for the host (null ⇒ not in clock mode). */
+  private clockScale: number | null = null;
 
   /** Tether anchor when `wanderRadius` is set: `behavior.home`, else the spawn
    *  point. Mutable ONLY by rebase() — a chart re-anchor re-expresses it. */
@@ -365,6 +409,16 @@ class BaseController implements NpcController {
     this.errandBestArc = -1;
     this.errandGainAt = -1;
     this.errandDwellUntil = -1;
+    this.clockOn = !!e?.clocked;
+    this.clockArc = 0;
+    this.clockNow = -1;
+    this.clockArcAt = null;
+    this.clockScale = null;
+  }
+
+  clockState(): { scale: number } | null {
+    if (!this.errand || !this.clockOn || this.clockScale === null) return null;
+    return { scale: this.clockScale };
   }
 
   hasErrand(): boolean {
@@ -411,7 +465,10 @@ class BaseController implements NpcController {
     const errand = this.errand!;
     const pts = errand.points;
     if (this.errandDwellUntil >= 0) {
-      // Standing at the waypoint (a shopper at the stall).
+      // Standing at the waypoint (a shopper at the stall). The clock anchor
+      // waits WITH the body (it is stop-clamped here anyway) — keeping its
+      // timestamp fresh so the dwell never banks as anchor distance.
+      this.clockNow = ctx.now;
       if (ctx.now < this.errandDwellUntil) return null;
       this.errandDwellUntil = -1;
       return this.errandAdvance(errand);
@@ -419,6 +476,20 @@ class BaseController implements NpcController {
     if (!this.errandEntry) {
       this.errandEntry = { x: ctx.self.x, y: ctx.self.y };
       this.errandGainAt = ctx.now;
+      if (this.clockOn) {
+        // Cumulative vertex arcs (entry-based, matching errandArcBase's
+        // banking) — the anchor's ruler along the plan.
+        const arcs: number[] = [];
+        let acc = 0;
+        let prev: Vec2 = this.errandEntry;
+        for (const p of pts) {
+          acc += Math.hypot(p.x - prev.x, p.y - prev.y);
+          arcs.push(acc);
+          prev = p;
+        }
+        this.clockArcAt = arcs;
+        this.clockNow = ctx.now;
+      }
     }
     const segStart = (i: number): Vec2 => (i === 0 ? this.errandEntry! : pts[i - 1]!);
     const isStop = (i: number): boolean => i >= pts.length - 1 || !!(pts[i]!.dwell && pts[i]!.dwell! > 0);
@@ -534,23 +605,76 @@ class BaseController implements NpcController {
     const a0 = segStart(this.errandIndex);
     let i = this.errandIndex;
     let from = a0;
+    let projT = 1;
+    let seg0Len = 0;
     {
       // Projection point on the current segment.
       const pt = pts[i]!;
       const bx = pt.x - a0.x;
       const by = pt.y - a0.y;
       const len2 = bx * bx + by * by;
-      const t = len2 < 1e-9 ? 1 : Math.min(1, Math.max(0, ((ctx.self.x - a0.x) * bx + (ctx.self.y - a0.y) * by) / len2));
-      from = { x: a0.x + bx * t, y: a0.y + by * t };
+      seg0Len = Math.sqrt(len2);
+      projT = len2 < 1e-9 ? 1 : Math.min(1, Math.max(0, ((ctx.self.x - a0.x) * bx + (ctx.self.y - a0.y) * by) / len2));
+      from = { x: a0.x + bx * projT, y: a0.y + by * projT };
     }
+
+    // ── THE CLOCK ANCHOR (clock-path-dodging.md) ─────────────────────────
+    // A clocked errand's schedule position advances along the plan at
+    // CLOCK_SCHEDULE_RATE × walk speed; the body rides it. The carrot below
+    // is capped at the anchor + CLOCK_AHEAD, so the body can never LEAD the
+    // schedule — and a body pushed further than CLOCK_BUBBLE_R from the
+    // anchor is FORCED OUT (the one disruption predicate): the errand
+    // demotes to a normal full-pace physics walk mid-stride.
+    let clockBudgetCap = Infinity;
+    if (this.clockOn && this.clockArcAt) {
+      const bodyArc = this.errandArcBase + projT * seg0Len;
+      const speed = (ctx.maxSpeed ?? WORLD_ENGINE_DEFAULTS.steerMaxSpeed) * CLOCK_SCHEDULE_RATE;
+      const cdt = this.clockNow < 0 ? 0 : Math.max(0, ctx.now - this.clockNow);
+      this.clockNow = ctx.now;
+      let anchor = this.clockArc + cdt * speed;
+      // The anchor FOLLOWS a forward skip (path recovery) — only falling
+      // behind or aside counts as disruption (pinned decision 1).
+      anchor = Math.max(anchor, bodyArc - CLOCK_AHEAD);
+      // Stop-clamp (decision 3): the anchor waits at the next dwell/final
+      // vertex until the body lands it through the normal arrive machinery —
+      // the bubble COLLAPSES onto every stop, so tight arrival handoffs and
+      // dwells behave exactly as unclocked.
+      let stopArc = this.clockArcAt[this.clockArcAt.length - 1]!;
+      for (let j = this.errandIndex; j < pts.length; j++) {
+        if (isStop(j)) {
+          stopArc = this.clockArcAt[j]!;
+          break;
+        }
+      }
+      anchor = Math.min(anchor, stopArc);
+      this.clockArc = anchor;
+      const ap = this.pointAtClockArc(anchor);
+      const dev = ap ? Math.hypot(ctx.self.x - ap.x, ctx.self.y - ap.y) : 0;
+      if (dev > CLOCK_BUBBLE_R) {
+        this.clockOn = false;
+        this.clockScale = null; // the host stops exempting it this same frame
+        errand.onClockLost?.();
+        if (this.errand !== errand) return null; // the callback replaced it
+      } else {
+        // Dodge strength: full inside half the bubble, fading to zero
+        // (pass-through) at the edge — the shrink rule (decision 4).
+        this.clockScale = Math.max(0, Math.min(1, 2 * (1 - dev / CLOCK_BUBBLE_R)));
+        clockBudgetCap = Math.max(0.05, anchor + CLOCK_AHEAD - bodyArc);
+      }
+    }
+    /** With the clock cap binding, aims stay RAW — a near aim brakes the
+     *  body onto the schedule's pace; reach-extension would defeat it. */
+    const clockClamped = clockBudgetCap < LOOKAHEAD;
+
     const reach = (carrot: Vec2): Vec2 => {
+      if (clockClamped) return carrot;
       const gx = carrot.x - ctx.self.x;
       const gy = carrot.y - ctx.self.y;
       const g = Math.hypot(gx, gy);
       if (g < 1e-4 || g >= AIM_REACH) return carrot;
       return { x: ctx.self.x + (gx / g) * AIM_REACH, y: ctx.self.y + (gy / g) * AIM_REACH };
     };
-    let budget = LOOKAHEAD;
+    let budget = Math.min(LOOKAHEAD, clockBudgetCap);
     for (;;) {
       const pt = pts[i]!;
       const remaining = dist(from, pt);
@@ -581,6 +705,29 @@ class BaseController implements NpcController {
       i += 1;
       if (i >= pts.length) return pts[pts.length - 1]!;
     }
+  }
+
+  /** The world point at entry-based arc `arc` along the errand polyline —
+   *  where the clock anchor STANDS (clamped to the path's ends). */
+  private pointAtClockArc(arc: number): Vec2 | null {
+    const arcs = this.clockArcAt;
+    const errand = this.errand;
+    if (!arcs || !errand || !this.errandEntry) return null;
+    const pts = errand.points;
+    let prev: Vec2 = this.errandEntry;
+    let base = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const end = arcs[i]!;
+      if (arc <= end || i === pts.length - 1) {
+        const seg = end - base;
+        const t = seg < 1e-9 ? 1 : Math.max(0, Math.min(1, (arc - base) / seg));
+        const p = pts[i]!;
+        return { x: prev.x + (p.x - prev.x) * t, y: prev.y + (p.y - prev.y) * t };
+      }
+      base = end;
+      prev = pts[i]!;
+    }
+    return null;
   }
 
   /** Step to the next errand waypoint (or finish). */

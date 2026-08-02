@@ -189,12 +189,6 @@ export function renderWorld2D(
       ctx.lineTo(b.sx, b.sy);
       ctx.stroke();
     } else {
-      const open = state.doors[s.id]?.open ?? 0;
-      const locked = state.doors[s.id]?.locked ?? false;
-      const hinge = s.hinge === "b" ? b : a;
-      const other = s.hinge === "b" ? a : b;
-      const len = Math.hypot(other.sx - hinge.sx, other.sy - hinge.sy);
-      const ang = Math.atan2(other.sy - hinge.sy, other.sx - hinge.sx) + open * (Math.PI * 0.55);
       // Frame slot (where the closed leaf would sit) in faint grey.
       ctx.strokeStyle = "rgba(156,163,175,0.4)";
       ctx.lineWidth = lw;
@@ -202,7 +196,18 @@ export function renderWorld2D(
       ctx.moveTo(a.sx, a.sy);
       ctx.lineTo(b.sx, b.sy);
       ctx.stroke();
+      // A LEAFLESS doorway (phase 5) is the frame and nothing else — the 2D
+      // twin of render3d's lintel-only build. Drawing the leaf here would be
+      // worse than merely wrong: `tickDoors` pins a hole's `open` at 1, so the
+      // slab would swing wide open and read as a door that IS there.
+      if (s.leaf === false) continue;
       // The leaf.
+      const open = state.doors[s.id]?.open ?? 0;
+      const locked = state.doors[s.id]?.locked ?? false;
+      const hinge = s.hinge === "b" ? b : a;
+      const other = s.hinge === "b" ? a : b;
+      const len = Math.hypot(other.sx - hinge.sx, other.sy - hinge.sy);
+      const ang = Math.atan2(other.sy - hinge.sy, other.sx - hinge.sx) + open * (Math.PI * 0.55);
       ctx.strokeStyle = locked ? "#7c2d12" : "#b45309";
       ctx.lineWidth = lw;
       ctx.beginPath();

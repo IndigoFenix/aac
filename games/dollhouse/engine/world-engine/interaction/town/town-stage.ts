@@ -29,7 +29,9 @@ import {
 import type { CompiledEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { probesOn } from "@shared/world-engine/perf-probes.js";
 import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/furniture.js";
-import { buildingRoomPlan, houseRoomPlan } from "@shared/world-engine/kernel/town/rooms.js";
+import {
+  buildingRoomPlan, doorwaysWithLeaves, houseRoomPlan,
+} from "@shared/world-engine/kernel/town/rooms.js";
 import { workProgram, type BuildingProgram } from "@shared/world-engine/kernel/town/stations.js";
 import type { WorkstationRegistry } from "@shared/world-engine/kernel/town/workstations.js";
 import type { TownHost } from "@shared/world-engine/kernel/town/host.js";
@@ -40,10 +42,24 @@ import {
 } from "@shared/world-engine/kernel/town/goods.js";
 import {
   annexWorldRect,
+  demolitionStage,
+  doorlessOf,
   foundedBuildingDone,
+  foundedProgress,
+  foundedStage,
   isInteriorCandidate,
+  laborFraction,
+  pendingAnnexStage,
+  pendingRoomKindOf,
   workDeltaKey,
+  type FoundedBuilding,
 } from "@shared/world-engine/kernel/town/construction.js";
+import { roomKindDisplayGlyph } from "@shared/world-engine/kernel/town/programs.js";
+import {
+  resolveStructure,
+  structureDisplayGlyph,
+  type StructureSpec,
+} from "@shared/world-engine/kernel/town/structures.js";
 import { createTownTrade, type TownTrade } from "@shared/world-engine/kernel/town/trade.js";
 import { createResidentModel, STREET_NPCS } from "@shared/world-engine/kernel/town/residents.js";
 import type { TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
@@ -104,6 +120,10 @@ export interface TownStageOpts {
   /** THE WORKSTATION REGISTRY this town furnishes from (game.culture.
    *  architecture, resolved). Absent = the default global registry. */
   registry?: WorkstationRegistry;
+  /** The town's STRUCTURE CATALOG — read only to name a construction site
+   *  (⑦: the icon hovering over a staked plot is the structure's own display
+   *  glyph). Absent ⇒ sites fall back to a generic building frame. */
+  structures?: StructureSpec[];
 }
 
 /** A CONSTRUCTION SITE (city-founding): an ordered-but-unbuilt lot. A
@@ -118,6 +138,22 @@ export interface ConstructionSite {
   h: number;
   /** StructureSpec type ("house", "farm") — "annex" for a house's growth rect. */
   type: string;
+  /** VISIBLE BUILD STAGE (⑦ — construction.ts BuildStage): 0 marked ground,
+   *  1 floor laid, 2 pillars up. A room COMING DOWN walks the same ladder
+   *  backwards, and its walls are withheld from the building set while it
+   *  does. Absent ⇒ 0 (a bare marking — every pre-⑦ caller's meaning). */
+  stage?: 0 | 1 | 2;
+  /** BANKED-LABOR FRACTION 0..1 (phase 3 — worked pieces): drives the wall
+   *  COURSES the renderer stacks on a stage-2 site, so walls visibly rise
+   *  block by block as labor banks (and sink as a demolition works). Absent
+   *  ⇒ 0. Never its own clock — a pure read of the order's labor. */
+  progress?: number;
+  /** The composed GLYPH of what will stand here — a house, a bedroom — shown
+   *  as an icon hovering over the plot so a site is never an anonymous
+   *  rectangle. Absent = no icon. */
+  glyph?: string;
+  /** The finished building's wall tint, for the floor + pillars. */
+  color?: string;
 }
 
 export interface TownStageFrame {
@@ -264,19 +300,24 @@ const houseBuilding = (
   center: { x: number; y: number },
   id: string,
   b: { dx: number; dy: number; w: number; h: number; door: TownHouse["door"]; color: string; floors?: number },
+  doorless: ReadonlySet<string> = new Set(),
 ): BuildingSpec => {
   const along = b.door === "north" || b.door === "south" ? b.w : b.h;
+  const footprint = { x: center.x + b.dx, y: center.y + b.dy, w: b.w, h: b.h };
   return {
     id,
-    footprint: { x: center.x + b.dx, y: center.y + b.dy, w: b.w, h: b.h },
+    footprint,
     // Storeys from the plan (the build-up knob). Upper floors are visual
     // for now — no stairs staged; ground floor keeps every mechanic.
     floors: b.floors ?? 1,
     stairs: false,
     wallThickness: 0.4,
     // Door gap centered on its wall — the same midpoint houseDoorstep /
-    // doorTransit aim at (grand-dream's centred-gap lesson).
-    doorways: [{ edge: b.door, offset: along / 2, width: 2 }],
+    // doorTransit aim at (grand-dream's centred-gap lesson). The SHELL form
+    // carries the leaf flag too: the street door's midpoint is the living
+    // room's street-door midpoint, so a house whose front door was broken off
+    // reads the same whether it is staged shell or full.
+    doorways: doorwaysWithLeaves({ rect: footprint }, [{ edge: b.door, offset: along / 2, width: 2 }], doorless),
     color: b.color,
   };
 };
@@ -425,6 +466,8 @@ export function* createTownStageSteps(
      *  shell↔full swap, so door states and routing anchors survive). */
     shell: BuildingSpec[];
     full: BuildingSpec[];
+    /** Room id → its kind — the scaffold site's icon reads from here (⑦). */
+    kinds: Map<string, string>;
     cx: number;
     cy: number;
   }
@@ -433,26 +476,40 @@ export function* createTownStageSteps(
   const houseMode = new Map<number, "shell" | "full">();
   /** Construction-delta revision each house was last staged at. */
   const stagedRev = new Map<number, number>();
-  /** New annex rooms of a WATCHED house stand as a marked SITE (flat
-   *  ground, no walls — city-founding "construction sites") until this
-   *  townClock second, then the doored room swaps in. The rect + owning
-   *  house ride along for the site emission and the furniture deferral. */
-  const scaffoldUntil = new Map<
-    string,
-    { until: number; rect: { x: number; y: number; w: number; h: number }; houseKey: string }
-  >();
-  const SCAFFOLD_S = 30;
-  /** In-progress FOUNDED works' site markings, by plan work index. */
+  // SCAFFOLD_S is DEAD (phase 3 — walls as worked pieces): the settle
+  // timer existed to hide the wall pop at commit, and a timer is exactly
+  // what nothing here may be. Since phase 3 the PENDING order's site rises
+  // its wall courses with banked labor (ConstructionSite.progress), so at
+  // the commit instant the courses ARE the walls — the full doored room
+  // swaps in continuously, with the crew still standing there.
+  /** In-progress FOUNDED works' site markings, by plan work index. The STAGE
+   *  is not stored: it moves with the banked labor, so `activeSites` reads it
+   *  fresh off the delta every time (registration happens once, the ladder
+   *  climbs for as long as builders stand there). */
   const workSites = new Map<number, ConstructionSite>();
   /** Frame-over-frame site signature — sites emit on ANY change (including
-   *  the first frame of a restored in-progress build), never else. */
+   *  the first frame of a restored in-progress build, and every stage the
+   *  ladder climbs), never else. */
   let lastSiteSig: string | null = null;
-  const annexSiteOf = (id: string, s: { rect: { x: number; y: number; w: number; h: number } }): ConstructionSite =>
-    ({ id: `site_${id}`, ...s.rect, type: "annex" });
+  /** Frame-over-frame set of rooms a demolition has already unwalled — a
+   *  change here re-emits the building set (the walls really left). */
+  let lastFallingSig = "";
+  /** The last frame's town clock — the day the stage reads build progress
+   *  against when a caller asks for sites outside `frame()`. */
+  let lastFrameSec = 0;
+  /** A structure type → the glyph its site wears. Falls back to the generic
+   *  building frame when the stage was given no catalog. */
+  const structureGlyphOf = (type: string): string => {
+    const spec = opts.structures ? resolveStructure(opts.structures, type) : null;
+    return spec ? structureDisplayGlyph(spec) : `building(${type})`;
+  };
+  /** Clamp a kernel BuildStage to what a SITE can carry — a site is by
+   *  definition unfinished, so 3 (walls up) never reaches the renderer. */
+  const siteStage = (s: number): 0 | 1 | 2 => (s >= 2 ? 2 : s <= 0 ? 0 : 1);
   /** Pending-designation GROUND MARKINGS (⑤): a staked annex rect reads as
-   *  a construction site while its materials gather. Interior designations
-   *  skip — their ground is indoors (the cutaway shows the room when it
-   *  lands). */
+   *  a construction site while its materials gather, and CLIMBS the ⑦ stage
+   *  ladder as its builders bank labor. Interior designations skip — their
+   *  ground is indoors (the cutaway shows the room when it lands). */
   const pendingSites = (): ConstructionSite[] => {
     const out: ConstructionSite[] = [];
     for (const p of opts.deltas?.annexSites() ?? []) {
@@ -461,32 +518,123 @@ export function* createTownStageSteps(
       const h = m ? plan.houses.find((hh) => hh.index === Number(m[1])) : undefined;
       if (!h) continue;
       const r = annexWorldRect(center, h, p.candidate);
-      out.push({ id: `site_pa_${p.ord}`, ...r, type: "annex" });
+      out.push({
+        id: `site_pa_${p.ord}`,
+        ...r,
+        type: "annex",
+        stage: siteStage(pendingAnnexStage(p)),
+        progress: laborFraction(p),
+        glyph: roomKindDisplayGlyph(pendingRoomKindOf(p)),
+        ...(h.color ? { color: h.color } : {}),
+      });
+    }
+    return out;
+  };
+  /** A room named by a designation, resolved to live geometry — houses by
+   *  their delta key, works through workDeltaKey (the one door). */
+  const roomGeometryOf = (
+    buildingKey: string,
+    roomId: string,
+  ): { rect: { x: number; y: number; w: number; h: number }; kind: string; color?: string } | null => {
+    const hm = /^h_(\d+)$/.exec(buildingKey);
+    if (hm) {
+      const h = plan.houses.find((hh) => hh.index === Number(hm[1]));
+      if (!h) return null;
+      const room = houseRoomPlan(center, h, opts.deltas?.get(buildingKey)).rooms.find((r) => r.id === roomId);
+      return room ? { rect: room.rect, kind: room.kind, ...(h.color ? { color: h.color } : {}) } : null;
+    }
+    for (let i = 0; i < plan.works.length; i++) {
+      const wk = plan.works[i]!;
+      if (workDeltaKey(wk, i) !== buildingKey) continue;
+      const room = workPlans[i]?.rooms.find((r) => r.id === roomId);
+      return room ? { rect: room.rect, kind: room.kind, ...(wk.color ? { color: wk.color } : {}) } : null;
+    }
+    return null;
+  };
+  /** ROOMS COMING DOWN (⑦): an ordered demolition is MARKED from the moment
+   *  it is ordered (a designation the player can see standing, wearing the
+   *  break glyph over it); once its builders are really at work the room
+   *  loses its walls and runs the build ladder BACKWARDS — pillars, then bare
+   *  floor, then nothing. Its walls are withheld from the building set for
+   *  exactly as long as `fallingRoomIds` names it. */
+  const fallingSites = (): ConstructionSite[] => {
+    const out: ConstructionSite[] = [];
+    for (const p of opts.deltas?.demolitionSites() ?? []) {
+      const st = demolitionStage(p);
+      if (st <= 0) continue; // already gone — the row is about to commit
+      const g = roomGeometryOf(p.buildingKey, p.roomId);
+      if (!g) continue;
+      out.push({
+        id: `site_pd_${p.ord}`,
+        ...g.rect,
+        type: "demolish",
+        // Walls still standing ⇒ a bare marking (no floor, no posts): the
+        // room IS its own geometry until the work starts.
+        stage: st >= 3 ? 0 : siteStage(st),
+        // The courses run BACKWARDS — what remains of the walls.
+        progress: Math.max(0, Math.min(1, 1 - laborFraction(p))),
+        // `break + <room>` — a site coming down must not read the same as one
+        // going up, and both wear their kind.
+        glyph: `break + ${roomKindDisplayGlyph(g.kind)}`,
+        ...(g.color ? { color: g.color } : {}),
+      });
+    }
+    return out;
+  };
+  /** Building ids whose walls a demolition has already taken down. */
+  const fallingRoomIds = (): Set<string> => {
+    const ids = new Set<string>();
+    for (const p of opts.deltas?.demolitionSites() ?? []) {
+      const st = demolitionStage(p);
+      if (st < 3 && st > 0) ids.add(p.roomId);
+    }
+    return ids;
+  };
+  /** In-progress FOUNDED works, with their stage read fresh off the delta. */
+  const workSiteRows = (): ConstructionSite[] => {
+    const day = lastFrameSec / FOOD_DAY_SEC;
+    const out: ConstructionSite[] = [];
+    for (const [wi, base] of workSites) {
+      const wk = plan.works[wi];
+      const fb =
+        wk?.foundedOrd !== undefined
+          ? opts.deltas?.founded().find((f) => f.ord === wk.foundedOrd)
+          : undefined;
+      out.push({
+        ...base,
+        stage: siteStage(fb ? foundedStage(fb, day) : 0),
+        progress: fb ? foundedProgress(fb, day) : 0,
+      });
     }
     return out;
   };
   const activeSites = (): ConstructionSite[] => [
-    ...workSites.values(),
-    ...[...scaffoldUntil.entries()].map(([id, s]) => annexSiteOf(id, s)),
+    ...workSiteRows(),
     ...pendingSites(),
+    ...fallingSites(),
   ];
   const houseStagingOf = (h: TownHouse): HouseStaging => {
     const delta = opts.deltas?.get(`h_${h.index}`);
     const rooms = houseRoomPlan(center, h, delta).rooms;
+    // Which of this house's openings have lost their leaf (phase 5). A
+    // worldgen house has none, so `doorwaysWithLeaves` is a pass-through and the
+    // staged spec is byte-identical to the pre-phase-5 one.
+    const doorless = doorlessOf(delta);
     const roomSpec = (room: (typeof rooms)[number]): BuildingSpec => ({
       id: room.id,
       footprint: room.rect,
       floors: h.floors ?? 1,
       stairs: false,
       wallThickness: 0.4,
-      doorways: room.doorways,
+      doorways: doorwaysWithLeaves(room, room.doorways, doorless),
       color: h.color,
     });
     const annexRooms = rooms.filter((r) => /_a\d+$/.test(r.id));
     return {
       house: h,
+      kinds: new Map(rooms.map((r) => [r.id, r.kind as string])),
       shell: [
-        houseBuilding(center, `h_${h.index}`, h),
+        houseBuilding(center, `h_${h.index}`, h, doorless),
         // Annexes keep their footprint (and id) in shell form — door-less
         // boxes, like the shell itself keeps only its street door.
         ...annexRooms.map((r) => ({ ...roomSpec(r), doorways: [] })),
@@ -572,8 +720,15 @@ export function* createTownStageSteps(
         w: wk.w,
         h: wk.h,
         type: wk.type,
+        // What will stand here, hovering over the plot (⑦).
+        glyph: structureGlyphOf(wk.type),
+        ...(wk.color ? { color: wk.color } : {}),
       });
     } else {
+      // A PIPELINE-RAISED work seeds every opening `doorless` at shell
+      // completion, so its rooms stand as bare openings until the furniture
+      // sweeps hang each leaf — the doors going in are visible, one at a time.
+      const doorless = doorlessOf(wkDelta);
       for (const room of workPlans[i]!.rooms) {
         buildingById.set(room.id, {
           id: room.id,
@@ -581,7 +736,7 @@ export function* createTownStageSteps(
           floors: 1,
           stairs: false,
           wallThickness: 0.4,
-          doorways: room.doorways,
+          doorways: doorwaysWithLeaves(room, room.doorways, doorless),
           color: wk.color,
         });
         allBuildings.push({ id: room.id, cx, cy });
@@ -662,6 +817,7 @@ export function* createTownStageSteps(
     /** RECRUITED CIVIC WORKERS (⑥): pinned bodies — see TownStage.frame. */
     isBusy?: (id: string) => boolean,
   ): TownStageFrame => {
+    lastFrameSec = tSec; // build progress reads the clock through this
     // The "interior on show" gate — shared by the interior staging, the
     // furniture and the residents (see the FURNITURE note below). No signal
     // ⇒ fall back to the raw footprint test (the 2D lab).
@@ -672,10 +828,10 @@ export function* createTownStageSteps(
           p.y > center.y + h.dy && p.y < center.y + h.dy + h.h;
 
     // ── CONSTRUCTION DELTAS (v1): a bumped building re-plans, re-stages
-    // and re-furnishes THIS frame. A watched house's new annex rooms pass
-    // through a door-less SCAFFOLD box (SCAFFOLD_S of townClock) before
-    // their real doored form swaps in — construction is visible, and no
-    // door invites a body in while the walls materialize.
+    // and re-furnishes THIS frame. A committed room's doored form lands
+    // the same frame (phase 3): its pending order's site rose the wall
+    // courses with banked labor, so the swap is continuous — construction
+    // was visible the whole way, as worked pieces rather than a timer.
     let changed = false;
     const deltaRemoveObjects: string[] = [];
     // FOUNDED-WORK COMPLETION (①b): a build clock running out swaps the
@@ -743,22 +899,12 @@ export function* createTownStageSteps(
         const rev = opts.deltas.get(key)?.rev ?? 0;
         if ((stagedRev.get(hs.house.index) ?? 0) === rev) continue;
         stagedRev.set(hs.house.index, rev);
-        const prevIds = new Set(hs.full.map((b) => b.id));
         const rebuilt = houseStagingOf(hs.house);
         hs.shell = rebuilt.shell;
         hs.full = rebuilt.full;
-        if (houseVisible(hs.house)) {
-          for (const b of rebuilt.full) {
-            // New annex OR interior rooms (⑤b) pass through the scaffold.
-            if (!prevIds.has(b.id) && /_[ai]\d+$/.test(b.id)) {
-              scaffoldUntil.set(b.id, {
-                until: tSec + SCAFFOLD_S,
-                rect: { ...b.footprint },
-                houseKey: key,
-              });
-            }
-          }
-        }
+        // A committed room's walls land THIS frame (phase 3 — no scaffold
+        // timer): the pending order's site already rose its courses with
+        // banked labor, so the swap is continuous.
         // Refurnish: clear the old set now (quest-host removes before it
         // adds, so a surviving id re-lands cleanly the same frame); the
         // want-loop below re-adds the new set while the house is on show.
@@ -774,21 +920,6 @@ export function* createTownStageSteps(
         changed = true;
       }
     }
-    // Annex sites harden into real doored rooms as their time passes — the
-    // room emits this frame, and the owning house REFURNISHES so the new
-    // room's deferred pieces stream in (remove-before-add, the rev-bump
-    // pattern).
-    for (const [id, s] of scaffoldUntil) {
-      if (tSec >= s.until) {
-        scaffoldUntil.delete(id);
-        if (furnished.has(s.houseKey)) {
-          for (const o of furnitureOf.get(s.houseKey) ?? []) deltaRemoveObjects.push(o.id);
-          furnished.delete(s.houseKey);
-        }
-        changed = true;
-      }
-    }
-
     // BUILDINGS: load within reach, keep until past the unload radius.
     for (const b of allBuildings) {
       const d = Math.hypot(b.cx - p.x, b.cy - p.y);
@@ -829,24 +960,37 @@ export function* createTownStageSteps(
         else houseMode.set(hs.house.index, next);
       }
     }
+    // A room whose walls have come down under a live demolition (⑦) leaves
+    // the building set the same way an unbuilt annex does — its marked
+    // ground IS its visible form now, running the ladder backwards.
+    const falling = fallingRoomIds();
+    const fallingSig = [...falling].sort().join("|");
+    if (fallingSig !== lastFallingSig) {
+      lastFallingSig = fallingSig;
+      changed = true;
+    }
     // An annex under its site window emits NO walls (the site marking is
     // the construction's visible form — city-founding "construction sites").
     const buildings = changed
       ? [
-          ...[...solid].map(id => buildingById.get(id)!),
+          ...[...solid].map(id => buildingById.get(id)!).filter(b => !falling.has(b.id)),
           ...houseStagings.flatMap(hs => {
             const mode = houseMode.get(hs.house.index);
             return mode === "full"
-              ? hs.full.filter(b => !scaffoldUntil.has(b.id))
+              ? hs.full.filter(b => !falling.has(b.id))
               : mode === "shell" ? hs.shell : [];
           }),
         ]
       : null;
-    // SITES: emit the full set on ANY membership change (order landed,
-    // build completed, annex window opened/closed) — including the very
-    // first frame of a restored in-progress build.
+    // SITES: emit the full set on ANY membership, STAGE or COURSE change
+    // (order landed, materials staged, pillars up, a wall course rising,
+    // build completed) — including the very first frame of a restored
+    // in-progress build. Progress is bucketed to course granularity so
+    // the walls climb in visible steps, not a re-emit every frame.
     const siteList = activeSites();
-    const siteSig = siteList.map(s => s.id).join("|");
+    const siteSig = siteList
+      .map(s => `${s.id}@${s.stage ?? 0}.${Math.floor((s.progress ?? 0) * 8)}`)
+      .join("|");
     const sites = siteSig !== lastSiteSig ? siteList : null;
     lastSiteSig = siteSig;
 
@@ -883,12 +1027,17 @@ export function* createTownStageSteps(
     }
     for (const id of wantFurnished) {
       if (furnished.has(id) || !furnitureOf.has(id)) continue;
-      // Pieces standing inside an ACTIVE annex site defer until the room's
-      // walls land (the expiry refurnish above re-adds them) — furniture
-      // never stands on the open marked ground.
-      const siteRects = [...scaffoldUntil.values()]
-        .filter(s => s.houseKey === id)
-        .map(s => s.rect);
+      // Pieces standing inside a PENDING order's marked ground defer until
+      // the room commits (the rev-bump refurnish re-adds them) — furniture
+      // never stands on an open construction site.
+      const siteRects = (opts.deltas?.annexSites() ?? [])
+        .filter((p) => p.buildingKey === id && !isInteriorCandidate(p.candidate))
+        .map((p) => {
+          const m = /^h_(\d+)$/.exec(p.buildingKey);
+          const h = m ? plan.houses.find((hh) => hh.index === Number(m[1])) : undefined;
+          return h ? annexWorldRect(center, h, p.candidate) : null;
+        })
+        .filter((r): r is { x: number; y: number; w: number; h: number } => !!r);
       const pieces = siteRects.length
         ? furnitureOf.get(id)!.filter(
             o => !siteRects.some(r => o.x >= r.x && o.x <= r.x + r.w && o.y >= r.y && o.y <= r.y + r.h),

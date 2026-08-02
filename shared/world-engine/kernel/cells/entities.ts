@@ -388,18 +388,43 @@ export function stepWorld(world: EntityWorld): boolean {
       st.fingerprint = fp;
       st.recomputes++;
     }
-    if (fn.drift) {
+    // THE GRANARY FEEDBACK (FlowNetSpec.feed): on a shortage, each entity's
+    // own drift stock tops up its delivery — fed = min(stock, shortage) —
+    // and that fed amount IS the drain (replacing the uniform residual
+    // share, which drained the stock without feeding anyone). Surplus-side
+    // residual is unchanged. Computed before the drift/satisfied writes so
+    // both read one number; per-entity, so conservation is by construction.
+    const driftArr = fn.drift ? world.scalars[fn.drift] : undefined;
+    const feeding = !!(fn.feed && driftArr);
+    let fed: Float64Array | null = null;
+    if (feeding) {
+      fed = new Float64Array(world.n);
       for (let i = 0; i < world.n; i++) {
-        if (st.residual[i] !== 0) add(entOwn, fn.drift, i, st.residual[i]);
+        if (world.disabled[i]) continue;
+        const shortage = dem[i] - st.satisfied[i];
+        if (shortage > 0) fed[i] = Math.min(Math.max(0, driftArr![i]), shortage);
       }
     }
-    // Demand met, written as a derived value (the chaining output).
+    if (fn.drift) {
+      for (let i = 0; i < world.n; i++) {
+        if (feeding && st.residual[i] < 0) {
+          // Shortage component: the eating is the drain — per entity, only
+          // where a shortage was actually fed (a zero-demand entity's stock
+          // is not eaten; a dry stock drains nothing).
+          if (fed![i] !== 0) add(entOwn, fn.drift, i, -fed![i]);
+        } else if (st.residual[i] !== 0) {
+          add(entOwn, fn.drift, i, st.residual[i]);
+        }
+      }
+    }
+    // Demand met, written as a derived value (the chaining output) — plus
+    // whatever the stockpile fed this step.
     if (fn.satisfied) {
       const satArr = world.scalars[fn.satisfied];
       const sv = comp.entityVars.get(fn.satisfied);
       if (satArr && sv) {
         for (let i = 0; i < world.n; i++) {
-          const val = clamp(sv, st.satisfied[i]);
+          const val = clamp(sv, st.satisfied[i] + (fed ? fed[i] : 0));
           if (val !== satArr[i]) { satArr[i] = val; changed = true; }
         }
       }

@@ -220,6 +220,21 @@ export type GoalSpec =
   // so a child who says the wrong one still gets the thing. Host-routed like
   // `build`: the craft is house-scoped work, not a body errand.
   | { kind: "craft"; glyph: string; cap: number }
+  // THE TWO ROOM VERBS (construction ④, construction-structures.md §Demolishing
+  // or Changing Rooms), spoken instead of pressed: `demolish` takes the room
+  // down whole ("break the bedroom"), `emptyRoom` takes only its furniture out
+  // and leaves the walls standing ("empty the kitchen"). `room` is the SPOKEN
+  // WORD, resolved by the host against the focused building's plan exactly as
+  // `build` resolves `structure` against the catalog — a goal never carries
+  // world ids, and which building is meant is the host's scope question, not
+  // the parser's. Host-routed: both post a DESIGNATION for builders to work,
+  // never a body errand.
+  | { kind: "demolish"; room: string }
+  | { kind: "emptyRoom"; room: string }
+  // BREAK ONE PIECE ("break the bed") — `place`'s exact inverse, and it carries
+  // the same ItemRef for the same reason: the piece is named by KIND and the
+  // host finds a standing one. Host-routed like the room verbs.
+  | { kind: "breakPiece"; item: ItemRef }
   // WORK A CONSTRUCTION SITE (pipeline ⑥): stand at the staged site and
   // BUILD — labor banks only while builders are present, and more of them
   // build faster (capped). `site` = "f:<ord>" (a founded building) or

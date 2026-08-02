@@ -8,11 +8,20 @@ import {
   BUILDER_CATEGORIES,
   builderSurfaceFor,
   defaultBuilderNouns,
+  placeBuilderNouns,
   type BuilderNounEntry,
 } from "@shared/world-engine/interaction/intent/builder-surface.js";
 import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
 import { CORE_CONCEPTS } from "@shared/world-engine/object-properties.js";
 import { headOf } from "@shared/world-engine/variations.js";
+import {
+  DEFAULT_ROOM_PROGRAMS,
+  DEFAULT_STRUCTURE_PROGRAMS,
+  programOverridesOf,
+  resolveRoomPrograms,
+} from "@shared/world-engine/kernel/town/programs.js";
+import { tokenizeSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
+import { canResolveGlyph, parseGlyph } from "@shared/glyph-compositor.js";
 
 const NOUNS: BuilderNounEntry[] = [
   { symbol: "apple", label: "apple", kind: "item", affords: ["eat", "want", "get", "give"], properties: ["food"] },
@@ -211,23 +220,36 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
 });
 
 describe("defaultBuilderNouns — the out-of-game object set", () => {
-  it("non-empty, deterministic, all items, no presence, no invented keys", () => {
+  it("non-empty, deterministic, items and places, no presence, no invented keys", () => {
     const nouns = defaultBuilderNouns();
     expect(nouns.length).toBeGreaterThanOrEqual(15);
-    expect(nouns.length).toBeLessThanOrEqual(25);
     expect(defaultBuilderNouns()).toEqual(nouns); // same list every call
+    // Two kinds now: the curated OBJECTS, and every PLACE the programs know.
+    const items = nouns.filter((n) => n.kind === "item");
+    const places = nouns.filter((n) => n.kind === "place");
+    expect(items.length).toBeGreaterThanOrEqual(15);
+    expect(items.length).toBeLessThanOrEqual(25);
+    expect(items.length + places.length).toBe(nouns.length);
     for (const n of nouns) {
-      expect(n.kind).toBe("item");
       expect(n.present).toBeUndefined();
       expect(n.affords!.length).toBeGreaterThan(0);
+      expect(n.properties).toEqual(propertiesOf(n.symbol)); // spec-side, never authored
+    }
+    for (const n of items) {
       // NO INVENTED KEYS (user law: properties from the spec side): every
       // head is one the engine's registries genuinely know — it carries
       // spec-derived properties, or it is a core engine concept (water).
       expect(
         n.properties!.length > 0 || CORE_CONCEPTS.has(headOf(n.symbol)),
       ).toBe(true);
-      expect(n.properties).toEqual(propertiesOf(n.symbol)); // spec-side, never authored
     }
+    // A PLACE's key is legitimate for the same reason, one repository over:
+    // it IS a room kind or a building character the programs declare.
+    const declared = new Set<string>([
+      ...DEFAULT_ROOM_PROGRAMS.map((d) => d.word ?? d.kind),
+      ...DEFAULT_STRUCTURE_PROGRAMS.map((d) => d.word ?? d.type),
+    ]);
+    for (const n of places) expect(declared.has(n.symbol)).toBe(true);
     // The staples the dollhouse teaches (teddy = the doll facet, `bear.toy`).
     const syms = nouns.map((n) => n.symbol);
     for (const s of ["apple", "ball", "bear.toy", "shirt"]) expect(syms).toContain(s);
@@ -240,7 +262,7 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
     expect(s.buttons.map((b) => b.key)).toEqual(nouns.map((n) => n.symbol));
     for (const b of s.buttons) {
       expect(b.category).toBe("things");
-      expect(b.kind).toBe("item");
+      expect(["item", "place"]).toContain(b.kind);
       expect(b.label.length).toBeGreaterThan(0);
     }
   });
@@ -254,5 +276,89 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
     expect(structuredClone(whole)).toEqual(whole);
     expect(JSON.parse(JSON.stringify(whole))).toEqual(whole);
     expect(JSON.parse(JSON.stringify(nouns))).toEqual(nouns);
+  });
+});
+
+// PLACES ARE SINGLE WORDS THAT RENDER AS COMPOSED ICONS.
+//
+// The rule, stated by the user and pinned here: a room or a building is ONE
+// WORD in the sentence — `bedroom`, `smithy` — and the compositor is used only
+// to DRAW it (`room(bed)`, `building(anvil)`). If the composition ever leaked
+// into the key, the builder would be emitting parentheses into glyph strings it
+// deliberately never emits and `tokenizeSentence` cannot parse.
+describe("placeBuilderNouns — every room and building the spec knows", () => {
+  it("offers one entry per room kind and building character", () => {
+    const places = placeBuilderNouns();
+    const syms = places.map((p) => p.symbol);
+    // Buildings first (you name a building more often than a room of it).
+    for (const t of ["home", "workshop", "shop", "smithy", "temple", "weaver", "library"]) {
+      expect(syms).toContain(t);
+    }
+    for (const k of ["bedroom", "kitchen", "bath", "living", "store", "forge", "shrine", "weaving", "study"]) {
+      expect(syms).toContain(k);
+    }
+    expect(new Set(syms).size).toBe(syms.length);
+    expect(places.every((p) => p.kind === "place")).toBe(true);
+    expect(placeBuilderNouns()).toEqual(places); // deterministic
+  });
+
+  it("the KEY is a single word and the GLYPH is the composed icon", () => {
+    const places = placeBuilderNouns();
+    for (const p of places) {
+      // The word: no parentheses, no "+", no ".", ever.
+      expect(p.symbol).toMatch(/^[a-z_]+$/);
+      // The icon: composed, and it renders.
+      expect(canResolveGlyph(p.glyph!)).toBe(true);
+    }
+    const bedroom = places.find((p) => p.symbol === "bedroom")!;
+    expect(bedroom.glyph).toBe("room(bed)");
+    const smithy = places.find((p) => p.symbol === "smithy")!;
+    expect(smithy.glyph).toBe("building(anvil)");
+  });
+
+  it("the surface carries the word as key and the composition as glyph", () => {
+    // THE WHOLE POINT, end to end: what the client presses vs what it draws.
+    const s = builderSurfaceFor("", { nouns: placeBuilderNouns(), category: "things" });
+    const smithy = s.buttons.find((b) => b.key === "smithy")!;
+    expect(smithy.key).toBe("smithy");
+    expect(smithy.glyph).toBe("building(anvil)");
+    // And a pressed key composes into a parseable one-slot sentence.
+    expect(parseGlyph(smithy.key).slots).toHaveLength(1);
+    expect(tokenizeSentence(smithy.key)).toEqual(["smithy"]);
+  });
+
+  it("every place word has a LOCALIZED label, never the raw English key", () => {
+    // `baseWord` falls back to the raw key for anything the lexicon misses —
+    // the untranslated-button bug. Hebrew is the check that catches it.
+    const nouns = placeBuilderNouns();
+    for (const locale of ["en", "he", "es", "pt"]) {
+      const s = builderSurfaceFor("", { nouns, category: "things", locale });
+      for (const b of s.buttons) {
+        expect(b.label.length).toBeGreaterThan(0);
+        if (locale !== "en") {
+          expect({ locale, key: b.key, label: b.label }).not.toEqual({ locale, key: b.key, label: b.key });
+        }
+      }
+    }
+  });
+
+  it("reads the RESOLVED programs, so a culture's own rooms surface too", () => {
+    // The repositories are the vocabulary: author a room kind and it becomes a
+    // button, with no list to keep in step.
+    const rooms = resolveRoomPrograms(
+      programOverridesOf({
+        rooms: [{ kind: "bath", requires: ["toilet"], symbol: "bath", frame: "building" }],
+      }),
+    );
+    const places = placeBuilderNouns(rooms);
+    const bath = places.find((p) => p.symbol === "bath")!;
+    // The communal culture's bathhouse — same word, different shell.
+    expect(bath.glyph).toBe("building(bath)");
+  });
+
+  it("groups under the `places` chip, apart from the objects", () => {
+    const s = builderSurfaceFor("", { nouns: defaultBuilderNouns(), category: "things" });
+    const ids = (s.groups ?? []).map((g) => g.id);
+    expect(ids).toContain("places");
   });
 });

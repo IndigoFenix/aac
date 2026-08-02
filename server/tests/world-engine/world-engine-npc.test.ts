@@ -528,6 +528,98 @@ describe("runWorldHost NPC brain hooks", () => {
 });
 
 // ---------------------------------------------------------------------------
+// TWO BODY LEDGERS — creatures and rooted things are budgeted apart
+// ---------------------------------------------------------------------------
+
+describe("rooted bodies (trees) are budgeted apart from creatures", () => {
+  // A tree is a body: drawn, hoverable, holding its harvest. But it declares
+  // zero pace, so it can never walk — it skips steering entirely and costs an
+  // avatar record, not a tick. A forest must therefore never spend the
+  // creature budget: the bug this pins had a dense stand's tree bodies
+  // silently refused by the creature cap AFTER the streamer had already
+  // hidden their scenery, so the trees vanished as the player approached.
+  function build(maxNpcs: number, maxRootedNpcs: number) {
+    let pending: ((nowMs: number) => void) | null = null;
+    let clock = 0;
+    const host = runWorldHost({
+      view: fakeView(),
+      spec: socialFieldNpcsSpec,
+      localId: "you",
+      spawnIndex: 0,
+      hostNpcs: true,
+      npcRng: makeRng(7),
+      maxNpcs,
+      maxRootedNpcs,
+      net: { send: () => undefined },
+      scheduleFrame: (cb) => { pending = cb; return () => { pending = null; }; },
+      now: () => clock,
+    });
+    host.start();
+    const step = (frames: number) => {
+      for (let i = 0; i < frames; i++) { clock += 16; pending?.(clock); }
+    };
+    return { host, step };
+  }
+  /** The wild-flora / town-orchard convention: rooted AT its own spot. */
+  const tree = (id: string, x: number, y: number) => ({
+    id, x, y,
+    behavior: { movement: "wander" as const, wanderRadius: 0, home: { x, y }, speed: 0, conversationRadius: 3 },
+  });
+  const walker = (id: string, x: number, y: number) => ({
+    id, x, y,
+    behavior: { movement: "wander" as const, wanderRadius: 10, home: { x, y } },
+  });
+
+  it("stands a forest of trees while the creature cast is already full", () => {
+    // The spec ships 2 NPCs, so a cap of 2 leaves NO creature headroom at all.
+    const { host } = build(2, 64);
+    expect(host.addNpc(walker("late_arrival", 30, 20))).toBe(false); // creatures full
+    for (let i = 0; i < 40; i++) {
+      expect(host.addNpc(tree(`flora:oak:t${i}`, 10 + i, 40))).toBe(true);
+    }
+    expect(host.state.avatars["flora:oak:t39"]).toBeDefined();
+    host.stop();
+  });
+
+  it("refuses trees only when the ROOTED ledger fills, and reports it", () => {
+    const { host } = build(8, 3);
+    for (let i = 0; i < 3; i++) expect(host.addNpc(tree(`flora:oak:t${i}`, 10 + i, 40))).toBe(true);
+    // Over the rooted cap: refused — and the caller MUST be told, so the
+    // streamer keeps drawing its scenery copy instead of hiding a tree that
+    // stands nowhere.
+    expect(host.addNpc(tree("flora:oak:t3", 20, 40))).toBe(false);
+    expect(host.state.avatars["flora:oak:t3"]).toBeUndefined();
+    // A creature still fits — the two budgets are genuinely separate.
+    expect(host.addNpc(walker("wanderer", 30, 20))).toBe(true);
+    host.stop();
+  });
+
+  it("frees the right ledger on removal", () => {
+    const { host } = build(8, 1);
+    expect(host.addNpc(tree("flora:oak:a", 12, 40))).toBe(true);
+    expect(host.addNpc(tree("flora:oak:b", 14, 40))).toBe(false); // rooted full
+    expect(host.removeNpc("flora:oak:a")).toBe(true);
+    expect(host.addNpc(tree("flora:oak:b", 14, 40))).toBe(true); // slot returned
+    host.stop();
+  });
+
+  it("never steers a rooted body — it stands exactly where it was planted", () => {
+    const { host, step } = build(8, 64);
+    host.addNpc(tree("flora:oak:still", 12, 40));
+    host.addNpc(walker("mover", 12, 44));
+    step(240); // ~4 s
+    const oak = host.state.avatars["flora:oak:still"];
+    expect(oak.x).toBe(12);
+    expect(oak.y).toBe(40);
+    expect(oak.vx).toBe(0);
+    expect(oak.vy).toBe(0);
+    // …while an ordinary body on the same ground did move (the world is live).
+    expect(dist(host.state.avatars["mover"], { x: 12, y: 44 })).toBeGreaterThan(1);
+    host.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Wander with unreachable ground (the stuck-indoors fix)
 // ---------------------------------------------------------------------------
 

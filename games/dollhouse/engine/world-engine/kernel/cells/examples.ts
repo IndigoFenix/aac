@@ -568,17 +568,22 @@ export const intRivers: SystemSpec = {
  *                above the same treeline — so ore and fertility anti-correlate
  *                by construction (farm country vs mine country). Inert at
  *                runtime; mining depletes it externally at the day boundary.
- *    people    — wild humans as an animal population: logistic growth toward
- *                fertility-set capacity + diffusion. Founding candidates are
- *                read off this field (worldgen.findFoundingSites).
+ *    forage    — the land's FORAGE CAPACITY (settlement-emergence.md §3):
+ *                rations a tile yields to a mobile taker, converging on the
+ *                lure the land offers. The people who live on it are BANDS —
+ *                entities in the civ layer (kernel/civ/bands.ts) — because
+ *                mobility cannot live in a field that must reach rest.
+ *                Founding candidates are read off this field
+ *                (worldgen.findFoundingSites), and a founding harvest
+ *                consumes the standing crop it counts.
  *  All int vars: per-step deltas round, so `toward` rates stay ≥ 0.25 (a
  *  smaller rate stalls when rate × gap < 0.5) — fields land within ~1 of
- *  target and rest crisply. Coupling: river→fertility→{plant, people} is a
+ *  target and rest crisply. Coupling: river→fertility→{plant, forage} is a
  *  DAG; no loops; every field bounded. */
 export const worldgenSubstrate: SystemSpec = {
   id: 'worldgen-substrate',
   name: 'Worldgen substrate',
-  description: 'Height + computed rivers + fertility + vegetation + finite ore + wild people — the canonical layered-world ground.',
+  description: 'Height + computed rivers + fertility + vegetation + finite ore + wild forage — the canonical layered-world ground.',
   vars: [
     { name: 'height', min: 0, max: 63, initial: 20, init: 'bowl', int: true },
     { name: 'solid', min: 0, max: 1, initial: 0, init: 'flat', int: true },
@@ -605,11 +610,11 @@ export const worldgenSubstrate: SystemSpec = {
     { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
     { name: 'ore', min: 0, max: 15, initial: 0, init: 'flat', int: true }, // worldgen writes; runtime only depletes
     // Sugarscape-style two-resource attraction: lure = max(fertility, ore).
-    // People's carrying capacity follows LURE, not fertility alone — so ore
-    // country grows proto-mining camps the way sugar/spice mountains each
-    // hold their own population, and mine towns can found themselves.
+    // Forage capacity follows LURE, not fertility alone — so ore country
+    // feeds proto-mining camps the way sugar/spice mountains each hold
+    // their own crowd, and mine towns can found themselves.
     { name: 'lure', min: 0, max: 15, initial: 0, init: 'flat', int: true },
-    { name: 'people', min: 0, max: 31, initial: 0, init: 'flat', int: true },
+    { name: 'forage', min: 0, max: 31, initial: 0, init: 'flat', int: true },
   ],
   // Vegetation reads the NEIGHBOURHOOD's fertility: fertile tiles are river
   // tiles (the guards above), and rivers render as water — grass growing
@@ -643,15 +648,15 @@ export const worldgenSubstrate: SystemSpec = {
       effects: [{ toward: { scalar: 'lure', target: { scalar: 'ore' }, rate: 0.5 } }] },
     { id: 'lure-fert', when: { cmp: '<=', left: { scalar: 'ore' }, right: { scalar: 'fertility' } }, trigger: { every: true },
       effects: [{ toward: { scalar: 'lure', target: { scalar: 'fertility' }, rate: 0.5 } }] },
-    // Wild people: logistic growth in place toward the land's carrying
-    // capacity (2 × lure) — an animal population that fills the habitable
-    // (or minable) land and rests. NOTE deliberately no `spread`:
-    // diffusion out of attractive tiles into barren ones creates a
-    // perpetual leak→die→regrow boundary flux that never rests. Wandering
-    // needs a fenced transport (spread-with-block, or a crowding-potential
-    // flow) — noted in world-content.md as future engine work.
+    // Forage capacity: logistic recovery in place toward what the land
+    // offers (2 × lure) — the standing crop a mobile band can take, which
+    // fills the habitable (or minable) land and rests. NOTE deliberately
+    // no `spread`: diffusion out of attractive tiles into barren ones
+    // creates a perpetual leak→die→regrow boundary flux that never rests
+    // — which is exactly why the MOBILE things (bands) are entities, not
+    // this field (settlement-emergence.md §3).
     { id: 'multiply', trigger: { every: true },
-      effects: [{ toward: { scalar: 'people', target: { scalar: 'lure', scale: 2 }, rate: 0.25 } }] },
+      effects: [{ toward: { scalar: 'forage', target: { scalar: 'lure', scale: 2 }, rate: 0.25 } }] },
   ],
   tools: [
     { id: 'raise', label: 'Raise', symbol: '⛰️', radius: 1.6, paints: [{ scalar: 'height', amount: 70 }] },
@@ -695,7 +700,7 @@ export const worldgenSubstrate: SystemSpec = {
  *                fluxless, settles by construction) writes a graded band
  *                that HUGS the water: rich beside rivers, damp near a high
  *                table, desert elsewhere. Grass is earned, not carpeted.
- *  Plus the layered-world fields (ore/lure/people) unchanged. This is the
+ *  Plus the layered-world fields (ore/lure/forage) unchanged. This is the
  *  LIVING profile: springs cycle predictably (fold-friendly) rather than
  *  reaching exact rest — pair with `worldgenSubstrate` (computed rivers,
  *  true rest) per the scalars-vs-integers profile rule. */
@@ -713,7 +718,7 @@ export const oasisSubstrate: SystemSpec = {
     { name: 'plant', min: 0, max: 7, initial: 0, init: 'flat', int: true },
     { name: 'ore', min: 0, max: 15, initial: 0, init: 'flat', int: true }, // worldgen writes; runtime only depletes
     { name: 'lure', min: 0, max: 15, initial: 0, init: 'flat', int: true },
-    { name: 'people', min: 0, max: 31, initial: 0, init: 'flat', int: true },
+    { name: 'forage', min: 0, max: 31, initial: 0, init: 'flat', int: true },
   ],
   sensors: [
     // Box kernels (no per-neighbour trig): sensors are the hot path.
@@ -762,7 +767,7 @@ export const oasisSubstrate: SystemSpec = {
       effects: [{ toward: { scalar: 'fertility', target: { const: 5 }, rate: 0.5 } }] },
     { id: 'barren', when: { any: [{ cmp: '>=', left: { scalar: 'height' }, right: { const: 40 } }, { cmp: '>=', left: { scalar: 'solid' }, right: { const: 0.5 } }, { all: [{ cmp: '<=', left: { scalar: 'moisture' }, right: { scalar: 'height', scale: 0.5 } }, { cmp: '<=', left: { sensor: 'wet' }, right: { const: 0.6 } }] }] }, trigger: { every: true },
       effects: [{ toward: { scalar: 'fertility', target: { const: 0 }, rate: 0.5 } }] },
-    // Vegetation tracks fertility; people track the Sugarscape lure.
+    // Vegetation tracks fertility; forage tracks the Sugarscape lure.
     { id: 'greenery', trigger: { every: true },
       effects: [{ toward: { scalar: 'plant', target: { scalar: 'fertility', scale: 0.5 }, rate: 0.5 } }] },
     { id: 'lure-ore', when: { cmp: '>', left: { scalar: 'ore' }, right: { scalar: 'fertility' } }, trigger: { every: true },
@@ -770,7 +775,7 @@ export const oasisSubstrate: SystemSpec = {
     { id: 'lure-fert', when: { cmp: '<=', left: { scalar: 'ore' }, right: { scalar: 'fertility' } }, trigger: { every: true },
       effects: [{ toward: { scalar: 'lure', target: { scalar: 'fertility' }, rate: 0.5 } }] },
     { id: 'multiply', trigger: { every: true },
-      effects: [{ toward: { scalar: 'people', target: { scalar: 'lure', scale: 2 }, rate: 0.25 } }] },
+      effects: [{ toward: { scalar: 'forage', target: { scalar: 'lure', scale: 2 }, rate: 0.25 } }] },
   ],
   tools: [
     { id: 'raise', label: 'Raise', symbol: '⛰️', radius: 1.6, paints: [{ scalar: 'height', amount: 70 }] },

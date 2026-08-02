@@ -106,6 +106,7 @@
       "construction": { "tier": "industry", "costs": [{ "stockpile": "granary", "amount": 25 }] },
       "sells": ["cloth"],
       "shelved": true,
+      "refines": { "from": "wool", "into": "cloth" },
       "leansToward": null,
       "mapCap": 3,
       "district": "craft",

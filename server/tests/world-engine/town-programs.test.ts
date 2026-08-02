@@ -5,7 +5,16 @@
 // (game.culture.architecture.rooms/buildings) replace same-name defaults in
 // place and append new names; unknown station kinds resolve to no-ops.
 // Persistent wants: an unmet programmed room outranks the default annex
-// differentiation, so a demolished bedroom re-rises. No DOM / GL.
+// differentiation.
+//
+// PHASE 4 REVERSED THE LAW ABOVE THIS ONE: program rows used to be
+// APPEND-ONLY, and the header used to read "so a demolished bedroom
+// re-rises". Rows are REMOVABLE now (construction.ts `removeProgram`) and the
+// commit of every removal act drops the row the removed thing stood for — a
+// house must never re-order what the player deliberately tore out. What
+// `nextAnnexWant` does with the rows it is GIVEN is unchanged, and that is
+// all this file pins; the drop itself lives in town-construction-phase4.
+// No DOM / GL.
 
 import { describe, it, expect } from "@jest/globals";
 import {
@@ -340,7 +349,11 @@ describe("every display glyph the repositories emit is renderable", () => {
 describe("persistent wants — nextAnnexWant reads programs first", () => {
   it("an unmet programmed room outranks the default differentiation", () => {
     // Default order would say "sleep" (no bedrooms); the standing store
-    // program wins — this is how a demolished programmed room re-rises.
+    // program wins — an ORDERED room is built before any default one.
+    // (Phase 4: this used to be justified as "how a demolished programmed
+    // room re-rises". It no longer does — the commit DROPS the row with the
+    // room. The precedence itself is untouched: a want that still stands is
+    // still first.)
     expect(nextAnnexWant(planOf(["living"]), [{ room: "store" }])).toBe("store");
   });
 

@@ -67,6 +67,10 @@ import { DEFAULT_BODY_RADIUS_M, speciesBodyRadius } from "../../creatures/specie
 // Type-only — construction.ts imports this module's VALUES (frame math),
 // so the runtime dependency must stay one-directional.
 import type { BuildingDelta } from "./construction";
+// Type-only, and types.ts is a leaf — the door LEAF flag (phase 5) is an
+// engine-side concept, so the one function that authors it says so in the
+// engine's own vocabulary rather than inventing a parallel shape.
+import type { BuildingDoorway } from "../../types";
 
 // Local FNV/mulberry helpers, the kernel/town convention (plan.ts,
 // residents.ts) — this layer stays import-free of app modules.
@@ -248,13 +252,69 @@ export function livingRect(
 
 /** World point of a room doorway's center (u along the wall from its min
  *  corner — buildingStructures' convention). Exported for the goods-box
- *  resolver (placement.ts). */
-export function doorwayWorldPoint(room: HouseRoom, d: RoomDoorway): { x: number; y: number } {
+ *  resolver (placement.ts). Takes anything with a `rect` — town-stage keys a
+ *  BUILDING's own doorway (a shell's street door) through the same math. */
+export function doorwayWorldPoint(
+  room: { rect: { x: number; y: number; w: number; h: number } },
+  d: RoomDoorway,
+): { x: number; y: number } {
   const r = room.rect;
   return d.edge === "north" ? { x: r.x + d.offset, y: r.y }
     : d.edge === "south" ? { x: r.x + d.offset, y: r.y + r.h }
     : d.edge === "west" ? { x: r.x, y: r.y + d.offset }
     : { x: r.x + r.w, y: r.y + d.offset };
+}
+
+/**
+ * THE DOORWAY KEY (construction phase 5) — the identity of an OPENING, the
+ * thing a `BuildingDelta.doorless` row names. It is the opening's quantized
+ * WORLD MIDPOINT and nothing else, for one reason: a shared interior doorway
+ * is recorded on BOTH rooms it joins (see `HouseRoom.doorways`), from opposite
+ * winding and with the offset measured from each room's own min corner, so
+ * NOTHING about the two records agrees except the point in the world they
+ * describe. Key by anything else and the two rooms disagree about whether a
+ * leaf hangs, and the boundary ends up with one leaf and one hole.
+ *
+ * Centimetre quantization matches the engine's own `doorwayKey` (engine.ts) and
+ * for the same reason: the two rooms' rects are computed by independent
+ * guillotine arithmetic, so float noise must not split one doorway in two.
+ *
+ * Living HERE, next to `doorwayWorldPoint`, is the point — the plan side and
+ * the delta side both go through this function, so they can never drift.
+ */
+export function doorwayKeyAt(at: { x: number; y: number }): string {
+  return `${Math.round(at.x * 100)},${Math.round(at.y * 100)}`;
+}
+
+/** {@link doorwayKeyAt} of a room's own doorway record. */
+export function doorwayKeyOf(
+  room: { rect: { x: number; y: number; w: number; h: number } },
+  d: RoomDoorway,
+): string {
+  return doorwayKeyAt(doorwayWorldPoint(room, d));
+}
+
+/**
+ * A room's doorways as the ENGINE's `BuildingDoorway`s, with each opening's
+ * LEAF resolved against the building's `doorless` set (phase 5). Every raiser
+ * of a BuildingSpec — the town stage, the wilderness founded site — goes
+ * through this one function, so no two of them can disagree about whether a
+ * door hangs.
+ *
+ * The doorway records themselves are passed through UNCONDITIONALLY: the gap
+ * in the wall run exists either way, so the generated wall/door structures,
+ * the routing portals and `doorConnectivity` are identical whether or not a
+ * leaf hangs. An empty `doorless` returns the plan's records verbatim, which
+ * is what keeps every worldgen building byte-identical to its pre-phase-5 self.
+ */
+export function doorwaysWithLeaves(
+  room: { rect: { x: number; y: number; w: number; h: number } },
+  doorways: readonly RoomDoorway[],
+  doorless: ReadonlySet<string>,
+): BuildingDoorway[] {
+  return doorways.map((d) =>
+    doorless.size && doorless.has(doorwayKeyOf(room, d)) ? { ...d, leaf: false } : { ...d },
+  );
 }
 
 /** The corner of a room farthest from its nearest doorway — where the

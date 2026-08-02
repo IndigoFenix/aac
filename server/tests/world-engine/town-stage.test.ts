@@ -20,7 +20,7 @@ import {
 } from "@shared/world-engine/interaction/town/town-stage.js";
 import { AWAY_DISTANCE_M, RARE_IMPORT_KIND, rarePerVisit } from "@shared/world-engine/kernel/town/trade.js";
 import {
-  annexOptions, createTownDeltas, requestAnnex,
+  annexOptions, bankLabor, createTownDeltas, requestAnnex,
 } from "@shared/world-engine/kernel/town/construction.js";
 
 const DOC: EconomyDoc = {
@@ -700,7 +700,7 @@ describe("trade v1.5 — a REAL partner, distance-priced rarity (trade.ts bindPa
 });
 
 describe("construction deltas: the stage re-plans a bumped house mid-session", () => {
-  it("annex → marked site while watched → real doored room → refurnished, one frame each", () => {
+  it("staked order → marked site climbing courses; commit → doored room the SAME frame (no scaffold timer)", () => {
     const town = createTownWorld({
       economy: ECO,
       charter: { farmland: 420, ore_access: 0 },
@@ -724,36 +724,44 @@ describe("construction deltas: the stage re-plans a bumped house mid-session", (
     const oldIds = f0.addObjects.filter(o => o.id.startsWith(`furn_${h.index}_`)).map(o => o.id);
     expect(oldIds.length).toBeGreaterThan(0);
 
-    // Raise a STORE annex on the house.
+    // STAKE a STORE annex order (phase 3 — the designation IS the visible
+    // construction): a marked SITE stands on the growth rect while the
+    // room is pending; no walls exist yet.
     const opts = annexOptions(stage.center, h, houseRoomPlan(stage.center, h), [], deltas.get(key), "store");
     expect(opts.length).toBeGreaterThan(0);
-    expect(requestAnnex(deltas, key, opts[0]!)).toEqual({ ok: true });
-
-    // The NEXT frame re-stages: the annex arrives as a marked SITE (the
-    // house is watched) — no walls yet, a flat construction plot on the
-    // growth rect — and the furniture set is replaced in one frame; pieces
-    // standing INSIDE the site rect defer until its walls land.
+    const row = deltas.postAnnexSite({
+      buildingKey: key, cluster: "store", candidate: opts[0]!,
+      costs: { block: 1 }, pile: {}, startedDay: 0, buildDays: 0.5,
+    });
     const f1 = stage.frame(p, 1);
-    expect(f1.buildings).not.toBeNull();
-    expect(f1.buildings!.find(b => b.id === `${key}_a0`)).toBeUndefined();
-    const annexSite = (f1.sites ?? []).find(s => s.id === `site_${key}_a0`);
+    const annexSite = (f1.sites ?? []).find(s => s.id === `site_pa_${row.ord}`);
     expect(annexSite).toBeDefined();
-    expect(annexSite).toMatchObject({ type: "annex" });
-    for (const id of oldIds) expect(f1.removeObjects).toContain(id);
-    expect(f1.addObjects.length).toBeGreaterThan(0);
-    const inSite = (o: { x: number; y: number }) =>
-      o.x >= annexSite!.x && o.x <= annexSite!.x + annexSite!.w &&
-      o.y >= annexSite!.y && o.y <= annexSite!.y + annexSite!.h;
-    expect(f1.addObjects.some(inSite)).toBe(false);
+    expect(annexSite).toMatchObject({ type: "annex", stage: 0, progress: 0 });
+    expect(f1.buildings?.find(b => b.id === `${key}_a0`)).toBeUndefined();
 
-    // After the site time passes, the real DOORED room swaps in, the site
-    // marking leaves, and the deferred pieces refurnish (remove → re-add).
-    const f2 = stage.frame(p, 40);
-    expect(f2.buildings).not.toBeNull();
-    const real = f2.buildings!.find(b => b.id === `${key}_a0`);
+    // Materials stage and builders bank — the site CLIMBS: pillars at the
+    // ⑦ bar, and `progress` carries the wall-course fraction (the renderer
+    // stacks courses off it — worked pieces, never a timer).
+    row.pile.block = 1;
+    deltas.stageAnnexSite(row.ord, 1);
+    bankLabor(row, 0.4);
+    const f2 = stage.frame(p, 2);
+    const climbing = (f2.sites ?? []).find(s => s.id === `site_pa_${row.ord}`);
+    expect(climbing).toMatchObject({ stage: 2 });
+    expect(climbing!.progress).toBeCloseTo(0.8);
+
+    // COMMIT (the one order loop's executor path): the doored room lands
+    // the SAME frame — the courses were the walls, so there is no scaffold
+    // window, no timer, and the furniture refurnishes at once.
+    expect(requestAnnex(deltas, key, opts[0]!)).toEqual({ ok: true });
+    deltas.removeAnnexSite(row.ord);
+    const f3 = stage.frame(p, 3);
+    expect(f3.buildings).not.toBeNull();
+    const real = f3.buildings!.find(b => b.id === `${key}_a0`);
     expect(real).toBeDefined();
     expect(real!.doorways.length).toBeGreaterThan(0);
-    expect((f2.sites ?? [])).toEqual([]);
-    expect(f2.addObjects.length).toBeGreaterThan(0); // the full set re-lands
+    expect((f3.sites ?? [])).toEqual([]);
+    for (const id of oldIds) expect(f3.removeObjects).toContain(id);
+    expect(f3.addObjects.length).toBeGreaterThan(0); // the full set re-lands
   });
 });

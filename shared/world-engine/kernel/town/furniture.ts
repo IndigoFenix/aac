@@ -56,7 +56,7 @@ import {
   type HouseRoomPlan,
   type WorkShape,
 } from "./rooms";
-import type { BuildingDelta } from "./construction";
+import type { BuildingDelta, PlacedPiece } from "./construction";
 import {
   DOOR_DEPTH,
   PASS_THROUGH,
@@ -145,6 +145,44 @@ function furnishPlan(
   goods: ReadonlyArray<{ key: string; slot?: number }>,
   delta?: BuildingDelta,
 ): FurniturePiece[] {
+  // A DOORWAY-PINNED row (phase 5 — a hung door leaf) is not floor furniture
+  // and never enters this list. THIS is the one seam: the output is what
+  // becomes the placement obstacle set, the room's `kindsIn` kind derivation,
+  // and the stage's ObjectSpecs — and a door must be none of the three. It
+  // renders as the doorway's own `leaf` on the wall structure, it claims no
+  // floor, and it designates no room. The break path reads `delta.placed`
+  // directly, so the leaf is still findable.
+  const rowPiece = (p: PlacedPiece): FurniturePiece => ({
+    id: p.id, kind: p.kind, x: p.x, y: p.y,
+    radius: p.radius, facing: p.facing, openable: p.openable,
+    // Carry the delivered-but-not-set-up flag through so the view can stand
+    // the real model on its side until a resident assembles it.
+    ...(p.setUp !== undefined ? { setUp: p.setUp } : {}),
+    // A MATERIALIZED goods box is still the good's own box — the economy keys
+    // on this, and losing it here would orphan a pantry.
+    ...(p.good !== undefined ? { good: p.good } : {}),
+  });
+
+  // ── THE FURNITURE IS REAL (blueprint.ts — the blueprint/house split).
+  // Once a building is materialized, `placed` IS its contents and the station
+  // registry is not consulted for it AT ALL: not for the household's furniture,
+  // not even for the street-good boxes, whose corner rule is the one that used
+  // to teleport a refrigerator across a house the moment a kitchen appeared
+  // behind it.
+  //
+  // The registry has not stopped being right about where a fridge belongs — it
+  // is answering a different question now. It draws the BLUEPRINT (this same
+  // function, over `blueprintDelta`, which clears the flag), and what it draws
+  // is where somebody carries the fridge to.
+  //
+  // Returned BEFORE the fit machinery is built, because reading a materialized
+  // building's furniture is now a list lookup and should cost like one — this
+  // path runs for every sweep, every frame the stage refurnishes, and every
+  // obstacle query.
+  if (delta?.materialized) {
+    return (delta.placed ?? []).filter((p) => p.doorway === undefined).map(rowPiece);
+  }
+
   // The shared fit machinery — ctx.pieces is the LIVE output list (the
   // predicates read it as this driver pushes into it).
   const ctx: PlacementContext = makePlacementContext(center, shape, plan, goods);
@@ -155,13 +193,8 @@ function furnishPlan(
   // generated ids never emit (their space frees for later stations).
   const removed = new Set(delta?.removedPieces ?? []);
   for (const p of delta?.placed ?? []) {
-    pieces.push({
-      id: p.id, kind: p.kind, x: p.x, y: p.y,
-      radius: p.radius, facing: p.facing, openable: p.openable,
-      // Carry the delivered-but-not-set-up flag through so the view can stand
-      // the real model on its side until a resident assembles it.
-      ...(p.setUp !== undefined ? { setUp: p.setUp } : {}),
-    });
+    if (p.doorway !== undefined) continue;
+    pieces.push(rowPiece(p));
   }
 
   const push = (

@@ -105,8 +105,12 @@ const objectSchema = z
     // FURNITURE (fixtures): static containers along a room's walls — solid
     // (bar the pass-through kinds, types.ts PASSTHROUGH_FIXTURES).
     fixture: z
-      .enum(["chest", "cupboard", "table", "bed", "chair", "box", "barrel", "bath", "toilet", "bin", "bowl", "oven", "workbench", "refrigerator"])
+      .enum(["chest", "cupboard", "table", "bed", "chair", "box", "barrel", "bath", "toilet", "bin", "bowl", "oven", "workbench", "refrigerator", "anvil", "altar", "loom", "shelf", "stonecutter", "door"])
       .optional(),
+    // SOLIDITY stated outright (phase 5) — absent falls back to the fixture
+    // rule above, so authored worlds are unaffected. What it buys: a thing can
+    // be solid WITHOUT borrowing a furniture archetype to say so (a boulder).
+    solid: z.boolean().optional(),
     openable: z.boolean().optional(),
     facing: finite.optional(),
     // SET-UP state (construction ⑥): `false` renders the fixture TIPPED ON ITS
@@ -146,6 +150,11 @@ const doorSchema = z
     hinge: z.enum(["a", "b"]).optional(),
     openRadius: positive.max(WORLD_MANIFOLD_MAX).optional(),
     locked: z.boolean().optional(),
+    // Construction phase 5 — the spec is the DOORWAY, `leaf: false` says no
+    // leaf hangs in it. Optional, so every spec authored before it still
+    // validates; the object is `.strict()`, so it must be declared here or an
+    // authored doorless opening would be rejected outright.
+    leaf: z.boolean().optional(),
     keyObjectId: idSchema.optional(),
     floor: floorSchema.optional(),
     color: colorSchema.optional(),
@@ -171,6 +180,7 @@ const buildingDoorwaySchema = z
     offset: z.number().finite().nonnegative().max(WORLD_MANIFOLD_MAX),
     width: positive.max(WORLD_MANIFOLD_MAX),
     locked: z.boolean().optional(),
+    leaf: z.boolean().optional(), // phase 5 — see doorSchema.leaf
   })
   .strict();
 

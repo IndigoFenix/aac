@@ -88,6 +88,45 @@ export function wildFeatureContainerId(f: WildernessFeature): string {
   return wildFeatureEmbodied(f) ? wildFloraBodyId(f) : f.id;
 }
 
+/** How small a fully-quarried feature gets, as a fraction of its declared
+ *  radius. NOT zero: the last unit has to stay visible and dwellable — the
+ *  source's removal is the felling rule's job (sourceKillExhausted), never a
+ *  shrink to nothing. */
+const SPENT_FEATURE_SCALE = 0.4;
+
+/** THE DRAWN SIZE of a standing feature's body, metres: the source's declared
+ *  `feature.radiusM` at full kill stock, shrinking toward a pebble as the
+ *  stock is quarried out of it.
+ *
+ *  DEPLETION HAS TO BE VISIBLE. A rock with one stone left and a rock with
+ *  four are the same object to the container path, so if they are also the
+ *  same size on the ground the player has no way to read which is nearly
+ *  spent — the whole quarry act becomes invisible until the outcrop suddenly
+ *  vanishes. Size is measured against the SPECIES' maximum roll rather than
+ *  against this feature's own initial roll, so "one stone left" looks the
+ *  same whether it rolled that small or was cut down to it: size means
+ *  REMAINING UNITS, always, and an outcrop worth one stone reads as a pebble
+ *  wherever it came from.
+ *
+ *  PURE — no rng, no clock (same species + same stock ⇒ same radius), which
+ *  is exactly what lets the spawner and the take path both call it and agree
+ *  on one answer. Kill-less sources never shrink: a bush picked clean is
+ *  still a whole bush. */
+export function wildFeatureRadius(
+  species: string,
+  stock: Record<string, number> | undefined,
+): number {
+  const src = naturalSourceOf(species);
+  const base = src?.feature?.radiusM ?? 0.6;
+  const kill = (src?.products ?? []).filter((p) => p.method === "kill");
+  if (!kill.length) return base;
+  const max = kill.reduce((n, p) => n + p.yield.max, 0);
+  if (max <= 0) return base;
+  const left = kill.reduce((n, p) => n + (stock?.[p.glyph] ?? 0), 0);
+  const frac = Math.max(0, Math.min(1, left / max));
+  return base * (SPENT_FEATURE_SCALE + (1 - SPENT_FEATURE_SCALE) * frac);
+}
+
 export interface WildernessContent {
   /** The square manifold side, metres. */
   side: number;
@@ -148,8 +187,10 @@ const CREATURE_ICONS = ["🐰", "🐻", "🐸", "🐶"] as const;
  *  stock (the tree IS its wood), harvest products rolled as the standing
  *  bearing AND its capacity ceiling. Deterministic — killStockOf rolls
  *  first, then harvestStockOf (kill-only species consume no extra rolls,
- *  so legacy oak/rock scatters stay byte-identical). */
-function makeFeature(id: string, species: string, p: { x: number; y: number }, rng: () => number): WildernessFeature {
+ *  so legacy oak/rock scatters stay byte-identical). Exported for LIVE
+ *  additions (flora twins: a host materializes a feature at a streamed
+ *  tree's exact spot, rolling its stock off a per-placement seed). */
+export function makeFeature(id: string, species: string, p: { x: number; y: number }, rng: () => number): WildernessFeature {
   const kill = killStockOf(species, rng);
   const cap = harvestStockOf(species, rng);
   const f: WildernessFeature = { id, species, x: p.x, y: p.y, stock: { ...kill, ...cap } };

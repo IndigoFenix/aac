@@ -138,6 +138,7 @@ const L: Record<string, Lexeme> = {
   sheep: { w: "sheep", plw: "sheep" },
   box: { w: "box" },
   basket: { w: "basket" },
+  satchel: { w: "satchel" },
   bubbles: { w: "bubbles", pl: true },
   sparks: { w: "sparks", pl: true },
   boat: { w: "boat" },
@@ -189,6 +190,10 @@ const L: Record<string, Lexeme> = {
   chase: { w: "chase" },
   follow: { w: "follow" },
   stop: { w: "stop" },
+  // BOARD CHROME (⑦ board-chrome.ts): the "go back a step" word every list
+  // wears. The AAC vocabulary already draws it (glyph `return`, 🔙); this is
+  // the lexeme so the button SPEAKS in the player's language.
+  return: { w: "return", v3: "returns" },
   // Nations P6 — the political words. `fight` is what the absolute taboo
   // ring forbids; `town`/`area` are the law-scope nouns P2 put on the
   // board ("no + fight + in + town") without ever giving them a lexeme.
@@ -215,7 +220,31 @@ const L: Record<string, Lexeme> = {
   bin: { w: "bin" },
   bowl: { w: "bowl" },
   oven: { w: "oven" },
+  anvil: { w: "anvil" },
+  loom: { w: "loom" },
+  shelf: { w: "shelf" },
+  altar: { w: "altar" },
+  // The masonry bench (construction phase 5) — the fifth place-making fixture,
+  // and the SYMBOL its room and its building both draw (structure specs name
+  // the picture, not the place: `building(stonecutter)` is the masonry).
+  stonecutter: { w: "stonecutter" },
   well: { w: "well" },
+  smithy: { w: "smithy", plw: "smithies" },
+  weaver: { w: "weaver" },
+  library: { w: "library", plw: "libraries" },
+  temple: { w: "temple" },
+  living: { w: "living room", plw: "living rooms" },
+  shop: { w: "shop" },
+  forge: { w: "forge" },
+  shrine: { w: "shrine" },
+  weaving: { w: "weaving room", plw: "weaving rooms" },
+  study: { w: "study", plw: "studies" },
+  // The stonecutter's room/building — the word beside `forge` and `weaving`.
+  masonry: { w: "masonry", plw: "masonries" },
+  // The wild outcrop, NOT the material: you quarry `stone` out of a `rock`.
+  // Two words because they are two things — one is a place in the world you
+  // walk to, the other is what ends up in your hands.
+  rock: { w: "rock" },
   food: { w: "food", mass: true },
   toy: { w: "toy" },
   book: { w: "book" },
@@ -244,6 +273,8 @@ const L: Record<string, Lexeme> = {
   show: { w: "show" },
   // City-founding ③ — the structure board's room words + the demolish verb.
   break: { w: "break" },
+  // Construction ④ — the room-EMPTYING verb (break's stow-only twin).
+  empty: { w: "empty" },
   room: { w: "room" },
   door: { w: "door" },
   bedroom: { w: "bedroom" },

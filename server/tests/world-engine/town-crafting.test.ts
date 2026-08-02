@@ -16,7 +16,7 @@ import {
   furnitureItemOf,
   nextCraftKind,
 } from "@shared/world-engine/kernel/town/stations.js";
-import { buildingMaterialGlyphs } from "@shared/world-engine/products.js";
+import { buildingChainGlyphs } from "@shared/world-engine/products.js";
 
 const BENCH = furnitureItemOf("workbench")!;
 
@@ -26,8 +26,11 @@ describe("the workbench bootstrap", () => {
     expect(Object.keys(BENCH.craft!.consumes).length).toBeGreaterThan(0);
   });
 
-  it("every recipe consumes only glyphs the natural-sources registry can supply", () => {
-    const supplies = new Set(buildingMaterialGlyphs());
+  it("every recipe consumes only glyphs the building CHAIN can supply", () => {
+    // Since phase 3 furniture consumes BLOCKS — not a natural product, but
+    // the chain's refined target (wood/stone mill into it), so the supply
+    // closure is the chain vocabulary, raws AND refined heads.
+    const supplies = new Set(buildingChainGlyphs());
     for (const f of FURNITURE_ITEMS) {
       if (!f.craft) continue;
       for (const g of Object.keys(f.craft.consumes)) expect(supplies.has(g)).toBe(true);

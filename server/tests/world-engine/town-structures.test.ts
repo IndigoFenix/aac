@@ -11,6 +11,7 @@ import {
   missingCosts,
   resolveStructure,
   spendCosts,
+  structureCosts,
   type StructureSpec,
 } from "@shared/world-engine/kernel/town/structures.js";
 import { TOWN_PLAY_STRUCTURES } from "@shared/world-engine/interaction/town/town-play.js";
@@ -29,10 +30,15 @@ describe("the default catalog (TOWN_PLAY_STRUCTURES)", () => {
       expect(s.footprint.w).toBeGreaterThan(0);
       expect(s.footprint.d).toBeGreaterThan(0);
       expect(s.buildDays).toBeGreaterThan(0);
-      expect(Object.keys(s.costs).length).toBeGreaterThan(0);
-      // Costs must be gatherable: the wilderness stacks (wood/stone) — the
-      // frontier loop (gather → found → build) has to close.
-      for (const glyph of Object.keys(s.costs)) {
+      // RESOLVED costs (phase 6): the block bill is derived from the footprint,
+      // so a row authors only its extras — `structureCosts` is what any
+      // affordability question actually sees, and what has to be gatherable.
+      const costs = structureCosts(s);
+      expect(Object.keys(costs).length).toBeGreaterThan(0);
+      // Costs must be gatherable: the wilderness stacks (wood/stone) and the
+      // blocks they refine into — the frontier loop (gather → found → build)
+      // has to close.
+      for (const glyph of Object.keys(costs)) {
         expect(isSiteMaterial(glyph)).toBe(true);
       }
       expect(s.program).toBeDefined();

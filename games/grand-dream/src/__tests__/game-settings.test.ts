@@ -35,6 +35,7 @@ describe("game settings — the session shape parses", () => {
       creativeMode: true,
       entities: null,
       scale: null,
+      transport: null,
       culture: null,
     });
   });
@@ -60,6 +61,7 @@ describe("game settings — the session shape parses", () => {
       creativeMode: false,
       entities: null,
       scale: null,
+      transport: null,
       culture: null,
     });
   });

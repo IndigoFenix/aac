@@ -10,13 +10,15 @@
 // button (every act returned is one the kernel would accept right now).
 
 import {
-  ANNEX_COSTS,
+  MIN_ROOM_COSTS,
   annexOptions,
   demolishCheck,
   demolishedRects,
   interiorOptions,
+  type AnnexCandidate,
   type AnnexCluster,
   type BuildingDelta,
+  type InteriorCandidate,
   type TownDeltas,
 } from "../../kernel/town/construction";
 import {
@@ -26,6 +28,7 @@ import {
   type StationKind,
 } from "../../kernel/town/stations";
 import { costsMet } from "../../kernel/town/structures";
+import { withRefinableCredit } from "../../products";
 import type { HouseRoom, HouseRoomPlan, HouseShape } from "../../kernel/town/rooms";
 
 /** What a spirit focus frame lands on: a plan house (annex/demolish/furnish
@@ -96,21 +99,51 @@ export const ROOM_GLYPH: Readonly<Record<HouseRoom["kind"], string>> = {
   workshop: "workshop",
 };
 
+/** WHERE a room could rise, exactly — the validated candidate behind one
+ *  entry of `annex` / `interior`. The lit ground is made of these: a growth
+ *  area is a place, and the order it raises is pinned to the geometry that
+ *  was lit, never re-derived to somewhere else. */
+export interface StructureGrowCandidate {
+  kind: HouseRoom["kind"];
+  /** The annex cluster the house order path speaks through (every kind the
+   *  board offers has one; a shell's own kinds order by kind). */
+  cluster?: AnnexCluster;
+  /** True = outward growth, false = a cut inside a standing floor. */
+  outward: boolean;
+  /** Door-local frame rect — annexWorldRect turns it into world coords. */
+  candidate: AnnexCandidate | InteriorCandidate;
+}
+
 export interface StructureActs {
-  /** Clusters an annex could rise for RIGHT NOW — ground feasible, under
-   *  the annex cap, and the builder's stock covers ANNEX_COSTS. */
+  /** Clusters an annex could rise for RIGHT NOW — ground feasible, under the
+   *  annex cap, and the builder's stock covers MIN_ROOM_COSTS (the cheapest
+   *  room anyone could order; bills are per-rect since phase 6, and the room's
+   *  own shortfall is NAMED at order time rather than refused here). */
   annex: AnnexCluster[];
   /** Room kinds an INTERIOR room could rise for (⑤b — subdivision of an
    *  open host, or re-creation of a demolished base room in place) that
    *  no annex already offers. The order path prefers in-place anyway;
    *  this list is the kinds the board would otherwise never show. */
   interior: Array<HouseRoom["kind"]>;
+  /** Every candidate behind `annex` and `interior`, best-first per kind —
+   *  the same enumeration those two lists were derived from, kept instead
+   *  of thrown away, so the ground can be LIT without running it twice. */
+  grow: StructureGrowCandidate[];
   /** Rooms whose demolition the kernel would accept right now (never the
    *  living room, never a merge that breaks the door graph). */
   demolish: HouseRoom[];
+  /** Every room standing in the delta-applied plan — what the ground offers
+   *  one aim each (a room with nothing to do stays dark; `demolish` is the
+   *  subset that can come down). */
+  rooms: HouseRoom[];
   /** Furniture kinds standing as stacks in the house's own storage. */
   furnish: StationKind[];
 }
+
+/** Candidates kept per kind. The enumeration is best-first and near-identical
+ *  rects merge into one area anyway, so a handful is every distinct PLACE a
+ *  kind could take without walking the whole tail. */
+const GROW_PER_KIND = 4;
 
 /**
  * Everything the focused BUILDING can DO right now. Pure: reads the
@@ -145,26 +178,49 @@ export function structureActsOf(input: {
 }): StructureActs {
   const key = input.buildingKey ?? `h_${input.house.index}`;
   const delta: BuildingDelta | undefined = input.deltas.get(key);
-  const affordable = costsMet({ costs: { ...ANNEX_COSTS } }, input.stock);
-  const annex = affordable && (input.growOutward ?? true)
-    ? ANNEX_ORDER.filter(
-        (c) =>
-          annexOptions(input.center, input.house, input.plan, input.neighbors, delta, c).length > 0,
-      )
-    : [];
+  // CHAIN-AWARE (phase 3): raws count at their milled value — a yard of
+  // wood affords a block-costed room; the refine chain fills the bill.
+  // The probe is the CHEAPEST room anyone could order (phase 6 — bills are
+  // per-rect now, and this gate runs before there is a rect to bill). It gates
+  // the board, not the order: pick a room this stock can't quite reach and the
+  // designation still posts, naming its shortfall (the "missing materials
+  // never refuse" law).
+  const affordable = costsMet({ costs: { ...MIN_ROOM_COSTS } }, withRefinableCredit(input.stock));
+  // THE ENUMERATION IS THE LIT GROUND. It used to be run for its LENGTH and
+  // thrown away, which left the board naming kinds with no idea where they
+  // would go; the candidates are what the player aims at now, so they are
+  // kept as they come back.
+  const grow: StructureGrowCandidate[] = [];
+  const annex: AnnexCluster[] = [];
+  if (affordable && (input.growOutward ?? true)) {
+    for (const c of ANNEX_ORDER) {
+      const cands = annexOptions(input.center, input.house, input.plan, input.neighbors, delta, c);
+      if (!cands.length) continue;
+      annex.push(c);
+      for (const candidate of cands.slice(0, GROW_PER_KIND)) {
+        grow.push({ kind: ANNEX_ROOM_KIND[c], cluster: c, outward: true, candidate });
+      }
+    }
+  }
   const annexKinds = new Set(annex.map((c) => ANNEX_ROOM_KIND[c]));
-  const interior = affordable
-    ? ANNEX_ORDER.map((c) => ANNEX_ROOM_KIND[c]).filter(
-        (k) =>
-          !annexKinds.has(k) &&
-          interiorOptions(input.center, input.house, input.plan, delta, k, {
-            keepRoot: input.keepRoot ?? true,
-            preferred: input.basePlan
-              ? demolishedRects(input.center, input.house, input.basePlan, delta, k)
-              : [],
-          }).length > 0,
-      )
-    : [];
+  const interior: Array<HouseRoom["kind"]> = [];
+  if (affordable) {
+    for (const c of ANNEX_ORDER) {
+      const k = ANNEX_ROOM_KIND[c];
+      if (annexKinds.has(k)) continue;
+      const cands = interiorOptions(input.center, input.house, input.plan, delta, k, {
+        keepRoot: input.keepRoot ?? true,
+        preferred: input.basePlan
+          ? demolishedRects(input.center, input.house, input.basePlan, delta, k)
+          : [],
+      });
+      if (!cands.length) continue;
+      interior.push(k);
+      for (const candidate of cands.slice(0, GROW_PER_KIND)) {
+        grow.push({ kind: k, cluster: c, outward: false, candidate });
+      }
+    }
+  }
   // A room a pending demolition already targets is spoken for — the order
   // stands, the button would be a dead re-press.
   const comingDown = new Set(
@@ -173,11 +229,12 @@ export function structureActsOf(input: {
       .filter((p) => p.buildingKey === key)
       .map((p) => p.roomId),
   );
-  const demolish = input.plan.rooms.filter(
-    (r) => !comingDown.has(r.id) && demolishCheck(input.deltas, key, input.plan, r.id).ok,
-  );
+  // A room a pending order already owns is not aimable either — its own site
+  // marking answers for that ground while the work runs.
+  const rooms = input.plan.rooms.filter((r) => !comingDown.has(r.id));
+  const demolish = rooms.filter((r) => demolishCheck(input.deltas, key, input.plan, r.id).ok);
   const furnish = FURNITURE_ITEMS.filter((f) => input.furnStock(furnitureGlyph(f.kind)) > 0).map(
     (f) => f.kind,
   );
-  return { annex, interior, demolish, furnish };
+  return { annex, interior, grow, demolish, rooms, furnish };
 }

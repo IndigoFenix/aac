@@ -35,6 +35,7 @@ import {
   type RoomDoorway,
 } from "./rooms";
 import { ANNEX_ROOM_KIND, CLUSTERS, type AnnexCluster, type StationKind } from "./stations";
+import { annexBill, blockCosts, partitionBill } from "./block-bill.js";
 import { growStreets, type TownStreets } from "./streets";
 import type { TownPlan } from "./plan";
 // Type-only by design (zoning.ts imports THIS module at runtime — the one
@@ -189,6 +190,10 @@ export interface PendingDemolition {
   startedDay: number;
   /** Street-days of labor to bring it down. */
   buildDays: number;
+  /** "empty" (phase 4): furniture OUT, walls STAY — the commit runs
+   *  emptyRoom instead of demolishRoom (same row, same ladder, same
+   *  labor; only the executor differs). Absent = a full demolition. */
+  mode?: "empty";
   /** BANKED LABOR, in build-days — accrues only while builders stand at
    *  the room (the buildwork machinery). Absent = 0. */
   labor?: number;
@@ -198,6 +203,188 @@ export interface PendingDemolition {
  *  runs from the order; tearing down needs no materials.) */
 export function demolitionLaborDone(p: PendingDemolition): boolean {
   return (p.labor ?? 0) >= p.buildDays - 1e-9;
+}
+
+// ── ONE CONSTRUCTION ORDER (phase 2 — construction-phase2-plan.md) ──────
+// The three parallel row families above were the same designation machine
+// written three times: costs gather into a pile, labor banks while builders
+// stand there, a commit executes at the bar. What differed was keyed on WHO
+// CREATED the row — the "builds itself" bug class. They now live in ONE
+// ordered list with ONE town-wide ordinal sequence; the per-kind difference
+// is the commit executor and the payload geometry, nothing in the lifecycle.
+// The kind-typed interfaces above remain THE payload shapes (every consumer
+// keeps reading b.dx / p.candidate / p.roomId exactly as before); an order
+// is one of them plus its `kind` tag.
+
+export type ConstructionOrderKind = "found" | "annex" | "interior" | "demolish" | "refine";
+
+export interface FoundedOrder extends FoundedBuilding {
+  kind: "found";
+}
+/** An ordered room — outward growth ("annex") or a subdivision cut
+ *  ("interior"); the candidate carries the geometry either way (the
+ *  PendingAnnex shape, unchanged). */
+export interface RoomOrder extends PendingAnnex {
+  kind: "annex" | "interior";
+  /** The per-kind ordinal this row carried BEFORE the one-sequence adapter
+   *  renumbered it (pre-phase-2 saves only) — in-flight pile agreements
+   *  (`annexpile:<old>`) resolve through it. Absent on new rows. */
+  legacyOrd?: number;
+}
+export interface DemolishOrder extends PendingDemolition {
+  kind: "demolish";
+  /** See RoomOrder.legacyOrd (demolitions have no pile — kept only so a
+   *  round-trip preserves the adapter's work byte-stably). */
+  legacyOrd?: number;
+}
+/**
+ * A REFINE order (phase 3 — the block chain): mill `count` units of a
+ * refined stack (`block.material_wood`) out of the raw bill in `costs`
+ * (`{ wood: count × inPerOut }`, head-paid), gathered into `pile` at the
+ * mill spot exactly like a site stages — the SAME costed-order lifecycle
+ * (gather → stage → labor → commit), so the one order loop drives it with
+ * no new machinery. TRANSIENT: the commit mints the product into a real
+ * container and REMOVES the row — a refine is work, not a standing thing.
+ */
+export interface RefineOrder {
+  /** Order ordinal — town-wide, monotone, never reused. */
+  ord: number;
+  kind: "refine";
+  /** The faceted stack the commit mints ("block.material_wood"). */
+  produces: string;
+  /** Units the commit mints. */
+  count: number;
+  /** The raw bill (head → count × inPerOut) — the one costed-order shape,
+   *  shared verbatim with the staging/pile machinery. */
+  costs: Record<string, number>;
+  /** The mill-spot heap (live stack map, the `stock` pattern). */
+  pile: Record<string, number>;
+  /** The mill spot (world coords), stamped at post — the order's anchor
+   *  for hauls, observation and the working pose. */
+  at: { x: number; y: number };
+  startedDay: number;
+  /** Street-days of milling (count × the per-unit rate). */
+  buildDays: number;
+  /** Street-day the pile covered the bill — milling MAY begin here. */
+  laborStartDay?: number;
+  /** BANKED LABOR, in build-days (the ⑥ pair, unchanged semantics). */
+  labor?: number;
+}
+export type ConstructionOrder = FoundedOrder | RoomOrder | DemolishOrder | RefineOrder;
+
+/** ONE stage ladder over every order kind (⑦ — the per-kind functions
+ *  below it are the projections the stage renderer already consumes). */
+export function orderStage(o: ConstructionOrder, day: number): BuildStage {
+  switch (o.kind) {
+    case "found":
+      return foundedStage(o, day);
+    case "annex":
+    case "interior":
+      return pendingAnnexStage(o);
+    case "demolish":
+      return demolitionStage(o);
+    case "refine": {
+      // The same ladder shape as a staged room (refines emit no ground
+      // site, but the one loop and the tests read the stage uniformly).
+      if (o.laborStartDay === undefined) return 0;
+      const f = laborFraction(o);
+      return f >= 1 ? 3 : f >= BUILD_PILLARS_AT ? 2 : 1;
+    }
+  }
+}
+
+/** ONE done check over every order kind — the commit bar. */
+export function orderDone(o: ConstructionOrder, day: number): boolean {
+  switch (o.kind) {
+    case "found":
+      return foundedBuildingDone(o, day);
+    case "annex":
+    case "interior":
+      return pendingLaborDone(o);
+    case "demolish":
+      return demolitionLaborDone(o);
+    case "refine":
+      return o.laborStartDay !== undefined && (o.labor ?? 0) >= o.buildDays - 1e-9;
+  }
+}
+
+// ── VISIBLE BUILD STAGES (⑦) ────────────────────────────────────────────
+// Construction is WATCHED, not waited out: a designation is marked ground
+// while its materials gather, gets a FLOOR the moment builders start, PILLARS
+// halfway through, and only then the walls. A demolition runs the very same
+// ladder in reverse — walls, pillars, floor, gone — so unbuilding reads as
+// the film of building played backwards rather than a room blinking out.
+//
+// The stage is a pure read of the SAME labor the pipeline already banks
+// (⑥ — builders make buildings): nothing here is its own clock, so a site
+// with nobody standing at it holds its stage exactly as it holds its labor.
+
+/** 0 = marked ground, 1 = floor laid, 2 = pillars up, 3 = walls standing
+ *  (a finished building — never emitted as a construction site). */
+export type BuildStage = 0 | 1 | 2 | 3;
+
+/** Labor fraction the PILLARS go up at. The floor lands at the FIRST worked
+ *  moment (a builder's first act is to lay it), so there is no floor
+ *  threshold — staging alone earns stage 1. */
+export const BUILD_PILLARS_AT = 0.5;
+
+/** How far a designation's banked labor has come, 0..1. */
+export function laborFraction(b: { buildDays: number; labor?: number }): number {
+  if (b.buildDays <= 0) return 1;
+  return Math.max(0, Math.min(1, (b.labor ?? 0) / b.buildDays));
+}
+
+/** The stage a RISING designation shows: marked ground until its materials
+ *  are staged, then floor, then pillars. A no-cost row the driver has
+ *  ADOPTED (phase 2 step 3 — `laborStartDay` stamped, elapsed fraction
+ *  banked as labor) reads labor like every staged row; an UNADOPTED
+ *  no-cost row (growth's collapsed twin, pre-pipeline worldgen, sessions
+ *  with no construction driver) keeps its pure clock — it has no labor to
+ *  bank, and a staked plot that never changes shape would be a worse lie
+ *  than an approximate one. */
+export function foundedStage(b: FoundedBuilding, day: number): BuildStage {
+  if (b.completed === true) return 3;
+  if (!b.costs && b.laborStartDay === undefined) {
+    if (b.buildDays <= 0) return 3;
+    const f = Math.max(0, Math.min(1, (day - b.startedDay) / b.buildDays));
+    return f >= 1 ? 3 : f >= BUILD_PILLARS_AT ? 2 : 1;
+  }
+  if (b.laborStartDay === undefined) return 0;
+  const f = laborFraction(b);
+  return f >= 1 ? 3 : f >= BUILD_PILLARS_AT ? 2 : 1;
+}
+
+/** The raw 0..1 build fraction behind `foundedStage` — the wall-course
+ *  driver (phase 3 worked pieces). Same arms: completed = 1; an unadopted
+ *  no-cost row reads its clock; a staged row reads banked labor;
+ *  unstaged = 0. */
+export function foundedProgress(b: FoundedBuilding, day: number): number {
+  if (b.completed === true) return 1;
+  if (!b.costs && b.laborStartDay === undefined) {
+    if (b.buildDays <= 0) return 1;
+    return Math.max(0, Math.min(1, (day - b.startedDay) / b.buildDays));
+  }
+  if (b.laborStartDay === undefined) return 0;
+  return laborFraction(b);
+}
+
+/** The stage a pending ANNEX/interior room shows — the same ladder, one
+ *  level down. */
+export function pendingAnnexStage(p: PendingAnnex): BuildStage {
+  if (p.laborStartDay === undefined) return 0;
+  const f = laborFraction(p);
+  return f >= 1 ? 3 : f >= BUILD_PILLARS_AT ? 2 : 1;
+}
+
+/** The stage a room COMING DOWN shows — the ladder in reverse. The walls
+ *  stand (3) until the work has really begun, then pillars, then bare
+ *  floor; at 0 the room is gone and the row commits. */
+export function demolitionStage(p: PendingDemolition): BuildStage {
+  const f = laborFraction(p);
+  if (f >= 1) return 0;
+  if (f >= 2 / 3) return 1;
+  if (f >= 1 / 3) return 2;
+  return 3;
 }
 
 /** The construction-delta KEY of a plan WORK row: a FOUNDED work keys by its
@@ -228,6 +415,32 @@ export interface PlacedPiece {
    *  generic: no furniture kind carries its own tipped pose — the flag is a
    *  placement property every kind inherits (emergent-over-scripted). */
   setUp?: boolean;
+  /** THE DOORWAY THIS PIECE HANGS IN (construction phase 5): a `door` row is
+   *  pinned to an opening (`doorwayKeyOf`, rooms.ts) instead of standing on a
+   *  floor spot. A pinned row is NOT floor furniture and is excluded wherever
+   *  furniture is enumerated (furnishPlan) — it must not be a placement
+   *  obstacle, must not render as an object (it renders as the wall's own door
+   *  STRUCTURE, via the doorway's `leaf`), and must never designate a room
+   *  (a door tells you nothing about what a room is for). `x`/`y` still hold
+   *  the opening's midpoint so break/inspection paths have somewhere to aim. */
+  doorway?: string;
+  /** The street good whose household box this chest IS (pantry…) — carried on
+   *  the row once the building is `materialized`, because from then on the row
+   *  IS the box and the goods economy keys on it. */
+  good?: string;
+  /**
+   * THE PLAYER PUT IT EXACTLY HERE (blueprint.ts). A spoken "put the chair by
+   * the window" is a change to the DRAWING, so the blueprint keeps the row as
+   * given and arranges everything else around it.
+   *
+   * ABSENT is the default and covers every autonomous placement — a delivery
+   * standing itself up, a program install. Those rows say where a piece HAPPENS
+   * to be, not where it belongs, so the drawing re-slots them by kind: kitchen
+   * things stood in the main room because there was no kitchen get carried into
+   * one the day a kitchen exists. Honouring them unconditionally is what would
+   * make that impossible.
+   */
+  pinned?: boolean;
 }
 
 /** A demolished BASE room and the door-adjacent room that absorbs its
@@ -255,15 +468,58 @@ export interface BuildingDelta {
   /** Generated piece ids removed/stowed — furnishPlan never emits them
    *  (their space genuinely frees; an anchored piece follows its anchor). */
   removedPieces: string[];
+  /**
+   * THE FURNITURE HAS BEEN MADE REAL (blueprint.ts — the blueprint/house
+   * split). `placed` is now the WHOLE physical contents of this building, and
+   * `furnishPlan` stops generating for it entirely.
+   *
+   * WHY. The station generator answers "where should furniture stand in a
+   * house shaped like this" — it draws a BLUEPRINT. Reading its output as the
+   * furniture itself is what made a house re-arrange in a single frame the
+   * instant a room went up: nothing had moved, the answer to the question had
+   * changed. So the generator keeps drawing (it is still the only thing that
+   * knows where a bed belongs), but the furniture is instantiated from that
+   * drawing ONCE and is a fact thereafter. A room going up re-draws; the
+   * furniture stays where it is until somebody carries it.
+   *
+   * Set lazily, at the first structural change to a building — a town nobody
+   * has rebuilt keeps an empty overlay and derives its furniture as it always
+   * did, so worldgen and serialization are untouched for every untouched
+   * house. `blueprintDelta` clears this flag, which is exactly how the drawing
+   * keeps being drawn after the house has stopped deriving.
+   */
+  materialized?: boolean;
+  /**
+   * DOORWAYS WITH NO LEAF (construction phase 5) — the exact mirror of
+   * `removedPieces`, one level up: that list says "this generated FIXTURE is
+   * not there", this one says "this generated DOORWAY has no door in it".
+   * Rows are `doorwayKeyOf` keys (rooms.ts — the quantized world midpoint, so
+   * the two rooms that both record a shared opening produce ONE row).
+   *
+   * ABSENT ⇒ every doorway has its leaf, which is what keeps worldgen towns
+   * exactly as they were: the law lets a finished worldgen building abstract
+   * its walls, and its doors come with them. A building the CONSTRUCTION
+   * pipeline raises seeds this with all of its openings at shell completion
+   * and then hangs them one at a time, so you watch the doors go in.
+   *
+   * OUT OF SCOPE, deliberately: a partition cut AFTER founding gets the
+   * default leaf (no row is added for it), and a row left behind by a room
+   * that moved or came down is INERT — it names a point nothing opens at, and
+   * nothing ever reads it again.
+   */
+  doorless?: string[];
   /** The auto-expansion accumulator (construction v1 §5). */
   prosperity?: number;
-  /** PERSISTENT ROOM PROGRAMS (pipeline ④): the rooms this building is
-   *  ORDERED to have — standing wants, append-only, NEVER deleted (the
-   *  designation outlives the room). An unmet program outranks the default
-   *  differentiation in nextAnnexWant, so a demolished programmed room
-   *  re-rises in place; its furniture requirement (programs.ts
-   *  roomProgramOf) drives crafting until met. */
-  programs?: Array<{ ord: number; room: string }>;
+  /** PERSISTENT ROOM PROGRAMS (pipeline ④, REMOVABLE since phase 4): the
+   *  rooms this building is ORDERED to have — standing wants. An unmet
+   *  program outranks the default differentiation in nextAnnexWant; its
+   *  furniture requirement (programs.ts roomProgramOf) drives crafting
+   *  until met. Phase 4 reversed the old append-only law: demolishing or
+   *  breaking what a program stood for DROPS the row (removeProgram) —
+   *  a designation must never re-order what the player tore out.
+   *  `roomId` (optional) pins the want to a specific EXISTING room (the
+   *  empty-room-reuse path) so the furnish sweeps aim there. */
+  programs?: Array<{ ord: number; room: string; roomId?: string }>;
 }
 
 /**
@@ -321,19 +577,73 @@ export interface FoundedBuilding {
    *  buildDays`. Absent = 0. Legacy rows (no costs — growth's collapsed
    *  twin) keep the pure clock instead. */
   labor?: number;
+  /** The WALL MATERIAL the building was raised from (phase 3 — the pile's
+   *  dominant block material, recorded at commit): the same-material
+   *  abstraction hook (a complete one-material building abstracts its
+   *  walls) and the deconstruction refund's glyph. Absent = legacy /
+   *  unrecorded (reads as wood). */
+  material?: string;
 }
 
 /** A founding candidate — a FoundedBuilding minus the ordinal/clock fields
  *  (assigned when the order is accepted). */
 export type FoundingCandidate = Omit<
   FoundedBuilding,
-  "ord" | "startedDay" | "buildDays" | "completed" | "costs" | "pile" | "laborStartDay"
+  "ord" | "startedDay" | "buildDays" | "completed" | "costs" | "pile" | "laborStartDay" | "material"
 >;
+
+/** A standing MAKE-ORDER (pipeline ③), one per house. The job carries a
+ *  RECIPE, not a furniture row: furniture was the first thing the pipeline
+ *  made but never the only possible one — a toy is made exactly the same way
+ *  (real inputs drawn from real stacks, the same labor clock, the same bench
+ *  discount, the same honest wait when an input is missing). PERSISTED on
+ *  TownDeltas (construction rewrite 1b) so a reload RESUMES the work — its
+ *  haul agreements and craftspot reservations keep their owner. */
+export interface CraftJob {
+  /** The finished stack glyph one job mints (`furn.chair`, `rabbit.toy`). */
+  produces: string;
+  /** Input glyphs → units the job consumes. */
+  consumes: Record<string, number>;
+  /** The station that SPEEDS the work, and NEVER gates it (the bench law). */
+  at?: StationKind;
+  /** Short provenance label for haul rows and logs (`chair`, `rabbit.toy`). */
+  label: string;
+  /** The container the inputs pile into and the finished stack lands in. */
+  spotId: string;
+  /** Haul agreements feeding the spot (reservations ride their ids). */
+  agreements: string[];
+  /** townClock s labor began — unset while inputs are still gathering. */
+  laborStart?: number;
+  laborS: number;
+  /** townClock s this job has been waiting on hauls it cannot see land —
+   *  the deadlock watchdog's clock. */
+  waitingSince?: number;
+  /** townClock s the crafter was last actually present. Work only advances
+   *  while somebody is there to do it, so an absence shifts the finish line
+   *  rather than counting toward it. */
+  lastWorkedAt?: number;
+}
+
+/** A QUEUED make-order (phase 4 — full craft queueing): what to make,
+ *  waiting for the house's ONE craft slot. Deliberately spot-less: the
+ *  CraftJob is built at POP time so the spot follows the bench of that
+ *  moment, and no stale reservations ride the queue. */
+export type QueuedCraft = Pick<CraftJob, "produces" | "consumes" | "at" | "label">;
 
 export interface SerializedTownDeltas {
   version: number;
   buildings: Record<string, BuildingDelta>;
-  /** Founded whole buildings, in founding order (①b). Absent = none. */
+  /** CONSTRUCTION ORDERS (phase 2 — the ONE row family), in ordinal order.
+   *  The only field written since phase 2; absent on older saves (the
+   *  legacy trio below adapts in at load). */
+  orders?: ConstructionOrder[];
+  /** The ordinal sequence's HIGH-WATER mark (phase 3) — ordinals are never
+   *  reused even after a TRANSIENT row (a committed refine) leaves the
+   *  list. Absent (older saves) = derived from the rows present. */
+  ordSeq?: number;
+  /** LEGACY (pre-phase-2) — founded whole buildings, in founding order
+   *  (①b). READ FOREVER, never written: the loader adapts these rows into
+   *  `orders`, founding ordinals preserved (f_<ord> keys are immortal). */
   founded?: FoundedBuilding[];
   /** The town's builder's-yard STOCK (material glyph → count) build costs
    *  draw from. Absent = empty. (A wilderness FoundedSite keeps its own
@@ -355,11 +665,12 @@ export interface SerializedTownDeltas {
    *  reserved by pending tasks/designations, so two orders never draw the
    *  same wood. Absent = empty ledger. */
   reservations?: SerializedReservationLedger;
-  /** PENDING ANNEXES (pipeline ⑤ — annex staging), in posting order.
-   *  Absent = none. */
+  /** LEGACY (pre-phase-2) — pending annexes, in posting order. READ
+   *  FOREVER, never written: adapted into `orders` at load (renumbered
+   *  into the one sequence; `legacyOrd` keeps the pile endpoints live). */
   annexSites?: PendingAnnex[];
-  /** PENDING DEMOLITIONS (ordered tear-downs awaiting labor), in posting
-   *  order. Absent = none. */
+  /** LEGACY (pre-phase-2) — pending demolitions, in posting order. READ
+   *  FOREVER, never written: adapted into `orders` at load. */
   demolitionSites?: PendingDemolition[];
   /** ABSTRACT-PARTNER SHELVES (⑤ stub partners): partner key → the
    *  synthetic stack `town:<key>` endpoints alias when the partner isn't a
@@ -371,6 +682,16 @@ export interface SerializedTownDeltas {
    *  the session. NEVER holds the world spec's absolute ring (that
    *  re-derives from game.culture). Absent = none. */
   laws?: Law[];
+  /** CRAFT JOBS (③ — rewrite 1b), house index → the standing make-order.
+   *  Absent = none (every pre-1b save). */
+  craftJobs?: Record<string, CraftJob>;
+  /** BUILDING furniture-delivery piles (⑥ — the stacks `bfurn:<deltaKey>`
+   *  endpoints alias), persisted beside the agreements that feed them
+   *  (rewrite 1b). Absent = none. */
+  shellFurnPiles?: Record<string, Record<string, number>>;
+  /** QUEUED make-orders (phase 4), house index → the waiting line behind
+   *  the one craft slot. Absent = none (every pre-phase-4 save). */
+  craftQueue?: Record<string, QueuedCraft[]>;
 }
 
 /** The per-town overlay store. `version` is the global monotone the
@@ -382,7 +703,18 @@ export interface TownDeltas {
   mutate(key: string, f: (d: BuildingDelta) => void): void;
   keys(): string[];
   version: number;
-  /** FOUNDED whole buildings, in founding order (①b). Read-only view. */
+  /** EVERY construction order (phase 2 — the ONE row family), in ordinal
+   *  order. The kind-scoped reads below are filtered views of this list. */
+  orders(): readonly ConstructionOrder[];
+  /** STAGE order `ord` (kind-agnostic, idempotent): its pile covers its
+   *  costs — labor runs from `day`. No-op for cost-free orders. Bumps the
+   *  version. */
+  stageOrder(ord: number, day: number): void;
+  /** Drop order `ord` (committed or cancelled — the caller banks any pile
+   *  remainder first). Bumps the version. */
+  removeOrder(ord: number): void;
+  /** FOUNDED whole buildings, in founding order (①b). Read-only view of
+   *  `orders()` (kind "found"). */
   founded(): readonly FoundedBuilding[];
   /** Commit a validated founding candidate (from foundingOptions) — assigns
    *  its ordinal, stamps the clock, bumps the version. With `costs` the row
@@ -405,6 +737,12 @@ export interface TownDeltas {
   /** Mark founded house `ord` HOUSEHOLDED (④ move-in, idempotent). Bumps
    *  the version so the stage reconciles the work-row→house conversion. */
   admitHousehold(ord: number): void;
+  /** CALL OFF an unfinished founding (⑦ — the deconstruction menu on work in
+   *  progress): drop the row and hand back whatever was hauled to its plot,
+   *  so nothing is lost. A COMPLETED building is not cancellable — that is a
+   *  demolition, which is work of its own. Returns the returned pile, or
+   *  null when the row is gone/finished. */
+  cancelFounding(ord: number): Record<string, number> | null;
   /** The town's material STOCK (glyph → count) — the ONE mutable stack map
    *  build costs draw from (aliasable as a crate's contents, the FoundedSite
    *  pattern). Mutate it in place; it serializes with the deltas. */
@@ -431,7 +769,8 @@ export interface TownDeltas {
    *  material resolution draws FREE units only (reservations.ts
    *  resolveMaterials). Serializes with the deltas. */
   readonly reservations: ReservationLedger;
-  /** PENDING ANNEXES (pipeline ⑤) — read-only view, posting order. */
+  /** PENDING ANNEXES (pipeline ⑤) — read-only view of `orders()` (kinds
+   *  "annex" + "interior"), posting order. */
   annexSites(): readonly PendingAnnex[];
   /** Post an annex DESIGNATION (assigns its ordinal, bumps the version —
    *  the staked growth rect is orderable state). */
@@ -442,7 +781,14 @@ export interface TownDeltas {
   /** Drop pending annex `ord` (committed via requestAnnex, or cancelled —
    *  the caller banks any pile remainder first). Bumps the version. */
   removeAnnexSite(ord: number): void;
-  /** PENDING DEMOLITIONS — read-only view, posting order. */
+  /** REFINE orders (phase 3 — the block chain) — read-only view of
+   *  `orders()` (kind "refine"), posting order. */
+  refineOrders(): readonly RefineOrder[];
+  /** Post a refine order (assigns its ordinal, bumps the version). The
+   *  mill runs it through the one order loop; the commit removes it. */
+  postRefineOrder(p: Omit<RefineOrder, "ord" | "kind">): RefineOrder;
+  /** PENDING DEMOLITIONS — read-only view of `orders()` (kind
+   *  "demolish"), posting order. */
   demolitionSites(): readonly PendingDemolition[];
   /** Post a demolition DESIGNATION (assigns its ordinal, bumps the
    *  version) — the room comes down later, when builders work it off. */
@@ -457,6 +803,18 @@ export interface TownDeltas {
    *  aliases (the cohorts pattern: append via kernel/laws.ts addLaw);
    *  serializes with the deltas. */
   readonly laws: Law[];
+  /** CRAFT JOBS (③ — rewrite 1b): the live rows, house index → job,
+   *  mutated in place (the `stock` pattern); serialize with the deltas so a
+   *  reload resumes the work. */
+  readonly craftJobs: Map<number, CraftJob>;
+  /** BUILDING furniture-delivery piles (⑥ — rewrite 1b): the live stacks
+   *  `bfurn:<deltaKey>` endpoints alias, mutated in place; serialize with
+   *  the deltas. */
+  readonly shellFurnPiles: Map<string, Record<string, number>>;
+  /** QUEUED make-orders (phase 4): house index → the waiting line behind
+   *  the one craft slot, mutated in place (the craftJobs pattern);
+   *  serializes with the deltas. */
+  readonly craftQueue: Map<number, QueuedCraft[]>;
   toJSON(): SerializedTownDeltas;
 }
 
@@ -474,6 +832,8 @@ export function deltaIsEmpty(d: BuildingDelta | undefined): boolean {
       (d.interior?.length ?? 0) === 0 &&
       d.placed.length === 0 &&
       d.removedPieces.length === 0 &&
+      (d.doorless?.length ?? 0) === 0 &&
+      !d.materialized &&
       (d.programs?.length ?? 0) === 0)
   );
 }
@@ -487,9 +847,71 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       buildings.set(k, JSON.parse(JSON.stringify(d)) as BuildingDelta);
     }
   }
-  const founded: FoundedBuilding[] = (json?.founded ?? []).map(
-    (b) => JSON.parse(JSON.stringify(b)) as FoundedBuilding,
+  const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+  // ONE order list (phase 2). A phase-2 save carries `orders` verbatim; a
+  // pre-phase-2 save carries the legacy trio, adapted here ONCE at load:
+  // founding ordinals are IMMORTAL (f_<ord> work keys, sitepile endpoints)
+  // so found rows keep their numbers; room/demolition designations
+  // renumber into the one town-wide sequence and remember their old
+  // per-kind ordinal (`legacyOrd`) so in-flight pile agreements
+  // (`annexpile:<old>`) still resolve. Behavior is identical either way —
+  // the adapter is shape, never semantics.
+  const orders: ConstructionOrder[] = [];
+  if (json?.orders) {
+    for (const o of json.orders) orders.push(clone(o));
+  } else if (json) {
+    for (const b of json.founded ?? []) orders.push({ kind: "found", ...clone(b) });
+    let next = orders.reduce((m, o) => Math.max(m, o.ord + 1), 0);
+    for (const p of json.annexSites ?? []) {
+      orders.push({
+        kind: isInteriorCandidate(p.candidate) ? "interior" : "annex",
+        ...clone(p),
+        ord: next++,
+        legacyOrd: p.ord,
+      });
+    }
+    for (const p of json.demolitionSites ?? []) {
+      orders.push({ kind: "demolish", ...clone(p), ord: next++, legacyOrd: p.ord });
+    }
+  }
+  // Kind-scoped LIVE views (consumers mutate rows in place — labor banks,
+  // piles fill — so the views must alias the rows, never copy them).
+  // Membership changes only on post/remove; field mutation never dirties.
+  let viewsDirty = true;
+  let foundedView: FoundedOrder[] = [];
+  let annexView: RoomOrder[] = [];
+  let demolitionView: DemolishOrder[] = [];
+  let refineView: RefineOrder[] = [];
+  const views = () => {
+    if (viewsDirty) {
+      foundedView = orders.filter((o): o is FoundedOrder => o.kind === "found");
+      annexView = orders.filter(
+        (o): o is RoomOrder => o.kind === "annex" || o.kind === "interior",
+      );
+      demolitionView = orders.filter((o): o is DemolishOrder => o.kind === "demolish");
+      refineView = orders.filter((o): o is RefineOrder => o.kind === "refine");
+      viewsDirty = false;
+    }
+    return { foundedView, annexView, demolitionView, refineView };
+  };
+  // ONE monotone ordinal sequence, HIGH-WATER tracked (phase 3): a
+  // TRANSIENT refine row commits and leaves the list, and deriving the
+  // next ordinal from live rows alone would hand its number to a later
+  // founding — in-flight `orderpile:<ord>` remnants would then resolve
+  // against the wrong row. The sequence serializes so ordinals stay
+  // immortal across reloads too; legacy saves derive it from their rows.
+  let ordSeq = Math.max(
+    json?.ordSeq ?? 0,
+    orders.reduce((m, o) => Math.max(m, o.ord + 1), 0),
   );
+  const nextOrd = () => {
+    const n = Math.max(
+      ordSeq,
+      orders.reduce((m, o) => Math.max(m, o.ord + 1), 0),
+    );
+    ordSeq = n + 1;
+    return n;
+  };
   const stock: Record<string, number> = { ...(json?.stock ?? {}) };
   const zones: ZoneCharter[] = (json?.zones ?? []).map((z) => ({ ...z }));
   const civic = { prosperity: json?.civicProsperity ?? 0 };
@@ -498,16 +920,25 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
   );
   const transfers = createTransferLedger(json?.transfers);
   const reservations = createReservationLedger(json?.reservations);
-  const annexSites: PendingAnnex[] = (json?.annexSites ?? []).map(
-    (p) => JSON.parse(JSON.stringify(p)) as PendingAnnex,
-  );
-  const demolitionSites: PendingDemolition[] = (json?.demolitionSites ?? []).map(
-    (p) => JSON.parse(JSON.stringify(p)) as PendingDemolition,
-  );
   const partnerStock: Record<string, Record<string, number>> = JSON.parse(
     JSON.stringify(json?.partnerStock ?? {}),
   ) as Record<string, Record<string, number>>;
   const laws: Law[] = (json?.laws ?? []).map((l) => JSON.parse(JSON.stringify(l)) as Law);
+  const craftJobs = new Map<number, CraftJob>(
+    Object.entries(json?.craftJobs ?? {}).map(([k, j]) => [
+      Number(k),
+      JSON.parse(JSON.stringify(j)) as CraftJob,
+    ]),
+  );
+  const shellFurnPiles = new Map<string, Record<string, number>>(
+    Object.entries(json?.shellFurnPiles ?? {}).map(([k, s]) => [k, { ...s }]),
+  );
+  const craftQueue = new Map<number, QueuedCraft[]>(
+    Object.entries(json?.craftQueue ?? {}).map(([k, q]) => [
+      Number(k),
+      q.map((e) => JSON.parse(JSON.stringify(e)) as QueuedCraft),
+    ]),
+  );
   const store: TownDeltas = {
     version: json?.version ?? 0,
     get: (key) => buildings.get(key),
@@ -519,35 +950,54 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       store.version++;
     },
     keys: () => [...buildings.keys()],
-    founded: () => founded,
+    orders: () => orders,
+    stageOrder: (ord, day) => {
+      const o = orders.find((q) => q.ord === ord);
+      if (!o || o.kind === "demolish") return; // no costs — nothing stages
+      if (o.laborStartDay !== undefined) return;
+      o.laborStartDay = day;
+      store.version++;
+    },
+    removeOrder: (ord) => {
+      const i = orders.findIndex((q) => q.ord === ord);
+      if (i < 0) return;
+      orders.splice(i, 1);
+      viewsDirty = true;
+      store.version++;
+    },
+    founded: () => views().foundedView,
     foundBuilding: (c, startedDay, buildDays, costs) => {
-      const ord = founded.reduce((m, b) => Math.max(m, b.ord + 1), 0);
-      const b: FoundedBuilding = {
-        ord,
+      const b: FoundedOrder = {
+        kind: "found",
+        ord: nextOrd(),
         ...c,
         startedDay,
         buildDays,
         ...(costs ? { costs: { ...costs }, pile: {} } : {}),
       };
-      founded.push(b);
+      orders.push(b);
+      viewsDirty = true;
       store.version++;
       return b;
     },
-    stageFounded: (ord, day) => {
-      const b = founded.find((f) => f.ord === ord);
-      if (!b || b.laborStartDay !== undefined) return;
-      b.laborStartDay = day;
-      store.version++;
-    },
+    stageFounded: (ord, day) => store.stageOrder(ord, day),
     completeFounding: (ord) => {
-      const b = founded.find((f) => f.ord === ord);
+      const b = views().foundedView.find((f) => f.ord === ord);
       if (!b || b.completed) return;
       b.completed = true;
       delete b.pile; // consumed — the materials are the building
       store.version++;
     },
+    cancelFounding: (ord) => {
+      const b = views().foundedView.find((f) => f.ord === ord);
+      if (!b) return null;
+      if (b.completed) return null; // finished — taking it down is a demolition
+      const pile = { ...(b.pile ?? {}) };
+      store.removeOrder(ord);
+      return pile;
+    },
     admitHousehold: (ord) => {
-      const b = founded.find((f) => f.ord === ord);
+      const b = views().foundedView.find((f) => f.ord === ord);
       if (!b || b.household) return;
       b.household = true;
       store.version++;
@@ -565,63 +1015,70 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     cohorts,
     transfers,
     reservations,
-    annexSites: () => annexSites,
+    annexSites: () => views().annexView,
     postAnnexSite: (p) => {
-      const ord = annexSites.reduce((m, a) => Math.max(m, a.ord + 1), 0);
-      const row: PendingAnnex = { ord, ...JSON.parse(JSON.stringify(p)) as Omit<PendingAnnex, "ord"> };
-      annexSites.push(row);
-      store.version++;
-      return row;
-    },
-    stageAnnexSite: (ord, day) => {
-      const p = annexSites.find((a) => a.ord === ord);
-      if (!p || p.laborStartDay !== undefined) return;
-      p.laborStartDay = day;
-      store.version++;
-    },
-    removeAnnexSite: (ord) => {
-      const i = annexSites.findIndex((a) => a.ord === ord);
-      if (i < 0) return;
-      annexSites.splice(i, 1);
-      store.version++;
-    },
-    demolitionSites: () => demolitionSites,
-    postDemolitionSite: (p) => {
-      const ord = demolitionSites.reduce((m, d) => Math.max(m, d.ord + 1), 0);
-      const row: PendingDemolition = {
-        ord,
-        ...(JSON.parse(JSON.stringify(p)) as Omit<PendingDemolition, "ord">),
+      const row: RoomOrder = {
+        kind: isInteriorCandidate(p.candidate) ? "interior" : "annex",
+        ord: nextOrd(),
+        ...clone(p),
       };
-      demolitionSites.push(row);
+      orders.push(row);
+      viewsDirty = true;
       store.version++;
       return row;
     },
-    removeDemolitionSite: (ord) => {
-      const i = demolitionSites.findIndex((d) => d.ord === ord);
-      if (i < 0) return;
-      demolitionSites.splice(i, 1);
+    stageAnnexSite: (ord, day) => store.stageOrder(ord, day),
+    removeAnnexSite: (ord) => store.removeOrder(ord),
+    refineOrders: () => views().refineView,
+    postRefineOrder: (p) => {
+      const row: RefineOrder = { kind: "refine", ord: nextOrd(), ...clone(p) };
+      orders.push(row);
+      viewsDirty = true;
       store.version++;
+      return row;
     },
+    demolitionSites: () => views().demolitionView,
+    postDemolitionSite: (p) => {
+      const row: DemolishOrder = { kind: "demolish", ord: nextOrd(), ...clone(p) };
+      orders.push(row);
+      viewsDirty = true;
+      store.version++;
+      return row;
+    },
+    removeDemolitionSite: (ord) => store.removeOrder(ord),
     partnerStock,
     laws,
+    craftJobs,
+    shellFurnPiles,
+    craftQueue,
     toJSON: () => ({
       version: store.version,
       buildings: Object.fromEntries(
         [...buildings.entries()].map(([k, d]) => [k, JSON.parse(JSON.stringify(d)) as BuildingDelta]),
       ),
-      founded: founded.map((b) => JSON.parse(JSON.stringify(b)) as FoundedBuilding),
+      // Phase 2 writes ONLY `orders` — the legacy trio (founded /
+      // annexSites / demolitionSites) is read-forever, written-never.
+      orders: orders.map((o) => clone(o)),
+      ordSeq,
       stock: { ...stock },
       zones: zones.map((z) => ({ ...z })),
       civicProsperity: civic.prosperity,
       cohorts: cohorts.map((r) => JSON.parse(JSON.stringify(r)) as CohortRow),
       transfers: transfers.toJSON(),
       reservations: reservations.toJSON(),
-      annexSites: annexSites.map((p) => JSON.parse(JSON.stringify(p)) as PendingAnnex),
-      demolitionSites: demolitionSites.map(
-        (p) => JSON.parse(JSON.stringify(p)) as PendingDemolition,
-      ),
       partnerStock: JSON.parse(JSON.stringify(partnerStock)) as Record<string, Record<string, number>>,
       laws: laws.map((l) => JSON.parse(JSON.stringify(l)) as Law),
+      craftJobs: Object.fromEntries(
+        [...craftJobs.entries()].map(([k, j]) => [String(k), JSON.parse(JSON.stringify(j)) as CraftJob]),
+      ),
+      shellFurnPiles: Object.fromEntries(
+        [...shellFurnPiles.entries()].map(([k, s]) => [k, { ...s }]),
+      ),
+      craftQueue: Object.fromEntries(
+        [...craftQueue.entries()]
+          .filter(([, q]) => q.length > 0)
+          .map(([k, q]) => [String(k), q.map((e) => JSON.parse(JSON.stringify(e)) as QueuedCraft)]),
+      ),
     }),
   };
   return store;
@@ -632,11 +1089,13 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
  *  pipeline row (carrying `costs`) needs its materials STAGED and its
  *  labor WORKED (⑥ — builders make buildings: `labor` banks only while
  *  bodies stand at the site, so an unattended plot honestly waits at any
- *  clock). A legacy row (no costs — growth's collapsed twin, pre-pipeline
- *  worldgen) keeps the pure clock. */
+ *  clock). A no-cost row the driver ADOPTED (phase 2 step 3 — staged with
+ *  its elapsed fraction banked) is labor-driven the same way; an unadopted
+ *  one (growth's collapsed twin, pre-pipeline worldgen, driver-less
+ *  sessions) keeps the pure clock. */
 export function foundedBuildingDone(b: FoundedBuilding, day: number): boolean {
   if (b.completed === true) return true;
-  if (b.costs) {
+  if (b.costs || b.laborStartDay !== undefined) {
     if (b.laborStartDay === undefined) return false;
     return (b.labor ?? 0) >= b.buildDays - 1e-9;
   }
@@ -697,10 +1156,64 @@ export const ANNEX_FRONTAGE_CAP = 16;
 export const ANNEX_CLEARANCE = 1.0;
 /** Annexes per building — a cottage is not a palace. */
 export const MAX_ANNEXES = 3;
-/** Materials a PLAYER-ORDERED annex spends from the builder's stock
- *  (city-founding ③ structure board) — about one room of the house's own
- *  6-wood build cost. Auto-expansion keeps paying in banked prosperity. */
-export const ANNEX_COSTS: Readonly<Record<string, number>> = { wood: 2 };
+/**
+ * Materials a PLAYER-ORDERED annex or interior cut spends (city-founding ③
+ * structure board). BLOCKS since phase 3 (the one construction primitive;
+ * raws refine into them at a bench — head-paid, so any material's block
+ * covers the bill). Auto-expansion keeps paying in banked prosperity.
+ *
+ * DERIVED FROM THE ROOM'S OWN RECT since phase 6 (block-bill.ts): these were
+ * one flat block for everything, which made a broom-cupboard partition and a
+ * full outbuilding cost the same, and made a room 1/3 of a whole house. An
+ * annex brings floor, roof and its unshared walls; an interior cut brings one
+ * partition and nothing else, so subdividing a shell is now properly the
+ * cheap way to get a room — which is what it is.
+ */
+export function annexCosts(candidate: AnnexCandidate): Record<string, number> {
+  return blockCosts(annexBill(candidate));
+}
+
+/** {@link annexCosts} for an INTERIOR cut — the partition alone. */
+export function interiorCosts(spec: Omit<InteriorSpec, "ord">): Record<string, number> {
+  return blockCosts(partitionBill(spec));
+}
+
+/** THE ORDER-TIME BILL for either kind of room the stake path accepts. An
+ *  outward annex carries a `side` (which wall it shares with the house); an
+ *  interior cut carries a `hostId` (whose floor it is taken out of) — the one
+ *  discriminator, so a caller holding the union never has to know which. */
+export function roomOrderCosts(
+  candidate: AnnexCandidate | InteriorCandidate,
+): Record<string, number> {
+  return "side" in candidate ? annexCosts(candidate) : interiorCosts(candidate);
+}
+
+/**
+ * What comes down when a BASE room is demolished — the PARTITION between it
+ * and the room that absorbs its floor, and nothing else. A base room is part
+ * of the original footprint: its floor and roof do not disappear, they join
+ * the neighbour (`DemolishedRoom.into` — the rect union), and the outer walls
+ * are the building's own. Only the wall between the two is dismantled, so only
+ * that wall's blocks come back.
+ *
+ * This is what keeps the demolish/rebuild loop CONSERVATIVE: tearing out a
+ * base room and cutting it again pays and refunds the same partition, so the
+ * pair is a wash instead of a block mint.
+ */
+export function baseRoomCosts(rect: { w: number; h: number }): Record<string, number> {
+  return blockCosts(partitionBill({ u0: 0, u1: rect.w, v0: 0, v1: rect.h }));
+}
+
+/**
+ * The bill of the CHEAPEST room anyone could order — what the structure board
+ * probes with before it enumerates anywhere to put one. A single bay of
+ * partition is the floor: no legal cut is smaller, so a builder who cannot
+ * afford this cannot afford any room, and one who can is offered the
+ * enumeration and gets a NAMED shortfall on whichever they pick.
+ */
+export const MIN_ROOM_COSTS: Readonly<Record<string, number>> = blockCosts(
+  partitionBill({ u0: 0, u1: 1, v0: 0, v1: 1 }),
+);
 
 interface Rect {
   x: number;
@@ -1132,6 +1645,22 @@ export function requestInterior(
   return { ok: true };
 }
 
+/** Drop a standing room-program row (phase 4 — designations are DERIVED
+ *  and REMOVABLE, reversing ④'s append-only law). The FIRST delete path
+ *  programs have ever had: a room whose required furniture the player
+ *  removes must lose its standing want, or the sweeps re-order the bed
+ *  forever. The room's DISPLAYED kind re-derives from what's left
+ *  (roomKindOf) — rows are the wants, derivation is the fact. Returns
+ *  whether a row was removed (no rev bump otherwise). */
+export function removeProgram(deltas: TownDeltas, buildingKey: string, room: string): boolean {
+  const d = deltas.get(buildingKey);
+  if (!d?.programs?.some((pr) => pr.room === room)) return false;
+  deltas.mutate(buildingKey, (bd) => {
+    bd.programs = bd.programs?.filter((pr) => pr.room !== room);
+  });
+  return true;
+}
+
 /** Pure feasibility of demolishRoom — the same rules, NO mutation (the
  *  structure board pre-filters with this so it never shows a dead button).
  *  `into` = the base-room merge host; null = an annex spec removal. */
@@ -1192,6 +1721,13 @@ export function demolishCheck(
  * Placed pieces in the room return as `stowed` stacks (kind → count) for
  * the caller to bank into storage; generated pieces re-derive with the
  * new plan (the household honestly rearranges).
+ *
+ * A DOORWAY-PINNED row (a hung door leaf, phase 5) is NOT the room's
+ * furniture — "doorways are part of the wall" — so it neither stows nor
+ * moves: it stays exactly where the wall is. Stowing one would ALSO mint a
+ * `furn.door` stack while the leaf kept hanging (the leaf is drawn from
+ * `doorless`, not from this list), which is a duplicated unit — the same
+ * item-conservation trap the street-good boxes sit in.
  */
 export function demolishRoom(
   deltas: TownDeltas,
@@ -1218,10 +1754,58 @@ export function demolishRoom(
     }
     const stay: PlacedPiece[] = [];
     for (const p of bd.placed) {
-      if (p.roomId === roomId) stowed[p.kind] = (stowed[p.kind] ?? 0) + 1;
-      else stay.push(p);
+      if (p.roomId === roomId && p.doorway === undefined) {
+        stowed[p.kind] = (stowed[p.kind] ?? 0) + 1;
+        // NEVER RE-ORDER WHAT THE PLAYER TORE OUT. A materialized row carries
+        // the generator's own id (blueprint.ts), so without this the drawing
+        // would ask for the piece straight back the moment the room went.
+        if (!bd.removedPieces.includes(p.id)) bd.removedPieces.push(p.id);
+      } else stay.push(p);
     }
     bd.placed = stay;
+  });
+  return { ok: true, stowed };
+}
+
+/**
+ * EMPTY one room (phase 4 — the law's "empty" verb): furniture OUT, walls
+ * STAY. The stow-half of demolishRoom with none of its structural rules —
+ * emptying tears nothing down, so even the living room may be emptied.
+ * Placed pieces stow exactly as demolishRoom stows them (including its
+ * doorway-pinned exception — clearing a room out never takes its door off
+ * the wall); GENERATED pieces (which would simply re-derive if left alone)
+ * are passed in by the caller — their ids join `removedPieces` and their
+ * kinds stow too (decision 5: worldgen furniture lazily mints its component
+ * at deconstruction).
+ */
+export function emptyRoom(
+  deltas: TownDeltas,
+  buildingKey: string,
+  plan: HouseRoomPlan,
+  roomId: string,
+  generated?: ReadonlyArray<{ id: string; kind: StationKind }>,
+): { ok: true; stowed: Partial<Record<StationKind, number>> } | { ok: false; reason: "no-room" } {
+  if (!plan.rooms.some((r) => r.id === roomId)) return { ok: false, reason: "no-room" };
+  const stowed: Partial<Record<StationKind, number>> = {};
+  const d = deltas.get(buildingKey);
+  const hasPlaced = d?.placed.some((p) => p.roomId === roomId && p.doorway === undefined) ?? false;
+  const fresh = (generated ?? []).filter((g) => !d?.removedPieces.includes(g.id));
+  if (!hasPlaced && fresh.length === 0) return { ok: true, stowed }; // already bare — no rev bump
+  deltas.mutate(buildingKey, (bd) => {
+    const stay: PlacedPiece[] = [];
+    for (const p of bd.placed) {
+      if (p.roomId === roomId && p.doorway === undefined) {
+        stowed[p.kind] = (stowed[p.kind] ?? 0) + 1;
+        // Withheld for demolishRoom's reason — clearing a room out is a player
+        // act, and the drawing must not simply ask for it all back.
+        if (!bd.removedPieces.includes(p.id)) bd.removedPieces.push(p.id);
+      } else stay.push(p);
+    }
+    bd.placed = stay;
+    for (const g of fresh) {
+      bd.removedPieces.push(g.id);
+      stowed[g.kind] = (stowed[g.kind] ?? 0) + 1;
+    }
   });
   return { ok: true, stowed };
 }
@@ -1268,12 +1852,58 @@ export function removePlacedPiece(
   return kind;
 }
 
+// DELIBERATELY ABSENT: `movePlacedPiece`, which rewrote a row's coordinates in
+// place. It was how the re-flow sweep "moved" furniture, and it was the
+// teleport: the piece stood on its old mark for the whole walk and the row was
+// edited at the far end, so nothing was ever carried. A carry is a piece
+// LEAVING one place and ARRIVING at another (construction-director's
+// liftPieceIntoHands / landPieceFromHands — remove the row, hold it, place it),
+// and there is no third thing a move could be.
+
 /** Stow a GENERATED piece (its id never re-emits; its space frees, and
  *  an anchored piece follows its anchor out). */
 export function stowGeneratedPiece(deltas: TownDeltas, buildingKey: string, pieceId: string): void {
   deltas.mutate(buildingKey, (d) => {
     if (!d.removedPieces.includes(pieceId)) d.removedPieces.push(pieceId);
   });
+}
+
+// ── DOORS AS FURNITURE (phase 5) ────────────────────────────────────────
+// `doorless` is the mirror of `removedPieces` and these three are the mirror
+// of `stowGeneratedPiece` / `removePlacedPiece`: ONE place that writes the
+// list, so no caller ever has to remember that absent means "leaf".
+
+/** The openings of `buildingKey` with no leaf — a Set for the staging path,
+ *  which asks once per doorway per re-registration. */
+export function doorlessOf(delta: BuildingDelta | undefined): ReadonlySet<string> {
+  return new Set(delta?.doorless ?? []);
+}
+
+/** TAKE THE LEAF OFF an opening (the shell seeding its doorways, and `break`
+ *  on a hung door). Idempotent — a doorway already bare doesn't re-bump the
+ *  rev, so re-seeding a completed shell never re-stages the whole building. */
+export function markDoorless(deltas: TownDeltas, buildingKey: string, keys: readonly string[]): boolean {
+  const have = doorlessOf(deltas.get(buildingKey));
+  const add = keys.filter((k) => !have.has(k));
+  if (!add.length) return false;
+  deltas.mutate(buildingKey, (d) => {
+    d.doorless = [...(d.doorless ?? []), ...add];
+  });
+  return true;
+}
+
+/** HANG A LEAF: drop the opening's key (the doorway gets its door back) and
+ *  record the piece that IS that leaf. One move, because the two halves must
+ *  never be observable apart — a `door` PlacedPiece with its key still listed
+ *  would render a leaf in a hole the engine still says is open. */
+export function hangDoor(deltas: TownDeltas, buildingKey: string, piece: PlacedPiece): boolean {
+  const key = piece.doorway;
+  if (!key || !doorlessOf(deltas.get(buildingKey)).has(key)) return false;
+  deltas.mutate(buildingKey, (d) => {
+    d.doorless = (d.doorless ?? []).filter((k) => k !== key);
+    d.placed.push(piece);
+  });
+  return true;
 }
 
 /** The next placed-piece id for a building (`furn<scope>_<i>_p<serial>`
@@ -1434,6 +2064,28 @@ function segCrossesRect(
   );
 }
 
+/** ONE-ENTRY STREET MEMO. Growing the tree is the expensive half of a lot
+ *  enumeration, and it depends on nothing the per-structure loop varies —
+ *  so asking "where could a house / a farm / a smithy go?" in one breath
+ *  (⑦ build spots: once per catalog entry) grows it once instead of nine
+ *  times. Read-only by contract: `foundingOptions` only reads `slots` and
+ *  `streets`, and it is the sole user of this memo (plan.ts keeps its own
+ *  fresh call — the town layout must never share a mutable net). */
+let streetMemo: { key: string; net: TownStreets } | null = null;
+
+function streetsFor(
+  seed: number,
+  key: string,
+  minSlots: number,
+  bearings: readonly number[] | undefined,
+): TownStreets {
+  const memoKey = `${seed}|${key}|${minSlots}|${(bearings ?? []).join(",")}`;
+  if (streetMemo && streetMemo.key === memoKey) return streetMemo.net;
+  const net = growStreets(seed, key, minSlots, { bearings: [...(bearings ?? [])] });
+  streetMemo = { key: memoKey, net };
+  return net;
+}
+
 /**
  * Feasible lots for founding one structure, best-first. Deterministic and
  * RNG-free given its input (multiplayer law: claims and placements are pure
@@ -1445,9 +2097,7 @@ export function foundingOptions(input: FoundingOptionsInput): FoundingCandidate[
   let maxClaimed = -1;
   for (const s of input.claimedSlots) maxClaimed = Math.max(maxClaimed, s);
   const minSlots = Math.max(maxClaimed + 1, input.claimedSlots.size) + FOUNDING_LOOKAHEAD;
-  const net: TownStreets = growStreets(input.seed, input.key, minSlots, {
-    bearings: [...(input.bearings ?? [])],
-  });
+  const net: TownStreets = streetsFor(input.seed, input.key, minSlots, input.bearings);
   // With zoning, feasible lots split MATCH (in a zone that wants this
   // structure) / OPEN (unzoned); matches lead the result. Without zoning
   // everything is "open" and the loop early-outs exactly as before.
@@ -1533,7 +2183,10 @@ export interface ConstructionSignal {
   value: number;
 }
 
-export interface ConstructionOrder {
+/** An auto-expansion REQUEST (constructionStep output) — a validated
+ *  candidate the caller posts as a pending-annex ORDER. Renamed from
+ *  `ConstructionOrder` in phase 2: that name now means the persisted row. */
+export interface ConstructionRequest {
   buildingKey: string;
   action: { kind: "annex"; cluster: AnnexCluster; candidate: AnnexCandidate };
 }
@@ -1553,10 +2206,15 @@ const CLUSTER_OF_ROOM: Readonly<Record<string, AnnexCluster>> = Object.fromEntri
 );
 
 /** The next annex CLUSTER a house wants, from its realized plan — ORDERED
- *  programs first (pipeline ④ persistent wants: a demolished programmed
- *  room re-rises before any default differentiation), then the unmet
- *  occupant program (a third sleep cell), then the differentiations in
- *  historical order (kitchen → store → workshop). Null = content. */
+ *  programs first (pipeline ④ persistent wants: a standing want is raised
+ *  before any default differentiation), then the unmet occupant program (a
+ *  third sleep cell), then the differentiations in historical order
+ *  (kitchen → store → workshop). Null = content.
+ *
+ *  PHASE 4: this used to be documented as "a demolished programmed room
+ *  re-rises". It no longer does — `removeProgram` drops the row at the
+ *  demolition/empty/break commit, so a house never re-orders what the player
+ *  tore out. The precedence over the rows it IS given is unchanged. */
 export function nextAnnexWant(
   plan: HouseRoomPlan,
   programs?: ReadonlyArray<{ room: string }>,
@@ -1581,8 +2239,18 @@ export function nextAnnexWant(
  * house per town spend a full threshold on its best annex candidate —
  * center-out on ties, exactly the build-up knob's distribution
  * philosophy. Deterministic given (plan, deltas, signals); `day` is
- * carried into the order log only. Mutates `deltas` (prosperity accrual
- * + the accepted annex) and returns the orders raised.
+ * carried into the order log only.
+ *
+ * A BUILDING NEVER RISES BY ITSELF (⑥ user law). This step DESIGNATES —
+ * it accrues prosperity, spends the threshold and hands the caller a
+ * validated candidate; the caller posts it as a pending annex so the same
+ * hauls and the same banked builder labor raise it as a player's order
+ * would. It used to `requestAnnex` on the spot, which is how a room could
+ * appear on a watched house with nobody standing anywhere near it.
+ *
+ * `busy` is ground already spoken for by a live designation — the caller's
+ * pending sites. Without it the same house would re-order its annex every
+ * day while the first one is still gathering materials.
  */
 export function constructionStep(
   center: { x: number; y: number },
@@ -1590,12 +2258,16 @@ export function constructionStep(
   deltas: TownDeltas,
   signalsOf: (houseIndex: number) => ConstructionSignal[],
   day: number,
-): ConstructionOrder[] {
+  busy: ReadonlyArray<Rect> = [],
+): ConstructionRequest[] {
   void day;
   const rects: Rect[] = [
     ...plan.houses.map((h) => ({ x: center.x + h.dx, y: center.y + h.dy, w: h.w, h: h.h })),
     ...plan.works.map((w) => ({ x: center.x + w.dx, y: center.y + w.dy, w: w.w, h: w.h })),
+    ...busy.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
   ];
+  /** Buildings a designation is already raising a room on — one at a time. */
+  const designated = new Set(deltas.annexSites().map((p) => p.buildingKey));
   // Accrue prosperity for every house (cheap — a few adds per house).
   for (const h of plan.houses) {
     const gain = Math.min(
@@ -1617,9 +2289,10 @@ export function constructionStep(
     }))
     .filter((e) => e.p >= PROSPERITY_THRESHOLD)
     .sort((a, b) => b.p - a.p || a.r - b.r || a.h.index - b.h.index);
-  const orders: ConstructionOrder[] = [];
+  const requests: ConstructionRequest[] = [];
   for (const e of ranked) {
     const key = `h_${e.h.index}`;
+    if (designated.has(key)) continue; // its last order is still being built
     const delta = deltas.get(key);
     const housePlan = houseRoomPlan(center, e.h, delta);
     const want = nextAnnexWant(housePlan, delta?.programs);
@@ -1628,14 +2301,13 @@ export function constructionStep(
     const opts = annexOptions(center, e.h, housePlan, neighbors, delta, want);
     if (!opts.length) continue; // out of ground — try the next-richest
     const candidate = opts[0]!;
-    if (!requestAnnex(deltas, key, candidate).ok) continue;
     deltas.mutate(key, (d) => {
       d.prosperity = Math.max(0, (d.prosperity ?? 0) - PROSPERITY_THRESHOLD);
     });
-    orders.push({ buildingKey: key, action: { kind: "annex", cluster: want, candidate } });
+    requests.push({ buildingKey: key, action: { kind: "annex", cluster: want, candidate } });
     break; // one build per town per day
   }
-  return orders;
+  return requests;
 }
 
 // ── door-graph helpers (request-time validation) ────────────────────────

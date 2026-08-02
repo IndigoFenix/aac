@@ -9,4 +9,6 @@ export * from './entities';
 export * from './validate';
 export * from './world-validate';
 export * from './worldgen';
+export * from './node-typing';
+export * from './ceilings';
 export * from './examples';

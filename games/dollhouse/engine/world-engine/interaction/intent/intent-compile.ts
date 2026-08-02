@@ -540,6 +540,39 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
       if (mobile && (v === "make" || !structural)) return { kind: "craft", glyph: mobile, cap };
       return { kind: "build", structure: s, cap };
     }
+    case "break": {
+      // THE UNMAKING VERBS (construction ④, construction-structures.md
+      // §Demolishing or Changing Rooms). `break` is make/build's mirror and
+      // splits the same way its makers do: a PIECE of furniture comes apart
+      // where it stands ("break the bed" — `place`'s inverse, so it carries
+      // `place`'s ItemRef), a ROOM or a whole structure comes DOWN ("break the
+      // bedroom" — the structure board's demolish word, now sayable).
+      //
+      // Furniture is tested FIRST because it is the narrower reading: the
+      // furniture kinds and the room words are disjoint vocabularies (a `bed`
+      // is never a room, a `bedroom` never a piece), so the order only decides
+      // a word that is genuinely both — and the piece is the smaller, more
+      // recoverable act. Neither ⇒ null: an unbindable "break" stays the
+      // explicit not-understood, never a guessed demolition.
+      if (frame.object && binder.isFurniture?.(frame.object)) {
+        const it = item();
+        if (it) return { kind: "breakPiece", item: it };
+      }
+      const room = frame.object?.kind === "entity" ? frame.object.symbol : null;
+      if (room && binder.isStructure?.(frame.object)) return { kind: "demolish", room };
+      return null;
+    }
+    case "empty": {
+      // "empty the kitchen" — the stow-only half of `break`: the furniture
+      // comes out, the walls stay up. ONLY a room reads this way; emptying a
+      // CONTAINER is the transform the default arm has always compiled
+      // ("empty the box" → the `empty` state), and that reading is kept here
+      // verbatim so gaining the room sense costs the box sense nothing.
+      const room = frame.object?.kind === "entity" ? frame.object.symbol : null;
+      if (room && binder.isStructure?.(frame.object)) return { kind: "emptyRoom", room };
+      const it = item();
+      return it ? { kind: "transform", item: it, state: TRANSFORM_STATE[v]! } : null;
+    }
     case "trade": {
       // INTERCITY BARTER (⑤): "trade wood with the city" — give-good from the
       // object; the PARTNER from the with/to-marked noun (or the bare second

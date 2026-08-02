@@ -351,6 +351,13 @@ export interface DualWorld extends CompositionWorld {
    *  false when either key is unknown, the keys match, or either side is
    *  already a tombstone. */
   absorbSettlement(loserKey: string, winnerKey: string): boolean;
+  /** The ABANDON transaction (settlement-emergence.md Gate D) — the
+   *  absorb's no-winner twin: the population EMIGRATES off the
+   *  composition (walkers, ledgered separately from deaths — the layer
+   *  above turns them into a wild band), and the site ruins exactly as
+   *  absorption ruins it. Returns the souls that walked; 0 = refused
+   *  (unknown/dead site, or a backend without the emigration channel). */
+  abandonSettlement(key: string): number;
   /** Absorbed settlements, oldest first ({ key, day, pop at absorption }). */
   tombstones(): Array<{ key: string; day: number; pop: number }>;
   /** Resolved conquests, oldest first. `mode` is §2b's split: "political"
@@ -781,31 +788,14 @@ export async function bootDual(spec: DualSpec, seed: number, boot: CompositionBo
   // Absorbed settlements, oldest first — the ruin ledger.
   const tombstoneLog: Array<{ key: string; day: number; pop: number }> = [];
 
-  /** The absorb transaction (physical mode) — see the interface doc. */
-  function absorbSettlement(loserKey: string, winnerKey: string): boolean {
-    const li = nodeIdx.get(loserKey);
-    const wi = nodeIdx.get(winnerKey);
-    if (li === undefined || wi === undefined || li === wi) return false;
-    if (ew.disabled[li] || ew.disabled[wi]) return false;
-
-    // 1. The whole crowd walks: driven migration, exact and uniform by
-    //    syndrome (moving everyone is trivially uniform — the same
-    //    argument applyTraitFlip rides).
-    const pop = sitePops()[li];
-    if (pop > 0) {
-      restWorld.applyExternalMigration([{ from: loserKey, to: winnerKey, count: pop }]);
-    }
-
-    // 2. The ruin reads as abandoned: every entity scalar to its floor
-    //    (fields untended, buildings emptied — nothing left to produce
-    //    with; the frozen display state IS the ruin).
+  /** The RUIN half shared by absorb and abandon: every entity scalar to
+   *  its floor (fields untended, buildings emptied — the frozen display
+   *  state IS the ruin), then structural death — absent from every
+   *  dynamic, edges inert, index preserved. */
+  function ruinSettlement(li: number, key: string, pop: number): void {
     for (const v of spec.settlement.entity.vars ?? []) {
       ew.scalars[v.name][li] = v.min;
     }
-
-    // 3. Structural death: absent from every dynamic, edges inert, index
-    //    preserved. Migration carries and siege clocks on its roads are
-    //    moot now.
     setEntityDisabled(ew, li);
     for (const e of ew.adj[li]) {
       carry[e] = 0;
@@ -815,13 +805,50 @@ export async function bootDual(spec: DualSpec, seed: number, boot: CompositionBo
     for (const bc of birthCarry) bc[li] = 0;
     for (const dc of deathCarry) dc[li] = 0;
     skirmishCarry[li] = 0;
-
-    tombstoneLog.push({ key: loserKey, day: lab.day(), pop });
-
-    // 4. Immediate write-back: layers agree at the moment of absorption.
+    tombstoneLog.push({ key, day: lab.day(), pop });
+    // Immediate write-back: layers agree at the moment of ruin.
     writeBackPops();
-    settlementChanged = true; // an absorption day is never a resting day
+    settlementChanged = true; // a ruin day is never a resting day
+  }
+
+  /** The absorb transaction (physical mode) — see the interface doc. */
+  function absorbSettlement(loserKey: string, winnerKey: string): boolean {
+    const li = nodeIdx.get(loserKey);
+    const wi = nodeIdx.get(winnerKey);
+    if (li === undefined || wi === undefined || li === wi) return false;
+    if (ew.disabled[li] || ew.disabled[wi]) return false;
+
+    // The whole crowd walks: driven migration, exact and uniform by
+    // syndrome (moving everyone is trivially uniform — the same
+    // argument applyTraitFlip rides).
+    const pop = sitePops()[li];
+    if (pop > 0) {
+      restWorld.applyExternalMigration([{ from: loserKey, to: winnerKey, count: pop }]);
+    }
+    ruinSettlement(li, loserKey, pop);
     return true;
+  }
+
+  /** ABANDONMENT (settlement-emergence.md Gate D): the settlement fails
+   *  and its people leave the settled world entirely — emigrants, never
+   *  deaths (the layer above turns them back into a wild BAND; that is
+   *  what keeps foragers permanent rather than transitional). Same ruin
+   *  as absorption, but the crowd has no winner to walk to. Returns the
+   *  souls that walked; 0 = refused (unknown/dead site, or a composition
+   *  backend without the emigration channel). */
+  function abandonSettlement(key: string): number {
+    const li = nodeIdx.get(key);
+    if (li === undefined || ew.disabled[li]) return 0;
+    if (!restWorld.applyEmigration) return 0;
+
+    // 0 always means NOTHING HAPPENED: an empty settlement has nobody to
+    // walk (emptying ghost towns is absorption's business).
+    const pop = sitePops()[li];
+    if (pop <= 0) return 0;
+    const walked = restWorld.applyEmigration(key, pop);
+    if (walked <= 0) return 0;
+    ruinSettlement(li, key, walked);
+    return walked;
   }
 
   // Resolved conquests, oldest first — the war ledger (war rows only,
@@ -1172,6 +1199,7 @@ export async function bootDual(spec: DualSpec, seed: number, boot: CompositionBo
     histfigCount: () => restWorld.histfigs.length,
     foundSettlement,
     absorbSettlement,
+    abandonSettlement,
     tombstones: () => tombstoneLog.slice(),
     conquests: () => conquestLog.slice(),
     resolutions: () => resolutionLog.slice(),

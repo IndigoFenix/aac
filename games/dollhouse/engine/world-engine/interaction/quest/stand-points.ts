@@ -84,7 +84,15 @@ export interface SeparableBody {
   x: number;
   y: number;
   floor?: number;
+  /** Live velocity, when the caller has one (avatar states do) — feeds the
+   *  walker-vs-stander share asymmetry. Absent ⇒ treated as standing. */
+  vx?: number;
+  vy?: number;
 }
+
+/** Faster than this and a body counts as WALKING for the separation share
+ *  (idle drift and brake tails stay below it; real walks are ≥ 0.8 m/s). */
+const MOVING_EPS = 0.1;
 
 /** Options for {@link separateBodies}. */
 export interface SeparateOptions {
@@ -155,9 +163,21 @@ export function separateBodies(bodies: SeparableBody[], dt: number, opts: Separa
       }
       const correction = Math.min(min - d, rate * dt);
       // Split between the movable bodies (full to the one that can move when its
-      // partner is pinned).
-      const shareA = aMove ? (bMove ? 0.5 : 1) : 0;
-      const shareB = bMove ? (aMove ? 0.5 : 1) : 0;
+      // partner is pinned). ASYMMETRIC when exactly one of the pair is actively
+      // WALKING (clock-path-dodging.md pinned decision 5): the stander absorbs
+      // the whole correction — it steps aside for the walker instead of the
+      // walker being knocked off its route. Both walking (lockstep) or both
+      // standing (a fused pile) still split 50/50, the original unmerge.
+      let shareA = aMove ? (bMove ? 0.5 : 1) : 0;
+      let shareB = bMove ? (aMove ? 0.5 : 1) : 0;
+      if (aMove && bMove) {
+        const aWalks = Math.hypot(a.vx ?? 0, a.vy ?? 0) > MOVING_EPS;
+        const bWalks = Math.hypot(b.vx ?? 0, b.vy ?? 0) > MOVING_EPS;
+        if (aWalks !== bWalks) {
+          shareA = aWalks ? 0 : 1;
+          shareB = bWalks ? 0 : 1;
+        }
+      }
       if (shareA > 0) {
         const na = { x: a.x + ux * correction * shareA, y: a.y + uy * correction * shareA, floor: a.floor };
         if (stands(na, rA)) {
@@ -174,6 +194,81 @@ export function separateBodies(bodies: SeparableBody[], dt: number, opts: Separa
       }
     }
   }
+}
+
+/** Options for {@link clockDodgeAim}. */
+export interface ClockDodgeOptions {
+  selfId: string;
+  /** Per-body girth (world-host `npcRadiusOf`). */
+  radiusOf: (id: string) => number;
+  /** Dodge strength 0..1 — the bubble's SHRINK rule: 1 near the anchor, 0 at
+   *  the bubble edge (pass through rather than lose the schedule). */
+  scale: number;
+  /** Walkability gate — a dodge whose landing probe is blocked is DROPPED
+   *  (pass through rather than clip a wall; pinned decision 5). */
+  canStand?: (p: { x: number; y: number; floor?: number }, radius: number) => boolean;
+  /** How far ahead (m, along the walk direction) a body counts as in the way. */
+  look?: number;
+}
+
+/** How much lateral clearance beyond combined radii a dodge aims for. */
+const DODGE_MARGIN = 0.15;
+
+/**
+ * CLOCKED-WALKER AVOIDANCE (clock-path-dodging.md) — an AIM bend, never a
+ * position push: a clocked body walks around the nearest body blocking its
+ * line by offsetting its aim sideways, scaled by the bubble's shrink rule.
+ * Two walkers meeting head-on split to DETERMINISTIC opposite sides by id
+ * order (pinned decision 2); off-center meetings dodge away from the
+ * neighbour's actual side. Pure — the caller composes it after detourAim and
+ * only off TIGHT legs (indoors the shrink rule alone applies).
+ */
+export function clockDodgeAim(
+  self: SeparableBody,
+  aim: { x: number; y: number },
+  bodies: readonly SeparableBody[],
+  opts: ClockDodgeOptions,
+): { x: number; y: number } {
+  if (opts.scale <= 0) return aim; // at the bubble edge — pass through
+  const look = opts.look ?? 2.2;
+  const ux0 = aim.x - self.x;
+  const uy0 = aim.y - self.y;
+  const d0 = Math.hypot(ux0, uy0);
+  if (d0 < 1e-4) return aim;
+  const ux = ux0 / d0;
+  const uy = uy0 / d0;
+  const rSelf = opts.radiusOf(self.id);
+  // The nearest body ahead that intrudes on the walk line.
+  let best: { fwd: number; lat: number; need: number; id: string } | null = null;
+  for (const b of bodies) {
+    if (b.id === self.id || b.floor !== self.floor) continue;
+    const dx = b.x - self.x;
+    const dy = b.y - self.y;
+    const fwd = dx * ux + dy * uy;
+    if (fwd <= 0.05 || fwd > look) continue;
+    const lat = dx * -uy + dy * ux; // + = neighbour on the LEFT of the line
+    const need = rSelf + opts.radiusOf(b.id) + DODGE_MARGIN;
+    if (Math.abs(lat) >= need) continue; // already clear
+    if (!best || fwd < best.fwd) best = { fwd, lat, need, id: b.id };
+  }
+  if (!best) return aim;
+  // Dodge AWAY from the neighbour's side; dead-ahead ties split by id order
+  // so the two parties of a head-on pass always pick opposite sides.
+  const side =
+    Math.abs(best.lat) > 1e-3 ? -Math.sign(best.lat) : opts.selfId < best.id ? 1 : -1;
+  const offset = (best.need - Math.abs(best.lat)) * opts.scale * side;
+  const dodged = { x: aim.x + -uy * offset, y: aim.y + ux * offset };
+  if (opts.canStand) {
+    // Probe where the dodge actually sends the body next, not the far aim.
+    const probeF = Math.min(best.fwd, 1);
+    const probe = {
+      x: self.x + ux * probeF + -uy * offset,
+      y: self.y + uy * probeF + ux * offset,
+      floor: self.floor,
+    };
+    if (!opts.canStand(probe, rSelf)) return aim; // blocked — pass through
+  }
+  return dodged;
 }
 
 /** The SOLID fixture whose no-stand box covers `p` (an item resting on a table

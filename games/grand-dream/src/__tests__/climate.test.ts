@@ -149,7 +149,7 @@ describe("climate on the earthlike — the dryness fix and the ice caps", () => 
       if (grid.fields.ice[c] < 1) continue;
       expect(grid.fields.tempC[c]).toBeLessThan(ICE_TEMP_C);
       expect(grid.fields.fertility[c]).toBe(0);
-      expect(grid.fields.people[c]).toBe(0);
+      expect(grid.fields.forage[c]).toBe(0);
       if (isLand(c)) iceLand++;
     }
     // The caps are real (a meaningful share of land) but not a snowball.

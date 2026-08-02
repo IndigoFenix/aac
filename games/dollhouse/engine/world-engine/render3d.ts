@@ -35,7 +35,8 @@ import {
 import type { RenderIntent, ScreenPick, WorldView, WorldViewDeps } from "./world-view.js";
 import { cornerOrbitDelta } from "./spirit/corner-orbit.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
-import { buildObjectModel, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
+import { buildObjectModel, objectModelKey, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
+import { naturalSourceOf } from "./products.js";
 import { useContractFor, useAnchorWorld, type ContactPart } from "./furniture-use.js";
 import {
   getShadingMode, propMaterial, roadMaterial, structureMaterial, terrainMaterial, type LitMaterial,
@@ -86,6 +87,15 @@ const ROAD_Y = 0.02;
  *  darker stake-line border — matte ground paint, distinct from road tan. */
 const SITE_FILL_COLOR = "#a08a66";
 const SITE_EDGE_COLOR = "#6f5a40";
+/** A BUILT room's floor — a warm neutral board tone, deliberately its own
+ *  colour rather than the wall tint (the tint names the HOUSE; every house's
+ *  floor is a floor). Matte, like all ground-level surfaces. */
+const BUILDING_FLOOR_COLOR = 0x8f8272;
+/** How far a floor plane sits above its building's base level — clear of the
+ *  field (which conforms a hair below placement level) and just under the
+ *  hidden-room black plate at 0.03, which must still win when a room is
+ *  sealed. */
+const FLOOR_LIFT = 0.02;
 
 // Structure geometry. World units are METERS — the default avatar is a 1.8 m
 // capsule, so buildings use real-house dimensions: 3 m storeys (walls reach the
@@ -274,6 +284,128 @@ export function dollhousePoseMath(
   out.up.set(0, 1, 0);
   out.fov = DOLLHOUSE_FOV;
 }
+
+// ── The CONVERSATION dolly + face-camera (dollhouse slice 4), as pure math ────
+//    "TALKING → person faces camera + camera dollies in." The slice-2 dolly was
+//    cut for being TOO FAST (a gaze that brushed a room yanked the camera into
+//    it), so everything here is deliberately slow, and nothing here is driven by
+//    the gaze at all — the ONLY trigger is the game layer saying two bodies are
+//    talking (`RenderIntent.conversation`).
+
+/** Ease rate (1/s) the conversation frame blends IN at. The rejected slice-2
+ *  dolly ran at 4/s (a ~0.25 s time constant — a lurch). This is 0.55/s: a
+ *  ~1.8 s time constant, so the move is ~63% done after 1.8 s and settled after
+ *  ~5 s. Seven times gentler, and it starts from a standing camera rather than
+ *  from wherever a saccade left it. */
+export const CONV_DOLLY_IN_RATE = 0.55;
+/** …and OUT at, slower still. Coming back to the whole house is nobody's
+ *  request — it is the camera getting out of the way — so it happens even more
+ *  quietly than going in. Never a cut: the blend only ever reaches 0 by easing. */
+export const CONV_DOLLY_OUT_RATE = 0.4;
+/** Rate (1/s) the tracked pair frame follows the conversants' own drift. Same as
+ *  the blend-in rate on purpose: every motion this feature can produce shares one
+ *  speed, so a body shifting its feet, a hand-off to a different pair, and the
+ *  dolly itself are indistinguishable in pace and can never beat against each
+ *  other. */
+export const CONV_TRACK_RATE = 0.55;
+/** HYSTERESIS: seconds the camera keeps a conversation framed after the game
+ *  layer stops publishing it. Two people who trade several remarks publish, drop,
+ *  and re-publish the same pair; without this the dolly would reverse between
+ *  every line. Also holds the frame steady across a one-frame gap, and makes a
+ *  DIFFERENT pair wait its turn (the camera never hops mid-move). */
+export const CONV_HOLD_S = 2.5;
+/** Extra span (world units) beyond the two conversants' separation, so neither
+ *  body is jammed against the frame edge — roughly a body's width of air on each
+ *  side plus their own girth. */
+export const CONV_PAIR_MARGIN = 4.5;
+/** Floor on the conversation span: how wide a frame two people standing nose to
+ *  nose still get. Stops the dolly from becoming a face close-up on a pair that
+ *  happens to stand very close (a hug distance), which at this pitch would put
+ *  the camera inside the room's furniture. */
+export const CONV_MIN_SPAN = 8;
+/** How far a conversant may turn toward the camera: 30°. A body standing in
+ *  profile ends up ~60° off the lens — the THREE-QUARTER read the user asked
+ *  for, not a full-front one — and since the pair turns in OPPOSITE directions
+ *  (see `faceCameraYawOffset`), each still looks within 30° of the other, so
+ *  they visibly remain squared up with each other. */
+export const CONV_FACE_MAX_TURN = Math.PI / 6;
+/** Ease rate (1/s) of the face-camera turn itself. The orbit can sweep at 1.3
+ *  rad/s; without this the heads would whip round with it. At 1.5/s the turn
+ *  lags the orbit by about half a second, which reads as people slowly keeping
+ *  the visitor in view. */
+export const CONV_FACE_RATE = 1.5;
+
+/** Frame-rate-independent exponential ease of a scalar toward `target`. `rate`
+ *  is a 1/s decay constant, so the same call at 30 fps and 120 fps covers the
+ *  same ground in the same wall-clock time. */
+export function easeApproach(cur: number, target: number, rate: number, dt: number): number {
+  if (!(dt > 0) || !(rate > 0)) return cur;
+  return cur + (target - cur) * (1 - Math.exp(-rate * dt));
+}
+
+/** The dollhouse frame that holds a CONVERSATION: centred on the midpoint of the
+ *  two conversants, spanning their separation plus margin.
+ *
+ *  `b` may be the same body as `a` (or the caller may pass `a` twice) — a
+ *  conversation with only one visible body, which is what a formless spirit
+ *  talking to somebody looks like. That degenerates to a body-scale window on
+ *  the one person, which is the right picture.
+ *
+ *  NEVER WIDER THAN THE BASE FRAME: `baseSpan` (the whole-building frame) is a
+ *  hard ceiling, because this is a DOLLY IN. Two people who wander far apart
+ *  must not pull the camera back past the house and turn a conversation into a
+ *  retreat. */
+export function conversationBounds(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  baseSpan: number,
+): DollhouseBounds {
+  const sep = Math.hypot(b.x - a.x, b.y - a.y);
+  const want = Math.max(sep + CONV_PAIR_MARGIN, CONV_MIN_SPAN);
+  return {
+    cx: (a.x + b.x) / 2,
+    cz: (a.y + b.y) / 2,
+    span: Math.min(want, baseSpan),
+  };
+}
+
+/**
+ * The THREE yaw OFFSET that turns one conversant three-quarter toward the
+ * camera — a RENDER-ONLY rotation composed on top of whatever the body's own
+ * sim facing already produced.
+ *
+ * The turn, as a GAME angle, is `maxTurn · sin(toCamera − facing)`. Why a sine
+ * rather than a clamped difference:
+ *   • It is bounded by `maxTurn` by construction — no clamp, no corner cases.
+ *   • It is ANTI-SYMMETRIC across a squared-up pair for free. The two bodies
+ *     face opposite ways, so their (toCamera − facing) differ by π and their
+ *     sines are exact negatives: they lean apart, both toward the lens, which
+ *     is the Sims three-quarter cheat. Nothing has to know they are a pair.
+ *   • It goes to ZERO both when a body already faces the camera and when it has
+ *     its back squarely to it. The back-on case is the one that matters: there
+ *     is no small turn that fixes a back, and any clamped-difference rule flips
+ *     sign as the body drifts through exactly 180° — a 60° strobe. Here the
+ *     turn simply fades out through that point, continuously.
+ *
+ * THE NEGATION. `facing` is a GAME angle; a THREE yaw ψ aims a creature rig at
+ * game angle `a` via ψ = π/2 − a (`rigYawTo`). The axes are mirrored, so a
+ * POSITIVE turn in game angle is a NEGATIVE delta in yaw. Getting this backwards
+ * is the repeat bug in this file (it looks fine head-on and inverts at the
+ * sides), so the negation lives here, once, and is pinned by a test.
+ */
+export function faceCameraYawOffset(
+  body: { x: number; y: number; fx: number; fy: number },
+  camX: number,
+  camZ: number,
+  maxTurn: number = CONV_FACE_MAX_TURN,
+): number {
+  // Game (x, y) lays onto THREE (x, z), so a game angle is atan2 over (z, x).
+  const toCamera = Math.atan2(camZ - body.y, camX - body.x);
+  const facing = Math.atan2(body.fy, body.fx);
+  const turn = maxTurn * Math.sin(toCamera - facing); // GAME angle
+  return -turn; // …into THREE yaw. See THE NEGATION above.
+}
+
 /** Ray-depth (world units) within which a picked OBJECT counts as COINCIDENT with
  *  a creature and wins the pick — item-priority for genuinely co-located things.
  *
@@ -1798,6 +1930,10 @@ export class World3DRenderer {
       shadow: THREE.Mesh;
       icon?: THREE.Sprite;
       glyphKey?: string;
+      /** The RECIPE this mesh was built for (`objectModelKey`, or "icon" for the
+       *  billboard failsafe). A spec can be replaced under a live id, and a mesh
+       *  built for the old identity is simply the wrong object — see syncObjects. */
+      identity?: string;
       /** Every standard material in `mesh` — highlight/fade touch all of them. */
       materials: LitMaterial[];
       /** The procedural model (present unless this object fell back to box/sphere);
@@ -1808,6 +1944,16 @@ export class World3DRenderer {
        *  half-extent, so a tall cabinet reported a short one and the spark
        *  hovered INSIDE it. Invalidated when the model's glyph changes. */
       topY?: number;
+      /** The radius the mesh was BUILT at. A spec's radius can change under a
+       *  live object (a quarried rock shrinks with the stone left in it), and
+       *  a model is not rebuilt for that — the ratio against this is applied
+       *  as a scale, so the model, its materials, and its seeded shape all
+       *  survive the resize. */
+      builtRadius: number;
+      /** The radius the mesh is currently SCALED to (absent = built size) —
+       *  the latch that keeps the rescale a one-off per change instead of a
+       *  per-frame write. */
+      scaledTo?: number;
       /** TIP fraction for a delivered-but-not-set-up fixture: 1 = lying flat
        *  on its side (just delivered), 0 = standing upright (assembled). Eased
        *  toward the target each frame so the stand-up reads as a gentle settle
@@ -1829,10 +1975,17 @@ export class World3DRenderer {
       tall?: THREE.Mesh;
     }
   >();
-  /** Per-building render meshes: upper floor slabs (by storey) + a roof. */
+  /** Per-building render meshes: the ground-storey floor, upper floor slabs
+   *  (by storey) + a roof. */
   private readonly buildingMeshes = new Map<
     string,
     {
+      /** THE GROUND STOREY'S FLOOR — a room is a floored space, not a patch
+       *  of field with walls round it. Kept out of `slabs` on purpose: an
+       *  upper slab fades so the camera can see past it, and the floor you
+       *  are standing on must never do that (the spirit dollhouse fades every
+       *  revealed slab, which would leave its rooms hanging over the ground). */
+      floor: THREE.Mesh;
       slabs: { floor: number; mesh: THREE.Mesh }[];
       roof: THREE.Mesh;
       /** SPIRIT dollhouse stand-in for a HIDDEN (locked) room: a black floor +
@@ -1852,8 +2005,26 @@ export class World3DRenderer {
   /** CONSTRUCTION SITES (city-founding): the marked-plot set, held until the
    *  next render like roads (ground sampler) but REPLACEABLE — sites come
    *  and go with orders and completions. */
-  private pendingSites?: Array<{ id: string; x: number; y: number; w: number; h: number }>;
-  private siteMeshes: { group: THREE.Group; geoms: THREE.BufferGeometry[] } | null = null;
+  private pendingSites?: Array<{
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    /** VISIBLE BUILD STAGE (⑦): 0 marked ground, 1 floor laid, 2 pillars +
+     *  rising wall courses. Absent = 0 (a bare marking). */
+    stage?: 0 | 1 | 2;
+    /** Banked-labor fraction 0..1 (phase 3 worked pieces) — drives how many
+     *  wall COURSES stand on a stage-2 site. */
+    progress?: number;
+    /** The finished building's wall tint. */
+    color?: string;
+  }>;
+  private siteMeshes: {
+    group: THREE.Group;
+    geoms: THREE.BufferGeometry[];
+    mats: THREE.Material[];
+  } | null = null;
   private siteFillMat?: THREE.Material;
   private siteEdgeMat?: THREE.Material;
   /** The playable field mesh + its motion grid (buildGround). On an
@@ -1904,6 +2075,28 @@ export class World3DRenderer {
   // gaze fixation to screen space for the edge (orbit) trigger.
   private spiritAz = 0;
   private readonly _camScratch = new THREE.Vector3();
+  // SPIRIT conversation dolly (slice 4). `convPair` is the LATCHED pair — not
+  // whatever the intent published this frame — because the latch is what gives
+  // the camera its hysteresis (`convHold` seconds of grace before it lets go,
+  // during which a competing pair cannot steal the frame). `convBlend` is the
+  // 0..1 weight of the pair frame against the whole-building frame; `convC*` is
+  // the pair frame itself, tracked slowly so a body shifting its feet doesn't
+  // shake the camera. `convSeeded` says the tracker holds a real point: it is
+  // seeded ONLY from a fully-released blend, so re-aiming at a new pair mid-move
+  // glides instead of jumping. `convYaw` is each conversant's eased face-camera
+  // yaw offset, kept per body id so a body that leaves the pair unwinds rather
+  // than snapping straight.
+  private convPair: { a: string; b: string } | null = null;
+  private convHold = 0;
+  private convBlend = 0;
+  private convCx = 0;
+  private convCz = 0;
+  private convSpan = 0;
+  private convSeeded = false;
+  private readonly convYaw = new Map<string, number>();
+  /** Scratch for the blended spirit frame — consumed immediately by the pose,
+   *  never retained, so it costs no per-frame allocation (see the GC probe). */
+  private readonly _spiritFrame: DollhouseBounds = { cx: 0, cz: 0, span: 0 };
   /** The smoothed camera HEADING (unit, on the XZ ground plane). The camera sits
    *  behind it and looks ahead along it, so it swings to reveal what's in front of
    *  the avatar as it moves. Defaults to -Z (north), matching the spawn framing. */
@@ -2111,21 +2304,35 @@ export class World3DRenderer {
 
   /** Replace the CONSTRUCTION SITE markings (city-founding): flat staked-plot
    *  paint over ordered-but-unbuilt lots — a darker border ribbon around a
-   *  packed-earth fill, draped on the ground like roads. Built on the next
+   *  packed-earth fill, draped on the ground like roads — plus the WORKED
+   *  PIECES (phase 3): a floor slab at stage 1, corner posts and block-
+   *  course walls rising with `progress` at stage 2. Built on the next
    *  render (the ground sampler rides the state). Empty array clears. */
-  setSites(sites: Array<{ id: string; x: number; y: number; w: number; h: number }>): void {
+  setSites(
+    sites: Array<{
+      id: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      stage?: 0 | 1 | 2;
+      progress?: number;
+      color?: string;
+    }>,
+  ): void {
     this.pendingSites = sites.map((s) => ({ ...s }));
   }
 
   /** Rebuild the site-marking meshes for the current set. Matte flat color
-   *  only (ground paint — never a specular surface). */
+   *  only (ground paint and lambert walls — never a specular surface). */
   private buildSites(
-    sites: Array<{ x: number; y: number; w: number; h: number }>,
+    sites: NonNullable<typeof this.pendingSites>,
     ground?: GroundSampler,
   ): void {
     if (this.siteMeshes) {
       this.scene.remove(this.siteMeshes.group);
       for (const g of this.siteMeshes.geoms) g.dispose();
+      for (const m of this.siteMeshes.mats) m.dispose();
       this.siteMeshes = null;
     }
     if (!sites.length) return;
@@ -2136,6 +2343,7 @@ export class World3DRenderer {
     }
     const group = new THREE.Group();
     const geoms: THREE.BufferGeometry[] = [];
+    const mats: THREE.Material[] = [];
     const EDGE = 0.35; // stake-line border width, metres
     const ribbon = (
       a: { x: number; y: number },
@@ -2157,6 +2365,29 @@ export class World3DRenderer {
       group.add(mesh);
       geoms.push(geom);
     };
+    // Worked-piece proportions (phase 3): a wall is WALL_COURSES block
+    // courses; they stand between BUILD_PILLARS (progress 0.5, the ⑦
+    // pillar bar) and completion, so the commit's full-wall swap lands on
+    // an already-full course stack — continuous, no pop.
+    const COURSE_H = 0.45;
+    const WALL_COURSES = 6;
+    const POST_H = COURSE_H * WALL_COURSES;
+    const WALL_T = 0.35;
+    const box = (
+      mat: THREE.Material,
+      cx: number,
+      cz: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      baseY: number,
+    ): void => {
+      const geom = new THREE.BoxGeometry(sx, sy, sz);
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set(cx, baseY + sy / 2, cz);
+      group.add(mesh);
+      geoms.push(geom);
+    };
     for (const s of sites) {
       // Border: top/bottom span the full width; the flanks run between them.
       ribbon({ x: s.x, y: s.y + EDGE / 2 }, { x: s.x + s.w, y: s.y + EDGE / 2 }, EDGE, this.siteEdgeMat!);
@@ -2166,9 +2397,49 @@ export class World3DRenderer {
       // The packed-earth fill inside the stake line.
       const cy = s.y + s.h / 2;
       ribbon({ x: s.x + EDGE, y: cy }, { x: s.x + s.w - EDGE, y: cy }, s.h - EDGE * 2, this.siteFillMat!);
+      const stage = s.stage ?? 0;
+      if (stage < 1) continue;
+      const mat = structureMaterial(new THREE.Color(s.color ?? "#a8875f"));
+      mats.push(mat);
+      const cx = s.x + s.w / 2;
+      const cz = s.y + s.h / 2;
+      const baseY = ground ? ground(cx, cz) : 0;
+      // Stage 1 — the FLOOR: a builder's first act is to lay it.
+      box(mat, cx, cz, Math.max(0.5, s.w - EDGE * 2), 0.1, Math.max(0.5, s.h - EDGE * 2), baseY);
+      if (stage < 2) continue;
+      // Stage 2 — corner POSTS, then the wall COURSES climbing with the
+      // banked labor (progress 0.5 → 1 spans empty → full walls; a
+      // demolition hands a REVERSED progress, so its courses sink).
+      const inset = EDGE + WALL_T / 2;
+      for (const [px, pz] of [
+        [s.x + inset, s.y + inset],
+        [s.x + s.w - inset, s.y + inset],
+        [s.x + inset, s.y + s.h - inset],
+        [s.x + s.w - inset, s.y + s.h - inset],
+      ] as const) {
+        box(mat, px, pz, WALL_T * 0.8, POST_H, WALL_T * 0.8, baseY + 0.1);
+      }
+      const frac = Math.max(0, Math.min(1, ((s.progress ?? 0) - 0.5) / 0.5));
+      const courses = Math.floor(frac * WALL_COURSES);
+      const spanX = s.w - inset * 2 - WALL_T * 1.6; // between the posts
+      const spanZ = s.h - inset * 2 - WALL_T * 1.6;
+      for (let c = 0; c < courses; c++) {
+        // Alternating courses inset a hair — the wall reads as stacked
+        // blocks rather than one extruding slab.
+        const t = WALL_T - (c % 2 ? 0.04 : 0);
+        const y = baseY + 0.1 + c * COURSE_H;
+        if (spanX > 0.5) {
+          box(mat, cx, s.y + inset, spanX, COURSE_H, t, y);
+          box(mat, cx, s.y + s.h - inset, spanX, COURSE_H, t, y);
+        }
+        if (spanZ > 0.5) {
+          box(mat, s.x + inset, cz, t, COURSE_H, spanZ, y);
+          box(mat, s.x + s.w - inset, cz, t, COURSE_H, spanZ, y);
+        }
+      }
     }
     this.scene.add(group);
-    this.siteMeshes = { group, geoms };
+    this.siteMeshes = { group, geoms, mats };
   }
 
   /** A fullscreen radial vignette drawn on top of the scene. Its alpha is driven
@@ -2858,9 +3129,16 @@ export class World3DRenderer {
     // so it never sticks to the carried item or the person being spoken to.
     const av = cur.hoverKind === "avatar" && cur.hoverId ? state.avatars[cur.hoverId] : undefined;
     if (av) {
+      // Species-bodied natural sources (`flora:<species>:…` rooted plants,
+      // `fauna:<species>:…` product animals) hover at THEIR height from the
+      // registry — the humanoid head constant put the spark inside a 4.6 m
+      // oak's trunk. Everyone else keeps the head snap.
+      const m = /^(?:flora|fauna):([^:]+):/.exec(av.id);
+      const bodyH = m ? naturalSourceOf(m[1]!)?.bodyHeightM : undefined;
       this.placeCursor(
         av.x,
-        BUBBLE.headY + av.floor * FLOOR_HEIGHT + standHeightAt(state, av.x, av.y) + 0.15,
+        (bodyH !== undefined ? bodyH + 0.2 : BUBBLE.headY + 0.15) +
+          av.floor * FLOOR_HEIGHT + standHeightAt(state, av.x, av.y),
         av.y,
         true, // hovering a creature
         select,
@@ -3076,6 +3354,9 @@ export class World3DRenderer {
         this.scene.add(entry.object);
         this.dbgBuilt++;
       }
+      // A LEAFLESS doorway (phase 5) has no `door` record on its entry — it is
+      // a lintel over a hole, so there is nothing to swing or to bar, and it
+      // falls through to the cutaway rules below like any other wall piece.
       if (entry.door) {
         const door = state.doors[s.id];
         const open = door?.open ?? 0;
@@ -3188,7 +3469,7 @@ export class World3DRenderer {
       const live = new Set(buildings.map((b) => b.id));
       for (const [id, entry] of this.buildingMeshes) {
         if (live.has(id)) continue;
-        for (const s of entry.slabs) {
+        for (const s of [{ mesh: entry.floor }, ...entry.slabs]) {
           this.scene.remove(s.mesh);
           s.mesh.geometry.dispose();
           (s.mesh.material as THREE.Material).dispose();
@@ -3209,6 +3490,7 @@ export class World3DRenderer {
       if (!entry) {
         entry = this.buildBuilding(b, buildingBaseY(state.ground, b.footprint));
         this.buildingMeshes.set(b.id, entry);
+        this.scene.add(entry.floor);
         for (const s of entry.slabs) this.scene.add(s.mesh);
         this.scene.add(entry.roof);
         this.scene.add(entry.hidden.floor);
@@ -3223,6 +3505,9 @@ export class World3DRenderer {
       const ghost = this.cutawayBlackout.has(b.id);
       entry.hidden.floor.visible = ghost;
       entry.hidden.cube.visible = ghost;
+      // The ground-storey floor is present whenever the room is: it never
+      // fades (you stand on it) and gives way only to the sealed-room ghost.
+      entry.floor.visible = !ghost;
       for (const { floor, mesh } of entry.slabs) {
         mesh.visible = !ghost;
         if (!ghost) {
@@ -3249,6 +3534,7 @@ export class World3DRenderer {
   /** `baseY` = the site's ground level at the footprint center (buildingBaseY);
    *  every plane of the shell is lifted by it, so walls stay vertical. */
   private buildBuilding(b: BuildingSpec, baseY = 0): {
+    floor: THREE.Mesh;
     slabs: { floor: number; mesh: THREE.Mesh }[];
     roof: THREE.Mesh;
     hidden: { floor: THREE.Mesh; cube: THREE.Mesh };
@@ -3256,8 +3542,21 @@ export class World3DRenderer {
     const { x, y, w, h } = b.footprint;
     const cx = x + w / 2;
     const cz = y + h / 2;
+    // THE GROUND-STOREY FLOOR. A built room is a floored space: the field
+    // used to show straight through it, so an interior read as walls staked
+    // into open country (and a sloped site showed the hillside running under
+    // the furniture). Laid at the building's own base level — the same one
+    // the walls stand on — so the floor is flat even where the ground is not.
+    // Matte, never specular, like every other ground-level surface.
+    const floorGeom = new THREE.PlaneGeometry(w, h);
+    const floorMat = structureMaterial(BUILDING_FLOOR_COLOR, { side: THREE.DoubleSide, roughness: 1 });
+    const floor = new THREE.Mesh(floorGeom, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(cx, baseY + FLOOR_LIFT, cz);
+    floor.renderOrder = 0;
+    this.disposables.push(floorGeom, floorMat);
     const slabs: { floor: number; mesh: THREE.Mesh }[] = [];
-    // Upper-storey floor planes (the ground storey is the field itself).
+    // Upper-storey floor planes.
     for (let f = 1; f < b.floors; f++) {
       const geom = new THREE.PlaneGeometry(w, h);
       const mat = structureMaterial(0x94a3b8, { side: THREE.DoubleSide });
@@ -3301,7 +3600,7 @@ export class World3DRenderer {
     cube.visible = false;
     this.disposables.push(hFloorGeom, hFloorMat, cubeGeom, cubeMat);
 
-    return { slabs, roof, hidden: { floor: hiddenFloor, cube } };
+    return { floor, slabs, roof, hidden: { floor: hiddenFloor, cube } };
   }
 
   /** Replace the flat field with a terrain-conformed grid (world-frame
@@ -3428,24 +3727,36 @@ export class World3DRenderer {
       return { object: group, mats: [tallMat], tall };
     }
     // Door: hinge at the chosen endpoint, leaf extends toward the other.
-    const hinge = s.hinge === "b" ? s.b : s.a;
-    const other = s.hinge === "b" ? s.a : s.b;
-    const hdx = other.x - hinge.x;
-    const hdz = other.y - hinge.y;
-    const thetaClosed = Math.atan2(-hdz, hdx);
+    // LEAFLESS (construction phase 5, `leaf: false`): the doorway is cut but
+    // nobody has hung a door in it, so we build the LINTEL ALONE — an empty
+    // frame you can see and walk straight through. No pivot, no leaf material,
+    // and (crucially) no `door` entry on the returned record: syncStructures
+    // guards its swing/lock work on `entry.door`, so a hole simply never
+    // animates. The lintel keeps the wall reading continuous above the gap.
+    const bare = s.leaf === false;
     const group = new THREE.Group();
-    const pivot = new THREE.Group();
-    pivot.position.set(hinge.x, baseY + floorY, hinge.y);
-    pivot.rotation.y = thetaClosed;
-    group.add(pivot);
-    const geom = new THREE.BoxGeometry(len, STRUCTURE.doorHeight, s.thickness);
-    const leafMat = structureMaterial(STRUCTURE.doorColor, { roughness: 0.7 });
-    const leaf = new THREE.Mesh(geom, leafMat);
-    // Centre the box so its near edge sits at the hinge and it spans toward `other`.
-    leaf.position.set(len / 2, STRUCTURE.doorHeight / 2, 0);
-    pivot.add(leaf);
-    this.disposables.push(geom, leafMat);
-    const mats: LitMaterial[] = [leafMat];
+    const mats: LitMaterial[] = [];
+    let swing: { pivot: THREE.Group; thetaClosed: number; leafMat: LitMaterial } | undefined;
+    if (!bare) {
+      const hinge = s.hinge === "b" ? s.b : s.a;
+      const other = s.hinge === "b" ? s.a : s.b;
+      const hdx = other.x - hinge.x;
+      const hdz = other.y - hinge.y;
+      const thetaClosed = Math.atan2(-hdz, hdx);
+      const pivot = new THREE.Group();
+      pivot.position.set(hinge.x, baseY + floorY, hinge.y);
+      pivot.rotation.y = thetaClosed;
+      group.add(pivot);
+      const geom = new THREE.BoxGeometry(len, STRUCTURE.doorHeight, s.thickness);
+      const leafMat = structureMaterial(STRUCTURE.doorColor, { roughness: 0.7 });
+      const leaf = new THREE.Mesh(geom, leafMat);
+      // Centre the box so its near edge sits at the hinge and it spans toward `other`.
+      leaf.position.set(len / 2, STRUCTURE.doorHeight / 2, 0);
+      pivot.add(leaf);
+      this.disposables.push(geom, leafMat);
+      mats.push(leafMat);
+      swing = { pivot, thetaClosed, leafMat };
+    }
     // A real doorway: the leaf is door-height (2.1 m), the wall continues above
     // it as a LINTEL up to the storey height, tinted like the wall it sits in.
     const lintelH = STRUCTURE.wallHeight - STRUCTURE.doorHeight;
@@ -3465,7 +3776,7 @@ export class World3DRenderer {
       this.disposables.push(lintelGeom, lintelMat);
       mats.push(lintelMat);
     }
-    return { object: group, mats, door: { pivot, thetaClosed, leafMat } };
+    return { object: group, mats, ...(swing ? { door: swing } : {}) };
   }
 
   /** A triangular corner stub for the dollhouse cutaway: full stub-height at local
@@ -3503,13 +3814,45 @@ export class World3DRenderer {
       const spec = state.spec.objects.find((o) => o.id === obj.id);
       const radius = spec?.radius ?? 0.5;
       let entry = this.objectMeshes.get(obj.id);
+      // WHAT IT IS CAN CHANGE UNDER A LIVE ID. The model-vs-icon choice was made
+      // once, at first sight, and never revisited — so an object re-specced in
+      // place (a mirror prop converting to a carryable one, a stack unit that
+      // turns out to be furniture) kept whatever it happened to look like when
+      // it first appeared, forever. Both re-adds happen inside one tick, so the
+      // id never leaves `state.objects` and the drop-loop above never fires.
+      // Keyed on the RECIPE, not the glyph: `apple.cold` → `apple.hot` is the
+      // same model wearing different descriptors, and `applyDescriptors` below
+      // is far cheaper than a rebuild. Only becoming a different KIND of thing
+      // rebuilds. Costs one lookup and one string compare per object per frame.
+      const identity =
+        objectModelKey({
+          ...(spec?.iconRef !== undefined ? { iconRef: spec.iconRef } : {}),
+          ...(spec?.glyph !== undefined ? { glyph: spec.glyph } : {}),
+          ...(spec?.fixture !== undefined ? { fixture: spec.fixture } : {}),
+        }) ?? "icon";
+      if (entry && entry.identity !== identity) {
+        this.scene.remove(entry.mesh);
+        this.scene.remove(entry.shadow);
+        entry.model?.dispose();
+        this.objectMeshes.delete(obj.id);
+        entry = undefined;
+      }
       if (!entry) {
         // Prefer a real procedural 3D model for the object's identity; FAILSAFE
         // to the generic box/sphere when there's no recipe (a new/queued type).
         let mesh: THREE.Object3D;
         let materials: LitMaterial[];
         const model =
-          buildObjectModel({ iconRef: spec?.iconRef, glyph: spec?.glyph, fixture: spec?.fixture, radius }) ?? undefined;
+          buildObjectModel({
+            iconRef: spec?.iconRef,
+            glyph: spec?.glyph,
+            fixture: spec?.fixture,
+            radius,
+            // The id seeds recipes that come in no fixed form (a boulder), so a
+            // scatter of them is a scatter of DIFFERENT ones — and the same one
+            // every time it streams back in.
+            id: obj.id,
+          }) ?? undefined;
         if (model) {
           mesh = model.object;
           materials = model.materials;
@@ -3533,7 +3876,15 @@ export class World3DRenderer {
         // A fixture that first appears DELIVERED (not set up) starts tipped;
         // everything else starts upright. Starting AT the target means a plain
         // fixture never settles on load — only a live set-up transition eases.
-        entry = { mesh, shadow, materials, model, tipFrac: spec?.fixture && spec?.setUp === false ? 1 : 0 };
+        entry = {
+          mesh,
+          shadow,
+          materials,
+          model,
+          identity,
+          builtRadius: radius,
+          tipFrac: spec?.fixture && spec?.setUp === false ? 1 : 0,
+        };
         // A modeled object shows its descriptors PHYSICALLY (color/size/heat), so
         // it needs no floating symbol. Only the FAILSAFE (generic shape) wears the
         // emoji icon so it still reads as what it is.
@@ -3546,6 +3897,19 @@ export class World3DRenderer {
         }
         mesh.userData.pick = { kind: "object", id: obj.id } satisfies ScreenPick;
         this.objectMeshes.set(obj.id, entry);
+      }
+      // A RESIZED object — a wild source shrinking as it is quarried out —
+      // scales rather than rebuilds. Rebuilding would reroll nothing (the seed
+      // is the id) but would churn geometry and materials on every take, and
+      // the model's own base-at-(-radius) convention means a uniform scale
+      // lands the smaller body exactly on the ground where the bigger one
+      // stood. Costs two float compares per object per frame.
+      if (entry.builtRadius > 0 && (entry.scaledTo ?? entry.builtRadius) !== radius) {
+        const k = radius / entry.builtRadius;
+        entry.mesh.scale.setScalar(k);
+        entry.shadow.scale.setScalar(k);
+        entry.scaledTo = radius;
+        entry.topY = undefined; // the shell moved — the spark must re-measure
       }
       if (entry.model) {
         // A live glyph change (a transformed item apple.cold → apple.hot, or a
@@ -3677,6 +4041,164 @@ export class World3DRenderer {
     }
   }
 
+  /** The two bodies a published conversation actually SHOWS: the ids the game
+   *  layer named, minus any with no body in this world, minus the LOCAL one.
+   *
+   *  Dropping the local one is the whole reason this is a pair of ids rather
+   *  than a pair of points. In the dollhouse the local avatar is the formless
+   *  SPARK — parked, bodiless, drawn as a light — so a spirit talking to Ada
+   *  must frame ADA, not the midpoint between Ada and a parked spark across the
+   *  room. An EMBODIED player (the same seam, walking scope) keeps both. */
+  private convBodies(state: WorldState): { a: AvatarState | null; b: AvatarState | null } {
+    const p = this.convPair;
+    if (!p) return { a: null, b: null };
+    const pick = (id: string): AvatarState | null =>
+      id === this.localId ? null : (state.avatars[id] ?? null);
+    return { a: pick(p.a), b: pick(p.b) };
+  }
+
+  /**
+   * SPIRIT: the framed bounds for this frame — the whole-building frame, eased
+   * toward the conversants while a conversation stands and back again when it
+   * ends. Returns `base` untouched whenever nothing is being said and nothing is
+   * still unwinding, so a silent house renders exactly the orbit-only camera it
+   * did before this slice existed.
+   *
+   * Everything here is slow on purpose. The slice-2 dolly was cut for being too
+   * fast, and it was ALSO gaze-driven, so a glance could yank the camera; this
+   * one moves only when the game layer says two people are talking, and takes
+   * seconds to do it.
+   */
+  private spiritConversationFrame(
+    state: WorldState,
+    base: DollhouseBounds,
+    intent: RenderIntent | undefined,
+    step: number,
+  ): DollhouseBounds {
+    // ── THE LATCH (hysteresis) ────────────────────────────────────────────────
+    // A pair the game re-publishes keeps its grace period topped up. A pair it
+    // stops publishing is held for CONV_HOLD_S more — which is what stops a
+    // back-and-forth exchange (publish, lapse, publish again) from making the
+    // camera breathe in and out — and only THEN may a different pair take the
+    // frame. So the camera never hops between two conversations mid-move.
+    const pub = intent?.conversation ?? null;
+    const held = this.convPair;
+    const same = !!(pub && held && pub.a === held.a && pub.b === held.b);
+    if (pub && (same || !held || this.convHold <= 0)) {
+      if (!same) {
+        // Seed the tracker afresh only from a FULLY RELEASED frame. Taking over
+        // while the camera is still part-way in must glide from where it is.
+        if (this.convBlend < 0.01) this.convSeeded = false;
+        this.convPair = { a: pub.a, b: pub.b };
+      }
+      this.convHold = CONV_HOLD_S;
+    } else if (held) {
+      this.convHold -= step;
+      if (this.convHold <= 0) this.convPair = null;
+    }
+
+    const { a, b } = this.convBodies(state);
+    // One visible body is a legal conversation (the bodiless spirit's partner);
+    // `conversationBounds` degenerates to a window on that one person.
+    const lead = a ?? b;
+    const pairEnd = b ?? a;
+    const talking = !!lead;
+
+    this.convBlend = easeApproach(
+      this.convBlend,
+      talking ? 1 : 0,
+      talking ? CONV_DOLLY_IN_RATE : CONV_DOLLY_OUT_RATE,
+      step,
+    );
+    if (talking) {
+      const want = conversationBounds(lead!, pairEnd!, base.span);
+      if (!this.convSeeded) {
+        // Safe to place instantly: the blend is ~0 here by construction, so this
+        // point carries no weight yet and the move still starts from the house.
+        this.convCx = want.cx;
+        this.convCz = want.cz;
+        this.convSpan = want.span;
+        this.convSeeded = true;
+      } else {
+        this.convCx = easeApproach(this.convCx, want.cx, CONV_TRACK_RATE, step);
+        this.convCz = easeApproach(this.convCz, want.cz, CONV_TRACK_RATE, step);
+        this.convSpan = easeApproach(this.convSpan, want.span, CONV_TRACK_RATE, step);
+      }
+    }
+    // Below a thousandth the pull is invisible: settle to exactly the base frame
+    // so a fully-released camera is provably identical to one that never moved.
+    if (!talking && this.convBlend < 1e-3) this.convBlend = 0;
+    if (this.convBlend === 0 || !this.convSeeded) return base;
+    const t = this.convBlend;
+    const out = this._spiritFrame;
+    out.cx = base.cx + (this.convCx - base.cx) * t;
+    out.cz = base.cz + (this.convCz - base.cz) * t;
+    out.span = base.span + (this.convSpan - base.span) * t;
+    return out;
+  }
+
+  /**
+   * SPIRIT: turn the framed conversants three-quarter toward the camera.
+   *
+   * RENDER-ONLY, deliberately. The turn is a function of THIS viewer's camera
+   * azimuth, which the simulation neither knows nor should: writing it into
+   * `fx/fy` would put one player's orbit into the replicated body state every
+   * peer sees, and would fight the NPC steering that re-derives facing from
+   * velocity every tick. So it is applied as a yaw OFFSET on the avatar's ROOT
+   * group, composed on top of whatever facing the model already took from
+   * `fx/fy` (the sim keeps saying "these two face each other"; the render adds
+   * "…and both lean toward the lens"). Nothing can desync, and the moment the
+   * offset unwinds the body is byte-identical to an untouched one.
+   *
+   * Caveat worth knowing: a root yaw also rotates any CAMERA-FACING child a
+   * model hangs off its root (the fallback disc avatar's face card copies the
+   * camera quaternion in local space). Creature bodies — the only thing a
+   * dollhouse frames — have no such child, and the capsule fallback only ever
+   * appears at far district range where no conversation is framed. If that ever
+   * stops being true, the offset wants to move into the model frame.
+   */
+  private spiritFaceCamera(state: WorldState, step: number, active: boolean): void {
+    if (!this.convPair && this.convYaw.size === 0) return;
+    // NOT SPIRIT ANY MORE (the dollhouse focus cleared, the spark walked into a
+    // body): drop the latch and let every turn unwind. A stranded offset would
+    // otherwise leave somebody permanently askew in avatar mode, where nothing
+    // here runs again to fix it.
+    if (!active) {
+      this.convPair = null;
+      this.convBlend = 0;
+      this.convSeeded = false;
+    }
+    // The avatars live in the scene-LOCAL frame; so does this camera stand-in
+    // (owner mode: it IS this.camera). One frame stale, like the orbit's own
+    // NDC projection — invisible at these rates.
+    const cam = this.camLocalFrame.position;
+    const { a, b } = this.convBodies(state);
+    for (const body of [a, b]) {
+      if (!body) continue;
+      // A body ON a fixture (asleep, seated at the table) has its axis owned by
+      // the furniture — twisting its root would slide it off the chair. It keeps
+      // exactly the pose the anchor gave it.
+      const want = body.activity
+        ? 0
+        : faceCameraYawOffset(body, cam.x, cam.z) * this.convBlend;
+      this.convYaw.set(body.id, easeApproach(this.convYaw.get(body.id) ?? 0, want, CONV_FACE_RATE, step));
+    }
+    for (const [id, cur] of this.convYaw) {
+      const framed = a?.id === id || b?.id === id;
+      // A body that left the pair UNWINDS at the same rate it turned — never a
+      // snap back to its sim heading.
+      const next = framed ? cur : easeApproach(cur, 0, CONV_FACE_RATE, step);
+      const model = this.avatars.get(id);
+      if (!framed && Math.abs(next) < 1e-3) {
+        if (model) model.object.rotation.y = 0;
+        this.convYaw.delete(id);
+        continue;
+      }
+      if (model) model.object.rotation.y = next;
+      this.convYaw.set(id, next);
+    }
+  }
+
   private updateCamera(state: WorldState, dt: number, intent?: RenderIntent): void {
     // SPIRIT: a FIXED angled-overhead vantage that frames the whole manifold. The
     // formless player never moves, so there is nothing to follow — a static
@@ -3693,12 +4215,17 @@ export class World3DRenderer {
       const lookY = FLOOR_HEIGHT * 0.55;
       // One bounds/pose formula shared with the public dollhousePose()
       // (the spirit ladder blends against the SAME numbers).
-      const bounds = resolveDollhouseBounds(
+      const base = resolveDollhouseBounds(
         this.spiritFrame, state.spec.buildings ?? [],
         this.spec.manifold.width, this.spec.manifold.height,
         // Open ground: frame the driven body (see resolveDollhouseBounds).
         state.avatars[state.drivenId] ?? null,
       );
+      // CONVERSATION DOLLY (slice 4): while somebody is talking, ease this frame
+      // toward the conversants and back again when they stop. Returns the frame
+      // to actually use — `base` untouched when nothing is being said, so a
+      // silent house is byte-identical to the orbit-only camera.
+      const bounds = this.spiritConversationFrame(state, base, intent, step);
       const cx = bounds.cx;
       const cz = bounds.cz;
       // The fixed vantage rides the site's ground level at the framed center.
@@ -3742,10 +4269,18 @@ export class World3DRenderer {
         this.camera.up.copy(this._camUp);
         this.camera.lookAt(this._camLook);
       }
+      // FACE-CAMERA: turn the framed pair three-quarter toward the lens. After
+      // the pose write so the turn answers the camera the frame is settling on,
+      // not the one it left.
+      this.spiritFaceCamera(state, step, true);
       this.lastYawSpeed = 0;
       if (!this.camCenter) this.camCenter = new THREE.Vector3(cx, 0, cz);
       return;
     }
+    // AVATAR MODE: framing is untouched by this slice. The one thing that has to
+    // happen here is UNWINDING a face-camera turn left over from spirit mode —
+    // free when there is none (the method's own first line returns).
+    this.spiritFaceCamera(state, Math.max(0, dt), false);
     const me = state.avatars[this.localId];
     const step = Math.max(0, dt);
     const cam = this.cameraCfg;
@@ -3887,7 +4422,8 @@ export class World3DRenderer {
       this.scene.remove(object);
     }
     this.structureMeshes.clear();
-    for (const { slabs, roof } of this.buildingMeshes.values()) {
+    for (const { floor, slabs, roof } of this.buildingMeshes.values()) {
+      this.scene.remove(floor);
       for (const s of slabs) this.scene.remove(s.mesh);
       this.scene.remove(roof);
     }

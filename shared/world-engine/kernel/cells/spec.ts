@@ -361,6 +361,20 @@ export interface FlowNetSpec {
   /** Entity var receiving each entity's share of its component's imbalance
    *  every step (+overproduction / −shortage). Optional. */
   drift?: string;
+  /**
+   * THE GRANARY FEEDBACK (settlement-emergence.md §6): the drift stockpile
+   * FEEDS the shortfall it is drained by. Without this flag a shortage
+   * drains the stock while `satisfied` still reports the bare proportional
+   * fill — the granary pays and the town starves anyway. With it, each
+   * entity's own stock tops up its `satisfied` (bounded by the stock, so
+   * the drain IS the eating — conserving by construction), and the
+   * shortage-side drain replaces the uniform residual share. Surplus
+   * accumulation is unchanged. Requires `drift`. Idle-safe: the top-up is
+   * a pure function of bounded state, and the stock strictly falls while
+   * it feeds — a fed world under a seasonal draw rides the sanctioned
+   * clock cycle; an unfed one still reaches rest.
+   */
+  feed?: boolean;
   /** Entity var receiving the demand actually MET at each entity
    *  (proportional fill: demand_i × min(1, component supply/demand)),
    *  written as a derived per-step value. This is what lets processing

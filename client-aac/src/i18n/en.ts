@@ -641,6 +641,7 @@ export const en = {
       cabinet: "Cabinet",
       barrel: "Barrel",
       basket: "Basket",
+      satchel: "Satchel",
       lamp: "Lamp",
       window: "Window",
       heater: "Heater",

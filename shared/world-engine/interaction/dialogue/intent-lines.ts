@@ -291,6 +291,17 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       // other line here follows; a doll's `toy` descriptor can't ride a plain
       // symbol string, so "make the rabbit" is as close as this shape gets.
       return phrase({ subject: "i_me", verb: "make", object: spokenMakeable(goal.glyph) });
+    case "demolish":
+      // The unmaking half (④): "I'll break the bedroom". The room word is the
+      // spoken one, so it is already a lexeme in every ruleset.
+      return phrase({ subject: "i_me", verb: "break", object: goal.room });
+    case "emptyRoom":
+      // "I'll empty the kitchen" — the walls stay up, so the verb is `empty`
+      // and never `break` (the two acts must not sound alike).
+      return phrase({ subject: "i_me", verb: "empty", object: goal.room });
+    case "breakPiece":
+      // "I'll break the bed" — `place`'s echo with the opposite verb.
+      return phrase({ subject: "i_me", verb: "break", object: syms.item(goal.item) });
     case "buildwork":
       // ⑥ standing site work — "I'll build" (the site names no glyph word).
       return { a: "build", b: "i_me + build", c: "i_me + build" };
@@ -487,6 +498,12 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
       return { verb: "build", ...(goal.structure !== "town" ? { object: goal.structure } : {}) };
     case "craft":
       return { verb: "make", object: spokenMakeable(goal.glyph) };
+    case "demolish":
+      return { verb: "break", object: goal.room };
+    case "emptyRoom":
+      return { verb: "empty", object: goal.room };
+    case "breakPiece":
+      return { verb: "break", object: syms.item(goal.item) };
     case "buildwork":
       return { verb: "build" }; // ⑥ standing site work
     case "trade":

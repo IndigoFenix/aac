@@ -28,6 +28,11 @@ const ALL_FIXTURES = [
   "oven", "workbench", "refrigerator",
   // The place-making stations — each the signature fixture of a room kind.
   "anvil", "altar", "loom", "shelf",
+  // Construction phase 5: the masonry's bench, and the DOOR LEAF — the doorway
+  // is wall, the door itself is furniture, so it is a fixture that has to be
+  // sayable like any other (`door` was already a registered place word; this
+  // is what pins that the fixture kind reaches it).
+  "stonecutter", "door",
 ] as const;
 
 // COMPILE-TIME EXHAUSTIVENESS: adding a FixtureKind without listing it here is

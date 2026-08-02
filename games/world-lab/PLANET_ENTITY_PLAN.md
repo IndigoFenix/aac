@@ -291,10 +291,17 @@ it is wide but mechanical once ownership is right.
     instance keys (`face:tx:ty:i`). `FloraField.setTwinHidden(keys)` zero-
     scales individual instances (billboard + near-real meshes, diffed by
     tile).
-  - products.ts: oak gets `bodyHeightM: 4.6` (matches the field's OAK_H) —
-    a wild oak now stands EMBODIED as a real grown flora body (the registry's
-    own "step ④ closes this" note; fellIfConsumed already removes bodies).
-    Test pin updated: `wildFeatureEmbodied(oak)` is now true.
+  - products.ts: oak gets `bodyHeightM: 23.8` — a wild oak now stands
+    EMBODIED as a real grown flora body (the registry's own "step ④ closes
+    this" note; fellIfConsumed already removes bodies). Test pin updated:
+    `wildFeatureEmbodied(oak)` is now true. 23.8 m is the blueprint's OWN
+    build height, measured off `buildSkeleton` bounds — and the field now
+    renders trees at that NATIVE model scale too (the old fixed OAK_H = 4.6
+    squashed every tree to a shrub, so a resolving forest read as one that
+    had LOST its trees; user: *"Oak trees are supposed to be 15-30m"*).
+    Resize the BLUEPRINT to resize oaks, never one of these numbers alone.
+    Grass keeps a 0.6 m display height — its blueprint is a 0.13 m tuft,
+    unreadable as ground cover, and it has no twin to agree with.
   - quest-host.ts: `addWildFeature` / `removeWildFeature` — the per-feature
     seeding body extracted (`spawnWildFeature`) so a feature can materialize
     or release LIVE; removal mirrors fellIfConsumed's teardown.
@@ -309,6 +316,16 @@ it is wide but mechanical once ownership is right.
     standing, FELLED ones keep their instance hidden for the mount. The
     biome wildMix stops scattering its own oaks on the planet path
     (`FLORA_TREE_SPECIES` filter) — no second population.
+  - 🚨 DENSE-FOREST FOLLOW-UP (2026-07-31): a twin whose body was REFUSED
+    still hid its scenery, so dense stands (biome 1 = 60 oaks/tile ⇒ ~30
+    inside 80 m) lost most of their trees on approach while moderate biomes
+    (8–11/tile) matched fine. Two fixes: `spawnWildFeature`/`addWildFeature`
+    now return SPAWN TRUTH (a refusal leaves no trace and the scenery keeps
+    drawing — never hide an instance whose body did not stand), and rooted
+    bodies got their own budget, since a tree is not a creature —
+    `isRootedNpc` (`behavior.speed === 0`) charges `maxRootedNpcs` (160 in
+    quest sessions) instead of `maxNpcs`, AND skips the whole per-frame
+    steering pipeline, which is what makes a forest of real bodies cheap.
   KNOWN SOFT EDGES: twin height is the registry constant while flora
   instances vary ±25 % (a subtle resize at the 80 m boundary); a felled
   tree returns as pristine scenery only after the whole chunk unmounts (no

@@ -641,6 +641,7 @@ export const he: Translations = {
       cabinet: "ארון",
       barrel: "חבית",
       basket: "סל",
+      satchel: "ילקוט",
       lamp: "מנורה",
       window: "חלון",
       heater: "תנור חימום",

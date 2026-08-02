@@ -17,7 +17,7 @@
 //    parent's value (ore passes through the same way; both are 0..n-unit
 //    fields whose count-apportionment over ~9k children rounds to dust).
 //    Strict COUNT conservation was probed and kills the tier: tier-0
-//    `people` is capitals-tier founding fuel, not a census — a 208-km cell
+//    `forage` is capitals-tier founding fuel, not a census — a 208-km cell
 //    holds "300 grid-persons" as a ranking signal, and spreading that over
 //    a region supports ~one village. The village-tier population is what
 //    tier 0 never modeled; the civ layer stays at tier 0, so nothing
@@ -415,9 +415,9 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   //    each parent-cell slice's MEAN matches the parent's per-cell value.
   //    The parent decides HOW CROWDED its land is; the child's own river
   //    solve decides WHERE within it the crowds pool. ──────────────────────
-  const parentPeople = built.grid.fields.people;
-  const childPeople = prep.grid.fields.people;
-  if (parentPeople && childPeople) {
+  const parentForage = built.grid.fields.forage;
+  const childForage = prep.grid.fields.forage;
+  if (parentForage && childForage) {
     const groups = new Map<number, number[]>();
     for (let i = 0; i < cols * rows; i++) {
       const parent = topo.cellAt!(dirs[i]);
@@ -427,10 +427,10 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     }
     for (const [parent, children] of groups) {
       let sum = 0;
-      for (const i of children) sum += childPeople[i];
+      for (const i of children) sum += childForage[i];
       if (sum <= 0) continue;
-      const scale = (parentPeople[parent] * children.length) / sum;
-      for (const i of children) childPeople[i] *= scale;
+      const scale = (parentForage[parent] * children.length) / sum;
+      for (const i of children) childForage[i] *= scale;
     }
     // Crowds changed after the settle — re-rank the founding candidates on
     // the budgeted field (same scan, same spacing, same fixed points).
@@ -441,7 +441,7 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   //    like ore; temperature re-derives by the child-vs-parent elevation
   //    delta (the lapse anchor cancels in the difference). applyClimate
   //    then re-folds fertility/plant/ice onto the child's own river solve.
-  //    People stay the budget's ("iceOnly" — the parent's crowds already
+  //    Forage stays the budget's ("iceOnly" — the parent's crowds already
   //    carried climate at tier 0); ice still empties, so no village founds
   //    on a cap. ─────────────────────────────────────────────────────────
   const parentRain = built.grid.fields.rain;
@@ -460,7 +460,7 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
         - Math.max(0, parentHeight[parent] - SEA_HEIGHT)) * thermalM;
       childTempC[i] = parentTempC[parent] - LAPSE_C_PER_M * dElevM;
     }
-    applyClimate(prep.grid, { rain: childRain, tempC: childTempC }, { people: "iceOnly" });
+    applyClimate(prep.grid, { rain: childRain, tempC: childTempC }, { forage: "iceOnly" });
     const ice = prep.grid.fields.ice;
     prep.sites = findFoundingSites(prep.grid, founding).filter(s => ice[s.cell] < 1);
   }

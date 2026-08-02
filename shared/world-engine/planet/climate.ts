@@ -52,9 +52,9 @@
 // applyClimate then rewrites the substrate's REST STATE consistently with
 // its own rule targets: fertility = max(river halo, rain-fed), plant tracks
 // the new fertility (the greenery sensor formula), lure = max(fertility,
-// ore), people = 2 × lure — exactly what the rules converge to, so an
+// ore), forage = 2 × lure — exactly what the rules converge to, so an
 // unchanged cell keeps its settled value bit-identically. tempC < ICE_TEMP_C
-// is ICE CAP: fertility 0, plant 0, people 0 (nothing founds on the caps),
+// is ICE CAP: fertility 0, plant 0, forage 0 (nothing founds on the caps),
 // ice = 1; tempC in [ICE_TEMP_C, 0) is cold-barren (fertility 0 via the
 // growing season, crowds only at ore). A later wake (sculpt, mining,
 // harvest) re-settles that cell to the river-only value — rain-aware
@@ -74,7 +74,7 @@ export const LAPSE_C_PER_M = 6.5 / 1000;
 export const THERMAL_M_PER_UNIT_CAP = 160;
 
 /** Annual-mean temperature below which land is ICE CAP (fertility 0,
- *  people 0, ice = 1). The 0 °C annual isotherm crosses inhabited taiga
+ *  forage 0, ice = 1). The 0 °C annual isotherm crosses inhabited taiga
  *  (Moscow), so the cap line sits at the ice-sheet ≈ −8 °C; between −8
  *  and 0 the land is cold-barren (growing season 0 ⇒ fertility 0, crowds
  *  only where ore lures them) but not capped. */
@@ -232,11 +232,11 @@ export interface ApplyClimateOpts {
   seaHeight?: number;
   /** Fertility ceiling elevation (default 40 — the worldgen treeline). */
   treeline?: number;
-  /** "recompute" (default): people re-derive from the climate-adjusted
+  /** "recompute" (default): forage re-derives from the climate-adjusted
    *  lure (tier 0, before founding — the rules' own rest value).
-   *  "iceOnly": only ice zeroes people — tier 1, where the parent budget
+   *  "iceOnly": only ice zeroes forage — tier 1, where the parent budget
    *  owns crowd density and must not be overwritten. */
-  people?: "recompute" | "iceOnly";
+  forage?: "recompute" | "iceOnly";
 }
 
 export interface ClimateSummary {
@@ -260,7 +260,7 @@ function tempGrowth(tC: number): number {
 
 /**
  * Fold climate into a SETTLED substrate. Rewrites fertility (max of the
- * river halo and rain-fed), plant, lure and people to the rule-consistent
+ * river halo and rain-fed), plant, lure and forage to the rule-consistent
  * rest values, freezes ice cells, and writes `rain` / `tempC` / `ice`
  * into grid.fields for renderers and region refinement. Deterministic;
  * no scheduler wake (worldgen composition, like founding).
@@ -270,7 +270,7 @@ export function applyClimate(
 ): ClimateSummary {
   const seaHeight = opts.seaHeight ?? 3;
   const treeline = opts.treeline ?? 40;
-  const peopleMode = opts.people ?? "recompute";
+  const forageMode = opts.forage ?? "recompute";
   const { rain, tempC } = fields;
 
   const n = grid.topo.n;
@@ -281,7 +281,7 @@ export function applyClimate(
   const plant = grid.fields.plant;
   const ore = grid.fields.ore;
   const lure = grid.fields.lure;
-  const people = grid.fields.people;
+  const forage = grid.fields.forage;
   if (!height || !fert) throw new Error("applyClimate: substrate has no height/fertility fields");
 
   const ice = new Float64Array(n);
@@ -298,7 +298,7 @@ export function applyClimate(
       ice[c] = 1;
       if (land) summary.ice++;
       fert[c] = 0;
-      if (people) people[c] = 0;
+      if (forage) forage[c] = 0;
       continue;
     }
 
@@ -336,12 +336,12 @@ export function applyClimate(
   }
 
   // Lure and crowds follow (the Sugarscape rules' rest values) — founding
-  // must see climate-adjusted people. Ice was zeroed above.
+  // must see climate-adjusted forage. Ice was zeroed above.
   for (let c = 0; c < n; c++) {
     if (ice[c] >= 1) continue;
     const l = Math.max(fert[c], ore ? ore[c] : 0);
     if (lure) lure[c] = Math.min(15, l);
-    if (people && peopleMode === "recompute") people[c] = Math.max(0, Math.min(31, Math.round(2 * l)));
+    if (forage && forageMode === "recompute") forage[c] = Math.max(0, Math.min(31, Math.round(2 * l)));
   }
 
   grid.fields.rain = Float64Array.from(rain);

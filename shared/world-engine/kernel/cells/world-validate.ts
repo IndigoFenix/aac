@@ -132,6 +132,7 @@ export function validateWorldSpec(spec: WorldSpec): ValidationResult {
     if (fn.by && !edgeVarNames.has(fn.by)) errors.push(`flow net "${id}": by "${fn.by}" is not an edge var.`);
     if (fn.drift && !entityVarNames.has(fn.drift)) errors.push(`flow net "${id}": drift "${fn.drift}" is not an entity var.`);
     if (fn.satisfied && !entityVarNames.has(fn.satisfied)) errors.push(`flow net "${id}": satisfied "${fn.satisfied}" is not an entity var.`);
+    if (fn.feed && !fn.drift) errors.push(`flow net "${id}": feed requires a drift stockpile (there is nothing to feed from).`);
   }
 
   // --- Processes --------------------------------------------------------------
@@ -252,6 +253,10 @@ export function validateWorldSpec(spec: WorldSpec): ValidationResult {
       link(E(fn.demand), E(target));
       if (fn.by && severable) link(X(fn.by), E(target));
     }
+    // The granary feedback: a fed `satisfied` also READS the drift stock
+    // (top-up = min(stock, shortage)) — an honest dependency edge. The
+    // stock stays STATE (it integrates); satisfied stays derived.
+    if (fn.feed && fn.drift && fn.satisfied) link(E(fn.drift), E(fn.satisfied));
     for (const rd of spec.roads ?? []) {
       if (rd.use !== fn.id) continue;
       link(E(fn.source), X(rd.attr));

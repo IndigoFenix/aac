@@ -75,12 +75,15 @@ describe("pending demolitions (designation rows on the deltas)", () => {
     expect(back.demolitionSites()).toHaveLength(1);
     expect(back.demolitionSites()[0]).toEqual(p);
     expect(back.demolitionSites()[0]!.labor).toBe(0.1);
-    // A removed ordinal is never reused downward — the next post stays
-    // monotone over everything ever posted that still stands.
+    // A removed ordinal is NEVER reused — phase 3 serializes the
+    // sequence's high-water mark (`ordSeq`), so monotonicity holds over
+    // everything EVER posted, standing or not, across reloads (a
+    // committed transient refine must not hand its number to a later
+    // founding).
     const fresh = back.postDemolitionSite({
       buildingKey: "h_9", roomId: "h9_r1", startedDay: 4, buildDays: 0.25,
     });
-    expect(fresh.ord).toBe(1);
+    expect(fresh.ord).toBe(2);
   });
 
   it("removeDemolitionSite drops the row and bumps the version", () => {

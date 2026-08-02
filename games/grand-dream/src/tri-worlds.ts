@@ -216,9 +216,11 @@ export function triBase(opts: TriBaseOpts = {}): Omit<DualSpec, "nodes" | "edges
         id: "city",
         vars: [
           // Structural: the population the coupling writes, the charter
-          // attrs tri.ts samples from the substrate, the unrest input.
+          // attrs tri.ts samples from the substrate, the unrest input,
+          // and the §④ derived ceiling (0 until a world declares
+          // `ceilings` — bind vitals capacity to it only then).
           v("population", 1_000_000), v("farmland", 2000), v("ore_access", 2000), v("timberland", 2000),
-          v("pasture", 2000),
+          v("pasture", 2000), v("pop_ceiling", 1_000_000),
           ...eco.vars,
           v("unrest", 1),
         ],
@@ -354,7 +356,7 @@ export async function buildAcceptanceTri(seed: number): Promise<AcceptanceWorld>
   const prep = prepareSubstrate({ cols: 48, rows: 32, height: ridgeValley, treeline: TREELINE, founding: FOUNDING, oreSeed: 7 });
   const { valley, highland } = pickBiomes(prep);
 
-  const gridPeople0 = prep.grid.fields.people.reduce((a, b) => a + b, 0);
+  const gridPeople0 = prep.grid.fields.forage.reduce((a, b) => a + b, 0);
   const gridOre0 = prep.grid.fields.ore.reduce((a, b) => a + b, 0);
 
   const tri = await foundTri(prep, {
@@ -465,7 +467,7 @@ export async function buildTectonicTri(seed: number, extraContent?: EconomyDoc[]
     treeline: TREELINE, founding: FOUNDING,
     spec: wildSubstrate(worldgenSubstrate, compiled.species),
   });
-  const gridPeople0 = prep.grid.fields.people.reduce((a, b) => a + b, 0);
+  const gridPeople0 = prep.grid.fields.forage.reduce((a, b) => a + b, 0);
   const gridOre0 = prep.grid.fields.ore.reduce((a, b) => a + b, 0);
 
   const citizens = (mix?: Record<string, number>): Record<string, unknown> => ({

@@ -156,7 +156,7 @@ describe("tectonics — the seam (provenance-independence)", () => {
     expect(both / Math.max(1, oreTiles)).toBeLessThan(0.5);
     // Nobody lives in the sea.
     for (let c = 0; c < N; c++) {
-      if (g.fields.height[c] < SEA_HEIGHT) expect(g.fields.people[c]).toBe(0);
+      if (g.fields.height[c] < SEA_HEIGHT) expect(g.fields.forage[c]).toBe(0);
     }
     // And crowds pooled somewhere worth founding.
     expect(prep.sites.length).toBeGreaterThan(0);

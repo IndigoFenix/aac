@@ -515,6 +515,21 @@ export const WORLD_ENGINE_DEFAULTS: WorldEngineConfig = {
  * their spec positions, free and at rest. Remote avatars are added later via
  * applyRemoteAvatar.
  */
+/**
+ * The DoorState a door structure is born with. A leafed door starts SHUT and
+ * carries its spec's lock; a LEAFLESS one (phase 5 — the doorway is cut but no
+ * leaf hangs) is born wide open and unlocked, because that IS the physical
+ * fact: `visibleBuildings`, `accessibleBuildings` and the renderer all read
+ * `open`/`locked`, and a hole in a wall reveals and admits like a door somebody
+ * propped. Nothing latches a hole either, which is why the lock is dropped
+ * rather than carried (a `locked` leafless spec is out of scope for phase 5).
+ */
+function initialDoorState(s: DoorSpec): DoorState {
+  return s.leaf === false
+    ? { id: s.id, open: 1, locked: false }
+    : { id: s.id, open: 0, locked: s.locked ?? false };
+}
+
 export function createWorldState(
   spec: WorldSpec,
   localId: string,
@@ -561,7 +576,7 @@ export function createWorldState(
   const doors: Record<string, DoorState> = {};
   for (const s of spec.structures ?? []) {
     if (s.kind === "door") {
-      doors[s.id] = { id: s.id, open: 0, locked: s.locked ?? false };
+      doors[s.id] = initialDoorState(s);
     }
   }
 
@@ -1396,6 +1411,11 @@ export function structuresWalkable(
         if (s.kind === "wall") {
           if (pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) return false;
         } else {
+          // A LEAFLESS doorway (phase 5) is a hole in the wall: there is no
+          // leaf to be shut, so it never blocks — checked before `open` so a
+          // stale DoorState (the leaf was broken while the door stood shut)
+          // can't wall off an opening that physically isn't there.
+          if (s.leaf === false) continue;
           const open = state.doors[s.id]?.open ?? 0;
           if (open < config.doorPassThreshold && pointSegmentDistance(p, s.a, s.b) < s.thickness / 2 + radius) {
             return false;
@@ -1498,7 +1518,7 @@ function edgeStructures(
   edge: string,
   P: Vec2,
   Q: Vec2,
-  gaps: { offset: number; width: number; locked?: boolean }[],
+  gaps: { offset: number; width: number; locked?: boolean; leaf?: boolean }[],
   thickness: number,
   color?: string,
 ): StructureSpec[] {
@@ -1517,7 +1537,10 @@ function edgeStructures(
     if (gs - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(gs), thickness, ...tint });
     // The door carries the building color too — it tints the LINTEL the
     // renderer raises above the leaf, so the doorway wall matches its house.
-    out.push({ kind: "door", id: `${bid}_${edge}_d${di++}`, a: at(gs), b: at(ge), thickness, ...(g.locked ? { locked: true } : {}), ...tint });
+    // `leaf` is spread ONLY when it is false (phase 5): the doorway structure
+    // is emitted unconditionally, so a building that hangs its doors produces
+    // byte-identical structures to one authored before the flag existed.
+    out.push({ kind: "door", id: `${bid}_${edge}_d${di++}`, a: at(gs), b: at(ge), thickness, ...(g.locked ? { locked: true } : {}), ...(g.leaf === false ? { leaf: false as const } : {}), ...tint });
     cursor = ge;
   }
   if (L - cursor > 1e-3) out.push({ kind: "wall", id: `${bid}_${edge}_w${wi++}`, a: at(cursor), b: at(L), thickness, ...tint });
@@ -1535,7 +1558,7 @@ export function buildingStructures(b: BuildingSpec): StructureSpec[] {
   const NE: Vec2 = { x: x + w, y };
   const SW: Vec2 = { x, y: y + h };
   const SE: Vec2 = { x: x + w, y: y + h };
-  const byEdge: Record<string, { offset: number; width: number; locked?: boolean }[]> = {
+  const byEdge: Record<string, { offset: number; width: number; locked?: boolean; leaf?: boolean }[]> = {
     north: [], south: [], east: [], west: [],
   };
   for (const d of b.doorways ?? []) byEdge[d.edge].push(d);
@@ -1576,7 +1599,11 @@ export function setWorldStructures(state: WorldState, structures: StructureSpec[
   const doors: Record<string, DoorState> = {};
   for (const s of structures) {
     if (s.kind === "door") {
-      doors[s.id] = state.doors[s.id] ?? { id: s.id, open: 0, locked: s.locked ?? false };
+      // A LEAFLESS doorway (phase 5) never inherits the old state: hanging or
+      // breaking a leaf re-streams the very same door id, so a preserved
+      // `open: 0` from the leafed era would leave a hole reading as shut to
+      // every visibility/reveal consumer until the next tick.
+      doors[s.id] = s.leaf === false ? initialDoorState(s) : (state.doors[s.id] ?? initialDoorState(s));
     }
   }
   state.doors = doors;
@@ -1643,13 +1670,25 @@ export function removeWorldObject(state: WorldState, id: string): boolean {
 // add/remove replaces `spec.objects`, re-keying the cache. Live state
 // (position, floor) is still read per candidate at query time.
 const fixtureGridCache = new WeakMap<ObjectSpec[], Map<number, ObjectSpec[]>>();
+
+/** Does this object stop a body? An explicit `solid` ALWAYS wins — it is the
+ *  spec saying so in as many words. Absent, we fall back to the rule that held
+ *  while furniture was the only solid thing there was: a fixture collides
+ *  unless its kind is one bodies must be able to stand on. Keeping the
+ *  fallback is what makes `solid` additive — every existing spec, town and
+ *  test keeps the collision it already had. */
+function objectIsSolid(f: ObjectSpec): boolean {
+  if (f.solid !== undefined) return f.solid;
+  return !!f.fixture && !PASSTHROUGH_FIXTURES.has(f.fixture);
+}
+
 function fixtureGridOf(state: WorldState): Map<number, ObjectSpec[]> {
   const specs = state.spec.objects;
   let grid = fixtureGridCache.get(specs);
   if (grid) return grid;
   grid = new Map();
   for (const f of specs) {
-    if (!f.fixture || PASSTHROUGH_FIXTURES.has(f.fixture)) continue;
+    if (!objectIsSolid(f)) continue;
     const o = state.objects[f.id];
     if (!o) continue;
     const cx0 = Math.floor((o.x - f.radius) / STRUCT_GRID_CELL);
@@ -1691,7 +1730,7 @@ export function fixturesWalkable(state: WorldState, p: Vec2, radius: number, flo
 }
 
 function makeFixtureConstraint(state: WorldState, floor: number): MoveConstraint | undefined {
-  if (!state.spec.objects.some((o) => o.fixture && !PASSTHROUGH_FIXTURES.has(o.fixture))) return undefined;
+  if (!state.spec.objects.some(objectIsSolid)) return undefined;
   return { walkable: (p, r) => fixturesWalkable(state, p, r, floor) };
 }
 
@@ -1791,6 +1830,12 @@ const OUTDOORS = " outdoors";
  * Undirected graph of building interiors joined by the doors `accept` admits.
  * Each admitted door links the two building ids just inside its faces (OUTDOORS
  * for an exterior side), sampled a hair past the wall along its normal.
+ *
+ * LEAFLESS doorways (phase 5) need no special case here and must not get one:
+ * they are unlocked with `open` pinned at 1, so every `accept` in the file
+ * admits them — an open hole is always connected. The reveal RADIUS still
+ * applies (`visibleBuildings`), which is right: a doorless opening across the
+ * map reveals no more than a door somebody propped there.
  */
 function doorConnectivity(
   state: WorldState,
@@ -2072,6 +2117,17 @@ function tickDoors(state: WorldState, step: number, config: WorldEngineConfig): 
     if (s.kind !== "door") continue;
     const door = state.doors[s.id];
     if (!door) continue;
+    if (s.leaf === false) {
+      // NOTHING TO SWING (phase 5). The opening is pinned wide so every
+      // consumer that reads `open` — reveal, connectivity, the 2D leaf — sees
+      // the hole for what it is, and the swing easing below never runs on it.
+      // Pinned here rather than only at birth because a leaf can be BROKEN off
+      // a standing door mid-session, which leaves the old shut state behind.
+      door.open = 1;
+      door.held = false;
+      door.pinned = false;
+      continue;
+    }
     const cx = (s.a.x + s.b.x) / 2;
     const cy = (s.a.y + s.b.y) / 2;
     // The doorway's own axes: `u` runs ALONG the wall through the opening,
@@ -2125,10 +2181,22 @@ export function unlockDoor(state: WorldState, doorId: string): void {
   if (d) d.locked = false;
 }
 
-/** Re-lock a door (it will shut and stay solid until unlocked again). */
+/** Re-lock a door (it will shut and stay solid until unlocked again). A
+ *  LEAFLESS doorway (phase 5) REFUSES: there is no leaf to latch, and a lock
+ *  that made a bare opening solid would be a wall nobody built. */
 export function lockDoor(state: WorldState, doorId: string): void {
   const d = state.doors[doorId];
-  if (d) d.locked = true;
+  if (!d || doorSpecOf(state, doorId)?.leaf === false) return;
+  d.locked = true;
+}
+
+/** The door STRUCTURE behind a door id (the spec side of `state.doors`) —
+ *  undefined for an unknown id. The act paths need it to tell a hung leaf from
+ *  a bare opening; `DoorState` deliberately carries no copy of the flag (the
+ *  spec is the one truth, and it re-streams on every hang/break). */
+function doorSpecOf(state: WorldState, doorId: string): DoorSpec | undefined {
+  const s = (state.spec.structures ?? []).find((st) => st.kind === "door" && st.id === doorId);
+  return s?.kind === "door" ? s : undefined;
 }
 
 /**
@@ -2147,12 +2215,20 @@ export function lockDoor(state: WorldState, doorId: string): void {
  * Acts on the whole DOORWAY, not one leaf: a room boundary carries a door
  * structure from each side (`doorwayKey`), and collision blocks on either, so
  * opening half of one gap leaves it as solid as a wall.
+ *
+ * A LEAFLESS peer (phase 5) is skipped — there is nothing there to swing, and
+ * `tickDoors` would overwrite the pin next tick anyway. Skipping PER PEER
+ * rather than refusing the whole call keeps the mixed case honest: if one side
+ * of a boundary still has its leaf, acting on the doorway still swings it.
  */
 export function setDoorOpen(state: WorldState, doorId: string, open: boolean): void {
   if (!state.doors[doorId]) return;
+  const structures = state.spec.structures ?? [];
   for (const id of doorwayPeers(state, doorId)) {
     const d = state.doors[id];
     if (!d) continue;
+    const spec = structures.find((s) => s.kind === "door" && s.id === id);
+    if (spec?.kind === "door" && spec.leaf === false) continue;
     if (open && d.locked) continue;
     d.pinned = open;
     d.held = open;

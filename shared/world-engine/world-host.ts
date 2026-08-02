@@ -50,12 +50,12 @@ import { createDwellTracker } from "./dwell.js";
 import { probesOn } from "./perf-probes.js";
 import { speciesBodyRadius } from "./creatures/species.js";
 import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
-import { WORLD_MAX_NPCS, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type TransitPoint, type Vec2, type WorldSpec } from "./types.js";
+import { WORLD_MAX_NPCS, WORLD_MAX_ROOTED_NPCS, isRootedNpc, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type TransitPoint, type Vec2, type WorldSpec } from "./types.js";
 import type { WorldView } from "./world-view.js";
 import { createGazeInterpreter } from "./gaze-intent.js";
 import { approachAim, pickEntity } from "./interact.js";
 import { DEFAULT_WORLD_TUNABLES, type WorldTunables } from "./world-tunables.js";
-import { separateBodies } from "./interaction/quest/stand-points.js";
+import { clockDodgeAim, separateBodies } from "./interaction/quest/stand-points.js";
 import { tickFurnitureAnchor, isFurnitureAnchored } from "./interaction/quest/furniture-anchor.js";
 import {
   __npcStats,
@@ -141,8 +141,15 @@ export interface WorldHostDeps {
    *  whose cast is pure bodies (wander/errand controllers, no AI mind —
    *  e.g. grand-dream's villagers) may raise it: a body costs one
    *  steering tick per frame. Spec-authored NPCs stay schema-capped
-   *  regardless. */
+   *  regardless. Counts MOVERS only — rooted bodies have their own
+   *  ledger (maxRootedNpcs), so a forest never crowds out the cast. */
   maxNpcs?: number;
+  /** Concurrent cap for ROOTED runtime bodies (isRootedNpc — zero declared
+   *  pace: trees). Defaults to WORLD_MAX_ROOTED_NPCS, which is far larger
+   *  than maxNpcs because these bodies skip steering entirely: they cost an
+   *  avatar record, not a tick. Raise it for a world that stands a dense
+   *  forest as touchable entities. */
+  maxRootedNpcs?: number;
   /** Fires (on CHANGE of the in-range set) with the hosted NPCs the LOCAL player is
    *  within conversation range of, nearest first. The React conversation layer uses
    *  it to decide which NPC the player can talk to. Only meaningful when hostNpcs. */
@@ -215,6 +222,18 @@ export interface WorldHost {
    *  slews to FACE it. Pass the partner's LIVE position each frame. Pass null to
    *  leave. Driven by the game layer (e.g. dwell-to-talk). */
   setConversation(target: Vec2 | null): void;
+  /** WHO IS TALKING — the two AVATAR IDS holding a conversation, passed straight
+   *  through to the renderer as `RenderIntent.conversation` (the dollhouse
+   *  camera's conversation dolly reads it). Null clears.
+   *
+   *  DELIBERATELY SEPARATE from `setConversation`: that one is the LOCAL
+   *  player's steering/facing target and is a POINT (it also carries a container
+   *  board's standpoint, which is not a conversation at all). This is the pair
+   *  of bodies a camera must FRAME, so it must be identities the renderer can
+   *  re-read each frame, and it covers the NPC↔NPC exchanges the local player
+   *  isn't even part of. Pass it every frame the conversation stands; the
+   *  renderer adds its own hysteresis so a one-frame gap never drops the frame. */
+  setConversationPair(pair: { a: string; b: string } | null): void;
   /** POINT: transiently override the camera to swivel and FACE a world point
    *  (over-the-shoulder, at max yaw speed), overriding any conversation target
    *  for `holdMs` (default 2200), then revert. Used when an NPC gives the player
@@ -414,11 +433,17 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   const npcBodies = npcHosting || !!deps.replicaNpcs;
   const npcControllers: NpcController[] = [];
   const npcIds = new Set<string>();
+  /** ROOTED bodies (isRootedNpc — zero declared pace: trees). A subset of
+   *  `npcIds`: still avatars in every way that shows (drawn, hoverable,
+   *  proximity, containers), but they never steer and they spend their OWN
+   *  budget, so a forest can stand without crowding out the creature cast. */
+  const rootedIds = new Set<string>();
   if (npcBodies && spec.npcs?.length) {
     for (const npc of spec.npcs) {
       addLocalAvatar(state, npc.id, npc.x, npc.y, npc.facing ?? 0);
       if (npcHosting) npcControllers.push(createNpcController(npc));
       npcIds.add(npc.id);
+      if (isRootedNpc(npc)) rootedIds.add(npc.id);
     }
   }
   const npcRng = deps.npcRng ?? Math.random;
@@ -547,6 +572,13 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       // the spark becomes a decision-GUIDE rather than a driver, this is where
       // the controller starts consuming the gaze as a goal instead of yielding.)
       if (ctrl.npcId === driven()) continue;
+      // ROOTED (a tree — isRootedNpc): zero pace, so aim → detour → steer
+      // could only ever return it to the spot it is already standing on.
+      // The whole pipeline is waste, and skipping it is exactly what makes
+      // a forest of standing bodies affordable (what the separate rooted
+      // budget is priced on). It keeps everything that SHOWS: drawn,
+      // hoverable, in proximity, holding its container.
+      if (rootedIds.has(ctrl.npcId)) continue;
       const self = state.avatars[ctrl.npcId];
       if (!self) continue;
       // THIS body's collision radius — planner probes must match locomotion
@@ -611,6 +643,8 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         // controller refuse to aim at blocked ground (wander waypoints).
         walkable: walk,
         radius: bodyR,
+        // The clock anchor's pace derives from the body's own walk speed.
+        maxSpeed: (npcConfigs.get(ctrl.npcId) ?? WORLD_ENGINE_DEFAULTS).steerMaxSpeed,
         // Spread milling bodies out — don't roam onto a spot a neighbour holds.
         occupied,
       });
@@ -631,6 +665,19 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         // RENEW on every bent frame; NEVER clear on a straight one — the hold is
         // what carries one bypass through to the end (createDetourMemory).
         if (bent !== aim) detourSides.record(ctrl.npcId, sideOfBend(self, aim, bent), state.time);
+      }
+      // CLOCKED-WALKER DODGE (clock-path-dodging.md): a body riding a clock
+      // anchor walks AROUND bodies in its line — an aim bend scaled by the
+      // bubble's shrink rule (fading to pass-through at the edge), never a
+      // position push. Off tight legs only, walkability-gated like every aim.
+      const clock = ctrl.clockState();
+      if (bent && clock && !legTight) {
+        bent = clockDodgeAim(self, bent, allBodies, {
+          selfId: ctrl.npcId,
+          radiusOf: (id) => (npcConfigs.get(id) ?? WORLD_ENGINE_DEFAULTS).avatarRadius,
+          scale: clock.scale,
+          canStand: (p, r) => walk(p, r),
+        });
       }
       const _tSteer = _pn(); _npcPhase.detour += _tSteer - _tDet; // TEMP
       // DEBUG: snapshot the whole decision — the errand PLAN, the waypoint the
@@ -668,16 +715,26 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // OBSTACLE its neighbours part around; rooted `flora:` (trees a resident stands
     // at to harvest) are excluded entirely — they neither shove nor are shoved.
     const drivenNow = driven();
+    // CLOCKED walkers leave separation entirely (clock-path-dodging.md,
+    // pinned decision 5): they are never shoved — idle neighbours part
+    // around them (the immovable-obstacle treatment the spark body gets),
+    // and clocked-vs-clocked pairs resolve through the dodge aim above.
+    const clockedIds = new Set<string>();
+    for (const c of npcControllers) if (c.clockState()) clockedIds.add(c.npcId);
     separateBodies(
       // A body held by the furniture anchor (asleep on its bed, sat on its
       // chair) is excluded ENTIRELY: it must not be pushed off the fixture, and
       // it blocks the room no more than the fixture it sits on already does — so
-      // it neither shoves nor is shoved. Rooted `flora:` are excluded the same way.
-      allBodies.filter((b) => !b.id.startsWith("flora:") && !isFurnitureAnchored(b)),
+      // it neither shoves nor is shoved. ROOTED bodies are excluded the same
+      // way — by FUNCTION (isRootedNpc: a thing that cannot walk cannot be
+      // shoved aside) with the older `flora:` id rule kept as a floor.
+      allBodies.filter(
+        (b) => !b.id.startsWith("flora:") && !rootedIds.has(b.id) && !isFurnitureAnchored(b),
+      ),
       dt,
       {
         radiusOf: (id) => (npcConfigs.get(id) ?? WORLD_ENGINE_DEFAULTS).avatarRadius,
-        movable: (id) => id !== drivenNow,
+        movable: (id) => id !== drivenNow && !clockedIds.has(id),
         canStand: (p, r) =>
           structuresWalkable(state, p, r, p.floor) &&
           fixturesWalkable(state, p, r, p.floor) &&
@@ -770,6 +827,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // Conversation: when set, the avatar follows this point (to talking distance,
   // facing it) and the camera faces it. Updated to the partner's live position.
   let conversationTarget: Vec2 | null = null;
+  // WHO IS TALKING (dollhouse conversation dolly): the two body ids the game
+  // layer says are in a conversation, republished verbatim on the render intent.
+  // Ids survive a REBASE untouched — unlike `conversationTarget` below, which is
+  // a point and has to be re-mapped — which is half the reason the seam is
+  // identities rather than positions.
+  let conversationPair: { a: string; b: string } | null = null;
   // POINT override (NPC directions): while the hold counts down, the camera
   // faces this point instead of the conversation target, over-the-shoulder, at
   // max yaw. Counted down by dt each frame (no wall-clock dependency).
@@ -1104,6 +1167,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       interactId,
       faceTarget,
       shoulder: wantShoulder,
+      conversation: conversationPair,
       // The spark cursor tracks the genuine gaze fixation (`effFix`) + what it
       // rests on (`snap`), NOT `interactId`/`aim` — so it never sticks to the
       // carried item or the conversation partner. Its bloom is the dwell-select
@@ -1169,6 +1233,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     setConversation(target) {
       conversationTarget = target;
+    },
+    setConversationPair(pair) {
+      conversationPair = pair;
     },
     pointAt(target, holdMs = 2200) {
       pointTarget = { x: target.x, y: target.y };
@@ -1237,7 +1304,15 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     addNpc(npc) {
       if (!npcBodies) return false; // neither hosting nor replicating
       if (npcIds.has(npc.id) || state.avatars[npc.id]) return false;
-      if (npcIds.size >= (deps.maxNpcs ?? WORLD_MAX_NPCS)) return false; // spec cap unless the host raised it
+      // TWO LEDGERS, because the two cost wildly different things: a mover
+      // spends a steering tick every frame, a rooted body spends none. A
+      // forest must never eat the creature budget (a capped tree used to
+      // fail SILENTLY, and the streamer had already hidden its scenery).
+      const rooted = isRootedNpc(npc);
+      const cap = rooted
+        ? (deps.maxRootedNpcs ?? WORLD_MAX_ROOTED_NPCS)
+        : (deps.maxNpcs ?? WORLD_MAX_NPCS);
+      if ((rooted ? rootedIds.size : npcIds.size - rootedIds.size) >= cap) return false;
       addLocalAvatar(state, npc.id, npc.x, npc.y, npc.facing ?? 0);
       if (npcHosting) {
         // Ours to drive AND to stream (replicas get neither — the owner's
@@ -1248,6 +1323,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
         ownedAvatarIds.push(npc.id); // rides the outbound avatar stream like spec NPCs
       }
       npcIds.add(npc.id);
+      if (rooted) rootedIds.add(npc.id);
       npcRadii.set(npc.id, npc.behavior?.conversationRadius ?? DEFAULT_CONVERSATION_RADIUS);
       npcConfig(npc);
       lastProximityKey = "\0"; // cast changed — re-emit proximity next frame
@@ -1259,6 +1335,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     removeNpc(npcId) {
       if (!npcIds.has(npcId)) return false;
       npcIds.delete(npcId);
+      rootedIds.delete(npcId); // frees a slot in whichever ledger it spent
       npcById.delete(npcId);
       const ci = npcControllers.findIndex((c) => c.npcId === npcId);
       if (ci >= 0) npcControllers.splice(ci, 1);

@@ -35,6 +35,7 @@
  */
 
 import { parseWorldScaleSpec, type WorldScaleSpec } from "../scale.js";
+import { parseTransportSpec, type TransportSpec } from "../freight.js";
 import { parseWorldCultureSpec, type WorldCultureSpec } from "../culture.js";
 
 /** A capability module: owns one manifest section by key. */
@@ -149,6 +150,12 @@ export interface GameSettings {
    *  planets. Compression is always a declaration, never a default —
    *  resolve with scale.ts `resolveWorldScale`. */
   scale: WorldScaleSpec | null;
+  /** TRANSPORT ASYMMETRY (`transport` — resources-and-trade.md §①): how much
+   *  farther one hauling cost carries a good by water than by land
+   *  (downstream/upstream multipliers; land is the unit). Null = the
+   *  Earth-premodern anchor ratios. Shape gated by freight.ts; resolve with
+   *  `resolveTransportAsymmetry`. */
+  transport: TransportSpec | null;
   /** DEFINED ENTITIES (`entities`): hand-authored individuals the world must
    *  contain, at any scope. Per entity TYPE, `mode` picks the composition:
    *    "some" — the defined entities are ADDED to (or overlay the first of)
@@ -230,8 +237,8 @@ function fail(path: string, msg: string): never {
 export function parseGameSettings(raw: unknown, path: string): GameSettings {
   if (!isObj(raw)) fail(path, "expected an object");
   for (const k of Object.keys(raw)) {
-    if (!["scope", "world", "initial_focus", "avatar", "avatar_species", "can_fly", "creative_mode", "entities", "scale", "culture"].includes(k)) {
-      fail(`${path}.${k}`, "unknown field (allowed: scope, world, initial_focus, avatar, avatar_species, can_fly, creative_mode, entities, scale, culture)");
+    if (!["scope", "world", "initial_focus", "avatar", "avatar_species", "can_fly", "creative_mode", "entities", "scale", "transport", "culture"].includes(k)) {
+      fail(`${path}.${k}`, "unknown field (allowed: scope, world, initial_focus, avatar, avatar_species, can_fly, creative_mode, entities, scale, transport, culture)");
     }
   }
 
@@ -332,6 +339,13 @@ export function parseGameSettings(raw: unknown, path: string): GameSettings {
     scale = parseWorldScaleSpec(raw.scale, `${path}.scale`);
   }
 
+  // TRANSPORT ASYMMETRY — shape gated by freight.ts (the owner of the
+  // vocabulary); absent or null = the Earth-premodern anchor ratios.
+  let transport: TransportSpec | null = null;
+  if ("transport" in raw && raw.transport !== null) {
+    transport = parseTransportSpec(raw.transport, `${path}.transport`);
+  }
+
   // CULTURAL LAW — shape gated by culture.ts (the owner of the vocabulary);
   // absent or null = no universal taboos.
   let culture: WorldCultureSpec | null = null;
@@ -339,7 +353,7 @@ export function parseGameSettings(raw: unknown, path: string): GameSettings {
     culture = parseWorldCultureSpec(raw.culture, `${path}.culture`);
   }
 
-  return { scope: scope as GameScope, world: raw.world, initialFocus, avatar, avatarSpecies, canFly, creativeMode, entities, scale, culture };
+  return { scope: scope as GameScope, world: raw.world, initialFocus, avatar, avatarSpecies, canFly, creativeMode, entities, scale, transport, culture };
 }
 
 /**

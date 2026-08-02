@@ -11,7 +11,11 @@
 // (the descend seam's law).
 
 import type { BuiltPlanet } from "./planet-game.js";
-import type { FoundingSite } from "../kernel/cells/index.js";
+import {
+  classifyNode, constraintCeiling, markShadows,
+  type CeilingOpts, type CeilingReading, type FoundingSite, type NodeReading, type NodeTypingOpts,
+} from "../kernel/cells/index.js";
+import { hinterlandJobs, cityLicense, type CityLicense } from "../kernel/civ/jobs.js";
 
 export interface PlanetCity {
   /** The substrate cell the city sits on — its identity AND its town seed. */
@@ -20,12 +24,26 @@ export interface PlanetCity {
   name: string;
   /** Unit direction from the planet's center (topo.pos3). */
   dir: readonly [number, number, number];
-  /** Σ people in the founding box — the crowd the founding harvested. */
+  /** Σ forage in the founding box — the crowd the founding harvested. */
   density: number;
   /** The radius-3 charter box the town is founded from (descend's shape). */
   charter: { farmland: number; ore_access: number; timberland: number };
   /** Founding population (descend's souls-per-grid-person clamp). */
   startPop: number;
+  /** THE NODE TYPE (resources-and-trade.md §②): what this geography makes
+   *  the settlement — its job-description seed, with the printed sentence
+   *  and the water-first veto. Geography chooses, spec marks. */
+  node: NodeReading;
+  /** THE DERIVED CEILING (§④, opt-in via `ceilings`): the min of the
+   *  site's constraints, the §② water veto turned into a real waystation
+   *  cap, and the founding population clamped under it. */
+  cap?: CeilingReading;
+  /** GATE C at founding (settlement-emergence §5, opt-in via
+   *  `ceilings.jobs`): the site's hinterland jobs read off its own node
+   *  taxonomy — terrain only at this tier; the graph and the refineries
+   *  live where settlements actually run (tri). No job ⇒ the founding
+   *  crowd caps at the village line too. */
+  license?: CityLicense;
 }
 
 export interface PlanetCityOpts {
@@ -35,6 +53,22 @@ export interface PlanetCityOpts {
   /** Minimum farmland in the charter box — a granary-less mining camp
    *  honestly starves (we watched it happen), so it never becomes a city. */
   minFarmland?: number;
+  /** Node-typing thresholds (defaults = the substrate's own lines). */
+  nodeTyping?: NodeTypingOpts;
+  /** Raw-bulk market reach in CELLS (node-typing rawBulkReachCells) —
+   *  when present, the SHADOW pass runs over the founded set: surplus
+   *  country with no other settlement within reach becomes a `shadow`
+   *  node (distance is the reason refining exists, §③). Absent = skipped
+   *  (the tier doesn't know its cell pitch). */
+  rawReachCells?: number;
+  /** CONSTRAINT CEILINGS (§④) — when present, every founded city carries
+   *  its derived `cap` (min-of-constraints over its supply zone; the §②
+   *  water veto caps a dry site at a waystation) and its startPop is
+   *  clamped under the ceiling. `freshWater` comes from the node reading
+   *  — never declare it here. `jobs` adds Gate C (§5): a site whose node
+   *  taxonomy holds no hinterland job founds at most `villageHeads`
+   *  souls. Absent = the shipped clamp, bit for bit. */
+  ceilings?: Omit<CeilingOpts, "freshWater"> & { jobs?: { villageHeads: number } };
 }
 
 const mulberry32 = (seed: number) => (): number => {
@@ -77,9 +111,17 @@ function charterBox(grid: SubstrateGrid, cell: number) {
   return { farmland: box("fertility"), ore_access: box("ore"), timberland: box("plant") };
 }
 
-/** What the founding helper reads off a substrate — a CellGrid satisfies it. */
+/** What the founding helper reads off a substrate — a CellGrid satisfies it.
+ *  `n`/`neighbours`/`maxDegree`/`dist2` feed the node classifier; thinner
+ *  grids degrade gracefully (node-typing.ts NodeGrid). */
 export interface SubstrateGrid {
-  topo: { disk(i: number, r: number, visit: (cell: number, d: number) => void): void };
+  topo: {
+    n?: number;
+    disk(i: number, r: number, visit: (cell: number, d: number) => void): void;
+    neighbours?(i: number, out: number[]): number;
+    maxDegree?: number;
+    dist2?(a: number, b: number): number;
+  };
   fields: Record<string, ArrayLike<number>>;
 }
 
@@ -105,6 +147,7 @@ export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
   const cellKey = opts.cellKey ?? ((c: number) => c);
 
   const cities: PlanetCity[] = [];
+  const siteCells: number[] = []; // SITE cell per accepted city (typing/distances)
   const taken = new Set<string>();
   for (const site of opts.sites) {
     if (cities.length >= maxCities) break;
@@ -117,16 +160,50 @@ export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
     if (taken.has(name)) name = `${name} ${cities.length + 1}`;
     taken.add(name);
 
+    // Geography chooses, spec marks: the job-description seed, read off
+    // the SITE's cell (typing keys on terrain, not the host key space).
+    const node = classifyNode(opts.grid, site.cell, opts.nodeTyping);
+    // The site's crowd founds the town (a few souls per grid person —
+    // clamped so a thin camp still functions and a metropolis stays sane).
+    let startPop = Math.max(40, Math.min(2000, Math.round(site.density * 5)));
+    // §④: the derived ceiling — the veto is the node's own freshWater
+    // reading, and nobody founds above what the constraints feed. With
+    // `jobs`, Gate C mins in: no hinterland job in the taxonomy ⇒ the
+    // crowd caps at the village line, whatever the land could feed.
+    let cap: CeilingReading | undefined;
+    let license: CityLicense | undefined;
+    if (opts.ceilings) {
+      const { jobs, ...ceilingOpts } = opts.ceilings;
+      cap = constraintCeiling(opts.grid, site.cell, { ...ceilingOpts, freshWater: node.freshWater });
+      let limit = cap.ceiling;
+      if (jobs) {
+        license = cityLicense(hinterlandJobs({ node }), jobs.villageHeads);
+        limit = Math.min(limit, license.cap);
+      }
+      startPop = Math.max(1, Math.min(startPop, limit));
+    }
+
     cities.push({
       cell: key,
       name,
       dir: opts.dirOf(site.cell),
       density: site.density,
       charter,
-      // The site's crowd founds the town (a few souls per grid person —
-      // clamped so a thin camp still functions and a metropolis stays sane).
-      startPop: Math.max(40, Math.min(2000, Math.round(site.density * 5))),
+      startPop,
+      node,
+      ...(cap ? { cap } : {}),
+      ...(license ? { license } : {}),
     });
+    siteCells.push(site.cell);
+  }
+  // The shadow pass wants SITE cells for distances; cities carry host KEYS.
+  // Pair them up, mark, done — the readings are shared references.
+  if (opts.rawReachCells !== undefined && opts.grid.topo.dist2) {
+    markShadows(
+      opts.grid,
+      cities.map((c, i) => ({ cell: siteCells[i], node: c.node })),
+      opts.rawReachCells,
+    );
   }
   return cities;
 }

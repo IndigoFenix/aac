@@ -192,11 +192,11 @@ describe("region refinement — tier 1 of the hierarchical substrate", () => {
     }
   });
 
-  it("crowd budget (density semantics): a parent slice's MEAN people matches the parent", () => {
+  it("crowd budget (density semantics): a parent slice's MEAN forage matches the parent", () => {
     const { frame } = refined;
     const R = built.spec.radius;
-    const childPeople = refined.prep.grid.fields.people;
-    const parentPeople = built.grid.fields.people;
+    const childPeople = refined.prep.grid.fields.forage;
+    const parentPeople = built.grid.fields.forage;
     // Group child cells by containing parent; each slice's mean should be
     // the parent's per-cell value (the parent decides how crowded its land
     // is; the child's river solve decides where the crowds pool).

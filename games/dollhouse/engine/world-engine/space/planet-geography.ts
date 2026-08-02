@@ -170,6 +170,7 @@ export function buildPlanetGeography(
     creativeMode: false,
     entities: null,
     scale: null,
+    transport: null,
     culture: null,
   };
   return { built: buildPlanetWorld(game, `body:${resolved.body.id}`), radiusM, hasOcean };

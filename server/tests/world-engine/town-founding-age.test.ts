@@ -13,14 +13,30 @@ import { buildTownScope, parseTownWorld } from "@shared/world-engine/interaction
 import { parseGameSettings } from "@shared/world-engine/kernel/manifest.js";
 import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan.js";
 import { createTownDeltas, foundingOptions } from "@shared/world-engine/kernel/town/construction.js";
-import { resolveStructure, spendCosts } from "@shared/world-engine/kernel/town/structures.js";
+import {
+  resolveStructure,
+  spendCostsChain,
+  structureCosts,
+} from "@shared/world-engine/kernel/town/structures.js";
+import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import { buildWilderness } from "@shared/world-engine/interaction/quest/wilderness.js";
 import { FOOD_DAY_SEC } from "@shared/world-engine/kernel/town/goods.js";
+
+/** Raw wood that covers ONE house, milled at the chain's 2:1 ratio. Derived
+ *  from the catalogue (phase 6 — the block bill comes off the footprint), so a
+ *  settlers' supply box keeps meaning "enough for the first building" however
+ *  the bill or the bay knobs are tuned. */
+const HOUSE_WOOD =
+  structureCosts(resolveStructure(TOWN_PLAY_STRUCTURES, "house")!)[BLOCK_GLYPH]! * 2;
+/** The declared supply box: one house, plus a few units left over so the
+ *  post-spend assertion reads a REMAINDER. Spending a stack to exactly zero
+ *  deletes its key (transfer.ts), and `undefined` is not the fact under test. */
+const SUPPLY_WOOD = HOUSE_WOOD + 4;
 
 describe("an age-0 town with population: settlers, no buildings", () => {
   const config = {
     seed: 11, days: 0, questCount: 0, key: "frontier",
-    startPop: 5, stock: { wood: 14, stone: 6 },
+    startPop: 5, stock: { wood: SUPPLY_WOOD, stone: 6 },
   };
   const play = buildTownPlay(config);
 
@@ -40,7 +56,7 @@ describe("an age-0 town with population: settlers, no buildings", () => {
   });
 
   it("seeds the builder's yard with EXACTLY the declared supply box", () => {
-    expect(play.deltas.stock).toEqual({ wood: 14, stone: 6 });
+    expect(play.deltas.stock).toEqual({ wood: SUPPLY_WOOD, stone: 6 });
   });
 
   it("still stands as a live session (stage tolerates the empty town)", () => {
@@ -66,9 +82,11 @@ describe("an age-0 town with population: settlers, no buildings", () => {
       claimedSlots: new Set<number>(),
     })[0];
     expect(c).toBeDefined();
+    // Phase 3: the bill is BLOCKS and the declared box is raw wood — the
+    // chain spend mills implicitly at the 2:1 ratio.
     const stock = { ...play.deltas.stock };
-    expect(spendCosts(spec, stock)).toBe(true);
-    expect(stock.wood).toBe(14 - (spec.costs.wood ?? 0));
+    expect(spendCostsChain(spec, stock)).toBe(true);
+    expect(stock.wood).toBe(SUPPLY_WOOD - structureCosts(spec)[BLOCK_GLYPH]! * 2);
   });
 });
 

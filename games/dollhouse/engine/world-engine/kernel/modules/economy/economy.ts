@@ -41,6 +41,10 @@
 import type {
   AllocateSpec, Condition, FlowNetSpec, ProcessSpec, RoadSpec, RuleSpec, SumSpec, SystemSpec, VarSpec,
 } from "../../cells/spec";
+import {
+  freightOf, refinerySiting,
+  type Freight, type NamedFreight, type TransitBehavior,
+} from "../../../freight";
 
 /* --------------------- types the compiler emits into --------------------- */
 
@@ -171,6 +175,13 @@ export interface CommodityDef {
     demand?: string;
     /** Stockpile receiving overproduction drift. */
     drift?: string;
+    /** The drift stockpile FEEDS shortfalls (FlowNetSpec.feed — the
+     *  granary feedback, settlement-emergence.md §6): in a lean spell the
+     *  stock tops up `{key}_got` until it runs dry, so the town eats what
+     *  its granary pays. Without it a shortage drains the stock while the
+     *  fill still starves — the pre-seasonal inconsistency, kept as the
+     *  default for byte-stability. */
+    driftFeeds?: boolean;
     /** The drift exists only under construction (the granary case —
      *  the funding stock IS the construction system's). */
     driftRequiresConstruction?: boolean;
@@ -184,6 +195,15 @@ export interface CommodityDef {
    *  fed. Policy is data and it matters (smiths-first vs households-
    *  first decides whether the tool chain lives). */
   allocate?: Array<{ share: string; demand: string }>;
+  /** TRANSPORT ATTRIBUTES (resources-and-trade.md §① — freight.ts owns the
+   *  vocabulary): how this commodity survives the road, and the pile
+   *  (`keepDays` — storage half-life in real-anchor days, the spoilage
+   *  axis Gate A and the granary read). Absent fields fall back to the
+   *  freight registry's row for this key, then to the durable staple
+   *  default — so every commodity always resolves to a full Freight
+   *  (`CompiledEconomy.freights`). NOTE `transport` above is the FLOW-NET
+   *  block (ship it on the roads); this is the good's physics. */
+  freight?: { valueDensity?: number; transit?: TransitBehavior; keepDays?: number };
   /** Street projection — household goods only. Presence makes this a
    *  good people shop for (a GoodSpec + an errand role + a house box). */
   street?: CommodityStreetDef;
@@ -222,9 +242,24 @@ export interface BuildingDef {
   sells?: string[];
   /** Sells over a stocked SHELF (dawn-stocked counter) vs at the gate. */
   shelved?: boolean;
+  /** REFINERY DECLARATION (resources-and-trade.md §③): this building IS
+   *  the refine step `from` → `into` (both declared commodities, and the
+   *  refined must out-value the raw — the refinement law, checked at
+   *  compile). Declaring it makes the build rule gate on
+   *  `{key}_license` — a per-settlement scalar, INITIAL 1 (licensed
+   *  until a host that runs the transport math revokes: distance is the
+   *  reason refining exists, but absent the geography every town may
+   *  still refine, byte-stable with the pre-③ worlds). freight.ts
+   *  `refineryLicense` is the verdict; kernel/civ/tri.ts
+   *  `refineLicensing` is the live writer. */
+  refines?: { from: string; into: string };
   /** Placement lean: a substrate FIELD name (fertility/ore/plant), or
-   *  null — takes an outskirt street tip whichever way it points. */
-  leansToward: string | null;
+   *  null — takes an outskirt street tip whichever way it points. May be
+   *  OMITTED only on a `refines` building: the compiler derives it from
+   *  the siting physics (freight.ts refinerySiting — a fragile input
+   *  pulls the works to the input's producer; otherwise the market,
+   *  which keeps the plain null lean). */
+  leansToward?: string | null;
   /** Most footprints the town plan draws (landmarks, not the ledger). */
   mapCap: number;
   /** District class this building files under (city fills / zoning ③).
@@ -283,13 +318,14 @@ export interface SpeciesDef {
    *  the primary sapient takes the remainder) — herds arrive with
    *  their founders and grow into the pens that get built. */
   foundingShare?: number;
-  /** Sapient only: a WILD substrate population of this species — an
-   *  animal-model field (logistic growth toward habitat-set capacity,
-   *  the `people` pattern) that pools where ITS land is good, gates
-   *  foundings, and is HARVESTED into founding crowds. `habitat` names
-   *  an existing substrate field (fertility, ore, lure, plant...);
-   *  capacity = habitat × scale (default 2). Humans ride the implicit
-   *  `people`/`lure` field the base substrate already carries. */
+  /** Sapient only: this species' WILD presence on the substrate — a
+   *  forage-capacity field (logistic recovery toward habitat-set
+   *  capacity, the `forage` pattern) that pools where ITS land is good,
+   *  gates foundings, and is GATHERED into founding bands
+   *  (kernel/civ/bands.ts). `habitat` names an existing substrate field
+   *  (fertility, ore, lure, plant...); capacity = habitat × scale
+   *  (default 2). Humans ride the implicit `forage`/`lure` field the
+   *  base substrate already carries. */
   wild?: { field: string; habitat: string; scale?: number };
   /** Settlement scalar carrying the species headcount (traitInputs
    *  count mode for PopuSim species; the LIVE population var itself
@@ -337,7 +373,7 @@ export const HUMAN_SPECIES: SpeciesDef = {
   // The base substrate already carries this field (lure = max(fertility,
   // ore) — the Sugarscape landscape); declaring it here just makes the
   // human crowd one species among the wilds.
-  wild: { field: "people", habitat: "lure", scale: 2 },
+  wild: { field: "forage", habitat: "lure", scale: 2 },
 };
 
 export interface CompiledEconomy {
@@ -363,6 +399,20 @@ export interface CompiledEconomy {
    *  order) — the city view's Supply bars come from HERE, so a modded
    *  commodity's bar appears the moment its ledger does. */
   fills: Array<{ good: string; got: string; need: string }>;
+  /** Every commodity's RESOLVED transport attributes (declared `freight`
+   *  block over the freight-registry row over the durable default) —
+   *  what refinery emergence (§③), derived caps (§④) and partner trade
+   *  (§⑤) read. Registration order. */
+  freights: Array<{ good: string } & Freight>;
+  /** REFINERY EMERGENCE (§③): every building declaring `refines`, with
+   *  its license scalar (the build-rule gate — a var only under
+   *  construction; initial 1, revoked by a host running the transport
+   *  math) and its derived in-town siting, sentence printed
+   *  (freight.ts refinerySiting). Registration order. */
+  refineries: Array<{
+    building: string; from: string; into: string;
+    license: string; siting: "input" | "market"; sentence: string;
+  }>;
   /** The species registry — implicit human first, then declared. */
   species: SpeciesDef[];
   /** PopuSim trait defs for the sapient/domestic species (human first,
@@ -387,6 +437,18 @@ export interface CompiledEconomy {
 export interface CompileOpts {
   /** Emit the funding stock, cap vars/processes and build rules. */
   construction?: boolean;
+  /** GATE B (settlement-emergence.md §5 — SPECIALIZE): industry gates on
+   *  SURPLUS, not size. Every industry-tier build rule additionally
+   *  requires the subsistence fill to be whole
+   *  (`{diet}_got ≥ {diet}_need × floor`) — someone may only eat without
+   *  producing food where the producers actually cover everyone, so a
+   *  big HUNGRY village stops spawning smithies. `good` defaults to the
+   *  primary sapient species' declared diet; `floor` to 1. The transfer-
+   *  channel half of the gate is satisfied by construction: a commodity
+   *  that ships (transport) IS the channel, and the gate refuses a diet
+   *  that doesn't. Opt-in — absent, the shipped base-at-cap gates stand
+   *  alone, byte-stable. `true` = all defaults. */
+  industryAfterSurplus?: boolean | { good?: string; floor?: number };
   /** Scalars the HOST world declares outside the economy (the compiler
    *  checks every reference resolves — a typo'd scalar name fails at
    *  compile with the def's name, not at runtime as a silent 0). */
@@ -394,9 +456,13 @@ export interface CompileOpts {
 }
 
 /** The tri worlds' structural vars — population written by the
- *  coupling, the charter attrs tri.ts samples, the unrest input. */
+ *  coupling, the charter attrs tri.ts samples, the unrest input, and
+ *  the DERIVED ceiling anchor (resources-and-trade.md §④: tri.ts
+ *  `ceilings` writes it; a species' `vitals.capacity` may bind to it —
+ *  but only in worlds that declare that block, or the capacity reads a
+ *  never-written 0 and stops births outright). */
 export const STRUCTURAL_SCALARS: readonly string[] = [
-  "population", "farmland", "ore_access", "timberland", "pasture", "unrest",
+  "population", "farmland", "ore_access", "timberland", "pasture", "unrest", "pop_ceiling",
 ];
 
 /** Merge docs by key — a later doc's commodity/building/stockpile with
@@ -474,10 +540,41 @@ function validateDocs(docs: EconomyDoc[], doc: Required<EconomyDoc>): void {
     if (b.shelved && !(b.sells ?? []).length) {
       fail(`building "${b.key}" is shelved but sells nothing`);
     }
+    if (b.refines) {
+      for (const [side, good] of [["from", b.refines.from], ["into", b.refines.into]] as const) {
+        if (!commodities.has(good)) {
+          fail(`building "${b.key}" refines ${side} unknown commodity "${good}"`);
+        }
+      }
+      // The refinement law at the content seam: a refinery that
+      // concentrates no value would never be worth the work — and could
+      // never earn a license (the refined form reaches no farther).
+      const vd = (key: string): number => {
+        const c = doc.commodities.find(x => x.key === key)!;
+        return c.freight?.valueDensity ?? freightOf(key).valueDensity;
+      };
+      const rawVd = vd(b.refines.from);
+      const refVd = vd(b.refines.into);
+      if (!(refVd > rawVd)) {
+        fail(
+          `building "${b.key}" refines "${b.refines.from}" (worth ${rawVd}) into ` +
+          `"${b.refines.into}" (worth ${refVd}) — refinement must multiply value`,
+        );
+      }
+    }
   }
   for (const c of doc.commodities) {
     if (c.transport?.drift && !stockpiles.has(c.transport.drift)) {
       fail(`commodity "${c.key}" drifts into unknown stockpile "${c.transport.drift}"`);
+    }
+    if (c.freight?.valueDensity !== undefined && !(c.freight.valueDensity > 0)) {
+      fail(`commodity "${c.key}" freight valueDensity must be positive (rations-worth per bulk unit)`);
+    }
+    if (c.freight?.keepDays !== undefined && !(c.freight.keepDays > 0)) {
+      fail(`commodity "${c.key}" freight keepDays must be positive (storage half-life in real-anchor days)`);
+    }
+    if (c.transport?.driftFeeds && !c.transport.drift) {
+      fail(`commodity "${c.key}" declares driftFeeds with no drift stockpile to feed from`);
     }
     for (const p of c.street?.producers ?? []) {
       if (!buildings.has(p) && p !== "hall" && p !== "market") {
@@ -581,7 +678,14 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
     if (s.construction && !construction) continue;
     vars.push(v(s.key, s.max));
   }
-  if (construction) for (const b of doc.buildings) vars.push(v(`${b.key}_cap`, 40));
+  if (construction) {
+    for (const b of doc.buildings) {
+      vars.push(v(`${b.key}_cap`, 40));
+      // The refinery license (§③): per-settlement, INITIAL 1 — licensed
+      // until a host running the transport math writes the honest 0/1.
+      if (b.refines) vars.push({ name: `${b.key}_license`, min: 0, max: 1, initial: 1, int: true });
+    }
+  }
 
   // ---- build rules (the tier/stagger laws) ----
   const rules: RuleSpec[] = [];
@@ -592,6 +696,30 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
     const baseDone: Condition[] = base.map(b => ({
       cmp: ">=" as const, left: { scalar: b.countScalar }, right: { scalar: `${b.key}_cap` },
     }));
+    // GATE B — INDUSTRY AFTER SURPLUS: the diet fill must be whole before
+    // anyone eats without producing food (the compiler writes this gate
+    // too; a big hungry village stops spawning smithies).
+    if (opts.industryAfterSurplus) {
+      const cfg = opts.industryAfterSurplus === true ? {} : opts.industryAfterSurplus;
+      const primary = doc.species.find(s => s.role === "sapient");
+      const good = cfg.good ?? primary?.vitals?.diet ?? "food";
+      const c = doc.commodities.find(x => x.key === good);
+      if (!c) {
+        throw new Error(`economy: industryAfterSurplus diet "${good}" is not a declared commodity`);
+      }
+      if (!c.transport) {
+        throw new Error(
+          `economy: industryAfterSurplus diet "${good}" does not ship (no transport) — ` +
+          `the fill ledger IS the transfer channel the gate reads`,
+        );
+      }
+      const floor = cfg.floor ?? 1;
+      baseDone.push({
+        cmp: ">=" as const,
+        left: { scalar: `${good}_got` },
+        right: { scalar: c.transport.demand ?? `${good}_need`, ...(floor !== 1 ? { scale: floor } : {}) },
+      });
+    }
     const emit = (tier: BuildingDef[], gates: Condition[]): void => {
       let cum = 0;
       for (const b of tier) {
@@ -602,6 +730,12 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
           when: {
             all: [
               ...gates,
+              // The WHY-HERE gate (§③): a refinery rises only where the
+              // transport math licenses it. Initial 1 ⇒ inert until a
+              // host writes the honest verdict per settlement.
+              ...(b.refines
+                ? [{ cmp: ">=" as const, left: { scalar: `${b.key}_license` }, right: { const: 1 } }]
+                : []),
               { cmp: ">=" as const, left: { scalar: funding.stockpile }, right: { const: cum } },
               ...extra.map(x => ({ cmp: ">=" as const, left: { scalar: x.stockpile }, right: { const: x.amount } })),
               { cmp: "<" as const, left: { scalar: b.countScalar }, right: { scalar: `${b.key}_cap` } },
@@ -658,7 +792,8 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
     const t = c.transport;
     if (!t) continue;
     const id = t.id ?? c.key;
-    const drift = t.drift && (!t.driftRequiresConstruction || construction) ? { drift: t.drift } : {};
+    const hasDrift = t.drift && (!t.driftRequiresConstruction || construction);
+    const drift = hasDrift ? { drift: t.drift, ...(t.driftFeeds ? { feed: true } : {}) } : {};
     flownets.push({
       id, source: `${c.key}_out`, demand: t.demand ?? `${c.key}_need`,
       by: "road", satisfied: `${c.key}_got`, ...drift,
@@ -765,13 +900,55 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
     });
   }
 
+  // ---- freights, refineries, works (§③) ----
+  // Declared block over registry row over durable default — field-wise, so
+  // a doc may reprice a good without restating how it travels.
+  const freights: CompiledEconomy["freights"] = doc.commodities.map(c => {
+    const base = freightOf(c.key);
+    const keepDays = c.freight?.keepDays ?? base.keepDays;
+    return {
+      good: c.key,
+      valueDensity: c.freight?.valueDensity ?? base.valueDensity,
+      transit: c.freight?.transit ?? base.transit,
+      // Left absent when nobody declared it, so keepDaysOf falls to the
+      // RESOLVED transit class's default (a doc that flips a good's
+      // transit gets the matching keep unless it says otherwise).
+      ...(keepDays !== undefined ? { keepDays } : {}),
+    };
+  });
+  const freightRow = (good: string): NamedFreight => freights.find(f => f.good === good)!;
+  const refineries: CompiledEconomy["refineries"] = doc.buildings
+    .filter(b => b.refines)
+    .map(b => {
+      const siting = refinerySiting(freightRow(b.refines!.from), freightRow(b.refines!.into));
+      return {
+        building: b.key, from: b.refines!.from, into: b.refines!.into,
+        license: `${b.key}_license`, siting: siting.at, sentence: siting.sentence,
+      };
+    });
+  // A refinery whose author left `leansToward` unsaid gets the lean the
+  // siting physics derives: a fragile input pulls the works to where the
+  // input comes from (its producer's own lean — the smelter's ground is
+  // the fuel's ground); the market case keeps the plain null lean. Rows
+  // with an authored lean (including null) pass through UNTOUCHED.
+  const works: BuildingDef[] = doc.buildings.map(b => {
+    if (!b.refines || b.leansToward !== undefined) return b;
+    const at = refineries.find(r => r.building === b.key)!.siting;
+    const producer = at === "input"
+      ? doc.buildings.find(p => p.processes.some(pr => pr.output === `${b.refines!.from}_out`))
+      : undefined;
+    return { ...b, leansToward: producer?.leansToward ?? null };
+  });
+
   const eco: CompiledEconomy = {
     vars, rules, processes, sums, allocates, flownets, roads,
-    demandInputs, traitDemands, goods, works: doc.buildings,
+    demandInputs, traitDemands, goods, works,
     stockpiles: doc.stockpiles.filter(s => !s.construction || construction),
     fills: doc.commodities
       .filter(c => c.transport)
       .map(c => ({ good: c.key, got: `${c.key}_got`, need: c.transport!.demand ?? `${c.key}_need` })),
+    freights,
+    refineries,
     species: doc.species, speciesTraits, vitals: vitalsOut, civicTraits, traitInputs,
     numeraire: doc.numeraire || null,
   };
@@ -781,9 +958,9 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
 
 /** Extend a substrate SystemSpec with the WILD FIELDS of the sapient
  *  species that declare one — each an int var plus one logistic
- *  `toward` rule (the `people` pattern: capacity = habitat × scale,
+ *  `toward` rule (the `forage` pattern: capacity = habitat × scale,
  *  rate 0.25 — the minimum that doesn't stall on int rounding). Fields
- *  the base spec already carries (people) are skipped; an unknown
+ *  the base spec already carries (forage) are skipped; an unknown
  *  habitat fails at build, not as a silent dead field. */
 export function wildSubstrate(base: SystemSpec, species: SpeciesDef[]): SystemSpec {
   const have = new Set((base.vars ?? []).map(v => v.name));

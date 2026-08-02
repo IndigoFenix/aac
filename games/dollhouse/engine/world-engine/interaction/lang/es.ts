@@ -39,6 +39,8 @@ const L: Record<string, Lexeme> = {
   chase: { w: "persigo", v2: "persigues", v3: "persigue", v3p: "persiguen", inf: "perseguir" },
   follow: { w: "sigo", v2: "sigues", v3: "sigue", v3p: "siguen", inf: "seguir" },
   stop: { w: "paro", v2: "paras", v3: "para", v3p: "paran", inf: "parar" },
+  // Board chrome's "go back" word (⑦) — the AAC glyph `return`.
+  return: { w: "vuelvo", v2: "vuelves", v3: "vuelve", v3p: "vuelven", inf: "volver" },
   // Nations P6: the political verb the absolute taboo ring forbids, and the
   // places a people speaks of ("our town", "that area").
   fight: { w: "lucho", v2: "luchas", v3: "lucha", v3p: "luchan", v1p: "luchamos", inf: "luchar" },
@@ -111,6 +113,7 @@ const L: Record<string, Lexeme> = {
   sheep: { w: "oveja", g: "f" },
   box: { w: "caja", g: "f" },
   basket: { w: "cesta", g: "f" },
+  satchel: { w: "bolso", g: "m" },
   bubbles: { w: "burbujas", g: "f", pl: true },
   sparks: { w: "chispas", g: "f", pl: true },
   boat: { w: "barco", g: "m" },
@@ -159,7 +162,29 @@ const L: Record<string, Lexeme> = {
   bin: { w: "papelera", g: "f" },
   bowl: { w: "cuenco", g: "m" },
   oven: { w: "horno", g: "m", plw: "hornos" },
+  anvil: { w: "yunque", g: "m", plw: "yunques" },
+  loom: { w: "telar", g: "m", plw: "telares" },
+  shelf: { w: "estante", g: "m", plw: "estantes" },
+  altar: { w: "altar", g: "m", plw: "altares" },
+  // The masonry bench, formed like `workbench` ("banco de trabajo") — the head
+  // noun pluralizes, so the regular +s rule would be wrong and `plw` carries it.
+  stonecutter: { w: "banco de cantero", g: "m", plw: "bancos de cantero" },
   well: { w: "pozo", g: "m" },
+  smithy: { w: "herrería", g: "f", plw: "herrerías" },
+  weaver: { w: "tejeduría", g: "f", plw: "tejedurías" },
+  library: { w: "biblioteca", g: "f", plw: "bibliotecas" },
+  temple: { w: "templo", g: "m", plw: "templos" },
+  living: { w: "sala", g: "f", plw: "salas" },
+  shop: { w: "tienda", g: "f", plw: "tiendas" },
+  forge: { w: "forja", g: "f", plw: "forjas" },
+  shrine: { w: "santuario", g: "m", plw: "santuarios" },
+  weaving: { w: "sala de tejido", g: "f", plw: "salas de tejido" },
+  study: { w: "estudio", g: "m", plw: "estudios" },
+  // The stonecutter's room/building — "cantería" is exactly the stone-cutting
+  // workshop, the way "forja" is the forge.
+  masonry: { w: "cantería", g: "f", plw: "canterías" },
+  // The wild outcrop, not the material: you quarry `stone` out of a `rock`.
+  rock: { w: "roca", g: "f" },
   food: { w: "comida", g: "f", mass: true },
   toy: { w: "juguete", g: "m" },
   book: { w: "libro", g: "m" },
@@ -184,6 +209,8 @@ const L: Record<string, Lexeme> = {
   show: { w: "muestro", v2: "muestras", v3: "muestra", v3p: "muestran", inf: "mostrar" },
   // City-founding ③ — the structure board's room words + the demolish verb.
   break: { w: "rompo", v2: "rompes", v3: "rompe", v3p: "rompen", inf: "romper" },
+  // Construction ④ — the room-EMPTYING verb (break's stow-only twin).
+  empty: { w: "vacío", v2: "vacías", v3: "vacía", v3p: "vacían", inf: "vaciar" },
   room: { w: "habitación", g: "f", plw: "habitaciones" },
   door: { w: "puerta", g: "f" },
   bedroom: { w: "dormitorio", g: "m" },

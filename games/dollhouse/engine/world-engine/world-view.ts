@@ -42,6 +42,26 @@ export interface RenderIntent {
    *  player and the speaker stay framed instead of the overhead top-down. */
   shoulder?: boolean;
   /**
+   * WHO IS TALKING RIGHT NOW — the two AVATAR IDS holding a conversation, or
+   * null when nobody is. The DOLLHOUSE camera's conversation dolly reads this
+   * and nothing else.
+   *
+   * Ids, not points, because the camera must frame BOTH bodies (and turn them
+   * three-quarter toward itself), so it needs to look them up in the live
+   * `WorldState` every frame — a point pair captured once would lag a body that
+   * shifts its feet. Either id may be absent from `state.avatars` (a formless
+   * spirit "conversing" has no body, a partner may have streamed out); the
+   * camera frames whichever bodies it can actually see, so a one-sided pair is
+   * legal and means "frame this one person".
+   *
+   * The GAME LAYER is the authority — a conversation is not a geometric fact
+   * (two bodies standing close are not talking) and there is no way to infer it
+   * from the state the renderer sees. Published by the world host from whatever
+   * the game knows: the player's open conversation, or an ambient NPC exchange
+   * while its words are on screen.
+   */
+  conversation?: { a: string; b: string } | null;
+  /**
    * The gaze-CURSOR payload for the flying-spark cursor (render3d). Deliberately
    * separate from `aim`/`interactId` — those get repurposed by the game (steering
    * re-target, carry suspension, conversation-facing), which would drag the spark
@@ -135,7 +155,21 @@ export interface WorldView {
   /** CONSTRUCTION SITES (city-founding): replace the marked-plot set — flat
    *  ground markings over ordered-but-unbuilt lots (staked border + packed
    *  earth), draped like roads. Empty array clears. 3D-only. */
-  setSites?(sites: Array<{ id: string; x: number; y: number; w: number; h: number }>): void;
+  setSites?(
+    sites: Array<{
+      id: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      /** ⑦ build stage: 0 marked ground, 1 floor, 2 posts + wall courses. */
+      stage?: 0 | 1 | 2;
+      /** Banked-labor fraction 0..1 — the wall-course driver (phase 3). */
+      progress?: number;
+      /** The finished building's wall tint. */
+      color?: string;
+    }>,
+  ): void;
   /** SPIRIT LADDER: opt this view's OWNER-mode camera writes off — an external
    *  rig owns the shared camera while the view keeps rendering. 3D-only. */
   setExternalCamera?(on: boolean): void;

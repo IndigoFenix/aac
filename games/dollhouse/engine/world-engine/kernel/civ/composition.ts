@@ -87,6 +87,10 @@ export interface CompositionOps {
   addRoute(json: Record<string, unknown>): unknown;
   /** DRIVEN migration — exact counts, uniform by syndrome (conserving). */
   applyExternalMigration(moves: Array<{ from: string; to: string; count: number }>): number;
+  /** EMIGRATION (Gate D): exact people LEAVE the composition — walkers,
+   *  ledgered as `emigrants_total`, never deaths. Optional: a backend
+   *  without it simply cannot desettle (dual.abandonSettlement refuses). */
+  applyEmigration?(siteKey: string, count: number, trait?: string): number;
   /** Political conquest: rewrite a site's membership traits in place. */
   applyTraitFlip(where: string[], apply: string[], remove: string[], siteKey?: string): number;
 }

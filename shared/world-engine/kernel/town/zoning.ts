@@ -33,7 +33,8 @@
  * through `import type` alone — no runtime cycle.
  */
 
-import { costsMet, resolveStructure, spendCosts, type StructureSpec } from "./structures.js";
+import { costsMet, resolveStructure, spendCostsChain, type StructureSpec } from "./structures.js";
+import { withRefinableCredit } from "../../products.js";
 // Runtime import — the sanctioned direction (construction.ts sees zoning
 // through `import type` alone; the yard endpoint id rides down the stack).
 import { TOWN_YARD_EP } from "./construction.js";
@@ -273,6 +274,10 @@ export interface FoundingGrowthInput {
   /** The town's construction overlay — the accumulator (`civic`), the
    *  charters, and the YARD STOCK the founding spends live here. */
   deltas: TownDeltas;
+  /** REAL build days of a spec's RELATIVE `buildDays` (house = 1) — the
+   *  live host passes constructionGameDays×scale so founded rows match the
+   *  scale-day clocks (`buildDayNow`). Absent = identity (worldgen twin). */
+  buildDaysOf?: (rel: number) => number;
   catalog: ReadonlyArray<StructureSpec>;
   /** The day's raw prosperity gain (host: the mean household gain — the
    *  same proxy signals constructionStep accrues). Capped inside. */
@@ -293,6 +298,20 @@ export interface FoundingGrowthInput {
    *  the enumeration). `zone: null` = OPEN GROUND (an unchartered town) —
    *  no zone filter, the street tree's own enumeration. */
   candidatesFor(spec: StructureSpec, zone: ZoneCharter | null): FoundingCandidate[];
+  /**
+   * FOUND AS A DESIGNATION (⑥ user law — a building never rises by itself).
+   * True: the row carries its material bill and NOTHING is deducted; the
+   * caller's staging sweep hauls the materials to the plot and builders
+   * bank the labor, exactly as a player's order does. The yard is still the
+   * gate (growth only starts what the town can currently cover), it just
+   * isn't the payment.
+   *
+   * False (the default — the ABSTRACT TWIN): the costs are deducted at
+   * order and the row runs the pure clock. Right for worldgen and for towns
+   * nobody is standing in; wrong anywhere the player can watch, which is
+   * how a farm used to finish itself with the site deserted.
+   */
+  pipeline?: boolean;
 }
 
 export interface FoundingGrowthOrder {
@@ -411,14 +430,29 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     const eco = r.spec.economy ? input.economyOf(r.spec.economy) : null;
     if (eco && input.countOf(r.spec.type) + 1 > input.capValueOf(eco.cap.by) * eco.cap.rate) continue;
     // Real materials — the FREE yard must cover it (missing or spoken-for
-    // wood halts growth). The spend still draws the REAL stock: free ⊆
-    // real, so covering costs from free leaves reserved units untouched.
-    if (!costsMet(r.spec, freeStock)) continue;
+    // stock halts growth). CHAIN-AWARE since phase 3: raws count at their
+    // milled value — the pipeline's refine orders (or the twin's implicit
+    // mill below) fill a block bill out of wood. The spend still draws the
+    // REAL stock: free ⊆ real, so covering costs from free leaves reserved
+    // units untouched.
+    if (!costsMet(r.spec, withRefinableCredit(freeStock))) continue;
     // Geometric capacity — feasibility inside the enumeration.
     const candidate = input.candidatesFor(r.spec, r.zone)[0];
     if (!candidate) continue;
-    if (!spendCosts(r.spec, freeStock) || !spendCosts(r.spec, d.stock)) continue;
-    const building = d.foundBuilding(candidate, input.day, r.spec.buildDays);
+    // PIPELINE: the bill rides the row and the builders bring it. TWIN: the
+    // yard pays now and the clock raises it (worldgen / unwatched towns) —
+    // milling implicitly at the refinement ratio (the twin is unobserved
+    // by definition; ledger arithmetic is its whole mode).
+    if (!input.pipeline && (!spendCostsChain(r.spec, freeStock) || !spendCostsChain(r.spec, d.stock))) continue;
+    const building = d.foundBuilding(
+      candidate,
+      input.day,
+      // REAL days via the host's scale mapping — a raw relative buildDays
+      // (house = 1) against scale-day clocks completed ×180 too fast at
+      // REAL_SCALE. Absent = identity (the worldgen twin's historical rate).
+      (input.buildDaysOf ?? ((n) => n))(r.spec.buildDays),
+      input.pipeline ? r.spec.costs : undefined,
+    );
     // The bank pays only when it can — an urgent build before the
     // threshold is materials-paid, never a negative balance.
     if (banked) {

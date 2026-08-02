@@ -641,6 +641,7 @@ export const ru: Translations = {
       cabinet: "Шкаф",
       barrel: "Бочка",
       basket: "Корзина",
+      satchel: "Сумка",
       lamp: "Лампа",
       window: "Окно",
       heater: "Обогреватель",

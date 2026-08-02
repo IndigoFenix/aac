@@ -40,6 +40,8 @@ const L: Record<string, Lexeme> = {
   chase: { w: "persigo", v3: "persegue", v3p: "perseguem", inf: "perseguir" },
   follow: { w: "sigo", v3: "segue", v3p: "seguem", inf: "seguir" },
   stop: { w: "paro", v3: "para", v3p: "param", inf: "parar" },
+  // Board chrome's "go back" word (⑦) — the AAC glyph `return`.
+  return: { w: "volto", v3: "volta", v3p: "voltam", inf: "voltar" },
   // Nations P6: the political verb the absolute taboo ring forbids, and the
   // places a people speaks of ("our town", "that area").
   fight: { w: "luto", v3: "luta", v3p: "lutam", v1p: "lutamos", inf: "lutar" },
@@ -112,6 +114,7 @@ const L: Record<string, Lexeme> = {
   sheep: { w: "ovelha", g: "f" },
   box: { w: "caixa", g: "f" },
   basket: { w: "cesta", g: "f" },
+  satchel: { w: "bolsa", g: "f" },
   bubbles: { w: "bolhas", g: "f", pl: true },
   sparks: { w: "faíscas", g: "f", pl: true },
   boat: { w: "barco", g: "m" },
@@ -164,11 +167,25 @@ const L: Record<string, Lexeme> = {
   loom: { w: "tear", g: "m" },
   shelf: { w: "estante", g: "f" },
   altar: { w: "altar", g: "m" },
+  // The masonry bench, formed off `workbench` ("bancada"). The head noun is
+  // what pluralizes, so `plw` carries it like `toilet` does.
+  stonecutter: { w: "bancada de cantaria", g: "f", plw: "bancadas de cantaria" },
   well: { w: "poço", g: "m" },
   smithy: { w: "ferraria", g: "f" },
   weaver: { w: "tecelagem", g: "f" },
   library: { w: "biblioteca", g: "f" },
   temple: { w: "templo", g: "m" },
+  living: { w: "sala", g: "f" },
+  shop: { w: "loja", g: "f" },
+  forge: { w: "forja", g: "f" },
+  shrine: { w: "santuário", g: "m" },
+  weaving: { w: "sala de tecelagem", g: "f" },
+  study: { w: "escritório", g: "m" },
+  // The stonecutter's room/building — "cantaria" is the stone-cutting trade
+  // and its workshop both, the way "forja" is the forge.
+  masonry: { w: "cantaria", g: "f" },
+  // The wild outcrop, not the material: you quarry `stone` out of a `rock`.
+  rock: { w: "rocha", g: "f" },
   water: { w: "água", g: "f", mass: true },
   food: { w: "comida", g: "f", mass: true },
   toy: { w: "brinquedo", g: "m" },
@@ -194,6 +211,8 @@ const L: Record<string, Lexeme> = {
   show: { w: "mostro", v2: "mostras", v3: "mostra", v3p: "mostram", inf: "mostrar" },
   // City-founding ③ — the structure board's room words + the demolish verb.
   break: { w: "quebro", v2: "quebras", v3: "quebra", v3p: "quebram", inf: "quebrar" },
+  // Construction ④ — the room-EMPTYING verb (break's stow-only twin).
+  empty: { w: "esvazio", v2: "esvazias", v3: "esvazia", v3p: "esvaziam", inf: "esvaziar" },
   room: { w: "cômodo", g: "m" },
   door: { w: "porta", g: "f" },
   bedroom: { w: "quarto", g: "m" },

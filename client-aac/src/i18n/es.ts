@@ -641,6 +641,7 @@ export const es: Translations = {
       cabinet: "Armario",
       barrel: "Barril",
       basket: "Cesta",
+      satchel: "Bolso",
       lamp: "Lámpara",
       window: "Ventana",
       heater: "Calefactor",

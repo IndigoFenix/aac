@@ -641,6 +641,7 @@ export const yue: Translations = {
       cabinet: "櫃",
       barrel: "木桶",
       basket: "籃",
+      satchel: "袋",
       lamp: "燈",
       window: "窗",
       heater: "暖爐",

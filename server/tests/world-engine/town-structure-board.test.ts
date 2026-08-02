@@ -16,7 +16,8 @@ import {
   structureActsOf,
 } from "@shared/world-engine/interaction/town/structure-board.js";
 import {
-  ANNEX_COSTS,
+  MIN_ROOM_COSTS,
+  annexCosts,
   createTownDeltas,
   annexOptions,
   demolishCheck,
@@ -25,7 +26,8 @@ import {
 } from "@shared/world-engine/kernel/town/construction.js";
 import { ANNEX_ROOM_KIND, furnitureGlyph } from "@shared/world-engine/kernel/town/stations.js";
 import { houseRoomPlan } from "@shared/world-engine/kernel/town/rooms.js";
-import { costsMet, spendCosts } from "@shared/world-engine/kernel/town/structures.js";
+import { costsMet, spendCostsChain } from "@shared/world-engine/kernel/town/structures.js";
+import { BLOCK_GLYPH, withRefinableCredit } from "@shared/world-engine/products.js";
 
 const CONFIG = { seed: 5, days: 30, questCount: 0, key: "smalltown", startPop: 20 };
 
@@ -89,7 +91,13 @@ describe("structureActsOf — what the focused house can DO right now", () => {
       neighbors: neighborRectsOf(play, house.index),
       furnStock: () => 0,
     };
-    const funded = structureActsOf({ ...base, stock: { wood: 5 } });
+    // FUNDED = enough raw wood to reach the board's gate, which is the
+    // cheapest room anyone could order (MIN_ROOM_COSTS, phase 6) milled at the
+    // chain's 2:1 ratio. Derived, so the gate and the fixture move together.
+    const funded = structureActsOf({
+      ...base,
+      stock: { wood: MIN_ROOM_COSTS[BLOCK_GLYPH]! * 2 },
+    });
     expect(funded.annex.length).toBeGreaterThan(0);
     for (const cl of funded.annex) expect(ANNEX_ORDER).toContain(cl);
     const broke = structureActsOf({ ...base, stock: {} });
@@ -136,6 +144,56 @@ describe("structureActsOf — what the focused house can DO right now", () => {
     expect(JSON.stringify(play.deltas.toJSON())).toBe(before);
   });
 
+  it("hands back WHERE each offered kind would go, not just that it could", () => {
+    // The lit ground (⑦) is made of these candidates: the enumeration used to
+    // run for its LENGTH and be thrown away, which left the board naming
+    // kinds with no idea where they would stand. Every kind the acts name
+    // must carry at least one place, and every place must belong to a named
+    // kind — otherwise a highlight exists that no press can reach, or a press
+    // exists with no ground under it.
+    const play = established();
+    const house = play.plan.houses[0]!;
+    const plan = houseRoomPlan(play.stage.center, house, undefined);
+    const acts = structureActsOf({
+      center: play.stage.center,
+      house,
+      plan,
+      deltas: play.deltas,
+      neighbors: neighborRectsOf(play, house.index),
+      // Past the board's gate — the cheapest room, milled at 2:1 (phase 6).
+      stock: { wood: MIN_ROOM_COSTS[BLOCK_GLYPH]! * 2 },
+      furnStock: () => 0,
+    });
+    const named = new Set([...acts.annex.map((c) => ANNEX_ROOM_KIND[c]), ...acts.interior]);
+    expect(named.size).toBeGreaterThan(0);
+    for (const k of named) expect(acts.grow.some((g) => g.kind === k)).toBe(true);
+    for (const g of acts.grow) {
+      expect(named.has(g.kind)).toBe(true);
+      // Outward growth carries a side; a cut carries the floor it splits.
+      expect(g.outward).toBe(!("hostId" in g.candidate));
+    }
+  });
+
+  it("lists every standing room, with the demolishable ones a subset", () => {
+    // The ground offers one aim per ROOM; `demolish` is the subset that can
+    // come down, which is why the break word can only appear on a room that
+    // is lit.
+    const play = established();
+    const house = play.plan.houses[0]!;
+    const plan = houseRoomPlan(play.stage.center, house, undefined);
+    const acts = structureActsOf({
+      center: play.stage.center,
+      house,
+      plan,
+      deltas: play.deltas,
+      neighbors: neighborRectsOf(play, house.index),
+      stock: {},
+      furnStock: () => 0,
+    });
+    expect(acts.rooms.map((r) => r.id)).toEqual(plan.rooms.map((r) => r.id));
+    for (const r of acts.demolish) expect(acts.rooms.map((x) => x.id)).toContain(r.id);
+  });
+
   it("furnish words come from the house's own stacks", () => {
     const play = established();
     const house = play.plan.houses[0]!;
@@ -178,17 +236,26 @@ describe("the annex act round-trips: order → room stands → break → room go
     const plan0 = houseRoomPlan(center, house, undefined);
     const neighbors = neighborRectsOf(play, house.index);
 
-    // The board's affordability gate, then the exact order the host runs.
-    const stock: Record<string, number> = { wood: 3 };
-    expect(costsMet({ costs: { ...ANNEX_COSTS } }, stock)).toBe(true);
+    // The board's affordability gate (CHAIN-AWARE since phase 3 — raw wood
+    // affords a block bill at the 2:1 milled value), then the exact order
+    // the host runs. The GATE is the cheapest room anyone could order
+    // (MIN_ROOM_COSTS, phase 6): bills are per-rect now, so the board cannot
+    // know what a room costs until the enumeration has picked one.
+    const stock: Record<string, number> = { wood: 400 };
+    expect(costsMet({ costs: { ...MIN_ROOM_COSTS } }, withRefinableCredit(stock))).toBe(true);
     const cluster = ANNEX_ORDER.find(
       (c) => annexOptions(center, house, plan0, neighbors, undefined, c).length > 0,
     )!;
     expect(cluster).toBeDefined();
     const candidate = annexOptions(center, house, plan0, neighbors, undefined, cluster)[0]!;
     expect(requestAnnex(play.deltas, key, candidate).ok).toBe(true);
-    expect(spendCosts({ costs: { ...ANNEX_COSTS } }, stock)).toBe(true);
-    expect(stock.wood).toBe(3 - (ANNEX_COSTS.wood ?? 0));
+    // THE ROOM'S OWN BILL (phase 6) — floor, roof and its three unshared
+    // walls, sized off the rect the enumeration picked. The chain spend mills
+    // it out of raw wood at 2:1.
+    const bill = annexCosts(candidate)[BLOCK_GLYPH]!;
+    expect(bill).toBeGreaterThan(1); // a room is not one block any more
+    expect(spendCostsChain({ costs: annexCosts(candidate) }, stock)).toBe(true);
+    expect(stock.wood).toBe(400 - bill * 2);
 
     const plan1 = houseRoomPlan(center, house, play.deltas.get(key));
     const annexRoom = plan1.rooms.find((r) => /_a0$/.test(r.id))!;

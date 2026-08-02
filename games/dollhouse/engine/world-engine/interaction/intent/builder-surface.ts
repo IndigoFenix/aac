@@ -38,6 +38,14 @@ import { LEXICON, tokenizeSentence } from "./parse-intent.js";
 import { surfaceNext, type SurfaceNoun } from "./surface-next.js";
 import { AXIS_WORDS, descriptorAxesFor, type DescriptorAxis } from "../../object-properties.js";
 import { propertiesOf } from "../content/properties.js";
+import {
+  DEFAULT_ROOM_PROGRAMS,
+  DEFAULT_STRUCTURE_PROGRAMS,
+  roomDisplayGlyph,
+  structureProgramDisplayGlyph,
+  type RoomProgramDef,
+  type StructureProgramDef,
+} from "../../kernel/town/programs.js";
 import { headOf } from "../../variations.js";
 import { languageFor } from "../lang/index.js";
 import { baseWord, type GlyphLanguage } from "../lang/core.js";
@@ -99,6 +107,19 @@ export interface BuilderNounEntry {
   properties?: string[];
   /** Present in the current scene (persons/creatures) — passed through. */
   present?: boolean;
+  /**
+   * DISPLAY glyph, when the word's PICTURE is not its own symbol. The pressed
+   * word stays `symbol` — one word, parseable, exactly what the sentence
+   * carries — while the button renders this instead.
+   *
+   * This is what lets a ROOM or a BUILDING be a single word with a composed
+   * icon: `bedroom` is the word the student presses and the sentence keeps,
+   * `room(bed)` is only how the button draws. Composing the icon into the KEY
+   * would put parentheses in the sentence, which the builder deliberately
+   * never emits (ENABLE_GLYPH_ARGUMENTS is off) and `tokenizeSentence` cannot
+   * parse anyway.
+   */
+  glyph?: string;
 }
 
 export interface BuilderSurfaceOpts {
@@ -193,11 +214,78 @@ function propertyAffords(props: readonly string[]): string[] {
  * `kind: "item"`, no `present` flags — there is no scene to be present in.
  */
 export function defaultBuilderNouns(): BuilderNounEntry[] {
-  return DEFAULT_NOUNS.map(({ symbol, acts }) => {
-    const properties = propertiesOf(symbol);
-    const affords = [...new Set(["want", "get", "give", ...(acts ?? []), ...propertyAffords(properties)])];
-    return { symbol, kind: "item" as const, affords, properties };
-  });
+  return [
+    ...DEFAULT_NOUNS.map(({ symbol, acts }) => {
+      const properties = propertiesOf(symbol);
+      const affords = [...new Set(["want", "get", "give", ...(acts ?? []), ...propertyAffords(properties)])];
+      return { symbol, kind: "item" as const, affords, properties };
+    }),
+    ...placeBuilderNouns(),
+  ];
+}
+
+/**
+ * EVERY ROOM AND BUILDING THE SPEC KNOWS, as single-word place nouns.
+ *
+ * The two program repositories ARE the world's place vocabulary (programs.ts:
+ * room kinds forward and backward, building characters one level up), so the
+ * builder reads them rather than carrying a list of its own — a culture that
+ * authors a new room kind gets a new button for free, and one that renames a
+ * kind can't leave a stale button behind.
+ *
+ * Each entry is a SINGLE WORD (`bedroom`, `smithy`) carrying a COMPOSED GLYPH
+ * (`room(bed)`, `building(anvil)`) for the button to draw. The word is what the
+ * sentence keeps; the composition never reaches it.
+ *
+ * `affords: ["go"]` — a place is somewhere you GO. It is not a thing you want,
+ * get or give, so the noun default is deliberately not inherited here.
+ *
+ * Pass the session's RESOLVED programs (defaults ⊕ culture) to get that
+ * world's places; the no-argument form is the kernel default, which is what
+ * the out-of-game builder offers.
+ */
+export function placeBuilderNouns(
+  rooms: ReadonlyArray<RoomProgramDef> = DEFAULT_ROOM_PROGRAMS,
+  buildings: ReadonlyArray<StructureProgramDef> = DEFAULT_STRUCTURE_PROGRAMS,
+): BuilderNounEntry[] {
+  const out: BuilderNounEntry[] = [];
+  const seen = new Set<string>();
+  // Buildings before rooms: "where am I going" is answered by a building far
+  // more often than by which room of it. Deterministic — repository order.
+  // `word ?? kind` is the fold: the SYMBOL is what gets pressed and spoken, so
+  // it has to be a word the lang layer carries (`house` → `home`), while the
+  // program keeps its own name for every rule that derives it.
+  for (const b of buildings) {
+    const symbol = b.word ?? b.type;
+    if (seen.has(symbol)) continue;
+    seen.add(symbol);
+    out.push({
+      symbol,
+      kind: "place",
+      affords: ["go"],
+      // Properties from the SPEC SIDE, never authored here — the same law the
+      // item list follows. Mostly empty (a room kind is not a station), but
+      // `bath` names both a room and a tub and the spec is what says so.
+      properties: propertiesOf(symbol),
+      glyph: structureProgramDisplayGlyph(b),
+    });
+  }
+  for (const r of rooms) {
+    const symbol = r.word ?? r.kind;
+    if (seen.has(symbol)) continue;
+    seen.add(symbol);
+    out.push({
+      symbol,
+      kind: "place",
+      affords: ["go"],
+      // Properties from the SPEC SIDE, never authored here — the same law the
+      // item list follows. Mostly empty (a room kind is not a station), but
+      // `bath` names both a room and a tub and the spec is what says so.
+      properties: propertiesOf(symbol),
+      glyph: roomDisplayGlyph(r),
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +320,11 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
 
   /** One wire word. Noun-backed symbols keep the noun's FULL composed symbol
    *  as key+glyph (identity survives the round trip); everything else is its
-   *  own key. `kind`/`present` ride only on nouns (the bridge's contract). */
+   *  own key. `kind`/`present` ride only on nouns (the bridge's contract).
+   *
+   *  The glyph is the noun's own `glyph` when it declares one — the KEY never
+   *  changes, so a place stays a single word in the sentence while its button
+   *  draws the composed shell+symbol icon. */
   const wordJson = (symbol: string): BuilderWordJson => {
     const head = headOf(symbol);
     const noun = nounByHead.get(head);
@@ -241,7 +333,7 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
     return {
       key,
       label: noun?.label ?? baseWord(lang, head),
-      glyph: key,
+      glyph: noun?.glyph ?? key,
       category: lex ? lex.cat : "things",
       ...(!lex && noun?.kind ? { kind: noun.kind } : {}),
       ...(!lex && noun?.present !== undefined ? { present: noun.present } : {}),

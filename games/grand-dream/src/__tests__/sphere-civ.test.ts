@@ -49,7 +49,7 @@ async function buildSphereTri(seed: number): Promise<SphereRun> {
   expect(farm).toBeDefined();
   expect(mine).toBeDefined();
 
-  const gridPeople0 = g.fields.people.reduce((a, b) => a + b, 0);
+  const gridPeople0 = g.fields.forage.reduce((a, b) => a + b, 0);
   const gridOre0 = g.fields.ore.reduce((a, b) => a + b, 0);
 
   const tri = await foundTri(prep, {

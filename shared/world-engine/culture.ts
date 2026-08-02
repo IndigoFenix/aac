@@ -65,6 +65,10 @@ export interface WorldRoomProgramSpec {
 export interface WorldStructureProgramSpec {
   type: string;
   rooms: string[];
+  /** Inner symbol for the type's icon (programs.ts StructureProgramDef.symbol). */
+  symbol?: string;
+  /** Container frame the icon draws on — the building half of the same mark. */
+  frame?: "building" | "room" | "none";
 }
 
 /**
@@ -267,14 +271,28 @@ export function parseWorldArchitectureSpec(raw: unknown, path: string): WorldArc
     if (r.buildings.length > 16) fail(`${path}.buildings`, "at most 16 structure programs");
     out.buildings = r.buildings.map((v, i) => {
       const p = `${path}.buildings[${i}]`;
-      if (!isObj(v)) fail(p, "expected an object ({ type, rooms })");
+      if (!isObj(v)) fail(p, "expected an object ({ type, rooms, symbol?, frame? })");
       const vr = v as Record<string, unknown>;
-      const allowedB = ["type", "rooms"];
+      const allowedB = ["type", "rooms", "symbol", "frame"];
       for (const kk of Object.keys(vr)) {
         if (!allowedB.includes(kk)) fail(`${p}.${kk}`, `unknown field (allowed: ${allowedB.join(", ")})`);
       }
       if (typeof vr.type !== "string" || !vr.type.trim()) fail(`${p}.type`, "expected a non-empty structure type");
-      return { type: vr.type.trim(), rooms: parseWords(vr.rooms, `${p}.rooms`, 8) };
+      const spec: WorldStructureProgramSpec = {
+        type: vr.type.trim(),
+        rooms: parseWords(vr.rooms, `${p}.rooms`, 8),
+      };
+      if ("symbol" in vr) {
+        if (typeof vr.symbol !== "string" || !vr.symbol.trim()) fail(`${p}.symbol`, "expected a non-empty symbol word");
+        spec.symbol = vr.symbol.trim();
+      }
+      if ("frame" in vr) {
+        if (typeof vr.frame !== "string" || !ROOM_FRAMES.includes(vr.frame)) {
+          fail(`${p}.frame`, `expected one of ${ROOM_FRAMES.join(" | ")}`);
+        }
+        spec.frame = vr.frame as WorldStructureProgramSpec["frame"];
+      }
+      return spec;
     });
   }
   return out;

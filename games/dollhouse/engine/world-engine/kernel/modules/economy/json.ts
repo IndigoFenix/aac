@@ -13,6 +13,7 @@
 import type {
   BuildingDef, CommodityDef, CommodityStreetDef, EconomyDoc, SpeciesDef, StockpileDef,
 } from "./economy";
+import { TRANSIT_BEHAVIORS, type TransitBehavior } from "../../../freight";
 
 class ParseError extends Error {}
 
@@ -89,23 +90,39 @@ function parseStreet(ctx: Ctx, raw: unknown): CommodityStreetDef {
 
 function parseCommodity(ctx: Ctx, raw: unknown): CommodityDef {
   const o = obj(ctx, raw, [
-    "key", "scalarMax", "perPersonDaily", "popScalar", "transport", "needSum", "allocate", "street",
+    "key", "scalarMax", "perPersonDaily", "popScalar", "transport", "needSum", "allocate", "street", "freight",
   ]);
   const key = str(ctx, o.key, "key");
   const out: CommodityDef = { key, scalarMax: num(ctx, o.scalarMax, "scalarMax") };
   if (o.perPersonDaily !== undefined) out.perPersonDaily = num(ctx, o.perPersonDaily, "perPersonDaily");
   if (o.popScalar !== undefined) out.popScalar = str(ctx, o.popScalar, "popScalar");
   if (o.transport !== undefined) {
-    const t = obj({ path: `${ctx.path}.transport` }, o.transport, ["id", "demand", "drift", "driftRequiresConstruction", "wearsRoad"]);
+    const t = obj({ path: `${ctx.path}.transport` }, o.transport, ["id", "demand", "drift", "driftFeeds", "driftRequiresConstruction", "wearsRoad"]);
     const tc: Ctx = { path: `${ctx.path}.transport` };
     out.transport = {
       ...(t.id !== undefined ? { id: str(tc, t.id, "id") } : {}),
       ...(t.demand !== undefined ? { demand: str(tc, t.demand, "demand") } : {}),
       ...(t.drift !== undefined ? { drift: str(tc, t.drift, "drift") } : {}),
+      ...(t.driftFeeds !== undefined ? { driftFeeds: bool(tc, t.driftFeeds, "driftFeeds") } : {}),
       ...(t.driftRequiresConstruction !== undefined
         ? { driftRequiresConstruction: bool(tc, t.driftRequiresConstruction, "driftRequiresConstruction") } : {}),
       ...(t.wearsRoad !== undefined ? { wearsRoad: bool(tc, t.wearsRoad, "wearsRoad") } : {}),
     };
+  }
+  if (o.freight !== undefined) {
+    const fc: Ctx = { path: `${ctx.path}.freight` };
+    const f = obj(fc, o.freight, ["valueDensity", "transit", "keepDays"]);
+    const freight: CommodityDef["freight"] = {};
+    if (f.valueDensity !== undefined) freight.valueDensity = num(fc, f.valueDensity, "valueDensity");
+    if (f.transit !== undefined) {
+      const t = str(fc, f.transit, "transit");
+      if (!(TRANSIT_BEHAVIORS as readonly string[]).includes(t)) {
+        fail(fc, `"transit" must be one of: ${TRANSIT_BEHAVIORS.join(", ")}`);
+      }
+      freight.transit = t as TransitBehavior;
+    }
+    if (f.keepDays !== undefined) freight.keepDays = num(fc, f.keepDays, "keepDays");
+    out.freight = freight;
   }
   if (o.needSum !== undefined) out.needSum = strArr(ctx, o.needSum, "needSum");
   if (o.allocate !== undefined) {
@@ -122,7 +139,7 @@ function parseCommodity(ctx: Ctx, raw: unknown): CommodityDef {
 function parseBuilding(ctx: Ctx, raw: unknown): BuildingDef {
   const o = obj(ctx, raw, [
     "key", "countScalar", "cap", "processes", "vars", "construction",
-    "sells", "shelved", "leansToward", "mapCap", "district",
+    "sells", "shelved", "refines", "leansToward", "mapCap", "district",
     "style", "vignette", "glyph", "title", "info",
   ]);
   const key = str(ctx, o.key, "key");
@@ -137,9 +154,16 @@ function parseBuilding(ctx: Ctx, raw: unknown): BuildingDef {
   }
   const styleO = obj({ path: `${ctx.path}.style` }, o.style, ["color", "w", "h"]);
   const vigO = obj({ path: `${ctx.path}.vignette` }, o.vignette, ["w", "h"]);
-  if (o.leansToward !== null && typeof o.leansToward !== "string") {
+  // leansToward may be OMITTED only on a `refines` building (the compiler
+  // derives it from the siting physics); everywhere else it stays required.
+  if (o.leansToward === undefined) {
+    if (o.refines === undefined) fail(ctx, `"leansToward" must be a substrate field name or null`);
+  } else if (o.leansToward !== null && typeof o.leansToward !== "string") {
     fail(ctx, `"leansToward" must be a substrate field name or null`);
   }
+  const refinesO = o.refines !== undefined
+    ? obj({ path: `${ctx.path}.refines` }, o.refines, ["from", "into"])
+    : undefined;
   return {
     key,
     countScalar: str(ctx, o.countScalar, "countScalar"),
@@ -189,7 +213,15 @@ function parseBuilding(ctx: Ctx, raw: unknown): BuildingDef {
     },
     ...(o.sells !== undefined ? { sells: strArr(ctx, o.sells, "sells") } : {}),
     ...(o.shelved !== undefined ? { shelved: bool(ctx, o.shelved, "shelved") } : {}),
-    leansToward: o.leansToward as string | null,
+    ...(refinesO !== undefined
+      ? {
+          refines: {
+            from: str({ path: `${ctx.path}.refines` }, refinesO.from, "from"),
+            into: str({ path: `${ctx.path}.refines` }, refinesO.into, "into"),
+          },
+        }
+      : {}),
+    ...(o.leansToward !== undefined ? { leansToward: o.leansToward as string | null } : {}),
     mapCap: num(ctx, o.mapCap, "mapCap"),
     district: district as BuildingDef["district"],
     style: {

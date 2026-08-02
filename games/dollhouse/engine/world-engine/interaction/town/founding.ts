@@ -33,14 +33,15 @@ import {
 } from "@shared/world-engine/kernel/town/construction.js";
 import type { TownPlayConfig } from "./town-play.js";
 import { headOf } from "../../variations.js";
-import { buildingMaterialGlyphs } from "../../products.js";
+import { buildingChainGlyphs } from "../../products.js";
 
 /** The BUILDING-MATERIAL stack glyphs a site's stock accepts — DERIVED from
  *  the natural-sources registry (products.ts): every `use: "building"`
- *  product glyph (wood from the trees, stone from the rocks). Everything
- *  else (food, toys) stays personal — a site stockpile is a builder's yard,
- *  not a pantry. */
-export const SITE_MATERIAL_GLYPHS: readonly string[] = buildingMaterialGlyphs();
+ *  product glyph (wood from the trees, stone from the rocks) PLUS their
+ *  refined targets (blocks — phase 3: the yard holds the whole chain).
+ *  Everything else (food, toys) stays personal — a site stockpile is a
+ *  builder's yard, not a pantry. */
+export const SITE_MATERIAL_GLYPHS: readonly string[] = buildingChainGlyphs();
 
 export function isSiteMaterial(glyph: string): boolean {
   // Stack signatures are composed glyphs — "wood" and any facted variant of

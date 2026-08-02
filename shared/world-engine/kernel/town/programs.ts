@@ -51,6 +51,17 @@ export interface RoomProgramDef {
    * shell for a kind whose symbol is already a place (the `well` pattern).
    */
   frame?: "room" | "building" | "none";
+  /**
+   * The LEXICON WORD this kind is SPOKEN as, when the kind name is not itself a
+   * word the lang layer carries — `fixtureWord`'s rule (types.ts) applied to
+   * places, authored where the data lives.
+   *
+   * Every value MUST be a lang-layer lexicon key, because `baseWord` falls back
+   * to the RAW ENGLISH KEY for anything it doesn't carry — which is exactly how
+   * a Hebrew button ends up reading "house". Absent = the kind IS the word,
+   * which is the normal case.
+   */
+  word?: string;
 }
 
 /** One structure program — what rooms make the building what it is. */
@@ -59,6 +70,23 @@ export interface StructureProgramDef {
   type: string;
   /** Derived room kinds that must all be present. */
   rooms: string[];
+  /**
+   * Inner symbol for the type's icon — `RoomProgramDef.symbol`'s twin, and for
+   * the same reason: "smithy" is a word with no picture, `anvil` is a picture.
+   * Absent = the type word doubles as its own symbol.
+   *
+   * Deliberately NOT derived from `rooms[0]`: a house's first room is its
+   * living room, and `building(table)` is not a house.
+   */
+  symbol?: string;
+  /** Container frame the icon draws on. Defaults to `building` — a structure
+   *  program names a whole building. `"none"` drops the shell for a type whose
+   *  symbol is already a place. */
+  frame?: "building" | "room" | "none";
+  /** The lexicon word this type is SPOKEN as — `RoomProgramDef.word`'s twin.
+   *  `house` needs it: the lang layer's key is `home` (whose English word IS
+   *  "house"), so an unfolded `house` would read raw English everywhere else. */
+  word?: string;
 }
 
 /** Precedence order is semantics: the FIRST def whose signature matches
@@ -83,6 +111,13 @@ export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
   // culture that gathers instead flips the SAME row to `"building"` — the
   // temple, the weaving hall. One program, two social arrangements.
   { kind: "forge", requires: ["anvil"], signature: ["anvil"], symbol: "anvil" },
+  // The MASONRY (construction phase 5) — the forge's rule applied to stone,
+  // and filed beside it for the same reason: a room with a stonecutter in it
+  // is a masonry no matter what counter or barrel WORK_STATIONS also put
+  // there. BELOW `workshop` deliberately, following the forge's precedent: a
+  // floor holding both a workbench and a stonecutter is a carpenter's room
+  // that happens to keep a slab, and the bench is the more general trade.
+  { kind: "masonry", requires: ["stonecutter"], signature: ["stonecutter"], symbol: "stonecutter" },
   { kind: "shrine", requires: ["altar"], signature: ["altar"], symbol: "altar" },
   { kind: "weaving", requires: ["loom"], signature: ["loom"], symbol: "loom" },
   { kind: "study", requires: ["shelf"], signature: ["shelf"], symbol: "shelf" },
@@ -98,17 +133,28 @@ export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
 ];
 
 export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
-  { type: "house", rooms: ["living", "bedroom", "kitchen", "bath"] },
-  { type: "workshop", rooms: ["workshop"] },
-  { type: "shop", rooms: ["store"] },
+  // `word: "home"` — the lang layer's key for a dwelling is `home` (its English
+  // word is literally "house"); the program type stays `house` because that is
+  // what `buildingKindOf` reports and every rule keys on.
+  { type: "house", rooms: ["living", "bedroom", "kitchen", "bath"], symbol: "home", word: "home" },
+  { type: "workshop", rooms: ["workshop"], symbol: "workbench" },
+  { type: "shop", rooms: ["store"], symbol: "trade" },
   // The place-making buildings — each derives from its ONE defining room, the
   // same rule that makes a shell holding four household rooms a house. A
   // building that ends up with an anvil in it IS a smithy, however it was
   // built; nothing has to declare it.
-  { type: "smithy", rooms: ["forge"] },
-  { type: "temple", rooms: ["shrine"] },
-  { type: "weaver", rooms: ["weaving"] },
-  { type: "library", rooms: ["study"] },
+  { type: "smithy", rooms: ["forge"], symbol: "anvil" },
+  // The MASONRY is the one place-making pair whose ROOM and BUILDING share a
+  // word — a masonry is the room you cut in and the building that room fills,
+  // the way a workshop already is (and unlike the forge/smithy, which have
+  // two). Nothing needs to disambiguate them: `roomKindOf` and
+  // `buildingKindOf` read different tables, and the builder's place list keeps
+  // the first entry per word (buildings first), so the one button draws
+  // `building(stonecutter)` — which is what a player means by "masonry".
+  { type: "masonry", rooms: ["masonry"], symbol: "stonecutter" },
+  { type: "temple", rooms: ["shrine"], symbol: "altar" },
+  { type: "weaver", rooms: ["weaving"], symbol: "loom" },
+  { type: "library", rooms: ["study"], symbol: "shelf" },
 ];
 
 /** Culture-authored program blocks (culture.ts gates their shape; station
@@ -131,7 +177,12 @@ export function programOverridesOf(arch?: {
     symbol?: string;
     frame?: "room" | "building" | "none";
   }>;
-  buildings?: ReadonlyArray<{ type: string; rooms: string[] }>;
+  buildings?: ReadonlyArray<{
+    type: string;
+    rooms: string[];
+    symbol?: string;
+    frame?: "building" | "room" | "none";
+  }>;
 }): ProgramOverrides {
   const known = (k: string): k is StationKind => k in STATION_PROPERTIES;
   const out: ProgramOverrides = {};
@@ -152,7 +203,12 @@ export function programOverridesOf(arch?: {
     if (rooms.length) out.rooms = rooms;
   }
   if (arch?.buildings?.length) {
-    out.buildings = arch.buildings.map((b) => ({ type: b.type, rooms: [...b.rooms] }));
+    out.buildings = arch.buildings.map((b) => {
+      const def: StructureProgramDef = { type: b.type, rooms: [...b.rooms] };
+      if (b.symbol) def.symbol = b.symbol;
+      if (b.frame) def.frame = b.frame;
+      return def;
+    });
   }
   return out;
 }
@@ -217,6 +273,14 @@ export function roomKindDisplayGlyph(
 ): string {
   const def = roomProgramOf(kind, defs);
   return def ? roomDisplayGlyph(def) : kind;
+}
+
+/** `roomDisplayGlyph` for a BUILDING character — the structure-program half.
+ *  Defaults to the `building` shell, the mirror of a room's `room`. */
+export function structureProgramDisplayGlyph(def: StructureProgramDef): string {
+  const symbol = def.symbol ?? def.type;
+  const frame = def.frame ?? "building";
+  return frame === "none" ? symbol : `${frame}(${symbol})`;
 }
 
 /** BACKWARD: the kind a room DERIVES from the furniture standing in it —

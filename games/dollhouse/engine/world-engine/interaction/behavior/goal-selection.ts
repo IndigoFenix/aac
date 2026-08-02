@@ -503,6 +503,13 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
       return null; // house-scoped pipeline work (the craft job) — the host runs it, never a compiled errand
     case "buildwork":
       return null; // ⑥ standing site work — the construction sweep walks + banks it, never a compiled errand
+    case "demolish":
+    case "emptyRoom":
+    case "breakPiece":
+      // The UNMAKING verbs (④) — designations on the construction pipeline's
+      // own order rows, worked by the buildwork machinery. Like `build` and
+      // `craft`, never a compiled body errand.
+      return null;
     case "area":
       return null; // a spatial charter (③) — the host writes it; never a body errand
     case "transfer":

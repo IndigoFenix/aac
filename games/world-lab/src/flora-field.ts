@@ -42,10 +42,17 @@ const NEAR_R = 260;          // impostors RESOLVE to real geometry inside this
 const BUILD_BUDGET = 2;      // tile builds per ensure() call (spread the cost)
 
 // Per-biome scatter counts per tile (biome field: 0 barren, 1 tree, 2 grass,
-// 3 grazer range) + display heights matching the interactive chunk's bodies.
+// 3 grazer range).
 const OAK_COUNT = [1, 60, 11, 8];
 const GRASS_COUNT = [2, 16, 44, 40];
-const OAK_H = 4.6;
+// TREES RENDER AT THE MODEL'S OWN SIZE (the blueprint is the authority — a
+// grown oak builds ~24 m tall): instance scale is just the per-placement
+// variation `v`. The old fixed OAK_H (4.6, a relic of matching the box
+// features the interactive chunk used to place) squashed every tree to
+// shrub height — from a glide camera the resolved forest looked like it had
+// LOST its trees next to the fat far-field silhouettes. GRASS keeps a
+// display height: its blueprint is a 0.13 m tuft, unreadable as ground
+// cover at native scale, and it has no interactive twin to agree with.
 const GRASS_H = 0.6;
 
 function mulberry(seed: number): () => number {
@@ -356,8 +363,11 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
       if (!pls.length) continue;
       const a = speciesAssets(renderer, species);
       const isTree = species === FLORA_TREE_SPECIES;
+      // Trees at NATIVE model size (targetH = the geometry's own height ⇒
+      // scale is the per-placement variation alone); grass at its display
+      // height — see the constants note.
       const mesh = buildMesh(
-        pls, a.impostor.heightM, isTree ? OAK_H : GRASS_H, a.billboardGeom, a.billboardMat,
+        pls, a.impostor.heightM, isTree ? a.impostor.heightM : GRASS_H, a.billboardGeom, a.billboardMat,
         isTree ? oakHiddenAt(key) : undefined,
       );
       mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
@@ -378,7 +388,7 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
         const a = speciesAssets(renderer, species);
         const isTree = species === FLORA_TREE_SPECIES;
         const mesh = buildMesh(
-          pls, a.realHeightM, isTree ? OAK_H : GRASS_H, a.realGeom, a.realMat,
+          pls, a.realHeightM, isTree ? a.realHeightM : GRASS_H, a.realGeom, a.realMat,
           isTree ? oakHiddenAt(tile.key) : undefined,
         );
         mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
@@ -456,7 +466,8 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
         const tile = tiles.get(tKey);
         if (!tile || !tile.oak.length) continue;
         const pls = tile.placements.get(FLORA_TREE_SPECIES) ?? [];
-        for (const o of tile.oak) writeMatrices(o.mesh, pls, o.geomH, OAK_H, oakHiddenAt(tKey));
+        // targetH = geomH: trees render at native model size (scale = v).
+        for (const o of tile.oak) writeMatrices(o.mesh, pls, o.geomH, o.geomH, oakHiddenAt(tKey));
       }
     },
     dispose() {

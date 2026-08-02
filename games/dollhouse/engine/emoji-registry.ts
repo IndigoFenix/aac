@@ -286,6 +286,7 @@ const EXTRA_EMOJIS: Record<string, string> = {
   write: "✍️",
 
   // ─── Nature / weather ───────────────────────────────────────────────
+  block: "🧱",
   cloud: "☁️",
   fire: "🔥",
   grass: "🌱",

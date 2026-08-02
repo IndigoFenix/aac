@@ -38,9 +38,16 @@ describe("natural-sources registry — internal coherence", () => {
         // A live harvest renews — it must say how fast. A kill never regrows.
         if (p.method === "harvest") expect(p.regrowDays ?? 0).toBeGreaterThan(0);
         else expect(p.regrowDays).toBeUndefined();
-        // Only raws refine; every raw names its refined commodity.
-        if (p.use === "raw") expect(p.refinesTo?.length ?? 0).toBeGreaterThan(0);
-        else expect(p.refinesTo).toBeUndefined();
+        // Every RAW must refine (raw is useless until processed), and any
+        // product MAY (a preservation refinement concentrates a perishable
+        // — milk → cheese, resources-and-trade ③). Whoever refines does it
+        // with a MASS-LOSSY ratio (①: inPerOut ≥ 1 — refining concentrates,
+        // it never multiplies substance).
+        if (p.use === "raw") expect(p.refinesTo).toBeDefined();
+        if (p.refinesTo) {
+          expect(p.refinesTo.into.length).toBeGreaterThan(0);
+          expect(p.refinesTo.inPerOut).toBeGreaterThanOrEqual(1);
+        }
       }
     }
   });
@@ -73,12 +80,17 @@ describe("acquisition rolls", () => {
   });
 
   it("killStockOf rolls only the kill products (the legacy wilderness stacks)", () => {
-    // The stocks the scattered features held before the registry: trees
-    // 2..4 wood, rocks 1..2 stone — one rng() per feature, unchanged.
-    expect(killStockOf("oak", () => 0)).toEqual({ wood: 2 });
-    expect(killStockOf("oak", () => 0.99)).toEqual({ wood: 4 });
-    expect(killStockOf("rock", () => 0)).toEqual({ stone: 1 });
-    expect(killStockOf("rock", () => 0.99)).toEqual({ stone: 2 });
+    // The roll spans the DECLARED bounds, read off the catalogue rather than
+    // spelled out: the yields were rescaled in phase 6 (a house is 120 blocks,
+    // so a 24 m oak had to be worth more than two units of timber), and what
+    // this line is about is that a kill rolls its own product's range — true
+    // at any bounds. `() => 0.99` is the top of the range, not a literal count.
+    const bounds = (species: string, glyph: string): { min: number; max: number } =>
+      naturalSourceOf(species)!.products.find((p) => p.glyph === glyph)!.yield;
+    expect(killStockOf("oak", () => 0)).toEqual({ wood: bounds("oak", "wood").min });
+    expect(killStockOf("oak", () => 0.99)).toEqual({ wood: bounds("oak", "wood").max });
+    expect(killStockOf("rock", () => 0)).toEqual({ stone: bounds("rock", "stone").min });
+    expect(killStockOf("rock", () => 0.99)).toEqual({ stone: bounds("rock", "stone").max });
     // A pure-harvest source releases nothing on a kill — there is no kill.
     expect(killStockOf("grape_vine", () => 0.5)).toEqual({});
     // Harvest products stay out of the kill stock even on mixed sources.
@@ -160,9 +172,10 @@ describe("derived vocabularies — the registry IS the source of truth", () => {
     expect(FOOD_KINDS).toEqual(["apple", "banana", "grape"]);
   });
 
-  it("SITE_MATERIAL_GLYPHS = the building-use product glyphs", () => {
+  it("SITE_MATERIAL_GLYPHS = the building CHAIN's glyphs (phase 3)", () => {
     expect(buildingMaterialGlyphs()).toEqual(["wood", "stone"]);
-    expect(SITE_MATERIAL_GLYPHS).toEqual(["wood", "stone"]);
+    // The yard accepts the whole chain — raws AND their refined target.
+    expect(SITE_MATERIAL_GLYPHS).toEqual(["wood", "block", "stone"]);
   });
 
   it("FRUIT_TREES = the orchard mapping", () => {

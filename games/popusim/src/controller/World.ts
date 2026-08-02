@@ -915,9 +915,13 @@ export class World extends BWObj implements WorldLike {
 	// ========================================
 
 	/** Accounting ledger: the conservation invariant for a vital world is
-	 * Σ pops + histfigs = start + births_total − deaths_total. */
+	 * Σ pops + histfigs = start + births_total − deaths_total − emigrants_total. */
 	births_total: number = 0;
 	deaths_total: number = 0;
+	/** People who WALKED off the settled world (settlement-emergence Gate D:
+	 * abandonment back into wild bands) — leavers, never deaths. The layer
+	 * above owns where they went; this ledger only keeps Σ pops honest. */
+	emigrants_total: number = 0;
 
 	/**
 	 * Apply exact birth and death counts to a site — the DIRECT population
@@ -1021,6 +1025,67 @@ export class World extends BWObj implements WorldLike {
 			this.markCompositionDirty();
 		}
 		return { born, died };
+	}
+
+	/**
+	 * EMIGRATION — exact people LEAVE the composition entirely (the
+	 * settlement layer's Gate D: an abandoned settlement's crowd walks
+	 * back into the wild, which this world does not model). Removal is
+	 * uniform by syndrome from a snapshot, largest remainder, RNG-free —
+	 * applyVitals' death mechanics with one crucial difference: the
+	 * walkers land in `emigrants_total`, never `deaths_total` (a collapse
+	 * is people leaving, not people dying — the generational ledgers must
+	 * not read abandonment as massacre). `trait` scopes to one species'
+	 * carriers, as in applyVitals. Clamps to what exists; returns the
+	 * count that walked. Marks the composition dirty.
+	 */
+	applyEmigration(siteKey: string, count: number, trait?: string): number {
+		interface WalkPop {
+			pop: number;
+			syndrome: { key: string; trait_keys: string[] };
+			removeUnits(n: number, from: unknown, sub: null): void;
+		}
+		const site = this.sites.find(s => s.key === siteKey);
+		if (!site) return 0;
+		const snapshot = (site.pops as unknown as WalkPop[])
+			.filter(p => p.pop > 0 && (trait === undefined || p.syndrome.trait_keys.includes(trait)))
+			.sort((a, b) => (a.syndrome.key < b.syndrome.key ? -1 : a.syndrome.key > b.syndrome.key ? 1 : 0))
+			.map(p => ({ p, size: p.pop }));
+		const total = snapshot.reduce((a, s) => a + s.size, 0);
+		const want = Math.min(Math.max(0, Math.floor(count)), total);
+		if (want <= 0) return 0;
+
+		// Largest-remainder apportionment of the walkers over the snapshot.
+		const takes = snapshot.map(() => 0);
+		let placed = 0;
+		const shares = snapshot.map((s, idx) => {
+			const exact = (want * s.size) / total;
+			const base = Math.floor(exact);
+			takes[idx] = base;
+			placed += base;
+			return { idx, rem: exact - base };
+		});
+		let left = want - placed;
+		shares.sort((a, b) => b.rem - a.rem ||
+			(snapshot[a.idx].p.syndrome.key < snapshot[b.idx].p.syndrome.key ? -1 : 1));
+		for (const s of shares) {
+			if (left <= 0) break;
+			if (s.rem > 0) { takes[s.idx]++; left--; }
+		}
+
+		let walked = 0;
+		snapshot.forEach((s, idx) => {
+			const n = Math.min(takes[idx], s.p.pop);
+			if (n <= 0) return;
+			s.p.removeUnits(n, s.p, null);
+			site.pop -= n;
+			walked += n;
+		});
+		if (walked > 0) {
+			this.emigrants_total += walked;
+			this.markCompositionDirty();
+		}
+		return walked;
 	}
 
 	// ========================================

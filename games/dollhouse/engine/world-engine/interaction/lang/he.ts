@@ -63,6 +63,8 @@ const L: Record<string, Lexeme> = {
   chase: { w: "רודף", f: "רודפת", vmpl: "רודפים", vfpl: "רודפות", inf: "לרדוף" },
   follow: { w: "עוקב", f: "עוקבת", vmpl: "עוקבים", vfpl: "עוקבות", inf: "לעקוב" },
   stop: { w: "עוצר", f: "עוצרת", vmpl: "עוצרים", vfpl: "עוצרות", inf: "לעצור" },
+  // Board chrome's "go back" word (⑦) — the AAC glyph `return`.
+  return: { w: "חוזר", f: "חוזרת", vmpl: "חוזרים", vfpl: "חוזרות", inf: "לחזור" },
   market: { w: "שוק" },
   trade: { w: "מחליף", f: "מחליפה", vmpl: "מחליפים", vfpl: "מחליפות" },
   // Nations P6: the verb the absolute taboo ring forbids (root ל.ח.מ).
@@ -164,6 +166,7 @@ const L: Record<string, Lexeme> = {
   sheep: { w: "כבשה", g: "f" },
   box: { w: "קופסה", g: "f" },
   basket: { w: "סל", g: "m" },
+  satchel: { w: "ילקוט", g: "m" },
   bubbles: { w: "בועות", g: "f", pl: true },
   sparks: { w: "ניצוצות", g: "m", pl: true },
   boat: { w: "סירה", g: "f" },
@@ -215,7 +218,29 @@ const L: Record<string, Lexeme> = {
   bin: { w: "פח", g: "m" },
   bowl: { w: "קערה", g: "f" },
   oven: { w: "תנור", g: "m" },
+  anvil: { w: "סדן", g: "m" },
+  loom: { w: "נול", g: "m" },
+  shelf: { w: "מדף", g: "m" },
+  altar: { w: "מזבח", g: "m" },
+  // The masonry bench — a construct pair built like `workbench` ("שולחן עבודה"),
+  // which is the model for every bench-that-is-a-trade in this lexicon.
+  stonecutter: { w: "שולחן סיתות", g: "m" },
   well: { w: "באר", g: "f" },
+  smithy: { w: "נפחייה", g: "f" },
+  weaver: { w: "אריגה", g: "f" },
+  library: { w: "ספריה", g: "f" },
+  temple: { w: "מקדש", g: "m" },
+  living: { w: "סלון", g: "m" },
+  shop: { w: "חנות", g: "f" },
+  forge: { w: "מפוחה", g: "f" },
+  shrine: { w: "מקדש קטן", g: "m" },
+  weaving: { w: "חדר אריגה", g: "m" },
+  study: { w: "חדר עבודה", g: "m" },
+  // The stonecutter's room, formed like `weaving` ("חדר אריגה") — "the <craft>
+  // room" is how this lexicon names every workroom.
+  masonry: { w: "חדר סיתות", g: "m" },
+  // The wild outcrop, not the material: you quarry `stone` out of a `rock`.
+  rock: { w: "סלע", g: "m" },
   food: { w: "אוכל", g: "m", mass: true },
   // TOY is a NOUN used attributively, never an adjective: Hebrew says
   // "מכונית צעצוע" (a construct pair), not "מכונית צעצועה". Without invariant
@@ -244,6 +269,8 @@ const L: Record<string, Lexeme> = {
   show: { w: "מראה", f: "מראה", vmpl: "מראים", vfpl: "מראות", inf: "להראות" },
   // City-founding ③ — the structure board's room words + the demolish verb.
   break: { w: "שובר", f: "שוברת", vmpl: "שוברים", vfpl: "שוברות", inf: "לשבור" },
+  // Construction ④ — the room-EMPTYING verb (break's stow-only twin).
+  empty: { w: "מרוקן", f: "מרוקנת", vmpl: "מרוקנים", vfpl: "מרוקנות", inf: "לרוקן" },
   room: { w: "חדר", g: "m" },
   door: { w: "דלת", g: "f" },
   bedroom: { w: "חדר שינה", g: "m", defw: "חדר השינה" },

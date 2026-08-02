@@ -237,7 +237,7 @@ describe("craftRecipeOf — one pipeline job shape for furniture and toys alike"
   it("resolves furniture through its own row", () => {
     expect(craftRecipeOf("furn.chair")).toMatchObject({
       produces: "furn.chair",
-      consumes: { wood: 1 },
+      consumes: { block: 1 }, // phase 3: furniture consumes BLOCKS
       label: "chair",
     });
   });

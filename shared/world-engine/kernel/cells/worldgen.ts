@@ -3,9 +3,11 @@
 // Generation-time writes and pure read-side scans that sit OUTSIDE the rule
 // engine: ore deposits are placed once (a finite budget the runtime may only
 // deplete), and founding candidates are detected by reading the settled
-// `people` field. Neither adds dynamics, so the substrate's idle-safety is
-// untouched. Everything here is deterministic — keyed hashes, fixed scan
-// order — because founding a city must replay bit-identically.
+// `forage` field (the land's forage capacity — the crowd it feeds is
+// proportional, settlement-emergence.md §3). Neither adds dynamics, so the
+// substrate's idle-safety is untouched. Everything here is deterministic —
+// keyed hashes, fixed scan order — because founding a city must replay
+// bit-identically.
 
 import type { CellGrid } from './grid';
 
@@ -155,7 +157,7 @@ export function carveValleys(grid: CellGrid, opts: CarveOpts = {}): void {
 }
 
 export interface FoundingOpts {
-  /** Density needed: Σ people within `radius` (box) ≥ threshold. */
+  /** Density needed: Σ forage within `radius` (box) ≥ threshold. */
   threshold: number;
   radius: number;
   /** Minimum euclidean distance to every existing/accepted settlement. */
@@ -169,10 +171,12 @@ export interface FoundingOpts {
   maxHarvest?: number;
   /** Existing settlement positions ([x, y] tile coords). */
   occupied?: Array<[number, number]>;
-  peopleField?: string;
+  /** The capacity field crowds are read off (default 'forage'; a wild
+   *  species' declared field when its crowds scout for themselves). */
+  forageField?: string;
   /** Sugarscape hook: rank candidates by density PLUS weighted resource
    *  sums over the same box (e.g. [{field:'ore', weight:3}] makes
-   *  prospector towns outrank equally-crowded farm hamlets). People still
+   *  prospector towns outrank equally-crowded farm hamlets). Crowds still
    *  gate via `threshold` — resources rank, crowds found. This is where
    *  day-boundary SUPPLY/DEMAND plugs in later: the settlement layer sets
    *  the weights from scarcity (metal dear → ore weight up), and founding
@@ -189,8 +193,8 @@ export interface FoundingOpts {
    *  (default 'river'; absent from the substrate ⇒ no mask). Towns sit on
    *  the BANK, not in the channel — without this the picker founds mid-
    *  river by construction, because `river > 45` is the unique global
-   *  maximum of the `people` field it ranks on (fertility 15 → lure 15 →
-   *  people 30) AND the exact cells zoom.ts calls unwalkable. Rejecting
+   *  maximum of the `forage` field it ranks on (fertility 15 → lure 15 →
+   *  forage 30) AND the exact cells zoom.ts calls unwalkable. Rejecting
    *  the channel doesn't cost the river its pull: `density` is a box-sum
    *  over `radius`, so a bank cell still counts the whole watercourse's
    *  crowds and still outranks dry land. Rivers stay the strongest
@@ -220,14 +224,14 @@ export interface FoundingSite {
   x: number;
   y: number;
   cell: number;
-  /** Σ people in the box — the crowd a founding would harvest. */
+  /** Σ forage in the box — the crowd a founding would harvest. */
   density: number;
   /** density + Σ weight × resource box-sums — the ranking key. */
   score: number;
 }
 
 /**
- * Scan the settled `people` field for tiles dense enough to found a city
+ * Scan the settled `forage` field for tiles dense enough to found a city
  * (world-content §5). Pure read, deterministic: candidates rank by
  * (score desc, cell index asc) and are accepted greedily under the
  * spacing rule against occupied AND already-accepted sites. The harvest /
@@ -235,11 +239,11 @@ export interface FoundingSite {
  */
 export function findFoundingSites(grid: CellGrid, opts: FoundingOpts): FoundingSite[] {
   const {
-    threshold, radius, minSpacing, occupied = [], peopleField = 'people', score = [], eligible,
+    threshold, radius, minSpacing, occupied = [], forageField = 'forage', score = [], eligible,
     wetField = 'river', wetOver = 45,
   } = opts;
-  const people = grid.fields[peopleField];
-  if (!people) return [];
+  const forage = grid.fields[forageField];
+  if (!forage) return [];
   const { cols, topo } = grid;
   const scoreFields = score
     .map(s => ({ arr: grid.fields[s.field], weight: s.weight }))
@@ -253,7 +257,7 @@ export function findFoundingSites(grid: CellGrid, opts: FoundingOpts): FoundingS
     let density = 0;
     let rank = 0;
     topo.disk(c, radius, cell => {
-      density += people[cell];
+      density += forage[cell];
       for (const s of scoreFields) rank += s.weight * s.arr![cell];
     });
     if (density >= threshold) candidates.push({ x: c % cols, y: (c / cols) | 0, cell: c, density, score: density + rank });

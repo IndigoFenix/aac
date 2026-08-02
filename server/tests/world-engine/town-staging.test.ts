@@ -26,13 +26,19 @@ import {
   slotZoningFn,
   type FoundingGrowthInput,
 } from "@shared/world-engine/kernel/town/zoning.js";
-import { resolveStructure } from "@shared/world-engine/kernel/town/structures.js";
+import { resolveStructure, structureCosts } from "@shared/world-engine/kernel/town/structures.js";
+import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import { TOWN_PLAY_STRUCTURES } from "@shared/world-engine/interaction/town/town-play.js";
 import { putStock } from "@shared/world-engine/kernel/town/transfer.js";
 
 const SEED = 21;
 const KEY = "millbrook";
 const HOUSE = resolveStructure(TOWN_PLAY_STRUCTURES, "house")!;
+/** The house's RESOLVED bill (phase 6 — derived from its footprint, not
+ *  authored on the row). Every assertion below reads this rather than
+ *  `HOUSE.costs`, which now carries only a structure's extras. */
+const HOUSE_COSTS = structureCosts(HOUSE);
+const HOUSE_BLOCKS = HOUSE_COSTS[BLOCK_GLYPH]!;
 
 function lot(occupied: Array<{ x: number; y: number; w: number; h: number }> = []) {
   return foundingOptions({
@@ -44,13 +50,13 @@ function lot(occupied: Array<{ x: number; y: number; w: number; h: number }> = [
 describe("the staged labor clock (FoundedBuilding.costs / pile / laborStartDay)", () => {
   it("a designation records its costs with an empty pile and NEVER completes unstaged", () => {
     const deltas = createTownDeltas();
-    const b = deltas.foundBuilding(lot(), 0, 2, HOUSE.costs);
-    expect(b.costs).toEqual(HOUSE.costs);
+    const b = deltas.foundBuilding(lot(), 0, 2, HOUSE_COSTS);
+    expect(b.costs).toEqual(HOUSE_COSTS);
     expect(b.pile).toEqual({});
     expect(b.laborStartDay).toBeUndefined();
     // The waiting staked plot is honest: no materials, no walls — ever.
     expect(foundedBuildingDone(b, 1_000_000)).toBe(false);
-    expect(stagingMissing(b)).toEqual(HOUSE.costs);
+    expect(stagingMissing(b)).toEqual(HOUSE_COSTS);
   });
 
   it("the pile fills (facted variants pay their head), staging stamps, BUILDERS work it off", () => {
@@ -202,7 +208,9 @@ describe("growth's collapsed twin spends only FREE yard stock", () => {
   }
 
   it("reserved wood halts growth; releasing it restarts growth; the spend never eats reserved units", () => {
-    const houseWood = HOUSE.costs.wood ?? 0;
+    // Phase 3: the bill is BLOCKS; a wood-only yard pays through the
+    // twin's implicit mill at 2:1 — one house = costs.block × 2 wood.
+    const houseWood = HOUSE_BLOCKS * 2;
     expect(houseWood).toBeGreaterThan(0);
     const deltas = createTownDeltas();
     // Exactly one house's wood in the yard — and every unit spoken for.
@@ -227,7 +235,9 @@ describe("growth's collapsed twin spends only FREE yard stock", () => {
   });
 
   it("a reservation smaller than the surplus leaves growth untouched (free covers the bill)", () => {
-    const houseWood = HOUSE.costs.wood ?? 0;
+    // Phase 3: the bill is BLOCKS; a wood-only yard pays through the
+    // twin's implicit mill at 2:1 — one house = costs.block × 2 wood.
+    const houseWood = HOUSE_BLOCKS * 2;
     const deltas = createTownDeltas();
     deltas.stock.wood = houseWood + 2;
     deltas.stock.stone = 20; // cover any stone in richer catalogs
@@ -240,7 +250,9 @@ describe("growth's collapsed twin spends only FREE yard stock", () => {
   });
 
   it("banked (non-urgent) growth respects reservations identically", () => {
-    const houseWood = HOUSE.costs.wood ?? 0;
+    // Phase 3: the bill is BLOCKS; a wood-only yard pays through the
+    // twin's implicit mill at 2:1 — one house = costs.block × 2 wood.
+    const houseWood = HOUSE_BLOCKS * 2;
     const deltas = createTownDeltas();
     deltas.stock.wood = houseWood;
     deltas.reservations.reserve("agr_x", TOWN_YARD_EP, "wood", houseWood);

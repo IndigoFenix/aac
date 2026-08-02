@@ -30,7 +30,13 @@ import {
   type TransferSource,
 } from "@shared/world-engine/kernel/town/transfer.js";
 import { createTownDeltas } from "@shared/world-engine/kernel/town/construction.js";
-import { costsMet, resolveStructure, spendCosts } from "@shared/world-engine/kernel/town/structures.js";
+import {
+  costsMet,
+  resolveStructure,
+  spendCostsChain,
+  structureCosts,
+} from "@shared/world-engine/kernel/town/structures.js";
+import { BLOCK_GLYPH, withRefinableCredit } from "@shared/world-engine/products.js";
 import { foundSite } from "@shared/world-engine/interaction/town/founding.js";
 import { TOWN_PLAY_STRUCTURES } from "@shared/world-engine/interaction/town/town-play.js";
 import { FOOD_DAY_SEC } from "@shared/world-engine/kernel/town/goods.js";
@@ -264,12 +270,16 @@ describe("yard deposit → a build order can spend it", () => {
     expect(costsMet(spec, deltas.stock)).toBe(false); // nothing in the yard yet
 
     // The player's pocket → the yard crate (whose stack IS deltas.stock).
-    const pocket: Record<string, number> = { wood: 10 };
+    // Sized off the house's OWN bill (phase 6 — derived from its footprint),
+    // so "enough wood for a house, and two left over" stays true whatever the
+    // bay knobs are tuned to.
+    const HOUSE_WOOD = structureCosts(spec)[BLOCK_GLYPH]! * 2;
+    const pocket: Record<string, number> = { wood: HOUSE_WOOD + 4 };
     const hands = ep("pocket:__player__", pocket, { kind: "pocket" });
     const yard = ep("town:yard", deltas.stock, { kind: "yard" });
     const ledger = createTransferLedger();
     const a = ledger.post({
-      from: hands.id, to: yard.id, goods: { wood: 8 },
+      from: hands.id, to: yard.id, goods: { wood: HOUSE_WOOD + 2 },
       issuer: "__player__", mode: "haul", now: 0, sourceGlyph: "put + wood + in + yard",
     });
     ledger.begin(a.id, "resident_0_1");
@@ -279,10 +289,12 @@ describe("yard deposit → a build order can spend it", () => {
     ledger.complete(a.id);
 
     expect(pocket.wood).toBe(2);
-    expect(deltas.stock.wood).toBe(8);
-    expect(costsMet(spec, deltas.stock)).toBe(true); // the order can now afford it
-    expect(spendCosts(spec, deltas.stock)).toBe(true);
-    expect(deltas.stock.wood ?? 0).toBe(8 - spec.costs.wood!);
+    expect(deltas.stock.wood).toBe(HOUSE_WOOD + 2);
+    // Phase 3: the bill is BLOCKS — raw wood affords it at the 2:1 milled
+    // value (chain-aware), and the chain spend mills implicitly.
+    expect(costsMet(spec, withRefinableCredit(deltas.stock))).toBe(true);
+    expect(spendCostsChain(spec, deltas.stock)).toBe(true);
+    expect(deltas.stock.wood ?? 0).toBe(2);
   });
 });
 

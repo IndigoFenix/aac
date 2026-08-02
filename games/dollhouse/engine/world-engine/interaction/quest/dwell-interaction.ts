@@ -16,6 +16,11 @@
 // to the live game, and the SAME resolved target drives the spark's visual, so
 // the highlight can never disagree with what a dwell would act on.
 //
+// A THING OR A PLACE, NEVER BOTH (user law). Whatever the spark is over decides
+// which rule applies, and only one rule ever applies: hovering an object means
+// THAT object, hovering an area means THAT area. Modes narrow what a cell does;
+// they never add a second claim on the same hover.
+//
 // WHY A TABLE AND NOT FIVE GESTURES. Each interaction used to own its own read
 // of the gaze plus its own preconditions — five dwells racing per frame, each
 // able to discard a target the others accepted. That is how looking straight at
@@ -48,10 +53,19 @@ export interface HoverTarget {
 export type DwellPhase = "short" | "long";
 
 /** The live context a hover is read against. `conversingWith` is the creature
- *  the player is talking to right now, and is the ONLY state that changes what a
- *  hover means. */
+ *  the player is talking to right now; `buildSpot` is the marked construction
+ *  spot under this frame's hover, if the player has the build word up. Those
+ *  two are the ONLY state that changes what a hover means. */
 export interface DwellContext {
   conversingWith: string | null;
+  /** BUILD MODE (⑦): is the player holding the build word, with the ground
+   *  lit? While they are, a settled look is ABOUT the ground. */
+  building?: boolean;
+  /** The highlighted build spot the hover is over, or null for unmarked
+   *  ground. Resolved by the host from the SAME point the hover reports —
+   *  and only for a GROUND hover, because that is the only hover this table
+   *  reads it on — so the lit spot and the acted-on spot can never disagree. */
+  buildSpot?: string | null;
 }
 
 /**
@@ -72,7 +86,11 @@ export type DwellAction =
   /** Point the partner at a thing — it acts on it if it has a need for it. */
   | { act: "attendObject"; cid: string; id: string }
   /** Point the partner at another person — likewise, need-gated. */
-  | { act: "attendCreature"; cid: string; id: string };
+  | { act: "attendCreature"; cid: string; id: string }
+  /** Choose the marked construction spot the spark settled on — or NULL to
+   *  let the last one go (the ground outside every spot is a deselection,
+   *  not nothing). */
+  | { act: "buildSpot"; id: string | null };
 
 /**
  * THE TABLE. Pure: same inputs, same answers, no world access.
@@ -96,6 +114,23 @@ export function dwellInteraction(
 ): DwellAction[] {
   if (!target) return [];
   const partner = ctx.conversingWith;
+
+  // BUILD MODE (⑦). While the build word is up the GROUND is what the world
+  // is FOR: a long rest on a marked place chooses it, and a long rest on
+  // ANYWHERE ELSE lets the chosen one go — settling on open ground is a real
+  // answer ("not that one"), not silence.
+  //
+  // IT CLAIMS THE GROUND AND NOTHING ELSE. A person is never a spot (someone
+  // standing on a plot is still someone) and neither is a THING: the mode
+  // used to claim any non-creature hover, which meant a fixture standing on a
+  // lit place fired two cells of this table at once — the short rest opened
+  // its board, the long rest selected the place under it — and since each of
+  // those releases the other (one selection at a time), the board flipped
+  // between the chest and the build menu for as long as the player looked at
+  // it. Two rules were racing for one hover. The hover itself decides now.
+  if (ctx.building && phase === "long" && target.kind === "ground") {
+    return [{ act: "buildSpot", id: ctx.buildSpot ?? null }];
+  }
 
   if (target.kind === "ground") {
     // Only a LONG rest on bare ground means anything: the ground is what the

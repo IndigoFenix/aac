@@ -641,6 +641,7 @@ export const ko: Translations = {
       cabinet: "수납장",
       barrel: "나무통",
       basket: "바구니",
+      satchel: "가방",
       lamp: "램프",
       window: "창문",
       heater: "히터",

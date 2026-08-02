@@ -176,7 +176,14 @@ export type FixtureKind =
   // The PLACE-MAKING stations (stations.ts): the signature fixture of a room
   // kind the town can now name — an ANVIL makes a forge, an ALTAR a shrine, a
   // LOOM a weaving room, a SHELF a study. Each speaks its own name.
-  | "anvil" | "altar" | "loom" | "shelf";
+  | "anvil" | "altar" | "loom" | "shelf"
+  // Construction phase 5's pair. The STONECUTTER is the masonry's place-making
+  // bench — the anvil's twin, one trade over. The DOOR is the leaf that hangs
+  // in a doorway (construction-structures.md: the doorway is wall, the door
+  // itself is furniture): the one fixture kind pinned to an OPENING rather
+  // than a floor spot, so it renders as part of its wall run once hung and as
+  // a loose object only while it is being carried or stored.
+  | "stonecutter" | "door";
 
 /** Fixture kinds a walker passes THROUGH: no collision footprint. A chair
  *  is knee-high and tucked right against the table — making it solid
@@ -234,6 +241,15 @@ export interface ObjectSpec {
    *  may be empty since a fixture is a container. Streamed worlds may
    *  abstract fixtures away with their building (add/removeWorldObject). */
   fixture?: FixtureKind;
+  /** SOLIDITY, stated outright (phase 5). Absent ⇒ the historical rule: solid
+   *  iff it is a non-passthrough `fixture`. That rule silently conflated "has a
+   *  furniture archetype" with "you cannot walk through it", which held only
+   *  while every solid thing in the world was furniture. A wild boulder is
+   *  solid and is no kind of furniture — it used to borrow the chest archetype
+   *  purely to collide, and modelling it properly took its collision away with
+   *  the chest. Set it explicitly and neither fact depends on the other:
+   *  `true` collides with no archetype, `false` is a fixture you walk through. */
+  solid?: boolean;
   /** A lidded fixture eases open while someone stands beside it. */
   openable?: boolean;
   /** Which way the fixture faces (radians, 0 = +x) — into the room. */
@@ -299,6 +315,13 @@ export interface WallSpec {
  * while CLOSED and is passable while OPEN; the engine eases it open whenever an
  * avatar is within `openRadius` (and it isn't locked) and shut again once nobody
  * is near, so it "swings out as you walk through, then closes."
+ *
+ * THE SPEC IS THE DOORWAY, NOT THE LEAF (construction phase 5, the law's
+ * "doorways are part of the wall, but the doors themselves should be
+ * constructed as furniture pieces"). A `door` structure is the GAP the wall run
+ * leaves — it is emitted whether or not anything hangs in it, so routing
+ * portals, `doorConnectivity` and `visibleBuildings` are identical either way.
+ * `leaf` is the only thing that changes.
  */
 export interface DoorSpec {
   kind: "door";
@@ -306,6 +329,13 @@ export interface DoorSpec {
   a: Vec2;
   b: Vec2;
   thickness: number;
+  /** Does a swinging LEAF hang in this doorway? ABSENT or true ⇒ yes (every
+   *  spec authored before phase 5, and every worldgen building — the law lets
+   *  worldgen abstract its walls, doors included). `false` ⇒ a bare opening:
+   *  nothing blocks it, nothing swings, nothing latches. The leaf is furniture
+   *  (`FURNITURE_ITEMS.door`) the construction pipeline makes and hangs; until
+   *  it does, the hole in the wall is exactly a hole in the wall. */
+  leaf?: boolean;
   /** Endpoint the leaf is hinged at (swings about it). Defaults to "a". */
   hinge?: "a" | "b";
   /** An avatar within this distance of the door's center opens it. Defaults to
@@ -350,6 +380,11 @@ export interface BuildingDoorway {
   offset: number;
   width: number;
   locked?: boolean;
+  /** Threaded straight through to the generated `DoorSpec.leaf` (see there):
+   *  absent/true = a leaf hangs, `false` = a bare opening. This is how a
+   *  building AUTHOR (town-stage reading a construction delta's `doorless`)
+   *  says "the doorway is cut but nobody has hung the door yet". */
+  leaf?: boolean;
 }
 
 /**
@@ -421,9 +456,22 @@ export interface NpcBehaviorSpec {
    * projects an NPC's position from a schedule clock (grand-dream's food
    * errands) sets this to the SAME speed the clock assumes, so the body and
    * the projection stay in step.
+   *
+   * ZERO IS A DECLARATION, NOT A SLOW WALK: it makes the body ROOTED
+   * (isRootedNpc) — a tree. See WORLD_MAX_ROOTED_NPCS.
    */
   speed?: number;
 }
+
+/**
+ * ROOTED = this body can never walk, because its spec says its pace is zero.
+ * A living thing that stands still (a shopkeeper at their stall) does NOT
+ * qualify: it declares no speed, so it keeps player pace and merely chooses
+ * to hold position — it can be given an errand and walk off at any moment.
+ * A tree cannot, so the host spends no steering on it and budgets it apart
+ * from the creature cast. The FUNCTION decides, never an id prefix or a kind.
+ */
+export const isRootedNpc = (npc: NpcSpec): boolean => npc.behavior?.speed === 0;
 
 /**
  * The NPC's social persona. These fields MIRROR the `social_trainer` app's
@@ -532,8 +580,16 @@ export const WORLD_MAX_BUILDINGS = 16;
 /** Max storeys in one building. */
 export const WORLD_MAX_FLOORS = 8;
 /** Each NPC is hosted + voiced (a live social session) on one peer; keep the
- *  count low so a single host can drive them all. */
+ *  count low so a single host can drive them all. Counts MOVERS only — see
+ *  WORLD_MAX_ROOTED_NPCS. */
 export const WORLD_MAX_NPCS = 8;
+/** ROOTED bodies (trees and the like) are budgeted SEPARATELY and far more
+ *  generously: a body that declares zero pace can never walk, so it skips
+ *  the whole per-frame steering pipeline (aim → detour → steer, the
+ *  expensive part) and costs only its avatar record — rendering, hover,
+ *  proximity, containers. A forest is therefore affordable in a way a crowd
+ *  is not, and standing one must never crowd out a creature. */
+export const WORLD_MAX_ROOTED_NPCS = 128;
 export const WORLD_MAX_PLAYERS = 12;
 /** Max world-units per manifold axis. World units read as METERS (avatar
  *  radius 0.4, walk speed 5/s), so this admits an Earth-circumference

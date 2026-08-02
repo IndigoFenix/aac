@@ -23,7 +23,12 @@ import { TOWN_HOUSE_PALETTE } from "@shared/world-engine/interaction/dialogue/di
 import {
   createTownDeltas, seedFoundingWorkshops, type FoundedBuilding, type SerializedTownDeltas, type TownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
-import { resolveStructure, type StructureSpec } from "@shared/world-engine/kernel/town/structures.js";
+import {
+  resolveStructure,
+  structureCosts,
+  type StructureSpec,
+} from "@shared/world-engine/kernel/town/structures.js";
+import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import { serviceRadiusM, type WorldScale } from "@shared/world-engine/scale.js";
 
 export interface TownPlayConfig {
@@ -275,28 +280,63 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
     frame: "building", symbol: "home",
     footprint: { w: 9, d: 8 },
     program: { sleepCells: 2, wet: true, kitchen: true },
-    jobs: 0, costs: { wood: 6 }, buildDays: 1, color: "#a8875f", default: true,
+    jobs: 0, costs: {}, buildDays: 1, color: "#a8875f", default: true,
   },
   {
     type: "farm", glyph: "farm", label: "farm", role: "work",
     frame: "building", symbol: "grain",
     footprint: { w: 18, d: 12 },
     program: { store: true }, economy: "farm",
-    jobs: 2, costs: { wood: 8 }, buildDays: 2, color: "#7d9c53", default: true,
+    jobs: 2, costs: {}, buildDays: 2, color: "#7d9c53", default: true,
   },
   {
     type: "market", glyph: "market", label: "market", role: "work",
     frame: "building", symbol: "money",
     footprint: { w: 14, d: 10 },
     program: {}, // an open hall — the stalls ARE the floor
-    jobs: 2, costs: { wood: 10, stone: 4 }, buildDays: 2, color: "#c9803a", default: true,
+    jobs: 2, costs: {}, buildDays: 2, color: "#c9803a", default: true,
   },
   {
-    type: "workshop", glyph: "workshop", label: "workshop", role: "work",
+    // The CARPENTRY rename (phase 3, decision 3): `type`/`glyph` stay
+    // "workshop" (save + speech identity), the LABEL wears the trade —
+    // resolveStructure matches labels too, so "build carpentry" works.
+    // Phase 5 finally splits the masonry off it (the next row); metalworking
+    // still waits.
+    type: "workshop", glyph: "workshop", label: "carpentry", role: "work",
     frame: "building", symbol: "workbench",
     footprint: { w: 10, d: 8 },
     program: { store: true },
-    jobs: 2, costs: { wood: 6, stone: 2 }, buildDays: 1.5, color: "#8a7fae", default: true,
+    jobs: 2, costs: {}, buildDays: 1.5, color: "#8a7fae", default: true,
+  },
+  {
+    // THE MASONRY (construction phase 5) — the carpentry's twin, and the row
+    // that finishes the block chain. Stone has always refined into blocks
+    // (products.ts), but until now it did so at a CARPENTER's bench, because
+    // the carpentry was the only work type `refineSpotOf` knew. The catalogue
+    // says where each raw belongs (`refinesTo.at`); this is the building that
+    // claim finally points at.
+    //
+    // Named the way the carpentry is: the `type`/`glyph` is the PLACE
+    // ("masonry" — what the town has, and the word a hauler's intent line
+    // speaks), the `label` is the BENCH ("stonecutter"), so both "build
+    // masonry" and "build stonecutter" reach this row through
+    // resolveStructure's type → glyph → label ladder. The icon frames the
+    // bench for the place-making reason below: `building(stonecutter)` draws,
+    // where `building(masonry)` would frame a ❓.
+    //
+    // Wider than the smithy at the same depth, mirroring CLUSTERS.masonry: a
+    // mason needs a STOCK LANE (rough stone waiting, cut block stacked) that
+    // a smith working at one anvil never did. `store: true` for the same
+    // reason — the stock band is the point, not an afterthought.
+    //
+    // `default: true`: a town that cannot raise this one is a town whose
+    // stone keeps routing to the carpenter's bench, which is the very thing
+    // the split exists to end.
+    type: "masonry", glyph: "masonry", label: "stonecutter", role: "work",
+    frame: "building", symbol: "stonecutter",
+    footprint: { w: 12, d: 9 },
+    program: { store: true }, stations: ["stonecutter"],
+    jobs: 2, costs: {}, buildDays: 1.5, color: "#9a968f", default: true,
   },
   // ── THE PLACE-MAKING BUILDINGS ──────────────────────────────────────
   // Each is one row: a footprint, a program, and the STATION that makes it
@@ -304,7 +344,10 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
   // now with fixtures to put through it). The room its fixture stands in
   // derives the room kind, and the room derives the building's character, so
   // "a building with an anvil in it" and "a smithy" are the same fact
-  // reached from either direction.
+  // reached from either direction. The MASONRY above is one of these too —
+  // it is filed beside the carpentry instead because what it is FOR is the
+  // refinement split, and a reader looking for the other half of that split
+  // should find it in the next row, not four rows down.
   //
   // Not `default: true` on all four: the SMITHY and the WEAVER ride the
   // existing craft economy and ship, while the TEMPLE and the LIBRARY are
@@ -316,28 +359,28 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
     frame: "building", symbol: "anvil",
     footprint: { w: 11, d: 9 },
     program: { store: true }, stations: ["anvil"],
-    jobs: 2, costs: { wood: 6, stone: 6 }, buildDays: 2, color: "#6f6b66", default: true,
+    jobs: 2, costs: {}, buildDays: 2, color: "#6f6b66", default: true,
   },
   {
     type: "weaver", glyph: "weaver", label: "weaver", role: "work",
     frame: "building", symbol: "loom",
     footprint: { w: 10, d: 9 },
     program: { store: true }, stations: ["loom"],
-    jobs: 2, costs: { wood: 8 }, buildDays: 1.5, color: "#a97fa2", default: true,
+    jobs: 2, costs: {}, buildDays: 1.5, color: "#a97fa2", default: true,
   },
   {
     type: "library", glyph: "library", label: "library", role: "work",
     frame: "building", symbol: "shelf",
     footprint: { w: 12, d: 10 },
     program: {}, stations: ["shelf"], // an open reading hall
-    jobs: 1, costs: { wood: 10, stone: 4 }, buildDays: 2, color: "#7f93ae", default: false,
+    jobs: 1, costs: {}, buildDays: 2, color: "#7f93ae", default: false,
   },
   {
     type: "temple", glyph: "temple", label: "temple", role: "work",
     frame: "building", symbol: "altar",
     footprint: { w: 13, d: 11 },
     program: {}, stations: ["altar"], // the hall IS the room
-    jobs: 1, costs: { wood: 8, stone: 12 }, buildDays: 3, color: "#c8bfa4", default: false,
+    jobs: 1, costs: {}, buildDays: 3, color: "#c8bfa4", default: false,
   },
   {
     // THE EMPTY SHELL (pipeline ⑤b): a building with NO role — completes
@@ -347,7 +390,20 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
     type: "building", glyph: "building", label: "building", role: "work",
     footprint: { w: 10, d: 9 },
     program: {}, shell: true,
-    jobs: 0, costs: { wood: 5 }, buildDays: 1, color: "#9b8a6d", default: true,
+    jobs: 0, costs: {}, buildDays: 1, color: "#9b8a6d", default: true,
+  },
+  {
+    // THE STOREHOUSE (phase 3): the town's raw-material bank — a store
+    // program whose communal crates hold the chain's stock (felled wood,
+    // milled blocks). The par-stock logging loop keeps it fed, refine
+    // commits land their blocks here first, and construction hauls draw
+    // from it like any other communal container. No staff: a storehouse
+    // is shelving, not a trade.
+    type: "storehouse", glyph: "storehouse", label: "storehouse", role: "work",
+    frame: "building", symbol: "box",
+    footprint: { w: 10, d: 8 },
+    program: { store: true },
+    jobs: 0, costs: {}, buildDays: 1.5, color: "#8d7f63", default: true,
   },
 ];
 
@@ -356,7 +412,25 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
  *  town stock to draw on. A founded site brings its own gathered stock. */
 export function townStockSeed(houses: number): Record<string, number> {
   if (houses <= 0) return {};
-  return { wood: 20 + Math.min(40, houses), stone: 8 + Math.min(16, Math.floor(houses / 2)) };
+  // Phase 3 mix: milled blocks for immediate building (an established
+  // town has built before) plus raws so the refine loop has something to
+  // draw the day the blocks run out.
+  //
+  // SIZED IN BUILDINGS (phase 6), not in units: bills are derived from
+  // footprints now (block-bill.ts — a cottage is 120 blocks), and the flat
+  // 10–30 this used to seed stopped being a yard and became a rounding error
+  // the day that landed. One dwelling's worth of milled block on hand, and the
+  // raws to mill a second, growing slowly with the town — an established town
+  // can start ONE building today and has the timber for the next.
+  const dwelling = structureCosts(
+    TOWN_PLAY_STRUCTURES.find((s) => s.type === "house") ?? { costs: {}, footprint: { w: 9, d: 8 } },
+  )[BLOCK_GLYPH] ?? 1;
+  const growth = 1 + Math.min(1, houses / 24); // 1× at a hamlet → 2× at a town
+  return {
+    "block.material_wood": Math.round(dwelling * growth),
+    wood: Math.round(dwelling * growth * 2), // the 2:1 mill — a second building's worth
+    stone: Math.round(dwelling * growth),
+  };
 }
 
 /**
@@ -648,6 +722,8 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     castNpcs: false,
     deltas,
     registry: workstations,
+    // The catalog a construction site names itself from (⑦ site icons).
+    structures,
     // Real-planet terrain ⇒ the planet is the reference frame: the town rect
     // is content, not walls (bodies/followers may leave town). Synthetic
     // ground ("flat"/"hills") has no world beyond the rect, so it stays bounded.

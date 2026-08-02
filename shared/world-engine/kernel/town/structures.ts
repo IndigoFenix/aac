@@ -25,6 +25,8 @@
 
 import type { BuildingProgram, StationKind } from "./stations.js";
 import { headOf } from "../../variations.js";
+import { BLOCK_GLYPH, rawsForRefined, withRefinableCredit } from "../../products.js";
+import { shellBill } from "./block-bill.js";
 
 /** One buildable structure — a registry row (StationDef/ClusterDef pattern). */
 export interface StructureSpec {
@@ -75,7 +77,19 @@ export interface StructureSpec {
   /** The economic half: a BuildingDef KEY in the world's compiled economy
    *  (produces/consumes/cap/district ride there). Absent = no aggregate row. */
   economy?: string;
-  /** Build-material costs, drawn from the site/town stock: glyph → count. */
+  /**
+   * EXTRA build materials beyond the structural block bill: glyph → count.
+   *
+   * The BLOCKS are NOT authored here (phase 6) — they are derived from
+   * `footprint` by `shellBill` (block-bill.ts), because a building's stone and
+   * timber is a function of how big it is and nothing else. This map is for
+   * anything a particular structure needs ON TOP of its shell: the glass a
+   * library wants, the iron a forge's hearth takes. Empty is the normal case.
+   *
+   * An explicit `block` entry OVERRIDES the derivation — the escape hatch for a
+   * world doc that wants a specific bill (a ruin that costs almost nothing, a
+   * monument that costs absurdly more). Nothing in the default catalog uses it.
+   */
   costs: Record<string, number>;
   /** Street-days of visible construction (scaffold up → doors open). */
   buildDays: number;
@@ -105,11 +119,39 @@ export function resolveStructure(
   );
 }
 
+/**
+ * The shape every cost helper below accepts. A FULL structure row (with a
+ * `footprint`) is billed for its geometry; a bare `{ costs }` literal — an
+ * annex bill, a partition bill, a test's ad-hoc map — is taken as given.
+ *
+ * The distinction is deliberately made by the PRESENCE of the footprint rather
+ * than by which function you call: it means `costsMet(spec, …)` on a real
+ * catalog row can never silently price a building at its extras alone.
+ */
+export type CostBearing = Pick<StructureSpec, "costs"> &
+  Partial<Pick<StructureSpec, "footprint">>;
+
+/**
+ * THE ONE COST RESOLVER (phase 6): what a structure actually costs to build —
+ * its geometric block bill plus whatever extras its row authors. Everything
+ * that asks "can we afford this / what is missing / spend it" goes through
+ * here, so the catalog, the abstract growth twin, the live pipeline and the
+ * builder's ghost outlines can never quote three different numbers.
+ *
+ * A row that authors its own `block` count keeps it (the documented override).
+ */
+export function structureCosts(spec: CostBearing): Record<string, number> {
+  const authored = { ...spec.costs };
+  if (!spec.footprint || authored[BLOCK_GLYPH] !== undefined) return authored;
+  const bill = shellBill({ w: spec.footprint.w, h: spec.footprint.d });
+  return { ...authored, [BLOCK_GLYPH]: bill.total };
+}
+
 /** The costs a stock cannot cover: glyph → units MISSING (empty = affordable).
  *  Facted stack variants count toward their material head ("wood.wet" pays a
  *  "wood" cost — the founding.ts isSiteMaterial convention). */
 export function missingCosts(
-  spec: Pick<StructureSpec, "costs">,
+  spec: CostBearing,
   stock: Readonly<Record<string, number>>,
 ): Record<string, number> {
   const have = new Map<string, number>();
@@ -118,7 +160,7 @@ export function missingCosts(
     have.set(head, (have.get(head) ?? 0) + Math.max(0, n));
   }
   const missing: Record<string, number> = {};
-  for (const [glyph, n] of Object.entries(spec.costs)) {
+  for (const [glyph, n] of Object.entries(structureCosts(spec))) {
     const short = n - (have.get(glyph) ?? 0);
     if (short > 0) missing[glyph] = short;
   }
@@ -127,7 +169,7 @@ export function missingCosts(
 
 /** Can the stock cover the spec's costs right now? */
 export function costsMet(
-  spec: Pick<StructureSpec, "costs">,
+  spec: CostBearing,
   stock: Readonly<Record<string, number>>,
 ): boolean {
   return Object.keys(missingCosts(spec, stock)).length === 0;
@@ -139,11 +181,11 @@ export function costsMet(
  * false (and spends nothing) when the stock can't cover.
  */
 export function spendCosts(
-  spec: Pick<StructureSpec, "costs">,
+  spec: CostBearing,
   stock: Record<string, number>,
 ): boolean {
   if (!costsMet(spec, stock)) return false;
-  for (const [glyph, cost] of Object.entries(spec.costs)) {
+  for (const [glyph, cost] of Object.entries(structureCosts(spec))) {
     let left = cost;
     // Plain stack first, then facted variants in stable key order.
     const keys = Object.keys(stock)
@@ -156,6 +198,60 @@ export function spendCosts(
       stock[k]! -= take;
       left -= take;
       if (stock[k]! <= 0) delete stock[k];
+    }
+  }
+  return true;
+}
+
+/**
+ * CHAIN-AWARE SPEND (phase 3 — the abstract twin's implicit mill): cover
+ * each cost head from the stock first, then by drawing RAWS at their
+ * refinement ratio (products.ts refinesTo — inPerOut raw units per refined
+ * one). The collapsed growth twin is unobserved by definition, so its mill
+ * happens as ledger arithmetic at exactly the ratio the live refine orders
+ * pay — same knob, both accounts. Returns false (spending nothing) when
+ * even the chain can't cover.
+ */
+export function spendCostsChain(
+  spec: CostBearing,
+  stock: Record<string, number>,
+): boolean {
+  if (!costsMet(spec, withRefinableCredit(stock))) return false;
+  for (const [glyph, cost] of Object.entries(structureCosts(spec))) {
+    let left = cost;
+    const keys = Object.keys(stock)
+      .filter((k) => headOf(k) === glyph)
+      .sort((a, b) => (a === glyph ? -1 : b === glyph ? 1 : a < b ? -1 : 1));
+    for (const k of keys) {
+      if (left <= 0) break;
+      const take = Math.min(left, stock[k] ?? 0);
+      if (take <= 0) continue;
+      stock[k]! -= take;
+      left -= take;
+      if (stock[k]! <= 0) delete stock[k];
+    }
+    // The remainder mills implicitly: raws pay at inPerOut per unit,
+    // catalogue order (wood before stone), facted raw variants included.
+    for (const p of rawsForRefined(glyph)) {
+      if (left <= 0) break;
+      const per = p.refinesTo?.inPerOut ?? 1;
+      const rawKeys = Object.keys(stock)
+        .filter((k) => headOf(k) === p.glyph)
+        .sort((a, b) => (a === p.glyph ? -1 : b === p.glyph ? 1 : a < b ? -1 : 1));
+      let rawHave = rawKeys.reduce((s, k) => s + Math.max(0, stock[k] ?? 0), 0);
+      while (left > 0 && rawHave >= per) {
+        let need = per;
+        for (const k of rawKeys) {
+          if (need <= 0) break;
+          const take = Math.min(need, stock[k] ?? 0);
+          if (take <= 0) continue;
+          stock[k]! -= take;
+          need -= take;
+          rawHave -= take;
+          if (stock[k]! <= 0) delete stock[k];
+        }
+        left -= 1;
+      }
     }
   }
   return true;

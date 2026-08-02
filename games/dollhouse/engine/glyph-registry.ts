@@ -948,6 +948,12 @@ const VOCAB: VocabularyItem[] = [
   // the container silhouette family when its art lands (weave + handle).
   { key: "basket", tKey: "aac.glyph.basket", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧺" },
+  // The SATCHEL — the basket's sibling and the other half of the carried/worn
+  // pair (scope-unification ②): you hold a basket, you WEAR a satchel, so a
+  // satchel leaves your hands free. 🎒 stands in until it has art of its own;
+  // the world already draws it as a real satchel (object-models `satchel`).
+  { key: "satchel", tKey: "aac.glyph.satchel", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🎒" },
   // THE TOGGLEABLE DEVICES the world already speaks about. They pair with the
   // `on`/`off` state poles and the turn_on/turn_off verbs, all of which already
   // ship — these were the only missing half, so "turn on the lamp" had a verb, a
@@ -997,6 +1003,39 @@ const VOCAB: VocabularyItem[] = [
   // board can name, and an unregistered word is a button with no icon.
   { key: "workbench", tKey: "aac.glyph.workbench", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛠️" },
+  // The ANVIL — the smith's fixture, and the inner symbol of every metalworking
+  // place: `building(anvil)` is the smithy, `room(anvil)` the forge-room. Named
+  // as the FIXTURE (not "smithy") because the framing supplies the place; one
+  // word serves both shells. See CONTAINER FRAMES at `building` / `room`.
+  { key: "anvil", tKey: "aac.glyph.anvil", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "⚒️",
+    imagePath: "things/furniture/anvil" },
+  // The LOOM and the SHELF — the weaver's and the reader's fixtures, the other
+  // two place-making stations. No bundled art yet, so they raster their emoji
+  // like `bath` and `toilet` did; art at things/furniture/{loom,shelf}
+  // auto-upgrades them with no code change.
+  { key: "loom", tKey: "aac.glyph.loom", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧵" },
+  { key: "shelf", tKey: "aac.glyph.shelf", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📚" },
+  // The ALTAR — the fixture a house of worship is built around, and the one
+  // word here that names a place's PURPOSE rather than a tool. 🙏 per the
+  // user's call: it is the one glyph in the set that reads across traditions
+  // without picking one (⛩️/✝️/🕌 each name a single faith; an altar is the
+  // furniture they share). Filed under things because it IS furniture — the
+  // temple is `building(altar)`, which is where the meaning lands.
+  { key: "altar", tKey: "aac.glyph.altar", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🙏" },
+  // The STONECUTTER — the mason's bench, and the fifth place-making fixture.
+  // Registered for the anvil's reason twice over: it is a fixture the board can
+  // name (an unregistered word is a button with a label and no icon), and it is
+  // the inner symbol of its place, so `building(stonecutter)` is the masonry the
+  // way `building(anvil)` is the smithy. ⛏️ names the WORK — no emoji draws a
+  // cutting bench, and the pick reads as stone-shaping to a child where 🔨
+  // (already `make`/`build`) would read as any making at all. Art at
+  // things/furniture/stonecutter auto-upgrades it with no code change.
+  { key: "stonecutter", tKey: "aac.glyph.stonecutter", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "⛏️" },
   { key: "soap", tKey: "aac.glyph.soap", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🧼" },
   // emoji weak — toilet-paper roll emoji approximates "towel".
@@ -1023,6 +1062,12 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "💊" },
   { key: "flower", tKey: "aac.glyph.flower", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🌸" },
+  // GRAIN — the staple crop, and the inner symbol of the places that hold and
+  // process it: `building(grain)` reads granary / mill, `room(grain)` the
+  // pantry. The 🌾 emoji is the sheaf, not the field, so it stays the THING.
+  { key: "grain", tKey: "aac.glyph.grain", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🌾",
+    imagePath: "things/plants/grain" },
   { key: "camera", tKey: "aac.glyph.camera", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📷" },
   { key: "computer", tKey: "aac.glyph.computer", pos: "noun", categories: ["what"],
@@ -1079,6 +1124,13 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "nature"] }, tone: "comment", emoji: "⭐" },
   { key: "tree", tKey: "aac.glyph.tree", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "nature"] }, tone: "comment", emoji: "🌳" },
+  // The ROCK — the outcrop standing in the world, filed beside the tree because
+  // that is what it is: the other thing you walk up to and take a material out
+  // of. NOT the material — `stone` is what comes off it — and NOT a fixture, so
+  // it carries no station row; it earns its key here because a wild feature the
+  // board cannot name is a thing the child can see and not say.
+  { key: "rock", tKey: "aac.glyph.rock", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "nature"] }, tone: "comment", emoji: "🪨" },
   { key: "cloud", tKey: "aac.glyph.cloud", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "nature"] }, tone: "comment", emoji: "☁️" },
   { key: "rain", tKey: "aac.glyph.rain", pos: "noun", categories: ["what"],

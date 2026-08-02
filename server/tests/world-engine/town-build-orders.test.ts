@@ -29,7 +29,9 @@ import {
   missingCosts,
   resolveStructure,
   spendCosts,
+  structureCosts,
 } from "@shared/world-engine/kernel/town/structures.js";
+import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import { TOWN_PLAY_STRUCTURES } from "@shared/world-engine/interaction/town/town-play.js";
 import { assignTownJobs } from "@shared/world-engine/kernel/town/roster.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
@@ -66,7 +68,11 @@ describe("the full pooled lifecycle: order → task → claim → announce → p
   it("runs end to end off REAL construction state", () => {
     const goal: GoalSpec = { kind: "build", structure: "house", cap: 1 };
     const deltas = createTownDeltas();
-    deltas.stock.wood = 10;
+    // Phase 3: bills are BLOCKS. Phase 6: the bill is DERIVED from the
+    // footprint, so the yard is stocked FROM the bill rather than from a
+    // literal that quietly stops covering a house when the knobs move.
+    const houseSpec = resolveStructure(TOWN_PLAY_STRUCTURES, goal.structure)!;
+    deltas.stock["block.material_wood"] = structureCosts(houseSpec)[BLOCK_GLYPH]! + 2;
 
     // ── ORDER → TASK (untargeted → the ①a pool).
     const pool = createTaskPool();
@@ -101,9 +107,10 @@ describe("the full pooled lifecycle: order → task → claim → announce → p
     expect(line.c).toContain("build");
     expect(line.c).toContain("house");
 
-    // ── COMMIT: spend the stock, write the founded delta.
+    // ── COMMIT: spend the stock, write the founded delta (a faceted block
+    // pays the head bill — the phase-3 material convention).
     expect(spendCosts(spec, deltas.stock)).toBe(true);
-    expect(deltas.stock.wood).toBe(4);
+    expect(deltas.stock["block.material_wood"]).toBe(2);
     const b = deltas.foundBuilding(candidates[0]!, 0, spec.buildDays);
 
     // ── PROGRESS off construction state — NOT the errand queue: the walk
@@ -144,15 +151,14 @@ describe("refusals — named, never generic", () => {
     expect(resolveStructure(TOWN_PLAY_STRUCTURES, "palace")).toBeNull();
   });
 
-  it("missing materials are NAMED with their shortfall ('we need more wood')", () => {
+  it("missing materials are NAMED with their shortfall ('we need more block')", () => {
     const spec = resolveStructure(TOWN_PLAY_STRUCTURES, "workshop")!;
-    const missing = missingCosts(spec, { wood: 2 });
-    expect(missing.wood).toBeGreaterThan(0);
-    expect(missing.stone).toBeGreaterThan(0);
+    // A faceted block pays toward the head; the shortfall names the head.
+    const missing = missingCosts(spec, { "block.material_wood": 1 });
+    expect(missing.block).toBe(structureCosts(spec)[BLOCK_GLYPH]! - 1);
     // The refusal string the host builds from this names each glyph.
     const names = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
-    expect(names).toMatch(/wood/);
-    expect(names).toMatch(/stone/);
+    expect(names).toMatch(/block/);
   });
 
   it("an infeasible site (no ground) refuses with an EMPTY enumeration, never a bad lot", () => {

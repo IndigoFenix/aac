@@ -142,3 +142,58 @@ describe("buildObjectModel", () => {
     expect(() => model.dispose()).not.toThrow();
   });
 });
+
+// ── THE CONSTRUCTION BLOCK (phase 6) ──────────────────────────────────────
+// The one primitive every building is made of had no recipe: the `block` head
+// fell through to the 🧱 emoji, which mapped to `blocks` — the NURSERY TOY. A
+// mason's dressed stone rendered as three little coloured cubes.
+describe("the construction block is not a toy", () => {
+  it("the block head resolves to its own model, by glyph and by icon", () => {
+    expect(hasObjectModel(undefined, "block")).toBe(true);
+    expect(hasObjectModel(undefined, "block.material_wood")).toBe(true);
+    expect(hasObjectModel(undefined, "block.material_stone")).toBe(true);
+    expect(hasObjectModel("🧱")).toBe(true);
+  });
+
+  it("is a SQUARED unit, longer than it is thick, resting on the ground line", () => {
+    const r = 0.5;
+    const box = new THREE.Box3().setFromObject(
+      buildObjectModel({ glyph: "block.material_wood", radius: r })!.object,
+    );
+    const len = box.max.x - box.min.x;
+    const wide = box.max.z - box.min.z;
+    const tall = box.max.y - box.min.y;
+    expect(len).toBeGreaterThan(wide * 1.5); // a beam/ashlar, not a cube
+    expect(len).toBeGreaterThan(tall * 1.5);
+    expect(box.min.y).toBeCloseTo(-r * 1.04, 2); // the library's ground contract
+  });
+
+  it("is MATTE — a builder carries it at head height across the screen", () => {
+    // The seizure rule, at the object level: nothing specular may slide over a
+    // surface as the camera moves, and a carried block moves constantly.
+    const model = buildObjectModel({ glyph: "block.material_stone", radius: 0.5 })!;
+    for (const m of model.materials) {
+      expect(m.metalness).toBeLessThanOrEqual(0.1);
+      expect(m.roughness).toBeGreaterThanOrEqual(0.8);
+    }
+  });
+
+  it("the TOY blocks are untouched — a different word, a different object", () => {
+    // `blocks` (plural) is the nursery set and still routes by its own head,
+    // which `keyFor` consults BEFORE any icon. The two read differently at a
+    // glance: the toy is a scatter of same-sized cubes in three colours, the
+    // construction block is ONE elongated unit.
+    const toyBox = new THREE.Box3().setFromObject(
+      buildObjectModel({ iconRef: "🧱", glyph: "blocks", radius: 0.5 })!.object,
+    );
+    const blockBox = new THREE.Box3().setFromObject(
+      buildObjectModel({ glyph: "block", radius: 0.5 })!.object,
+    );
+    const ratio = (b: THREE.Box3): number => (b.max.x - b.min.x) / (b.max.y - b.min.y);
+    expect(ratio(blockBox)).toBeGreaterThan(ratio(toyBox) * 1.5);
+    // And the toy's cubes still carry the three distinct colours that make it
+    // read as a nursery set — the thing a mason's stone must never be.
+    const toy = buildObjectModel({ iconRef: "🧱", glyph: "blocks", radius: 0.5 })!;
+    expect(new Set(toy.materials.map((m) => m.color.getHex())).size).toBeGreaterThan(1);
+  });
+});

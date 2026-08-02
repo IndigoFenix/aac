@@ -61,6 +61,7 @@ export const POOLS: Record<string, PoolDef> = {
     members: [
       { id: "box", label: "Box", iconRef: "📦", symbol: "box" },
       { id: "basket", label: "Basket", iconRef: "🧺", symbol: "basket" },
+      { id: "satchel", label: "Satchel", iconRef: "🎒", symbol: "satchel" },
     ],
   },
   emit: {

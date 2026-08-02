@@ -94,7 +94,7 @@ describe("wild fields (step 6f): every sapient people pools on its own land", ()
     const spec = wildSubstrate(worldgenSubstrate, eco.species);
     // Dwarves got their field + logistic rule; humans ride the existing one.
     expect(spec.vars!.some(v => v.name === "dwarves")).toBe(true);
-    expect(spec.vars!.filter(v => v.name === "people")).toHaveLength(1);
+    expect(spec.vars!.filter(v => v.name === "forage")).toHaveLength(1);
     const rule = spec.rules.find(r => r.id === "multiply-dwarves")!;
     expect(rule.effects).toEqual([{
       toward: { scalar: "dwarves", target: { scalar: "ore", scale: 2 }, rate: 0.25 },
@@ -132,7 +132,7 @@ describe("wild fields (step 6f): every sapient people pools on its own land", ()
       for (const v of prep.grid.fields[f]) x += v;
       return x;
     };
-    expect(sum("people")).toBeGreaterThan(0);
+    expect(sum("forage")).toBeGreaterThan(0);
     expect(sum("dwarves")).toBeGreaterThan(0);
 
     // Measure the ridge box BEFORE founding — the same numbers the
@@ -142,8 +142,8 @@ describe("wild fields (step 6f): every sapient people pools on its own land", ()
       const g = prep.grid;
       const r = prep.founding.radius;
       const out: Record<string, number> = {};
-      for (const field of ["people", "dwarves"] as const) {
-        const key = field === "people" ? "human" : "dwarf";
+      for (const field of ["forage", "dwarves"] as const) {
+        const key = field === "forage" ? "human" : "dwarf";
         let n = 0;
         for (let dy = -r; dy <= r; dy++) {
           for (let dx = -r; dx <= r; dx++) {

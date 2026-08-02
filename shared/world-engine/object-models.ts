@@ -69,9 +69,41 @@ interface Ctx {
   /** Each tintable material's original color, to restore when the tint clears. */
   tintBase: THREE.Color[];
   disposables: Array<{ dispose(): void }>;
+  /** PER-INSTANCE SHAPE SEED (see `seedOf`). Recipes for things that come in
+   *  no fixed form — a boulder — draw their jitter from this instead of
+   *  hard-coded numbers, so two of them in one view are two different ones.
+   *  0 for a caller that named no instance: a recipe must still build. */
+  seed: number;
   /** A recipe with an OPENING part (a chest lid, cupboard doors) registers
    *  its swing here; `setOpen(frac)` on the model drives it, 0..1. */
   setOpen?: (frac: number) => void;
+}
+
+/** The per-instance shape seed for an object id — fnv1a, the hash this engine
+ *  keys ids with everywhere else. NEVER Math.random(): a model is rebuilt
+ *  every time its object streams back into view, and a shape that rerolls on
+ *  a rebuild is a rock that changes shape when you look away. Same id ⇒ same
+ *  rock, in every session, on every peer. */
+function seedOf(id: string | undefined): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < (id?.length ?? 0); i++) {
+    h ^= id!.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/** A tiny deterministic stream off a seed (mulberry32 — the same generator the
+ *  wilderness scatter uses, for the same reason). */
+function jitter(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a += 0x6d2b79f5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function mat(
@@ -755,6 +787,207 @@ const RECIPES: Record<string, Recipe> = {
     part(ctx, new THREE.BoxGeometry(r * 0.42, r * 0.4, r * 0.5), wood, [0, r * (levels[2] + 0.25), -r * 0.4]);
   },
 
+  "fixture:stonecutter": (ctx) => {
+    const { r } = ctx;
+    // The mason's bench (construction phase 5): a thick dressed slab on a squat
+    // block base, a rough stone waiting on one end and a cut block stacked at
+    // the other, with the chisel and mallet lying along the near edge. Faces +x
+    // — a mason works ACROSS the slab from the front, which is the same reach
+    // contract the anvil earns (STATION_PROPERTIES: furniture + appliance).
+    //
+    // All matte, all stone: the same #9a968f the `material_stone` facet paints
+    // (variations.ts), so a stonecutter and the block it cuts read as the same
+    // substance. Nothing here is polished — a shiny slab under an orbiting
+    // camera is a moving highlight, and that is the one thing we never ship.
+    const slab = mat(ctx, "#9a968f", { roughness: 0.95, tint: true });
+    const base = mat(ctx, "#7f7b74", { roughness: 0.95 });
+    const rough = mat(ctx, "#8b877f", { roughness: 1 });
+    const iron = mat(ctx, "#4b4a48", { roughness: 0.6, metalness: 0.25 });
+    const haft = mat(ctx, "#6b4d2b", { roughness: 0.9 });
+    const slabTop = r * 0.45;
+    // The base — two piers with a gap, so the bench reads as masonry rather
+    // than as a solid crate.
+    for (const bx of [-0.62, 0.62] as const) {
+      part(ctx, new THREE.BoxGeometry(r * 0.5, r * 1.35, r * 1.2), base, [r * bx, -r * 0.35, 0]);
+    }
+    // The working slab, and a shallower ledge under its front lip.
+    part(ctx, new THREE.BoxGeometry(r * 2, r * 0.34, r * 1.35), slab, [0, slabTop, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.7, r * 0.12, r * 1.1), base, [0, slabTop - r * 0.23, 0]);
+    // The work in progress: a rough lump at the -x end (uncut), a squared
+    // block at the +x end (dressed) — the transform, stated in geometry.
+    const lump = part(ctx, new THREE.IcosahedronGeometry(r * 0.36, 0), rough,
+      [-r * 0.62, slabTop + r * 0.34, r * 0.1], [0.4, 0.7, -0.3]);
+    lump.scale.set(1, 0.75, 0.9);
+    part(ctx, new THREE.BoxGeometry(r * 0.42, r * 0.34, r * 0.42), slab,
+      [r * 0.66, slabTop + r * 0.34, -r * 0.05]);
+    // Chisel + mallet resting on the near (+z) edge, where a hand finds them.
+    part(ctx, new THREE.CylinderGeometry(r * 0.05, r * 0.03, r * 0.42, 8), iron,
+      [0, slabTop + r * 0.2, r * 0.5], [0, 0, Math.PI / 2]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.05, r * 0.05, r * 0.4, 8), haft,
+      [-r * 0.25, slabTop + r * 0.22, r * 0.24], [Math.PI / 2, 0, 0]);
+    part(ctx, new THREE.CylinderGeometry(r * 0.13, r * 0.13, r * 0.26, 10), haft,
+      [-r * 0.25, slabTop + r * 0.22, r * 0.5], [0, 0, Math.PI / 2]);
+  },
+
+  "fixture:door": (ctx) => {
+    const { r } = ctx;
+    // A ledged plank door, OFF ITS HINGES. This is the model you see while the
+    // leaf is being carried to its opening or stacked in a store — a HUNG leaf
+    // is drawn by render3d's door branch as part of its wall run, never as an
+    // object, so this recipe only ever shows the furniture half of
+    // construction-structures.md's law.
+    //
+    // Thin along +x (the recipe's forward, so a carried door is held edge-on
+    // the way a real one has to be), tall in y, wide in z.
+    const plank = mat(ctx, "#8a6238", { roughness: 0.9, tint: true });
+    const ledge = mat(ctx, "#6b4d2b", { roughness: 0.9 });
+    const iron = mat(ctx, "#4b4a48", { roughness: 0.6, metalness: 0.25 });
+    // Five boards with a hairline between them — the leaf is BOARDS, which is
+    // what makes it read as a door rather than as a panel of wall.
+    for (let i = 0; i < 5; i++) {
+      part(ctx, new THREE.BoxGeometry(r * 0.14, r * 2, r * 0.4), plank, [0, 0, r * (-0.88 + i * 0.44)]);
+    }
+    // The ledges holding the boards together, on the BACK face (-x).
+    for (const ly of [-0.78, 0, 0.78] as const) {
+      part(ctx, new THREE.BoxGeometry(r * 0.07, r * 0.22, r * 2.1), ledge, [-r * 0.1, r * ly, 0]);
+    }
+    // Two strap hinges down the hinge edge (-z), a ring pull on the other.
+    for (const hy of [-0.62, 0.62] as const) {
+      part(ctx, new THREE.BoxGeometry(r * 0.05, r * 0.16, r * 0.8), iron, [r * 0.09, r * hy, -r * 0.7]);
+    }
+    part(ctx, new THREE.TorusGeometry(r * 0.14, r * 0.035, 6, 14), iron,
+      [r * 0.1, r * 0.05, r * 0.72], [0, Math.PI / 2, 0]);
+  },
+
+  rock: (ctx) => {
+    const { r } = ctx;
+    // A BOULDER — the wild mineral outcrop stone is quarried out of
+    // (products.ts `feature: { icon: "🪨" }`), which until this recipe existed
+    // rendered as a wooden treasure chest, because the spawner forced
+    // `fixture: "chest"` and a fixture short-circuits icon resolution.
+    //
+    // SEVERAL rotated, unevenly scaled lumps rather than one sphere: the
+    // silhouette is the entire job here. A smooth ball reads as a ball, and an
+    // outcrop has to read as broken ground at a glance, from any angle, with no
+    // icon floating over it. Low-poly icosahedra give flat facets that catch
+    // the light as PLANES — which is also what keeps it honest as stone.
+    //
+    // Matte, and it must STAY matte: colour, roughness and metalness are the
+    // `material_stone` facet's own (variations.ts — #9a968f, 0.95, 0). A glossy
+    // rock in sunlight is a bright highlight sliding across the screen every
+    // time the camera orbits, which is the one class of thing this project
+    // keeps out of a child's field of view.
+    // NO TWO ROCKS ALIKE: every number below is drawn from the instance seed
+    // (ctx.seed — the object's own id, hashed), because a scatter of identical
+    // boulders reads as a repeated prop, which is worse than a box. Seeded and
+    // not random: the same outcrop rebuilds into the same outcrop forever.
+    const rnd = jitter(ctx.seed);
+    const span = (lo: number, hi: number): number => lo + rnd() * (hi - lo);
+    const stone = mat(ctx, "#9a968f", { roughness: 0.95, tint: true });
+    const shaded = mat(ctx, "#807c76", { roughness: 0.95 });
+    // One lump: a low-poly ball, unevenly squashed and turned. `tilt` bounds
+    // the lean off vertical — the CORE keeps a small one so its squash stays a
+    // squash (a freely tumbled ellipsoid points its long axis anywhere, which
+    // both un-flattens the boulder and sinks it through the floor, since the
+    // library's contract is a base at exactly -radius); the small lumps tumble
+    // freely, which is what makes the broken ground look broken.
+    const lump = (
+      m: LitMaterial,
+      tilt: number,
+      p: [number, number, number],
+      s: [number, number, number],
+    ): void => {
+      const mesh = part(ctx, new THREE.IcosahedronGeometry(r, 0), m, p, [
+        span(-tilt, tilt),
+        span(-Math.PI, Math.PI), // yaw is free for every lump — it costs nothing
+        span(-tilt, tilt),
+      ]);
+      mesh.scale.set(s[0], s[1], s[2]);
+    };
+    // THE MASS — one squat core, sunk so the boulder is wider than it is tall.
+    // It carries the tint, so a coloured rock still reads as ONE rock.
+    lump(
+      stone,
+      0.1,
+      [span(-0.08, 0.08) * r, -r * 0.22, span(-0.08, 0.08) * r],
+      [span(0.92, 1.06), span(0.58, 0.74), span(0.88, 1.02)],
+    );
+    // BROKEN GROUND — 3–5 smaller lumps ringed round the base on an even split
+    // of the circle, each bearing nudged off true. An even split guarantees the
+    // silhouette is broken from EVERY camera angle (a random ring leaves bald
+    // sides); the nudge is what stops the ring reading as machined. They sit
+    // low enough to bite slightly into the ground: an outcrop comes OUT of the
+    // earth, it is not set down on it.
+    const n = 3 + Math.floor(rnd() * 3);
+    const turn = span(0, Math.PI * 2);
+    for (let i = 0; i < n; i++) {
+      const a = turn + (i / n) * Math.PI * 2 + span(-0.35, 0.35);
+      const d = span(0.34, 0.52) * r;
+      const k = span(0.34, 0.5);
+      lump(
+        i % 2 ? shaded : stone,
+        Math.PI,
+        [Math.cos(a) * d, -r * span(0.38, 0.48), Math.sin(a) * d],
+        [k, k * span(0.72, 1), k * span(0.86, 1.08)],
+      );
+    }
+    // THE SHOULDER — one off-centre lump riding the top. This is the piece
+    // that makes the whole thing asymmetric in profile, which is the entire
+    // difference between "a rock" and "a lumpy sphere".
+    lump(
+      stone,
+      Math.PI,
+      [span(-0.3, 0.3) * r, r * span(0.12, 0.26), span(-0.3, 0.3) * r],
+      [span(0.36, 0.52), span(0.34, 0.48), span(0.38, 0.52)],
+    );
+    // GROUND IT. The library's contract is a base at -r (the renderer lifts an
+    // object by its radius), and no amount of arithmetic on the jitter bounds
+    // can promise that: a tumbled ellipsoid's vertical reach depends on which
+    // facet the roll pointed down. So measure the cluster and drop it onto the
+    // line — one box per BUILD, never per frame. It lands a hair BELOW the
+    // line on purpose: an outcrop comes out of the earth, it is not set down
+    // on it. Shifting the children (not `content`, whose y the descriptor pass
+    // owns) keeps the size descriptors working untouched.
+    const shell = new THREE.Box3().setFromObject(ctx.content);
+    const drop = -r * 1.04 - shell.min.y;
+    for (const child of ctx.content.children) child.position.y += drop;
+  },
+
+  block: (ctx) => {
+    const { r } = ctx;
+    // THE CONSTRUCTION BLOCK (phase 6) — the one primitive every building is
+    // made of, as a thing you can hold. It had no recipe: the `block` head fell
+    // through to the 🧱 emoji, which mapped to `blocks`, the TOY — so a mason's
+    // dressed stone was three little red, green and blue cubes.
+    //
+    // A SQUARED UNIT, proportioned to BLOCK_SIZE_M (block-bill.ts — 0.8 × 0.4 ×
+    // 0.4, roughly 2:1:1): long enough along the recipe's forward (+X) that a
+    // carried block reads as a beam or an ashlar held across the body, not a
+    // parcel. Deliberately ONE unit and not a stack — a stack of six blocks and
+    // a stack of one are the same `ObjectSpec`, so a drawn stack would lie
+    // about the count; the unit says "block", the number is the bubble's job.
+    //
+    // Matte and untextured, tinted by the `material_*` facet the stack carries
+    // (`block.material_wood` → timber, `block.material_stone` → grey ashlar —
+    // variations.ts owns both palettes). Nothing specular: this is an object a
+    // builder carries at head height across the whole screen, which is the
+    // worst possible place for a sliding highlight.
+    const body = mat(ctx, "#8a6238", { roughness: 0.9, tint: true });
+    const L = r * 1.6;
+    const H = r * 0.8;
+    const W = r * 0.8;
+    // Base on the library's -1.04r line, like every grounded prop.
+    const cy = -r * 1.04 + H / 2;
+    part(ctx, new THREE.BoxGeometry(L, H, W), body, [0, cy, 0]);
+    // THE DRESSED FACE: a shallow chamfer along the top edges, as two thin
+    // slabs inset from the block's own footprint. Enough to catch the diffuse
+    // light differently from the body and read as a WORKED face — the one
+    // thing that separates a building block from a cardboard box.
+    const edge = mat(ctx, "#6f4e2c", { roughness: 0.95 });
+    part(ctx, new THREE.BoxGeometry(L * 0.94, H * 0.1, W * 0.62), edge, [0, cy + H * 0.5, 0]);
+    part(ctx, new THREE.BoxGeometry(L * 0.08, H * 0.62, W * 0.9), edge, [-L * 0.5, cy, 0]);
+  },
+
   crate: (ctx) => {
     const { r } = ctx;
     part(ctx, new THREE.BoxGeometry(r * 1.7, r * 1.7, r * 1.7), mat(ctx, "#b98a4b", { roughness: 0.85, tint: true }), [0, -r * 0.15, 0]);
@@ -769,6 +1002,32 @@ const RECIPES: Record<string, Recipe> = {
     part(ctx, new THREE.TorusGeometry(r * 0.95, r * 0.09, 8, 20), wicker, [0, r * 0.5, 0], [Math.PI / 2, 0, 0]);
     part(ctx, new THREE.TorusGeometry(r * 0.85, r * 0.07, 8, 20, Math.PI), wicker, [0, r * 0.5, 0], [0, 0, 0]);
     void wall;
+  },
+
+  /** THE WORN CONTAINER (scope-unification ②) — the basket's sibling: a body
+   *  carries a basket in its hands and WEARS a satchel, which is the whole
+   *  difference between the two and the reason both exist. A flap bag with a
+   *  shoulder strap, so it reads as worn even lying on the ground. */
+  satchel: (ctx) => {
+    const { r } = ctx;
+    const leather = mat(ctx, "#8a5a2b", { roughness: 0.85, tint: true });
+    const dark = mat(ctx, "#5c3a1a", { roughness: 0.85 });
+    const brass = mat(ctx, "#c9a227", { roughness: 0.4, metalness: 0.7 });
+    // Body — the bag itself, sitting on its base.
+    part(ctx, new THREE.BoxGeometry(r * 1.5, r * 1.05, r * 0.62), leather, [0, -r * 0.4, 0]);
+    // Flap over the front, hanging a little past the seam.
+    part(ctx, new THREE.BoxGeometry(r * 1.56, r * 0.55, r * 0.1), dark, [0, r * 0.1, r * 0.33]);
+    part(ctx, new THREE.BoxGeometry(r * 1.56, r * 0.12, r * 0.66), dark, [0, r * 0.14, 0]);
+    // Buckle.
+    part(ctx, new THREE.BoxGeometry(r * 0.22, r * 0.18, r * 0.06), brass, [0, -r * 0.14, r * 0.36]);
+    // Shoulder strap — a half hoop standing up out of the body.
+    part(
+      ctx,
+      new THREE.TorusGeometry(r * 0.62, r * 0.07, 6, 16, Math.PI),
+      dark,
+      [0, r * 0.12, 0],
+      [0, 0, 0],
+    );
   },
 
   boat: (ctx) => {
@@ -928,18 +1187,35 @@ const EMOJI_TO_KEY: Record<string, string> = {
   "🍪": "cookie",
   "🚗": "car", "🚙": "car", "🏎": "car",
   "🚂": "train", "🚆": "train", "🚋": "train",
-  "🧱": "blocks",
+  // 🧱 IS A BUILDING BRICK, not a toy set (phase 6). It pointed at `blocks`,
+  // the nursery cubes, which is what made every construction block in the
+  // world render as three coloured toys. The toy keeps its own route — its
+  // glyph head is `blocks` (plural), matched by SYMBOL_TO_KEY below, which
+  // `keyFor` consults BEFORE any icon — so nothing about the toy changes.
+  "🧱": "block",
+  // The wild outcrop's icon (products.ts `stone` source). Without this row the
+  // 🪨 never resolved to anything and the feature fell back to whatever the
+  // spawner had forced on it.
+  "🪨": "rock",
   "🧸": "doll", "🪆": "doll",
   "🧩": "puzzle",
   "📦": "crate",
   "🧺": "basket",
+  // The worn container. 🎒 stands in for the satchel until it has artwork of
+  // its own — a placeholder for the ICON, never for the model: the recipe is a
+  // real satchel, so it reads as one in the world whatever the board shows.
+  "🎒": "satchel", "👜": "satchel",
   "⛵": "boat", "🚤": "boat", "🛶": "boat",
 };
 
 const SYMBOL_TO_KEY: Record<string, string> = {
   ball: "ball", apple: "apple", banana: "banana", grape: "grapes", cookie: "cookie",
   car: "car", train: "train", blocks: "blocks", box: "crate",
-  basket: "basket", boat: "boat",
+  // The CONSTRUCTION block (phase 6) — singular, and a different object from
+  // the plural toy `blocks` above it. Listed so the stack head resolves
+  // directly, without ever depending on the icon.
+  block: "block",
+  basket: "basket", satchel: "satchel", boat: "boat",
   // `teddy` is gone as a WORD (a teddy bear is `bear.toy` now); the plush body it
   // named lives on as the generic `doll` recipe, which the bare word also uses.
   doll: "doll", puzzle: "puzzle",
@@ -998,6 +1274,10 @@ export function buildObjectModel(opts: {
   /** A FIXTURE (furniture) renders its archetype regardless of icon. */
   fixture?: string;
   radius: number;
+  /** THE OBJECT'S OWN ID, for recipes whose form varies per instance (the
+   *  boulder). Hashed to a seed — same id, same shape, every rebuild. Omit
+   *  and every instance of such a recipe is the same one. */
+  id?: string;
 }): ObjectModel | null {
   const key = opts.fixture ? `fixture:${opts.fixture}` : keyFor(opts.iconRef, opts.glyph);
   if (!key) return null;
@@ -1006,7 +1286,15 @@ export function buildObjectModel(opts: {
 
   const r = opts.radius;
   const content = new THREE.Group();
-  const ctx: Ctx = { r, content, materials: [], tintable: [], tintBase: [], disposables: [] };
+  const ctx: Ctx = {
+    r,
+    content,
+    materials: [],
+    tintable: [],
+    tintBase: [],
+    disposables: [],
+    seed: seedOf(opts.id),
+  };
   recipe(ctx);
 
   const object = new THREE.Group();
@@ -1064,4 +1352,22 @@ export function buildObjectModel(opts: {
 /** Whether the engine has a real 3D model for an object of this identity. */
 export function hasObjectModel(iconRef?: string, glyph?: string): boolean {
   return keyFor(iconRef, glyph) !== undefined;
+}
+
+/**
+ * WHICH RECIPE this identity resolves to — the same choice `buildObjectModel`
+ * makes, without building anything. Undefined = no recipe (the icon failsafe).
+ *
+ * A renderer keys its live mesh on this to notice that an object has become a
+ * DIFFERENT KIND OF THING under a live id (a mirror prop converting to a
+ * carryable one, a stack unit that turns out to be furniture). Deliberately the
+ * KEY and not the glyph: `apple.cold` → `apple.hot` is the same recipe wearing
+ * different descriptors, and re-applying those is far cheaper than a rebuild.
+ */
+export function objectModelKey(opts: {
+  iconRef?: string;
+  glyph?: string;
+  fixture?: string;
+}): string | undefined {
+  return opts.fixture ? `fixture:${opts.fixture}` : keyFor(opts.iconRef, opts.glyph);
 }

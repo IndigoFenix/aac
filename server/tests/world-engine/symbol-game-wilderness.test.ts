@@ -12,8 +12,10 @@ import {
   wildAnimalBodyId,
   wildFeatureContainerId,
   wildFeatureEmbodied,
+  wildFeatureRadius,
   type WildernessFeature,
 } from "@shared/world-engine/interaction/quest/wilderness.js";
+import { naturalSourceOf } from "@shared/world-engine/products.js";
 
 describe("buildWilderness", () => {
   it("is deterministic in the seed", () => {
@@ -31,15 +33,20 @@ describe("buildWilderness", () => {
     expect(trees).toHaveLength(5);
     expect(rocks).toHaveLength(4);
     expect(w.creatures).toHaveLength(2);
+    // The bounds come off the CATALOGUE, never literals: the yields were
+    // rescaled in phase 6 against real block bills, and what this pins is that
+    // a laid feature carries its species' own declared roll.
+    const bounds = (species: string, glyph: string): { min: number; max: number } =>
+      naturalSourceOf(species)!.products.find((p) => p.glyph === glyph)!.yield;
     for (const t of trees) {
       expect(Object.keys(t.stock)).toEqual(["wood"]);
-      expect(t.stock.wood).toBeGreaterThanOrEqual(2);
-      expect(t.stock.wood).toBeLessThanOrEqual(4);
+      expect(t.stock.wood).toBeGreaterThanOrEqual(bounds("oak", "wood").min);
+      expect(t.stock.wood).toBeLessThanOrEqual(bounds("oak", "wood").max);
     }
     for (const r of rocks) {
       expect(Object.keys(r.stock)).toEqual(["stone"]);
-      expect(r.stock.stone).toBeGreaterThanOrEqual(1);
-      expect(r.stock.stone).toBeLessThanOrEqual(2);
+      expect(r.stock.stone).toBeGreaterThanOrEqual(bounds("rock", "stone").min);
+      expect(r.stock.stone).toBeLessThanOrEqual(bounds("rock", "stone").max);
     }
   });
 
@@ -63,6 +70,65 @@ describe("buildWilderness", () => {
 
   it("floors the side at 60 m", () => {
     expect(buildWilderness({ seed: 1, side: 10 }).side).toBe(60);
+  });
+
+  // ── Visible depletion (construction phase 5 step ④: rock bodies) ──────────
+  describe("wildFeatureRadius", () => {
+    const ROCK_R = naturalSourceOf("rock")!.feature!.radiusM; // 0.55 today
+    const OAK_R = naturalSourceOf("oak")!.feature!.radiusM;
+    // FULL is the species' own maximum roll, read off the catalogue — never a
+    // literal. The yields were rescaled in phase 6 (a house is 120 blocks, so
+    // a tree had to be worth more than two units of wood), and a test that
+    // spells "full" as `{ stone: 2 }` fails on a rebalance while claiming the
+    // shrink curve broke. What this describe is ABOUT is that depletion reads;
+    // that is true at any max.
+    const maxKill = (species: string, glyph: string): number =>
+      naturalSourceOf(species)!.products.find((p) => p.glyph === glyph)!.yield.max;
+    const ROCK_FULL = maxKill("rock", "stone");
+    const OAK_FULL = maxKill("oak", "wood");
+
+    it("stands a full source at its declared radius", () => {
+      expect(wildFeatureRadius("rock", { stone: ROCK_FULL })).toBeCloseTo(ROCK_R, 6);
+      expect(wildFeatureRadius("oak", { wood: OAK_FULL })).toBeCloseTo(OAK_R, 6);
+    });
+
+    it("shrinks with the REMAINING kill stock — one stone reads as a pebble", () => {
+      const full = wildFeatureRadius("rock", { stone: ROCK_FULL });
+      const half = wildFeatureRadius("rock", { stone: Math.floor(ROCK_FULL / 2) });
+      const last = wildFeatureRadius("rock", { stone: 1 });
+      const spent = wildFeatureRadius("rock", { stone: 0 });
+      expect(half).toBeLessThan(full * 0.8); // unmistakably smaller, not a nuance
+      expect(last).toBeLessThan(half);
+      expect(spent).toBeLessThan(last);
+      expect(spent).toBeGreaterThan(0); // never a speck — felling removes it, not the size
+    });
+
+    it("size means UNITS LEFT, not a fraction of its own roll", () => {
+      // An outcrop that rolled a single stone and one quarried down to its
+      // last stone are the same pebble — otherwise a poor roll would stand
+      // as tall as a fresh boulder.
+      expect(wildFeatureRadius("rock", { stone: 1 })).toBeCloseTo(
+        wildFeatureRadius("rock", { stone: 1 }),
+        6,
+      );
+      expect(wildFeatureRadius("rock", { stone: 1 })).toBeLessThan(
+        wildFeatureRadius("rock", { stone: 2 }),
+      );
+    });
+
+    it("never shrinks a source with no kill products (a picked bush is still a bush)", () => {
+      const full = wildFeatureRadius("banana_plant", { banana: 3 });
+      expect(wildFeatureRadius("banana_plant", {})).toBeCloseTo(full, 6);
+      expect(wildFeatureRadius("banana_plant", undefined)).toBeCloseTo(full, 6);
+    });
+
+    it("is pure and total — same input, same answer; unknown species get the default", () => {
+      expect(wildFeatureRadius("rock", { stone: 1 })).toBe(wildFeatureRadius("rock", { stone: 1 }));
+      expect(wildFeatureRadius("nothing_at_all", undefined)).toBeGreaterThan(0);
+      // Over-stocked (a regrow overshoot could never happen for kill glyphs,
+      // but the clamp must hold) never grows past the declared radius.
+      expect(wildFeatureRadius("rock", { stone: 99 })).toBeCloseTo(ROCK_R, 6);
+    });
   });
 
   it("kill-only features carry no harvest capacity or regrow ledger", () => {

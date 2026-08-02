@@ -163,7 +163,9 @@ export function createGeologyBaker(): GeologyBaker {
       // this; the bake key silently didn't, and every algorithm improvement
       // was invisibly masked by year-old cached bakes). bake6: depression
       // fill + rain-fed flow sources + riverDown drainage pointers.
-      const key = `bake6:${JSON.stringify(world)}`;
+      // bake7: the `people` field is `forage` (settlement-emergence §③ —
+      // a stale grid's crowds would be invisible to the renamed readers).
+      const key = `bake7:${JSON.stringify(world)}`;
       const db = await dbPromise;
       const hit = await cacheGet(db, key);
       console.info(`geology cache ${hit ? "HIT" : "miss"} for ${resolved.body.id} (db ${db ? "open" : "unavailable"})`);
