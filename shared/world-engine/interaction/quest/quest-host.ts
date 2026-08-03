@@ -54,6 +54,7 @@ import {
   ERRAND_WALK,
   FOOD_DAY_SEC,
   HOUSEHOLD,
+  SHOP_SEC,
   addStoreConsumption,
   goodBoxAt,
   houseDoorstep,
@@ -133,7 +134,10 @@ import {
 import {
   createReservationLedger,
   freeUnits,
+  freeUnitsOver,
   resolveMaterials,
+  toolClaimed,
+  TOOL_CLAIM_GLYPH,
   type ReservationLedger,
 } from "@shared/world-engine/kernel/town/reservations.js";
 import {
@@ -181,15 +185,20 @@ import {
   type ResolveLocation,
 } from "@shared/world-engine/kernel/town/item-move.js";
 import {
-  BARTER_LEG_DAY_FRAC,
+  BARTER_FAMINE_MAX,
+  BARTER_RETRY_SEC,
+  barterLegSeconds,
   barterQuote,
   barterWillingness,
   defaultTakeGood,
   inboundRouteHealth,
+  nextBarterWillingAt,
+  nextShortageBelow,
   runDueBarters,
   stockAbstractPartner,
   stubPartnerSignals,
   type BarterLegReport,
+  type BarterRefusal,
   type BarterSignals,
 } from "@shared/world-engine/kernel/town/barter.js";
 import { numeraireActive } from "@shared/world-engine/kernel/town/money.js";
@@ -333,6 +342,29 @@ import {
   containerDefOfGlyph,
   mayDissolveToStack,
 } from "@shared/world-engine/kernel/town/containers.js";
+// WHAT BAGS THE WORLD STARTS WITH (step ③, the seeding half). Pure data — the
+// glyph, the spot and the owner. Minting them is this host's business.
+import {
+  houseBagSeeds,
+  marketBagSeeds,
+  yardBagSeeds,
+  PLAYER_BAG_GLYPH,
+  type ContainerSeed,
+} from "@shared/world-engine/kernel/town/container-seeds.js";
+// THE BODY'S BINDING of the universal shape (scope-unification.md §2.1): what a
+// creature is holding, in the containers it holds, and the pure rules over it.
+// A body has NO abstract bag any more — these read its REAL carry, so the
+// needs walker, the strip and the haul all count the same units.
+import {
+  activeBag,
+  bodyCarryView,
+  costTotalS,
+  handsFree,
+  stackRoom,
+  type BagRef,
+  type BodyCarry,
+  type VerbCost,
+} from "@shared/world-engine/kernel/town/scope-shape.js";
 import {
   auditScopeTree,
   parseScopeId,
@@ -477,6 +509,7 @@ import {
   hygieneTemplate,
   tidyTemplate,
   unloadTemplate,
+  relieveTemplate,
   dressTemplate,
   laundryTemplate,
   stowTemplate,
@@ -484,6 +517,8 @@ import {
   ritualPrepTemplate,
   ritualAttendTemplate,
   canGrasp,
+  NEED_COST_SELECTION,
+  NEED_PRESSURE_S,
   needPressure,
   stressStep,
   STRESS_VISIBLE,
@@ -491,6 +526,8 @@ import {
   type CompanionSpec,
   type Relation,
   type NeedCtx,
+  type NeedIntent,
+  type NeedPrice,
   type NeedTarget,
   type NeedTemplate,
   type StationCandidate,
@@ -499,7 +536,8 @@ import {
   type PlaceRef,
 } from "@shared/world-engine/interaction/index.js";
 import { planGoal, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
-import { needPursuitGoals } from "@shared/world-engine/interaction/behavior/need-goals.js";
+import { needPursuitGoals, tasteBonusS } from "@shared/world-engine/interaction/behavior/need-goals.js";
+import { driveValueS, goodsValueS, journeyTimeS, netValueS, priceOf } from "@shared/world-engine/kernel/town/pricing.js";
 import { probesOn } from "@shared/world-engine/perf-probes.js";
 import {
   objectMotive,
@@ -661,16 +699,18 @@ import {
   carryTotalOf,
   splitStock,
   isLargeGlyph,
-  inventoryRoom,
   totalStackUnits,
 } from "@shared/world-engine/kernel/town/goods-kinds.js";
-import { designatedContainerId } from "@shared/world-engine/kernel/town/container-home.js";
+import { designatedContainerId, livesOnTheFloor } from "@shared/world-engine/kernel/town/container-home.js";
 import {
+  needFillS,
   needRate,
   restDwellS,
+  walkSpeedMps,
   constructionGameDays,
   serviceRadiusM,
   REAL_SCALE,
+  type NeedKey,
   type WorldScale,
 } from "@shared/world-engine/scale.js";
 // THE CONSTRUCTION DIRECTOR (phase 1a of the construction rewrite) — every
@@ -747,6 +787,11 @@ function restDwellFor(tplKey: string, scale: WorldScale): number {
   if (tplKey.startsWith("cook:")) return COOK_DWELL_S; // the pot at the oven
   return restDwellS(scale);
 }
+/** THE BEAT AT THE BOX — seconds a body spends reaching into a container (or
+ *  bending for a loose thing) to move units. Named ONCE (step ④): it is both
+ *  the errand leg's dwell, so the take/put gesture is SEEN, and the `handsS`
+ *  the acquire comparison charges for going through a lid. */
+const BOX_ACT_DWELL_S = 1.1;
 const EAT_SHOW_S = 2; // seconds the (instant) consume effect SHOWS as eating
 /** A meal eaten FROM A CHAIR shows a little longer — the diner is settled, so
  *  the scene reads as sit → eat → rise rather than a bite and a bolt. */
@@ -771,7 +816,12 @@ const RITUAL_SEATED_M = 1.6;
  *  with the table's far side (≥ ~1.4) — well past this line. */
 const SEAT_MOUNT_REACH_M = 0.9;
 /** Seconds a loose prop must sit on the floor before the TIDY chore may sweep
- *  it (a toy mid-game isn't snatched from under the player). */
+ *  it (a toy mid-game isn't snatched from under the player).
+ *  ⚖️ A CLOCK WHERE A PRICE SHOULD BE (scope-behaviors.md §4.4), and step ④
+ *  now has the price: `inPlaceWants` charges the sweep what the thing is worth
+ *  where it lies, which answers "is it worth more here than in the box"
+ *  honestly and for every member of the house at once. This stays until that
+ *  charge is verified live, then goes with `isPlayArea`/`inUseByLiveNeed`. */
 const TIDY_GRACE_S = 45;
 /** How far AHEAD of the body a thing is set out (metres) — the play area. Far
  *  enough that the setter isn't standing on its own game and a ring of players
@@ -797,11 +847,11 @@ const HOME_IDLE_GRACE_S = 10;
  *  bounds how stale their answer can go. townClock seconds — deterministic
  *  over the shared clock, so a multiplayer owner handoff just recomputes. */
 const NEED_DECIDE_CAP_S = 1.5;
-/** After a market take yields NOTHING (the abstract shelf emptied during the
- *  walk over), that member doesn't retry the same good for this long — the
- *  decide-time/arrival-time stock race was marching shoppers out and back
- *  empty-handed in an endless loop. */
-const SHOP_RETRY_COOLDOWN_S = 90;
+// (SHOP_RETRY_COOLDOWN_S retired — scope-behaviors.md §2.5 DEFER, §4.3. A
+//  market take that yielded NOTHING used to start a 90 s stopwatch that HID the
+//  stall from the ctx entirely. It is now a PARK: the row waits on the
+//  condition that failed it — "the shelf restocked" — and the stall stays
+//  visible and prices honestly the whole time. See `parkNeed`/`shelfRestockAt`.)
 /** Conditions the MOTIVE METERS own (mirrored each tick; how-are-you answers
  *  from them). A quest-authored condition outside this set is never touched.
  *  `need_toilet` renders as a NEED phrase ("I need the bathroom") rather than
@@ -836,6 +886,109 @@ export interface Pursuit {
   tplKey?: string;
   acts?: number;
   stand?: Map<string, { x: number; y: number }>;
+}
+
+/**
+ * ⏸️ A PARKED GOAL (scope-behaviors.md §2.5 DEFER) — "wait when later is
+ * cheaper", stated as a CONDITION rather than a clock.
+ *
+ * The chapter's indictment of what stood here: five body-rung cooldowns that
+ * are "deferral-shaped amnesia — this plan failed, don't reconsider — a
+ * plan-quality memory with a stopwatch where a price should be". A park is the
+ * replacement: the plan that failed is set down together with WHAT WOULD MAKE
+ * IT WORTH TRYING AGAIN, and nothing reconsiders it until that happens.
+ *
+ * The wake is three cheap tests, ORed, and none of them searches the world:
+ *   • an EPOCH advanced — `needsPropsEpoch` (something was dropped or created)
+ *     or `needsStockEpoch` (a container gained units). Coarse gates on "did
+ *     anything at all move"; the re-decide is what asks whether it helped.
+ *
+ *     ⚠️ AND THE COARSENESS IS SAFE BECAUSE THE RE-DECIDE IS HONEST. A row
+ *     parked on a bare shelf wakes when a housemate fills the WARDROBE, which
+ *     has nothing to do with the market — but the woken row re-prices the
+ *     market at what it actually holds, reads zero, and blocks. It cannot
+ *     re-launch the wasted trip, because the thing that would launch it (a
+ *     shelf with units on it) is the same thing the park is waiting for. What
+ *     the wake buys is the row's OTHER branches: a park is over a ROW, and a
+ *     pantry that filled while the market was bare must not be ignored for a
+ *     whole fill clock just because the shopping trip failed.
+ *   • `dueAt` — a DERIVED wake, and the distinction matters: this is not a
+ *     retry timer, it is the moment the CLOSED FORM the plan failed against
+ *     next produces a different answer. The market's shelf is a pure function
+ *     of the town clock (goods.ts, "the dawn cart always makes its delivery"),
+ *     so "wait for the shelf to restock" is a fact about the world computable
+ *     once, at park time, from the very same formula the decide read. A
+ *     stopwatch says "try again in 90 s"; this says "there is nothing there
+ *     until dawn". 0 = the failure named no closed form.
+ *   • `staleAt` — THE BACKSTOP, never the mechanism. A park must not become a
+ *     statue: if the wake condition is wrong, or an epoch bump is missing at
+ *     some mutation site nobody has found yet, the park expires anyway and the
+ *     row re-decides at full price. Derived from the ROW'S OWN fill clock (one
+ *     complete need cycle — scale.ts `needFillS`), because that is the longest
+ *     a want can be ignored before ignoring it is itself the bug.
+ */
+export interface NeedPark {
+  /** WHAT is parked. `row` = the whole need row (`decideNeeds` skips it
+   *  without resolving a ctx); `pursuit` = only the S2 pursuit ROUTE for it,
+   *  leaving the legacy walker to own the motive meanwhile. Two different
+   *  goals fail here and they are not the same goal. */
+  scope: "row" | "pursuit";
+  /** `needsPropsEpoch` at park time. */
+  props: number;
+  /** `needsStockEpoch` at park time. */
+  stock: number;
+  /** townClock of the DERIVED wake, or 0 for none (see the note above). */
+  dueAt: number;
+  /** townClock past which the park expires unconditionally (the backstop). */
+  staleAt: number;
+  /** DIAGNOSTIC: the condition that failed, for the [needs] log. */
+  why: string;
+}
+
+/**
+ * ⏸️ A PARKED TOWN GOAL (scope-behaviors.md §2.5.1, §7 step 6) — the SAME
+ * primitive as `NeedPark`, one rung up. The chapter mapped both of the town's
+ * waits before either was built, and this is that mapping as landed:
+ *
+ *  • `agreement` — a famine-refused caravan (`reArmOneShot`). The PREDICATE is
+ *    the refusal itself (`barterWillingness` over the partner's own books —
+ *    note it reads `them` alone, so it is a pure function of two of their
+ *    shortages). The EPOCH is `partnerStockEpoch`: their shelf gained units.
+ *    The DERIVED WAKE is their goods clock (`nextShortageBelow` /
+ *    `nextBarterWillingAt`, sampled forward off the very closed form the quote
+ *    read). `staleAt` is `BARTER_RETRY_SEC` — today's constant, demoted.
+ *  • `job` — a craft job re-gathering on `SITE_HAUL_RETRY_S` while nothing has
+ *    moved. The PREDICATE is "some source now offers a material this job is
+ *    short of". The EPOCHS are `needsStockEpoch` (a container gained units) AND
+ *    the reservation ledger's `releaseEpoch` (a released claim freed units for
+ *    somebody else's job — precisely the event `resolveMaterials` would find).
+ *    `staleAt` is the job's own expected labour time, already computed.
+ *
+ * The clock is the SCOPE'S OWN: agreements ride `taskClock` (the ledger's), jobs
+ * ride `townClock` (the craft loop's). `parkTown`/`townParked` take `now` so
+ * neither has to know about the other. Session-lived and never serialized, for
+ * the same reason `needParks` isn't: a lost park costs one wasted re-resolve, a
+ * persisted stale one would silence a live want.
+ *
+ * What deliberately did NOT become a park: `CRAFT_HAUL_TIMEOUT_S`. See its
+ * comment in construction-director.ts — it measures carrier LIVENESS, and "a
+ * carrier that should have arrived has not" is a statement about elapsed time
+ * and nothing else.
+ */
+export interface TownPark {
+  scope: "agreement" | "job";
+  /** `partnerStockEpoch` at park time (agreement scope). */
+  partnerStock: number;
+  /** `needsStockEpoch` at park time (job scope). */
+  stock: number;
+  /** `reservations.releaseEpoch()` at park time (job scope). */
+  released: number;
+  /** The scope's own clock at the DERIVED wake, or 0 for none. */
+  dueAt: number;
+  /** The scope's own clock past which the park expires unconditionally. */
+  staleAt: number;
+  /** DIAGNOSTIC: the condition that failed. */
+  why: string;
 }
 
 export interface QuestSession {
@@ -896,27 +1049,41 @@ export interface QuestSession {
   /** INVENTORY as fungible STACKS (feedback_items_stack_one_container): items merge by
    *  SIGNATURE = their composed glyph ("food", "apple.hot").
    *
-   *  `pocket` = THE INVENTORY OF THE BODY THE PLAYER IS BEING — a VIEW, not a
-   *  store: it resolves to `needCarried` for the claimed creature while the
-   *  spark rides one, else for the player's own creature. An inventory belongs
-   *  to a body; there is no separate player account shadowing the creature's
-   *  own (user law) — so what a claimed baker already carries IS what the strip
-   *  shows, and what you pick up while riding stays with that body when you let
-   *  go. Writing through it (`stackAdd(session.pocket, …)`) writes that
-   *  creature's stack.
+   *  🚨 A BODY HAS NO INVENTORY FIELD (user law, 2026-08-02 — "creatures no
+   *  longer have abstract inventory"). What a creature has on it is what it is
+   *  PHYSICALLY holding: at most one object in its hands, plus the portable
+   *  containers it carries or wears, whose stacks live in `containerStock` like
+   *  any other container's. `bodyCarryOf` reads it; `bodyCarryView` merges it
+   *  for display. The strip is a VIEW of the body the player is being — there
+   *  is no player account shadowing the creature's own, so what a claimed baker
+   *  already carries IS what the strip shows, and what you pick up while riding
+   *  stays with that body when you let go.
    *
    *  `selectedPocketGlyph` = the armed stack;
    *  `smallProps` = world objectId → the LOOSE concrete prop on the ground
    *  ({instance id, glyph}) — the only place a small item is a concrete instance, so it
-   *  can be carried/owned; picking it up MERGES it into the pocket count and drops the
-   *  instance. A fresh instance is MATERIALIZED from a glyph only when a stack leaves
-   *  storage into the world/dialogue (drop / put-visible / present). */
-  readonly pocket: Record<string, number>;
+   *  can be carried/owned; picking it up merges it into whatever bag the body has (or
+   *  rides its hands when it has none). A fresh instance is MATERIALIZED from a glyph
+   *  only when a stack leaves storage into the world/dialogue (drop / put-visible /
+   *  present). */
   /** WHOSE HANDS THE PLAYER IS USING — the claimed creature while the spark
-   *  rides one, else the player's own creature. `pocket` resolves through it;
+   *  rides one, else the player's own creature. The strip resolves through it;
    *  possession is the only thing that moves it. */
   handsCid: string;
   selectedPocketGlyph: string | null;
+  /** THE WORN CONTAINER per body (cid → its object id + glyph) — the satchel,
+   *  the `install` verb at body scope (§3.4: a satchel is a FIXTURE of the body
+   *  exactly as a chest is of a house). Its stock stays in `containerStock`
+   *  under that object id, so a worn bag is an ordinary container scope that
+   *  happens to hang off a creature.
+   *
+   *  ⚠️ DECLARED DEBT: the world prop is REMOVED while worn — there is no
+   *  on-body satchel mount yet, so the alternative would be a bag lying on the
+   *  floor that the tidy chore sweeps out from under its owner. The
+   *  REGISTRATION survives (`containers`, `containerStock`, `containerOwner`),
+   *  which is what conserves the goods; `doffWornBag` re-spawns the prop under
+   *  the SAME object id so its stock is never orphaned. */
+  wornBags: Map<string, { objId: string; glyph: string }>;
   /** `at` = townClock when the prop hit the floor — the TIDY chore only sweeps
    *  props older than TIDY_GRACE_S (a toy mid-game isn't snatched). */
   smallProps: Map<string, { entityId: string; glyph: string; at?: number }>;
@@ -959,8 +1126,8 @@ export interface QuestSession {
   /** LIVE NEEDS (doc §13 promote⇄demote; needs.ts templates). Per resident:
    *  `needMeters` ("cid|tplKey" → level) = live meters (hunger), ticked only while the
    *  household is on show — the schedule's linear drain stands in off-screen;
-   *  `needCarried` (cid → glyph→count) = units physically in hand (a fetched ration, a
-   *  player GIFT — the deposit rule walks them home);
+   *  (what a body CARRIES is not here: it is the object in its hands plus the
+   *  containers it holds — `bodyCarryOf`, the law of 2026-08-02);
    *  `needStep` = the active move of the drive→arrive→effect→re-decide loop;
    *  `liveNeedBodies` = bodies the need loop is DRIVING — the clock's errand feed is
    *  suppressed for these (no double-drive), and they keep running even off-show until
@@ -969,7 +1136,6 @@ export interface QuestSession {
    *  LOAD (seed chests from the schedule) and UNLOAD (re-anchor the schedule from the
    *  chests), the §13a.3 handoff. */
   needMeters: Map<string, number>;
-  needCarried: Map<string, Record<string, number>>;
   /** HOUSEHOLD ERRAND CLAIMS ("<houseIndex>|<tplKey>" → the member on it).
    *  An `exclusive` need template (restocking) is a job the HOME wants done
    *  once, not once per body: it is OPEN to every member, but the first to act
@@ -979,6 +1145,23 @@ export interface QuestSession {
    *  or demoted, or when it stops firing — never held by a body that isn't
    *  walking it. */
   errandClaims: Map<string, string>;
+  /** UNIT RESERVATIONS FOR BODIES (scope-behaviors.md §2.6 CLAIM, step ④.1) —
+   *  the town's own `reservations.ts` ledger, LIFTED DOWN a rung. Nothing in
+   *  it knows what a town is: `{holder, endpoint, glyph, qty}` over free-string
+   *  ids, `free = real − spoken for`, intents not escrow.
+   *
+   *  What it closes: the body rung had claims for TEMPLATES (`errandClaims`)
+   *  and for SEATS (the stampede guard, `ritualSeat`) but none for UNITS — two
+   *  housemates both read three apples in the chest, both walked, and the
+   *  loser found out on arrival. Holder id is `need:<cid>`: ONE per body,
+   *  mirroring "one errand per body", so re-reserving releases what the body
+   *  spoke for before.
+   *
+   *  ⚠️ Deliberately NOT reserved: a WELL (`units: 99`, bottomless by design —
+   *  a claim there would be a lie about a thing that cannot run out) and LOOSE
+   *  PROPS (each is an instance taken whole through the one door, so the
+   *  pickup is already atomic). */
+  needClaims: ReservationLedger;
   needStep: Map<
     string,
     {
@@ -1033,10 +1216,24 @@ export interface QuestSession {
    *  stall re-route — lets the ONE walk system carry the body around the
    *  furniture. */
   pursuits: Map<string, Pursuit>;
-  /** "cid|tplKey" → townClock until which that need stays OFF the pursuit
-   *  route (a pursuit for it just failed — the legacy walker takes the motive
-   *  meanwhile; see NEED_PURSUIT_RETRY_S). */
-  needPursuitCooldown: Map<string, number>;
+  /** ⏸️ PARKED GOALS (scope-behaviors.md §2.5 DEFER, §7 step 5), keyed
+   *  "<scope>|<cid>|<tplKey>" — the failure-amnesia timers, replaced.
+   *
+   *  A plan that failed for a reason NAMING A CONDITION (nothing on the shelf,
+   *  the pursuit could not reach its target) does not set a stopwatch: it parks
+   *  with the condition, and nothing reconsiders it until the world moves. See
+   *  `NeedPark`, `parkNeed`, `needParked`. Session-lived — a reload simply
+   *  re-decides afresh, which is the safe direction (a lost park costs one
+   *  wasted trip; a persisted stale one would silence a live want). */
+  needParks: Map<string, NeedPark>;
+  /** THE STANDING CANDIDATE (step ④ hysteresis — scope-behaviors.md §2.3): cid →
+   *  which of a row's goal candidates this body chose last, keyed by the row.
+   *  The pursuit argmax keeps it unless a challenger beats it by
+   *  `GOAL_SWITCH_MARGIN_S`, so two near-equal sources cannot trade the body
+   *  back and forth between decides — the "carries things around for no clear
+   *  reason" surface. Session-lived; nothing serializes it (a reload simply
+   *  picks afresh). */
+  needGoalPick: Map<string, { tplKey: string; key: string }>;
   /** ON-THE-CLOCK DORMANCY (view-distance-lod-tiers.md step 2): cid → the
    *  sleep a NULL decide armed. `due` = townClock of the earliest possible new
    *  fire — the exact meter crossing, capped by NEED_DECIDE_CAP_S when a
@@ -1047,8 +1244,32 @@ export interface QuestSession {
    *  (step/pursuit/crouch endings) immediate for free. */
   needDecideDorm: Map<string, { due: number; epoch: number; at: number }>;
   /** Loose-prop world version — bumped when a small prop is REGISTERED
-   *  (dropped/created); the dormancy gate's event-wake signal. */
+   *  (dropped/created); the dormancy gate's event-wake signal, and half of
+   *  what wakes a parked goal (`NeedPark`). */
   needsPropsEpoch: number;
+  /** ⏸️ CONTAINER-STOCK world version — bumped wherever a container GAINS
+   *  units (a housemate banks a haul, the player puts one in, a whole prop
+   *  dissolves into a box, the interior's LOAD edge re-syncs a chest). The
+   *  other half of a park's wake condition: "somebody put something somewhere"
+   *  is the one event that can make an empty branch supply again.
+   *
+   *  ⚠️ Deliberately COARSE — one counter for the whole city, not per
+   *  container. It is a GATE, not the predicate: a woken park re-decides and
+   *  the ordinary ctx resolution answers whether the units are actually
+   *  reachable. A missed bump costs at most one `staleAt` horizon of waiting,
+   *  never a permanently silent row. */
+  needsStockEpoch: number;
+  /** ⏸️ PARKED TOWN GOALS (scope-behaviors.md §2.5.1, §7 step 6), keyed
+   *  "<scope>|<holder>" — `agreement|<agreementId>`, `job|<houseIndex>`. The
+   *  town-rung twin of `needParks`, same shape, same restore-is-safe argument
+   *  (session-lived, never serialized). See `TownPark`. */
+  townParks: Map<string, TownPark>;
+  /** ⏸️ PARTNER-SHELF world version — bumped wherever a TRADE PARTNER's stack
+   *  gains units: the stub's boundary mint (`stockAbstractPartner`) and the
+   *  barter executor's outbound unload. The town-rung twin of
+   *  `needsStockEpoch`, same one-line bump, same coarse gate: it says "their
+   *  shelf moved", and the woken row re-asks willingness at full price. */
+  partnerStockEpoch: number;
   /** THE CULTURE'S RITUALS (rituals.ts) — kernel defaults ⊕ `game.culture.
    *  rituals`. Data; the loop below reads it, nothing writes it after boot. */
   ritualTemplates: readonly RitualTemplate[];
@@ -1181,12 +1402,6 @@ export interface QuestSession {
    *  from `game.culture.dress`, else the curated default. A per-session subset
    *  of the garment vocabulary, so a town reads as its own culture. */
   dress: DressPalette;
-  /** VISUAL carried prop per needs-walking body (cid → the one prop riding
-   *  its hands). Pure display, reconciled from `needCarried` every tick
-   *  (`syncNeedCarryProps`) — the stack map stays the only truth. Registered
-   *  in neither smallProps nor the creature world, so no fetch/tidy/dialogue
-   *  rule can ever mistake it for a real loose instance. */
-  needProps: Map<string, { objId: string; glyph: string }>;
   houseShown: Set<number>;
   /** DOLLHOUSE mode (household-duties-and-sims-mode.md §3): the focused house
    *  index, or null. Its interior stays revealed, its members run the full
@@ -1216,9 +1431,8 @@ export interface QuestSession {
   /** Seconds an idle, un-owned resident has lingered with nothing to do —
    *  past HOME_IDLE_GRACE_S it walks home (a finished command parked it). */
   idleAway: Map<string, number>;
-  /** "cid|goodKey" → townClock time until which that member won't retry the
-   *  MARKET for that good (a take that arrived to an empty shelf set it). */
-  shopCooldown: Map<string, number>;
+  // (shopCooldown retired — see `needParks`: an empty shelf now PARKS the row
+  //  on "the shelf restocked" instead of hiding the stall behind a stopwatch.)
   /** DIAGNOSTIC: which system last issued each body's errand ("clock" feed /
    *  "needs:<tpl>" / "walk-home" / "command" / "follow") — the [doll]
    *  heartbeat prints it so a playtest can name the driver, not guess. */
@@ -1615,10 +1829,13 @@ export interface QuestHost3D {
    *  (follow centre, smoothed heading, spark) in a moved anchor frame — the
    *  pair of WorldHost.rebase's sim re-expression. No-op before the view exists. */
   rebaseLocal(delta: THREE.Matrix4): void;
-  /** GROUND HANDOFF: the player's pocket stacks (glyph → count), copied. */
+  /** GROUND HANDOFF: what the player's body is carrying (glyph → count),
+   *  copied — its goods AND its containers, each as one unit of its own glyph,
+   *  so the bags travel with the body that owned them. */
   pocketSnapshot(): Record<string, number>;
-  /** GROUND HANDOFF: replace the pocket with `stacks` (selection cleared) and
-   *  repaint the strip — the receiving host's half of a walker transfer. */
+  /** GROUND HANDOFF: rebuild the body's carry from `stacks` (containers first,
+   *  then their goods; selection cleared) and repaint the strip — the receiving
+   *  host's half of a walker transfer. */
   restorePocket(stacks: Record<string, number>): void;
   /** SPIRIT LADDER: where the formless spirit currently hovers (sim coords) —
    *  fed each frame by a ladder boot so distance rules (leaving an empty site)
@@ -1662,6 +1879,18 @@ export interface QuestHost3D {
   /** The whole session's stock, summed by glyph across that tree — the
    *  conservation probe. `__questLab.stockAudit()`. */
   stockAudit(): Record<string, number>;
+  /** WHAT ONE BODY HAS ON IT, merged for display (scope-unification.md §2.1):
+   *  the object in its hands plus the stacks of the containers it carries or
+   *  wears. There is no `needCarried` map to read any more — a body's carry is
+   *  derived from the world, so debug readouts must ask for it.
+   *  `__questLab.carryOf("resident_0_1")`. */
+  carryOf(cid: string): Record<string, number>;
+  /** DEBUG LEVER: put a real, registered portable container on a body and route
+   *  it by its HOLD MODE — a satchel is donned, a basket goes into free hands.
+   *  The live-check for step ③'s seeding: `__questLab.giveBag("resident_0_1",
+   *  "basket")`. Returns the prop id, or null when the glyph names no portable
+   *  container, the body isn't there, or it already has that kind of bag. */
+  giveBag(cid: string, glyph: string): string | null;
 }
 
 /**
@@ -2155,24 +2384,15 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     stayDwell: new Map(),
     escorting: new Set(),
     party: new Set(),
-    // THE POCKET IS NOT A THING OF ITS OWN (user law, 2026-07-26): an inventory
-    // belongs to a BODY, so "the player's pocket" is just the carried stack of
-    // whatever creature the player is being right now — a claimed avatar while
-    // it rides one, its own walker body otherwise. One store per body, read
-    // through the same `needCarried` map every other creature uses, so the box
-    // on screen IS that creature's inventory rather than a parallel account
-    // that shadowed it.
+    // THE POCKET IS NOT A THING OF ITS OWN (user law, 2026-07-26, sharpened
+    // 2026-08-02): an inventory belongs to a BODY, and a body's inventory is
+    // the sum of the containers it holds. So "the player's pocket" is the
+    // carry of whatever creature the player is being right now — a claimed
+    // avatar while it rides one, its own walker body otherwise — read live
+    // through `bodyCarryOf`. There is no map here to shadow it with.
     handsCid: PLAYER_CREATURE_ID,
-    get pocket(): Record<string, number> {
-      const cid = this.handsCid;
-      let bag = this.needCarried.get(cid);
-      if (!bag) {
-        bag = {};
-        this.needCarried.set(cid, bag);
-      }
-      return bag;
-    },
     selectedPocketGlyph: null,
+    wornBags: new Map(),
     smallProps: new Map(),
     containers: new Map(),
     containerStock: new Map(),
@@ -2184,14 +2404,18 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     chatClock: 0,
     chatCooldown: new Map(),
     needMeters: new Map(),
-    needCarried: new Map(),
     errandClaims: new Map(),
+    needClaims: createReservationLedger(),
     needStep: new Map(),
     liveNeedBodies: new Set(),
     pursuits: new Map(),
-    needPursuitCooldown: new Map(),
+    needParks: new Map(),
+    townParks: new Map(),
+    partnerStockEpoch: 0,
+    needGoalPick: new Map(),
     needDecideDorm: new Map(),
     needsPropsEpoch: 0,
+    needsStockEpoch: 0,
     ritualTemplates: resolveRituals(),
     rituals: new Map(),
     ritualSeat: new Map(),
@@ -2216,7 +2440,6 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     stress: new Map(),
     worn: new Map(),
     dress: DEFAULT_DRESS_PALETTE,
-    needProps: new Map(),
     houseShown: new Set(),
     dollhouse: null,
     scale: REAL_SCALE,
@@ -2224,7 +2447,6 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     familyHudSig: "",
     nounsSig: "",
     idleAway: new Map(),
-    shopCooldown: new Map(),
     lastDrive: new Map(),
     relations: new Map(),
     workAbsence: new Map(),
@@ -2681,7 +2903,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // The LIVE flag is KEPT (§4 — hands empty on every exit) so a creature
       // claimed mid-haul closes its episode cleanly.
       s.npcTasks.delete(body);
-      s.needStep.delete(cid);
+      clearNeedStep(s, cid);
       s.party.delete(cid);
       world.setNpcErrand(body, null);
       // Drive the creature's OWN body. No teleport: the spark goes to the body,
@@ -2707,7 +2929,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       world.setStationary(spirit);
       // Resume the creature's need loop from now (it was suspended, not lost).
-      s.needStep.delete(prev);
+      clearNeedStep(s, prev);
     }
     // MULTIPLAYER: possession IS the claim — announce which body this spark
     // now rides (or that it let go) so peers park our light beside it. Sent on
@@ -3391,25 +3613,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
-  /** The player GAVE a resident a stack unit (an accepted offer). The physical unit
-   *  goes into its CARRIED stack and the creature is PROMOTED to the live need loop
-   *  (§13): the deposit rule walks it home to put the gift in the house box (a walking
-   *  shopper turns around — no market trip needed), a hungry one eats it first, and on
-   *  demote the goods clock RE-ANCHORS so the next scheduled trip reflects the gift.
-   *  The old cycle-flag special case (`residentProvisioned`) fell out of this. */
-  function giftResidentGood(session: QuestSession, cid: string, glyph: string) {
-    if (!cid.startsWith("resident_")) return;
-    const carried = session.needCarried.get(cid) ?? {};
-    stackAdd(carried, glyph);
-    session.needCarried.set(cid, carried);
+  /** The player GAVE a resident a stack unit (an accepted offer). The unit goes
+   *  into the receiver's own carry — its bag, or its free hands — and the
+   *  creature is PROMOTED to the live need loop (§13): the deposit rule walks it
+   *  home to put the gift in the house box (a walking shopper turns around — no
+   *  market trip needed), a hungry one eats it first, and on demote the goods
+   *  clock RE-ANCHORS so the next scheduled trip reflects the gift.
+   *
+   *  🚨 RETURNS FALSE WHEN THERE IS NO ROOM, and takes nothing (decision 7 —
+   *  refusal conserves). A body with full hands and no bag genuinely cannot
+   *  accept a gift, and the giver must keep it rather than watch it vanish. */
+  function giftResidentGood(session: QuestSession, cid: string, glyph: string): boolean {
+    if (!cid.startsWith("resident_")) return false;
+    if (giveUnitsToBody(session, cid, glyph, 1) < 1) {
+      console.log(`[needs] ${cid} REFUSED a gifted ${glyph} — nothing free to carry it in`);
+      return false;
+    }
     session.liveNeedBodies.add(cid);
-    session.needStep.delete(cid); // whatever it was doing, re-decide with the gift in hand
+    clearNeedStep(session, cid); // whatever it was doing, re-decide with the gift in hand
     const need = session.creatures?.world.creatures[cid]?.needs.find(
       (n) => n.target?.category === goodKeyOfGlyph(glyph), // a gifted apple satisfies the FOOD want
     );
     if (need) need.fulfilled = true;
     // Kindness is remembered — the receiver warms toward the giver.
     warmRelations(session, cid, PLAYER_CREATURE_ID, { affinity: 0.1, trust: 0.05 });
+    return true;
   }
 
   /** Is this item entity physically IN the player's hands right now? */
@@ -3707,7 +3935,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       addRaw("town", "town", { kind: "place", affords: ["go"] });
       addRaw("area", "area", { kind: "place", affords: ["go", "area"] });
       const buildStock = session.town ? session.town.deltas.stock : session.foundedSite?.stock;
-      for (const g of Object.keys({ ...(buildStock ?? {}), ...session.pocket })) {
+      const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
+      for (const g of Object.keys({ ...(buildStock ?? {}), ...onMe })) {
         const head = headOf(g);
         if (isSiteMaterial(head)) {
           addRaw(head, head, { kind: "item", affords: ["get", "give", "bring", "want"], properties: ["material"] });
@@ -4175,18 +4404,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!need) continue;
       // LIVE (needs loop): it wants the good exactly while FETCHING it; a unit in hand
       // (a gift, a fresh purchase) reads as satisfied whatever the time-pure clock says.
-      // "I have no {good}" must be TRUE to be said: a unit in hand — the carried
-      // stack, or an owned instance (a player's gift) — forbids the lack claim, or
-      // the same creature answers "where is it?" with "I have it" and "why do you
-      // want it?" with "because I don't have it" in one breath.
+      // "I have no {good}" must be TRUE to be said: a unit on the body — in its hands
+      // or in the bag it is carrying, or an owned instance (a player's gift) — forbids
+      // the lack claim, or the same creature answers "where is it?" with "I have it"
+      // and "why do you want it?" with "because I don't have it" in one breath.
+      const onBody = bodyCarryView(bodyCarryOf(session, cid));
       const holdsUnit =
-        carryTotalOf(session.needCarried.get(cid), good.good.key) > 0 ||
+        carryTotalOf(onBody, good.good.key) > 0 ||
         Object.values(session.creatures.world.items).some(
           (i) => i.ownerId === cid && (i.kind === good.good.key || i.category === good.good.key),
         );
       if (session.liveNeedBodies.has(cid)) {
         const step = session.needStep.get(cid);
-        const carried = carryTotalOf(session.needCarried.get(cid), good.good.key);
+        const carried = carryTotalOf(onBody, good.good.key);
         const hungerHolds = hungry && good.good.key === "food"; // the food want stays open while hungry
         need.fulfilled = !hungerHolds && (carried > 0 || !(step && step.kind === "take" && step.goodKey === good.good.key));
         // Restocking reason (unless hunger already owns the fact): "I want {good}
@@ -4448,11 +4678,144 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  items at the feet, the bowl beside a wandering pet) — see the NEED SCOPE
    *  in makeGoalResolver. */
   const NEED_SCOPE_REACH_M = 8;
-  /** Seconds a need motive stays OFF the pursuit route after a pursuit for it
-   *  ended without completing (blocked mid-flight / act-cap): the legacy walker
-   *  — whose blocked machinery begs, surfaces for adoption and demotes — owns
-   *  the motive for the spell, instead of an install→fail→reinstall churn. */
-  const NEED_PURSUIT_RETRY_S = 25;
+  // ── ⏸️ DEFER — THE PARK (scope-behaviors.md §2.5, §7 step 5) ─────────────
+  //
+  // (NEED_PURSUIT_RETRY_S = 25 retired here, with SHOP_RETRY_COOLDOWN_S = 90 up
+  //  top. Both were §4.3's indictment made literal: "failure amnesia and
+  //  expected-value-of-trip as stopwatches". What they were REALLY saying is
+  //  "this plan cannot work until something changes" — so that is what is
+  //  written down now, and the clock comes out.)
+
+  /** PARK a failed goal on the condition that failed it. Idempotent per
+   *  key: re-parking an already-parked goal refreshes it, which is right —
+   *  the plan failed again, so the wait starts again.
+   *
+   *  `dueAt` is the DERIVED wake where the failure named a closed form (see
+   *  `NeedPark`); everything else rides the two epochs and the backstop. */
+  function parkNeed(
+    session: QuestSession,
+    cid: string,
+    tplKey: string,
+    o: { scope: NeedPark["scope"]; why: string; dueAt?: number },
+  ): void {
+    // THE BACKSTOP, DERIVED: one full fill cycle of THIS row's own drive. The
+    // same clock the value side prices the row against (`needClockKeyOf`), so
+    // a hunger park expires in a hunger's worth of seconds and a hygiene park
+    // in a hygiene's — no literal anywhere.
+    const staleAt = session.townClock + needFillS(session.scale, needClockKeyOf(tplKey));
+    session.needParks.set(`${o.scope}|${cid}|${tplKey}`, {
+      scope: o.scope,
+      props: session.needsPropsEpoch,
+      stock: session.needsStockEpoch,
+      dueAt: o.dueAt ?? 0,
+      staleAt,
+      why: o.why,
+    });
+    if (probesOn()) console.log(`[needs] ${cid} PARKED ${o.scope} ${tplKey} on "${o.why}"`);
+  }
+
+  /** IS this goal still parked? Asked before anything is resolved, so it must
+   *  stay a handful of comparisons — and it CONSUMES the park when the wake
+   *  fires, so a woken row is re-decided at full price exactly once and then
+   *  behaves like any other row. */
+  function needParked(session: QuestSession, cid: string, tplKey: string, scope: NeedPark["scope"]): boolean {
+    const key = `${scope}|${cid}|${tplKey}`;
+    const p = session.needParks.get(key);
+    if (!p) return false;
+    const woke =
+      p.props !== session.needsPropsEpoch || // something was dropped/created
+      p.stock !== session.needsStockEpoch || // a container gained units
+      (p.dueAt > 0 && session.townClock >= p.dueAt) || // the closed form moved on
+      session.townClock >= p.staleAt; // the backstop, never the mechanism
+    if (!woke) return true;
+    session.needParks.delete(key);
+    if (probesOn()) {
+      const by = session.townClock >= p.staleAt ? "stale" : p.dueAt > 0 && session.townClock >= p.dueAt ? "due" : "world";
+      console.log(`[needs] ${cid} WOKE ${scope} ${tplKey} (${by}; parked on "${p.why}")`);
+    }
+    return false;
+  }
+
+  /** ⏸️ A CONTAINER GAINED UNITS — the wake signal for every park that failed
+   *  because a branch was empty. One call, at every site that credits stock, so
+   *  "somebody put something somewhere" is a single event in this file. */
+  function bumpStockEpoch(session: QuestSession): void {
+    session.needsStockEpoch++;
+  }
+
+  /** ⏸️ A TRADE PARTNER'S SHELF GAINED UNITS — `bumpStockEpoch`'s town-rung
+   *  twin (scope-behaviors.md §2.5.1). One call, at every site that credits a
+   *  partner stack, so "their shelf moved" is a single event in this file. */
+  function bumpPartnerStockEpoch(session: QuestSession): void {
+    session.partnerStockEpoch++;
+  }
+
+  // ── ⏸️ THE TOWN PARKS (scope-behaviors.md §2.5.1, §7 step 6) ─────────────
+  //
+  // Same primitive as `parkNeed`/`needParked`, one rung up and on the scope's
+  // own clock. `TownPark` documents the two scopes and what wakes each.
+
+  /** ⏸️ PARK a town goal on the condition that failed it. Idempotent per key:
+   *  re-parking refreshes, because the plan failed again. */
+  function parkTown(
+    session: QuestSession,
+    key: string,
+    o: { scope: TownPark["scope"]; why: string; now: number; staleAfterS: number; dueAt?: number },
+  ): void {
+    session.townParks.set(key, {
+      scope: o.scope,
+      partnerStock: session.partnerStockEpoch,
+      stock: session.needsStockEpoch,
+      released: session.reservations.releaseEpoch(),
+      dueAt: o.dueAt ?? 0,
+      staleAt: o.now + o.staleAfterS,
+      why: o.why,
+    });
+    if (probesOn()) console.log(`[town] PARKED ${key} on "${o.why}"`);
+  }
+
+  /** ⏸️ IS this town goal still parked? Asked before anything is resolved, and
+   *  it CONSUMES the park when the wake fires, so a woken goal is retried at
+   *  full price exactly once and then behaves like any other. */
+  function townParked(session: QuestSession, key: string, now: number): boolean {
+    const p = session.townParks.get(key);
+    if (!p) return false;
+    const woke =
+      // An AGREEMENT has two sides and either shelf moving can unstall it:
+      // theirs (the famine lifts) or ours (the yard the give-goods come out of).
+      (p.scope === "agreement" &&
+        (p.partnerStock !== session.partnerStockEpoch || p.stock !== session.needsStockEpoch)) ||
+      (p.scope === "job" &&
+        (p.stock !== session.needsStockEpoch ||
+          p.released !== session.reservations.releaseEpoch())) ||
+      (p.dueAt > 0 && now >= p.dueAt) || // the closed form moved on
+      now >= p.staleAt; // the backstop, never the mechanism
+    if (!woke) return true;
+    session.townParks.delete(key);
+    if (probesOn()) {
+      const by = now >= p.staleAt ? "stale" : p.dueAt > 0 && now >= p.dueAt ? "due" : "world";
+      console.log(`[town] WOKE ${key} (${by}; parked on "${p.why}")`);
+    }
+    return false;
+  }
+
+  /**
+   * THE HYSTERESIS MARGIN (step ④ — scope-behaviors.md §2.3 PREFER): how much
+   * cheaper a CHALLENGER candidate must be before a body abandons the one it
+   * already chose for the same row.
+   *
+   * A priced argmax re-run at every junction is a body that changes its mind
+   * whenever two options are near-equal — walk two metres toward the pantry, the
+   * market's leg shortens by two metres, turn round. Stated as a distance, 6 s
+   * at the villager's 1.6 m/s is **≈10 m**: the challenger has to be ten metres
+   * better, which is more than any single leg of walking can manufacture, so the
+   * body finishes what it started. It is deliberately SMALLER than the taste
+   * bonus (30 s) — a real difference in what you get still wins immediately.
+   *
+   * Not a cooldown: the loser is never hidden, it merely has to be properly
+   * better. A candidate that stops compiling loses the seat outright.
+   */
+  const GOAL_SWITCH_MARGIN_S = 6;
   /** Arrival radius for a pursuing body — the same 1.3 the needs walker counts. */
   const COMMAND_ARRIVE = 1.3;
   /** The arrival tolerance for a leg that ends in POSING ON a piece
@@ -4579,12 +4942,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // reach); a command's resolution stays town-wide. Built per body — the
       // scope is seeker-relative.
       const base = pur.source === "need" ? makeGoalResolver(session, cid) : cmdBase;
-      // A failed need pursuit hands the motive back to the legacy walker for a
-      // spell (the beg/adopt/demote machinery lives there) — without this, an
-      // uncleared meter reinstalls the same failing plan every decide tick.
-      const coolOff = () => {
+      // ⏸️ A FAILED NEED PURSUIT PARKS ITS ROUTE (§2.5 DEFER) and hands the
+      // motive back to the legacy walker meanwhile — the beg/adopt/demote
+      // machinery lives there, and without the hand-back an uncleared meter
+      // reinstalls the same failing plan every decide tick.
+      //
+      // ⚠️ THE PARKED THING IS THE ROUTE, NOT THE ROW. `pursue` reports only
+      // THAT it is blocked, never which condition beat it, so the honest wake
+      // is the general one — "the world moved" (either epoch), with the row's
+      // own fill clock as the backstop. Parking the whole ROW on that would
+      // also silence the OTHER engine, which is the one that can still shop and
+      // draw water (the S3 degradation seam), so the scope is `pursuit`.
+      const parkRoute = () => {
         if (pur.source === "need" && pur.tplKey) {
-          session.needPursuitCooldown.set(`${cid}|${pur.tplKey}`, session.townClock + NEED_PURSUIT_RETRY_S);
+          parkNeed(session, cid, pur.tplKey, { scope: "pursuit", why: "the plan could not be finished" });
         }
       };
       const clear = () => {
@@ -4599,6 +4970,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // claim of its own — releasing just returns whatever a preempted need
         // episode held.
         if (pur.source === "command") releaseErrands(session, cid);
+        // UNIT claims are the other way round: they belong to the LEG, not the
+        // episode, so a pursuit that is over — completed, blocked, pre-empted —
+        // speaks for nothing. (A completed take already consumed its own inside
+        // the effect; this is the failure arm.)
+        releaseNeedUnits(session, cid);
       };
       // GIVE-UP GUARD: a pursuit that keeps ACTING without ever completing (hands
       // already full so `pick` no-ops, an un-grabbable target) would crouch on the
@@ -4613,8 +4989,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (pur.source === "command") {
             saySystem(session, pursuitBlockLine(pur.goal), `💬 "${pur.glyph}" — can't finish`, cid);
           } else {
-            coolOff();
-            console.log(`[needs] ${cid} pursuit ${pur.tplKey ?? pur.goal.kind} hit the act cap — dropped (cooling off)`);
+            parkRoute();
+            console.log(`[needs] ${cid} pursuit ${pur.tplKey ?? pur.goal.kind} hit the act cap — dropped (route parked)`);
           }
           return false;
         }
@@ -4712,8 +5088,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (pur.source === "command") {
           saySystem(session, pursuitBlockLine(pur.goal), `💬 "${pur.glyph}" — can't do that`, cid);
         } else {
-          coolOff();
-          console.log(`[needs] ${cid} pursuit ${pur.tplKey ?? pur.goal.kind} blocked mid-flight — back to the walker (cooling off)`);
+          parkRoute();
+          console.log(`[needs] ${cid} pursuit ${pur.tplKey ?? pur.goal.kind} blocked mid-flight — back to the walker (route parked)`);
         }
         continue;
       }
@@ -4946,7 +5322,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  the very next tick. Without this a head finishes its old errand first and
    *  the gathering visibly waits on nothing. */
   function ritualJunction(session: QuestSession, cid: string) {
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     session.needDecideDorm.delete(cid);
     if (session.pursuits.get(cid)?.source === "need") session.pursuits.delete(cid);
   }
@@ -5259,6 +5635,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // world claim identically on every peer (the multiplayer law the task pool
     // states: no RNG, pure over (task, candidates)).
     const cids = [...cidSet].sort();
+    // STALE UNIT CLAIMS, before anybody decides against them: a body that is
+    // neither live nor embodied can never come back for the units it spoke
+    // for, and units nobody will collect read as gone to every housemate.
+    // (`errandClaimFor`'s precedent, one ledger over.)
+    sweepNeedClaims(session, cidSet);
     for (const cid of cids) {
       // SOFT CONTROL (attention-spark.md): consume the "spark promoted this body
       // to a chore this frame" flag — its chosen pursuit ANNOUNCES below (a
@@ -5285,7 +5666,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // Recruited/tasked MID-pursuit: a NEED-born pursuit yields (exactly as
         // needStep is dropped) — a command-born one survives, it IS the order.
         if (session.pursuits.get(cid)?.source === "need") session.pursuits.delete(cid);
-        session.needStep.delete(cid);
+        clearNeedStep(session, cid);
         session.needDecideDorm.delete(cid); // command's end is a junction — decide fresh
         releaseErrands(session, cid); // following/obeying — not shopping
         continue;
@@ -5294,59 +5675,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // The step already fired beginAction and cleared needStep; leave the body
       // pinned and DON'T reclaim/re-decide until the crouch lands its effect.
       if (session.actionHold.has(cid)) continue;
-      // ── RECLAIM A PHYSICAL CARRY ────────────────────────────────────────
-      // THE ONE-WAY DOOR (playtest: authored spec items "picked up and carried
-      // forever"). There are two carry models: the physical `ObjectState.
-      // carriedBy` and the abstract `needCarried` stack. Only the stack is
-      // visible to the needs walker — and `carriedBy` ALSO removes the prop
-      // from every `loose` candidate list (`o.carriedBy` is skipped). So a
-      // commanded "get the ball" parked the ball in a hand that no rule could
-      // reach: never eaten, never tidied, never dropped. Unlike the hand-over
-      // paths, the `pick` goal step has no paired `dropObject`.
-      //
-      // The seam is exactly the user's own rule — get rid of what you hold
-      // "unless you are using, wearing, or TRANSPORTING it". A body that has
-      // reached this line is not transporting: it holds no command and is not
-      // in the party (the guard above `continue`d those). So the item is
-      // handed to the needs layer, which then owns it properly: hunger EATS a
-      // held apple, unload puts a held ball away or sets it down.
-      //
-      // Only real registered props are reclaimed — the display prop
-      // `syncNeedCarryProps` hangs on a carrying body is in neither
-      // `smallProps` nor the creature world, exactly so it can't be mistaken
-      // for a real instance, and this lookup preserves that.
-      if (!session.pursuits.has(cid)) {
-        // (A body driving a NEED pursuit is TRANSPORTING — the carry belongs to
-        // its plan; reclaiming it here would confiscate the apple en route to
-        // the table. The pursuit's own endings hand any orphan back: a blocked
-        // pursuit clears, and THIS reclaim absorbs the prop next tick.)
-        // Scan for a carried object that is a REAL registered prop, rather
-        // than taking whatever `npcCarrying` happens to return first: a body
-        // mid-carry also wears the display prop, and picking that one would
-        // skip the real item for the tick.
-        const bodyId = avatarIdOf(cid);
-        let heldObjId: string | undefined;
-        let heldRec: { entityId: string; glyph: string; at?: number } | undefined;
-        for (const [objId, rec] of session.smallProps) {
-          if (state.objects[objId]?.carriedBy === bodyId) {
-            heldObjId = objId;
-            heldRec = rec;
-            break;
-          }
-        }
-        if (heldObjId && heldRec) {
-          const bag = session.needCarried.get(cid) ?? {};
-          bag[heldRec.glyph] = (bag[heldRec.glyph] ?? 0) + 1;
-          session.needCarried.set(cid, bag);
-          world.removeObject(heldObjId);
-          session.smallProps.delete(heldObjId);
-          if (session.creatures) delete session.creatures.world.items[heldRec.entityId];
-          session.liveNeedBodies.add(cid); // the walker owns this body now
-          session.needStep.delete(cid); // re-decide with the item in hand
-          session.needDecideDorm.delete(cid); // wake — the hands changed
-          console.log(`[needs] ${cid} RECLAIMED a physically-carried ${heldRec.glyph} into its hands`);
-        }
-      }
+      // ── THE WALKER SEES THE HANDS ───────────────────────────────────────
+      // There used to be a RECLAIM here, converting a physically-carried prop
+      // into an abstract `needCarried` tally, because the walker could only
+      // count the tally: a commanded "get the ball" otherwise parked the ball
+      // in a hand no rule could reach (never eaten, never tidied, never
+      // dropped). That conversion is gone with the abstract bag — the walker
+      // now reads what the body is REALLY holding (`bodyCarryOf`), so a held
+      // ball is visible to hunger, tidy and unload the moment the command
+      // that put it there ends. One carry model, no door to walk through.
       const houseIndex = Number(cid.split("_")[1]);
       const member = Number(cid.split("_")[2]);
       const house = residentTownCtx(session, houseIndex)?.house; // neighbor-aware
@@ -5362,7 +5699,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!shown && !live) {
         // SCHEDULED: un-ticked. Meters drop so a later load re-seeds from the schedule.
         for (const tpl of templates) session.needMeters.delete(`${cid}|${tpl.key}`);
-        session.needStep.delete(cid);
+        clearNeedStep(session, cid);
         session.needDecideDorm.delete(cid); // a re-shown house decides fresh
         continue;
       }
@@ -5373,9 +5710,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // ABSTRACTLY — carried units land in the home box, the body's pending step is
         // dropped, and the clock re-anchors to the result. No zombie live state.
         if (live) {
-          session.needStep.delete(cid);
+          clearNeedStep(session, cid);
           session.needDecideDorm.delete(cid);
           session.pursuits.delete(cid); // an evicted body's pursuit dies with it
+          session.needGoalPick.delete(cid); // …and so does the candidate it was standing on (④)
           session.liveNeedBodies.delete(cid);
           releaseErrands(session, cid); // an evicted body can't finish the errand
           bankCarried(session, cid, houseIndex);
@@ -5425,12 +5763,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // Pets hold no duties — no clock gates apply.
       const runnerGood = pet ? undefined : residentShopGoods(session, houseIndex, member);
       if (!live && !shown && runnerGood && runnerGood.errand(house, session.townClock).phase !== "home") {
-        session.needStep.delete(cid);
+        clearNeedStep(session, cid);
         continue;
       }
       const shiftDuty = pet ? undefined : residentJobDuty(session, houseIndex, member);
       if (!live && shiftDuty && inShiftWindow(shiftDuty.window, session.townClock, FOOD_DAY_SEC)) {
-        session.needStep.delete(cid);
+        clearNeedStep(session, cid);
         continue;
       }
       // Progress an active step: still walking, or ARRIVED → apply its effect, re-decide.
@@ -5501,7 +5839,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (step.kind === "rest") {
           step.dwell = (step.dwell ?? restDwellFor(step.tplKey, session.scale)) - dt;
           if (step.dwell > 0) continue; // sleeping / playing / washing
-          session.needStep.delete(cid);
+          clearNeedStep(session, cid);
           session.needMeters.set(`${cid}|${step.tplKey}`, 0);
           showWorldBubble(state, `rest:${cid}`, {
             anchor: { kind: "avatar", id: cid },
@@ -5516,12 +5854,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // edit lands on the carried units (dirty shirts come out clean).
           step.dwell = (step.dwell ?? restDwellFor(step.tplKey, session.scale)) - dt;
           if (step.dwell > 0) continue;
-          session.needStep.delete(cid);
+          clearNeedStep(session, cid);
           applyNeedStepEffect(session, state, cid, step);
           continue;
         }
         if (step.kind === "socialize") {
-          session.needStep.delete(cid);
+          clearNeedStep(session, cid);
           const pid = step.objId ?? "";
           const pav = chatAvatar(state, pid);
           // Partner still here → a REAL exchange (gossip spreads, relations warm),
@@ -5556,7 +5894,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             Math.hypot(body.x - dineSeat.x, body.y - dineSeat.y) <= 1.6) {
           step.dwell = (step.dwell ?? SIT_BEFORE_EAT_S) - dt;
           if (step.dwell > 0) continue; // settling onto the chair
-          session.needStep.delete(cid);
+          clearNeedStep(session, cid);
           applyNeedStepEffect(session, state, cid, step);
           continue;
         }
@@ -5565,6 +5903,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // so it never applies mid-stride (the "moving while using" bug). Clear
         // needStep now; the busy-guard above holds re-decide until the crouch
         // ends, then the walker re-decides from the updated world.
+        //
+        // ⚠️ THE ONE SITE THAT DOES NOT GO THROUGH `clearNeedStep`: the UNIT
+        // CLAIM must survive the crouch. Releasing it here would free the very
+        // units this body is a beat away from lifting, and a housemate
+        // deciding inside that beat would be sent to a box about to be
+        // emptied. `applyNeedStepEffect` consumes what it takes and releases
+        // the rest — the claim's honest end.
         session.needStep.delete(cid);
         const arrived = step;
         beginAction(session, cid, `${arrived.kind}:${arrived.tplKey}`, () =>
@@ -5603,7 +5948,41 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const sinceDecide = dorm ? Math.max(dt, session.townClock - dorm.at) : dt;
       session.needDecideDorm.delete(cid);
       // DECIDE from live state (the shared template walker), then drive the body.
-      const decided = decideNeeds(templates, (tpl) => residentNeedCtx(session, state, cid, houseIndex, tpl, templates));
+      // The resolved ctx of the CHOSEN row is kept (step ④): the ENABLE
+      // comparison below re-decides the same row against a bigger bag, and it
+      // must ask the question over the very snapshot the decision was made on —
+      // resolving a second one would be a second world read AND a second
+      // answer.
+      const ctxSeen = new Map<string, NeedCtx>();
+      const decided = decideNeeds(
+        templates,
+        (tpl) => {
+          const c = residentNeedCtx(session, state, cid, houseIndex, tpl, templates);
+          ctxSeen.set(tpl.key, c);
+          return c;
+        },
+        {
+          // ⏸️ DEFER (§2.5): a row whose last plan failed on a condition that
+          // has not moved is skipped BEFORE its ctx is resolved — which is
+          // where the saving is, since the ctx is the expensive half. It still
+          // surfaces as the blocked want (needs.ts `NeedDecideOpts.parked`), so
+          // adoption and the beg bubble see it exactly as they saw the rows the
+          // deleted cooldowns used to strand.
+          //
+          // ⚠️ A METER ROW THAT IS NO LONGER FIRING IS NOT PARKED — it is
+          // SATISFIED. Cheap to tell (the meter is already on the session, no
+          // ctx involved), and without the check a body whose hunger was fed by
+          // some other door would keep begging for food it no longer wants.
+          parked: (tpl) => {
+            if (!needParked(session, cid, tpl.key, "row")) return false;
+            if (tpl.drive.kind !== "meter") return true;
+            const meter = session.needMeters.get(`${cid}|${tpl.key}`) ?? 0;
+            if (meter >= tpl.drive.threshold) return true;
+            session.needParks.delete(`row|${cid}|${tpl.key}`);
+            return false;
+          },
+        },
+      );
       // PROVISIONING STAYS ON THE CLOCK while the house is UNWATCHED
       // (view-distance-lod-tiers.md): an unwatched household's restocking is the
       // BUILDING's need — the goods clock already walks a real shopper down the
@@ -5617,6 +5996,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // empty on every exit (§4).
       if (decided?.tpl.drive.kind === "stock" && !shown && decided.intent.kind === "take") {
         if (decided.tpl.exclusive) releaseErrands(session, cid); // back in the pool
+        releaseNeedUnits(session, cid); // and the stock it would have drawn
         if (live) {
           // DEMOTE — the same hand-back as "nothing fires": the clock owns
           // this household's shopping again.
@@ -5642,6 +6022,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         claimErrand(session, houseIndex, decided.tpl.key, cid);
       } else if (!decided?.tpl.exclusive) {
         releaseErrands(session, cid);
+      }
+      // THE UNIT CLAIM (scope-behaviors.md §2.6), fired at the SAME moment and
+      // for the same reason: the errand claim says "I am the one shopping",
+      // this says "and those three apples are mine". On ACT, never on ctx
+      // resolution — a body that merely LOOKED at a chest has spoken for
+      // nothing, and reserving during resolution would let a decide that ends
+      // in a nap lock the pantry. Any other decision drops what this body held,
+      // so a reservation only ever outlives the tick that is walking toward it.
+      //
+      // ⚠️ It must land BEFORE the pursuit branch below, because both engines
+      // run the same decided take — the legacy step walks it, S2 hands it to
+      // `takeUnits`/`withdraw`, and the arrival that consumes the claim
+      // (`applyNeedStepEffect`) is shared.
+      if (decided?.intent.kind === "take") {
+        reserveNeedUnits(
+          session,
+          cid,
+          decided.intent.from.id,
+          decided.tpl.item.category ?? "",
+          decided.intent.units,
+        );
+      } else {
+        releaseNeedUnits(session, cid);
       }
       // SURFACE the unmet want for ADOPTION: the top firing need decided BLOCKED
       // (a graspless pet at a lidded pantry, an empty world). Housemates read
@@ -5778,16 +6181,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // needs no move at all"), while the pursuit's consume goal plans a walk
       // to the served item's own spot on the tabletop — which stood the seated
       // diner up, marched it around the table, and ate the meal standing.
+      // ── ④ ENABLE: FETCH THE BASKET FIRST, when it pays ────────────────────
+      // A bounded step like any other — the walker re-decides the moment the
+      // bag is in hand, and the very same row then sizes its take to the bag.
+      // Deliberately AHEAD of the pursuit install: this replaces the trip, it
+      // does not decorate it.
+      if (intent.kind === "take" && NEED_PURSUITS_ENABLED) {
+        const fetchBag = bagFetchGoal(session, cid, tpl, ctxSeen.get(tpl.key), intent);
+        if (fetchBag && compileGoal(fetchBag, cid, makeGoalResolver(session, cid))) {
+          session.liveNeedBodies.add(cid);
+          clearNeedStep(session, cid);
+          session.walk.delete(cid);
+          session.pursuits.set(cid, { source: "need", tplKey: tpl.key, goal: fetchBag, glyph: tpl.key });
+          console.log(`[needs] ${cid} fetching a bag first for ${tpl.key} (${intent.units} → bag)`);
+          continue;
+        }
+      }
       const ritualSeatDine =
         intent.kind === "consumeAt" && !!ritualSeatAt(session, cid, intent.station.id);
-      if (!ritualSeatDine && NEED_PURSUITS_ENABLED && (session.needPursuitCooldown.get(`${cid}|${tpl.key}`) ?? 0) <= session.townClock) {
-        const bag = session.needCarried.get(cid) ?? {};
+      // ⏸️ …unless this row's ROUTE is parked (§2.5): the last pursuit for it
+      // could not be finished and nothing has moved since, so the legacy walker
+      // keeps the motive until the world changes (`needParked`).
+      if (!ritualSeatDine && NEED_PURSUITS_ENABLED && !needParked(session, cid, tpl.key, "pursuit")) {
+        const onMe = bodyCarryView(bodyCarryOf(session, cid));
         const carriedMatching =
           tpl.satisfy.kind === "consume" && tpl.item.category
             ? [
                 ...(tpl.item.category === "food" ? carryKindsOf("meal") : []),
                 ...carryKindsOf(tpl.item.category),
-              ].reduce((s, k) => s + (bag[k] ?? 0), 0)
+              ].reduce((s, k) => s + (onMe[k] ?? 0), 0)
             : 0;
         const candidates = needPursuitGoals(tpl, intent, {
           carriedMatching,
@@ -5796,11 +6218,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         });
         if (candidates.length > 0) {
           const nr = makeGoalResolver(session, cid); // NEED-scoped: own household + arm's reach
-          const goal = candidates.find((g) => compileGoal(g, cid, nr));
+          const goal = chooseNeedGoal(session, cid, tpl.key, candidates, nr);
           if (goal) {
             if (probesOn() && !session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key} → pursuit)`);
             session.liveNeedBodies.add(cid);
-            session.needStep.delete(cid);
+            clearNeedStep(session, cid);
             session.walk.delete(cid); // the pursuit starts its walk fresh
             session.pursuits.set(cid, { source: "need", tplKey: tpl.key, goal, glyph: tpl.key });
             if (wasSparkActing) announceSparkIntent(session, cid, goal);
@@ -5842,11 +6264,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // clutter gets banked by the tidy chore (which outranks fun) or carried
         // off by the next bored housemate, and the set-out spins forever.
         //
-        // The move itself is `dropFromStack` — take from the hand FIRST, make
-        // the prop SECOND, put it back if the world refuses it — so the unit
-        // can never be in both places or in neither (item conservation).
-        const bag = session.needCarried.get(cid) ?? {};
-        const glyph = Object.keys(bag).find((k) => (bag[k] ?? 0) > 0 && matchesNeedItem(k, tpl.item));
+        // The move itself is atomic — take from the body FIRST, make the prop
+        // SECOND, put it back if the world refuses it — so the unit can never
+        // be in both places or in neither (item conservation). A toy already in
+        // the HANDS is simply set down: it is the thing itself, so there is
+        // nothing to mint.
+        const carry = bodyCarryOf(session, cid);
+        const onMe = bodyCarryView(carry);
+        const glyph = Object.keys(onMe).find((k) => (onMe[k] ?? 0) > 0 && matchesNeedItem(k, tpl.item));
         if (!glyph) continue; // hands emptied mid-decide — re-decide next tick
         const bodyR = world.npcRadiusOf(avatarIdOf(cid));
         const heading = Math.hypot(body.fx, body.fy) > 1e-3 ? { x: body.fx, y: body.fy } : { x: 1, y: 0 };
@@ -5854,9 +6279,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // body could actually stand — the players have to be able to ring it.
         const front = { x: body.x + heading.x * SET_OUT_AHEAD_M, y: body.y + heading.y * SET_OUT_AHEAD_M };
         const spot = nearestClearSpot(state, front, { x: body.x, y: body.y }, bodyR, standAvoid(cid));
-        const propId = dropFromStack(session, bag, glyph, spot.x, spot.y);
-        if (!propId) continue; // nothing moved — the unit is still in hand
-        if (Object.keys(bag).length === 0) session.needCarried.delete(cid);
+        const heldOut =
+          carry.inHand && !carry.inHand.bag && carry.inHand.glyph === glyph
+            ? setDownFromHands(
+                session,
+                avatarIdOf(cid),
+                { kind: "ground", x: spot.x, y: spot.y },
+                { objId: carry.inHand.objId },
+              )?.objId ?? null
+            : null;
+        const fromBag = bagHolding(carry, glyph);
+        const propId = heldOut ?? (fromBag ? dropFromStack(session, fromBag.stock, glyph, spot.x, spot.y) : null);
+        if (!propId) continue; // nothing moved — the unit is still on the body
         session.liveNeedBodies.add(cid);
         session.needStep.set(cid, {
           tplKey: tpl.key,
@@ -5969,10 +6403,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const last = legs.points[legs.points.length - 1];
         if (last) last.dwell = restDwellFor(tpl.key, session.scale) + 3;
       } else if (intent.kind === "take" || intent.kind === "deposit") {
-        // A beat at the box while the reach rig plays (syncNeedCarryProps) —
+        // A beat at the box while the reach rig plays (the take/put gesture) —
         // taking from and stowing into containers should be SEEN, not teleported.
         const last = legs.points[legs.points.length - 1];
-        if (last) last.dwell = 1.1;
+        if (last) last.dwell = BOX_ACT_DWELL_S;
       } else if (intent.kind === "consumeAt") {
         // The MEAL is eaten sitting still. The consume effect is instant but
         // SHOWS for EAT_SHOW_S (needEatShow → the eat rig); without a dwell the
@@ -6235,81 +6669,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
-  /** ONE VISUAL PROP rides each needs-walking body that carries stack units —
-   *  reconciled from `needCarried` every tick, so every path (takes, deposits,
-   *  consumes, equips, washes, evictions) stays covered without per-effect
-   *  hooks. The prop is registered NOWHERE else (no smallProps entry, no
-   *  creature-world entity), so fetch/tidy/dialogue can never mistake the
-   *  display for a real loose instance. Appearing fires the PICKUP gesture
-   *  (reach → grasp → lift, then the held carry pose while walking — the
-   *  creature-lab rig); emptied hands fire PUTDOWN (lower → release). */
-  function syncNeedCarryProps(session: QuestSession, state: WorldState) {
-    if (!world) return;
-    const repGlyph = (cid: string): string | null => {
-      const carried = session.needCarried.get(cid);
-      if (!carried) return null;
-      // Prefer what the ACTIVE errand is about (its good's kinds) so the shown
-      // item matches the trip; else the biggest stack in hand.
-      const goodKey = session.needStep.get(cid)?.goodKey;
-      if (goodKey) {
-        for (const k of carryKindsOf(goodKey)) {
-          if ((carried[k] ?? 0) > 0) return k;
-        }
-      }
-      let best: string | null = null;
-      for (const [k, n] of Object.entries(carried)) {
-        if (n > 0 && (best === null || n > (carried[best] ?? 0))) best = k;
-      }
-      return best;
-    };
-    // Sweep stale props: emptied hands (putdown plays), swapped goods (the
-    // washed shirt replaces the dirty one below), evicted bodies — and
-    // COMMANDED bodies, whose spoken-order machinery carries REAL props
-    // (`npcCarrying` must not find this visual one and refuse the pick).
-    for (const [cid, rec] of [...session.needProps]) {
-      const commanded = (session.npcTasks.get(cid)?.length ?? 0) > 0;
-      const glyph = state.avatars[cid] && !commanded ? repGlyph(cid) : null;
-      if (glyph === rec.glyph) continue;
-      const av = state.avatars[cid];
-      // EMPTIED hands put down; SWAPPED hands (a clean shirt for the dirty one)
-      // are quiet — nothing left the body, so nothing reaches. An evicted body
-      // has no avatar left to play either, and the token just goes.
-      const left =
-        av &&
-        setDownFromHands(
-          session,
-          cid,
-          { kind: "consumed" },
-          {
-            objId: rec.objId,
-            quiet: glyph !== null,
-            reachAt: { x: av.x + av.fx, y: av.y + av.fy },
-          },
-        );
-      if (!left) world.removeObject(rec.objId);
-      session.needProps.delete(cid);
-    }
-    // Dress every carrying body that lacks its prop (commanded bodies excepted).
-    for (const [id, av] of Object.entries(state.avatars)) {
-      if (!id.startsWith("resident_") && !id.startsWith("pet_")) continue;
-      if (session.needProps.has(id)) continue;
-      if ((session.npcTasks.get(id)?.length ?? 0) > 0) continue;
-      const glyph = repGlyph(id);
-      if (!glyph) continue;
-      // A SHADOW: the units are already counted in `needCarried`, so this is the
-      // picture of them and must never be findable as a loose instance. The
-      // reach aims where the body faces — it just turned to the box or the
-      // floor spot the unit came from.
-      const objId = takeIntoHands(
-        session,
-        id,
-        { kind: "glyph", glyph, at: { x: av.x, y: av.y }, id: `needprop:${id}`, shadow: true },
-        { reachAt: { x: av.x + av.fx, y: av.y + av.fy } },
-      );
-      if (!objId) continue;
-      session.needProps.set(id, { objId, glyph });
-    }
-  }
+  // THE SHADOW-PROP MACHINERY IS GONE (scope-unification.md decision 6).
+  // `needProps` / `syncNeedCarryProps` existed only because the carried stack
+  // was ABSTRACT and needed a picture: one display token per carrying body,
+  // registered nowhere, reconciled every tick so no fetch or tidy rule could
+  // mistake the picture for the thing. Under the law the carried thing IS a
+  // real object again — a unit that enters a bagless body enters its hands
+  // through `takeIntoHands`, and one that enters a bag rides a basket the world
+  // already draws — so the picture is the thing and the reconciliation has
+  // nothing left to reconcile. The pickup/putdown gestures fire inside the two
+  // doors, where they belong.
 
   /** The need templates a household member runs: HUNGER (food) for everyone; the RUNNER
    *  of a good also PROVISIONS the house box for it — the shopping errand as a need,
@@ -6373,6 +6742,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // no other row claims gets put away NOW — bodies don't wander the
         // house holding things.
         unloadTemplate(),
+        // RELIEVE (the WEAKEST row there is — user direction 2026-08-02): the
+        // one whole OBJECT in the hands, when nothing is using it. Unload's
+        // stack arithmetic can never see a held BASKET (it is the shelf, not
+        // the goods), so without this row a body told to pick one up held it
+        // for the rest of the session.
+        relieveTemplate(),
         funTemplate(rate("fun")),
         // CLOTHING (round 3): worn garments dirty over time (the dress meter),
         // a change fetches a clean one from the wardrobe, the doffed garment
@@ -6396,7 +6771,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         item: { category: "water" },
         drive: { kind: "stock", container: "home", below: BARREL_REFILL_BELOW },
         satisfy: { kind: "deposit", container: "home", upTo: BARREL_CAP },
-        acquire: [{ kind: "source" }],
+        // 🧺 THE SAME THREE BRANCHES `provisionTemplate` CARRIES, in the same
+        // order — this row is a provision row written out longhand (the barrel
+        // has no street good behind it), so it must not drift from the shape.
+        // The well first; then a bucket somebody set down, then water lying out.
+        acquire: [{ kind: "source" }, { kind: "container", role: "storage" }, { kind: "loose" }],
         priority: 3,
         exclusive: true,
       });
@@ -6425,6 +6804,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // resolves to the DROP (orDrop) almost always — which is exactly right:
       // a dog puts the ball down, it doesn't file it.
       unloadTemplate(),
+      // …and RELIEVE as the FLOOR under it: the row above works in stack
+      // units, so a whole object no carry view reports (a container in the
+      // jaw) is invisible to it. Nothing may ride a pair of hands forever.
+      relieveTemplate(),
     ];
   }
 
@@ -6511,7 +6894,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         item: { category: want.goodKey },
         drive: { kind: "stock", container: "recipient", below: 1 },
         satisfy: { kind: "deposit", container: "recipient", upTo: 1 },
-        acquire: [{ kind: "container", role: "home" }, { kind: "source" }],
+        // 🧺 …and the makeshift STORE last (2026-08-03). This row exists
+        // because somebody in the house is already BLOCKED, which is the
+        // strongest case there is for "it shouldn't be invisible to them": with
+        // the pantry bare and the stall shut, an apple in the basket is the
+        // difference between a fed pet and a starved one, and the propriety
+        // rung is a preference the emergency simply outbids.
+        //
+        // ⚠️ NO `loose` BRANCH, deliberately, and this is the one place the
+        // asymmetry matters. A deposit row that draws from the floor pays
+        // `forgoneS` — what the unit was serving where it lay — and
+        // `inPlaceWants` values that by the HUNGRIEST housemate's meter. The
+        // hungriest housemate here is precisely the blocked body being rescued,
+        // so the loose branch would price the rescue against the very hunger it
+        // is answering and refuse to lift the apple. Boxes carry no placement
+        // value (a stack in a box is not a placement), so `storage` is safe.
+        acquire: [{ kind: "container", role: "home" }, { kind: "source" }, { kind: "container", role: "storage" }],
         // MUST outrank provision (3) — the LIVELOCK INVARIANT (needs.ts): a
         // unit this row takes from the pantry is "carried", which fires
         // provision's put-it-away rule; if provision outranked, it would bank
@@ -6617,26 +7015,46 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
   }
 
-  /** THE HANDS-EMPTY COMPLETION (§4, DEBUG-CREATURE-BEHAVIOR): bank every
-   *  carried stack into the house's boxes by HEAD — a kind glyph into its
+  /** THE HANDS-EMPTY COMPLETION (§4, DEBUG-CREATURE-BEHAVIOR): bank everything
+   *  the body has on it into the house's boxes by HEAD — a kind glyph into its
    *  GOOD's home box (apples → the food chest, water → the barrel), loose
    *  clutter into the box. Every exit from the needs loop that abandons an
    *  episode routes through this (eviction, DEMOTE, the deposit give-up) — the
    *  ONLY alternative is keeping the body live until the hand is disposed of.
-   *  Returns the units banked (0 = hands were already empty). */
+   *
+   *  THE BAG ITSELF STAYS WITH THE BODY: banking empties an inventory, it does
+   *  not confiscate the basket. (DEMOTE — the body leaving the world entirely —
+   *  is the one place the container is folded away too.)
+   *  Returns the units banked (0 = the body was already empty). */
   function bankCarried(session: QuestSession, cid: string, houseIndex: number): number {
-    const carried = session.needCarried.get(cid);
-    if (!carried) return 0;
     let banked = 0;
-    for (const [glyph, n] of Object.entries(carried)) {
+    for (const [glyph, n] of Object.entries(bodyCarryView(bodyCarryOf(session, cid)))) {
       if (n <= 0) continue;
       const box = designatedContainerFor(session, glyph, houseIndex, cid);
-      const stock = session.containerStock.get(box) ?? {};
-      stock[glyph] = (stock[glyph] ?? 0) + n;
-      session.containerStock.set(box, stock);
-      banked += n;
+      // The HANDS instance is a real thing and goes into the box as one
+      // (`stowCarriedIn` merges it into the stack itself); everything else is
+      // stack arithmetic between two containers.
+      const carry = bodyCarryOf(session, cid);
+      let left = n;
+      if (
+        carry.inHand &&
+        !carry.inHand.bag &&
+        carry.inHand.glyph === glyph &&
+        session.containers.has(box) &&
+        setDownFromHands(session, avatarIdOf(cid), { kind: "container", id: box }, { objId: carry.inHand.objId })
+      ) {
+        left--;
+        banked++;
+      }
+      const took = takeUnitsFromBody(session, cid, glyph, left);
+      if (took > 0) {
+        const stock = session.containerStock.get(box) ?? {};
+        stock[glyph] = (stock[glyph] ?? 0) + took;
+        session.containerStock.set(box, stock);
+        bumpStockEpoch(session); // ⏸️ a box gained units — wakes parked rows
+        banked += took;
+      }
     }
-    session.needCarried.delete(cid);
     return banked;
   }
 
@@ -6648,6 +7066,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * put in, forever. Once the need is satisfied the toy stops being in use and
    * becomes ordinary clutter, which is what puts it away after play.
    * General on purpose: any `use`-shaped row protects its own item.
+   *
+   * ⚖️ THIS IS THE BOOLEAN `inPlaceWants` GENERALIZES (chapter §4.4). The
+   * priced form asks the same question of the same rows — what does this thing
+   * serve where it is — and answers it in hand-seconds, for the whole household
+   * rather than one body, so a toy is protected in proportion to how much
+   * somebody wants it. Once the charge is trusted live this becomes redundant
+   * and goes, along with `TIDY_GRACE_S` and the play-area exemption; it stays
+   * belt-and-braces until then.
    */
   function inUseByLiveNeed(
     session: QuestSession,
@@ -6659,6 +7085,110 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (t.satisfy.kind !== "use" || !matchesNeedItem(glyph, t.item)) continue;
       const threshold = t.drive.kind === "meter" ? t.drive.threshold : 1;
       if ((session.needMeters.get(`${cid}|${t.key}`) ?? 0) >= threshold) return true;
+    }
+    return false;
+  }
+
+  /**
+   * THE IDLE HELD OBJECT — what the put-down row (`relieveTemplate`) acts on,
+   * and the whole of "only if they aren't doing anything with the item".
+   *
+   * A body holds at most ONE whole object. This answers whether that object is
+   * doing nothing, and every arm of the test is a way for some OTHER row to
+   * claim it — which is why the row can sit at the bottom of the ladder and
+   * still never take a thing out from under a want:
+   *
+   *   • nothing in the hands                     → nothing to relieve
+   *   • the hold is FRESH (`TIDY_GRACE_S` since   → the order the player just
+   *     it was taken up, stamped by the one         gave has to visibly land;
+   *     door)                                       a command is not a statue,
+   *                                                 but it isn't undone either
+   *   • a live `use` row wants it                 → the toy mid-play
+   *     (`inUseByLiveNeed`)
+   *   • it is a PROVISIONED good                  → food/water/clothing have
+   *                                                 rows of their own that
+   *                                                 walk them home
+   *   • it is a BAG WHOSE CONTENTS HAVE          → the basket it is shopping
+   *     SOMEWHERE TO GO (`bagUnitsHaveAnOutlet`)   with; the goods' own
+   *                                                 deposit rows empty it
+   *                                                 first, and THEN this fires
+   *
+   * Returns the object, or null when some row still speaks for it.
+   */
+  function heldIdleObject(
+    session: QuestSession,
+    cid: string,
+    houseIndex: number,
+    all?: readonly NeedTemplate[],
+  ): { objId: string; glyph: string; bag: boolean } | null {
+    const carry = bodyCarryOf(session, cid);
+    const held = carry.inHand;
+    if (!held) return null;
+    const rec = session.smallProps.get(held.objId);
+    if (session.townClock - (rec?.at ?? 0) < TIDY_GRACE_S) return null;
+    if (inUseByLiveNeed(session, cid, held.glyph, all)) return null;
+    if (provisionedHeads(session, houseIndex).has(headOf(held.glyph))) return null;
+    if (held.bag && bagUnitsHaveAnOutlet(session, cid, houseIndex, held.bag, all)) return null;
+    return { objId: held.objId, glyph: held.glyph, bag: !!held.bag };
+  }
+
+  /**
+   * DOES ANYTHING IN THIS BAG HAVE SOMEWHERE TO BE?
+   *
+   * The rule this replaces was flat — ANY unit in the basket pinned it to the
+   * hands, on the reasoning that "the goods' own deposit rows empty it first".
+   * A FULL home box is precisely what blocks those rows, and then the leftover
+   * unit made the basket invisible to every row that could set it down:
+   * `heldIdleObject` refused it, `carriedClutter` skips provisioned heads, and
+   * the goods row itself blocked on the full box. `decideNeeds` returned
+   * blocked with nothing actionable and the body walked on carrying — §4's
+   * "carries it around forever", re-entered by the BAG door.
+   *
+   * So the honest question is not "is the bag empty" but "is holding it buying
+   * anything": has some unit in it an ACTIONABLE outlet — a destination with
+   * room, or a row on this body that will use it up. If none has, the bag is
+   * idle and goes down WHOLE, contents riding with it (the water-in-the-barrel
+   * law; the drop effect's bag arm carries them). Nothing is ever spilled to
+   * make a bag empty, and the basket on the floor is a legitimate container
+   * scope the household can draw from again — including by picking it back up
+   * (`bagFetchGoal`) once the box has room.
+   *
+   * CHEAP BY CONSTRUCTION: one pass over the bag's own stack (a handful of
+   * glyphs), and per glyph a template scan plus two map reads. No world search,
+   * no second ctx.
+   */
+  function bagUnitsHaveAnOutlet(
+    session: QuestSession,
+    cid: string,
+    houseIndex: number,
+    bag: BagRef,
+    all: readonly NeedTemplate[] | undefined,
+  ): boolean {
+    for (const [glyph, n] of Object.entries(bag.stock)) {
+      if (n <= 0) continue;
+      // ① A ROW THAT WILL USE IT UP — the hungry body's own apple, the toy it
+      //    is playing with, the dirty shirt its laundry row will wash. FIRING
+      //    rows only: a want that hasn't asked yet is no reason to keep hold of
+      //    the bag, and a bag on the floor can always be picked up again.
+      for (const t of all ?? []) {
+        if (t.satisfy.kind === "deposit" || !matchesNeedItem(glyph, t.item)) continue;
+        // A TRANSFORM row fires on ANY matching unit in hand whatever its
+        // meter says (needs.ts `needFires`); every other row waits for its
+        // threshold — which is `inUseByLiveNeed`'s own test, generalized off
+        // `use` onto everything that consumes rather than relocates.
+        if (t.satisfy.kind === "transform") return true;
+        const threshold = t.drive.kind === "meter" ? t.drive.threshold : 1;
+        if ((session.needMeters.get(`${cid}|${t.key}`) ?? 0) >= threshold) return true;
+      }
+      // ② A DESTINATION WITH ROOM — the SAME box the deposit rows resolve
+      //    (`designatedContainerFor`) measured by the SAME capacity the ctx's
+      //    home role reads (`containerUnitCap`). The full box is the reported
+      //    case, and it is the one that must read as "no outlet".
+      const box = designatedContainerFor(session, glyph, houseIndex, cid);
+      if (!box || !session.containers.has(box)) continue;
+      const cap = containerUnitCap(session, box);
+      if (cap === null) return true; // uncapped — there is always room
+      if (totalStackUnits(session.containerStock.get(box) ?? {}) < cap) return true;
     }
     return false;
   }
@@ -6743,7 +7273,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): number {
     const heads = provisionedHeads(session, houseIndex);
     let n = 0;
-    for (const [glyph, u] of Object.entries(session.needCarried.get(cid) ?? {})) {
+    for (const [glyph, u] of Object.entries(bodyCarryView(bodyCarryOf(session, cid)))) {
       if (heads.has(headOf(glyph))) continue;
       if (inUseByLiveNeed(session, cid, glyph, all)) continue; // mid-play — not clutter
       n += u;
@@ -6796,6 +7326,81 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
+  // ── UNIT CLAIMS (scope-behaviors.md §2.6, step ④.1) ───────────────────────
+  //
+  // The template claim above says "I am the one shopping"; this says "and
+  // THESE three apples are mine". One holder per body — `claimErrand`'s law,
+  // and the reason `reserveNeedUnits` starts by releasing: a body re-deciding
+  // has abandoned whatever it spoke for a tick ago, and a reservation nobody
+  // is walking toward is a lie that starves the housemates.
+
+  /** The ledger holder a body's unit claims live under. */
+  const needClaimHolder = (cid: string) => `need:${cid}`;
+
+  /** Drop every unit this body speaks for (re-decide, arrival, demote,
+   *  eviction, command, recruitment — every exit is this one call). */
+  function releaseNeedUnits(session: QuestSession, cid: string) {
+    session.needClaims.release(needClaimHolder(cid));
+  }
+
+  /** Speak for `qty` units of `goodKey` on `endpoint`, dropping whatever this
+   *  body spoke for before. Silently no-ops for the two endpoint families that
+   *  must never be reserved (see the SESSION note on `needClaims`): a WELL
+   *  cannot run out, and a LOOSE PROP is one instance through one door. An
+   *  affordance row (fun's `play`) carries no good key either — there is no
+   *  head to speak for, only a particular toy. */
+  function reserveNeedUnits(
+    session: QuestSession,
+    cid: string,
+    endpoint: string,
+    goodKey: string,
+    qty: number,
+  ) {
+    releaseNeedUnits(session, cid);
+    if (!goodKey || qty <= 0) return;
+    if (isWellId(endpoint) || endpoint.startsWith("small:")) return;
+    session.needClaims.reserve(needClaimHolder(cid), endpoint, goodKey, qty);
+  }
+
+  /** Units of `goodKey` on `endpoint` this body may honestly plan against:
+   *  what is really there, minus what OTHER bodies have spoken for. Its own
+   *  claim is never subtracted — a shopper must keep seeing the stock it is
+   *  already walking toward. */
+  function freeNeedUnits(
+    session: QuestSession,
+    cid: string,
+    endpoint: string,
+    goodKey: string,
+    units: number,
+  ): number {
+    if (!goodKey) return units;
+    return freeUnitsOver(units, session.needClaims, endpoint, goodKey, needClaimHolder(cid));
+  }
+
+  /** CLEAR the body's pending step AND everything it spoke for — the ONE exit
+   *  every "whatever it was doing, stop" path goes through, so no route can
+   *  leave a reservation standing behind an abandoned walk. (The take's own
+   *  ARRIVAL is the exception, and deliberately so: it consumes what it
+   *  actually took and releases the rest inside the effect, which keeps the
+   *  claim alive across the crouch instead of freeing the units for a
+   *  housemate one beat before they leave the box.) */
+  function clearNeedStep(session: QuestSession, cid: string) {
+    session.needStep.delete(cid);
+    releaseNeedUnits(session, cid);
+  }
+
+  /** STALE-CLAIM GC, on `errandClaimFor`'s precedent: a holder that is no
+   *  longer a live body loses what it spoke for. Belt-and-braces under the
+   *  routed releases — an un-embodied, un-live cid can never come back to take
+   *  its units, and units nobody will collect are a famine waiting. */
+  function sweepNeedClaims(session: QuestSession, live: ReadonlySet<string>) {
+    for (const row of session.needClaims.toJSON().rows) {
+      if (!row.holder.startsWith("need:")) continue;
+      if (live.has(row.holder.slice(5))) continue;
+      session.needClaims.release(row.holder);
+    }
+  }
+
   /** Resolve ONE template's world snapshot for a resident/pet (needs.ts NeedCtx):
    *  its own house box under the "home" role (other houses would gate through
    *  willingness — not offered), the market store / town well as the buy source,
@@ -6830,6 +7435,254 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return byHouse.get(houseIndex) ?? [];
   }
 
+  /**
+   * 🧺 THE CONTAINERS STANDING ON THE FLOOR — the set-down basket, and the gap
+   * pass 3 reported: "a floor basket's contents are visible to NO acquire
+   * branch — `houseContainerKeys` is `furn_*` only — so a set-down basket is
+   * drained only by someone picking it back up, never drawn from in place".
+   *
+   * A basket with an apple in it IS a container scope like any other (step ②'s
+   * law: a scope cannot become a number), so the acquire walk has no business
+   * caring whether the box it draws from is bolted down. It is a SOURCE OF
+   * OPPORTUNITY, never a destination of record: nothing here makes a floor
+   * basket a place to PUT things — that ladder is `designatedContainerFor`'s
+   * and it only ever names real furniture homes (container-home.ts rung 0 goes
+   * further and says a portable container has no box of its own at all).
+   *
+   * Deliberately NOT indexed like `houseContainerKeys`. That index is safe
+   * because `furn_*` keys are append-only; a basket is a thing that MOVES —
+   * carried out of the room, worn, put inside a chest — so a cached answer is
+   * a stale answer. The sweep is over `smallProps`, which the loose-candidate
+   * block below already walks once per typed row, and the per-prop test is a
+   * map lookup and a rect — the same order of work the ctx was already doing.
+   *
+   * Id order, so two bodies deciding in the same tick see the same list.
+   */
+  function floorContainerKeys(session: QuestSession, state: WorldState, houseIndex: number): string[] {
+    const rc = residentTownCtx(session, houseIndex);
+    const house = rc?.house;
+    if (!rc || !house) return [];
+    const x0 = rc.center.x + house.dx;
+    const y0 = rc.center.y + house.dy;
+    const out: string[] = [];
+    for (const objId of session.smallProps.keys()) {
+      // A REGISTERED CONTAINER, whatever shape: the household's basket, a
+      // satchel somebody put down, a flat-packed barrel standing in the corner
+      // ("a LOOSE barrel is as much a container as a standing one" —
+      // container-home.ts). Anything BOLTED DOWN has a `furn_*` id and comes
+      // through the index above instead; these ids are all `small:*`.
+      if (!session.containers.has(objId)) continue;
+      const o = state.objects[objId];
+      // In NOBODY's hands and not itself shelved: a basket inside a chest is
+      // the chest's business, and one in a pair of hands is that body's.
+      if (!o || o.carriedBy || o.containedIn) continue;
+      if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
+      out.push(objId);
+    }
+    return out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  }
+
+  /**
+   * ⚖️ IS THIS BOX A PROPER PLACE FOR *THIS ROW* TO DRAW FROM? — the resolved
+   * side of needs.ts `PROPRIETY_PENALTY_S` (`StockCandidate.improper` is its
+   * negation), answered here because propriety is made of things only the host
+   * knows: which container plays which ROLE for the row, who OWNS it, and where
+   * this particular body is supposed to be served.
+   *
+   * *(user direction, 2026-08-03, verbatim)*: "It shouldn't be invisible to
+   * them, but they should have a reduced tendency to use them. For now, a
+   * constant reduction in priority will do; we'll expand on this once we get
+   * into more detailed private property and personality rules."
+   *
+   * THREE WAYS TO BE PROPER, and nothing else is:
+   *   ① THE ROW'S OWN LARDER — the container its `home` role names (the food
+   *     chest, the water barrel). Where this good LIVES for this household.
+   *   ② THE ROW'S OWN PLACE — a container among its satisfy stations
+   *     (`satisfy.at`): the family's table for a person, the bowl for the pet.
+   *     This is the clause that makes the pet-bowl case fall out of the RULE
+   *     instead of being written down as an exception — the very same bowl is
+   *     proper to the animal whose dish it is (its row eats at `bowl`) and
+   *     improper to the resident reaching into it (whose row eats at `table`).
+   *   ③ YOUR OWN BOX — a container this body itself owns (`creature:<cid>`):
+   *     your personal box, a satchel you set down. Your things are yours.
+   *
+   * Everything else that survived `mayUse` is IMPROPER and pays the rung: a
+   * basket standing on the floor (a TOOL somebody left, not a larder — which is
+   * why even the HOUSEHOLD'S OWN shared basket is mildly avoided as a pantry),
+   * the bin, a cupboard that happens to have food in it, another creature's box
+   * where a joint owner admits this one.
+   *
+   * ⚠️ PERMISSION IS NOT PROPRIETY, and it is asked FIRST and separately. Every
+   * caller below has already run `mayUse` — a housemate's private box is not
+   * listed at all, and no price can put it back. This term only ever prices the
+   * permitted.
+   */
+  function properDrawFor(
+    session: QuestSession,
+    cid: string,
+    houseIndex: number,
+    tpl: NeedTemplate,
+    homeId: string,
+    boxId: string,
+  ): boolean {
+    if (boxId === homeId) return true; // ① the row's own larder
+    // ② the row's own place to be served — the same `at` list `bestStation`
+    // prefers, so "where I eat" and "where I may properly draw" cannot drift.
+    const at =
+      tpl.satisfy.kind === "consume" || tpl.satisfy.kind === "rest" || tpl.satisfy.kind === "transform"
+        ? (tpl.satisfy.at ?? [])
+        : [];
+    for (const kind of at) if (boxId === `furn_${houseIndex}_${kind}`) return true;
+    // ③ this body's own property (its box, a bag it put down).
+    return session.containerOwner.get(boxId) === creatureScope(cid);
+  }
+
+  // ── THE PRICE BOARD (scope-behaviors.md §3, step ④.2) ────────────────────
+  //
+  // Everything `NeedPrice` wants, resolved from the world the ctx is already
+  // reading. The arithmetic lives in kernel/town/pricing.ts and the assembly
+  // in needs.ts; this is only the LOOKUP — which clock, which weight, which
+  // dwell — because that is the part that knows what a dollhouse is.
+
+  /** THE CLOCK a row's value is measured against (scale.ts `NEED_FILL_DAYS`).
+   *  Rows with no drive clock of their own — the chores, the restock trips, the
+   *  derived ritual rows — take the ANCHOR ("hunger: 1 — THE anchor"), which is
+   *  a ceiling those rows never reach anyway. */
+  function needClockKeyOf(tplKey: string): NeedKey {
+    switch (tplKey.split(":")[0]) {
+      case "hunger": return "hunger";
+      case "thirst": return "thirst";
+      case "energy": return "energy";
+      case "social": return "social";
+      case "fun": return "fun";
+      case "waste": return "waste";
+      case "hygiene": return "hygiene";
+      case "dress": return "dirt"; // the worn garment's own wear clock
+      default: return "hunger";
+    }
+  }
+
+  /** WHAT ONE UNIT OF THIS ROW'S GOOD IS WORTH, in hand-seconds — the value of
+   *  the DRIVE that unit will eventually serve. This is the chapter's §3 join
+   *  made literal: a ration's worth to a hungry body and its worth on the
+   *  household's shelf are the SAME number, and only `shortage` separates them.
+   *  Resolved off the body's own row set — the strongest row that CONSUMES the
+   *  category rather than banking it, so a bucket of water is priced by thirst
+   *  and a clean shirt by the dress row. Nothing consumes it (swept clutter, an
+   *  orphan in the hands) ⇒ the row's own weight, which is what the ladder
+   *  always said it was worth. */
+  function unitValueSOf(tpl: NeedTemplate, all: readonly NeedTemplate[] | undefined): number {
+    let weight = tpl.priority;
+    const cat = tpl.item.category;
+    if (cat && all) {
+      for (const t of all) {
+        if (t.satisfy.kind === "deposit" || t.item.category !== cat) continue;
+        if (t.priority > weight) weight = t.priority;
+      }
+    }
+    return weight * NEED_PRESSURE_S;
+  }
+
+  /** HOW BADLY THE DESTINATION WANTS UNITS — `room / capacity` on the shelf
+   *  this row fills (1 = empty, 0 = full), the `1 − got/need` shape barter
+   *  already reads scarcity in. A deposit row fills its satisfy container; every
+   *  other row's acquisition is ultimately for the HOME box, which is what makes
+   *  "the household is five short" the thing that pays for the walk to market.
+   *  No capacity to measure against ⇒ 1: an unbounded destination always wants
+   *  what you are bringing it. */
+  /** Everyone this house's room is shared by — its members and its pets. The
+   *  scope that OWNS the floor, so it is the scope a placement serves. */
+  function householdCids(session: QuestSession, houseIndex: number): string[] {
+    const out: string[] = [];
+    for (let m = 0; m < HOUSEHOLD; m++) out.push(`resident_${houseIndex}_${m}`);
+    for (const pid of petCidsOf(session)) if (houseIndexOfCid(pid) === houseIndex) out.push(pid);
+    return out;
+  }
+
+  /**
+   * ⚖️ WHAT THE HOUSEHOLD WANTS *WHERE THINGS LIE* — the resolved side of
+   * `forgoneS` (scope-behaviors.md §3; needs.ts `forgoneOf` charges it), and
+   * the general form of the boolean `inUseByLiveNeed` has been standing in as.
+   *
+   * A row wants a unit IN PLACE when two things are true of it, and neither is
+   * a list of toys:
+   *   • it USES what it takes rather than relocating it — any satisfy but
+   *     `deposit`, since the deposit family IS the removing family; and
+   *   • it would take the thing AS IT LIES (an acquire `loose` branch). A row
+   *     that only reaches into boxes and shelves — hunger, dress — is not
+   *     served by anything on the floor, so a loose apple owes it nothing.
+   * What the want is WORTH is the same arithmetic `rowValueS` gives that row's
+   * own drive: pressure × the ladder weight × NEED_PRESSURE_S, under the fill
+   * clock's ceiling. A toy is therefore protected in PROPORTION to how bored
+   * somebody is — no threshold, no grace, no cooldown anywhere in it.
+   *
+   * ⚠️ ANY MEMBER OF THE HOUSE, the deciding body included. A housemate's
+   * boredom is a real cost of sweeping; and for the deciding body the charge
+   * simply agrees with the argmax already comparing its own two rows. The row
+   * VOCABULARY comes off the deciding body's own set (every member of a
+   * dollhouse runs the same motive rows, and a pet runs a subset of them), so
+   * this costs no template construction at all — what differs per member, and
+   * all this reads, is the METER.
+   */
+  function inPlaceWants(
+    session: QuestSession,
+    houseIndex: number,
+    all: readonly NeedTemplate[] | undefined,
+  ): { target: NeedTarget; valueS: number }[] {
+    const out: { target: NeedTarget; valueS: number }[] = [];
+    for (const t of all ?? []) {
+      if (t.satisfy.kind === "deposit") continue;
+      if (!t.acquire.some((a) => a.kind === "loose")) continue;
+      const threshold = t.drive.kind === "meter" ? t.drive.threshold : 1;
+      const fillS = needFillS(session.scale, needClockKeyOf(t.key));
+      let best = 0;
+      for (const mate of householdCids(session, houseIndex)) {
+        const meter = session.needMeters.get(`${mate}|${t.key}`) ?? 0;
+        const pressure = threshold > 0 ? meter / threshold : 1;
+        const v = driveValueS((pressure * t.priority * NEED_PRESSURE_S) / fillS, fillS);
+        if (v > best) best = v;
+      }
+      if (best > 0) out.push({ target: t.item, valueS: best });
+    }
+    return out;
+  }
+
+  function needShortageOf(tpl: NeedTemplate, containers: Readonly<Record<string, StockCandidate>>): number {
+    const dest = tpl.satisfy.kind === "deposit" ? containers[tpl.satisfy.container] : containers.home;
+    if (!dest || dest.room === undefined) return 1;
+    const capacity = dest.units + dest.room;
+    return capacity > 0 ? Math.max(0, Math.min(1, dest.room / capacity)) : 0;
+  }
+
+  function needPriceOf(
+    session: QuestSession,
+    tpl: NeedTemplate,
+    containers: Readonly<Record<string, StockCandidate>>,
+    all: readonly NeedTemplate[] | undefined,
+  ): NeedPrice {
+    const satisfyS =
+      tpl.satisfy.kind === "rest" || tpl.satisfy.kind === "transform" || tpl.satisfy.kind === "use"
+        ? restDwellFor(tpl.key, session.scale)
+        : tpl.satisfy.kind === "consume"
+          ? EAT_SHOW_S
+          : BOX_ACT_DWELL_S;
+    return {
+      walkMps: walkSpeedMps(session.scale),
+      fillS: needFillS(session.scale, needClockKeyOf(tpl.key)),
+      unitValueS: unitValueSOf(tpl, all),
+      shortage: needShortageOf(tpl, containers),
+      // The dwells are the ones the legs already spend (`BOX_ACT_DWELL_S`,
+      // `SHOP_SEC`, `restDwellFor`) — the chapter's point about `handsS` is
+      // that they were always SPENT and never CHARGED.
+      handsS: {
+        container: BOX_ACT_DWELL_S,
+        source: SHOP_SEC,
+        loose: BOX_ACT_DWELL_S,
+        satisfy: satisfyS,
+      },
+    };
+  }
+
   function residentNeedCtx(
     session: QuestSession,
     state: WorldState,
@@ -6844,18 +7697,55 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const P = (id: string) => ({ kind: "named" as const, id });
     const rc = residentTownCtx(session, houseIndex)!; // the OWNING town's books
     const grasp = canGrasp(session.creatures?.world.creatures[cid]);
+    // METRES FROM THE BODY (step ④): the candidate lists were always SORTED by
+    // this and then threw the number away. Keeping it is what turns "nearest
+    // first" into a price — and it costs nothing, because every branch below
+    // already computes the position it would walk to.
+    const me = state.avatars[cid];
+    const distTo = (p: { x: number; y: number } | null | undefined): number | undefined =>
+      me && p ? Math.hypot(p.x - me.x, p.y - me.y) : undefined;
+    const distToObj = (objId: string): number | undefined =>
+      distTo(needObjectPos(session, state, houseIndex, objId));
+    // 🧺 THE CONTAINERS ON THE FLOOR, SWEPT ONCE PER CTX. Two blocks below want
+    // the very same list — the `storage` role and the item-typed `loose` boxes
+    // — and as of the propriety pass the food rows reach BOTH, so a hunger
+    // decide would otherwise walk `smallProps` twice to answer one question on
+    // the hottest row in the house. Lazy, so a row that asks for neither pays
+    // nothing at all, and one list per ctx also means the two blocks can never
+    // disagree about what is standing there.
+    let floorBoxes: string[] | null = null;
+    const floorContainers = (): string[] =>
+      (floorBoxes ??= floorContainerKeys(session, state, houseIndex));
     const containers: Record<string, StockCandidate> = {};
     // HOME role: the good's own chest — except WATER, whose house store is the
     // barrel (both lidded: accessible if the body can open it, or someone left
     // it open).
+    //
+    // ⚖️ NAMED OUT HERE, not inside the block, because the id is wanted twice
+    // more below and for a reason that has nothing to do with whether the box
+    // is REACHABLE: it is this row's larder — the one place it may properly
+    // draw from (`properDrawFor` ①) — whether or not this body can open it
+    // today. An unreachable pantry is still where the food belongs.
+    const homeId = goodKey === "water" ? `furn_${houseIndex}_barrel` : `furn_${houseIndex}_chest_${goodKey}`;
     {
-      const homeId = goodKey === "water" ? `furn_${houseIndex}_barrel` : `furn_${houseIndex}_chest_${goodKey}`;
       const cap = goodKey === "water"
         ? BARREL_CAP
         : Math.floor(rc.goods.find((g) => g.good.key === goodKey)?.boxCap ?? 0);
-      if (containerAccessible(session, homeId, grasp) && needObjectPos(session, state, houseIndex, homeId)) {
+      const at = needObjectPos(session, state, houseIndex, homeId);
+      if (containerAccessible(session, homeId, grasp) && at) {
+        // REAL units for the drive's floor, FREE units for the acquire branch
+        // (StockCandidate.free): a pantry below its buffer is short whether or
+        // not a housemate has spoken for what's left in it, but the housemate
+        // that spoke first is the one that gets to draw it.
         const units = stackTotalOf(session.containerStock.get(homeId), goodKey);
-        containers.home = { id: homeId, place: P(homeId), units, room: Math.max(0, cap - units) };
+        containers.home = {
+          id: homeId,
+          place: P(homeId),
+          units,
+          free: freeNeedUnits(session, cid, homeId, goodKey, units),
+          room: Math.max(0, cap - units),
+          ...(distTo(at) !== undefined ? { d: distTo(at) } : {}),
+        };
       }
     }
     // STORAGE role — resolved PER ITEM, never to one fixed box.
@@ -6864,10 +7754,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     //  · fun (use/acquire): a box that currently HOLDS something matching the
     //    template — you fetch a toy from wherever a toy happens to be.
     if (tpl.satisfy.kind === "deposit" && tpl.satisfy.container === "storage") {
-      const held = Object.keys(session.needCarried.get(cid) ?? {}).find(
-        (g) => (session.needCarried.get(cid)?.[g] ?? 0) > 0,
-      );
-      const tid = designatedContainerFor(session, held ?? "", houseIndex, cid);
+      const onMe = bodyCarryView(bodyCarryOf(session, cid));
+      // THE PUT-DOWN ROW ASKS ABOUT THE OBJECT IN THE HANDS, which is exactly
+      // the thing `bodyCarryView` does not report (a held bag is the shelf,
+      // not the goods) — so it names its own subject rather than reading the
+      // stack view every other deposit row reads.
+      const idle = tpl.key === "relieve" ? heldIdleObject(session, cid, houseIndex, allTemplates) : null;
+      const held = idle ? idle.glyph : Object.keys(onMe).find((g) => (onMe[g] ?? 0) > 0);
+      // NOTHING HAS A BOX FOR A BASKET (container-home.ts rung 0): a portable
+      // container is the household's TOOL, and burying it in a chest is how a
+      // family ends up with a bag it can never find. No storage role ⇒ the
+      // row's `orDrop` sets it down on the floor, which is where one lives.
+      const tid = held && livesOnTheFloor(held)
+        ? ""
+        : designatedContainerFor(session, held ?? "", houseIndex, cid);
       // CAPABILITY GATE (was missing here): a graspless body cannot open a
       // LIDDED container, so offering it one sends the dog to a chest it can
       // never use — it would stand there failing the deposit. Only
@@ -6875,19 +7775,57 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // without hands. With `orDrop` on the unload row, a body that is left
       // with no legal container simply puts the thing DOWN, which is the
       // right answer for an animal.
-      if (state.objects[tid] && containerAccessible(session, tid, grasp)) {
-        containers.storage = { id: tid, place: P(tid), units: 0 };
+      if (tid && state.objects[tid] && containerAccessible(session, tid, grasp)) {
+        const d = distToObj(tid);
+        containers.storage = { id: tid, place: P(tid), units: 0, ...(d !== undefined ? { d } : {}) };
       }
     } else if (tpl.acquire.some((a) => a.kind === "container" && a.role === "storage")) {
-      for (const id of houseContainerKeys(session, houseIndex)) {
+      // 🧺 THE FURNITURE FIRST, THEN THE FLOOR (pass 4, work item B). The house's
+      // own boxes come in the index's insertion order exactly as they always
+      // have, and the containers standing loose in the room follow — so nothing
+      // that used to be picked is picked differently, and a set-down basket is
+      // reachable where it used to be invisible. Same gates either way:
+      // `mayUse` (a housemate's private bag is not the household's), FREE units
+      // (claims apply), and the distance the pricing reads.
+      for (const id of [...houseContainerKeys(session, houseIndex), ...floorContainers()]) {
         const stock = session.containerStock.get(id);
         if (!stock) continue;
+        // 🧺 NEVER THE ROW'S OWN LARDER. The food rows carry BOTH a `home`
+        // branch and (new) a `storage` one, and the storage sweep walks the
+        // same furniture the home role already named — so without this the
+        // pantry would be offered twice, and a DEPOSIT row (provision) would
+        // be offered the very box it deposits into, which is a take⇄put spin
+        // with no exit. The home branch owns that container; this arm is
+        // strictly "what ELSE in the house holds some".
+        if (id === homeId) continue;
         if (!mayUse(cid, houseIndex, session.containerOwner.get(id))) continue;
+        // GRASPABILITY, for the floor arm: a lidded crate on the floor needs
+        // hands to open exactly as a chest does; an open basket does not
+        // (`containerAccessible` — "on", left open, or the body can open it).
+        // The furniture arm above is left as it was: it has never applied this
+        // gate, and adding it there is a change to a shipped path, not a gap.
+        if (id.startsWith("small:") && !containerAccessible(session, id, grasp)) continue;
         const units = Object.entries(stock)
           .filter(([g, n]) => n > 0 && matchesNeedItem(g, tpl.item))
           .reduce((s, [, n]) => s + n, 0);
-        if (units > 0 && needObjectPos(session, state, houseIndex, id)) {
-          containers.storage = { id, place: P(id), units };
+        // FIRST-MATCH-IN-INSERTION-ORDER, over FREE units: a box a housemate
+        // has already spoken dry is not a box that holds a toy for you.
+        const free = freeNeedUnits(session, cid, id, goodKey, units);
+        const at = needObjectPos(session, state, houseIndex, id);
+        if (free > 0 && at) {
+          containers.storage = {
+            id,
+            place: P(id),
+            units,
+            free,
+            ...(distTo(at) !== undefined ? { d: distTo(at) } : {}),
+            // ⚖️ WHOSE LARDER IS THIS, REALLY (needs.ts PROPRIETY_PENALTY_S).
+            // The role reaches boxes that are not this row's business to treat
+            // as a pantry — the floor basket, the bin, the pet's dish — so it
+            // says so and the arithmetic prices it. Only the flag rides; the
+            // enumeration and the first-match order are untouched.
+            ...(properDrawFor(session, cid, houseIndex, tpl, homeId, id) ? {} : { improper: true }),
+          };
           break;
         }
       }
@@ -6911,7 +7849,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             ? tpl.drive.of
             : goodKey;
         const units = stackTotalOf(session.containerStock.get(live.placeId), measure);
-        containers.ritual = { id: live.placeId, place: P(live.placeId), units, room: Math.max(0, live.bill - units) };
+        const d = distToObj(live.placeId);
+        containers.ritual = {
+          id: live.placeId,
+          place: P(live.placeId),
+          units,
+          room: Math.max(0, live.bill - units),
+          ...(d !== undefined ? { d } : {}),
+        };
       }
     }
     // RECIPIENT role (an ADOPTION row `adopt:<wanter>|<tpl>`): the wanter's own
@@ -6926,16 +7871,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (!state.objects[oid]) continue;
         const cap = kind === "bowl" ? BOWL_CAP : 99;
         const units = stackTotalOf(session.containerStock.get(oid), goodKey);
-        containers.recipient = { id: oid, place: P(oid), units, room: Math.max(0, cap - units) };
+        const d = distToObj(oid);
+        containers.recipient = {
+          id: oid,
+          place: P(oid),
+          units,
+          room: Math.max(0, cap - units),
+          ...(d !== undefined ? { d } : {}),
+        };
         break;
       }
     }
     // SOURCES: water is drawn free at a town WELL — the plaza's or the
     // NEAREST neighborhood one (needs-aware construction lays one per
     // thirst-radius quarter); anything else is a market buy. Both need grasp
-    // (a bucket to work, a purse to pay). A member cooling off a good (it
-    // arrived to an empty shelf) sees no source at all until the cooldown
-    // lapses — no empty-handed loops.
+    // (a bucket to work, a purse to pay). ⏸️ THE STALL NEVER DISAPPEARS: a
+    // member whose trip arrived to an empty shelf parks the ROW on the shelf
+    // restocking (§2.5 DEFER) — the source itself keeps being listed and keeps
+    // pricing honestly, so nobody has to tell "empty" from "absent".
     let sources: StockCandidate[] = [];
     if (grasp) {
       if (goodKey === "water") {
@@ -6948,13 +7901,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           }
           // Nearest-first (the NeedCtx contract); id as the deterministic tie.
           wells.sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : 1));
-          sources = wells.map((w) => ({ id: w.id, place: P(w.id), units: 99 })); // wells never run dry
+          // NEVER RESERVED, so never free-adjusted: a well is bottomless by
+          // design (`units: 99`) and a claim on it would be a lie.
+          sources = wells.map((w) => ({ id: w.id, place: P(w.id), units: 99, d: w.d }));
         }
       } else {
         const storeId = `store:${goodKey}`;
-        const coolUntil = session.shopCooldown.get(`${cid}|${goodKey}`) ?? 0;
-        if (!rc.neighbor && state.objects[storeId] && session.townClock >= coolUntil) {
-          sources = [{ id: storeId, place: P(storeId), units: marketStoreUnits(session, storeId) }];
+        // ⏸️ THE STALL IS ALWAYS VISIBLE NOW (§2.5 DEFER / §4.3). It used to
+        // VANISH from the ctx for 90 s after a wasted trip, which meant the
+        // deciding body could not tell "the market is empty" from "there is no
+        // market" — and priced neither. An empty shelf is simply an empty
+        // shelf: `units: 0` is not an offer, `acquireFrom` passes it over, and
+        // the row that already wasted a walk on it is PARKED on the shelf
+        // restocking instead (see the take effect).
+        if (!rc.neighbor && state.objects[storeId]) {
+          const units = marketStoreUnits(session, storeId);
+          const d = distToObj(storeId);
+          sources = [{
+            id: storeId,
+            place: P(storeId),
+            units,
+            // THE SHELF IS SHARED. Two shoppers reading the same six apples
+            // is the same race as two housemates at one chest, one street
+            // further out — so the second reads what the first left.
+            free: freeNeedUnits(session, cid, storeId, goodKey, units),
+            ...(d !== undefined ? { d } : {}),
+          }];
         }
       }
     }
@@ -7002,7 +7974,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const mine = [...session.rituals.values()].some(
             (r) => r.placeId === sid && r.heads.includes(cid),
           );
-          stations.push({ id: sid, place: P(sid), kind, waiting: mine ? waiting : Math.max(0, waiting - inFlight) });
+          const d = distToObj(sid);
+          stations.push({
+            id: sid,
+            place: P(sid),
+            kind,
+            waiting: mine ? waiting : Math.max(0, waiting - inFlight),
+            ...(d !== undefined ? { d } : {}),
+          });
         }
       }
     } else if (tpl.key.startsWith("attend:")) {
@@ -7012,8 +7991,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // that somehow holds no seat simply doesn't attend (it blocks, which
       // shadows nothing) instead of resting against arbitrary furniture.
       const sid = session.ritualSeat.get(cid);
-      if (sid && state.objects[sid] && needObjectPos(session, state, houseIndex, sid)) {
-        stations = [{ id: sid, place: P(sid), kind: fixtureKindOf(state, sid), waiting: 0 }];
+      const seatAt = sid ? needObjectPos(session, state, houseIndex, sid) : null;
+      if (sid && state.objects[sid] && seatAt) {
+        const d = distTo(seatAt);
+        stations = [{
+          id: sid,
+          place: P(sid),
+          kind: fixtureKindOf(state, sid),
+          waiting: 0,
+          ...(d !== undefined ? { d } : {}),
+        }];
       }
     } else if (tpl.satisfy.kind === "rest" || tpl.satisfy.kind === "transform") {
       // Dwell stations (bed / box / bath / toilet) — a TRANSFORM works at
@@ -7032,7 +8019,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const own = cands.filter((sid) => mayUse(cid, houseIndex, session.containerOwner.get(sid)));
           if (own.length) cands = own;
         }
-        for (const sid of cands) stations.push({ id: sid, place: P(sid), kind, waiting: 0 });
+        for (const sid of cands) {
+          const d = distToObj(sid);
+          stations.push({ id: sid, place: P(sid), kind, waiting: 0, ...(d !== undefined ? { d } : {}) });
+        }
       }
     } else if (tpl.satisfy.kind === "use") {
       // PLAY AREAS as stations. A toy SET OUT on the floor and currently in use
@@ -7054,10 +8044,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (!o || o.carriedBy || o.containedIn) continue;
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
           if (!isPlayArea(session, state, objId)) continue;
-          areas.push({
-            c: { id: objId, place: P(objId), kind: "play", waiting: 0 },
-            d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0,
-          });
+          const d = body ? Math.hypot(o.x - body.x, o.y - body.y) : 0;
+          areas.push({ c: { id: objId, place: P(objId), kind: "play", waiting: 0, d }, d });
         }
         areas.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
         stations = areas.map((a) => a.c);
@@ -7077,7 +8065,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         partners.push({ id: pid, d: body ? Math.hypot(pav.x - body.x, pav.y - body.y) : 0 });
       }
       partners.sort((a, b) => a.d - b.d);
-      stations = partners.map((pt) => ({ id: pt.id, place: P(pt.id), kind: "partner", waiting: 0 }));
+      stations = partners.map((pt) => ({ id: pt.id, place: P(pt.id), kind: "partner", waiting: 0, d: pt.d }));
     }
     // LOOSE units. Two flavors by the template's item type:
     //   • ITEM-TYPED (laundry / stow — `goodKey` set): floor props MATCHING
@@ -7099,9 +8087,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const inPlay = (objId: string) => isPlayArea(session, state, objId);
     let loose: StockCandidate[] | undefined;
     if (tpl.drive.kind === "mess" || tpl.acquire.some((a) => a.kind === "loose")) {
+      // ⚖️ WHAT EACH LOOSE UNIT IS WORTH WHERE IT LIES (`forgoneS`). Resolved
+      // ONCE per decide, and only for a REMOVING row, because only a removing
+      // plan can be charged it (needs.ts `forgoneOf`). This is the PRICED form
+      // of the exemption above: `inPlay` is a boolean that hides a toy from a
+      // game already in progress, and this is the number that says what a toy
+      // nobody has picked up yet is still worth to a bored housemate.
+      // Gated to the rows that can actually be charged: a REMOVING row (needs.ts
+      // `forgoneOf` charges nothing else) that draws from the floor at all
+      // (`unload`/`relieve` have no acquire branch, so they never lift one of
+      // these and never pay for it).
+      const wants =
+        tpl.satisfy.kind === "deposit" && tpl.acquire.some((a) => a.kind === "loose")
+          ? inPlaceWants(session, houseIndex, allTemplates)
+          : [];
+      const servesS = (glyph: string): number => {
+        let s = 0;
+        for (const w of wants) if (w.valueS > s && matchesNeedItem(glyph, w.target)) s = w.valueS;
+        return s;
+      };
       const house = rc.house;
       const body = state.avatars[cid];
-      const cands: { c: StockCandidate; d: number }[] = [];
+      // `g` is the PROP's glyph where there is one — a box listed among the
+      // loose (the laundry raid below) is a stack, not a placement, so it has
+      // no in-place value to destroy.
+      const cands: { c: StockCandidate; d: number; g?: string }[] = [];
       if (house && tpl.item.affords) {
         // AFFORDANCE-TYPED (fun): anything lying out that carries the function.
         // No grace period — a toy on the floor is playable the moment it lands —
@@ -7117,6 +8127,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           cands.push({
             c: { id: objId, place: P(objId), units: 1 },
             d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0,
+            g: rec.glyph,
           });
         }
       } else if (house && goodKey) {
@@ -7132,25 +8143,59 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           cands.push({
             c: { id: objId, place: P(objId), units: 1 },
             d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0,
+            g: rec.glyph,
           });
         }
-        if (tpl.satisfy.kind === "transform") {
-          for (const boxId of houseContainerKeys(session, houseIndex)) {
-            const stock = session.containerStock.get(boxId);
-            if (!stock) continue;
-            if (!containerAccessible(session, boxId, grasp)) continue;
-            // Never raid a housemate's PRIVATE box (ownership.ts) — the
-            // laundry chore reaches the wardrobe, not Mara's treasures.
-            if (!mayUse(cid, houseIndex, session.containerOwner.get(boxId))) continue;
-            const units = stackTotalOf(stock, goodKey);
-            if (units <= 0) continue;
-            const o = state.objects[boxId];
-            if (!o) continue;
-            cands.push({
-              c: { id: boxId, place: P(boxId), units },
-              d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0,
-            });
-          }
+        // A BOX AMONG THE LOOSE. Two arms, and what separates them is which
+        // boxes may honestly be raided:
+        //   • the house's FURNITURE, for a TRANSFORM row only — a dirty garment
+        //     evicted into the wardrobe still wants washing. A DEPOSIT row must
+        //     never list furniture here, or it would cycle stock out of the very
+        //     box it deposits into.
+        //   • 🧺 the containers standing ON THE FLOOR, for every item-typed row
+        //     — pass 4's gap ("a set-down basket is drained only by someone
+        //     picking it back up, never drawn from in place"). The cycle the
+        //     rule above guards against cannot arise here: a portable container
+        //     is nobody's deposit target (`designatedContainerFor` names
+        //     furniture homes only; container-home.ts rung 0 says a basket has
+        //     no box of its own), so a stow row that lifts a shirt out of a
+        //     floor basket carries it to the WARDROBE — one way, and done.
+        const looseBoxes = [
+          ...(tpl.satisfy.kind === "transform" ? houseContainerKeys(session, houseIndex) : []),
+          ...floorContainers(),
+        ];
+        for (const boxId of looseBoxes) {
+          const stock = session.containerStock.get(boxId);
+          if (!stock) continue;
+          if (!containerAccessible(session, boxId, grasp)) continue;
+          // Never raid a housemate's PRIVATE box (ownership.ts) — the
+          // laundry chore reaches the wardrobe, not Mara's treasures.
+          if (!mayUse(cid, houseIndex, session.containerOwner.get(boxId))) continue;
+          if (inPlay(boxId)) continue; // a basket somebody is playing with
+          const units = stackTotalOf(stock, goodKey);
+          if (units <= 0) continue;
+          const o = state.objects[boxId];
+          if (!o) continue;
+          cands.push({
+            // A BOX listed among the loose is a real STACK draw, so it is
+            // free-adjusted like any other (the props beside it are single
+            // instances taken whole through the one door — nothing to share).
+            c: {
+              id: boxId,
+              place: P(boxId),
+              units,
+              free: freeNeedUnits(session, cid, boxId, goodKey, units),
+              // ⚖️ …and priced for propriety on the same rule as the storage
+              // role, because it is the same question about the same boxes
+              // reached down a second branch. A UNIT lying on the floor beside
+              // them is NOT flagged: propriety is about which STORE a draw
+              // comes out of, and a thing lying loose is nobody's store — which
+              // is also what keeps this off the rows whose whole business is
+              // the floor (tidy, laundry, stow, fun).
+              ...(properDrawFor(session, cid, houseIndex, tpl, homeId, boxId) ? {} : { improper: true }),
+            },
+            d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0,
+          });
         }
       } else if (house) {
         const heads = provisionedHeads(session, houseIndex);
@@ -7158,6 +8203,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const y0 = rc.center.y + house.dy;
         for (const [objId, rec] of session.smallProps) {
           if (heads.has(headOf(rec.glyph))) continue;
+          // A PORTABLE CONTAINER IS NOT CLUTTER (container-home.ts rung 0). The
+          // ladder would send the household's basket to whichever member's box
+          // came first, and the deposit could never even land — a bag is not a
+          // stack unit, so the effect moves nothing and strikes out. Worse, the
+          // pickup itself was one-way: NOTHING on a body could see a held
+          // container, so the tidier carried the family's only bag for the rest
+          // of the session. It lives on the floor; leave it there.
+          if (livesOnTheFloor(rec.glyph)) continue;
           // SOMEONE'S OWN thing (a gift, a keepsake — creature-world ownerId)
           // IS tidied, but never re-homed: designatedContainerFor sends it back
           // to its OWNER's box, not the tidier's. Putting your teddy away in
@@ -7170,11 +8223,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           cands.push({
             c: { id: objId, place: P(objId), units: 1 },
             d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0,
+            g: rec.glyph,
           });
         }
       }
       cands.sort((a, b) => a.d - b.d);
-      loose = cands.map((x) => x.c);
+      // The sort key RIDES ALONG now (step ④): nearest-first is still the
+      // order, but the distance itself is what lets the pickup be priced — and
+      // so does the unit's PLACEMENT VALUE, which is what lets the sweep of it
+      // be refused (needs.ts `forgoneOf`).
+      loose = cands.map((x) => {
+        const s = x.g ? servesS(x.g) : 0;
+        return { ...x.c, d: x.d, ...(s > 0 ? { servesS: s } : {}) };
+      });
     }
     // ── A RITUAL HEAD DOES NOT FORAGE ─────────────────────────────────────────
     // THE COORDINATION, and the only place a ritual touches a decision. While
@@ -7231,6 +8292,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // drops it every time.
       if (live.phase === "gather" && rt.prepare && rt.prepare.perHead > 0) meterOverride = 0;
     }
+    // WHAT THIS BODY REALLY HAS ON IT — the object in its hands merged with the
+    // stacks of the containers it holds (scope-shape.ts `bodyCarryView`). Read
+    // ONCE per ctx: it is a world read now, not a map lookup, and every row
+    // below must be decided against the same snapshot.
+    const carry = bodyCarryOf(session, cid);
+    const onMe = bodyCarryView(carry);
     return {
       // SOFT CONTROL note: the spark's attention no longer rides this meter —
       // a directed act targets the SPECIFIC indicated instance through
@@ -7244,13 +8311,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // other row on this body claims. They differ only in what they reach
       // for: tidy sweeps the floor (low-priority chore), unload empties the
       // hands (high priority, no acquire branch — see unloadTemplate).
-      carried: tpl.key === "tidy" || tpl.key === "unload"
+      carried: tpl.key === "relieve"
+        // THE PUT-DOWN ROW counts the ONE WHOLE OBJECT in the hands, and only
+        // while nothing else speaks for it (`heldIdleObject`). It is the only
+        // row on the body that can see a held CONTAINER at all: every other
+        // count goes through `bodyCarryView`, which reports a bag's contents
+        // and never the bag.
+        ? (heldIdleObject(session, cid, houseIndex, allTemplates) ? 1 : 0)
+        : tpl.key === "tidy" || tpl.key === "unload"
         ? carriedClutter(session, houseIndex, cid, allTemplates)
         // An AFFORDANCE row counts whatever in hand carries the function —
         // the toy already held IS the fun, so the body plays instead of
         // fetching another.
         : tpl.item.affords
-          ? Object.entries(session.needCarried.get(cid) ?? {})
+          ? Object.entries(onMe)
               .filter(([g, n]) => n > 0 && matchesNeedItem(g, tpl.item))
               .reduce((s, [, n]) => s + n, 0)
           // A FOOD row that EATS also counts a carried MEAL (the projection
@@ -7266,23 +8340,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // (provision:food) row must NOT see meals, or the cook would take
           // its own finished dish back to the oven and the pantry row would
           // bank dinner into the raw-food chest.
-          : carryTotalOf(session.needCarried.get(cid), goodKey) +
+          : carryTotalOf(onMe, goodKey) +
             (tpl.satisfy.kind === "consume" && goodKey === "food"
-              ? carryTotalOf(session.needCarried.get(cid), "meal")
+              ? carryTotalOf(onMe, "meal")
               : 0),
       // A stock drive measured in another category (`of`) counts THAT
       // category's carried units for its fire check (needs.ts) — the
       // cook's in-hand meal is the loop's brake.
       ...(tpl.drive.kind === "stock" && tpl.drive.of
-        ? { carriedOf: carryTotalOf(session.needCarried.get(cid), tpl.drive.of) }
+        ? { carriedOf: carryTotalOf(onMe, tpl.drive.of) }
         : {}),
       containers,
       sources,
       stations,
       ...(loose ? { loose } : {}),
-      // WHAT THE BODY CAN STILL TAKE ON — hands + inventory slots left. Every
-      // take is capped by it, so a bounded bag makes a bounded shopping trip.
-      room: inventoryRoom(session.needCarried.get(cid)),
+      // WHAT THE BODY CAN STILL TAKE ON — the room left in the container it is
+      // carrying or wearing, else ONE if its hands are free (scope-shape.ts
+      // `stackRoom`). Every take is capped by it, so a body that came to market
+      // without a basket walks home with one apple, and THAT is the decision
+      // step ④ will price rather than the script that used to hide it.
+      room: stackRoom(carry),
       // THE RESTOCK TARGET (the fix for single-unit grocery trips): how many
       // units the HOUSEHOLD still has ROOM for at home — which is exactly the
       // home container's remaining capacity, already resolved above. Applied
@@ -7294,6 +8371,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // THE HOUSEHOLD CLAIM on an exclusive errand (restocking): whoever holds
       // it goes, everyone else stands down.
       ...(tpl.exclusive ? { claimed: errandClaimFor(session, houseIndex, tpl.key, cid) } : {}),
+      // THE PRICE BOARD (step ④): the gait, the clock, what a unit is worth and
+      // how badly the shelf wants it — which is everything `decideNeeds` and
+      // `acquireFrom` need to subtract a cost from a want.
+      price: needPriceOf(session, tpl, containers, allTemplates),
     };
   }
 
@@ -7338,7 +8419,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** Apply an ARRIVED step's elemental effect over the container/stack model. A take
    *  from a MARKET store is a real off-schedule purchase — it depletes the same shelf
-   *  the player's takes deplete (the consumed offset over the time-pure stock). */
+   *  the player's takes deplete (the consumed offset over the time-pure stock).
+   *
+   *  THE BODY SIDE OF EVERY BRANCH GOES THROUGH THE TWO DOORS
+   *  (`giveUnitsToBody` / `takeUnitsFromBody`): a unit enters the container the
+   *  body is holding, or — with no container — its hands, one at a time. The
+   *  source is decremented by what the body ACTUALLY took, never by what the
+   *  step asked for, which is the whole of "refusal conserves". */
   function applyNeedStepEffect(
     session: QuestSession,
     state: WorldState,
@@ -7355,7 +8442,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       proc?: { drop?: string; add?: string };
     },
   ) {
-    const carried = session.needCarried.get(cid) ?? {};
+    // WHAT THE BODY HAS ON IT, re-read at every use — the hands are world state
+    // and each door below changes them, so a snapshot held across a take would
+    // be a unit counted twice.
+    const carriedNow = (): Record<string, number> => bodyCarryView(bodyCarryOf(session, cid));
     const likes = session.creatures?.world.creatures[cid]?.likes ?? [];
     // A good's kinds, LIKED first — the choice order for taking and eating.
     // The CARRY projection (carryKindsOf): eating or banking FOOD also reaches
@@ -7372,36 +8462,72 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // Clamping here (rather than trusting the decision) means no take path
       // can overfill a body, and a body that arrives full simply takes nothing
       // and re-decides — the want stays live and surfaces.
-      const room = inventoryRoom(carried);
+      const carry = bodyCarryOf(session, cid);
+      const room = stackRoom(carry);
       const units = Math.max(0, Math.min(step.units, room));
       if (units === 0) {
-        console.log(`[needs] ${cid} arrived at ${step.objId} with a FULL inventory (${totalStackUnits(carried)}) — took nothing`);
+        // Nothing moved ⇒ nothing is spoken for: the units this body reserved
+        // go straight back to the housemates rather than sitting locked behind
+        // a bag that filled up en route.
+        releaseNeedUnits(session, cid);
+        console.log(`[needs] ${cid} arrived at ${step.objId} with NO ROOM (${totalStackUnits(bodyCarryView(carry))} on it) — took nothing`);
         return;
       }
+      const stepAt = state.objects[step.objId] ?? state.avatars[step.objId];
+      const reach = stepAt ? { x: stepAt.x, y: stepAt.y } : undefined;
       // A town WELL: water is drawn free — no shelf, no depletion, no purse.
       if (isWellId(step.objId)) {
-        carried["water"] = (carried["water"] ?? 0) + units;
-        session.needCarried.set(cid, carried);
-        console.log(`[needs] ${cid} drew ${units}× water at the well`);
+        const drew = giveUnitsToBody(session, cid, "water", units, reach ? { at: reach } : {});
+        console.log(`[needs] ${cid} drew ${drew}× water at the well`);
         return;
       }
-      // A LOOSE floor prop (the tidy pickup): the prop dissolves into the
-      // carrier's hands — same merge rule as the player's own pocket.
-      if (step.objId.startsWith("small:")) {
+      // 🧺 A REGISTERED CONTAINER STANDING ON THE FLOOR IS A SOURCE, NOT A
+      // PICKUP (pass 4, work item B). The set-down basket with an apple in it
+      // is drawn from WHERE IT LIES — the generic stack draw further down
+      // already speaks `containerStock` by object id, so falling past the prop
+      // arm IS the whole fix; nothing re-picks the basket up to get at what is
+      // inside it. The OBJECT decides, unambiguously: a basket is not food and
+      // affords no play, so a step that wants what is IN it can never be
+      // confused with the `relieve` row's step that wants the basket.
+      const asContainerSource = (() => {
+        if (!session.containers.has(step.objId!)) return false;
+        const glyph = objGlyphOf(session, step.objId!) ?? "";
+        if (step.affords) return !matchesNeedItem(glyph, { affords: step.affords });
+        if (step.goodKey) return !carryKindsOf(step.goodKey).includes(glyph);
+        return false; // an UNTYPED row (tidy/unload) means the object itself
+      })();
+      // A LOOSE floor prop (the tidy pickup). Three answers, and the OBJECT
+      // decides which: a portable container is worn or held (decision 4 — the
+      // hold mode IS the routing); a small thing merges into whatever bag the
+      // body has; a body with no bag simply picks the thing UP, which is the
+      // single-unit trip the law makes ordinary.
+      if (step.objId.startsWith("small:") && !asContainerSource) {
         const rec = session.smallProps.get(step.objId);
-        // A LARGE thing (furniture) is never pocketed — it rides in the HANDS,
-        // so it may only be picked up by an otherwise empty-handed body. Small
-        // things merge into the bag as before.
-        if (rec && isLargeGlyph(rec.glyph) && totalStackUnits(carried) > 0) {
-          console.log(`[needs] ${cid} can't pick up ${rec.glyph} — hands full and it won't fit in a bag`);
+        if (!rec) return;
+        const cdef = containerDefOfGlyph(rec.glyph);
+        if (cdef?.hold === "wear" && !carry.worn) {
+          if (donWornBag(session, cid, step.objId)) {
+            console.log(`[needs] ${cid} put on a ${rec.glyph}`);
+          }
           return;
         }
-        if (rec) {
-          carried[rec.glyph] = (carried[rec.glyph] ?? 0) + 1;
-          session.needCarried.set(cid, carried);
-          world?.removeObject(step.objId);
-          session.smallProps.delete(step.objId);
-          if (session.creatures) delete session.creatures.world.items[rec.entityId];
+        // A LARGE thing (furniture) and any CONTAINER ride in the HANDS: a
+        // scope cannot become a countable unit inside another bag, and a chair
+        // was never bag-shaped either.
+        const handsOnly = isLargeGlyph(rec.glyph) || !!cdef?.hold;
+        if (!handsOnly && activeBag(carry)) {
+          if (giveUnitsToBody(session, cid, rec.glyph, 1, reach ? { at: reach } : {}) > 0) {
+            removeLooseProp(session, step.objId);
+            console.log(`[needs] ${cid} picked up ${rec.glyph} (tidying)`);
+          }
+          return;
+        }
+        if (!handsFree(carry)) {
+          console.log(`[needs] ${cid} can't pick up ${rec.glyph} — its hands are full`);
+          return;
+        }
+        // THE THING ITSELF goes into the hands — no mint, no merge, no shadow.
+        if (takeIntoHands(session, avatarIdOf(cid), { kind: "object", objId: step.objId })) {
           console.log(`[needs] ${cid} picked up ${rec.glyph} (tidying)`);
         }
         return;
@@ -7412,23 +8538,36 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       let take = 0;
       const marketKey = session.marketStore.get(step.objId);
       if (marketKey) {
-        take = Math.min(units, marketStoreUnits(session, step.objId));
-        if (take === 0) {
-          // Arrived to an EMPTY shelf (the abstract stock moved during the
-          // walk) — cool this member off the good so it doesn't march out
-          // and back empty-handed the moment the ledger flickers positive.
-          session.shopCooldown.set(`${cid}|${step.goodKey}`, session.townClock + SHOP_RETRY_COOLDOWN_S);
+        const offered = Math.min(units, marketStoreUnits(session, step.objId));
+        if (offered === 0) {
+          // ⏸️ ARRIVED TO AN EMPTY SHELF — PARK, don't cool off (§2.5 DEFER).
+          // The abstract stock moved during the walk over, and the shelf keeps
+          // flickering a fraction above and below one unit as the modelled
+          // shoppers draw it, which is what marched real shoppers out and back
+          // empty-handed in a loop. The condition that failed this plan has a
+          // name and a closed form — "there is nothing here until the cart
+          // comes" — so that is what the row waits on, and NOT a stopwatch.
+          parkNeed(session, cid, step.tplKey, {
+            scope: "row",
+            why: "the shelf was bare",
+            dueAt: shelfRestockAt(session, step.objId),
+          });
         }
-        if (take > 0) {
-          session.marketConsumed.set(
-            marketKey,
-            addStoreConsumption(session.marketConsumed.get(marketKey), session.townClock, take),
-          );
-          // A shopper buys what it LIKES; no preference → a mixed basket.
+        if (offered > 0) {
+          // A shopper buys what it LIKES; no preference → a mixed basket. The
+          // SHELF is charged for what the body actually carried away — units it
+          // had no room for were never bought and are still on the stall.
           const liked = preferredOf(likes, kindsOf(step.goodKey));
-          const basket = liked ? { [liked]: take } : dealGood(session.dress, step.goodKey, take, fnv1a(cid));
-          for (const [k, n] of Object.entries(basket)) carried[k] = (carried[k] ?? 0) + n;
-          session.needCarried.set(cid, carried);
+          const basket = liked ? { [liked]: offered } : dealGood(session.dress, step.goodKey, offered, fnv1a(cid));
+          for (const [k, n] of Object.entries(basket)) {
+            take += giveUnitsToBody(session, cid, k, n, reach ? { at: reach } : {});
+          }
+          if (take > 0) {
+            session.marketConsumed.set(
+              marketKey,
+              addStoreConsumption(session.marketConsumed.get(marketKey), session.townClock, take),
+            );
+          }
         }
       } else {
         // From a stored container: draw the liked kind first, then the rest.
@@ -7440,17 +8579,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           : kindOrder(step.goodKey);
         for (const k of order) {
           while (take < units && (stock[k] ?? 0) > 0) {
+            // ONE UNIT, TAKE-FIRST-ACCOUNT-SECOND: the body is asked before the
+            // box is debited, so a body that runs out of room mid-draw leaves
+            // the rest on the shelf instead of dropping it on the floor.
+            if (giveUnitsToBody(session, cid, k, 1, reach ? { at: reach } : {}) < 1) break;
             stock[k]! -= 1;
             if (stock[k]! <= 0) delete stock[k];
-            carried[k] = (carried[k] ?? 0) + 1;
             take++;
           }
         }
-        if (take > 0) {
-          session.containerStock.set(step.objId, stock);
-          session.needCarried.set(cid, carried);
-        }
+        if (take > 0) session.containerStock.set(step.objId, stock);
       }
+      // THE CLAIM CLOSES HERE (scope-behaviors.md §2.6: "reserve at
+      // resolution, consume as units actually leave, release on
+      // completion/failure"). CONSUME what really left — `take` is the
+      // take-first-account-second count, not what the step asked for — and
+      // RELEASE the rest: a body that came for five and could carry three has
+      // no business holding the other two shut against its housemates.
+      session.needClaims.consume(needClaimHolder(cid), step.objId, step.goodKey, take);
+      releaseNeedUnits(session, cid);
       console.log(`[needs] ${cid} took ${take}×${step.goodKey || step.affords || step.tplKey} from ${step.objId}`);
     } else if (step.kind === "deposit" && step.objId) {
       // OPEN the lid to file it away — the access action for a lidded box (bug:
@@ -7458,21 +8605,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (session.containers.get(step.objId) === "in") openContainerLid(session, cid, step.objId);
       const stock = session.containerStock.get(step.objId) ?? {};
       let put = 0;
-      // The TIDY row deposits CLUTTER — whatever non-provisioned glyphs are in
-      // hand (its goodKey is empty; the kinds loop below matches nothing).
+      const onMe = carriedNow();
+      // AN UNTYPED ROW deposits CLUTTER — whatever non-provisioned glyphs are
+      // on the body. Every row with `item: {}` is in this family (tidy, unload,
+      // relieve), and the test is the GOOD KEY, not the row's name: keying it
+      // on `tplKey === "tidy"` meant `unload`'s deposit resolved its kinds as
+      // `carryKindsOf("")` — the single glyph `""`, which nothing is ever
+      // holding — so the highest-priority put-away row on the body moved
+      // NOTHING, struck out three times and banked, every single time it fired.
       // Everything else banks through the CARRY projection (carryKindsOf), so
       // the deposit can empty exactly the hand ctx.carried counted — a treat
       // under a food row included (§4: a mismatch here is the no-op deposit).
-      const kinds =
-        step.tplKey === "tidy"
-          ? Object.keys(carried).filter(
-              (g) => !provisionedHeads(session, houseIndexOfCid(cid)).has(headOf(g)),
-            )
-          : [...carryKindsOf(step.goodKey)];
+      const kinds = step.goodKey
+        ? [...carryKindsOf(step.goodKey)]
+        : Object.keys(onMe).filter(
+            (g) => !provisionedHeads(session, houseIndexOfCid(cid)).has(headOf(g)),
+          );
+      const boxAt = state.objects[step.objId];
       for (const k of kinds) {
-        while (put < step.units && (carried[k] ?? 0) > 0) {
-          carried[k]! -= 1;
-          if (carried[k]! <= 0) delete carried[k];
+        while (put < step.units) {
+          // OFF THE BODY FIRST, into the box second — the hands instance leaves
+          // through its own door, bag units are stack arithmetic, and either way
+          // the unit is credited here exactly once.
+          if (takeUnitsFromBody(session, cid, k, 1, boxAt ? { reachAt: { x: boxAt.x, y: boxAt.y } } : {}) < 1) break;
           stock[k] = (stock[k] ?? 0) + 1;
           dropOwnedInstances(session, cid, k, 1);
           // An "on" container SHOWS what was just set down (the served
@@ -7484,7 +8639,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (put > 0) {
         session.needDepositFail.delete(`${cid}|${step.tplKey}`);
         session.containerStock.set(step.objId, stock);
-        session.needCarried.set(cid, carried);
+        bumpStockEpoch(session); // ⏸️ the pantry filled — wakes parked rows
         showWorldBubble(state, `put:${cid}`, { anchor: { kind: "avatar", id: cid }, text: "", glyph: step.goodKey, ttl: 1.5 });
         console.log(`[needs] ${cid} deposited ${put}×${step.goodKey} into ${step.objId}`);
       } else {
@@ -7513,42 +8668,88 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the tidy/fun rows can see rather than evaporating. Scatter slightly so
       // a multi-unit drop doesn't stack into one invisible pile.
       const av = state.avatars[cid];
+      const onMe = carriedNow();
       const order = kindOrder(step.goodKey === "" ? "" : step.goodKey);
-      const held = order.filter((k) => (carried[k] ?? 0) > 0);
+      const held = order.filter((k) => (onMe[k] ?? 0) > 0);
       // goodKey is empty for the untyped unload row — drop whatever is held.
-      const glyphs = held.length > 0 ? held : Object.keys(carried).filter((k) => (carried[k] ?? 0) > 0);
+      const glyphs = held.length > 0 ? held : Object.keys(onMe).filter((k) => (onMe[k] ?? 0) > 0);
       let dropped = 0;
+      // ── THE HELD BAG ─────────────────────────────────────────────────────
+      // A portable container in the hands is in NO carry view — `bodyCarryView`
+      // reports what a bag CONTAINS and never the bag, because it is the shelf
+      // and not the goods. So the stack loop below cannot reach it by any
+      // glyph, and before this arm a basket that reached a pair of hands could
+      // not be set down by any path in the engine: `takeUnitsFromBody` refuses
+      // the hands instance when it is a bag, `bagHolding` looks for the bag's
+      // glyph INSIDE the bag, and `bankCarried` iterates the same empty view.
+      // The put-down row's whole point is that a body never holds a thing it
+      // isn't using, so the commonest such thing leaves through the one door,
+      // explicitly, first. Its contents ride WITH it (the stock is keyed by the
+      // object id, which the set-down keeps) — the water-in-the-barrel law.
+      {
+        const c = bodyCarryOf(session, cid);
+        const bag = c.inHand?.bag;
+        // Gated to the row that MEANS the bag (and to a step that names its
+        // glyph outright): `unload`'s untyped drop is about the orphan UNITS
+        // riding in the bag, and shedding the bag under them would answer a
+        // different question than the one it asked.
+        if (av && bag && (step.tplKey === "relieve" || step.goodKey === c.inHand!.glyph)) {
+          const spot = { x: av.x + 0.35, y: av.y };
+          if (setDownFromHands(session, avatarIdOf(cid), { kind: "ground", ...spot }, { objId: bag.objId })) {
+            console.log(`[needs] ${cid} SET DOWN its ${bag.glyph} (${bag.objId})`);
+            dropped++;
+          }
+        }
+      }
       for (const glyph of glyphs) {
-        while (dropped < step.units && (carried[glyph] ?? 0) > 0) {
-          if (!av) break; // no body to put it down from — it stays in hand
+        while (dropped < step.units) {
+          if (!av) break; // no body to put it down from — it stays where it is
           const a = (dropped * 2.399) % (Math.PI * 2); // deterministic scatter
-          // ATOMIC (item conservation): the unit leaves the hand and the prop
+          const spot = { x: av.x + Math.cos(a) * 0.35, y: av.y + Math.sin(a) * 0.35 };
+          // ATOMIC (item conservation): the unit leaves the body and the prop
           // appears in one move, and if the world refuses the prop the unit
-          // goes straight back — never decrement-then-hope.
-          if (!dropFromStack(session, carried, glyph, av.x + Math.cos(a) * 0.35, av.y + Math.sin(a) * 0.35)) break;
+          // goes straight back — never decrement-then-hope. A thing already IN
+          // THE HANDS is simply set down; it never stopped being itself.
+          const c = bodyCarryOf(session, cid);
+          if (c.inHand && !c.inHand.bag && c.inHand.glyph === glyph) {
+            if (!setDownFromHands(session, avatarIdOf(cid), { kind: "ground", ...spot }, { objId: c.inHand.objId })) break;
+          } else {
+            const from = bagHolding(c, glyph);
+            if (!from || !dropFromStack(session, from.stock, glyph, spot.x, spot.y)) break;
+          }
           dropped++;
         }
       }
       if (dropped > 0) {
-        session.needCarried.set(cid, carried);
-        if (Object.keys(carried).length === 0) session.needCarried.delete(cid);
         console.log(`[needs] ${cid} PUT DOWN ${dropped}× (${glyphs.join(",")}) — nowhere to store it`);
       }
     } else if (step.kind === "equip") {
-      // THE CHANGE OF CLOTHES: a clean garment in hand goes ON the body; the
-      // one it was wearing comes OFF as a `.dirty` unit in the same hands —
-      // which is all it takes to fire the laundry row next (carrying rule).
-      const inHand = kindOrder(step.goodKey).filter((k) => (carried[k] ?? 0) > 0);
+      // THE CHANGE OF CLOTHES: a clean garment off the body's carry goes ON the
+      // body; the one it was wearing comes OFF as a `.dirty` unit — which is all
+      // it takes to fire the laundry row next (carrying rule).
+      const onMe = carriedNow();
+      const inHand = kindOrder(step.goodKey).filter((k) => (onMe[k] ?? 0) > 0);
       if (inHand.length > 0) {
         const glyph = inHand[0]!;
-        carried[glyph]! -= 1;
-        if (carried[glyph]! <= 0) delete carried[glyph];
+        // THE CLEAN ONE LEAVES FIRST — which is also what makes room for the
+        // dirty one on a body whose hands are its whole inventory.
+        if (takeUnitsFromBody(session, cid, glyph, 1) < 1) return;
         dropOwnedInstances(session, cid, glyph, 1);
         const prev = session.worn.get(cid);
-        if (prev) carried[`${prev.glyph}.dirty`] = (carried[`${prev.glyph}.dirty`] ?? 0) + 1;
+        const av0 = state.avatars[cid];
+        if (prev) {
+          // THE DOFFED GARMENT IS A REAL THING and must land somewhere: the
+          // body's own carry if it has room, else on the floor at its feet.
+          // Never nowhere — a shirt that evaporates here is a laundry row with
+          // nothing to wash and a wardrobe that slowly empties.
+          const dirty = `${prev.glyph}.dirty`;
+          if (giveUnitsToBody(session, cid, dirty, 1) < 1) {
+            if (av0) spawnLooseProp(session, dirty, av0.x + 0.3, av0.y + 0.3);
+            console.log(`[needs] ${cid} dropped its dirty ${prev.glyph} — nothing free to carry it in`);
+          }
+        }
         const n = (prev?.n ?? 0) + 1;
         session.worn.set(cid, { glyph, n });
-        session.needCarried.set(cid, carried);
         session.needMeters.set(`${cid}|${step.tplKey}`, 0);
         // The VISIBLE swap: the render factory watches AvatarState.wearing
         // and re-dresses the body from the (cached) preset bake.
@@ -7587,11 +8788,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // DIFFERENT type now, so this row stops firing on them and the put-away
       // row (stow / serve) takes over: type change = handoff. kindOrder (not
       // kindsOf) so a carried TREAT cooks too — a hot cookie is a meal.
-      let done = 0;
-      let sample: string | undefined;
-      for (const k of kindOrder(step.goodKey)) {
-        const nHeld = carried[k] ?? 0;
-        if (nHeld <= 0) continue;
+      //
+      // IN PLACE, PER CONTAINER: the units never leave the bag they are in, so
+      // a wash can neither overflow a full basket nor migrate a satchel's
+      // laundry into it. The HANDS instance is the one thing that has to change
+      // shape — a prop cannot be re-glyphed, so it is consumed and the clean
+      // one taken up in the same beat (still one unit, still in one place).
+      const carry = bodyCarryOf(session, cid);
+      const facet = (k: string): string | null => {
         let out = k;
         if (step.proc?.drop && out.split(".").includes(step.proc.drop)) {
           out = out
@@ -7602,16 +8806,41 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (step.proc?.add) {
           // Never double a facet (apple.hot.hot) — an already-transformed
           // unit in hand just stays what it is.
-          if (out.split(".").includes(step.proc.add)) continue;
+          if (out.split(".").includes(step.proc.add)) return null;
           out = `${out}.${step.proc.add}`;
         }
-        delete carried[k];
-        carried[out] = (carried[out] ?? 0) + nHeld;
-        sample = out;
-        done += nHeld;
+        return out === k ? null : out;
+      };
+      let done = 0;
+      let sample: string | undefined;
+      for (const bag of [carry.inHand?.bag ?? null, carry.worn]) {
+        if (!bag) continue;
+        for (const k of kindOrder(step.goodKey)) {
+          const nHeld = bag.stock[k] ?? 0;
+          if (nHeld <= 0) continue;
+          const out = facet(k);
+          if (!out) continue;
+          delete bag.stock[k];
+          bag.stock[out] = (bag.stock[out] ?? 0) + nHeld;
+          sample = out;
+          done += nHeld;
+        }
+      }
+      if (carry.inHand && !carry.inHand.bag) {
+        const held = carry.inHand.glyph;
+        const out = kindOrder(step.goodKey).includes(held) ? facet(held) : null;
+        if (out && takeUnitsFromBody(session, cid, held, 1) > 0) {
+          if (giveUnitsToBody(session, cid, out, 1) > 0) {
+            sample = out;
+            done++;
+          } else {
+            // Vanishingly unlikely (the hands just emptied), but the unit must
+            // land somewhere: back as itself rather than nowhere.
+            giveUnitsToBody(session, cid, held, 1);
+          }
+        }
       }
       if (done > 0) {
-        session.needCarried.set(cid, carried);
         showWorldBubble(state, `wash:${cid}`, {
           anchor: { kind: "avatar", id: cid },
           text: step.proc?.add === "hot" ? "🍳" : "🫧",
@@ -7628,12 +8857,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const eatOrder =
         step.goodKey === "food" ? [...kindOrder("meal"), ...kindOrder("food")] : kindOrder(step.goodKey);
       let eaten: string | undefined;
-      const inHand = eatOrder.filter((k) => (carried[k] ?? 0) > 0);
-      if (inHand.length > 0) {
+      const onMe = carriedNow();
+      const inHand = eatOrder.filter((k) => (onMe[k] ?? 0) > 0);
+      if (inHand.length > 0 && takeUnitsFromBody(session, cid, inHand[0]!, 1) > 0) {
         eaten = inHand[0]!;
-        carried[eaten]! -= 1;
-        if (carried[eaten]! <= 0) delete carried[eaten];
-        session.needCarried.set(cid, carried);
         dropOwnedInstances(session, cid, eaten, 1);
       } else if (step.objId) {
         const stock = session.containerStock.get(step.objId) ?? {};
@@ -7646,6 +8873,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           removeVisibleContainedProp(session, step.objId, eaten);
         }
       }
+      // 🚨 NO UNIT, NO MEAL. The ingest used to fire whether or not anything
+      // was actually consumed, so a body that arrived with its hand emptied
+      // (gifted away, banked mid-walk) and found nothing waiting at the station
+      // had its hunger/thirst cleared for free — a drink the barrel never paid
+      // for. The row must stay firing so the next decide goes and acquires;
+      // three futile arrivals then take the equip path's give-up so a want
+      // nothing can serve cannot spin the body at the table forever.
+      const failKey = `${cid}|${step.tplKey}`;
+      if (!eaten) {
+        const strikes = (session.needDepositFail.get(failKey) ?? 0) + 1;
+        if (strikes >= 3) {
+          session.needDepositFail.delete(failKey);
+          session.needMeters.set(`${cid}|${step.tplKey}`, 0);
+          console.log(`[needs] ${cid} consume no-op ×${strikes} on ${step.tplKey} — GAVE UP (nothing to eat here)`);
+        } else {
+          session.needDepositFail.set(failKey, strikes);
+          console.log(`[needs] ${cid} consume no-op (${strikes}/3) on ${step.tplKey} @ ${step.objId ?? "in place"}`);
+        }
+        return;
+      }
+      session.needDepositFail.delete(failKey);
       // The body effect (empty the hunger/thirst row + digestion's waste bump)
       // is the shared ingest effect — same code a spoken "eat X" command runs.
       applyIngestEffect(session, cid, step.tplKey);
@@ -7729,6 +8977,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           Object.assign(stock, dealGood(session.dress, g.good.key, level, house.index));
           session.containerStock.set(objId, stock);
         }
+        // ⏸️ THE LOAD EDGE IS A RESTOCK EVENT: the schedule's off-show drain
+        // and its dawn deliveries land here all at once, so a row parked on an
+        // empty pantry must see the interior come up.
+        bumpStockEpoch(session);
       } else if (!shown && was) {
         session.houseShown.delete(house.index);
         reanchorHouseGoods(session, house.index);
@@ -7940,12 +9192,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         fulfillIfContent(event.creatureId);
       }
     }
-    // GIFT to a townsperson (an accepted offer): the unit lands in its CARRIED stack
-    // and the live need loop takes it from there — a hungry one eats it, a shopper
-    // turns around and walks it home to the house box (doc §13; no clock special-case).
+    // GIFT to a townsperson (an accepted offer): the unit lands in the receiver's
+    // own carry and the live need loop takes it from there — a hungry one eats it,
+    // a shopper turns around and walks it home to the house box (doc §13; no clock
+    // special-case).
+    //
+    // 🚨 IT CAN BE REFUSED, and then NOTHING MOVES (decision 7). A body whose
+    // hands are full and who carries no bag has nowhere to put a gift; the item
+    // goes back to the giver — `presentSelected` reads the same ownership flag to
+    // decide whether the stack was spent — and the refusal is said out loud, so a
+    // player never watches an offer disappear into a shrug.
     if (act.kind === "offer" && res.responseGlyph === "thank_you" && convo.nodeId.startsWith("resident_")) {
       const glyph = act.itemId ? liveItemGlyph(session, act.itemId) : undefined;
-      if (glyph) giftResidentGood(session, convo.nodeId, glyph);
+      if (glyph && !giftResidentGood(session, convo.nodeId, glyph)) {
+        const it = act.itemId ? session.creatures?.world.items[act.itemId] : undefined;
+        if (it) it.ownerId = PLAYER_CREATURE_ID; // the offer is handed straight back
+        npcChatBubble(session, convo.nodeId, "no");
+        presenter.toast("💬 can't carry any more", "feedback");
+      }
     }
     if (res.close) {
       // A parting reaction (sad / ok / thanks) stays on screen after closing.
@@ -8344,6 +9608,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const stock = session.containerStock.get(containerObjId) ?? {};
     stackAdd(stock, small.glyph);
     session.containerStock.set(containerObjId, stock);
+    bumpStockEpoch(session); // ⏸️ a whole prop became stock — wakes parked rows
     if (rel === "on") {
       placeInContainer(world.state, objId, containerObjId, "on"); // visible on the table
     } else {
@@ -8477,10 +9742,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         /** Force the object id — a caller that keeps its own book on the prop. */
         id?: string;
         /**
-         * A DISPLAY TOKEN for units already counted somewhere else (the needs
-         * walker's abstract bag, a haul's manifest). Registered NOWHERE — no
-         * smallProps row, no creature-world entity — exactly so fetch, tidy and
-         * dialogue can never mistake the picture of a thing for the thing.
+         * A DISPLAY TOKEN for a thing whose real existence is a ROW somewhere
+         * else — the furniture piece mid-reflow, which lives in the building's
+         * delta while it is being moved. Registered NOWHERE (no smallProps row,
+         * no creature-world entity), exactly so fetch, tidy and dialogue can
+         * never mistake the picture of a thing for the thing.
+         *
+         * ⚠️ NEVER for stack units. That use died with the abstract bag: goods
+         * on a body are real objects in its hands or real stacks in the
+         * container it is carrying, and a token for them would be the second
+         * copy the law exists to forbid. (`bodyCarryOf` cannot see a token, so
+         * a body holding one still reads as having free hands — the reflow's
+         * bodies are on errands, which the needs walker leaves alone.)
          */
         shadow?: boolean;
       };
@@ -8550,6 +9823,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
     if (!objId || !carryObject(state, objId, bodyId)) return null;
+    // THE HOLD IS A FRESH EVENT. `rec.at` paces the grace period a thing gets
+    // before any chore may act on it, and taking something up is exactly the
+    // moment that clock should restart: a commanded "pick up the basket" has to
+    // visibly land before the put-down row (`heldIdleObject`) may undo it, and
+    // a thing set down and taken up again is not stale clutter either.
+    const rec = session.smallProps.get(objId);
+    if (rec) rec.at = session.townClock;
     fireCarryGesture(bodyId, "pickup", reach);
     return objId;
   }
@@ -8619,6 +9899,264 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return { objId, glyph };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // A BODY IS THE SAME SHAPE AS A STRUCTURE (scope-unification.md §2.1)
+  //
+  // User law (2026-08-02): "Creatures no longer have abstract inventory.
+  // Instead, creatures can carry or be equipped with containers (baskets being
+  // the prototype for a carried container, satchels for an equipped one) and
+  // those containers can contain items, which the creature can access."
+  //
+  // So a body's stock is not a field. It is the sum of what it holds, one level
+  // down — the object in its hands, and the portable containers it carries or
+  // wears, whose stacks are ordinary `containerStock` entries. Everything below
+  // is a live READ of that, or one of the two doors units pass through.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** The stack glyph of a world object — a registered loose prop first (the
+   *  record is the truth for anything the game minted), else the spec's own. */
+  function objGlyphOf(session: QuestSession, objId: string): string | null {
+    return (
+      session.smallProps.get(objId)?.glyph ??
+      world?.state.spec.objects.find((s) => s.id === objId)?.glyph ??
+      null
+    );
+  }
+
+  /**
+   * A PORTABLE CONTAINER, as a live bag view — or null for anything that is
+   * not one. `stock` ALIASES `session.containerStock`, which is the whole
+   * point: `StockEndpoint.stack` is an alias law, and a copy here would let
+   * units land in a bag that nobody else can see. The entry is CREATED if the
+   * container has never held anything, so the alias is real from the first
+   * write (the same ensure trick the old pocket branch used).
+   */
+  function bagRefOf(session: QuestSession, objId: string, glyph?: string): BagRef | null {
+    const g = glyph ?? objGlyphOf(session, objId);
+    if (!g) return null;
+    const def = containerDefOfGlyph(g);
+    if (!def?.hold) return null; // furniture is a container, but not one a body holds
+    let stock = session.containerStock.get(objId);
+    if (!stock) {
+      stock = {};
+      session.containerStock.set(objId, stock);
+    }
+    return { objId, glyph: g, stock, capacity: def.capacity };
+  }
+
+  /**
+   * WHAT THIS BODY HAS ON IT, right now. The live view every carry decision
+   * reads: the ONE object in the hands (a bag if it is a portable container),
+   * and the worn satchel. No caching — the hands are world state and a stale
+   * answer here is a unit in two places.
+   *
+   * The hands lookup walks the two REGISTERED prop books rather than the whole
+   * object table (`npcCarrying`), because this runs per body per decide and the
+   * object table is city-sized. Nothing else can be in a hand: every prop a
+   * body can take up is either a loose one (`smallProps` — everything
+   * `spawnLooseProp` mints) or a staged converse item.
+   *
+   * ⚠️ A PORTABLE CONTAINER WINS the hands slot when a body is somehow holding
+   * more than one thing (the frame in which a pickup has landed but has not yet
+   * been absorbed, a hand-over mid-carry). The slot models ONE object, and the
+   * bag is the one that decides what the body can do next — reading the apple
+   * instead would report a body with a basket as having no room at all.
+   */
+  function bodyCarryOf(session: QuestSession, cid: string): BodyCarry {
+    const carry: BodyCarry = { inHand: null, worn: null };
+    const wornRec = session.wornBags.get(cid);
+    if (wornRec) carry.worn = bagRefOf(session, wornRec.objId, wornRec.glyph);
+    if (!world) return carry;
+    const bodyId = avatarIdOf(cid);
+    const objects = world.state.objects;
+    let objId: string | null = null;
+    for (const [id, rec] of session.smallProps) {
+      if (objects[id]?.carriedBy !== bodyId) continue;
+      objId ??= id;
+      if (containerDefOfGlyph(rec.glyph)?.hold) {
+        objId = id;
+        break;
+      }
+    }
+    if (!objId) {
+      for (const id of session.convItems.keys()) {
+        if (objects[id]?.carriedBy === bodyId) {
+          objId = id;
+          break;
+        }
+      }
+    }
+    if (!objId) return carry;
+    const glyph = objGlyphOf(session, objId);
+    if (!glyph) return carry;
+    const bag = bagRefOf(session, objId, glyph);
+    carry.inHand = { objId, glyph, ...(bag ? { bag } : {}) };
+    return carry;
+  }
+
+  /** The ONE container this body's stack writes go to (scope-shape.ts
+   *  `activeBag`): the carried basket if there is one, else the worn satchel. */
+  function activeBagOf(session: QuestSession, cid: string): BagRef | null {
+    return activeBag(bodyCarryOf(session, cid));
+  }
+
+  /** The bag on this body that actually holds `glyph` — the active one first,
+   *  then the other. Used by every take-from-the-body path, so a unit is drawn
+   *  from where it IS rather than from where the writer would have put it. */
+  function bagHolding(carry: BodyCarry, glyph: string): BagRef | null {
+    const first = activeBag(carry);
+    if (first && (first.stock[glyph] ?? 0) > 0) return first;
+    const other = carry.inHand?.bag ? carry.worn : null;
+    if (other && (other.stock[glyph] ?? 0) > 0) return other;
+    return null;
+  }
+
+  /**
+   * ═══ THE ONE WAY UNITS ENTER A BODY ═══
+   *
+   * Fill the active bag up to its remaining room; with no bag, mint exactly ONE
+   * real instance into free hands (decision 3 — "no bag → single-unit trips",
+   * which is what makes bringing a basket a decision instead of a script).
+   *
+   * 🚨 RETURNS THE UNITS ACTUALLY TAKEN, and the caller decrements its source by
+   * THAT and no more (decision 7 — refusal conserves: a give that finds no room
+   * fails with the goods where they were, never a silent vanish and never a
+   * forced overflow).
+   */
+  function giveUnitsToBody(
+    session: QuestSession,
+    cid: string,
+    glyph: string,
+    n: number,
+    opts?: {
+      /** Where the unit comes from — the reach aims here and a minted prop
+       *  starts here. Defaults to the body's own feet. */
+      at?: { x: number; y: number };
+    },
+  ): number {
+    if (n <= 0) return 0;
+    const carry = bodyCarryOf(session, cid);
+    const bag = activeBag(carry);
+    if (bag) {
+      const take = Math.min(n, stackRoom(carry));
+      if (take <= 0) return 0;
+      bag.stock[glyph] = (bag.stock[glyph] ?? 0) + take;
+      return take;
+    }
+    // NO BAG: the hands are the whole inventory, and they hold one whole thing.
+    // 🚨 THE BODY MUST EXIST FIRST. A mint into a body that is not embodied
+    // spawns the prop and then fails to carry it — leaving a unit on the ground
+    // AND a caller told nothing moved, which is how one unit becomes two.
+    if (!handsFree(carry)) return 0;
+    const body = world?.state.avatars[avatarIdOf(cid)];
+    if (!body) return 0;
+    const at = opts?.at ?? { x: body.x, y: body.y };
+    const objId = takeIntoHands(
+      session,
+      avatarIdOf(cid),
+      { kind: "glyph", glyph, at },
+      { reachAt: at },
+    );
+    return objId ? 1 : 0;
+  }
+
+  /**
+   * ═══ THE ONE WAY UNITS LEAVE A BODY ═══
+   *
+   * The hands instance first (it is the thing the body is visibly using, and a
+   * real object, so it leaves through `setDownFromHands`), then the active bag,
+   * then the other one. Returns the units removed — the caller credits its
+   * destination by exactly that.
+   *
+   * ⚠️ The hands instance leaves as `consumed`: the unit is being ACCOUNTED FOR
+   * by the caller (banked into a box, eaten, deposited), so the prop's job is
+   * over. A caller that wants the thing to land somewhere physical (on the
+   * floor, inside a box as a visible instance) reaches for `setDownFromHands`
+   * itself rather than double-counting through here.
+   */
+  function takeUnitsFromBody(
+    session: QuestSession,
+    cid: string,
+    glyph: string,
+    n: number,
+    opts?: { reachAt?: { x: number; y: number } },
+  ): number {
+    if (n <= 0) return 0;
+    let left = n;
+    const carry = bodyCarryOf(session, cid);
+    if (carry.inHand && !carry.inHand.bag && carry.inHand.glyph === glyph) {
+      const gone = setDownFromHands(
+        session,
+        avatarIdOf(cid),
+        { kind: "consumed" },
+        { objId: carry.inHand.objId, ...(opts?.reachAt ? { reachAt: opts.reachAt } : {}) },
+      );
+      if (gone) left--;
+    }
+    for (const bag of [activeBag(carry), carry.inHand?.bag ? carry.worn : null]) {
+      if (!bag) continue;
+      while (left > 0 && (bag.stock[glyph] ?? 0) > 0) {
+        bag.stock[glyph]! -= 1;
+        if (bag.stock[glyph]! <= 0) delete bag.stock[glyph];
+        left--;
+      }
+    }
+    return n - left;
+  }
+
+  /**
+   * WEAR IT — the `install` verb at body scope (decision 4: the hold mode IS
+   * the routing). A satchel becomes a fixture of the body, and the body's hands
+   * stay free, which is the whole difference between it and a basket.
+   *
+   * The prop LEAVES the world while worn (see `wornBags` — declared debt: there
+   * is no on-body mount yet, and a bag left lying on the floor would be swept
+   * up by its owner's own tidy chore). Its registration and its stock stay
+   * exactly where they were, keyed by the same object id.
+   */
+  function donWornBag(session: QuestSession, cid: string, objId: string): boolean {
+    if (!world || session.wornBags.has(cid)) return false;
+    const glyph = objGlyphOf(session, objId);
+    const def = glyph ? containerDefOfGlyph(glyph) : null;
+    if (!glyph || def?.hold !== "wear") return false;
+    const av = world.state.avatars[avatarIdOf(cid)];
+    if (!session.containerStock.has(objId)) session.containerStock.set(objId, {});
+    session.containers.set(objId, def.relation);
+    // A PERSONAL BAG IS NOT THE HOUSEHOLD PANTRY (ownership.ts): what is in
+    // somebody's satchel is theirs, so the walkers' private-property gate keeps
+    // housemates out of it exactly as it keeps them out of a member's own box.
+    session.containerOwner.set(objId, creatureScope(cid));
+    const rec = session.smallProps.get(objId);
+    world.removeObject(objId);
+    session.smallProps.delete(objId);
+    // The creature-world instance goes with the prop — the bag is a fixture of
+    // the body now, not a loose thing anybody can be told to fetch.
+    if (rec && session.creatures) delete session.creatures.world.items[rec.entityId];
+    session.wornBags.set(cid, { objId, glyph });
+    if (av) fireCarryGesture(avatarIdOf(cid), "pickup", { x: av.x, y: av.y });
+    return true;
+  }
+
+  /** TAKE IT OFF — the `remove` verb: the worn bag becomes a loose prop again,
+   *  under the SAME object id, so the stock keyed by it is never orphaned (the
+   *  water-in-the-barrel law). Returns the prop id, or null when nothing was
+   *  worn. */
+  function doffWornBag(
+    session: QuestSession,
+    cid: string,
+    at: { x: number; y: number },
+  ): string | null {
+    const rec = session.wornBags.get(cid);
+    if (!rec || !world) return null;
+    const entityId = materialize(session, rec.glyph, null);
+    world.addObject(itemObjectSpec(rec.glyph, rec.objId, at));
+    session.smallProps.set(rec.objId, { entityId, glyph: rec.glyph, at: session.townClock });
+    session.needsPropsEpoch++; // a bag on the floor wakes dormant tidy decides
+    session.wornBags.delete(cid);
+    fireCarryGesture(avatarIdOf(cid), "putdown", at);
+    return rec.objId;
+  }
+
   /** The registered TRANSFORM station whose `applies` IS `state` (fire → hot,
    *  water tub → cold), nearest `near` when given. `session.stations` are the
    *  town's item-transform stations (the drop-on-station swap, §8); a commanded
@@ -8654,7 +10192,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // A `stock:` ref (container-stacked unit): withdraw one and MATERIALIZE
       // it into the hand — how "get the apple" reaches into the pantry.
       if (step.itemId.startsWith("stock:")) {
-        if (npcCarrying(npcId)) return;
+        // ⚠️ THE ONE DOOR, and the hands are only HALF of it. This used to bail
+        // on `npcCarrying` — anything at all in the hands and the withdraw was
+        // a silent no-op. But a body holding a BASKET is precisely a body that
+        // CAN take something (the basket is its bag), and the plan that issued
+        // this step re-issues it every tick until COMMAND_ACT_CAP: the observed
+        // "took multiple drinks of water from the barrel before eventually
+        // stopping, but the water didn't get depleted". Five visible reaches,
+        // nothing drawn. So the room question goes to `stackRoom`, which is the
+        // only thing that knows the answer for a bag AND for a bare hand.
+        const carry = bodyCarryOf(session, cid);
+        if (stackRoom(carry) <= 0) return;
         const [boxId, glyph] = step.itemId.slice(6).split("|") as [string, string];
         // A commanded body meets the same social stop-gate as the player's
         // own hand (ownership.ts): foreign PRIVATE property is refused
@@ -8672,26 +10220,71 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (session.containers.get(boxId) === "in") openContainerLid(session, cid, boxId);
         const stock = session.containerStock.get(boxId) ?? {};
         if ((stock[glyph] ?? 0) <= 0) return; // emptied during the walk — re-command re-resolves
+        const body = world.state.avatars[npcId];
+        const at = body ?? world.state.objects[boxId];
+        if (!at) return;
+        // TAKE-FIRST-ACCOUNT-SECOND (item conservation): the body is asked
+        // before the box is debited, so a refusal leaves the unit on the shelf.
+        // With a bag it lands IN the bag; bagless it becomes the real instance
+        // in the hands — the same two answers `applyNeedStepEffect`'s own take
+        // gives, which is what makes the command path and the needs path one
+        // door rather than two that drift.
+        const bag = activeBag(carry);
+        const got = bag
+          ? giveUnitsToBody(session, cid, glyph, 1, { at: { x: at.x, y: at.y } })
+          : // The reach aims at the BOX, not the prop — the prop is minted at
+            // the body's own feet, and reaching for your own feet reads as
+            // nothing.
+            (takeIntoHands(
+              session,
+              npcId,
+              { kind: "glyph", glyph, at: { x: at.x, y: at.y } },
+              { reachAt: world.state.objects[boxId] },
+            )
+              ? 1
+              : 0);
+        if (got < 1) return;
         stock[glyph]! -= 1;
         if (stock[glyph]! <= 0) delete stock[glyph];
         session.containerStock.set(boxId, stock);
         removeVisibleContainedProp(session, boxId, glyph);
-        const body = world.state.avatars[npcId];
-        const at = body ?? world.state.objects[boxId];
-        if (!at) return;
-        // The unit has left the stack above; the hand is the master's business.
-        // The reach aims at the BOX, not the prop — the prop is minted at the
-        // body's own feet, and reaching for your own feet reads as nothing.
-        takeIntoHands(
-          session,
-          npcId,
-          { kind: "glyph", glyph, at: { x: at.x, y: at.y } },
-          { reachAt: world.state.objects[boxId] },
-        );
         fellIfConsumed(session, boxId); // an emptied kill-source is felled
+        // A unit that went INTO A BAG leaves no instance behind, so the goal
+        // that asked for it ("hold one of these") can never read as satisfied
+        // and the plan would re-issue this withdraw until the act cap. The
+        // errand is finished the moment the unit is on the body — whatever the
+        // body chose to put it in.
+        if (bag) session.pursuits.delete(cid);
         return;
       }
       const o = objIdOfEntity(session, step.itemId);
+      // A SMALL LOOSE THING WITH A BAG ON THE BODY goes INTO the bag, exactly
+      // as the needs walker's own loose pickup routes it (`applyNeedStepEffect`
+      // take, the `small:` arm) — the two used to disagree, and the difference
+      // was the whole of "they went out shopping and came back with an empty
+      // basket": the hands were occupied BY THE BASKET, so every lift the
+      // pursuit planned was a silent no-op and the trip achieved nothing. A
+      // container and anything furniture-sized still ride the hands only: a
+      // scope may never become a countable unit inside another bag.
+      const loose = o ? session.smallProps.get(o) : undefined;
+      if (o && loose && npcCarrying(npcId) && !world.state.objects[o]?.carriedBy) {
+        const carry = bodyCarryOf(session, cid);
+        const cdef = containerDefOfGlyph(loose.glyph);
+        const handsOnly = isLargeGlyph(loose.glyph) || !!cdef?.hold;
+        const at = world.state.objects[o];
+        if (!handsOnly && activeBag(carry) && at) {
+          // TAKE-FIRST, REMOVE-SECOND (item conservation): the unit is on the
+          // body before the prop leaves the world, and a refusal leaves it
+          // lying exactly where it was.
+          if (giveUnitsToBody(session, cid, loose.glyph, 1, { at: { x: at.x, y: at.y } }) > 0) {
+            removeLooseProp(session, o);
+            // Nothing is left for a `holding` precondition to see, so the
+            // errand ends here rather than re-planning into the act cap.
+            session.pursuits.delete(cid);
+          }
+          return;
+        }
+      }
       if (o && !npcCarrying(npcId)) {
         const at = world.state.objects[o];
         // The FROM-AUTHORIZED hand-to-hand take ("take ball from dog"): the
@@ -8732,10 +10325,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     if (step.kind === "withdraw" || step.kind === "stow") {
       // THE STACK ECONOMY'S MANIPULATION ARMS (S3): move `units` between the
-      // reached store and the abstract bag by DELEGATING to the needs walker's
-      // own effects — market ledger + purse, the well's free draw, loose-prop
-      // pickup, lid access, carry-bound clamping, the deposit's no-op strikes
-      // and give-up banking all live there and stay the single source of truth.
+      // reached store and WHAT THE BODY IS CARRYING, by DELEGATING to the needs
+      // walker's own effects — market ledger + purse, the well's free draw,
+      // loose-prop pickup, lid access, the carry bound, the deposit's no-op
+      // strikes and give-up banking all live there and stay the single source
+      // of truth (and so do the two doors units pass through).
       applyNeedStepEffect(session, world.state, cid, {
         tplKey: step.tplKey ?? "command",
         kind: step.kind === "withdraw" ? "take" : "deposit",
@@ -8765,7 +10359,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         proc: { ...(step.drop ? { drop: step.drop } : {}), ...(step.add ? { add: step.add } : {}) },
       });
       const dwell = step.dwellS ?? WASH_DWELL_S;
-      session.needStep.delete(cid);
+      clearNeedStep(session, cid);
       session.npcTasks.delete(npcId);
       session.needPoseShow.set(cid, { t: dwell, kind: "sit" });
       // A DIRECT PIN, never enqueueNpcErrand: the queue is what `ritualEligible`
@@ -9056,7 +10650,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           : "sit"
         : (step.pose ?? (stKind === "box" ? "play" : "sit"));
       const dwell = step.dwellS ?? REST_CMD_DWELL_S; // a need's nap vs the commanded-sit default
-      session.needStep.delete(cid);
+      clearNeedStep(session, cid);
       session.npcTasks.delete(npcId);
       session.needPoseShow.set(cid, { t: dwell, kind: pose, ...(stObjId ? { objId: stObjId } : {}) });
       // A DIRECT PIN, never enqueueNpcErrand: an npcTasks entry reads as "the
@@ -9121,7 +10715,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // body; the one it was wearing comes OFF as a loose `.dirty` prop at the
       // feet — the laundry chain's first link (a body/housemate then washes it).
       // Mirrors the needs `equip` effect (session.worn + av.wearing + dress-meter
-      // clear), but on the PHYSICAL held prop rather than the needCarried stack.
+      // clear), but named at a SPECIFIC held prop rather than searching the
+      // body's whole carry for something of the right kind.
       const state = world.state;
       const av = state.avatars[npcId];
       if (!av) return;
@@ -9571,7 +11166,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (t.category && f.category !== t.category) return;
           if (t.descriptors && !t.descriptors.every((d) => (f.descriptors ?? []).includes(d))) return;
           if (t.state && !(f.states ?? []).includes(t.state)) return;
-          const d = seekerPos ? Math.hypot(o.x - seekerPos.x, o.y - seekerPos.y) : 0;
+          // 🚨 WHAT YOU ARE ALREADY HOLDING IS THE NEAREST THING THERE IS.
+          // A carried prop rides `CARRY_HOLD = 1 m` in front of its body, so
+          // scored on raw distance it LOST to the very box the body was
+          // standing at — and since a `holding` precondition is satisfied by
+          // the carried instance and not by the box, the plan re-emitted its
+          // withdraw every tick and the body reached into the barrel five
+          // times over for one drink. Identity, not geometry, answers this
+          // one: the thing in your hand is not somewhere you have to go.
+          const d = holder === seeker ? -1 : seekerPos ? Math.hypot(o.x - seekerPos.x, o.y - seekerPos.y) : 0;
           if (d < bestD) {
             bestD = d;
             best = entityId;
@@ -9689,8 +11292,254 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // for it regresses to blocked. Default (no body / unset) ⇒ can.
       canOpen: (self) => host.state.avatars[avatarIdOf(self)]?.canOpen !== false,
       carrierOf: (id) => (id.startsWith("stock:") ? null : carrierOf(id)),
+      // THE PRICE BOARD (step ④): the villager's gait, and the dwell each act
+      // already spends. Nothing new is invented here — `stepPlanHandsS` reads
+      // the same constants the executor burns, which is the whole of the
+      // surveys' "they are currently spent, never charged".
+      price: { walkMps: walkSpeedMps(session.scale), handsS: (s) => stepPlanHandsS(session, s) },
     };
     return resolver;
+  }
+
+  /**
+   * HAND-SECONDS ONE COMPILED STEP OCCUPIES — the `handsS` half of a plan's
+   * price (action-planner.ts `pricePlan`).
+   *
+   * Every number below is a dwell the executor ALREADY spends: the beat at a
+   * box (`BOX_ACT_DWELL_S`, the crouch), the beat at a stall (`SHOP_SEC`), the
+   * length of a nap or a scrub (`restDwellFor`), the meal's own show
+   * (`EAT_SHOW_S`). Charging them is the point — a plan that reaches into three
+   * boxes is dearer than one that reaches into one, and until now nothing in
+   * the engine could say so.
+   */
+  function stepPlanHandsS(session: QuestSession, step: GoalStep): number {
+    switch (step.kind) {
+      case "moveTo":
+      case "faceHold":
+        return 0;
+      case "withdraw":
+        // A market stall is a TRANSACTION, a box is a reach. The id carries
+        // which — the same split `needPriceOf` prices the two acquire branches
+        // by, so the two seats can never disagree about what shopping costs.
+        return session.marketStore.has(step.fromId) ? SHOP_SEC : BOX_ACT_DWELL_S;
+      case "rest":
+        return step.dwellS ?? restDwellFor("", session.scale);
+      case "processStack":
+        return step.dwellS ?? restDwellFor("", session.scale);
+      case "eat":
+      case "consumeStack":
+        return EAT_SHOW_S;
+      default:
+        // Every other act is one crouch: pick, place, give, stow, drop, equip,
+        // toggle, transform, open/shut, converse, a social act.
+        return BOX_ACT_DWELL_S;
+    }
+  }
+
+  // ═══ ④ ENABLE — THE BASKET QUESTION (scope-behaviors.md §2.4) ═══════════
+  //
+  // "Price the plan twice — with and without the enabler — and fetch the
+  // enabler when `cost(fetch) + cost(plan | enabler) < cost(plan | bare)`."
+  //
+  // The engine has had the FACTS since step ③ (a basket holds 8, a bare hand
+  // holds 1) and asked the question nowhere, which is the measured origin of the
+  // whole one-unit-per-trip surface: shopping, hauls, and a 120-block cottage as
+  // 120 round trips. ONE comparison serves both rungs below — a body's shopping
+  // trip and a porter's haul — because that is the user's law applied: the body
+  // case and the town case must be the same arithmetic at different constants.
+
+  /** A portable container standing free in the world, with what it offers. */
+  interface IdleBag {
+    objId: string;
+    entityId: string;
+    glyph: string;
+    at: { x: number; y: number };
+    /** UNITS it can still take (capacity − what is already in it). */
+    room: number;
+  }
+
+  /**
+   * THE BAGS `cid` COULD GO AND GET, in id order (deterministic).
+   *
+   * A bag qualifies when it is: a portable container (`livesOnTheFloor` — the
+   * one rule that says a basket has no box), standing in the world and in
+   * NOBODY's hands, not mid-play, this body's to use (`mayUse` — the household's
+   * own basket and the town's yard one; a stall's merchandise only if ownership
+   * says so), not already spoken for by another trip, and with room left in it.
+   */
+  function idleBagsFor(session: QuestSession, cid: string): IdleBag[] {
+    if (!world) return [];
+    const houseIndex = houseIndexOfCid(cid);
+    const out: IdleBag[] = [];
+    for (const [objId, rec] of session.smallProps) {
+      if (!livesOnTheFloor(rec.glyph)) continue;
+      const o = world.state.objects[objId];
+      if (!o || o.carriedBy) continue; // somebody has it
+      if (!mayUse(cid, houseIndex, session.containerOwner.get(objId))) continue;
+      if (toolClaimed(session.reservations, objId)) continue; // another trip's
+      if (isPlayArea(session, world.state, objId)) continue;
+      const cap = containerDefOfGlyph(rec.glyph)?.capacity ?? 0;
+      const room = cap - totalStackUnits(session.containerStock.get(objId) ?? {});
+      if (room <= 0) continue;
+      out.push({ objId, entityId: rec.entityId, glyph: rec.glyph, at: { x: o.x, y: o.y }, room });
+    }
+    return out.sort((a, b) => (a.objId < b.objId ? -1 : a.objId > b.objId ? 1 : 0));
+  }
+
+  /**
+   * THE BODY RUNG'S BASKET QUESTION. The decided `take` moves `intent.units`
+   * because that is all the body's hands hold; would a basket pay for itself?
+   *
+   *   net(bare) = value(units it can carry now)  − (walk to the source + the act)
+   *   net(bag)  = value(units WITH the bag)      − (walk to the bag + lift it
+   *                                                + walk bag → source + the act)
+   *
+   * Both sides are the row's OWN price board (`NeedPrice`) — the same
+   * `goodsValueS` the acquire seat already values a draw with — so a household
+   * five short pays for the detour and a household one short does not. Nothing
+   * is scripted: the put-back isn't either (the `relieve` row sets an idle bag
+   * down once the goods rows have emptied it).
+   *
+   * Returns the FETCH goal to run first, or null to take bare-handed.
+   */
+  function bagFetchGoal(
+    session: QuestSession,
+    cid: string,
+    tpl: NeedTemplate,
+    ctx: NeedCtx | undefined,
+    intent: Extract<NeedIntent, { kind: "take" }>,
+  ): GoalSpec | null {
+    const p = ctx?.price;
+    if (!NEED_COST_SELECTION) return null; // the kill-switch: nobody fetches a bag
+    if (!world || !p) return null; // unpriced ⇒ no comparison to make
+    const carry = bodyCarryOf(session, cid);
+    // A body that already HAS a bag has nothing to decide, and one whose hands
+    // are full cannot take a basket (the one door, scope-shape.ts).
+    if (activeBag(carry) || !handsFree(carry)) return null;
+    const body = world.state.avatars[avatarIdOf(cid)];
+    if (!body) return null;
+    // WHICH BRANCH a resolved candidate came from — the ctx lists hold the very
+    // objects the intent carries, so identity answers it (needs.ts writes the
+    // same three lines for the same reason).
+    const branchOf = (c: StockCandidate) =>
+      ctx.sources.includes(c) ? "source" : (ctx.loose ?? []).includes(c) ? "loose" : "container";
+    const value = (units: number) => goodsValueS(units, p.shortage, p.unitValueS, 1);
+    const bare = netValueS(
+      value(intent.units),
+      priceOf({
+        journeyS: journeyTimeS(intent.from.d ?? 0, p.walkMps),
+        handsS: p.handsS[branchOf(intent.from)],
+      }),
+    );
+    let best: { bag: IdleBag; net: number } | null = null;
+    for (const bag of idleBagsFor(session, cid)) {
+      if (bag.room <= (ctx.room ?? 1)) continue; // no more room than the hands: no gain
+      // RE-DECIDE THE SAME ROW AGAINST THE BIGGER BAG — the honest "price the
+      // plan twice". Re-deciding (rather than re-deriving the take size here)
+      // is what keeps the two answers the SAME rule: restock target, claims,
+      // branch choice and all.
+      //
+      // ⚠️ AND THE SOURCE MAY CHANGE UNDER IT, which is the point rather than a
+      // complication: bare-handed, the pantry's single apple beats a market trip
+      // it could only bring one unit back from; WITH a bag the market's fifty
+      // win. So the bag plan is priced against ITS OWN source, not forced back
+      // onto the bare plan's.
+      const withBag = decideNeed(tpl, { ...ctx, room: bag.room });
+      if (withBag.kind !== "take") continue;
+      if (withBag.units <= intent.units) continue; // the bag buys nothing here
+      const srcAt = containerAnchor(session, withBag.from.id);
+      if (!srcAt) continue; // a source with no place cannot be routed via a bag
+      const toBag = Math.hypot(bag.at.x - body.x, bag.at.y - body.y);
+      const bagToSrc = Math.hypot(srcAt.x - bag.at.x, srcAt.y - bag.at.y);
+      const net = netValueS(
+        value(withBag.units),
+        priceOf({
+          journeyS: journeyTimeS(toBag, p.walkMps) + journeyTimeS(bagToSrc, p.walkMps),
+          // The lift, then the act at whichever source the bag plan chose.
+          handsS: BOX_ACT_DWELL_S + p.handsS[branchOf(withBag.from)],
+        }),
+      );
+      if (!best || net > best.net) best = { bag, net };
+    }
+    if (!best || !(best.net > bare)) return null;
+    return { kind: "fetch", item: { id: best.bag.entityId } };
+  }
+
+  /**
+   * SEAT 4 (scope-behaviors.md §5.4) — WHICH CANDIDATE THE PURSUIT INSTALLS.
+   * `candidates.find(compileGoal)` becomes `argmax(value − cost)`.
+   *
+   * ⚠️ THE GROUPS ARE NOT INTERCHANGEABLE, and that is why this is not one flat
+   * argmax over the list. `needPursuitGoals` returns two DIFFERENT KINDS of
+   * thing in one ordered list: the alternatives for the errand (the hot meal,
+   * the raw unit) and then the DEGRADATION FALLBACK behind them (a bounded
+   * `takeUnits` leg, offered because market shelves and the well are invisible
+   * to the item resolver). A fallback plan is shorter by construction — one leg
+   * where the real errand is three — so a flat argmin would pick it every single
+   * time and no hungry body would ever walk to a meal again. So: consecutive
+   * candidates of the same `goal.kind` form a GROUP, groups keep their order,
+   * the FIRST group with anything compilable wins, and the arithmetic decides
+   * inside it. That is exactly the old semantics with the list order replaced by
+   * a price wherever the candidates really are alternatives.
+   *
+   * The row's own value (`NeedPrice`) is SHARED by every candidate for one goal
+   * — it is the same want being served — so it cancels out of the argmax and is
+   * not read here. What survives the cancellation is the TASTE term
+   * (`tasteBonusS`: a cooked meal is worth walking further for) and the cost.
+   *
+   * HYSTERESIS: the standing candidate keeps its seat unless a challenger nets
+   * `GOAL_SWITCH_MARGIN_S` better, so two near-equal sources cannot trade the
+   * body back and forth every time it re-decides at a junction.
+   *
+   * Deterministic: strict `>` keeps the FIRST maximum, so an unpriced resolver
+   * (every plan zero) lands on the first compilable candidate — byte-identical
+   * to the `find` this replaces.
+   */
+  function chooseNeedGoal(
+    session: QuestSession,
+    cid: string,
+    tplKey: string,
+    candidates: readonly GoalSpec[],
+    r: WorldResolver,
+  ): GoalSpec | undefined {
+    // THE KILL-SWITCH, shared with the two body-rung seats (`decideNeeds` /
+    // `acquireFrom`): off, this is the shipped `candidates.find(compileGoal)`
+    // byte for byte — first compilable, in the list's own order.
+    if (!NEED_COST_SELECTION) return candidates.find((g) => compileGoal(g, cid, r));
+    const standing = session.needGoalPick.get(cid);
+    const keyOf = (g: GoalSpec) => JSON.stringify(g);
+    let group: GoalSpec[] = [];
+    let groupKind: string | null = null;
+    let best: { goal: GoalSpec; net: number } | undefined;
+    const settle = (): GoalSpec | undefined => {
+      if (!best) return undefined;
+      session.needGoalPick.set(cid, { tplKey, key: keyOf(best.goal) });
+      return best.goal;
+    };
+    for (let i = 0; i <= candidates.length; i++) {
+      const g = candidates[i];
+      if (g && (groupKind === null || g.kind === groupKind)) {
+        groupKind = g.kind;
+        group.push(g);
+        continue;
+      }
+      // The group closed — price it. A group with nothing compilable falls
+      // through to the next one (the degradation seam, unchanged).
+      for (const cand of group) {
+        const plan = compileGoal(cand, cid, r);
+        if (!plan) continue;
+        let net = netValueS(tasteBonusS(cand), plan.cost);
+        // THE STANDING CANDIDATE'S HANDICAP, applied to it rather than to every
+        // challenger, so the margin is one number and ties still read the list
+        // order. (`session.needGoalPick` only speaks for the same row.)
+        if (standing?.tplKey === tplKey && standing.key === keyOf(cand)) net += GOAL_SWITCH_MARGIN_S;
+        if (!best || net > best.net) best = { goal: cand, net };
+      }
+      if (best) return settle();
+      group = g ? [g] : [];
+      groupKind = g ? g.kind : null;
+    }
+    return settle();
   }
 
   /** Furniture/station words + places a spoken noun may name — the CLASSIFIER's
@@ -9734,7 +11583,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     for (const [, rec] of session.smallProps) {
       if ((headOf(rec.glyph)).toLowerCase() === sym) return "item";
     }
-    if (Object.keys(session.pocket).some((g) => (headOf(g)).toLowerCase() === sym)) return "item";
+    const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
+    if (Object.keys(onMe).some((g) => (headOf(g)).toLowerCase() === sym)) return "item";
     for (const stock of session.containerStock.values()) {
       if (Object.keys(stock).some((g) => (headOf(g)).toLowerCase() === sym)) return "item";
     }
@@ -9783,7 +11633,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session.party.add(cid);
     const body = avatarIdOf(cid);
     session.npcTasks.delete(body);
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     world?.setNpcErrand(body, null);
   }
 
@@ -9797,8 +11647,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   // ── Items as STACKS · ONE container abstraction ───────────────────────────
   // Items are FUNGIBLE, merged by SIGNATURE = their composed glyph
-  // (feedback_items_stack_one_container). The pocket and every container's contents are
-  // glyph→count STACK MAPS — no lists of distinct instances. A concrete creature-world
+  // (feedback_items_stack_one_container). Every container's contents — including
+  // the basket on somebody's arm — are glyph→count STACK MAPS, no lists of
+  // distinct instances. A concrete creature-world
   // instance is MATERIALIZED from a glyph only when a stack leaves storage into the world
   // or dialogue (a loose prop, a table-visible prop, an offer) — that's where ownership
   // and the generosity path need a real item. ONE container path: any object with
@@ -9852,15 +11703,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   };
 
-  /** Build + push the inventory strip: one entry per glyph STACK, with its count. */
+  /** Build + push the inventory strip: one entry per glyph STACK, with its
+   *  count. THE STRIP IS A VIEW (decision 5) — it renders the merged carry of
+   *  the body the player is being, and nothing writes back through it. The bag
+   *  itself is not a row: it is the shelf, not the goods, and the world already
+   *  shows it riding the body. */
   function pushPocket(session: QuestSession) {
     presenter.pocket?.(
-      Object.entries(session.pocket)
+      Object.entries(bodyCarryView(bodyCarryOf(session, session.handsCid)))
         .filter(([, n]) => n > 0)
         .map(([glyph, count]) => ({
           glyph,
           count,
-          // DISPLAY face, not the stack key (see presentContainer): a pocketed
+          // DISPLAY face, not the stack key (see presentContainer): a carried
           // `furn.<kind>` piece is a chair, not a "furn".
           icon: drawnMakeable(glyph),
           label: spokenMakeable(glyph),
@@ -10284,7 +12139,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         npcChatBubble(session, cid, chore.idleLine);
         return true;
       }
-      session.needStep.delete(cid);
+      clearNeedStep(session, cid);
       session.npcTasks.delete(avatarIdOf(cid));
       session.liveNeedBodies.add(cid);
       ensureResidentCreature(session, cid);
@@ -10298,7 +12153,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (need === "wake_up") {
       const step = session.needStep.get(cid);
       if (step?.kind === "rest") {
-        session.needStep.delete(cid);
+        clearNeedStep(session, cid);
         const ek = `${cid}|${step.tplKey}`;
         session.needMeters.set(ek, (session.needMeters.get(ek) ?? 0) * 0.35);
         if (world) {
@@ -10337,7 +12192,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return true;
       }
     }
-    session.needStep.delete(cid); // re-decide fresh from the raised meter
+    clearNeedStep(session, cid); // re-decide fresh from the raised meter
     session.npcTasks.delete(avatarIdOf(cid)); // the new order overrides an old errand
     session.liveNeedBodies.add(cid); // the live loop owns the body (skips clock gates)
     // "ok" — RESERVED for exactly this: confirming an accepted order (①a §1).
@@ -10378,7 +12233,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         chair = { id: oid, x: o.x, y: o.y };
       }
     }
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     session.npcTasks.delete(avatarIdOf(cid));
     if (!chair) {
       session.needPoseShow.set(cid, { t: SIT_DWELL_S, kind: "sit" });
@@ -10743,7 +12598,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const spot = verdict.spot;
     const box = state.objects[sourceBox];
     const npcId = avatarIdOf(cid);
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     session.npcTasks.delete(npcId);
     session.lastDrive.set(cid, "command");
     const points = [
@@ -10822,15 +12677,44 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
 
-  /** A loose prop on the ground is picked up: MERGE its glyph into the pocket count and
-   *  drop the concrete instance (the pocket is counts, not instances). */
+  /**
+   * A loose prop is TAKEN UP by the body the player is being. Called both when
+   * the player reaches for something on the floor and, every frame, for
+   * whatever the walker body has already got hold of — so it must be a no-op
+   * for a thing that is exactly where it belongs.
+   *
+   * THE OBJECT DECIDES WHAT HAPPENS TO IT (decision 4 — the hold mode IS the
+   * routing): a satchel is WORN (hands stay free), a basket is HELD, anything
+   * else goes into whatever bag the body has. WITH NO BAG THE THING STAYS IN
+   * THE HANDS as itself: the hands ARE the inventory now, and the strip renders
+   * them, so there is nothing to absorb it into and nothing to say about it.
+   */
   function pocketLoose(session: QuestSession, objId: string) {
     const rec = session.smallProps.get(objId);
     if (!rec) return;
-    stackAdd(session.pocket, rec.glyph);
-    world?.removeObject(objId);
-    session.smallProps.delete(objId);
-    if (session.creatures) delete session.creatures.world.items[rec.entityId]; // count now, not an instance
+    const cid = session.handsCid;
+    const held = world?.state.objects[objId]?.carriedBy === avatarIdOf(cid);
+    const carry = bodyCarryOf(session, cid);
+    const cdef = containerDefOfGlyph(rec.glyph);
+    if (cdef?.hold === "wear" && !carry.worn) {
+      if (donWornBag(session, cid, objId)) pushPocket(session);
+      return;
+    }
+    // A CONTAINER — or anything furniture-sized — rides the HANDS as itself: a
+    // scope may never become a countable unit inside another bag (containers.ts),
+    // and nobody ever pocketed a chair.
+    const handsOnly = !!cdef?.hold || isLargeGlyph(rec.glyph);
+    const bag = activeBag(carry);
+    if (handsOnly || !bag) {
+      if (held) return; // already in the hands — that IS where it goes
+      if (!handsFree(carry)) return; // one thing at a time; the player can see it lying there
+      if (takeIntoHands(session, avatarIdOf(cid), { kind: "object", objId })) pushPocket(session);
+      return;
+    }
+    // INTO THE BAG — take-first, remove-second, so the unit is never in both
+    // places (and a full bag simply leaves it where it is).
+    if (giveUnitsToBody(session, cid, rec.glyph, 1) < 1) return;
+    removeLooseProp(session, objId);
     pushPocket(session);
   }
 
@@ -10855,6 +12739,52 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return objId;
   }
 
+  /** MINT ONE SEEDED CONTAINER (container-seeds.ts) as a loose prop, and record
+   *  whose it is. `spawnLooseProp` registers it as a container; only the OWNER
+   *  is left to say, and saying it here is why no seeding call site has to
+   *  remember. Returns the prop id, or null when the world isn't up. */
+  function seedContainerProp(session: QuestSession, seed: ContainerSeed): string | null {
+    const objId = spawnLooseProp(session, seed.glyph, seed.at.x, seed.at.y);
+    if (objId) session.containerOwner.set(objId, seed.owner);
+    return objId;
+  }
+
+  /**
+   * THE PLAYER STARTS WEARING A SATCHEL (step ③ seeding).
+   *
+   * Without it every quest game hands the player a ONE-ITEM body: the law says
+   * a body's inventory is the containers it holds, and nothing in the shipped
+   * content ever made one. So the very first thing a session mints is the
+   * player's own bag — in EVERY quest game, town or not, since the AAC
+   * symbol/fulfill games have no town to find one in.
+   *
+   * WORN, not carried, for the reason the pair exists: the hands stay free, so
+   * arming a glyph and picking a quest item up still work exactly as before.
+   *
+   * MINTED ONCE. `wornBags` is checked BEFORE the prop is spawned — spawning
+   * first and letting `donWornBag` refuse would leave a second satchel lying at
+   * the player's feet, which is the item-conservation bug in miniature. A
+   * restored session (`restorePocket`) rebuilds the carry from its snapshot and
+   * clears the old bag first, so it comes back with one satchel, not two.
+   */
+  function seedPlayerBag(session: QuestSession) {
+    if (!world) return;
+    const cid = session.handsCid;
+    if (session.wornBags.has(cid)) return; // already equipped — never a second one
+    const body = world.state.avatars[avatarIdOf(cid)];
+    const at = body ? { x: body.x, y: body.y } : { x: 0, y: 0 };
+    // The prop exists for one instant: `donWornBag` takes it out of the world
+    // (a worn bag has no world prop) keeping its id, registration and stock.
+    const objId = spawnLooseProp(session, PLAYER_BAG_GLYPH, at.x, at.y);
+    if (!objId) return;
+    if (donWornBag(session, cid, objId)) return;
+    // Defensive: nothing that reaches here can refuse (the glyph is a worn
+    // container and the body wears none), but a half-minted bag would be a
+    // registered container nobody holds — so it goes back out whole.
+    removeLooseProp(session, objId);
+    session.containers.delete(objId);
+  }
+
   /**
    * ONE UNIT LEAVES A STACK AND BECOMES A PROP ON THE GROUND — a MOVE, not a
    * creation. The unit is taken first and the prop made second, and if the prop
@@ -10876,12 +12806,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return objId;
   }
 
-  /** Drop one of the selected stack onto the ground (loose again, re-grabbable). */
+  /** Clear the armed stack once the body no longer has one of it — the strip's
+   *  selection points at a glyph, and a glyph nobody is carrying is not armed. */
+  function clearSelectionIfSpent(session: QuestSession) {
+    const g = session.selectedPocketGlyph;
+    if (g && !(bodyCarryView(bodyCarryOf(session, session.handsCid))[g] ?? 0)) {
+      session.selectedPocketGlyph = null;
+    }
+  }
+
+  /** Drop one of the selected stack onto the ground (loose again, re-grabbable).
+   *  A thing already IN THE HANDS is set down as ITSELF; a unit in a bag leaves
+   *  the stack and becomes a prop in the same atomic move. */
   function dropSelected(session: QuestSession, x: number, y: number) {
     const glyph = session.selectedPocketGlyph;
-    if (!glyph || !stackTake(session.pocket, glyph)) return;
-    spawnLooseProp(session, glyph, x, y);
-    if (!session.pocket[glyph]) session.selectedPocketGlyph = null;
+    if (!glyph) return;
+    const cid = session.handsCid;
+    const carry = bodyCarryOf(session, cid);
+    if (carry.inHand && !carry.inHand.bag && carry.inHand.glyph === glyph) {
+      if (!setDownFromHands(session, avatarIdOf(cid), { kind: "ground", x, y }, { objId: carry.inHand.objId })) return;
+    } else {
+      const from = bagHolding(carry, glyph);
+      if (!from || !dropFromStack(session, from.stock, glyph, x, y)) return;
+    }
+    clearSelectionIfSpent(session);
     pushPocket(session);
   }
 
@@ -10899,35 +12847,49 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     ) {
       return; // markets, producer piles + trade crates are economy-driven (derived stock, no puts)
     }
-    if (!stackTake(session.pocket, glyph)) return;
-    const stock = session.containerStock.get(containerObjId) ?? {};
-    stackAdd(stock, glyph);
-    session.containerStock.set(containerObjId, stock);
-    addVisibleContainedProp(session, containerObjId, glyph);
-    if (!session.pocket[glyph]) session.selectedPocketGlyph = null;
+    const cid = session.handsCid;
+    const carry = bodyCarryOf(session, cid);
+    // THE HELD THING GOES IN AS ITSELF (`stowCarriedIn` merges it into the
+    // stack, or stands it on the surface) — one door, and it already counts the
+    // unit, so nothing is added here on that arm.
+    if (carry.inHand && !carry.inHand.bag && carry.inHand.glyph === glyph) {
+      if (!setDownFromHands(session, avatarIdOf(cid), { kind: "container", id: containerObjId }, { objId: carry.inHand.objId })) return;
+    } else {
+      if (takeUnitsFromBody(session, cid, glyph, 1) < 1) return;
+      const stock = session.containerStock.get(containerObjId) ?? {};
+      stackAdd(stock, glyph);
+      session.containerStock.set(containerObjId, stock);
+      bumpStockEpoch(session); // ⏸️ the PLAYER filled a box — wakes parked rows
+      addVisibleContainedProp(session, containerObjId, glyph);
+    }
+    clearSelectionIfSpent(session);
     pushPocket(session);
   }
 
   /** Present one of the selected stack to the conversation partner — an OFFER. Materialize
    *  a concrete instance to hand over (generosity/`giveItem` need a real item); on accept
-   *  decrement the stack, on decline delete the throwaway instance. */
+   *  the unit leaves the giver's carry, on decline delete the throwaway instance.
+   *  A receiver that has nowhere to put it hands the item back (giftResidentGood),
+   *  which reads here as a decline — so a refusal costs the giver nothing. */
   function presentSelected(session: QuestSession) {
     const glyph = session.selectedPocketGlyph;
-    if (!glyph || !convo || !session.pocket[glyph]) return;
+    if (!glyph || !convo) return;
+    if (!(bodyCarryView(bodyCarryOf(session, session.handsCid))[glyph] ?? 0)) return;
     const entityId = materialize(session, glyph, PLAYER_CREATURE_ID);
     runCreatureAct({ kind: "offer", itemId: entityId, glyph });
     const accepted = session.creatures?.world.items[entityId]?.ownerId !== PLAYER_CREATURE_ID;
     if (accepted) {
-      stackTake(session.pocket, glyph); // the gift left the pocket
-      if (!session.pocket[glyph]) session.selectedPocketGlyph = null;
+      takeUnitsFromBody(session, session.handsCid, glyph, 1); // the gift left the giver
+      clearSelectionIfSpent(session);
     } else if (session.creatures) {
       delete session.creatures.world.items[entityId]; // declined — no lingering instance
     }
     pushPocket(session);
   }
 
-  /** Seed a couple of grabbable loose props at the market so the pickup→stack path can be
-   *  exercised (they MERGE into the pocket count). No-op off a town session. */
+  /** Seed a couple of grabbable loose props at the market so the pickup path can be
+   *  exercised (they go into a bag if the taker has one, else its hands).
+   *  No-op off a town session. */
   function seedSmallItems(session: QuestSession) {
     if (!world || !session.town) return;
     const refHouse = session.town.plan.houses[0];
@@ -10990,6 +12952,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.containers.set(TOWN_YARD_ID, "in");
       session.containerStock.set(TOWN_YARD_ID, town.deltas.stock); // ALIAS — the one stack map
       session.containerOwner.set(TOWN_YARD_ID, TOWN_SCOPE); // communal
+      // …and ONE basket beside it (step ③ seeding), communal at the same tier.
+      // Seeded HERE, inside the pre-houses block, for the same reason the yard
+      // is: an age-0 homestead has stock and no market, and it is the
+      // settlement most in need of something to haul with.
+      for (const seed of yardBagSeeds({ x: hallDoor.x - 2.2, y: hallDoor.y + 1.2 })) {
+        seedContainerProp(session, seed);
+      }
     }
     const refHouse = town.plan.houses[0];
     if (!refHouse) return;
@@ -11017,6 +12986,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.marketStore.set(objId, g.good.key);
       session.containerOwner.set(objId, vendorOf(g.good.key));
     });
+
+    // THE MARKET'S BAG SUPPLY (step ③ seeding) — baskets and satchels lying by
+    // the stalls, loose props like the fruit beside them, so nothing new is
+    // needed to pick one up. This is WHERE THE BAGS ARE, not a rule about going
+    // to get one. Seeded here, with the stalls, because this is the
+    // once-per-session moment the market's furniture comes to exist at all.
+    const bagMarket = town.stage.goods[0]?.sourceOf(refHouse) ?? town.stage.center;
+    for (const seed of marketBagSeeds(bagMarket)) seedContainerProp(session, seed);
 
     // THE TOWN WELLS — free water sources: no shelf economics, never run dry
     // (need takes draw directly; the stocked stack serves the player's own
@@ -11174,6 +13151,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         session.containerStock.set(objId, dealGood(session.dress, g.good.key, level, house.index));
         session.containerOwner.set(objId, owner);
       }
+      // THE HOUSEHOLD'S BASKET (step ③ seeding) — ONE, standing on the living
+      // room floor where the goods chests corner, at the same once-per-session
+      // moment those chests come to exist. A real loose prop, so `scopeTree`
+      // hangs it off the house it stands in (buildingOfContainer) and anybody
+      // may pick it up; owned by the HOUSE, so it is the household's shared
+      // tool and not any one resident's. What it is FOR is step ④'s question.
+      for (const seed of houseBagSeeds(house.index, livingRect(town.stage.center, house))) {
+        seedContainerProp(session, seed);
+      }
       // PRIVATE tier: each member's personal BOX (furniture places it in
       // their own bedroom, fit permitting) and their BED. The double bed
       // (bed_0) belongs to members 0+1; the singles split the rest by the
@@ -11256,8 +13242,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** A market store's currently-available unit count: the time-pure shelf (`stockOf` at
    *  the town clock — already drained by the modelled NPC shoppers) minus the player's
-   *  own consumed offset THIS day, floored, capped to the display. 0 ⇒ sold out. */
-  function marketStoreUnits(session: QuestSession, objId: string): number {
+   *  own consumed offset THIS day, floored, capped to the display. 0 ⇒ sold out.
+   *
+   *  ⏸️ `t` DEFAULTS TO NOW AND IS OTHERWISE THE FUTURE (scope-behaviors.md
+   *  §2.5): the shelf is a CLOSED FORM over the town clock, so the same
+   *  function that answers "is there anything there?" also answers "when will
+   *  there be?", which is what makes a DEFER wake derived rather than invented.
+   *  `shelfRestockAt` is its only forward caller. */
+  function marketStoreUnits(session: QuestSession, objId: string, t = session.townClock): number {
     const town = session.town;
     const key = session.marketStore.get(objId);
     const refHouse = town?.plan.houses[0];
@@ -11269,11 +13261,44 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // so the shelf reads thin and the market remark says "less + food"
     // without a scripted announcement.
     const base =
-      g.stockOf(g.sourceOf(refHouse), session.townClock) *
+      g.stockOf(g.sourceOf(refHouse), t) *
       producerAttendance(session, key!) *
       inboundRouteHealth(session.transfers.active(), key!);
-    const left = storeUnitsLeft(base, session.marketConsumed.get(key!), session.townClock);
+    const left = storeUnitsLeft(base, session.marketConsumed.get(key!), t);
     return Math.min(STORE_DISPLAY_CAP, Math.floor(left));
+  }
+
+  /**
+   * ⏸️ WHEN WILL THERE BE SOMETHING ON THIS SHELF? — the DERIVED WAKE for a
+   * shop park (scope-behaviors.md §2.5; the distinction the chapter asks to be
+   * documented is in `NeedPark`).
+   *
+   * This is NOT a retry timer. The shelf is a pure function of the town clock
+   * (goods.ts: dawn cart in, modelled shoppers out, "the dawn cart always makes
+   * its delivery"), so "when does it hold one more unit than it does now" is a
+   * question the SAME formula answers — evaluated forward, once, at park time.
+   * A stopwatch would say "try again in 90 seconds" and be wrong twice: too
+   * early on the day the stall is genuinely bare, too late the moment the cart
+   * arrives. This says "not before the next delivery", which is a world fact.
+   *
+   * Sampled rather than solved, because `stockOf` is a composed sawtooth with
+   * no closed inverse: one day's horizon at a coarse grid, ≤ 24 evaluations of
+   * a pure function, done ONCE. Deterministic — the town clock is the only
+   * input, never a wall clock — and monotone in the only way that matters: an
+   * answer that lands slightly late costs one grid step of waiting, and the
+   * park's `staleAt` backstop bounds it either way.
+   */
+  function shelfRestockAt(session: QuestSession, objId: string): number {
+    const now = session.townClock;
+    const want = marketStoreUnits(session, objId, now) + 1;
+    const STEPS = 24;
+    for (let i = 1; i <= STEPS; i++) {
+      const t = now + (FOOD_DAY_SEC * i) / STEPS;
+      if (marketStoreUnits(session, objId, t) >= want) return t;
+    }
+    // Nothing within a day — a stall the economy has stopped supplying. The
+    // park's own backstop takes over; there is no timer to fall back on.
+    return now + FOOD_DAY_SEC;
   }
 
   /** A producer pile's currently-available units: the day's accumulated
@@ -11518,7 +13543,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
     if (!fires) return false; // nothing to fill / nothing loose — no busywork
     session.liveNeedBodies.add(cid);
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     session.sparkActing.add(cid); // the need loop announces the chosen chore
     return true;
   }
@@ -11629,7 +13654,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): boolean {
     if (!compileGoal(goal, cid, makeGoalResolver(session))) return false;
     session.liveNeedBodies.add(cid);
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     session.walk.delete(cid);
     if (tplKey) session.pursuits.set(cid, { source: "need", tplKey, goal, glyph: tplKey });
     else session.pursuits.set(cid, { source: "command", goal, glyph: goal.kind });
@@ -11643,7 +13668,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (tpl.drive.kind !== "meter") return;
     const key = `${cid}|${tpl.key}`;
     session.needMeters.set(key, Math.max(session.needMeters.get(key) ?? 0, tpl.drive.threshold));
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     session.liveNeedBodies.add(cid);
     session.sparkActing.add(cid); // the need loop announces the chosen act
   }
@@ -12323,7 +14348,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
   }
 
-  /** Take one of a glyph STACK out of the open container into the pocket — a count move.
+  /** Take one of a glyph STACK out of the open container onto the BODY — into
+   *  the bag it is carrying, or, with none, its free hands as a real thing.
    *  A MARKET store DEPLETES its shelf (the player's consumed offset over the time-pure
    *  economy); a stored container decrements its stack (and clears a table's visible prop).
    *  THE OWNER STOP-GATE (ownership.ts): taking PRIVATE property is refused while an
@@ -12338,6 +14364,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const objector = objectingOwner(cOwner, containerStandpoint(world.state, objId));
       if (objector) {
         refusePrivateTake(session, objId, glyph, objector);
+        return;
+      }
+    }
+    // 🚨 ROOM FIRST, SOURCE SECOND (item conservation). Every branch below
+    // debits its source before the unit reaches the body, so a body with
+    // nowhere to put it must be turned away HERE — and told so, because a take
+    // that quietly does nothing is indistinguishable from a broken button.
+    // A body with no bag needs somewhere to MINT the thing, so it must also be
+    // embodied: the alternative is a debited shelf and a unit nowhere.
+    {
+      const takerCarry = bodyCarryOf(session, session.handsCid);
+      const canHold =
+        stackRoom(takerCarry) >= 1 &&
+        (!!activeBag(takerCarry) || !!world?.state.avatars[avatarIdOf(session.handsCid)]);
+      if (!canHold) {
+        presenter.toast("💬 can't carry any more", "feedback");
         return;
       }
     }
@@ -12364,15 +14406,21 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       regrowWildStock(session, objId); // matured units are takeable this frame
       const stock = session.containerStock.get(objId) ?? {};
       if (!stackTake(stock, glyph)) return;
-      // TOOLS MULTIPLY THE TAKE (step ④, registry-declared): the right tool
-      // in the pocket moves more units per act — axe on wood, pick on stone.
-      // Bare hands always work at one. Extra units add to the pocket here;
-      // the common path below adds the first.
+      // TOOLS MULTIPLY THE TAKE (step ④, registry-declared): the right tool on
+      // the body moves more units per act — axe on wood, pick on stone. Bare
+      // hands always work at one, and so does a body with no bag: a bigger
+      // swing is no use if there is nowhere to put the wood. Extra units land
+      // here; the common path below adds the first.
       const ws = wildSourceOf(session, objId);
       if (ws) {
-        const units = takeUnitsOf(naturalSourceOf(ws.species), glyph, (t) => (session.pocket[t] ?? 0) > 0);
-        for (let took = 1; took < units && stackTake(stock, glyph); took++) {
-          stackAdd(session.pocket, glyph);
+        const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
+        const units = takeUnitsOf(naturalSourceOf(ws.species), glyph, (t) => (onMe[t] ?? 0) > 0);
+        for (let took = 1; took < units && (stock[glyph] ?? 0) > 0; took++) {
+          // Keep one slot for the unit already off the source — the first one
+          // is spoken for, and overfilling here would strand it.
+          if (stackRoom(bodyCarryOf(session, session.handsCid)) <= 1) break;
+          if (giveUnitsToBody(session, session.handsCid, glyph, 1) < 1) break;
+          stackTake(stock, glyph);
         }
       }
       session.containerStock.set(objId, stock);
@@ -12391,7 +14439,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       }
     }
-    stackAdd(session.pocket, glyph);
+    // THE BODY TAKES IT — into the bag it holds, else its free hands. The room
+    // guard at the top of this function is what makes this safe to do after the
+    // source has already been debited.
+    giveUnitsToBody(session, session.handsCid, glyph, 1);
     pushPocket(session);
     presentContainer(session); // refresh remaining contents (closes when empty)
     fellIfConsumed(session, objId); // an emptied kill-source is felled
@@ -13925,9 +15976,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           }
         }
         // SMALL loose props ride the SAME carry→absorb path (per the pickup owner: "put it
-        // in the same place large pickup is"). On landing in hand the prop MERGES into the
-        // pocket STACK by its glyph signature and its instance is dropped (the pocket is
-        // counts, not instances). A pending gift is settled first so debts still clear.
+        // in the same place large pickup is"). On landing in hand the prop goes into the
+        // body's BAG by its glyph signature if it has one — and simply STAYS IN THE HANDS
+        // if it does not, because the hands are the whole inventory of a body with no
+        // container. A pending gift is settled first so debts still clear.
         if (session.creatures) {
           for (const [objId, rec] of [...session.smallProps]) {
             if (state.objects[objId]?.carriedBy !== PLAYER_ID) continue;
@@ -14413,7 +16465,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           _sp.needs = descendNow() - _sm; _sm = descendNow();
           syncNeedActivities(session, state, dt); // body-activity visuals track the steps
           stepIndoorEgress(session, state, dt); // strays walked out of buildings they're stuck in
-          syncNeedCarryProps(session, state); // carried stacks show as held props + reach rigs
           _sp.sync = descendNow() - _sm; _sm = descendNow();
           stepWorkAttendance(session, dt); // jobs→economy: absence during shifts
           pushFamilyHud(session); // dollhouse chips track the states just stepped
@@ -14863,6 +16914,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     presenter.sessionStarted(sess);
     const _dp = descendProbeArm(sess.town ? (sess.town.plan.key ?? "town") : null); // TEMP descent probe
     buildHost(sess);                       _dp?.mark("buildHost");
+    seedPlayerBag(sess); // the player's own worn satchel — EVERY game, town or not
+    _dp?.mark("seedPlayerBag");
     seedSmallItems(sess); // grabbable resource props (world ready after buildHost)
     _dp?.mark("seedSmallItems");
     stockContainers(sess); // stores: openable good boxes holding grabbable goods (bug #5)
@@ -15728,7 +17781,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           issuer: task.issuer,
         });
         const npcId = avatarIdOf(winner);
-        session.needStep.delete(winner);
+        clearNeedStep(session, winner);
         session.npcTasks.delete(npcId);
         session.lastDrive.set(npcId, "task");
         // A builder's commute is schedule playback — exactly the clock-path
@@ -15752,7 +17805,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         issuer: task.issuer,
       });
       // The claim takes the body over like any spoken command would.
-      session.needStep.delete(winner);
+      clearNeedStep(session, winner);
       session.npcTasks.delete(avatarIdOf(winner));
       session.lastDrive.set(avatarIdOf(winner), "task");
       if (PURSUED_GOALS.has(task.goal.kind)) {
@@ -15807,10 +17860,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * `ItemLocation` → the live, aliased stack it names. Every atomic move goes
    * through this, so "where may an item be" has one answer.
    *
-   * A creature's HANDS are its carried stack — the same `pocket:<cid>` endpoint
-   * the rest of the host already speaks. That is the whole point of the union:
-   * a carrier mid-haul is holding its load in a place a player could point at,
-   * not parked in a bookkeeping field that a failed errand would delete.
+   * 🚨 A CREATURE'S HANDS RESOLVE TO ITS ACTIVE BAG'S OWN ENDPOINT, never to a
+   * `pocket:<cid>` stack — there is no such stack any more. A body is a
+   * STACKLESS PARENT NODE (the `building` precedent): its goods live on the
+   * containers it holds, and those containers are already endpoints in their
+   * own right. Aliasing the body to the same map would make `auditScopeTree`
+   * count every unit twice.
+   *
+   * Null therefore means "this body has no bag to move stacks in or out of" —
+   * a real answer, and the reason a porter without a basket carries things one
+   * whole object at a time instead of by the armful.
    *
    * `ground` resolves to null on purpose — loose props are individual world
    * objects, not a stack map, so they are moved by `dropFromStack` /
@@ -15819,10 +17878,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const itemLocOf = (session: QuestSession): ResolveLocation => (loc) => {
     switch (loc.kind) {
       case "container": return stockEndpointOf(session, loc.id);
-      // One carried stack per creature today; the bag splits from the hands when
-      // the inventory tier lands (goods-kinds INVENTORY_SLOTS).
       case "hands":
-      case "inventory": return stockEndpointOf(session, `${POCKET_EP}${loc.cid}`);
+      case "inventory": {
+        const bag = activeBagOf(session, loc.cid);
+        return bag ? stockEndpointOf(session, bag.objId) : null;
+      }
       case "ground": return null;
     }
   };
@@ -15849,7 +17909,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function containerUnitCap(session: QuestSession, id: string): number | null {
     const good = houseChestCap(session, id);
     if (good !== null) return good;
-    const glyph = session.smallProps.get(id)?.glyph;
+    // A WORN bag has no world prop while it is worn (see `wornBags`) — its
+    // glyph is on the record instead, and its capacity must survive being put
+    // on, or a satchel would become a bag of holding the moment it was donned.
+    const glyph =
+      session.smallProps.get(id)?.glyph ??
+      [...session.wornBags.values()].find((w) => w.objId === id)?.glyph;
     if (glyph) return containerDefOfGlyph(glyph)?.capacity ?? null;
     return null;
   }
@@ -15888,10 +17953,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // the audit has to see them or it will report items as lost.
         for (const id of session.containers.keys()) out.add(id);
         for (const id of session.containerStock.keys()) out.add(id);
-        // Bodies. The player counts — its pocket is an inventory like any
-        // other, and will become a container like any other.
+        // BODIES — as stackless parent nodes. They carry no stack of their own
+        // (their containers, already enumerated above, do), so listing one adds
+        // structure to the tree without adding a single unit to the audit. The
+        // player is always listed; every other body earns its node by wearing
+        // or holding a container, which is the only way a body can have goods
+        // on it at all.
         out.add(`${POCKET_EP}${PLAYER_CREATURE_ID}`);
-        for (const cid of session.needCarried.keys()) out.add(`${POCKET_EP}${cid}`);
+        for (const cid of session.wornBags.keys()) out.add(`${POCKET_EP}${cid}`);
+        for (const [objId, o] of Object.entries(world?.state.objects ?? {})) {
+          if (o.carriedBy && session.containers.has(objId)) {
+            out.add(`${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`);
+          }
+        }
         return out;
       },
       endpointOf: (id) => stockEndpointOf(session, id),
@@ -15901,13 +17975,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return Number.isFinite(hi) ? hi : null;
       },
       buildingOfContainer: (objectId) => {
+        // A CONTAINER ON SOMEBODY BELONGS TO THEM (step ②/③) — the basket a
+        // body carries and the satchel it wears ARE its inventory, and hang off
+        // the body rather than off whatever room it happens to be standing in.
+        // This is the whole law in one line: a scope's inventory is the sum of
+        // the containers it holds. A WORN bag has no world object to ask, so
+        // the wear register answers for it.
+        for (const [cid, w] of session.wornBags) {
+          if (w.objId === objectId) return `${POCKET_EP}${cid}`;
+        }
         const o = world?.state.objects[objectId];
         if (!o || !world) return null;
-        // A CONTAINER IN SOMEBODY'S HANDS BELONGS TO THEM (step ②) — the
-        // basket a body is carrying is its inventory, and hangs off the body
-        // rather than off whatever room the body happens to be standing in.
-        // This is the whole law in one line: a scope's inventory is the sum of
-        // the containers it holds.
         if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
         return buildingAt(world.state, o.x, o.y)?.id ?? null;
       },
@@ -15943,16 +18021,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // session, not about the string.
     const ref = parseScopeId(id);
     if (ref.kind === "creature") {
-      const cid = ref.cid;
-      if (cid === PLAYER_CREATURE_ID) {
-        const at = playerWorldPos(session);
-        return at ? { id, kind: "pocket", at, stack: session.pocket, owner: creatureScope(cid) } : null;
-      }
-      const body = world.state.avatars[avatarIdOf(cid)];
-      if (!body) return null;
-      const carried = session.needCarried.get(cid) ?? {};
-      session.needCarried.set(cid, carried); // ensure the entry IS the alias
-      return { id, kind: "pocket", at: { x: body.x, y: body.y }, stack: carried, owner: creatureScope(cid) };
+      // 🚨 A BODY HAS NO STACK OF ITS OWN — the `building` precedent, one rung
+      // down (scope.ts: "It holds no stack of its own; its inventory is the sum
+      // of the containers standing in it"). A creature's goods live on the
+      // basket in its hands and the satchel on its back, and BOTH are already
+      // endpoints under their own object ids, parented here by
+      // `buildingOfContainer`. Handing back an alias to one of them would make
+      // the audit count every unit twice: once on the bag, once on the body.
+      //
+      // ⚠️ A persisted transfer agreement whose `from`/`to` is a `pocket:<cid>`
+      // therefore resolves to nothing now and fails through the existing
+      // no-endpoint path, which frees its reserved units. That is the honest
+      // outcome — there is no such account to deliver into any more.
+      return null;
     }
     // A COHORT DISTRICT POOL (④, population.ts) is a real endpoint: the
     // view ALIASES the pool's live stack (② transfers reach the district),
@@ -16109,9 +18190,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** The stock ENDPOINT a transfer destination names, or null when the place
-   *  isn't endpoint-shaped (the legacy putIn/drop paths keep those). */
+   *  isn't endpoint-shaped (the legacy putIn/drop paths keep those).
+   *
+   *  A CREATURE names the bag it is carrying — "bring three wood to Mara"
+   *  delivers into Mara's basket, because that is where goods on a body ARE.
+   *  A body with no bag has no stack to ship into, so the order falls through
+   *  to the single-unit give path rather than inventing an account for it. */
   function transferDestOf(session: QuestSession, place: PlaceRef, goodsHead: string): string | null {
-    if (place.kind === "creature") return `${POCKET_EP}${place.id}`;
+    if (place.kind === "creature") return activeBagOf(session, place.id)?.objId ?? null;
     if (place.kind !== "named") return null;
     const id = place.id;
     // "yard" — the builder's yard: the town crate (deltas.stock) or the
@@ -16168,16 +18254,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!at) continue;
       sources.push({ id: boxId, stack, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
     }
-    const pocketId = `${POCKET_EP}${PLAYER_CREATURE_ID}`;
-    if (pocketId !== destId && stackUnits(session.pocket, goodsHead) > 0) {
+    // THE ISSUER'S OWN CARRY is a source too — its bag, which is the container
+    // that actually holds the goods. (It may already be in the `containerStock`
+    // sweep above; the id check keeps it from being offered twice, and the
+    // player's own bag is never foreign to the player.)
+    const myBag = activeBagOf(session, PLAYER_CREATURE_ID);
+    if (myBag && myBag.objId !== destId && !sources.some((s) => s.id === myBag.objId) && stackUnits(myBag.stock, goodsHead) > 0) {
       const at = playerWorldPos(session);
-      if (at) sources.push({ id: pocketId, stack: session.pocket, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
+      if (at) sources.push({ id: myBag.objId, stack: myBag.stock, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
     }
     return { sources, foreignOwner };
   }
 
-  /** How the intent line phrases a destination endpoint. */
-  function transferDestPlaceRef(destId: string): PlaceRef {
+  /** How the intent line phrases a destination endpoint. A bag ON A BODY is
+   *  phrased as that PERSON — "bring it to Mara", not "to the basket": the
+   *  container is how the goods get there, the creature is who they are for. */
+  function transferDestPlaceRef(session: QuestSession, destId: string): PlaceRef {
+    for (const [cid, w] of session.wornBags) {
+      if (w.objId === destId) return { kind: "creature", id: cid };
+    }
+    const holder = world?.state.objects[destId]?.carriedBy;
+    if (holder) return { kind: "creature", id: creatureOfAvatar(holder) };
     if (destId.startsWith(POCKET_EP)) return { kind: "creature", id: destId.slice(POCKET_EP.length) };
     if (destId === TOWN_YARD_ID || destId === SITE_STOCK_ID) return { kind: "named", id: "yard" };
     if (/^furn_\d+_(chest_|cupboard)/.test(destId)) return { kind: "named", id: "house" };
@@ -16297,7 +18394,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     for (const a of posted) {
       postPooledTask(
         session,
-        { kind: "transfer", agreementId: a.id, goods: a.goods, to: transferDestPlaceRef(destId) },
+        { kind: "transfer", agreementId: a.id, goods: a.goods, to: transferDestPlaceRef(session, destId) },
         PLAYER_CREATURE_ID,
         focus,
         sentence,
@@ -16307,11 +18404,67 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   }
 
+  /**
+   * ④ ENABLE AT THE TOWN RUNG — should this porter fetch a basket first?
+   *
+   * THE MEASURED PAIN, verbatim from the live report: creatures "ignoring the
+   * basket and trying to construct a building one block at a time". That is not
+   * a bug in the haul; it is this comparison's ABSENCE. A porter with no bag
+   * moves ONE whole thing per trip (`giveUnitsToBody` — the law of a body
+   * without a container), so a six-block staging haul delivers one block and the
+   * sweep posts five more hauls.
+   *
+   * The arithmetic is §2.9 BATCH made literal: price the whole trip and DIVIDE
+   * BY THE UNITS MOVED. A detour that lets one trip carry eight is cheap per
+   * block; the same detour for a one-block bill is not, and the porter walks
+   * straight to the pile — no rule, no threshold, just the division.
+   *
+   * Returns the bag to pick up on the way, or null to haul bare-handed.
+   */
+  function haulBagLeg(
+    session: QuestSession,
+    cid: string,
+    units: number,
+    srcAt: { x: number; y: number },
+    destAt: { x: number; y: number },
+  ): IdleBag | null {
+    if (!world || !NEED_COST_SELECTION) return null; // the kill-switch
+    const carry = bodyCarryOf(session, cid);
+    if (activeBag(carry) || !handsFree(carry)) return null; // already bagged, or hands full
+    const room = stackRoom(carry);
+    if (units <= room) return null; // one trip covers it bare-handed
+    const body = world.state.avatars[avatarIdOf(cid)];
+    if (!body) return null;
+    const mps = walkSpeedMps(session.scale);
+    const leg = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      journeyTimeS(Math.hypot(b.x - a.x, b.y - a.y), mps);
+    // Both sides pay the load and the unload; only the DETOUR and the units
+    // moved differ, which is exactly what the division has to weigh.
+    const acts = 2 * BOX_ACT_DWELL_S;
+    const carriedBare = Math.min(units, room);
+    const perUnitBare =
+      carriedBare > 0
+        ? (leg(body, srcAt) + leg(srcAt, destAt) + acts) / carriedBare
+        : Number.POSITIVE_INFINITY; // no hands at all: any bag is better than none
+    let best: { bag: IdleBag; per: number } | null = null;
+    for (const bag of idleBagsFor(session, cid)) {
+      const carried = Math.min(units, bag.room);
+      if (carried <= carriedBare) continue;
+      const per =
+        (leg(body, bag.at) + leg(bag.at, srcAt) + leg(srcAt, destAt) + acts + BOX_ACT_DWELL_S) / carried;
+      if (!best || per < best.per) best = { bag, per };
+    }
+    return best && best.per < perUnitBare ? best.bag : null;
+  }
+
   /** Walk `cid` through one agreement's HAUL: LOAD at the source (stock
    *  leaves the real map into the hauler's hands — a visible carried prop),
    *  UNLOAD at the destination (hands → the real map; capacity overflow
    *  spills honestly as loose piles — nothing vanishes). Completion writes
-   *  the LEDGER; pooled tasks retire off that status, never the walk. */
+   *  the LEDGER; pooled tasks retire off that status, never the walk.
+   *
+   *  ④ prepends a BAG LEG when the arithmetic says one pays (`haulBagLeg`) —
+   *  the same comparison the body rung makes before a shopping trip. */
   function issueTransferHaul(session: QuestSession, cid: string, agreementId: string) {
     if (!world) return;
     const a = session.transfers.get(agreementId);
@@ -16325,7 +18478,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const npcId = avatarIdOf(cid);
     const syntax = session.game.meta.syntax ?? "b";
     const head = stackHead(Object.keys(a.goods)[0] ?? "thing");
-    session.needStep.delete(cid);
+    clearNeedStep(session, cid);
     session.npcTasks.delete(npcId);
     session.lastDrive.set(npcId, "transfer");
     session.npcGoing.set(cid, {
@@ -16350,12 +18503,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const bodyNow = world.state.avatars[npcId] ?? { x: from.at.x, y: from.at.y };
     const pickAt = standAt(from.at, a.from, { x: bodyNow.x, y: bodyNow.y });
     const destAt = standAt(to.at, a.to, pickAt);
+    // ④ THE BAG LEG. Spoken for under the agreement's own tool claim, so two
+    // porters cannot both count the same basket and the unobserved twin cannot
+    // count it a third time — and the claim dies with the agreement, through
+    // the release calls below and the staging sweep's holder GC.
+    const bagUnits = Object.values(a.goods).reduce((s, n) => s + n, 0);
+    const bag = haulBagLeg(session, cid, bagUnits, from.at, to.at);
+    if (bag) session.reservations.reserve(bagHolder(agreementId), bag.objId, TOOL_CLAIM_GLYPH, 1);
+    const LOAD = bag ? 1 : 0;
     enqueueNpcErrand(session, npcId, {
-      points: [pickAt, destAt],
+      points: bag ? [{ x: bag.at.x, y: bag.at.y }, pickAt, destAt] : [pickAt, destAt],
       onArrive: (i) => {
         const agr = session.transfers.get(agreementId);
         if (!agr || agr.status !== "moving" || !world) return;
-        if (i === 0) {
+        if (bag && i === 0) {
+          // TAKE UP THE BASKET. A refusal here is not a failure: another porter
+          // reached it first, so this trip simply proceeds at bare capacity and
+          // the sweep posts the remainder — the honest "first to hands wins".
+          const got = takeIntoHands(session, npcId, { kind: "object", objId: bag.objId }, { reachAt: bag.at });
+          if (got) fireCarryGesture(npcId, "pickup", bag.at);
+          else session.reservations.release(bagHolder(agreementId));
+          return;
+        }
+        if (i === LOAD) {
           // A RESTORED mid-carry row already holds its load (serialized
           // `carried` — a reload never loses a load): the goods left the
           // source in the DEAD session, so taking again would double-draw
@@ -16364,7 +18534,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const restored =
             agr.carried && Object.values(agr.carried).some((n) => n > 0);
           if (!restored) {
-            // LOAD — the goods move SOURCE → THIS CREATURE'S HANDS, atomically.
+            // LOAD — the goods move SOURCE → THIS CREATURE'S CARRY, atomically.
             //
             // They used to be taken from the source and parked on the agreement's
             // `carried` field, which is not a place: `complete`, `fail` and
@@ -16373,117 +18543,115 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // just leaves a creature holding something — which the hands-empty
             // banking already knows how to resolve. Nothing can vanish here.
             //
-            // The live map stays the truth: a shelf raided during the walk loads
-            // what's LEFT (ask for what is actually there), an emptied one fails
-            // ALOUD.
+            // 🚨 A HAUL LOADS A REAL CONTAINER (decision 9). The carrier's bag
+            // takes the armful; a porter with NO bag moves one whole thing per
+            // trip, in its hands, which is what the law makes of a body without
+            // one. Either way the source is debited by what the body actually
+            // took — the live map stays the truth, so a shelf raided during the
+            // walk loads what's LEFT and an emptied one fails ALOUD.
             const src = stockEndpointOf(session, agr.from);
-            const want: Record<string, number> = {};
+            const moved: Record<string, number> = {};
             for (const [g, n] of Object.entries(agr.goods)) {
-              const have = src ? stackUnits(src.stack, g) : 0;
-              const take = Math.min(n, have);
-              if (take > 0) want[g] = take;
+              if (!src) break;
+              const have = stackUnits(src.stack, g);
+              const got = giveUnitsToBody(session, cid, g, Math.min(n, have), { at: from.at });
+              for (let k = 0; k < got; k++) stackTake(src.stack, g);
+              if (got > 0) moved[g] = got;
             }
-            const loaded = moveItems(
-              itemLocOf(session),
-              { kind: "container", id: agr.from },
-              { kind: "hands", cid },
-              want,
-            );
-            if (!loaded.ok || !Object.keys(loaded.moved).length) {
+            if (!Object.keys(moved).length) {
               session.transfers.fail(agreementId, "missing");
+              session.reservations.release(bagHolder(agreementId));
               npcChatBubble(session, cid, noStock(head)[syntax]);
               return;
             }
-            for (const [g, c] of Object.entries(loaded.moved)) {
+            for (const [g, c] of Object.entries(moved)) {
               for (let k = 0; k < c; k++) removeVisibleContainedProp(session, agr.from, g);
               // The loaded units are no longer spoken for (pipeline ② —
               // no-op for agreements that reserved nothing).
               session.reservations.consume(agrHolder(agreementId), agr.from, g, c);
             }
-            if (agr.from === `${POCKET_EP}${PLAYER_CREATURE_ID}`) pushPocket(session);
+            if (agr.from === activeBagOf(session, PLAYER_CREATURE_ID)?.objId) pushPocket(session);
             fellIfConsumed(session, agr.from); // a hauled-empty kill-source is felled
             // `carried` is now a MANIFEST — what this haul is meant to be
-            // delivering — never the storage itself. The goods are in the hands.
-            session.transfers.load(agreementId, loaded.moved);
+            // delivering — never the storage itself. The goods are on the body.
+            session.transfers.load(agreementId, moved);
           }
-          // The visible load: one carried prop tokens the whole armful. (The
-          // token is a REGISTERED instance while the manifest also counts the
-          // units — one thing in two ledgers. Left as it was on purpose: that
-          // is the scope-ledger rewrite's to settle, not this pass's.)
-          const body = world.state.avatars[npcId];
-          if (!npcCarrying(npcId) && body) {
-            takeIntoHands(
-              session,
-              npcId,
-              { kind: "glyph", glyph: head, at: { x: body.x, y: body.y } },
-              { reachAt: from.at },
-            );
-          } else {
-            fireCarryGesture(npcId, "pickup", from.at); // already holding the armful
-          }
+          // The reach for the load. The armful is REALLY on the body now (in
+          // its bag, or as the one thing in its hands, which `giveUnitsToBody`
+          // already put there) — there is no separate display token to hang.
+          fireCarryGesture(npcId, "pickup", from.at);
           return;
         }
         // UNLOAD.
         const dst = stockEndpointOf(session, agr.to);
         if (!dst) {
           session.transfers.fail(agreementId, "no-endpoint");
+          session.reservations.release(bagHolder(agreementId));
           return;
         }
-        // UNLOAD — HANDS → destination, atomically. `agr.carried` is only the
-        // manifest of what this haul set out with; the goods themselves are in
-        // the creature's hands, so we deliver what it is ACTUALLY holding (it may
-        // have eaten a carried apple, or been handed something on the way).
-        const hands = stockEndpointOf(session, `${POCKET_EP}${cid}`);
-        const deliver: Record<string, number> = {};
+        // UNLOAD — THE BODY'S CARRY → destination. `agr.carried` is only the
+        // manifest of what this haul set out with; the goods themselves are on
+        // the creature, so we deliver what it is ACTUALLY holding (it may have
+        // eaten a carried apple, or been handed something on the way). Off the
+        // body FIRST, into the destination stack second — one unit at a time, so
+        // a half-full destination keeps the rest of the load on the carrier
+        // instead of scattering it.
+        const onMe = bodyCarryView(bodyCarryOf(session, cid));
+        const cap = dst.capacity;
+        const accepted: Record<string, number> = {};
+        let landed = 0;
         for (const [g, n] of Object.entries(agr.carried ?? {})) {
-          const held = hands ? stackUnits(hands.stack, g) : 0;
-          const give = Math.min(n, held);
-          if (give > 0) deliver[g] = give;
+          let give = Math.min(n, onMe[g] ?? 0);
+          while (give > 0) {
+            // `dst.stack` is a LIVE alias — it already counts what landed, so
+            // the cap is read straight off it rather than tallied twice.
+            if (cap !== undefined && totalStackUnits(dst.stack) >= cap) break;
+            if (takeUnitsFromBody(session, cid, g, 1, { reachAt: destAt }) < 1) break;
+            dst.stack[g] = (dst.stack[g] ?? 0) + 1;
+            addVisibleContainedProp(session, agr.to, g);
+            accepted[g] = (accepted[g] ?? 0) + 1;
+            landed++;
+            give--;
+          }
         }
-        const dropped = moveItems(
-          itemLocOf(session),
-          { kind: "hands", cid },
-          { kind: "container", id: agr.to },
-          deliver,
-        );
-        if (!dropped.ok) {
-          // The destination could not take it (full). The load stays IN HAND —
-          // never scattered, never deleted — and the haul fails honestly. The
-          // carrier's own banking will put it somewhere sensible. This used to
-          // strew refused units on the ground as fresh props, which is where a
-          // stack unit and a ground prop could both come to exist.
+        if (!landed) {
+          // The destination could not take it (full), or the carrier arrived
+          // empty. The load stays ON THE BODY — never scattered, never deleted —
+          // and the haul fails honestly. The carrier's own banking will put it
+          // somewhere sensible. This used to strew refused units on the ground
+          // as fresh props, which is where a stack unit and a ground prop could
+          // both come to exist.
           session.transfers.fail(agreementId, "refused");
+          session.reservations.release(bagHolder(agreementId));
           fireCarryGesture(npcId, "putdown", destAt);
           return;
-        }
-        const accepted = dropped.moved;
-        for (const [g, c] of Object.entries(accepted)) {
-          for (let k = 0; k < c; k++) addVisibleContainedProp(session, agr.to, g);
         }
         // LANDING = RESERVATION, atomically (phase 2 step 1): a unit
         // delivered to a craft spot or a construction pile is spoken for
         // from the instant it exists there — before the ledger says "done",
         // so no resolver ever sees it as free supply, not even for one tick.
         onTransferLanded(session, agreementId, accepted);
-        if (agr.to === `${POCKET_EP}${PLAYER_CREATURE_ID}`) pushPocket(session);
-        else if (agr.to.startsWith(POCKET_EP)) {
-          // A resident recipient re-decides with the goods in hand — the
-          // gift path's law: the live loop eats it or walks it home.
-          const rc = agr.to.slice(POCKET_EP.length);
-          if (rc.startsWith("resident_")) {
-            session.liveNeedBodies.add(rc);
-            session.needStep.delete(rc);
+        // ⏸️ A CONTAINER GAINED UNITS — the wake signal, at the one town-rung
+        // site that credits stock and did not yet say so. A craft job parked on
+        // "no free source offers wood" and the housemate whose pantry row went
+        // begging are waiting on exactly this event.
+        bumpStockEpoch(session);
+        if (agr.to === activeBagOf(session, PLAYER_CREATURE_ID)?.objId) pushPocket(session);
+        else {
+          // A resident recipient re-decides with the goods on it — the gift
+          // path's law: the live loop eats it or walks it home.
+          const rc = transferDestPlaceRef(session, agr.to);
+          if (rc.kind === "creature" && rc.id.startsWith("resident_")) {
+            session.liveNeedBodies.add(rc.id);
+            clearNeedStep(session, rc.id);
           }
         }
-        // The token's goods are in the destination's stack now, so the token is
-        // spent. Anything ELSE in those hands (a quest item picked up on the
-        // way) is not this haul's to dispose of — it only plays the gesture.
-        const held = npcCarrying(npcId);
-        if (held && session.smallProps.has(held)) {
-          setDownFromHands(session, npcId, { kind: "consumed" }, { objId: held, reachAt: destAt });
-        } else {
-          fireCarryGesture(npcId, "putdown", destAt);
-        }
+        // THE BAG IS THE PORTER'S NOW, not the haul's: the claim ends with the
+        // trip and the basket rides on until this body's own `relieve` row sets
+        // it down (or the next haul reuses it) — the emergent put-back, never a
+        // scripted return.
+        session.reservations.release(bagHolder(agreementId));
+        fireCarryGesture(npcId, "putdown", destAt);
         session.transfers.complete(agreementId);
         presenter.toast(`📦 ${agr.sourceGlyph ?? "transfer"} — delivered`, "feedback");
       },
@@ -16491,8 +18659,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
 
-  /** Drop a loose small prop from the world + the session's books (founding
-   *  sweep; the pocket-merge path in pickup has its own inline removal). */
+  /** Drop a loose small prop from the world + the session's books — a prop that
+   *  has become a unit in somebody's bag, or been swept up by a founding. */
   function removeLooseProp(session: QuestSession, objId: string) {
     const rec = session.smallProps.get(objId);
     if (!rec) return;
@@ -16542,6 +18710,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     real: boolean;
     signals: BarterSignals;
     stack: Record<string, number>;
+    /** ⚖️ HOW FAR THE ROAD RUNS (world metres), for `barterLegSeconds`. Null =
+     *  NO REAL GEOMETRY: a stub's `at` is the town's own gate, not the
+     *  partner's place, so measuring it would price a fiction. Nulls take the
+     *  flat `BARTER_LEG_DAY_FRAC` day, exactly as they always have. */
+    distanceM: number | null;
+    /** ⏸️ The partner's signals AT AN ARBITRARY FUTURE DAY — a closed form for
+     *  a stub (the derived wake a parked agreement reads), null for a real
+     *  neighbour whose books are a simulation and not a formula. */
+    signalsAtDay: ((day: number) => BarterSignals) | null;
   }
 
   /** An abstract partner's synthetic shelf (created on first touch). */
@@ -16591,8 +18768,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         real: false,
         signals: stubPartnerSignals(key, Math.floor(day)),
         stack: abstractPartnerStack(session, key),
+        // A stub has no place — see `TradePartner.distanceM`.
+        distanceM: null,
+        signalsAtDay: (d) => stubPartnerSignals(key, Math.floor(d)),
       });
     const t = session.town;
+    const center = t?.stage.center ?? null;
     for (const cp of t?.stage.cluster?.partners?.() ?? []) {
       if (cp.books) {
         const books = cp.books;
@@ -16602,6 +18783,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           real: true,
           signals: { shortage: (g) => shortageOfBooks(books.eco, books.town, g) },
           stack: books.stock,
+          distanceM:
+            center && cp.at ? Math.hypot(cp.at.x - center.x, cp.at.y - center.y) : null,
+          // A live sim's books are not a closed form: no derived wake exists,
+          // and inventing one would be worse than the epoch + backstop.
+          signalsAtDay: null,
         });
       } else stub(cp.key, cp.at);
     }
@@ -16691,7 +18877,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       mode: "scheduled",
       now: session.taskClock,
       every: FOOD_DAY_SEC,
-      dueAt: session.taskClock + BARTER_LEG_DAY_FRAC * FOOD_DAY_SEC,
+      // ⚖️ The first load TRAVELS — priced off the partner's own road
+      // (`barterLegSeconds`), flat for a stub with no geometry.
+      dueAt: session.taskClock + barterLegSeconds(session.scale, partner.distanceM),
       sourceGlyph: sentence,
     });
     const clerk = session.addressedFamily ?? gazeCreature(session) ?? convo?.nodeId ?? null;
@@ -16799,8 +18987,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       mode: "scheduled",
       now: session.taskClock,
       // The caravan takes TRAVEL TIME: the shipment lands a leg out, and a
-      // standing route runs one leg per street day after that.
-      dueAt: session.taskClock + FOOD_DAY_SEC * BARTER_LEG_DAY_FRAC,
+      // standing route runs one leg per street day after that — or one leg per
+      // ROAD, where the road is longer than a day (⚖️ `barterLegSeconds`).
+      dueAt: session.taskClock + barterLegSeconds(session.scale, partner.distanceM),
       ...(standing ? { every: FOOD_DAY_SEC } : {}),
       sourceGlyph: sentence,
       barter: {
@@ -16834,21 +19023,95 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     for (const a of session.transfers.due(now)) {
       const b = a.barter;
       if (!b) continue;
+      // ⏸️ A PARKED ROW IS NOT RESTOCKED EITHER: minting into the stub's shelf
+      // is exactly the event that would wake it, so doing it unconditionally
+      // would wake every park the moment it was set.
+      if (a.every === undefined && townParked(session, `agreement|${a.id}`, now)) continue;
       const p = byKey.get(b.partnerKey);
       if (p && !p.real) {
-        stockAbstractPartner(p.stack, b.takeGood, Math.max(9, Object.values(b.take)[0] ?? 0));
+        const minted = stockAbstractPartner(
+          p.stack,
+          b.takeGood,
+          Math.max(9, Object.values(b.take)[0] ?? 0),
+        );
+        if (minted > 0) bumpPartnerStockEpoch(session); // ⏸️ their shelf moved
       }
     }
+    const us = ourBarterSignals(session);
     const reports = runDueBarters(
       session.transfers,
       (id) => stockEndpointOf(session, id),
       now,
       {
-        us: ourBarterSignals(session),
+        us,
         themOf: (key) => byKey.get(key)?.signals ?? null,
+        // ⚖️ The road, per leg — a standing route re-derives it every time, so
+        // a partner rebound to a nearer neighbour speeds up on its own.
+        legSecondsOf: (key) => barterLegSeconds(session.scale, byKey.get(key)?.distanceM ?? null),
+        parked: (a) => townParked(session, `agreement|${a.id}`, now),
+        park: (a, why) => parkAgreement(session, a, why, byKey.get(a.barter!.partnerKey) ?? null, us, now),
       },
     );
-    for (const r of reports) renderBarterLeg(session, r);
+    for (const r of reports) {
+      // ⏸️ The executor's outbound leg CREDITED THEIR SHELF (transferStock us →
+      // them). The second of the two events that move a partner's stock.
+      if (Object.values(r.sent).some((n) => n > 0)) bumpPartnerStockEpoch(session);
+      renderBarterLeg(session, r);
+    }
+  }
+
+  /**
+   * ⏸️ PARK A STALLED ONE-SHOT CARAVAN (scope-behaviors.md §2.5.1) — the
+   * replacement for `reArmOneShot`'s flat street day.
+   *
+   * The refusal IS the predicate: `barterWillingness` reads the partner's books
+   * alone, so "will they take it later?" is a pure function of their own
+   * shortages over time. Where those shortages ARE a closed form (a stub's
+   * hash-and-season proxy) the wake is derived from it — `nextShortageBelow`
+   * for a famine ("they won't part with food": their shortage of the take-good
+   * must fall back under `BARTER_FAMINE_MAX`), `nextBarterWillingAt` for
+   * "has-enough", whose two-sided inequality only the predicate itself can
+   * answer. A REAL neighbour's books are a simulation, not a formula: no
+   * derived wake, and the epoch + backstop carry it — the same honest 0 a shop
+   * park takes when the failure names no closed form.
+   *
+   * `staleAt` = `BARTER_RETRY_SEC`, i.e. exactly the constant this replaces:
+   * the worst case is precisely the behaviour that shipped.
+   */
+  function parkAgreement(
+    session: QuestSession,
+    a: TransferAgreement,
+    why: BarterRefusal | "short",
+    partner: TradePartner | null,
+    us: BarterSignals,
+    now: number,
+  ): boolean {
+    const b = a.barter;
+    if (!b) return false;
+    // THE LEDGER'S OWN CLOCK, both ways: `now` is `taskClock` (what `due()` and
+    // this park are compared against), and the day it converts to is the day
+    // `tradePartnersOf` seeds the stub's signals with — `buildDayNow` reads
+    // `townClock` on a town and `taskClock` off one, and the two advance by the
+    // same `dt` from the same 0, so the sample starts where "today" is.
+    const dayS = session.scale.dayLengthS;
+    const fromDay = now / dayS;
+    let dueAt = 0;
+    const atDay = partner?.signalsAtDay ?? null;
+    if (atDay && why !== "short") {
+      const day =
+        why === "wont-part"
+          ? nextShortageBelow(atDay, b.takeGood, BARTER_FAMINE_MAX, fromDay)
+          : nextBarterWillingAt(b.giveGood, b.takeGood, us, atDay, fromDay);
+      if (day !== null) dueAt = day * dayS;
+    }
+    parkTown(session, `agreement|${a.id}`, {
+      scope: "agreement",
+      why: why === "short" ? "our own yard is short of the give-goods" : `partner refused: ${why}`,
+      now,
+      staleAfterS: BARTER_RETRY_SEC,
+      ...(dueAt > now ? { dueAt } : {}),
+    });
+    return true;
   }
 
   /** What one barter leg SHOWS: shipped goods toast + the caravan body at
@@ -17416,27 +19679,60 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** DEMOTE one household into its district pool: members join the
-   *  statistic, their CARRIED stacks fold into the pool inventory (the
-   *  house pantry stays with the standing building), their live-loop
-   *  state clears. Conserving — see population.ts. */
+   *  statistic, everything they were CARRYING folds into the pool inventory
+   *  (the house pantry stays with the standing building), their live-loop
+   *  state clears. Conserving — see population.ts.
+   *
+   *  🚨 THE FOLD IS ORDERED, and the order is the conservation law
+   *  (containers.ts `mayDissolveToStack`): a bag's CONTENTS bank into the pool
+   *  first, and only THEN does the emptied bag itself condense into one unit of
+   *  its own glyph. Nothing may become a number while it holds children — a
+   *  basket condensed with apples in it would take its stock map's key out of
+   *  the world and orphan the apples, which is the water-in-the-barrel bug at
+   *  the population tier. */
   function demoteHouse(session: QuestSession, houseIndex: number) {
     const t = session.town;
     if (!t || session.pooledHouses.has(houseIndex)) return;
     const h = t.plan.houses.find((x) => x.index === houseIndex);
     if (!h) return;
     const carried: Record<string, number> = {};
+    const bank = (g: string, n: number) => {
+      if (n > 0) carried[g] = (carried[g] ?? 0) + n;
+    };
     let stressSum = 0;
     for (let m = 0; m < HOUSEHOLD; m++) {
       const cid = `resident_${houseIndex}_${m}`;
-      const hand = session.needCarried.get(cid);
-      if (hand) {
-        for (const [g, n] of Object.entries(hand)) {
-          if (n > 0) carried[g] = (carried[g] ?? 0) + n;
+      const carry = bodyCarryOf(session, cid);
+      // ① the goods, out of every container on the body.
+      for (const bagRef of [carry.inHand?.bag ?? null, carry.worn]) {
+        if (!bagRef) continue;
+        for (const [g, n] of Object.entries(bagRef.stock)) bank(g, n);
+        for (const g of Object.keys(bagRef.stock)) delete bagRef.stock[g];
+      }
+      // ② the hands instance — one unit of whatever it is (a bag included:
+      // empty now, so it stacks like the flat-packed thing it has become).
+      if (carry.inHand) {
+        bank(carry.inHand.glyph, 1);
+        setDownFromHands(session, avatarIdOf(cid), { kind: "consumed" }, { objId: carry.inHand.objId });
+      }
+      // ③ the bags themselves, now that they hold nothing. A container that
+      //    somehow still holds children is NOT condensed — it is set down at
+      //    home as a whole object instead, which is the only honest answer.
+      for (const bagRef of [carry.inHand?.bag ?? null, carry.worn]) {
+        if (!bagRef) continue;
+        if (!mayDissolveToStack(bagRef.glyph, session.containerStock.get(bagRef.objId))) {
+          const at = world?.state.avatars[avatarIdOf(cid)];
+          if (session.wornBags.get(cid)?.objId === bagRef.objId && at) doffWornBag(session, cid, at);
+          continue;
         }
-        session.needCarried.delete(cid);
+        if (bagRef !== carry.inHand?.bag) bank(bagRef.glyph, 1); // the held one already banked at ②
+        session.containerStock.delete(bagRef.objId);
+        session.containers.delete(bagRef.objId);
+        session.containerOwner.delete(bagRef.objId);
+        if (session.wornBags.get(cid)?.objId === bagRef.objId) session.wornBags.delete(cid);
       }
       stressSum += session.stress.get(cid) ?? 0;
-      session.needStep.delete(cid);
+      clearNeedStep(session, cid);
       session.liveNeedBodies.delete(cid);
       session.npcTasks.delete(avatarIdOf(cid));
     }
@@ -17618,12 +19914,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
     relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, fellIfConsumed, dropFromStack,
-    takeIntoHands, setDownFromHands,
+    takeIntoHands, setDownFromHands, bodyCarryOf, takeUnitsFromBody,
     creatureMood,
     questViewOf: () => questView,
     invalidateTownJobs: () => { townJobsMemo = null; },
     convoNodeId: () => convo?.nodeId ?? null,
     spiritFocusOf: () => spiritFocus,
+    parkTown, townParked, bumpStockEpoch,
   });
   const {
     setWorld, setSites, sites: directorSites, buildGhostsNow, clearSpotCache, shellFurnPilesOf,
@@ -17632,7 +19929,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     buildContext, buildSpotsNow, cancellableSite, cancelWork, structureLabelOf,
     structureCatalogOf, buildMissingMaterials, pendingGrowthRects,
     steeringNear, buildCandidates, buildworkSiteAt, foundedLotAt,
-    pendingAnnexAt, pendingBuildingOf, agrHolder, onTransferLanded, buildDayNow,
+    pendingAnnexAt, pendingBuildingOf, agrHolder, bagHolder, onTransferLanded, buildDayNow,
     isCivicStockDest,
     executeBuildOrder, stepFoundedConstruction, stepFurnitureSetup,
     orderCraft, orderBuild, orderZone, stepZonedFounding,
@@ -17976,7 +20273,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
     selectPocket(glyph) {
       const s = sess;
-      if (!s || !s.pocket[glyph]) return;
+      // Validated against what the body ACTUALLY has on it — the strip is a
+      // view, and a row it drew a frame ago may already have been eaten.
+      if (!s || !(bodyCarryView(bodyCarryOf(s, s.handsCid))[glyph] ?? 0)) return;
       // In conversation, selecting a stack PRESENTS one (an offer) to the listener.
       if (convo) {
         s.selectedPocketGlyph = glyph;
@@ -18261,7 +20560,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           return;
         }
         s.helpOrders.set(helper, goal.target);
-        s.needStep.delete(helper); // re-decide with the order in force
+        clearNeedStep(s, helper); // re-decide with the order in force
         s.liveNeedBodies.add(helper);
         npcChatBubble(s, helper, commandEchoLine(s, frame, goal, helper)); // "I will help Mara" / the earned ok
         presenter.toast(`▶ ${sentence}`, "feedback");
@@ -18540,7 +20839,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (PURSUED_GOALS.has(goal.kind)) {
           if (compileGoal(goal, m, makeGoalResolver(s))) {
             s.npcTasks.delete(avatarIdOf(m));
-            s.needStep.delete(m);
+            clearNeedStep(s, m);
             s.walk.delete(m); // drop any stale need-walk state — the pursuit starts fresh
             s.pursuits.set(m, { source: "command", goal, glyph: sentence });
             npcChatBubble(s, m, commandEchoLine(s, frame, goal, m)); // the echo — or the earned ok
@@ -18699,13 +20998,62 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       questView?.rebaseLocal?.(delta);
     },
     pocketSnapshot() {
-      return { ...(sess?.pocket ?? {}) };
+      const s = sess;
+      if (!s) return {};
+      // THE BAGS TRAVEL TOO. A body walking from one host's world into
+      // another's takes its containers with it, so the snapshot lists each bag
+      // as one unit of its own glyph alongside the goods it holds — and
+      // `restorePocket` re-creates the bag before it fills it, which is what
+      // makes the two sides' capacities agree.
+      const carry = bodyCarryOf(s, s.handsCid);
+      const out: Record<string, number> = { ...bodyCarryView(carry) };
+      for (const bag of [carry.inHand?.bag ?? null, carry.worn]) {
+        if (bag) out[bag.glyph] = (out[bag.glyph] ?? 0) + 1;
+      }
+      return out;
     },
     restorePocket(stacks) {
       const s = sess;
-      if (!s) return;
-      for (const g of Object.keys(s.pocket)) delete s.pocket[g];
-      for (const [g, n] of Object.entries(stacks)) if (n > 0) s.pocket[g] = n;
+      if (!s || !world) return;
+      const cid = s.handsCid;
+      const av = world.state.avatars[avatarIdOf(cid)];
+      const at = av ? { x: av.x, y: av.y } : { x: 0, y: 0 };
+      // CLEAR what this body is carrying (the receiving half of a handoff owns
+      // the whole carry, and the sending half has already been emptied).
+      const old = bodyCarryOf(s, cid);
+      if (old.inHand) setDownFromHands(s, avatarIdOf(cid), { kind: "consumed" }, { objId: old.inHand.objId, quiet: true });
+      for (const bag of [old.inHand?.bag ?? null, old.worn]) {
+        if (!bag) continue;
+        s.containerStock.delete(bag.objId);
+        s.containers.delete(bag.objId);
+        s.containerOwner.delete(bag.objId);
+      }
+      s.wornBags.delete(cid);
+      // CONTAINERS FIRST, then their goods — the order is the capacity: fill
+      // before the bag exists and the units have nowhere but the hands to go.
+      const goods: [string, number][] = [];
+      for (const [g, n] of Object.entries(stacks)) {
+        if (n <= 0) continue;
+        const def = containerDefOfGlyph(g);
+        if (!def?.hold) {
+          goods.push([g, n]);
+          continue;
+        }
+        for (let k = 0; k < n; k++) {
+          const objId = spawnLooseProp(s, g, at.x, at.y);
+          if (!objId) break;
+          if (def.hold === "wear" && !s.wornBags.has(cid)) donWornBag(s, cid, objId);
+          else if (!takeIntoHands(s, avatarIdOf(cid), { kind: "object", objId })) break; // it stays at their feet
+        }
+      }
+      for (const [g, n] of goods) {
+        let left = n;
+        while (left > 0 && giveUnitsToBody(s, cid, g, 1, { at }) > 0) left--;
+        // Anything that will not fit lands at the body's feet rather than
+        // nowhere — a handoff must never be where items go to die.
+        for (let k = 0; k < left; k++) spawnLooseProp(s, g, at.x + 0.3, at.y + 0.3);
+        if (left > 0) console.log(`[pocket] ${cid} could not carry ${left}× ${g} across — set down at its feet`);
+      }
       s.selectedPocketGlyph = null;
       pushPocket(s);
     },
@@ -18791,6 +21139,38 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
     stockAudit() {
       return sess ? sessionStockAudit(sess) : {};
+    },
+    carryOf(cid) {
+      return sess ? bodyCarryView(bodyCarryOf(sess, cid)) : {};
+    },
+    giveBag(cid, glyph) {
+      const s = sess;
+      const def = containerDefOfGlyph(glyph);
+      if (!s || !world || !def?.hold) return null;
+      const body = world.state.avatars[avatarIdOf(cid)];
+      if (!body) return null;
+      // Refuse BEFORE minting: a bag that cannot be routed would be left on the
+      // floor as a registered container nobody asked for. (A worn bag already
+      // on, or hands already full, is the honest "no".)
+      const carry = bodyCarryOf(s, cid);
+      if (def.hold === "wear" ? !!carry.worn : !handsFree(carry)) return null;
+      const objId = spawnLooseProp(s, glyph, body.x, body.y);
+      if (!objId) return null;
+      // A PERSONAL BAG IS THEIRS (`donWornBag` says the same for the worn one) —
+      // so the walkers' private-property gate keeps housemates out of it.
+      s.containerOwner.set(objId, creatureScope(cid));
+      const took =
+        def.hold === "wear"
+          ? donWornBag(s, cid, objId)
+          : !!takeIntoHands(s, avatarIdOf(cid), { kind: "object", objId });
+      if (!took) {
+        removeLooseProp(s, objId);
+        s.containers.delete(objId);
+        s.containerOwner.delete(objId);
+        return null;
+      }
+      if (cid === s.handsCid) pushPocket(s);
+      return objId;
     },
   };
   return api;

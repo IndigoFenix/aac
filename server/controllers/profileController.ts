@@ -103,6 +103,67 @@ export class ProfileController {
       });
     }
   }
+
+  /**
+   * PATCH /api/profile/slp-mode — read/write the caller's own SLP MODE flag.
+   *
+   * SLP MODE is the one AAC behavior scoped to the LOGGED-IN USER rather than
+   * a student (a speech-language pathologist running a session WITH them), so
+   * it deliberately does NOT ride on `PATCH /api/students/:id` and is NOT in
+   * `AAC_SETTINGS_FIELDS`.
+   *
+   * Authorization: the target is ALWAYS `req.user.id`. There is no id in the
+   * request body and none is read — a user can only ever flip their own flag.
+   */
+  async updateSlpMode(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { slpMode } = req.body ?? {};
+
+      if (typeof slpMode !== "boolean") {
+        res.status(400).json({
+          success: false,
+          message: "slpMode must be a boolean",
+        });
+        return;
+      }
+
+      // Admin pseudo-identities live in admin_users and have no slp_mode
+      // column; writing would target a non-existent users row.
+      if (currentUser?._identityKind === "admin") {
+        res.status(403).json({
+          success: false,
+          message: "SLP mode is not available for admin accounts",
+        });
+        return;
+      }
+
+      const updatedUser = await userService.updateSlpMode(currentUser.id, slpMode);
+
+      if (!updatedUser) {
+        res.status(500).json({
+          success: false,
+          message: "Failed to update SLP mode",
+        });
+        return;
+      }
+
+      // Keep the in-memory session identity in step so anything reading
+      // `req.user` later in this request/session sees the new value.
+      (req.user as any).slpMode = updatedUser.slpMode;
+
+      res.json({
+        success: true,
+        slpMode: updatedUser.slpMode === true,
+      });
+    } catch (error: any) {
+      console.error("SLP mode update error:", error);
+      res.status(500).json({
+        success: false,
+        message: "SLP mode update failed",
+      });
+    }
+  }
 }
 
 export const profileController = new ProfileController();

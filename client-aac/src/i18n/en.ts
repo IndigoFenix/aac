@@ -572,7 +572,7 @@ export const en = {
       wash: "Wash",
       tidy: "Tidy up",
       heat: "Heat",
-      cool: "Cool down",
+      make_cold: "Cool down",
       wear: "Wear",
       color: "Color",
       brush_teeth: "Brush teeth",
@@ -767,6 +767,7 @@ export const en = {
       understand: "Understand",
       confused: "Confused",
       wow: "Wow",
+      amazing: "Amazing",
       oops: "Oops",
       oh_no: "Oh no",
       yuck: "Yuck",
@@ -845,6 +846,10 @@ export const en = {
   },
 
   quickActions: {
+    forward: "Next",
+    pauseBoard: "Hold",
+    resumeBoard: "Resume",
+    previous: "Previous",
     yes: "Yes",
     no: "No",
     more: "More",
@@ -1080,6 +1085,11 @@ export const en = {
   audioScan: {
     start: "Read board aloud",
     stop: "Stop reading",
+  },
+  slpMode: {
+    ready: "Ready",
+    wake: "Wake up",
+    sleep: "Let it sleep",
   },
   guessing: {
     category: {

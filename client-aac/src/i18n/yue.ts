@@ -572,7 +572,7 @@ export const yue: Translations = {
       wash: "洗",
       tidy: "整理",
       heat: "加熱",
-      cool: "冷卻",
+      make_cold: "冷卻",
       wear: "著",
       color: "上色",
       brush_teeth: "刷牙",
@@ -767,6 +767,7 @@ export const yue: Translations = {
       understand: "明白",
       confused: "唔明",
       wow: "嘩",
+      amazing: "好犀利",
       oops: "唉吔",
       oh_no: "唔好啊",
       yuck: "噁心",
@@ -845,6 +846,10 @@ export const yue: Translations = {
   },
 
   quickActions: {
+    forward: "下一個",
+    pauseBoard: "暫停",
+    resumeBoard: "繼續",
+    previous: "上一個",
     yes: "係",
     no: "唔係",
     more: "更多",
@@ -1080,6 +1085,11 @@ export const yue: Translations = {
   audioScan: {
     start: "讀出版面",
     stop: "停止讀出",
+  },
+  slpMode: {
+    ready: "準備好",
+    wake: "叫醒",
+    sleep: "俾佢休息",
   },
   guessing: {
     category: {

@@ -311,7 +311,13 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
     if (isIntentVerb(f.verb) && !f.subject) {
       f = { ...f, subject: { head: "i_me", mods: [], q: false } };
     }
-    const def = f.verb.head !== "want" || f.neg || !!f.tail;
+    // A MASS object of `have` is bare, never articled: "no tenemos madera" /
+    // "não temos madeira" — "la madera" would name a particular pile, and the
+    // claim is that there is none at all (the site's empty-stock report). Same
+    // rule English already applies to mass/plural `have` objects.
+    const def =
+      (f.verb.head !== "want" || f.neg || !!f.tail) &&
+      !(f.verb.head === "have" && !!f.object && (mass(f.object.noun) || pl(f.object.noun)));
     // A verb governing a preposition wraps its object through the ruleset's
     // contraction ("preciso DO banheiro") — plain verbs take the bare NP.
     // PLAY/TALK objects ride the comitative ("juego con la pelota", "falo com

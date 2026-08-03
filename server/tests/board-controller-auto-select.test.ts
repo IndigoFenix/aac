@@ -14,8 +14,26 @@ const createBoard = jest.fn(async (board: any) => ({ id: "new-board-id", ...boar
 const getBoard = jest.fn(async (_id: string) => ({ id: "existing-id", userId: "user-1" }));
 const updateBoard = jest.fn(async (_id: string, data: any) => ({ id: "existing-id", ...data }));
 
+// `packageRepository` is imported by the controller for the package-board read
+// guard (canReadPackageBoard). It is never reached on these paths — the caller
+// owns the board — but the mock must still supply it or the module fails to link.
+const listPackagesForBoard = jest.fn(async (_boardId: string) => [] as any[]);
+
 jest.unstable_mockModule("../repositories", () => ({
   boardRepository: { createBoard, getBoard, updateBoard },
+  packageRepository: { listPackagesForBoard },
+}));
+
+jest.unstable_mockModule("../services/studentService", () => ({
+  studentService: { verifyStudentAccess: jest.fn(async () => ({ hasAccess: false })) },
+}));
+
+jest.unstable_mockModule("../services/sharing/clinicianCtx", () => ({
+  buildClinicianCtx: jest.fn(async () => undefined),
+}));
+
+jest.unstable_mockModule("../services/packages/packageAccess", () => ({
+  resolvePackagePermission: jest.fn(async () => "none"),
 }));
 
 // activityLogService is fire-and-forget; stub it so nothing touches the DB.

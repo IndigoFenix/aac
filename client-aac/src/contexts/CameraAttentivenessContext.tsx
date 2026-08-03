@@ -110,6 +110,23 @@ interface CameraAttentivenessContextType {
   /** Imperative state setter — used by AI tools (`sleep`, `end_session`) and external transitions like session-init. */
   setSleepState: (state: SleepState) => void;
 
+  /** Whether the engagement-score loop is allowed to change `sleepState` on
+   *  its own. False in SLP MODE: a therapy session is full of long deliberate
+   *  silences, so the score must not drop the session — the therapist uses the
+   *  header wake/sleep control instead. `setSleepState` and `triggerAlwaysWake`
+   *  still work, so explicit transitions are unaffected. Defaults to true. */
+  autoSleepEnabled: boolean;
+
+  /** Enable/disable the automatic transitions above. Driven by the server's
+   *  `clientConfig.slpMode` (bridged in from DualAgentContext). */
+  setAutoSleepEnabled: (enabled: boolean) => void;
+
+  /** SLP MODE: an automatic wake was suppressed while asleep — someone is at
+   *  the device, but we will not wake on our own. The sleep overlay renders
+   *  this as "Ready"; the session stays asleep until the wake button is
+   *  pressed. Always false outside SLP MODE, and cleared by any real wake. */
+  wakeSuppressed: boolean;
+
   // ---- Perception fidelity (cost-saving; see planning-docs/aac-cost-saving-spec.md §0.2) ----
 
   /** Current perception fidelity. 'full' = frames streaming to the Observer;
@@ -196,7 +213,25 @@ export function CameraAttentivenessProvider({
   // Decays exponentially back toward 1.0 after each false-wake report.
   const wakeThresholdMultRef = useRef(1.0);
 
+  // Whether the 10 Hz score loop may move `sleepState` by itself. Turned off
+  // in SLP MODE (see the context type). Held in a ref as well so the interval
+  // callback — created once — always reads the live value.
+  const [autoSleepEnabled, setAutoSleepEnabledImpl] = useState(true);
+  const autoSleepEnabledRef = useRef(true);
+  autoSleepEnabledRef.current = autoSleepEnabled;
+
+  // SLP MODE: an automatic wake was suppressed while asleep — someone IS at the
+  // device, we just refuse to act on that by ourselves. The overlay turns this
+  // into "Ready" so the therapist can see the device noticed them; the session
+  // stays asleep until the wake button is actually pressed.
+  const [wakeSuppressed, setWakeSuppressed] = useState(false);
+
   sleepStateRef.current = sleepState;
+
+  // Only meaningful while asleep. Any real wake clears it.
+  useEffect(() => {
+    if (sleepState !== "asleep") setWakeSuppressed(false);
+  }, [sleepState]);
 
   // Create the hidden work canvas (the <video> is shared, owned by the provider).
   useEffect(() => {
@@ -603,6 +638,18 @@ export function CameraAttentivenessProvider({
     if (trigger === 'sustainedFace' && sleepStateRef.current === 'resting') {
       return;
     }
+    // SLP MODE (autoSleepEnabled=false): a DELIBERATE sleep must survive the
+    // therapist sitting right in front of the camera — otherwise presence would
+    // undo the button press instantly. Presence still lifts a fresh session out
+    // of hibernation (that's how a session starts at all), and deliberate
+    // interactions (aacButtonPress / avatarTap / avatarEyegaze) still wake.
+    if (trigger === 'sustainedFace' && !autoSleepEnabledRef.current
+        && sleepStateRef.current === 'asleep') {
+      // Don't wake — but DO record that we would have. The overlay shows this
+      // as "Ready": the device has noticed someone, and one press wakes it.
+      setWakeSuppressed(true);
+      return;
+    }
     console.log(`[SleepSystem] always-wake triggered: ${trigger}`);
     scoreRef.current = 1;
     contributionsRef.current = { ...contributionsRef.current };
@@ -645,6 +692,16 @@ export function CameraAttentivenessProvider({
     setSleepStateImpl(next);
   }, []);
 
+  const setAutoSleepEnabled = useCallback((enabled: boolean) => {
+    setAutoSleepEnabledImpl((prev) => {
+      if (prev !== enabled) {
+        console.log(`[SleepSystem] auto sleep/wake transitions ${enabled ? "ENABLED" : "DISABLED (SLP MODE)"}`);
+      }
+      return enabled;
+    });
+    autoSleepEnabledRef.current = enabled;
+  }, []);
+
   // 10 Hz engagement-score producer. Decays contributions, recomputes score,
   // applies hysteresis-gated state transitions. Hibernation is sticky — only
   // triggerAlwaysWake (or external setSleepState) leaves it.
@@ -671,6 +728,12 @@ export function CameraAttentivenessProvider({
       );
 
       setEngagementScore({ value: score, contributions: { ...contributions } });
+
+      // SLP MODE: the score keeps updating (the indicators and PCM gate still
+      // want it) but it must NOT drive a transition — a long therapy silence
+      // would otherwise read as an abandoned session. Explicit transitions
+      // (setSleepState / triggerAlwaysWake) still apply.
+      if (!autoSleepEnabledRef.current) return;
 
       const cur = sleepStateRef.current;
       const next = nextSleepState(cur, score, SLEEP_THRESHOLDS, wakeThresholdMultRef.current);
@@ -702,9 +765,12 @@ export function CameraAttentivenessProvider({
     triggerAlwaysWake,
     reportFalseWake,
     setSleepState,
+    autoSleepEnabled,
+    setAutoSleepEnabled,
+    wakeSuppressed,
     fidelity,
     setFidelity,
-  }), [state, start, stop, wake, sleep, setFrequency, setResolution, setMode, onFrameCaptured, onMotionStateChange, getLastFrame, captureNow, sleepState, engagementScore, pushSignal, triggerAlwaysWake, reportFalseWake, setSleepState, fidelity, setFidelity]);
+  }), [state, start, stop, wake, sleep, setFrequency, setResolution, setMode, onFrameCaptured, onMotionStateChange, getLastFrame, captureNow, sleepState, engagementScore, pushSignal, triggerAlwaysWake, reportFalseWake, setSleepState, autoSleepEnabled, setAutoSleepEnabled, wakeSuppressed, fidelity, setFidelity]);
 
   return (
     <CameraAttentivenessContext.Provider value={value}>

@@ -16,7 +16,7 @@
 
 import { type ReactNode, useMemo } from "react";
 import { motion } from "framer-motion";
-import { resolveButtonBackground } from "@shared/button-color";
+import { resolveButtonBackground, MORE_OPTIONS_ICON } from "@shared/button-color";
 import { labelFontSize, labelLines, type RatioLevel } from "@shared/button-sizing";
 import { ShapedButton, type CornerSpace } from "./ShapedButton";
 import type { BoardButtonInput, BoardRenderDeps, IconVisual } from "./types";
@@ -210,7 +210,16 @@ export function BoardButtonVisual(props: BoardButtonVisualProps) {
     [backgroundColor, deps, button],
   );
 
-  const icon = renderIcon(deps.resolveIcon(button), button, deps, iconFontSize ?? "2rem");
+  // A `more` button is the MORE OPTIONS affordance, not a word — it always
+  // wears the reload symbol, matching the fixed quick-actions button so the
+  // student reads one visual for "show me other things I could say". Forced
+  // here rather than trusted from the button's own fallback, which still
+  // carries the legacy `➕` on boards minted server-side.
+  const iconVisual: IconVisual =
+    button.buttonType === "more"
+      ? { kind: "emoji", text: MORE_OPTIONS_ICON }
+      : deps.resolveIcon(button);
+  const icon = renderIcon(iconVisual, button, deps, iconFontSize ?? "2rem");
 
   if (variant === "overlay") {
     const sz = overlaySize ?? { button: "min(45vw, 300px)", icon: "min(28vw, 180px)" };

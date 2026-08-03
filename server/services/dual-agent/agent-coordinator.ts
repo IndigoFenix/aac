@@ -19,6 +19,7 @@ import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
 
 import { type User, type PermittedWebsite } from "@shared/schema";
 import { isUrlPermitted } from "@shared/permitted-websites";
+import { resolveBoardKey } from "@shared/board-keys";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { boardRepository } from "../../repositories/boardRepository";
 import { dualAgentService } from "./dual-agent-service";
@@ -75,7 +76,7 @@ import {
 import type { ObserverToolConfig } from "./tool-declarations-observer";
 import type { SpeakerToolConfig } from "./tool-declarations-speaker";
 import type { BoardManagerToolConfig } from "./tool-declarations-board-manager";
-import { buildDefaultClientConfig, type ClientSeizureConfig } from "./client-config";
+import { buildDefaultClientConfig, buildClientAutoScanConfig, type ClientSeizureConfig } from "./client-config";
 import { coerceSeizureConfig, resolveThresholds } from "@shared/aac/seizure-config";
 import { APP_REGISTRY, getEnabledAppsFromConfig, getAppDefinition } from "./app-registry";
 import type { AppConfig } from "./app-registry";
@@ -242,6 +243,12 @@ import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
 import { decideIdleTransition, idleThresholdScaleForBand } from "./idle-watchdog";
 import {
+  resolveSlpMode,
+  allowsIdleRest,
+  allowsIdleSleep,
+  isManualSleepRequest,
+} from "./slp-mode";
+import {
   resolveGameOptions,
   classifyGameContext,
   shouldForwardGameContext,
@@ -350,7 +357,9 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
     topic: "feelings",
     speakerCompanion: "The user wants to talk about how they feel. Ask them gently.",
     speakerFacilitator: null,
-    boardManager: "Palette: emotions — happy, sad, tired, excited, angry, scared, bored, frustrated, calm. Include 'I want to talk about something else'.",
+    // "a different topic", NOT "something else" — the latter now reads as MORE
+    // OPTIONS on this board (see <meta_buttons> in prompts/board-manager.ts).
+    boardManager: "Palette: emotions — happy, sad, tired, excited, angry, scared, bored, frustrated, calm. Include 'I want to talk about a different topic'.",
   },
   HELP: {
     topic: "help",
@@ -826,6 +835,14 @@ export class AgentCoordinator {
     "set_mute_state", "user_message",
   ]);
 
+  /** SLP MODE for the user who opened this session (`users.slp_mode`) — a
+   *  speech-language pathologist running a therapy session WITH the student.
+   *  Resolved once from the authenticated user in handleInitialize. While on:
+   *  nothing auto-rests or auto-sleeps, the client shows an explicit
+   *  wake/sleep control, and the live prompts assume a co-present clinician.
+   *  See ./slp-mode.ts. */
+  private slpMode = false;
+
   /** Deliberate user inputs that cancel the pending startup greeting — the
    *  user started the interaction themselves, so we don't auto-greet over it. */
   private static readonly STARTUP_CANCELING_MSG_TYPES = new Set<ClientMessage["type"]>([
@@ -1297,6 +1314,16 @@ export class AgentCoordinator {
   private startupGreetTimer: ReturnType<typeof setTimeout> | null = null;
   /** Fallback timer so startup still resolves if no identification arrives. */
   private startupFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  /** SLP MODE only: the session is asleep and the AAC is showing the sleep
+   *  overlay, so the startup greeting must not fire — greeting a screen the
+   *  therapist has not woken is the "it greeted before I woke it" bug. Armed
+   *  when an SLP-MODE session enters sleep; cleared by the manual wake press
+   *  (handleManualSleepRequest), which then releases the greeting if it is
+   *  still owed. Always false outside SLP MODE.
+   *
+   *  A fresh session is NOT armed: it comes up awake with the board in front
+   *  of the student, so the normal startup greeting is correct there. */
+  private slpAwaitingWake = false;
 
   // Echo suppression is prompt-side only — Observer's <transcription>
   // section tells it to ignore device-speaker playback (button-press TTS
@@ -1884,6 +1911,9 @@ export class AgentCoordinator {
     if (band === "low") {
       if (this.state !== "ready" || this.paused || this.asleep
           || this.socialPeer || this.socialPeerTransition) return;
+      // SLP MODE: the budget-scaled sleep timer is still an AUTO sleep, so it
+      // is off too. The therapist owns engagement; long silences are therapy.
+      if (!allowsIdleSleep(this.slpMode)) return;
       const pct = bindingEnergy(this.budgetState, this.budgetWindows, now).percent;
       const sleepMs = Math.max(AgentCoordinator.BUDGET_SPEAKER_SLEEP_PERCENT, pct * 2) * 1000;
       const lastActivity = Math.max(this.lastEngagementActivityAt, this.lastObservationActivityAt);
@@ -1910,6 +1940,7 @@ export class AgentCoordinator {
       paused: this.paused,
       asleep: this.asleep,
       inSocialSession: Boolean(this.socialPeer || this.socialPeerTransition),
+      slpMode: this.slpMode,
       restAfterMs: Math.round(AgentCoordinator.IDLE_REST_MS * scale),
       sleepAfterMs: Math.round(AgentCoordinator.IDLE_SLEEP_MS * scale),
     });
@@ -2053,6 +2084,14 @@ export class AgentCoordinator {
         runInSessionContext(this.sessionId || "?", this.debugMode, () => {
           logLiveSession("CLIENT → set_paused", `paused=${msg.paused}`);
         });
+        return;
+      case "client_sleep_state_change":
+        // The client's engagement state machine reports EVERY transition it
+        // makes with source "system" — those are informational here (the
+        // server runs its own idle watchdog and must not be dragged cold by a
+        // quiet room). Only a HUMAN pressing the SLP MODE wake/sleep control
+        // in the header sends source "user", and that one moves the server.
+        await this.handleManualSleepRequest(msg.state, msg.source);
         return;
       case "mic_state": {
         // Diagnostics only. Record mic activate/deactivate in the session log via
@@ -2447,6 +2486,14 @@ export class AgentCoordinator {
     this.sessionId = state.sessionId;
     this.studentId = state.studentId;
     this.userId = state.userId;
+    // SLP MODE rides on the LOGGED-IN USER, not the student, so it comes from
+    // the authenticated identity (freshly loaded from the DB by the WS upgrade
+    // auth) rather than from anything student-scoped. Resolved before the
+    // prompts are built so the <slp_session> block makes it into them.
+    this.slpMode = resolveSlpMode(this.authedUser as any);
+    if (this.slpMode) {
+      flowNote("COORDINATOR", "SLP MODE on for this user — no auto-rest/auto-sleep; manual wake/sleep control shown.");
+    }
     // Resume detection: the service resumes from cache/DB keyed by the id the
     // client sent, so a resumed session comes back with the SAME id; a new
     // session gets a fresh UUID (state.sessionId !== msg.sessionId). Used to
@@ -2904,6 +2951,12 @@ export class AgentCoordinator {
         // Per-student seizure detection: resolved thresholds + seed baseline, or
         // undefined when the student has the feature off.
         seizure: buildClientSeizureConfig(studentRow?.aacSettings),
+        // Automated audio scan (eyegaze students only) — {} when off.
+        ...buildClientAutoScanConfig(studentRow?.aacSettings),
+        // SLP MODE (per logged-in USER, not the student): suppresses the
+        // client's own sleep state machine and shows the manual wake/sleep
+        // control. Omitted from the payload entirely when off.
+        slpMode: this.slpMode,
       }),
     });
 
@@ -3077,6 +3130,9 @@ export class AgentCoordinator {
       classroom: undefined as any, // classroom plumbing wired in a follow-up
       gestureOverrides: sections?.gestureOverrides,
       safetyNotes: sections?.safetyNotes,
+      // SLP MODE — per LOGGED-IN USER, so it reaches every agent's prompt via
+      // the shared base rather than any student-scoped setting.
+      slpMode: this.slpMode,
     };
 
     return {
@@ -5484,6 +5540,14 @@ export class AgentCoordinator {
    */
   private fireStartupGreeting(opts: { force?: boolean } = {}): void {
     if (!this.startupPending || this.state !== "ready") return;
+    // SLP MODE, session asleep: the AAC is showing the sleep overlay, so
+    // greeting now would talk over a screen the therapist has not woken.
+    // Returning BEFORE startupPending is cleared keeps the greeting armed;
+    // the manual wake press releases it (handleManualSleepRequest).
+    if (this.slpAwaitingWake) {
+      flowNote("COORDINATOR", "Startup greeting deferred — SLP MODE, session asleep awaiting a manual wake.");
+      return;
+    }
     const identified = this.activeUserIdentified();
     if (!identified && !opts.force) return; // nothing to fire yet
     this.startupPending = false;
@@ -5705,6 +5769,9 @@ export class AgentCoordinator {
    *  by noteEngagementActivity if activity resumes meanwhile. */
   private requestRest(reason?: string): void {
     if (this.sessionProfile === "resting") return;
+    // NOT gated by SLP MODE. The Observer's rest() is a judgment about whether
+    // the session is still running; SLP MODE only blocks the MECHANICAL drops
+    // (the idle timer and the "no face visible" score). See slp-mode.ts.
     // Resting closes the Speaker — which during a social session is the
     // peer mid-conversation. The session itself counts as engagement.
     if (this.socialPeer || this.socialPeerTransition) {
@@ -5751,6 +5818,11 @@ export class AgentCoordinator {
         // Cost-saving close: tear down both Live sessions, keep the WS
         // open so the client can re-wake on activity. Coordinator stays
         // ready and can rebuild agents on the next client signal.
+        // NOT gated by SLP MODE: the Observer is the one participant that can
+        // judge whether the session actually ended, and the therapist can wake
+        // it again from the sleep overlay. The `sleep_state_change` below is
+        // what puts the AAC into that overlay. SLP MODE blocks only the
+        // MECHANICAL sleeps (idle timer, "no face visible") — see slp-mode.ts.
         this.send({ type: "sleep_state_change", data: { state: "asleep", source: "ai" } });
         this.enterSleep();
         return;
@@ -5789,11 +5861,70 @@ export class AgentCoordinator {
   }
 
   /**
+   * A HUMAN asked the session to sleep or wake, via the SLP MODE wake/sleep
+   * control in the AAC header. Arrives on the EXISTING wire message
+   * (`client_sleep_state_change`) — the same one the client's own engagement
+   * state machine uses — distinguished only by `source: "user"`.
+   *
+   * Deliberately narrow:
+   *   - `source` other than "user" → informational, ignored (the client
+   *     reports every automatic transition it makes, and honouring those
+   *     would let a quiet room tear the agents down behind the watchdog).
+   *   - "asleep"/"hibernation" → enterSleep (zero Gemini cost, WS stays up).
+   *   - "awake"/"waking"       → rebuild from sleep, or lift out of resting.
+   *   - "resting"              → left to the normal rest path.
+   * Works regardless of SLP MODE (the control only renders in SLP MODE, but
+   * the server does not need a second gate to make that true).
+   */
+  private async handleManualSleepRequest(
+    state: "hibernation" | "waking" | "awake" | "resting" | "asleep",
+    source: "ai" | "system" | "user" | undefined,
+  ): Promise<void> {
+    if (!isManualSleepRequest(source)) return;
+    if (this.state !== "ready") return;
+
+    if (state === "asleep" || state === "hibernation") {
+      if (this.asleep) return;
+      flowNote("COORDINATOR", "Manual sleep requested from the AAC header — tearing agents down.");
+      this.send({ type: "sleep_state_change", data: { state: "asleep", source: "system" } });
+      this.enterSleep();
+      return;
+    }
+
+    if (state === "awake" || state === "waking") {
+      flowNote("COORDINATOR", "Manual wake requested from the AAC header.");
+      this.noteEngagementActivity();
+      if (this.asleep) {
+        await this.wakeFromSleep();
+      } else if (this.sessionProfile !== "awake") {
+        await this.transitionToProfile("awake");
+      } else {
+        // Already awake — still confirm, so a client that got out of sync
+        // (e.g. it thought it was asleep) reopens its capture gate.
+        this.send({ type: "sleep_state_change", data: { state: "awake", source: "system" } });
+      }
+      // SLP MODE: the therapist woke it deliberately, so a greeting that was
+      // held back while asleep is now owed. Harmless outside SLP MODE (the flag
+      // is only set there) and a no-op if the session already greeted — the
+      // startup greeting is one-shot.
+      if (this.slpAwaitingWake) {
+        this.slpAwaitingWake = false;
+        flowNote("COORDINATOR", "SLP MODE manual wake — releasing the deferred startup greeting.");
+        this.fireStartupGreeting({ force: true });
+      }
+    }
+  }
+
+  /**
    * Tear down both Live agents for a cost-saving sleep, keeping the WS open.
    * Sets `asleep` so the next real user action rebuilds them (wakeFromSleep).
    * Flushes any open repeat-press burst first so perseveration isn't lost.
    */
   private enterSleep(): void {
+    // SLP MODE: from here the AAC shows the sleep overlay, so an unfired
+    // startup greeting must wait for the therapist's wake press rather than
+    // being spoken at a screen nobody has woken. See fireStartupGreeting.
+    if (this.slpMode) this.slpAwaitingWake = true;
     // A sleep mid-social-session means the user disengaged entirely —
     // drop the session without analysis/debrief. The wake path rebuilds
     // the COMPANION Speaker from cached prompts, so just clearing the
@@ -8992,7 +9123,24 @@ export class AgentCoordinator {
   private async applyBoardLoadRequested(event: BoardLoadRequestedEvent): Promise<void> {
     const { boardKey } = event;
     const state = this.sessionId ? dualAgentService.getSessionCache(this.sessionId)?.state : undefined;
-    const match = state?.availableBoards?.find(b => b.key === boardKey);
+
+    // Resolve through the shared key helper so a BARE board slug works when it
+    // is unambiguous, and an ambiguous one comes back with the qualified
+    // alternatives instead of a dead end.
+    const keyMap = new Map((state?.availableBoards ?? []).map(b => [b.id, b.key]));
+    const resolution = resolveBoardKey(boardKey, keyMap);
+
+    if (resolution.kind === "ambiguous") {
+      flowNote("COORDINATOR", `set_board("${boardKey}") — ambiguous: ${resolution.candidates.join(", ")}`);
+      this.queueBoardMgrFeedback("set_board", [
+        `Board "${boardKey}" is ambiguous — several packages have a board by that name. Use the full key: ${resolution.candidates.map(c => `"${c}"`).join(" or ")}.`,
+      ]);
+      return;
+    }
+
+    const match = resolution.kind === "found"
+      ? state?.availableBoards?.find(b => b.id === resolution.id)
+      : undefined;
     if (!match) {
       const availableKeys = state?.availableBoards?.map(b => b.key).join(", ") || "none";
       flowNote("COORDINATOR", `set_board("${boardKey}") — board not found. Available: ${availableKeys}`);

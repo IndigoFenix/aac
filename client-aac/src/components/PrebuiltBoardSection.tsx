@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Grid3X3, Loader2 } from "lucide-react";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
@@ -47,8 +47,36 @@ export default function PrebuiltBoardSection({
   const { t } = useLanguage();
   const [selectedBoard, setSelectedBoard] = useState<BoardData | null>(null);
 
-  // Boards are pre-fetched during initialization.
-  const { boards, isLoading } = useBoards();
+  // The LIST is metadata only — IR is fetched when a board is actually opened.
+  const { boards, isLoading, loadBoard, loadingBoardId } = useBoards();
+
+  const openBoard = useCallback(
+    async (boardId: string) => {
+      const full = await loadBoard(boardId);
+      if (full?.irData) setSelectedBoard(full);
+    },
+    [loadBoard],
+  );
+
+  // Own boards first (no heading), then one group per package, in name order.
+  const groupedBoards = useMemo(() => {
+    const own = boards.filter((b) => !b.packageName);
+    const byPackage = new Map<string, BoardData[]>();
+    for (const board of boards) {
+      if (!board.packageName) continue;
+      const list = byPackage.get(board.packageName) ?? [];
+      list.push(board);
+      byPackage.set(board.packageName, list);
+    }
+    // With only one source there is nothing to distinguish — skip the heading.
+    const onlyOneSource = byPackage.size === 0 || (own.length === 0 && byPackage.size === 1);
+    const groups: Array<{ label: string | null; items: BoardData[] }> = [];
+    if (own.length) groups.push({ label: null, items: own });
+    for (const [label, items] of [...byPackage.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      groups.push({ label: onlyOneSource ? null : label, items });
+    }
+    return groups;
+  }, [boards]);
 
   // Back: leave the open board (return to the picker); at the picker root, defer
   // to the parent. Within-board page navigation is owned by <DynamicBoard />.
@@ -90,25 +118,39 @@ export default function PrebuiltBoardSection({
         <div className="p-2 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("board.selectBoard")}</h3>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          <div className="grid grid-cols-2 gap-2">
-            {boards
-              .filter((b) => b.irData)
-              .map((board) => (
-                <motion.button
-                  key={board.id}
-                  onClick={() => setSelectedBoard(board)}
-                  className="flex flex-col items-center justify-center p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Grid3X3 className="w-8 h-8 text-primary mb-2" />
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200 text-center">
-                    {board.name}
-                  </span>
-                </motion.button>
-              ))}
-          </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-3">
+          {/* Grouped by source once more than one contributes, so a student with
+              several attached packages isn't facing 40 undifferentiated tiles. */}
+          {groupedBoards.map(({ label, items }) => (
+            <div key={label ?? "__own__"}>
+              {label && (
+                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 px-1 pb-1">
+                  {label}
+                </h4>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {items.map((board) => (
+                  <motion.button
+                    key={board.id}
+                    onClick={() => void openBoard(board.id)}
+                    disabled={loadingBoardId !== null}
+                    className="flex flex-col items-center justify-center p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm disabled:opacity-60"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {loadingBoardId === board.id ? (
+                      <Loader2 className="w-8 h-8 text-primary mb-2 animate-spin" />
+                    ) : (
+                      <Grid3X3 className="w-8 h-8 text-primary mb-2" />
+                    )}
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200 text-center">
+                      {board.name}
+                    </span>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -134,10 +176,9 @@ export default function PrebuiltBoardSection({
             ? minRestSpace(studentRestSpace, (selectedBoard as { restSpace?: string }).restSpace)
             : "none"
         }
-        onNavigateToBoard={(boardId) => {
-          const target = boards.find((b) => b.id === boardId);
-          if (target) setSelectedBoard(target);
-        }}
+        // Board-to-board links: the target's IR may not be loaded yet, so go
+        // through the same lazy path rather than the metadata list.
+        onNavigateToBoard={(boardId) => void openBoard(boardId)}
       />
     </div>
   );

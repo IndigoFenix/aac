@@ -1,8 +1,11 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { boardRepository } from "../repositories";
+import { boardRepository, packageRepository } from "../repositories";
 import { analyticsService } from "../services/analyticsService";
 import { activityLogService } from "../services/activityLogService";
+import { studentService } from "../services/studentService";
+import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { resolvePackagePermission } from "../services/packages/packageAccess";
 
 const saveBoardSchema = z.object({
   name: z.string().min(1),
@@ -12,6 +15,37 @@ const saveBoardSchema = z.object({
   automaticSelectionHint: z.string().nullable().optional(),
   restSpace: z.enum(["none", "small", "large"]).optional(),
 });
+
+/**
+ * Can this caller read a board they did not author, because it belongs to a
+ * package they can reach?
+ *
+ * Two routes in, matching the two callers:
+ *   - clinician: holds `use` (or better) on a package containing the board
+ *   - AAC device: acting for a student the board is attached to, named via
+ *     `?studentId=` (the device already proves student access to reach this)
+ *
+ * Returns false for ordinary student-scoped boards — this is not a general
+ * relaxation of board ownership.
+ */
+async function canReadPackageBoard(req: Request, board: { id: string; scope: string }): Promise<boolean> {
+  if (board.scope !== "package") return false;
+
+  const studentId = typeof req.query.studentId === "string" ? req.query.studentId : undefined;
+  if (studentId) {
+    const { hasAccess } = await studentService.verifyStudentAccess(studentId, req.user!.id);
+    if (hasAccess && (await boardRepository.isBoardInStudentPackages(board.id, studentId))) {
+      return true;
+    }
+  }
+
+  const ctx = await buildClinicianCtx(req);
+  if (!ctx) return false;
+  for (const pkg of await packageRepository.listPackagesForBoard(board.id)) {
+    if ((await resolvePackagePermission(ctx, pkg.id)) !== "none") return true;
+  }
+  return false;
+}
 
 export class BoardController {
 
@@ -77,7 +111,9 @@ export class BoardController {
   async getStudentBoards(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
-      const boards = await boardRepository.getStudentBoardsMetadata(req.user!.id, studentId);
+      // Includes boards from packages attached to this student, auto-loading or
+      // not — the picker shows everything, the AI only sees auto-load boards.
+      const boards = await boardRepository.getStudentPickerBoards(req.user!.id, studentId);
       const sortedBoards = boards.sort((a, b) => b.loadedAt.getTime() - a.loadedAt.getTime());
       res.json(sortedBoards);
     } catch (error: any) {
@@ -92,10 +128,20 @@ export class BoardController {
   async getBoard(req: Request, res: Response): Promise<void> {
     try {
       const board = await boardRepository.getBoard(req.params.id);
-      if (!board || board.userId !== req.user!.id) {
+      if (!board) {
         res.status(404).json({ error: "error:BOARD_NOT_FOUND" });
         return;
       }
+
+      // A package board is readable by anyone who can reach it: the author, a
+      // user who can use one of its packages, or (the AAC case) a caller acting
+      // for a student it is attached to. Without this the device could list a
+      // package board in the picker but never load its IR.
+      if (board.userId !== req.user!.id && !(await canReadPackageBoard(req, board))) {
+        res.status(404).json({ error: "error:BOARD_NOT_FOUND" });
+        return;
+      }
+
       boardRepository.updateBoard(board.id, { loadedAt: new Date() });
       res.json(board);
     } catch (error: any) {

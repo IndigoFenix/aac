@@ -16,7 +16,9 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStudent } from '@/hooks/useStudent';
+import { useAuth } from '@/hooks/useAuth';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
+import { AACSettingsPackages } from '@/components/AACSettingsPackages';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
@@ -222,6 +224,10 @@ function CollapsibleSubSection({
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
+  // SLP MODE is the ONE setting on this panel that belongs to the logged-in
+  // USER rather than the student, so it reads/writes the profile endpoint and
+  // must never enter the per-student PATCH payload / AAC_SETTINGS_FIELDS.
+  const { user, refetchUser } = useAuth();
   const { t, isRTL } = useLanguage();
   const { theme } = useTheme();
   const { toast } = useToast();
@@ -271,6 +277,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [eyegazeProvider, setEyegazeProvider] = useState<string>('mouse');
   const [selectionMethod, setSelectionMethod] = useState<string>('whole_button');
   const [restSpace, setRestSpace] = useState<string>('large');
+  const [autoAudioScan, setAutoAudioScan] = useState(false);
+  const [autoAudioScanDelay, setAutoAudioScanDelay] = useState(15000);
   const [gazeSmoothing, setGazeSmoothing] = useState<GazeSmoothingSettings>(defaultSmoothingSettings());
   const [gazeAdvancedOpen, setGazeAdvancedOpen] = useState(false);
   const [allowReadProgress, setAllowReadProgress] = useState(true);
@@ -388,6 +396,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
       setSelectionMethod(aac?.selectionMethod ?? 'whole_button');
       setRestSpace(aac?.restSpace ?? 'large');
+      setAutoAudioScan(aac?.autoAudioScan ?? false);
+      setAutoAudioScanDelay(aac?.autoAudioScanDelay ?? 15000);
       setGazeSmoothing(parseSmoothingSettings(aac?.eyegazeSmoothing));
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
@@ -440,6 +450,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalEyegazeProvider = aac?.eyegazeProvider ?? 'mouse';
       const originalSelectionMethod = aac?.selectionMethod ?? 'whole_button';
       const originalRestSpace = aac?.restSpace ?? 'large';
+      const originalAutoAudioScan = aac?.autoAudioScan ?? false;
+      const originalAutoAudioScanDelay = aac?.autoAudioScanDelay ?? 15000;
       const originalGazeSmoothing = serializeSmoothingSettings(parseSmoothingSettings(aac?.eyegazeSmoothing));
       const originalAllowReadProgress = aac?.allowReadProgress ?? true;
       const originalAllowReadReports = aac?.allowReadReports ?? true;
@@ -485,6 +497,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         eyegazeProvider !== originalEyegazeProvider ||
         selectionMethod !== originalSelectionMethod ||
         restSpace !== originalRestSpace ||
+        autoAudioScan !== originalAutoAudioScan ||
+        autoAudioScanDelay !== originalAutoAudioScanDelay ||
         serializeSmoothingSettings(gazeSmoothing) !== originalGazeSmoothing ||
         allowReadProgress !== originalAllowReadProgress ||
         allowReadReports !== originalAllowReadReports ||
@@ -502,7 +516,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -532,6 +546,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       eyegazeSmoothing: string;
       selectionMethod: string;
       restSpace: string;
+      autoAudioScan: boolean;
+      autoAudioScanDelay: number;
       allowReadProgress: boolean;
       allowReadReports: boolean;
       allowNotes: boolean;
@@ -565,6 +581,33 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     },
   });
 
+  // SLP MODE — its OWN mutation against the profile endpoint, deliberately
+  // separate from updateMutation above. It is a property of the logged-in
+  // clinician (it follows them from student to student), so it is NOT part of
+  // the per-student save, has no dirty-check entry, and saves on toggle.
+  const slpMode = user?.slpMode === true;
+  const slpModeMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const response = await apiRequest('PATCH', '/api/profile/slp-mode', { slpMode: enabled });
+      return response.json();
+    },
+    onSuccess: async (data: { slpMode?: boolean }) => {
+      await refetchUser();
+      queryClient.invalidateQueries({ queryKey: ['/auth/user'] });
+      toast({
+        title: t('aacSettings.slpModeSaved'),
+        description: data?.slpMode ? t('aacSettings.slpModeOnDesc') : t('aacSettings.slpModeOffDesc'),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('common.error'),
+        description: error.message || t('aacSettings.slpModeError'),
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleSave = () => {
     if (!student) return;
     updateMutation.mutate({
@@ -593,6 +636,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       eyegazeSmoothing: serializeSmoothingSettings(gazeSmoothing),
       selectionMethod,
       restSpace,
+      autoAudioScan,
+      autoAudioScanDelay,
       allowReadProgress,
       allowReadReports,
       allowNotes,
@@ -643,6 +688,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
       setSelectionMethod(aac?.selectionMethod ?? 'whole_button');
       setRestSpace(aac?.restSpace ?? 'large');
+      setAutoAudioScan(aac?.autoAudioScan ?? false);
+      setAutoAudioScanDelay(aac?.autoAudioScanDelay ?? 15000);
       setGazeSmoothing(parseSmoothingSettings(aac?.eyegazeSmoothing));
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
@@ -822,6 +869,37 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   <RotateCcw className="w-4 h-4" />
                   {t('aacSettings.reloadAac')}
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* SLP MODE — the ONE control on this panel scoped to YOUR ACCOUNT
+              rather than this student. Its own card (not a CollapsibleSection)
+              and its own immediate save, so it never reads as part of the
+              student settings the Save button below writes. */}
+          <Card className="border-primary/40">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Activity className="w-4 h-4" />
+                {t('aacSettings.slpModeTitle')}
+              </CardTitle>
+              <CardDescription>{t('aacSettings.slpModeScope')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.slpModeLabel')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.slpModeDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={slpMode}
+                  disabled={slpModeMutation.isPending}
+                  onCheckedChange={(checked) => slpModeMutation.mutate(checked)}
+                />
               </div>
             </CardContent>
           </Card>
@@ -1961,6 +2039,49 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           {t('aacSettings.restSpaceHint')}
                         </p>
                       </div>
+                      {/* Automated audio scan — fires the ear button's readout on
+                          its own when the student has been hunting across the
+                          board without selecting anything. */}
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.autoAudioScan')}
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.autoAudioScanHint')}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={autoAudioScan}
+                          onCheckedChange={setAutoAudioScan}
+                        />
+                      </div>
+                      {autoAudioScan && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <Label className="text-sm font-medium">
+                              {t('aacSettings.autoAudioScanDelay')}
+                            </Label>
+                            <span className="text-sm text-muted-foreground">{autoAudioScanDelay / 1000}s</span>
+                          </div>
+                          <Slider
+                            min={5000}
+                            max={60000}
+                            step={1000}
+                            value={[autoAudioScanDelay]}
+                            onValueChange={(v) => setAutoAudioScanDelay(v[0])}
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>5s</span>
+                            <span>15s</span>
+                            <span>30s</span>
+                            <span>60s</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.autoAudioScanDelayHint')}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -2423,6 +2544,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
               {/* Custom Apps (Games) subsection */}
               {student?.id && <AACSettingsCustomApps studentId={student.id} />}
+
+              {/* Content packages subsection */}
+              {student?.id && <AACSettingsPackages studentId={student.id} />}
 
               {/* Other Apps subsection */}
               <CollapsibleSubSection

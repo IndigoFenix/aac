@@ -127,7 +127,9 @@ function describeCreature(session: QuestSession, cid: string): Record<string, un
     wants: (c?.needs ?? [])
       .filter((n) => !n.fulfilled)
       .map((n) => n.target?.category ?? n.target?.kind ?? n.itemId),
-    inventory: { owned, carriedStack: session.needCarried.get(cid) ?? {} },
+    // A body's carry is DERIVED now (scope-unification.md §2.1 — its hands plus
+    // the containers it holds), so the host answers for it instead of a map.
+    inventory: { owned, carrying: host()?.carryOf(cid) ?? {} },
     meters: Object.fromEntries(
       [...session.needMeters]
         .filter(([k]) => k.startsWith(`${cid}|`))
@@ -230,7 +232,8 @@ export function mountDebugPanel(): DebugPanel {
     mk("pre", "", sec("Session", true)).textContent = JSON.stringify(
       {
         townClock: session.townClock,
-        pocket: session.pocket,
+        carrying: host()?.carryOf(session.handsCid) ?? {},
+        wornBags: Object.fromEntries([...session.wornBags].map(([c, w]) => [c, w.glyph])),
         selectedPocket: (session as unknown as { selectedPocketGlyph?: string }).selectedPocketGlyph,
         party: [...session.party],
         escorting: [...session.escorting],
@@ -248,7 +251,11 @@ export function mountDebugPanel(): DebugPanel {
         meters: Object.fromEntries(
           [...session.needMeters].map(([k, v]) => [k, Math.round(v * 100) / 100]),
         ),
-        carried: Object.fromEntries(session.needCarried),
+        carried: Object.fromEntries(
+          [...new Set([...session.liveNeedBodies, ...session.wornBags.keys()])]
+            .map((cid) => [cid, host()?.carryOf(cid) ?? {}] as const)
+            .filter(([, c]) => Object.keys(c).length > 0),
+        ),
         steps: Object.fromEntries(
           [...session.needStep].map(([k, s]) => [k, `${s.kind} ${s.goodKey}×${s.units} @ ${s.objId ?? "?"}`]),
         ),

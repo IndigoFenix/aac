@@ -31,6 +31,14 @@ export interface LicensePermissions {
   // timestamped glyph overlays, preview and export. Optional so payloads/rows
   // predating the field stay valid; resolvePermissions fills the default.
   videoCaptionEnabled?: boolean;
+  // Content packages — create/edit packages, attach them to students, search
+  // public ones. Optional so payloads/rows predating the field stay valid;
+  // resolvePermissions fills the default. Deliberately gates MANAGEMENT only:
+  // an already-attached package keeps working in a live session regardless, so
+  // a lapsed or downgraded license never breaks a student mid-day. If we later
+  // sell individual packages, that detail belongs on the package row — this
+  // stays a single on/off. See planning-docs/aac-packages-plan.md §5.4.
+  packagesEnabled?: boolean;
   // Compliance regime slugs that apply to this license. Free-form strings
   // resolved against shared/regime/regimes.ts. Stored as data so adding a
   // new regime is a registry update, not a migration.
@@ -54,6 +62,7 @@ export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
   expertAgentsCount: 0,
   deepAnalysisEnabled: false,
   videoCaptionEnabled: false,
+  packagesEnabled: false,
   complianceRegimes: [],
   insuranceBridgeEnabled: false,
   billingRegime: "none",
@@ -72,6 +81,7 @@ export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
   expertAgentsCount: -1, // -1 = unlimited
   deepAnalysisEnabled: true,
   videoCaptionEnabled: true,
+  packagesEnabled: true,
   complianceRegimes: [],
   insuranceBridgeEnabled: true,
   billingRegime: "us_cpt",
@@ -90,6 +100,7 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
   expertAgentsCount: z.number().int(),
   deepAnalysisEnabled: z.boolean(),
   videoCaptionEnabled: z.boolean().optional(),
+  packagesEnabled: z.boolean().optional(),
   complianceRegimes: z.array(z.string()).optional(),
   insuranceBridgeEnabled: z.boolean(),
   billingRegime: z.enum(["none", "us_cpt"]),

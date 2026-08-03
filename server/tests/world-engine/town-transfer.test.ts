@@ -451,10 +451,16 @@ describe("player surface — give/bring compile to transfers' shapes", () => {
   it("the transfer intent line phrases goods + destination (announce surface)", () => {
     // phrase() caps level c at 3 CONTENT slots — the subject drops when a
     // tail complement would push past three (dialogue-gen law).
+    //
+    // CARRY, not PUT, for a place destination: the line is spoken at CLAIM
+    // time, before the hauler has touched the goods, and a haul IS a carry
+    // (and unlike `bring` it has board art). A creature recipient stays a give.
     const toYard: GoalSpec = { kind: "transfer", agreementId: "agr_0", goods: { wood: 3 }, to: { kind: "named", id: "yard" } };
-    expect(goalIntentLine(toYard, syms)!.c).toBe("put + wood + in + yard");
+    expect(goalIntentLine(toYard, syms)!.c).toBe("carry + wood + to + yard");
     const toMara: GoalSpec = { kind: "transfer", agreementId: "agr_1", goods: { apple: 2 }, to: { kind: "creature", id: "mara" } };
     expect(goalIntentLine(toMara, syms)!.c).toBe("give + apple + to + mara");
-    expect(goalIntentLine(toMara, syms)!.b).toBe("apple + to + mara");
+    // Level b keeps the VERB — a bare "apple + to + mara" reads as the
+    // verbless on-behalf fragment, not as a delivery the speaker will make.
+    expect(goalIntentLine(toMara, syms)!.b).toBe("give + apple + to + mara");
   });
 });

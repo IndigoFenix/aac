@@ -51,6 +51,7 @@ import {
   import { calendarRepository } from "../../repositories/calendarRepository";
   import { calendarService } from "../calendarService";
   import { locationService } from "../locationService";
+  import { INSTITUTE_PACKAGES_FIELD } from "./institute-packages-schema";
   import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
@@ -2468,6 +2469,7 @@ import {
       INSTITUTE_INSTITUTES_FIELD,
       INSTITUTE_STUDENTS_FIELD,
       INSTITUTE_LOCATIONS_FIELD,
+      INSTITUTE_PACKAGES_FIELD,
       ...(includeCalendar ? [INSTITUTE_CALENDAR_FIELD] : []),
     ];
   }

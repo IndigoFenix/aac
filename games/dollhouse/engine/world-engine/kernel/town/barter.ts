@@ -52,6 +52,9 @@ import {
   type TransferAgreement,
   type TransferLedger,
 } from "./transfer.js";
+// ⚖️ §7 step 6: `journeyS` into the barter leg. The region rung already owns
+// "how far one day of legs carries you" — the town stops inventing it.
+import { dailyTravelM, type WorldScale } from "../../scale.js";
 
 // ---------------------------------------------------------------------------
 // Signals — the model's whole input
@@ -73,9 +76,44 @@ export const BARTER_RATIO_CAP = 3;
 export const BARTER_WANT_MIN = 0.15;
 /** At/above this, a town won't PART with a good (its own famine). */
 export const BARTER_FAMINE_MAX = 0.7;
-/** Travel time of one shipment leg, as a fraction of a street day — the
- *  caravan is on the road before goods land (FOOD_DAY_SEC × this). */
+/**
+ * Travel time of one shipment leg, as a fraction of a street day — the
+ * caravan is on the road before goods land (FOOD_DAY_SEC × this).
+ *
+ * ⚖️ DEMOTED (scope-behaviors.md §2.7: "what the town's own EXCHANGE lacks —
+ * distance-blind quotes, the FLAT `BARTER_LEG_DAY_FRAC` leg time — is §2.2's
+ * pricing, not new exchange logic"). This is no longer the leg: it is the leg
+ * of a partner with NO GEOMETRY, and the floor under every other leg. See
+ * `barterLegSeconds`.
+ */
 export const BARTER_LEG_DAY_FRAC = 0.35;
+
+/**
+ * ⚖️ HOW LONG ONE SHIPMENT LEG TAKES — `journeyS` at caravan scale.
+ *
+ * `distanceM / dailyTravelM(scale)` is travel DAYS (the region rung's own
+ * function: gait × the waking day), and a day is `scale.dayLengthS` of clock.
+ * So a 3 km partner's caravan is visibly longer on the road than a 300 m one's,
+ * which is precisely what "a partner 3 km away and one next door quote
+ * identically" (§2.2) was the complaint about.
+ *
+ * A partner with NO REAL GEOMETRY — the abstract `away:<seed>` line, a
+ * flight-tier `city:<cell>` stub — passes `null` and gets the old flat
+ * `BARTER_LEG_DAY_FRAC` day, unchanged: a stub's distance is a fiction, and
+ * pricing a fiction is worse than admitting we don't know. That same constant
+ * floors every real leg too, so nobody's caravan teleports.
+ */
+export function barterLegSeconds(
+  scale: WorldScale,
+  distanceM: number | null | undefined,
+  dayS: number = FOOD_DAY_SEC,
+): number {
+  const flat = dayS * BARTER_LEG_DAY_FRAC;
+  if (distanceM === null || distanceM === undefined || !Number.isFinite(distanceM)) return flat;
+  const perDay = dailyTravelM(scale);
+  if (!(perDay > 0)) return flat;
+  return Math.max(flat, (Math.max(0, distanceM) / perDay) * scale.dayLengthS);
+}
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
@@ -204,6 +242,79 @@ export function stubPartnerSignals(partnerKey: string, day: number): BarterSigna
 }
 
 // ---------------------------------------------------------------------------
+// ⏸️ DERIVED WAKES — when will this partner say yes? (scope-behaviors.md §2.5.1)
+// ---------------------------------------------------------------------------
+//
+// The chapter, on the barter re-arm: "the DERIVED WAKE is already sitting there
+// and is the honest version of `BARTER_RETRY_SEC`: the partner's own goods
+// clock says when its famine lifts, so the day-timer becomes
+// `nextShortageBelow(partner, takeGood, threshold)` off the same closed form
+// the quote read."
+//
+// THE GRID, stated once for both samplers below. A stub partner's shortage is
+// `stubPartnerSignals`: a hash base plus a triangular season of
+// STUB_SEASON_DAYS. That is a pure function of the DAY, with no closed inverse
+// (a clamped triangle), so it is SAMPLED FORWARD on the DAY grid — the same
+// discipline `shelfRestockAt` uses on the market shelf, and the same honesty:
+// evaluated once, at park time, from the very formula the refusal read. The
+// horizon is ONE FULL SEASON, because the season IS the closed form's period —
+// a shortage that does not clear inside one has no derived wake at all, and
+// the park's `staleAt` backstop takes over. Real partners (live town books) are
+// not closed forms and return null by construction: an honest "no derived
+// wake", never an invented one.
+//
+// Both return a fractional DAY (the caller multiplies by its own day length),
+// or null for "not inside the horizon".
+
+/** Sample days `from + 1 … from + horizon` at one-day resolution. */
+function forwardDays(fromDay: number, horizonDays: number): number[] {
+  const out: number[] = [];
+  const n = Math.max(0, Math.floor(horizonDays));
+  for (let i = 1; i <= n; i++) out.push(Math.floor(fromDay) + i);
+  return out;
+}
+
+/**
+ * ⏸️ WHEN DOES THIS PARTNER'S SHORTAGE OF `good` FALL BELOW `threshold`? — the
+ * derived wake for a `wont-part` refusal ("they won't part with food"), whose
+ * whole content is `shortage(take) ≥ BARTER_FAMINE_MAX`. The answer is when
+ * their famine lifts, which their own goods clock knows.
+ */
+export function nextShortageBelow(
+  signalsAtDay: (day: number) => BarterSignals,
+  good: string,
+  threshold: number,
+  fromDay: number,
+  horizonDays: number = STUB_SEASON_DAYS,
+): number | null {
+  for (const d of forwardDays(fromDay, horizonDays)) {
+    if (clamp01(signalsAtDay(d).shortage(good)) < threshold) return d;
+  }
+  return null;
+}
+
+/**
+ * ⏸️ WHEN WOULD THIS PARTNER TAKE THE DEAL? — the general form, and the one a
+ * `has-enough` refusal needs (`wantGive < BARTER_WANT_MIN || wantGive ≤
+ * partTake` is a statement about TWO of their shortages at once). Evaluates the
+ * REAL predicate — `barterWillingness` itself — forward on the same grid, so
+ * the wake can never disagree with the refusal that produced it.
+ */
+export function nextBarterWillingAt(
+  give: string,
+  take: string,
+  us: BarterSignals,
+  signalsAtDay: (day: number) => BarterSignals,
+  fromDay: number,
+  horizonDays: number = STUB_SEASON_DAYS,
+): number | null {
+  for (const d of forwardDays(fromDay, horizonDays)) {
+    if (barterWillingness(give, take, us, signalsAtDay(d)).ok) return d;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // The scheduled executor — shipments both ways, terms re-derived per leg
 // ---------------------------------------------------------------------------
 
@@ -235,6 +346,23 @@ export interface RunBartersOpts {
   /** A partner's signals by key — real books for a simulated neighbor,
    *  stubPartnerSignals for an abstract one. Null fails the row NAMED. */
   themOf(partnerKey: string): BarterSignals | null;
+  /** ⚖️ Seconds one shipment leg takes for this partner (`barterLegSeconds`
+   *  over its real geometry). Absent ⇒ the row's own `every` alone paces it,
+   *  which is the shipped behaviour. A STANDING route re-derives this PER LEG
+   *  — a partner that moved (bindPartner) re-prices its road. */
+  legSecondsOf?(partnerKey: string): number;
+  /** ⏸️ IS THIS ROW PARKED? Asked BEFORE the terms are re-derived, exactly as
+   *  `decideNeeds` asks `parked(tpl)` before `ctxOf(tpl)` — the park exists to
+   *  skip work, and re-quoting a deal nobody will take is the work. Only
+   *  ONE-SHOT rows are ever parked (a standing route's own `every` IS its
+   *  wait; §2.5.1 sentences `reArmOneShot` alone). */
+  parked?(a: TransferAgreement): boolean;
+  /** ⏸️ PARK a stalled one-shot on the condition that stalled it. Return true
+   *  when the host took ownership of the wait — the row then stays DUE and is
+   *  skipped by `parked` until its wake fires, instead of being pushed a flat
+   *  `BARTER_RETRY_SEC` into the future. False/absent ⇒ `reArmOneShot`, the
+   *  shipped day-timer, unchanged. */
+  park?(a: TransferAgreement, why: BarterRefusal | "short"): boolean;
 }
 
 /**
@@ -260,9 +388,22 @@ export function runDueBarters(
   opts: RunBartersOpts,
 ): BarterLegReport[] {
   const out: BarterLegReport[] = [];
+  /** ⚖️ A STANDING route's clock, re-derived per leg: the recurrence the player
+   *  ordered, or the road, whichever is longer. You cannot have a daily caravan
+   *  from eight days away, and pretending otherwise is exactly the
+   *  distance-blindness §2.2 sentences. A stub partner's leg is the flat
+   *  fraction of a day, which is shorter than any `every` a route carries — so
+   *  stub pacing is untouched. */
+  const advanceLeg = (a: TransferAgreement, partnerKey: string): void => {
+    ledger.advance(a.id, now);
+    const legS = opts.legSecondsOf?.(partnerKey);
+    if (legS !== undefined && legS > (a.every ?? 0)) a.nextDueAt = now + legS;
+  };
   for (const a of ledger.due(now)) {
     const b = a.barter;
     if (!b) continue; // plain rows belong to runDueTransfers
+    // ⏸️ PARKED ROWS ARE SKIPPED BEFORE ANY WORK — the park's whole point.
+    if (a.every === undefined && opts.parked?.(a)) continue;
     const us = resolve(a.from);
     const them = resolve(a.to);
     const themSig = opts.themOf(b.partnerKey);
@@ -275,10 +416,22 @@ export function runDueBarters(
     const quote = { give: q.give, take: q.take };
     b.quote = quote;
     // A stalled leg retries next period: standing rows through their own
-    // clock; one-shots WAIT visibly (re-armed a day out) instead of rotting.
-    const retryLeg = () => {
-      if (a.every !== undefined) ledger.advance(a.id, now);
-      else reArmOneShot(a, now);
+    // clock; one-shots WAIT visibly instead of rotting — PARKED on the
+    // condition that stalled them where the host offers a park (§2.5.1),
+    // re-armed a flat day out where it doesn't.
+    const retryLeg = (why: BarterRefusal | "short") => {
+      if (a.every !== undefined) {
+        advanceLeg(a, b.partnerKey);
+        return;
+      }
+      // The park OWNS the wait: the row stays due and `parked` skips it until
+      // the partner's own goods clock (or an epoch, or the backstop) says the
+      // answer can have changed. `BARTER_RETRY_SEC` survives as that backstop.
+      if (opts.park?.(a, why)) {
+        a.nextDueAt = now;
+        return;
+      }
+      reArmOneShot(a, now);
     };
     // 2. Willingness re-checks per shipment — famine suspends, visibly.
     const will = barterWillingness(b.giveGood, b.takeGood, opts.us, themSig);
@@ -295,7 +448,7 @@ export function runDueBarters(
         received: {},
         quote,
       });
-      retryLeg();
+      retryLeg(will.reason);
       continue;
     }
     const resumed = b.suspended === true;
@@ -327,7 +480,7 @@ export function runDueBarters(
         received: {},
         quote,
       });
-      retryLeg();
+      retryLeg("short");
       continue;
     }
     b.suspended = false;
@@ -344,14 +497,21 @@ export function runDueBarters(
       received: inbound.moved,
       quote,
     });
-    if (a.every !== undefined) ledger.advance(a.id, now);
+    if (a.every !== undefined) advanceLeg(a, b.partnerKey);
     else ledger.complete(a.id);
   }
   return out;
 }
 
-/** How long a stalled one-shot waits before retrying (one street day —
- *  scarcities move on the day clock). */
+/** ⏸️ How long a stalled one-shot waits before retrying (one street day —
+ *  scarcities move on the day clock).
+ *
+ *  DEMOTED FROM MECHANISM TO BACKSTOP (§2.5.1: "`staleAt` = ... exactly today's
+ *  constant, demoted from mechanism to backstop"). Where a host supplies
+ *  `RunBartersOpts.park`, this is the park's `staleAt` and nothing else — the
+ *  wait itself is the partner's own goods clock. Where it doesn't, this is
+ *  still the whole timer, so a kernel-only caller (every test below) behaves
+ *  exactly as it shipped. */
 export const BARTER_RETRY_SEC = FOOD_DAY_SEC;
 
 /** A one-shot deal that couldn't run re-arms one leg out (it WAITS, visibly,
@@ -389,14 +549,23 @@ export function defaultTakeGood(
 /** Seed/refresh an ABSTRACT partner's shelf so the executor's honest
  *  partner-stock clamp never binds on a town that exists only as a proxy:
  *  the stub's one mint, at the boundary, deterministic (top up to `floor`).
- *  Real partners never pass through here — their shelves are their books. */
+ *  Real partners never pass through here — their shelves are their books.
+ *
+ *  ⏸️ RETURNS THE UNITS MINTED (0 = the shelf was already full). One of the two
+ *  events that credit a partner stack, and therefore one of the two that bump
+ *  `partnerStockEpoch` (§2.5.1's town-rung twin of `needsStockEpoch`) — a caller
+ *  that bumped unconditionally would tick the epoch on every due row and no
+ *  agreement park would ever hold. */
 export function stockAbstractPartner(
   stack: Record<string, number>,
   takeGood: string,
   floor: number,
-): void {
+): number {
   const have = stackUnits(stack, takeGood);
-  if (have < floor) stack[takeGood] = (stack[takeGood] ?? 0) + (floor - have);
+  if (have >= floor) return 0;
+  const minted = floor - have;
+  stack[takeGood] = (stack[takeGood] ?? 0) + minted;
+  return minted;
 }
 
 // ---------------------------------------------------------------------------

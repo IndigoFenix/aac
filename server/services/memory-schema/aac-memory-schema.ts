@@ -1201,6 +1201,7 @@ Use this when you notice the user is in a context that would benefit from a dedi
 **Rules:**
 - Before creating a new board, check if an appropriate board already exists (see list below). If so, edit it instead.
 - You can only edit boards marked as [generated]. Human-authored boards are read-only.
+- Boards marked [package] are ALWAYS read-only, even when also [generated]: they come from a shared package and editing one would change it for every other user of that package. To adapt one, create a new board instead.
 - Create boards with commonly-needed buttons for the situation. Use multi-page layouts when appropriate (e.g., main page + sub-pages for categories).
 - Each button needs: label, a glyph (its visual — see below), and optionally a sentence (what the button speaks when pressed).
 - glyph: one or more SYMBOLs joined by "+". A SYMBOL is an emoji (🍎, 🤗) or generate:lower_snake_case for a custom picture (use only when no emoji fits). If a glyph uses ANY generate: SYMBOL, also set glyphFallback to an emoji-only version so the button shows something immediately while the picture is produced.
@@ -1242,7 +1243,10 @@ Set "boardId" to an existing board's ID to edit it (only [generated] boards). Se
       prompt += `\n**Existing boards:**\n`;
       for (const b of availableBoards) {
         const tag = b.isGenerated ? ' [generated]' : ' [manual]';
-        prompt += `- "${b.name}" (ID: ${b.id})${b.hint ? ` — ${b.hint}` : ''}${tag}\n`;
+        // A package board is read-only whatever else it is — say so, so the
+        // model can see WHY an edit would be refused rather than retrying.
+        const packageTag = (b as { packageName?: string }).packageName ? ' [package]' : '';
+        prompt += `- "${b.name}" (ID: ${b.id})${b.hint ? ` — ${b.hint}` : ''}${tag}${packageTag}\n`;
       }
     } else {
       prompt += `\n**No boards exist yet.** Create boards as needed for the user's situations.\n`;

@@ -13,6 +13,8 @@
  *   - "none":  leave the session where it is.
  */
 
+import { allowsIdleRest, allowsIdleSleep } from "./slp-mode";
+
 export interface IdleWatchdogInput {
   /** Milliseconds since the last real engagement (press / board change / AI
    *  speech). Ambient frames/audio do NOT reset this. */
@@ -28,6 +30,11 @@ export interface IdleWatchdogInput {
   /** A social-training session is active (or transitioning). Counts as engaged
    *  even between peer turns, so never auto-rest/sleep through one. */
   inSocialSession: boolean;
+  /** SLP MODE is on for the user who opened this session (users.slp_mode).
+   *  A therapy session is full of long deliberate silences, so NOTHING here
+   *  may drop the session on its own — the therapist uses the explicit
+   *  wake/sleep control instead. See ./slp-mode.ts. */
+  slpMode: boolean;
   /** Idle threshold to drop awake → resting. */
   restAfterMs: number;
   /** Idle threshold to go fully asleep. */
@@ -55,10 +62,11 @@ export function decideIdleTransition(input: IdleWatchdogInput): IdleDecision {
   if (!input.ready || input.paused || input.asleep || input.inSocialSession) {
     return "none";
   }
-  if (input.idleMs >= input.sleepAfterMs) {
+  if (input.idleMs >= input.sleepAfterMs && allowsIdleSleep(input.slpMode)) {
     return "sleep";
   }
-  if (input.idleMs >= input.restAfterMs && input.sessionProfile === "awake") {
+  if (input.idleMs >= input.restAfterMs && input.sessionProfile === "awake"
+      && allowsIdleRest(input.slpMode)) {
     return "rest";
   }
   return "none";

@@ -22,6 +22,8 @@
 import type { CreatureId, ItemId } from "@shared/world-engine/interaction/behavior/creatures.js";
 import type { GoalSpec, PlaceRef } from "@shared/world-engine/interaction/behavior/rules.js";
 import type { GoalPlan, GoalStep, WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
+import { journeyTimeS, priceOf } from "@shared/world-engine/kernel/town/pricing.js";
+import type { VerbCost } from "@shared/world-engine/kernel/town/scope-shape.js";
 import type { Vec2 } from "../../types.js";
 
 /** When two RESOLVED points are the SAME SPOT (metres). Both sides come from the
@@ -57,7 +59,8 @@ export type Predicate =
   | { kind: "colored"; item: ItemId; color: string } // the item carries the colour facet
   | { kind: "socialized"; partner: CreatureId } // the actor has exchanged with the partner
   // Stack-economy micro-targets (S3): `units` of `category` moved between the
-  // named store and the actor's abstract bag. Terminal by design — one leg, one
+  // named store and the actor's own CARRY — the container it is holding or
+  // wearing, else its hands (scope-unification.md §2.1). Terminal by design — one leg, one
   // act; the SELECTOR paces multi-leg errands (take at the market, then a fresh
   // stow-at-home goal), exactly the needs walker's bounded-step granularity.
   | { kind: "unitsTaken"; from: PlaceRef; category: string; units: number; affords?: string; tplKey?: string }
@@ -226,8 +229,8 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
       return to ? [...legTo(to), { kind: "converse", target: target.partner }] : null;
     }
     case "unitsTaken": {
-      // Walk to the store and WITHDRAW — the executor moves the units into the
-      // abstract bag (market accounting, lid access, carry bounds all its own).
+      // Walk to the store and WITHDRAW — the executor moves the units onto the
+      // body (market accounting, lid access, carry bounds all its own).
       // The store must be a NAMED object: the id the walk resolves is the id
       // the withdraw acts on, one source of truth.
       if (target.from.kind !== "named") return null;
@@ -417,14 +420,69 @@ export function goalTarget(goal: GoalSpec, self: CreatureId, r: WorldResolver): 
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE PRICE OF A PLAN (step ④ — scope-behaviors.md §2.3 PREFER, §3 the
+// currency, §5 seat 3)
+// ---------------------------------------------------------------------------
+//
+// The surveys' verdict on this layer: "`handsS` and `forgoneS` have zero
+// implementations in the repo — labour is free everywhere", and the geometric
+// special cases below (`SAME_SPOT_M`, the dining leg, the tub fork) are
+// comparisons spelled as branches. This is the missing arithmetic, and NOTHING
+// else: a plan is a list of legs and acts, so its price is the walking plus the
+// hands, in that order, summed. The formulas stay in kernel/town/pricing.ts, so
+// a body's market trip and a caravan's route price the same way.
+//
+// 🚨 THE WALK IS CHAINED, not radial. Leg two starts where leg one ended, which
+// is the whole reason a plan can be priced at all: "fetch the basket, then go to
+// the market" is dearer than "go to the market" by exactly the detour, and that
+// difference IS the ENABLE comparison (§2.4). Measuring every leg from the body
+// would price a detour as free.
+
+/**
+ * Price a compiled step list in hand-seconds. `spoilageS`/`forgoneS` stay 0
+ * this pass (chapter §3 — forgone is what the argmax itself produces, once
+ * there is an argmax to read it off).
+ *
+ * An UNPRICED resolver (`r.price` absent) returns all zeros, which is what
+ * makes an unpriced candidate set tie and the first-compilable order decide —
+ * the byte-identical property every seat's flag promises.
+ */
+export function pricePlan(steps: readonly GoalStep[], self: CreatureId, r: WorldResolver): VerbCost {
+  const p = r.price;
+  if (!p) return priceOf({});
+  // Where the walk starts. An unlocatable body prices its FIRST leg at zero and
+  // chains honestly from there — a plan is still comparable by its detours even
+  // when the world cannot say where the walker stands.
+  let at = r.positionOf(self);
+  let journeyS = 0;
+  let handsS = 0;
+  for (const step of steps) {
+    if (step.kind === "moveTo") {
+      if (at) journeyS += journeyTimeS(Math.hypot(step.pos.x - at.x, step.pos.y - at.y), p.walkMps);
+      at = step.pos;
+      continue;
+    }
+    handsS += p.handsS(step);
+  }
+  return priceOf({ journeyS, handsS });
+}
+
+/** The step list for a goal by target-predicate regression, or null when it
+ *  isn't an item errand (caller falls back to compileGoal) or can't be reached
+ *  right now. `planGoal` is this plus the price. */
+export function planSteps(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalStep[] | null {
+  const target = goalTarget(goal, self, r);
+  if (!target) return null;
+  return achieve(target, self, r);
+}
+
 /** Plan a goal into body steps by target-predicate regression, or null when it
  *  isn't an item errand (caller falls back to compileGoal) or can't be reached
  *  right now. The deterministic twin of compileGoal for the item family. */
 export function planGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalPlan | null {
-  const target = goalTarget(goal, self, r);
-  if (!target) return null;
-  const steps = achieve(target, self, r);
-  return steps ? { steps } : null;
+  const steps = planSteps(goal, self, r);
+  return steps ? { steps, cost: pricePlan(steps, self, r) } : null;
 }
 
 // ---------------------------------------------------------------------------

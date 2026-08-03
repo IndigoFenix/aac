@@ -62,7 +62,12 @@ describe("goalIntentLine — GoalSpec → the announcement glyphs", () => {
       syms,
     )!;
     expect(line.a).toBe("chair");
-    expect(line.b).toBe("chair + next_to + table");
+    // Level b KEEPS THE VERB. A verbless "{item} + {prep} + {place}" is the
+    // locative assertion ("the chair is next to the table"), which is a
+    // different claim from the placement this line means — one shape, one
+    // meaning (dialogue-gen's tailed-clause law).
+    expect(line.b).toBe("put + chair + next_to + table");
+    expect(translateGlyph(asIntent(line).b, "en")).toBe("I will put the chair next to the table.");
     expect(line.c).toBe("put + chair + next_to + table");
     // The same 4-slot shape putIn uses — the subject drops and `.will` carries
     // the first person.

@@ -572,7 +572,7 @@ export const he: Translations = {
       wash: "לרחוץ",
       tidy: "לסדר",
       heat: "לחמם",
-      cool: "לקרר",
+      make_cold: "לקרר",
       wear: "ללבוש",
       color: "לצבוע",
       brush_teeth: "לצחצח שיניים",
@@ -767,6 +767,7 @@ export const he: Translations = {
       understand: "מבין",
       confused: "מבולבל",
       wow: "וואו",
+      amazing: "מדהים",
       oops: "אופס",
       oh_no: "אוי לא",
       yuck: "איכס",
@@ -845,6 +846,10 @@ export const he: Translations = {
   },
 
   quickActions: {
+    forward: "הבא",
+    pauseBoard: "עצירה",
+    resumeBoard: "המשך",
+    previous: "הקודם",
     yes: "כן",
     no: "לא",
     more: "עוד",
@@ -1080,6 +1085,11 @@ export const he: Translations = {
   audioScan: {
     start: "הקראת הלוח",
     stop: "הפסקת ההקראה",
+  },
+  slpMode: {
+    ready: "מוכן",
+    wake: "להעיר",
+    sleep: "לתת לישון",
   },
   guessing: {
     category: {

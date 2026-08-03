@@ -162,6 +162,13 @@ export const OWNERSHIP_MAP: Record<string, OwnershipResolver> = {
     return null;
   },
   boards: (r) => {
+    // Package boards are shareable CONTENT, not PHI. They must never be
+    // extracted to an institute-scoped external backend: doing so NULLs irData
+    // in the main DB, making the board unreadable to every other institute that
+    // uses the package. Note userId stays non-null on package rows (it is the
+    // author), so this guard has to come before the userId fallback.
+    // See planning-docs/aac-packages-plan.md §1.4.
+    if (r.scope === "package") return null;
     if (r.studentId) return { type: "student", id: r.studentId as string };
     if (r.userId) return { type: "user", id: r.userId as string };
     return null;

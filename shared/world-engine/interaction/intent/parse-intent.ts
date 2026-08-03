@@ -291,7 +291,10 @@ export const LEXICON: Record<string, Lex> = {
   tidy: V("tidy", true),
   area: V("area", true), // ③ area charters — "area + farm + here"
   // Verbs — transforming (directive)
-  heat: V("heat", true), cook: V("cook", true), cool: V("cool", true), wash: V("wash", true),
+  // `make_cold` — no key here may contain "cool" at all. The bare word is the
+  // slang, and the AI picks by nearest-word, so even `cool_down` pulled slang
+  // sentences onto the cold snowflake (see glyph-registry).
+  heat: V("heat", true), cook: V("cook", true), make_cold: V("make_cold", true), wash: V("wash", true),
   fill: V("fill", true), empty: V("empty", true),
   // Verbs — interacting
   help: V("help", true), play: V("play", true), talk: V("talk", true), ask: V("ask", true),

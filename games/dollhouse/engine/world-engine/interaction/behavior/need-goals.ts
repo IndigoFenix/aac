@@ -13,9 +13,10 @@
 //     The stack-economy motives (provision, tidy, laundry, dress, cook, fun's
 //     affordance acquire…) return [] and stay on the legacy needStep walker
 //     until S3 puts `units` + reach budgets on the goal vocabulary.
-//   • A body already carrying matching units in its ABSTRACT bag (needCarried)
-//     returns [] too: the item resolver sees props and container stocks, never
-//     the bag, so the legacy walker keeps those eats (seat show intact).
+//   • A body already carrying matching units RETURNS [] too: the item resolver
+//     sees loose props and container stocks in the world, never what is on a
+//     body (its hands, its basket, its satchel — scope-unification.md §2.1), so
+//     the legacy walker keeps those eats (seat show intact).
 //   • The caller must COMPILE-CHECK the returned candidates in order and fall
 //     through to the legacy path when none plans — that is the degradation
 //     seam: market shelves and the town well are invisible to the resolver on
@@ -70,6 +71,10 @@ export const NEED_PURSUIT_STACK_MOTIVES: ReadonlySet<string> = new Set([
   "dress",
   "fun",
   "unload",
+  // The put-down row (needs.ts `relieveTemplate`): its deposit is an ordinary
+  // putUnits leg and its drop an ordinary dropUnits one — the difference is
+  // only what the effect finds in the hands (a whole object, possibly a bag).
+  "relieve",
   "laundry",
   "cook",
   // Adoption rows ("adopt:<wanter>|<tpl>") are deposit-shaped supply runs into
@@ -78,9 +83,40 @@ export const NEED_PURSUIT_STACK_MOTIVES: ReadonlySet<string> = new Set([
   "adopt",
 ]);
 
+/**
+ * WHAT A COOKED MEAL IS WORTH OVER RAW FOOD, in hand-seconds — the ONE taste
+ * term this pass introduces, and the reason the hot-first ordering above
+ * survives becoming an argmax (step ④, `chooseNeedGoal` in quest-host).
+ *
+ * Before costs, "hot first" was absolute: the served dinner won however far off
+ * it stood. Priced, the two candidates differ only in their walk, so without a
+ * taste term a raw apple in the pantry beside you would always beat the meal
+ * somebody cooked — and the cook's work would go cold on the table.
+ *
+ * 30 s is the exchange rate, stated as a distance: at the villager's 1.6 m/s a
+ * body will walk **≈48 m further** for the dinner than for the raw unit, and no
+ * further. That is three quarters of one pressure point (`NEED_PRESSURE_S` 40 —
+ * the seconds one rung of the ladder buys), which is about what the cook row
+ * (3.3) puts into a meal over what the raw unit was already worth: enough to
+ * cross a house for dinner, not enough to cross the town.
+ */
+export const HOT_MEAL_TASTE_S = 30;
+
+/** The taste bonus this candidate carries, in hand-seconds — the value side of
+ *  the pursuit argmax. Zero for everything but a cooked meal; the knowledge of
+ *  WHICH candidate is the hot one stays here, beside the ordering it replaces,
+ *  rather than leaking into the host as a peek at `goal.item.match.state`. */
+export function tasteBonusS(goal: GoalSpec): number {
+  if (goal.kind !== "consume") return 0;
+  const m = "match" in goal.item ? goal.item.match : undefined;
+  return m?.state === "hot" ? HOT_MEAL_TASTE_S : 0;
+}
+
 export interface NeedGoalOpts {
-  /** Units in the creature's ABSTRACT bag matching the template's item — > 0
-   *  keeps the eat on the legacy walker (the bag is invisible to the resolver). */
+  /** Units ON THE BODY matching the template's item (its hands plus the
+   *  containers it holds — `bodyCarryView`). > 0 keeps the eat on the legacy
+   *  walker: what a body is carrying is invisible to the item resolver, which
+   *  only sees things standing in the world. */
   carriedMatching: number;
   /** The motive's dwell length (restDwellFor) — a nap, the toilet, the scrub. */
   restDwellS: number;
@@ -121,9 +157,10 @@ export function needPursuitGoals(tpl: NeedTemplate, intent: NeedIntent, opts: Ne
       const cat = tpl.item.category;
       if (!cat) return [];
       const at = tpl.satisfy.at;
-      // A unit already in the BAG (S4): eat IT — walk to the dining station
+      // A unit already ON THE BODY (S4): eat IT — walk to the dining station
       // when one resolves (the seat show), else in place. The single-item
-      // consume can't see the abstract stack, so this is its own micro-goal.
+      // consume plans against things standing in the world and cannot see a
+      // body's own carry, so this is its own micro-goal.
       if (opts.carriedMatching > 0) {
         return [{ kind: "consumeUnits", category: cat, ...(at ? { at } : {}), tplKey: tpl.key }];
       }
@@ -135,7 +172,7 @@ export function needPursuitGoals(tpl: NeedTemplate, intent: NeedIntent, opts: Ne
       // Food reaches for the served HOT meal first, raw as the fallback — and a
       // decided TAKE adds the stack leg LAST (S3): when no supply is visible to
       // the item resolver (a market shelf, the well — derived stock), the walk-
-      // and-buy still rides the pursuit; the bag eat that follows re-decides.
+      // and-buy still rides the pursuit; the carry eat that follows re-decides.
       const eats = cat === "food" ? [mk({ category: cat, state: "hot" }), mk({ category: cat })] : [mk({ category: cat })];
       return intent.kind === "take" ? [...eats, takeLeg(intent)] : eats;
     }

@@ -49,6 +49,19 @@ const originalConsoleLog = console.log;
 const originalConsoleWarn = console.warn;
 const originalConsoleError = console.error;
 
+// NOTE — the full-suite crash is NOT an unhandled rejection.
+// A full `npm test` dies partway through on an `ApiError: API key not valid`
+// from @google/genai (a detached real-LLM call escaping some earlier suite).
+// A `process.on('unhandledRejection')` handler here was TRIED on 2026-08-03 and
+// did NOT fire: the handler never printed, and the process still died, so the
+// throw reaches Node as an uncaught exception rather than a rejection — most
+// likely because it surfaces after the originating test file's environment has
+// been torn down, when jest has already removed the sandbox's listeners.
+// Anything that does catch it would have to sit outside the per-file sandbox —
+// globalSetup, a custom testEnvironment, or a runner-level wrapper. Until then,
+// verify changes with focused suites (`npm run test:unit -- <word>`,
+// `npm run test:engine`, or a single integration file) rather than a full run.
+
 beforeAll(() => {
   // Suppress logs during tests unless DEBUG is set
   if (!process.env.DEBUG) {

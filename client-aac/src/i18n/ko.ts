@@ -572,7 +572,7 @@ export const ko: Translations = {
       wash: "씻다",
       tidy: "정리하기",
       heat: "데우기",
-      cool: "식히기",
+      make_cold: "식히기",
       wear: "입다",
       color: "색칠하기",
       brush_teeth: "양치하다",
@@ -767,6 +767,7 @@ export const ko: Translations = {
       understand: "이해",
       confused: "헷갈려",
       wow: "우와",
+      amazing: "대단해",
       oops: "이런",
       oh_no: "안 돼",
       yuck: "으웩",
@@ -845,6 +846,10 @@ export const ko: Translations = {
   },
 
   quickActions: {
+    forward: "다음",
+    pauseBoard: "고정",
+    resumeBoard: "재개",
+    previous: "이전",
     yes: "네",
     no: "아니요",
     more: "더보기",
@@ -1080,6 +1085,11 @@ export const ko: Translations = {
   audioScan: {
     start: "보드 읽어 주기",
     stop: "읽기 중지",
+  },
+  slpMode: {
+    ready: "준비됨",
+    wake: "깨우기",
+    sleep: "재우기",
   },
   guessing: {
     category: {

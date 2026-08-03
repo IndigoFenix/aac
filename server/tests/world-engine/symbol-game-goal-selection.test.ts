@@ -274,8 +274,11 @@ describe("compileGoal — the world adapter", () => {
   };
 
   it("goHome → a single moveTo the home point", () => {
+    // …plus the step-④ price, which an UNPRICED resolver scores at zero — the
+    // property that keeps every compile in this file byte-identical.
     expect(compileGoal({ kind: "goHome" }, "bear", resolver)).toEqual({
       steps: [{ kind: "moveTo", pos: { x: 5, y: 5 } }],
+      cost: { journeyS: 0, handsS: 0, spoilageS: 0, forgoneS: 0 },
     });
   });
 

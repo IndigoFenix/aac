@@ -41,7 +41,9 @@ export interface BoardManagerPromptConfig extends BaseStudentContext {
   memoryContext?: string;
   muteState: "unmuted" | "muted";
   cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>;
-  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
+  // `packageName` groups boards reached through an attached package; absent for
+  // the student's own boards.
+  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; packageName?: string; grid: { rows: number; cols: number } }>;
   /** Normalized key of the currently loaded pre-built board, if any.
    *  Distinct from `loadedBoardName` so the prompt can present BOTH and
    *  the model never confuses the human label for the set_board argument. */
@@ -78,6 +80,49 @@ export interface BoardManagerPromptParts {
   base: string;
   builderBlock: string;
   guessingBlock: string;
+}
+
+/**
+ * Cap on how many pre-built boards are listed in the prompt.
+ *
+ * This block is rebuilt on EVERY Board Manager call, so its length is a
+ * per-turn cost, not a one-off. A student with several attached packages could
+ * otherwise carry dozens of lines forever. Thirty is comfortably more than any
+ * one moment needs while keeping the block bounded.
+ */
+export const MAX_PREBUILT_BOARDS_IN_PROMPT = 30;
+
+/**
+ * Render the `<prebuilt_boards>` listing: the student's own boards first, then
+ * package boards grouped under a heading per package.
+ *
+ * Returns the number DROPPED as well as the lines — the caller both tells the
+ * model there is more and logs it. A silent cap reads as "you have seen
+ * everything" when you have not.
+ */
+export function renderPrebuiltBoardLines(
+  boards: ReadonlyArray<{ key: string; name: string; hint?: string; packageName?: string }>,
+): { lines: string[]; dropped: number } {
+  const shown = boards.slice(0, MAX_PREBUILT_BOARDS_IN_PROMPT);
+  const dropped = boards.length - shown.length;
+
+  const entry = (b: { key: string; name: string; hint?: string }) =>
+    `  - key: "${b.key}"  name: "${b.name}"${b.hint ? `  — ${b.hint}` : ""}`;
+
+  const lines: string[] = [];
+  for (const b of shown) if (!b.packageName) lines.push(entry(b));
+
+  let currentPackage: string | null = null;
+  for (const b of shown) {
+    if (!b.packageName) continue;
+    if (b.packageName !== currentPackage) {
+      currentPackage = b.packageName;
+      lines.push(`  From package "${currentPackage}":`);
+    }
+    lines.push(entry(b));
+  }
+
+  return { lines, dropped };
 }
 
 export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): BoardManagerPromptParts {
@@ -142,13 +187,13 @@ The TARGET label on the incoming tagged event decides whether to build a board a
 
 **Build FOLLOW-UPS** when the USER just acted (${T.tagPress}, ${T.tagComposed}):
   - Options that continue or clarify what they said.
-  - E.g. they pressed "I want to talk about my day" → "the morning", "something good", "something hard", "more details", "actually, something else".
+  - E.g. they pressed "I want to talk about my day" → "the morning", "something good", "something hard", "more details", plus a \`button_type: "more"\` (see <meta_buttons>).
   - Especially valuable when they're talking to a non-AI person — the buttons let them elaborate further.
 
 **Build REPLIES** when someone ELSE just spoke to the USER (\`target = USER\`):
   - Options the user might say back.
   - Speaker may be AI ([AI to USER]), known person ([Mom to USER]), or UNKNOWN ([UNKNOWN to USER]). ALL THREE require replies.
-  - E.g. "do you want lunch?" → "yes please", "no thanks", "I'm not hungry", "something else", "later".
+  - E.g. "do you want lunch?" → "yes please", "no thanks", "I'm not hungry", "later", "just a drink".
 
 **TARGET decides, SPEAKER is just attribution.**
   - \`[UNKNOWN to USER]\` is NOT ambient noise — Observer transcribed it because speech was clearly addressed to the user.
@@ -233,15 +278,24 @@ Two META button kinds — set \`button_type\` on a rebuild_board / add_board_but
     - DON'T use for open-ended chitchat ("how are you?" — nothing to "find").
     - DON'T use when you already have a manageable shortlist (offer those as normal buttons).
     - DON'T include while guessing mode is active — server drops it.
-  - \`button_type: "more"\` — [MORE] button. The user might want OTHER options on the same topic.
-    - Pressing asks you to refresh with fresh alternatives (no voiced utterance).
-    - DON'T use as a substitute for rebuild_board when the topic should shift entirely.
+  - \`button_type: "more"\` — the MORE OPTIONS button. Renders as "something else" with a RELOAD symbol, in its own colour.
+    - Pressing it asks YOU for fresh alternatives on the SAME topic. Nothing is voiced.
+    - INCLUDE it whenever your ${T.button}s might not cover what the user wants to say.
+    - Reach for it most on a narrow ${T.board} — one topic, a short answer list, a yes/no beat.
+
+**"Something else" means MORE OPTIONS. It NEVER means "let's change the subject."**
+Users read the reload symbol as "show me the rest of the list", so a change-the-subject ${T.button} wearing it gets pressed by users who only wanted more of the same.
+
+  - Other options on THIS topic → \`{ button_type: "more" }\` ✅
+  - A DIFFERENT topic → \`{ button_type: "wordfinder" }\`, or leave it to the device's own ${T.builder} button ✅
+  - A normal ${T.button} labelled "Something else" (or drawn with \`🔄\`) to move off the topic ❌
 </meta_buttons>
 
 <board_rules>
   - Aim for 6–8 ${T.button}s per ${T.board}. Fill it.
   - No two ${T.button}s should look the same — distinguish at a glance.
-  - Never include yes/no/home/more ${T.button}s (added automatically).
+  - Never hand-author yes/no/home ${T.button}s (the device row already has them).
+  - For "more options", set \`button_type: "more"\` — never a hand-made ${T.button}.
   - Decide the \`speech\` first, then build the \`glyph\` array that depicts it.
 </board_rules>${glyphInputTranslation ? `
 
@@ -268,9 +322,13 @@ Generation is enabled. A generated SYMBOL is lowercase_with_underscores English 
   }
 
   if (availableBoards && availableBoards.length > 0) {
+    const { lines, dropped } = renderPrebuiltBoardLines(availableBoards);
     prompt += `\n\n<prebuilt_boards>
 Pre-built ${T.board}s available via set_board(board_key). Always pass the KEY (the snake_case identifier), never the display name.
-${availableBoards.map(b => `  - key: "${b.key}"  name: "${b.name}"${b.hint ? `  — ${b.hint}` : ""}`).join("\n")}`;
+${lines.join("\n")}`;
+    if (dropped > 0) {
+      prompt += `\n  (…and ${dropped} more not listed — ask if none of the above fits.)`;
+    }
     if (loadedBoardKey || loadedBoardName) {
       const loadedKey = loadedBoardKey ?? "(unknown)";
       const loadedName = loadedBoardName ?? "(unnamed)";
@@ -985,7 +1043,10 @@ Omit \`kind\` for a normal ${T.button} and for registry \`suggestion:\` keys (th
     properties.button_type = {
       type: "string",
       enum: ["wordfinder", "more"],
-      description: `OPTIONAL. See <meta_buttons> in the system prompt for usage. When set, the device renders a FIXED appearance; \`speech\` / \`label\` are ignored.`,
+      description: `OPTIONAL. Marks this entry as a META button. The device renders a FIXED appearance and IGNORES \`speech\` / \`glyph\` / \`label\`:
+  - "wordfinder" — a magnifier; opens Word Finder narrowing.
+  - "more" — "something else" with a RELOAD symbol; asks you for fresh options on the same topic.
+See <meta_buttons> for when to use each.`,
     };
   }
 

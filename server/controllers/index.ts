@@ -10,6 +10,7 @@ export { creditPackageController, CreditPackageController } from "./creditPackag
 export { interpretationController, InterpretationController } from "./interpretationController";
 export { boardController, BoardController } from "./boardController";
 export { customAppController, CustomAppController } from "./customAppController";
+export { packageController, PackageController } from "./packageController";
 export { onboardingController, OnboardingController } from "./onboardingController";
 export { slpClinicalController, SlpClinicalController } from "./slpClinicalController";
 export { programController, ProgramController } from "./programController";

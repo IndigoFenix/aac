@@ -8,8 +8,33 @@
 // importable without the 3D host, exactly like goods-kinds.
 
 import { headOf } from "../../variations.js";
+import { isPortableContainer } from "./containers.js";
 import { CLOTHING_HEADS, goodKeyOfGlyph } from "./goods-kinds.js";
 import { HOUSEHOLD } from "./stations.js";
+
+/**
+ * RUNG 0 — SOME THINGS HAVE NO BOX, AND A BASKET IS THE FIRST OF THEM.
+ *
+ * The ladder below answers "which container does this glyph belong in", and it
+ * has an answer for everything — which is wrong for a PORTABLE CONTAINER. A
+ * basket is not goods, it is the household's TOOL for moving goods
+ * (scope-unification.md §2.1: a container in somebody's hands hangs off that
+ * body in the scope tree). Sending one down the ladder buries it in whichever
+ * member's box comes first: legal (`mayDissolveToStack` lets an EMPTY one
+ * stack) but useless, because the household's only bag is then invisible
+ * inside a chest. scope-unification.md's own status note already names this as
+ * live pressure — *"the household basket gets tidied into a private box
+ * (nothing says where a basket LIVES)"*.
+ *
+ * So this says where it lives: ON THE FLOOR, wherever it was last set down.
+ * Consulted BEFORE the ladder (so the ladder keeps its first-match character
+ * untouched) by both the tidy chore — which must not sweep a bag into a box —
+ * and the put-down row, whose destination for one of these is a ground
+ * set-down through `setDownFromHands`, never a container.
+ */
+export function livesOnTheFloor(glyph: string): boolean {
+  return isPortableContainer(glyph);
+}
 
 /** The session facts the ladder reads — quest-host wires these from the live
  *  QuestSession; a test hands in literals. */

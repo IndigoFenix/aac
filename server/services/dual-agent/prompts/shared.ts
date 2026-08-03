@@ -14,6 +14,7 @@ import { listAllVocabulary } from "@shared/glyph-registry";
 import { getLanguageName, languageMarksGender } from "@shared/language-names";
 import { ex as _ex, type ExampleEntry, type LocaleCode } from "../../memory-schema/prompt-examples";
 import { T } from "../../memory-schema/canonical-terms";
+import { buildSlpModeBlock, type SlpModeAgent } from "../slp-mode";
 
 // ---------------------------------------------------------------------------
 // Shared sub-types
@@ -58,6 +59,11 @@ export interface BaseStudentContext {
   /** From AAC settings — what NOT to transcribe/say/show. */
   // (currently delivered via safetyNotes; keep as a forward-compat field)
   mutedHint?: "muted" | "unmuted";
+  /** SLP MODE — set on the LOGGED-IN USER (`users.slp_mode`), not the student:
+   *  a speech-language pathologist is running a therapy session WITH them.
+   *  Renders `<slp_session>` (see `slpSessionBlock`). All agents receive it;
+   *  each decides whether it changes their behavior. */
+  slpMode?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +196,24 @@ export function securityBlock(studentName: string, safetyNotes: string | undefin
     block += `\n\n<student_safety>\n${safetyNotes}\n</student_safety>`;
   }
   return block;
+}
+
+/**
+ * `<slp_session>` block — SLP MODE is on for the logged-in USER, so a
+ * speech-language pathologist is running a therapy session WITH the student
+ * and the agent is ASSISTING them rather than acting as the student's sole
+ * conversational partner.
+ *
+ * The wording lives in `../slp-mode.ts` alongside the pure decisions it
+ * pairs with; this is the prompts/ seam every agent builder calls. Returns
+ * "" when SLP MODE is off, so a normal prompt is unchanged.
+ */
+export function slpSessionBlock(ctx: BaseStudentContext, agent: SlpModeAgent): string {
+  return buildSlpModeBlock({
+    studentName: ctx.studentName,
+    agent,
+    slpMode: !!ctx.slpMode,
+  });
 }
 
 /** `<environment>` block — current time. */

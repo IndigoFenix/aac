@@ -184,7 +184,7 @@ const EXAMPLES: Record<string, ExampleEntry> = {
           {speech:"Yesterday", glyph:[{sym:"yesterday"}], label:"Yesterday"},
           {speech:"Something good happened", glyph:[{sym:"✨"}], label:"Good"},
           {speech:"Something hard happened", glyph:[{sym:"🌧️"}], label:"Hard"},
-          {speech:"Something else", glyph:[{sym:"🔄"}], label:"Else"}
+          {button_type:"more"}
         ])
 
         Trigger: AI just said "What would you like to talk about?"
@@ -213,7 +213,7 @@ const EXAMPLES: Record<string, ExampleEntry> = {
           {speech:"אתמול", glyph:[{sym:"yesterday"}], label:"אתמול"},
           {speech:"משהו טוב קרה", glyph:[{sym:"✨"}], label:"טוב"},
           {speech:"משהו קשה קרה", glyph:[{sym:"🌧️"}], label:"קשה"},
-          {speech:"משהו אחר", glyph:[{sym:"🔄"}], label:"אחר"}
+          {button_type:"more"}
         ])
 
         Trigger: ה-AI אמר "על מה תרצה לדבר?"
@@ -241,7 +241,7 @@ const EXAMPLES: Record<string, ExampleEntry> = {
           {speech:"אתמול", glyph:[{sym:"yesterday"}], label:"אתמול"},
           {speech:"משהו טוב קרה", glyph:[{sym:"✨"}], label:"טוב"},
           {speech:"משהו קשה קרה", glyph:[{sym:"🌧️"}], label:"קשה"},
-          {speech:"משהו אחר", glyph:[{sym:"🔄"}], label:"אחר"}
+          {button_type:"more"}
         ])
 
         Trigger: ה-AI אמר "על מה תרצי לדבר?"

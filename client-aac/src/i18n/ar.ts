@@ -572,7 +572,7 @@ export const ar: Translations = {
       wash: "\u064a\u063a\u0633\u0644",
       tidy: "يرتب",
       heat: "يسخن",
-      cool: "يبرّد",
+      make_cold: "يبرّد",
       wear: "\u064a\u0631\u062a\u062f\u064a",
       color: "\u062a\u0644\u0648\u064a\u0646",
       brush_teeth: "\u064a\u0646\u0638\u0641 \u0627\u0644\u0623\u0633\u0646\u0627\u0646",
@@ -767,6 +767,7 @@ export const ar: Translations = {
       understand: "\u0641\u0647\u0645\u062a",
       confused: "\u0645\u062d\u062a\u0627\u0631",
       wow: "\u0648\u0627\u0648",
+      amazing: "\u0645\u0630\u0647\u0644",
       oops: "\u0639\u0630\u0631\u0627\u064b",
       oh_no: "\u064a\u0627 \u0644\u0644\u0623\u0633\u0641",
       yuck: "\u0625\u064a\u064a\u064a\u0647",
@@ -845,6 +846,10 @@ export const ar: Translations = {
   },
 
   quickActions: {
+    forward: "التالي",
+    pauseBoard: "إيقاف",
+    resumeBoard: "متابعة",
+    previous: "السابق",
     yes: "\u0646\u0639\u0645",
     no: "\u0644\u0627",
     more: "\u0627\u0644\u0645\u0632\u064a\u062f",
@@ -1080,6 +1085,11 @@ export const ar: Translations = {
   audioScan: {
     start: "قراءة اللوحة بصوت عالٍ",
     stop: "إيقاف القراءة",
+  },
+  slpMode: {
+    ready: "جاهز",
+    wake: "إيقاظ",
+    sleep: "تركه ينام",
   },
   guessing: {
     category: {

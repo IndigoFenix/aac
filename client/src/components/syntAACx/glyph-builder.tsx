@@ -424,6 +424,11 @@ function CustomSymbolPicker({ studentId, isDark, onBack, onPick }: {
   const { t } = useLanguage();
   const [symbols, setSymbols] = useState<CustomSymbol[]>([]);
   const [uploading, setUploading] = useState(false);
+  // Marks the upload as depicting an identifiable person. Person images may be
+  // used inside an organization but never in a public package, and their image
+  // bytes are access-gated rather than served to any caller.
+  // See planning-docs/aac-packages-plan.md §3.
+  const [personImage, setPersonImage] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
@@ -441,6 +446,7 @@ function CustomSymbolPicker({ studentId, isDark, onBack, onPick }: {
     try {
       const form = new FormData();
       form.append("image", file, file.name || "symbol.png");
+      if (personImage) form.append("personImage", "true");
       const created = await apiRequest("POST", "/api/custom-symbols", form).then((r) => r.json());
       if (studentId) {
         await apiRequest("POST", `/api/custom-symbols/${created.id}/student-associate`, { studentId }).catch(() => {});
@@ -463,6 +469,19 @@ function CustomSymbolPicker({ studentId, isDark, onBack, onPick }: {
         <input ref={fileRef} type="file" accept="image/*" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
       </div>
+      <label className="flex items-start gap-1.5 text-[11px] cursor-pointer px-1">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={personImage}
+          onChange={(e) => setPersonImage(e.target.checked)}
+          data-testid="symbol-person-image"
+        />
+        <span className={isDark ? "text-slate-400" : "text-gray-500"}>
+          {t("packages.personImageLabel")}
+          <span className="block opacity-80">{t("packages.personImageHelp")}</span>
+        </span>
+      </label>
       <ScrollArea className="h-52 -mx-1 px-1">
         <div className="grid grid-cols-5 gap-1.5">
           {symbols.map((s) => (

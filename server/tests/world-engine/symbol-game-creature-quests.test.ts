@@ -182,16 +182,18 @@ describe("task b — placement (state) needs", () => {
     expect(world.creatures[giverId]!.needs[0]!.placedAt).toBe(destId);
     const opts: ProjectionOpts = { symbolOf: (id) => id };
 
-    // The line asks for the placement, not a hand-over.
+    // The line asks for the placement, not a hand-over — and level b KEEPS THE
+    // VERB, because "{item} + in + {place}" without one is the locative
+    // assertion ("the ball is in the box"), i.e. the want already granted.
     const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "b", opts);
-    expect(proj.lineGlyph).toBe(`${itemId} + in + ${destId}`);
+    expect(proj.lineGlyph).toBe(`want + ${itemId} + in + ${destId}`);
 
     // Offering the item in hand does NOT transfer it — polite redirect.
     claimItem(world, PLAYER_CREATURE_ID, itemId, { takerAcceptsAnything: true });
     const offer: DialogueAct = { kind: "offer", itemId, glyph: "" };
     const res = selectAct(world, giverId, PLAYER_CREATURE_ID, offer, "b", opts);
     expect(world.items[itemId]!.ownerId).toBe(PLAYER_CREATURE_ID);
-    expect(res.responseGlyph).toBe(`${itemId} + in + ${destId}`);
+    expect(res.responseGlyph).toBe(`want + ${itemId} + in + ${destId}`);
 
     // The physical drop into the container is what fulfills.
     const events = notePlacement(world, PLAYER_CREATURE_ID, itemId, destId);
@@ -303,9 +305,12 @@ describe("task c — on-behalf needs (deliver)", () => {
     const symbolOf = (id: string) => game.entities.find((e) => e.id === id)?.glyph ?? id;
     const opts: ProjectionOpts = { symbolOf, symbolOfCreature: (cid) => cid };
 
-    // The giver announces the recipient frame ("ball to bear").
+    // The giver announces the recipient frame ("give the ball to the bear").
+    // Level b KEEPS THE VERB: verbless, "{item} + to + {who}" is a fragment the
+    // frame layer reads as a locative/on-behalf assertion rather than the
+    // request it means (dialogue-gen's tailed-clause law).
     const proj = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "b", opts);
-    expect(proj.lineGlyph).toBe(`${symbolOf(itemId)} + to + ${recipId}`);
+    expect(proj.lineGlyph).toBe(`give + ${symbolOf(itemId)} + to + ${recipId}`);
     // …and at level c, the full give-frame.
     const projC = projectDialogue(world, giverId, PLAYER_CREATURE_ID, "c", opts);
     expect(projC.lineGlyph).toBe(`give + ${symbolOf(itemId)} + to + ${recipId}`);
@@ -314,7 +319,7 @@ describe("task c — on-behalf needs (deliver)", () => {
     claimItem(world, PLAYER_CREATURE_ID, itemId, { takerAcceptsAnything: true });
     const res = selectAct(world, giverId, PLAYER_CREATURE_ID, { kind: "offer", itemId, glyph: "" }, "b", opts);
     expect(world.items[itemId]!.ownerId).toBe(PLAYER_CREATURE_ID);
-    expect(res.responseGlyph).toBe(`${symbolOf(itemId)} + to + ${recipId}`);
+    expect(res.responseGlyph).toBe(`give + ${symbolOf(itemId)} + to + ${recipId}`);
 
     // Giving it to the recipient fulfills BOTH — and both owe the player.
     const give = selectAct(world, recipId, PLAYER_CREATURE_ID, { kind: "offer", itemId, glyph: "" }, "b", opts);

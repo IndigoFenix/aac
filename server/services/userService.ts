@@ -134,6 +134,19 @@ export class UserService {
     return userRepository.updateUser(userId, { profileImageUrl: imageUrl });
   }
 
+  /**
+   * SLP MODE — a per-USER AAC session behavior (see the doc comment on
+   * `users.slpMode`). Unlike every other AAC option it follows the logged-in
+   * professional from student to student, so it is written here on the user
+   * row and NEVER through the per-student aac_settings path.
+   *
+   * `userId` must always be the AUTHENTICATED caller's own id — this method
+   * takes no request body id, and the controller passes `req.user.id`.
+   */
+  async updateSlpMode(userId: string, enabled: boolean): Promise<User | undefined> {
+    return userRepository.updateUser(userId, { slpMode: enabled });
+  }
+
   async updateOnboardingStep(userId: string, step: number): Promise<void> {
     return userRepository.updateUserOnboardingStep(userId, step);
   }
@@ -171,6 +184,11 @@ export class UserService {
       mfaEnabled: user.mfaEnabled,
       mfaEnforcedByAdmin: user.mfaEnforcedByAdmin,
       biometricDataId: (user as any).biometricDataId ?? null,
+      // SLP MODE — per-USER AAC behavior. Rides on the current-user payload
+      // both clients already fetch (`GET /auth/user`) so neither has to make a
+      // second request to know it. Admin pseudo-identities have no column, so
+      // coerce to a strict boolean.
+      slpMode: (user as any).slpMode === true,
       adminPermissions,
     };
   }

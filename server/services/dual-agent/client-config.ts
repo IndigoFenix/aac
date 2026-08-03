@@ -144,6 +144,29 @@ export interface ClientConfig {
    * when the student has the feature off. See ClientSeizureConfig.
    */
   seizure?: ClientSeizureConfig;
+  /**
+   * Automated audio scan (eyegaze). When true, the client starts the board's
+   * spoken readout on its own once the student has hunted across the board for
+   * `autoAudioScanDelayMs` without selecting anything. Mirrors the per-student
+   * `autoAudioScan` / `autoAudioScanDelay` AAC settings; omitted (undefined)
+   * when the student has eyegaze or the feature off, so older clients and the
+   * non-eyegaze path are untouched.
+   */
+  autoAudioScan?: boolean;
+  /** Hunt time before the automated scan fires, in ms. */
+  autoAudioScanDelayMs?: number;
+  /**
+   * SLP MODE is on for the USER who opened this session (`users.slp_mode`) —
+   * a speech-language pathologist is running a therapy session WITH the
+   * student. The client must then:
+   *   - suppress its own sleep state machine's automatic transitions
+   *     (`sleepSystemLogic` / CameraAttentivenessContext), because long
+   *     deliberate silences are the therapy, not disengagement; and
+   *   - render the explicit wake/sleep control in the AAC header chrome.
+   * Omitted entirely (undefined) when off, so nothing changes for the normal
+   * path or for older client builds. See ../dual-agent/slp-mode.ts.
+   */
+  slpMode?: boolean;
 }
 
 /**
@@ -153,7 +176,7 @@ export interface ClientConfig {
  * Future per-student overrides layer on top of this.
  */
 export function buildDefaultClientConfig(
-  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive" | "pcmContinuous" | "seizure">,
+  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive" | "pcmContinuous" | "seizure" | "autoAudioScan" | "autoAudioScanDelayMs" | "slpMode">,
 ): ClientConfig {
   return {
     activityMonitor: {
@@ -202,5 +225,33 @@ export function buildDefaultClientConfig(
     // Per-student seizure detection — resolved + seeded by the coordinator.
     // Omitted entirely when the student has the feature off.
     ...(overrides?.seizure ? { seizure: overrides.seizure } : {}),
+    // Automated audio scan — omitted entirely unless the student has it on, so
+    // the client's default (manual ear button only) is what ships otherwise.
+    ...(overrides?.autoAudioScan
+      ? {
+          autoAudioScan: true,
+          autoAudioScanDelayMs: overrides.autoAudioScanDelayMs ?? 15000,
+        }
+      : {}),
+    // SLP MODE (per logged-in USER) — omitted entirely unless on, so the
+    // client's default sleep state machine is what ships otherwise.
+    ...(overrides?.slpMode ? { slpMode: true } : {}),
+  };
+}
+
+/**
+ * Resolve the automated-audio-scan overrides from a student's AAC settings.
+ * Only active when eyegaze is on — the feature exists to rescue a student who
+ * is hunting with their gaze, and a touch user who pauses is not stuck.
+ * The delay is floored at 5s so a mis-set value can't turn the scan into a
+ * constant interruption.
+ */
+export function buildClientAutoScanConfig(
+  aac: { eyegazeEnabled?: boolean | null; autoAudioScan?: boolean | null; autoAudioScanDelay?: number | null } | null | undefined,
+): Pick<ClientConfig, "autoAudioScan" | "autoAudioScanDelayMs"> {
+  if (!aac?.eyegazeEnabled || !aac?.autoAudioScan) return {};
+  return {
+    autoAudioScan: true,
+    autoAudioScanDelayMs: Math.max(5000, aac.autoAudioScanDelay ?? 15000),
   };
 }

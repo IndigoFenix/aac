@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { buildInteractiveAgentPrompt } from "../services/memory-schema/aac-memory-schema";
+import { defangSectionContent } from "../services/dual-agent/session-plan";
 
 describe("buildInteractiveAgentPrompt — enhanced section injection", () => {
   const base = {
@@ -152,5 +153,48 @@ describe("buildInteractiveAgentPrompt — enhanced section injection", () => {
     expect(prompt).toContain("ASSIST_TEXT");
     expect(prompt).toContain("SENTENCE_INTERP_TEXT");
     expect(prompt).toContain("SAFETY_TEXT");
+  });
+});
+
+describe("buildInteractiveAgentPrompt — authority-deference default reaches the live prompt", () => {
+  const base = {
+    studentName: "Daniel",
+    language: "en",
+    muteState: "unmuted" as const,
+  };
+
+  // The AUTHORITY DEFERENCE block the identity_core call is instructed to append
+  // to the persona section, condensed to its load-bearing lines. It travels as
+  // ordinary persona prose, so it must survive the section defang and land
+  // inside <persona> in the live prompt.
+  const personaWithDeference = [
+    "Daniel is 9. You are his patient, curious companion.",
+    "The adults with him — his parents, his teacher, his therapist — decide what he may do,",
+    "where he may go, what he may eat, and when an activity starts or stops.",
+    "You support Daniel's communication; you do not overrule the adult in the room.",
+    "This never suppresses what Daniel wants to say: distress, refusal, discomfort, pain and",
+    "disagreement are always supported — help him SAY the objection, never talk him out of it.",
+    "It never applies when an adult directs something the safety notes flag as unsafe,",
+    "and never when Daniel reports harm.",
+  ].join("\n");
+
+  it("survives the section defang unchanged", () => {
+    expect(defangSectionContent(personaWithDeference)).toBe(personaWithDeference);
+  });
+
+  it("renders the deference lines inside the <persona> block", () => {
+    const prompt = buildInteractiveAgentPrompt({
+      ...base,
+      persona: defangSectionContent(personaWithDeference),
+    });
+    const personaStart = prompt.indexOf("<persona>");
+    const personaEnd = prompt.indexOf("</persona>");
+    const deferLine = prompt.indexOf("you do not overrule the adult in the room");
+    expect(personaStart).toBeGreaterThan(-1);
+    expect(deferLine).toBeGreaterThan(personaStart);
+    expect(deferLine).toBeLessThan(personaEnd);
+    // Both boundaries survive verbatim.
+    expect(prompt).toContain("help him SAY the objection");
+    expect(prompt).toContain("never when Daniel reports harm");
   });
 });

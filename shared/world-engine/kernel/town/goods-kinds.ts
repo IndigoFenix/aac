@@ -109,15 +109,21 @@ export const carryKindsOf = (goodKey: string): readonly string[] =>
 /** Total CARRIED units of a good — stackTotalOf over the carry projection. */
 export const carryTotalOf = (stock: Record<string, number> | undefined, goodKey: string): number =>
   carryKindsOf(goodKey).reduce((s, k) => s + (stock?.[k] ?? 0), 0);
-// ── ITEM SIZE — what may ride in the hidden INVENTORY ──────────────────────
+// ── ITEM SIZE — what may ride in a bag at all ──────────────────────────────
 //
 // A body's HANDS hold exactly ONE item (the thing it is visibly using or
-// hauling); everything else it has on it rides in a hidden INVENTORY — a bag
-// it may reach into at any time, exactly like a container. The ONE datum that
-// decides what the bag will take is SIZE: a fruit, a garment, a toy are
-// SMALL; furniture is LARGE and stays hands-only (you carry a chair, you do
-// not pocket it). Default is SMALL — stack goods are small by nature, so a new
-// good needs no size row; only bulky things opt in.
+// hauling); everything else it has on it rides in a CONTAINER it carries or
+// wears — a basket, a satchel — exactly like any other container
+// (scope-unification.md §2.1). The ONE datum that decides what a bag will take
+// is SIZE: a fruit, a garment, a toy are SMALL; furniture is LARGE and stays
+// hands-only (you carry a chair, you do not put it in a satchel). Default is
+// SMALL — stack goods are small by nature, so a new good needs no size row;
+// only bulky things opt in.
+//
+// 🚨 There is NO per-species slot count here any more. `INVENTORY_SLOTS = 6`
+// died with `needCarried`: capacity is a fact about what a body is HOLDING
+// (containers.ts `ContainerDef.capacity`, folded by scope-shape.ts
+// `stackRoom`), never a constant on the creature.
 
 /** Glyph HEADS that are too big for a bag — the furniture/fixture kinds
  *  (stations.ts `StationKind` + the fixtures that render as world props).
@@ -148,18 +154,10 @@ export const LARGE_KINDS: readonly string[] = [
  *  definition. The head test covers loose props whose stack IS the kind. */
 export const isLargeGlyph = (glyph: string): boolean =>
   glyph.startsWith("furn.") || LARGE_KINDS.includes(headOf(glyph));
-/** How many SMALL items a body may keep on it (hands + bag). The bound is what
- *  makes a shopping trip a real decision — a full bag is a legible reason a
- *  creature can SAY ("I can't carry any more") instead of hoarding the market.
- *  Bodies differ later (species/child); one constant until they need to. */
-export const INVENTORY_SLOTS = 6;
 /** Total units a stack map holds, across every glyph in it. (Distinct from
  *  transfer.ts's `stackUnits(stack, glyph)`, which counts ONE glyph.) */
 export const totalStackUnits = (stock: Record<string, number> | undefined): number =>
   Object.values(stock ?? {}).reduce((s, n) => s + n, 0);
-/** Room left in a body's inventory, given everything already on it. */
-export const inventoryRoom = (carried: Record<string, number> | undefined): number =>
-  Math.max(0, INVENTORY_SLOTS - totalStackUnits(carried));
 
 /** Deal `n` units of a good across its kinds, deterministically (salt varies the mix). */
 export function splitStock(goodKey: string, n: number, salt: number): Record<string, number> {

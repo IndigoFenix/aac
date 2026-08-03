@@ -572,7 +572,7 @@ export const es: Translations = {
       wash: "Lavar",
       tidy: "Ordenar",
       heat: "Calentar",
-      cool: "Enfriar",
+      make_cold: "Enfriar",
       wear: "Llevar",
       color: "Colorear",
       brush_teeth: "Cepillar dientes",
@@ -767,6 +767,7 @@ export const es: Translations = {
       understand: "Entiendo",
       confused: "Confundido",
       wow: "Vaya",
+      amazing: "Increíble",
       oops: "Ups",
       oh_no: "Oh no",
       yuck: "Puaj",
@@ -845,6 +846,10 @@ export const es: Translations = {
   },
 
   quickActions: {
+    forward: "Siguiente",
+    pauseBoard: "Pausar",
+    resumeBoard: "Reanudar",
+    previous: "Anterior",
     yes: "S\u00ed",
     no: "No",
     more: "M\u00e1s",
@@ -1080,6 +1085,11 @@ export const es: Translations = {
   audioScan: {
     start: "Leer el tablero en voz alta",
     stop: "Detener la lectura",
+  },
+  slpMode: {
+    ready: "Listo",
+    wake: "Despertar",
+    sleep: "Dejar dormir",
   },
   guessing: {
     category: {

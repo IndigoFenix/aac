@@ -37,6 +37,11 @@ interface User {
   isTrial?: boolean;
   trialExpiresAt?: string;
   supportSession?: { instituteId: string; startedAt: string } | null;
+  // SLP MODE — a per-USER AAC session behavior (a speech-language pathologist
+  // running therapy sessions WITH students). Unlike every other AAC option it
+  // is NOT per-student, so it lives here on the account and follows the
+  // clinician. Written via PATCH /api/profile/slp-mode.
+  slpMode?: boolean;
   // Set only when the session identity is from admin_users. Array of admin
   // section keys this admin can access, with "*" meaning all sections.
   adminPermissions?: string[];

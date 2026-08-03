@@ -21,59 +21,59 @@
 // initialized; otherwise the overlay would flicker back to "Sleeping…" the
 // moment isLoading clears, because the sleep-system defaults to hibernation
 // until the user taps the cave.
+//
+// SLP MODE turns this overlay into a CURTAIN the therapist draws back by hand.
+// A speech-language pathologist carries the device around a room, so the
+// student is often out of frame and the screen must not become live on its own.
+// Two differences, both only while slpMode is on:
+//
+//   1. The "sleeping" stage carries a WAKE button. Nothing else can wake the
+//      session in SLP MODE (presence is deliberately inert — see
+//      triggerAlwaysWake in CameraAttentivenessContext), so without a control
+//      ON the overlay there would be no way back: the overlay covers the header
+//      where the normal wake/sleep control lives.
+//   2. Waking does NOT hand the device over. When the wake finishes, the stage
+//      becomes "ready" — label "Ready", button still there — and the overlay
+//      stays until the therapist presses it again. The session behind it is
+//      already live, so handing over is instant; the curtain is what waits.
+//      Outside SLP MODE this stage never occurs and the timed auto-hide is
+//      unchanged.
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { LogOut } from "lucide-react";
+import { LogOut, Sun } from "lucide-react";
 import { AacAvatar } from "@/components/AacAvatar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
-import type { SleepState } from "@/lib/cameraAttentivenessTypes";
+import {
+  computePhase,
+  initialStageFor,
+  stageForPhase,
+  slpStageFor,
+  overlayAwaitsPress,
+  type OverlayPhase as Phase,
+  type OverlayStage as Stage,
+} from "@/lib/sleepOverlayLogic";
 
 const WAKING_HOLD_MS = 1500;
 const LOGOUT_HOLD_MS = 2000;
-
-type Stage = "sleeping" | "waking" | "hidden";
-type Phase = "sleep" | "wake" | "awake";
-
-function computePhase(
-  isInitialized: boolean,
-  isLoading: boolean,
-  sleepState: SleepState | undefined,
-  errorFrozenOverlayVisible: boolean | null,
-  faceLost: boolean,
-): Phase {
-  // During a connection error, the upstream signals (isInitialized/isLoading)
-  // cycle as retries fire. Lock the overlay to the snapshot captured by the
-  // sprite provider so we don't flicker between sleeping / waking / awake.
-  if (errorFrozenOverlayVisible === true) return "sleep";
-  if (errorFrozenOverlayVisible === false) return "awake";
-  if (isLoading) return "wake";
-  if (!isInitialized) return "sleep";
-  // Asleep with the student still in frame: DON'T fade the screen — keep the
-  // board usable (they can tap to wake / press buttons) with just the header
-  // avatar showing sleeping eyes. Only fade to the fullscreen "Sleeping…"
-  // overlay once the face is LOST (nobody there to use the board). Default with
-  // no camera/face detection → faceLost=true → the original fade, unchanged.
-  if (sleepState === "asleep") return faceLost ? "sleep" : "awake";
-  if (sleepState === "waking") return "wake";
-  return "awake";
-}
 
 /** A face is "present" while its engagement contribution hasn't decayed away
  *  (~8s half-life). Below this it's treated as lost. */
 const FACE_PRESENT_MIN_CONTRIBUTION = 0.05;
 
-function initialStageFor(phase: Phase): Stage {
-  if (phase === "sleep") return "sleeping";
-  if (phase === "wake") return "waking";
-  return "hidden";
-}
-
 export function FullscreenAvatarOverlay() {
-  const { isInitialized, isLoading, startupStage } = useDualAgentContext();
+  const {
+    isInitialized,
+    isLoading,
+    startupStage,
+    slpMode,
+    sessionAsleep,
+    toggleSessionSleep,
+    slpWakeReady,
+  } = useDualAgentContext();
   const attentiveness = useCameraAttentivenessOptional();
   const sprite = useAvatarSprite();
   const { t } = useLanguage();
@@ -89,13 +89,17 @@ export function FullscreenAvatarOverlay() {
     sleepState,
     sprite.errorFrozenOverlayVisible,
     faceLost,
+    slpMode,
   );
 
-  const [stage, setStage] = useState<Stage>(() => initialStageFor(phase));
+  // NON-SLP stage: a small timed machine (waking → hidden after a hold), so it
+  // needs local state to run the timer.
+  const [timedStage, setTimedStage] = useState<Stage>(() => initialStageFor(phase));
   const lastPhaseRef = useRef<Phase>(phase);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (slpMode) return; // SLP MODE runs no timer — see the derived stage below
     const prev = lastPhaseRef.current;
     lastPhaseRef.current = phase;
     if (phase === prev) return;
@@ -105,21 +109,23 @@ export function FullscreenAvatarOverlay() {
       hideTimerRef.current = null;
     }
 
-    if (phase === "sleep") {
-      setStage("sleeping");
-    } else if (phase === "wake") {
-      setStage("waking");
-    } else {
-      // Transitioning into awake from sleep/wake — keep "Waking up…" visible
-      // for WAKING_HOLD_MS before hiding. Covers both the loading-complete
-      // path and any future direct sleep→awake jump.
-      setStage("waking");
+    // Transitioning into awake from sleep/wake keeps "Waking up…" visible for
+    // WAKING_HOLD_MS before hiding.
+    const { stage: next, autoHide } = stageForPhase(phase);
+    setTimedStage(next);
+    if (autoHide) {
       hideTimerRef.current = setTimeout(() => {
-        setStage("hidden");
+        setTimedStage("hidden");
         hideTimerRef.current = null;
       }, WAKING_HOLD_MS);
     }
-  }, [phase]);
+  }, [phase, slpMode]);
+
+  // In SLP MODE the stage is a pure projection of GLOBAL state — the phase plus
+  // the shared hand-over flag the header control also reads. No local state, so
+  // the two wake controls cannot drift out of sync (they did when the overlay
+  // owned "dismissed" itself).
+  const stage: Stage = slpMode ? slpStageFor(phase, slpWakeReady) : timedStage;
 
   useEffect(
     () => () => {
@@ -139,9 +145,25 @@ export function FullscreenAvatarOverlay() {
   const label =
     stage === "sleeping"
       ? t("status.sleeping")
-      : isLoading
-        ? t(`status.startup.${startupStage}`)
-        : t("status.wakingUp");
+      : stage === "ready"
+        ? t("slpMode.ready")
+        : isLoading
+          ? t(`status.startup.${startupStage}`)
+          : t("status.wakingUp");
+
+  // The therapist's control. Only in SLP MODE, and only at the two stages that
+  // are WAITING on a person: "sleeping" (wake the session) and "ready" (hand
+  // the screen over). The "waking" stage is work in progress — no button, so a
+  // second press can't land mid-wake.
+  const showWakeButton = slpMode && overlayAwaitsPress(stage);
+
+  // ONE press wakes and returns to the board. "sleeping" and "ready" are both
+  // asleep — "ready" only says the device noticed someone — so they take the
+  // same action. Guarded on sessionAsleep so a press while the session is
+  // merely pre-initialized can never toggle a LIVE session into sleep.
+  const handleWakePress = () => {
+    if (sessionAsleep) toggleSessionSleep();
+  };
 
   return (
     <AnimatePresence>
@@ -170,6 +192,21 @@ export function FullscreenAvatarOverlay() {
           <p className="mt-6 text-white text-2xl font-medium tracking-wide">
             {label}
           </p>
+          {showWakeButton && (
+            <button
+              type="button"
+              // data-dwell (unlike the logout button, which deliberately omits
+              // it): the overlay is a dwell-trap, so this is the only thing an
+              // eye-gaze user could reach while the curtain is up.
+              data-dwell
+              data-testid="overlay-wake"
+              onClick={handleWakePress}
+              className="mt-8 flex items-center gap-3 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/40 px-8 py-5 text-white text-xl font-semibold"
+            >
+              <Sun className="w-7 h-7" />
+              {t("slpMode.wake")}
+            </button>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

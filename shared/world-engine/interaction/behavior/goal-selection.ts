@@ -37,8 +37,9 @@ import {
   type Rule,
   type RuleContext,
 } from "@shared/world-engine/interaction/behavior/rules.js";
+import type { VerbCost } from "@shared/world-engine/kernel/town/scope-shape.js";
 import type { Vec2 } from "../../types.js";
-import { planGoal } from "@shared/world-engine/interaction/behavior/action-planner.js";
+import { planSteps, pricePlan } from "@shared/world-engine/interaction/behavior/action-planner.js";
 
 // ---------------------------------------------------------------------------
 // Need → goal (the creature pursuing its OWN motives)
@@ -310,6 +311,27 @@ export interface WorldResolver {
    *  reproduces the static `compileGoal` exactly (the equivalence the tests
    *  pin). The pursuit loop supplies it; the static bake does not. */
   arrived?(self: CreatureId, pos: Vec2): boolean;
+  /** THE PRICE BOARD FOR PLANS (step ④ — scope-behaviors.md §2.3 PREFER, §3
+   *  the currency). Absent ⇒ every plan prices at ZERO, which is what keeps a
+   *  headless resolver and the static bake byte-identical: an unpriced plan set
+   *  ties, and the FIRST-COMPILABLE order decides exactly as it always has. */
+  price?: PlanPrice;
+}
+
+/** What it costs this body to walk and to act, in hand-seconds — the two terms
+ *  a compiled plan can honestly carry (`spoilageS`/`forgoneS` stay 0 this pass,
+ *  chapter §3: forgone is what the argmax itself produces, later).
+ *
+ *  Deliberately a pair of world FACTS rather than a table of goal knowledge: the
+ *  gait is the body's, the dwell is the step's own (the beat at a box, the beat
+ *  at a stall, the length of a nap). Both already exist as constants that were
+ *  SPENT and never CHARGED — which is the whole of the surveys' `handsS`
+ *  finding. */
+export interface PlanPrice {
+  /** The body's gait — `journeyS = metres / walkMps`. */
+  walkMps: number;
+  /** Hand-seconds this non-walk step occupies. */
+  handsS(step: GoalStep): number;
 }
 
 /** One executable step. The world-host maps `moveTo` to an NpcErrand waypoint and the
@@ -332,12 +354,13 @@ export type GoalStep =
   | { kind: "converse"; target: CreatureId } // exchange with the partner (on arrival)
   | { kind: "rest"; place: PlaceRef; dwellS?: number; pose?: "sleep" | "sit" | "play" } // occupy a station and dwell there
   // Stack-economy manipulation (S3): move `units` between the reached store and
-  // the abstract bag. `fromId`/`intoId` are the resolved object ids (a chest, a
-  // market stall, "well", a loose "small:*" prop).
+  // WHAT THE BODY IS CARRYING. `fromId`/`intoId` are the resolved object ids (a
+  // chest, a market stall, "well", a loose "small:*" prop).
   | { kind: "withdraw"; fromId: string; goodKey: string; units: number; affords?: string; tplKey?: string }
   | { kind: "stow"; intoId: string; goodKey: string; units: number; tplKey?: string }
-  // Named -Stack to keep clear of the SINGLE-PROP steps (`equip` wears a held
-  // physical prop; `drop` releases one): these act on the abstract bag.
+  // Named -Stack to keep clear of the SINGLE-PROP steps, which name ONE
+  // resolved item (`equip` wears that garment; `drop` releases it): these act
+  // on whatever matching units the body has, wherever it has them.
   | { kind: "processStack"; atId: string; goodKey: string; drop?: string; add?: string; dwellS?: number; tplKey?: string }
   | { kind: "equipStack"; goodKey: string; tplKey?: string }
   | { kind: "dropStack"; goodKey: string; units: number; tplKey?: string }
@@ -348,6 +371,12 @@ export type GoalStep =
 
 export interface GoalPlan {
   steps: GoalStep[];
+  /** WHAT THIS PLAN COSTS (step ④): the walk legs plus the hands each act
+   *  occupies, summed over the steps — `pricePlan` in action-planner.ts. Both
+   *  compilers attach it, so a caller comparing candidates never has to know
+   *  which one built the plan. All-zero when the resolver carries no
+   *  `price` (see `PlanPrice`). */
+  cost: VerbCost;
 }
 
 /**
@@ -355,8 +384,17 @@ export interface GoalPlan {
  * now (unknown position / no matching item) — the world falls back to idle, never
  * errors. `build` is intentionally unmapped here (a civ-scope world order, not a body
  * errand — society-rules.md §5).
+ *
+ * THE PRICE RIDES OUT WITH THE PLAN (step ④): one wrapper over the step
+ * compiler, so a caller choosing between candidates never has to know whether
+ * the hand-written switch below or the action planner built the answer.
  */
 export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalPlan | null {
+  const steps = compileSteps(goal, self, r);
+  return steps ? { steps, cost: pricePlan(steps, self, r) } : null;
+}
+
+function compileSteps(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalStep[] | null {
   const steps: GoalStep[] = [];
   const move = (pos: Vec2 | null): boolean => {
     if (!pos) return false;
@@ -376,13 +414,13 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
 
   switch (goal.kind) {
     case "goHome":
-      return move(r.homeOf(self)) ? { steps } : null;
+      return move(r.homeOf(self)) ? steps : null;
     case "goTo":
-      return move(r.place(goal.place)) ? { steps } : null;
+      return move(r.place(goal.place)) ? steps : null;
     case "follow": {
       if (!move(r.positionOf(goal.target))) return null;
       steps.push({ kind: "faceHold", target: goal.target });
-      return { steps };
+      return steps;
     }
     case "stay": {
       if (goal.place) {
@@ -390,7 +428,7 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
         if (p) steps.push({ kind: "moveTo", pos: p });
       }
       steps.push({ kind: "faceHold", target: goal.place?.kind === "creature" ? goal.place.id : undefined });
-      return { steps };
+      return steps;
     }
     case "fetch": {
       const id = r.resolveItem(goal.item, self, goal.from);
@@ -403,11 +441,11 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
       if (holder && holder !== self && holder === fromCid) {
         if (!move(r.positionOf(holder))) return null;
         steps.push({ kind: "pick", itemId: id, from: fromCid });
-        return { steps };
+        return steps;
       }
       if (!move(r.itemPosition(id))) return null;
       steps.push({ kind: "pick", itemId: id });
-      return { steps };
+      return steps;
     }
     case "drop": {
       // Release the HELD item where you stand. You can only drop what you're
@@ -416,53 +454,53 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
       const id = r.resolveItem(goal.item, self);
       if (!id || (r.carrierOf?.(id) ?? null) !== self) return null;
       steps.push({ kind: "drop", itemId: id });
-      return { steps };
+      return steps;
     }
     case "give": {
       const id = r.resolveItem(goal.item, self);
       if (!id || !pickupLeg(id)) return null;
       if (!move(r.positionOf(goal.to))) return null;
       steps.push({ kind: "give", itemId: id, to: goal.to });
-      return { steps };
+      return steps;
     }
     case "putIn": {
       const id = r.resolveItem(goal.item, self);
       if (!id || !pickupLeg(id)) return null;
       if (!move(r.place(goal.container))) return null;
       steps.push({ kind: "place", itemId: id, place: goal.container });
-      return { steps };
+      return steps;
     }
     case "color":
       // Planner-owned (a station verb like transform/wear): the `colored` target
       // regresses acquire-the-item → walk-to-tub → recolour. planGoal is the
       // single owner so the static bake and the live pursuit never drift.
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "toggle": {
       const id = r.resolveItem(goal.device, self);
       if (!id || !move(r.itemPosition(id))) return null;
       steps.push({ kind: "toggle", deviceId: id, state: goal.state });
-      return { steps };
+      return steps;
     }
     case "transform":
       // Routed through the ACTION PLANNER like `consume` (action-planner.ts):
       // the `facet` target regresses `holding` → walk → transform, so a
       // commanded "cook the apple" carries it to the fire instead of magically
       // transforming a thing across the room. planGoal is the single owner.
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "rest":
       // Also planner-owned: the `rested` target regresses walk-to-station →
       // dwell. "Go to bed" walks to the bed and sleeps there.
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "setOpen":
       // Planner-owned: `openState` regresses walk-to-container → open/shut the
       // lid. Graspless bodies can't open, so the plan blocks (honest reason).
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "wear":
       // Planner-owned: `worn` regresses acquire-the-garment → equip.
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "converse":
       // Planner-owned: `socialized` regresses walk-to-partner → exchange.
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "takeUnits":
     case "putUnits":
     case "processUnits":
@@ -471,22 +509,22 @@ export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver):
     case "consumeUnits":
       // Planner-owned (S3): the stack economy's bounded micro-goals — move the
       // units, work them at a station, wear one, or set them down.
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "satisfy":
-      return { steps: [{ kind: "selfAct", need: goal.need }] };
+      return [{ kind: "selfAct", need: goal.need }];
     case "consume":
       // The first goal routed through the ACTION PLANNER (action-planner.ts):
       // "eat the banana" regresses target `consumed(item)` → walk-to + eat. The
       // planner reproduces fetch/give/putIn identically (proven in tests); this
       // is the migration's first live consumer, the rest staying hand-wired
       // here until each is swapped over.
-      return planGoal(goal, self, r);
+      return planSteps(goal, self, r);
     case "socialAct": {
       // Walk to the target and perform the social act there (a hug). The host's
       // step handler applies the warmth — relations, meters, hearts.
       if (!move(r.positionOf(goal.target))) return null;
       steps.push({ kind: "socialAct", target: goal.target, act: goal.act });
-      return { steps };
+      return steps;
     }
     case "help":
       // An adoption ORDER — the host routes it to the needs walker (a standing

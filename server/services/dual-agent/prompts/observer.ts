@@ -22,6 +22,7 @@ import {
   memoryBlock,
   observationRulesText,
   securityBlock,
+  slpSessionBlock,
   studentDescriptor,
   transcriptionRulesText,
   wrapUntrusted,
@@ -243,7 +244,7 @@ You own session energy via rest() / sleep() / wake_up().
     - Button presses auto-wake the system; you don't need to call wake_up for those.
     - DO call wake_up when [${studentName}] makes a clear gesture TOWARDS the device — turning to face it, pointing at it, reaching for it, holding up an object to the camera, or any other gesture that says "I want the AI's attention now."
     - Do NOT call for background activity, passing voices, or ambient observations.
-</engagement_state>
+</engagement_state>${slpSessionBlock(config, "observer")}
 
 <energy>
 Watching has a running cost. You'll see an [ENERGY] note — a percentage + a band (high / moderate / low) — when your budget changes meaningfully (it drops as you and the other agents work, and recovers while things are quiet). A compact [ENERGY ..%] also rides along with the speech you're given, so you always have a rough sense of your level. Let it shape HOW MUCH you observe — never WHETHER you keep [${studentName}] safe.

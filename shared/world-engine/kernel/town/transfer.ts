@@ -36,6 +36,9 @@ import { FOOD_DAY_SEC } from "./goods.js";
 import type { TradeRoute } from "./trade.js";
 import { IMPORT_ALLOTMENT, TRADE_IMPORT_KINDS } from "./trade.js";
 import { headOf } from "../../variations.js";
+import { journeyTimeS, priceOf } from "./pricing.js";
+import { costTotalS } from "./scope-shape.js";
+import { ERRAND_WALK_MPS } from "../../scale.js";
 
 // ---------------------------------------------------------------------------
 // Stock endpoints — ONE shape over every stack-map holder
@@ -190,21 +193,97 @@ export interface TransferSource {
   d: number;
 }
 
+// ── ⚖️ THE ONE PRICED SOURCE WALK (scope-behaviors.md §2.2 SOURCE) ─────────
+//
+// The chapter's indictment: SOURCE had "four disagreeing answers", and the
+// town's own was "nearest-first with lexicographic ties, IMPLEMENTED THREE
+// TIMES (`planTransferSources`, `resolveMaterials`, `requestPiece`) — and
+// inconsistently: construction uses crow-flies `hypot` while shopping
+// (`sourceOf`) and district deficits use `roadDistance`."
+//
+// The verdict, applied here: "GENERALIZE into ONE priced walk. The sort key
+// changes from `d` to `costTotalS(verbCost(source))`; NEAREST-FIRST IS THE
+// SPECIAL CASE WHERE VALUE AND HANDS ARE EQUAL."
+//
+// 🔒 THE COMPAT PROOF, stated so it can be read off the code: with one speed
+// and one dwell across the candidates, `cost = d / speed + hands` is STRICTLY
+// MONOTONE INCREASING in `d`, so ordering by cost is ordering by distance, and
+// the id tie-break is the same lexicographic one. Every shipped caller passes
+// equal terms, so every shipped ordering is byte-identical — the pricing only
+// starts to BITE when a caller has a reason to price two sources differently
+// (a slower cart, a deeper chest, a bag already at one of them).
+//
+// VALUE stays out of the key this pass, deliberately: every shipped caller
+// draws ONE good in ONE unit size from every candidate, so `value(units)` is
+// equal across the walk and subtracting it would move nothing. The moment a
+// caller has differing values (mixed heads, mixed grades) it belongs in
+// `PricedSourceOpts` as a per-source term — the seat is here, empty on purpose.
+
+/** What the walk charges a candidate. All shipped callers take the defaults,
+ *  which is why the priced order IS the old nearest-first order. */
+export interface PricedSourceOpts {
+  /** Hauler pace for the journey leg (m/s). Default: the villager errand
+   *  pace — the same one `haulBagLeg` prices a body's trip at. */
+  speedMps?: number;
+  /** Hand-seconds one draw costs AT the source (opening the box, loading).
+   *  Equal across a walk ⇒ it cancels; it is here so a caller with real
+   *  per-source dwells can spend it. Default 0. */
+  loadDwellS?: number;
+  /** Per-source overrides where a caller genuinely has them. Absent (or
+   *  returning nothing) ⇒ the walk-level defaults above. */
+  perSource?(s: TransferSource): { speedMps?: number; loadDwellS?: number } | undefined;
+}
+
+/** THE SORT KEY: this source's `VerbCost`, totalled in hand-seconds. */
+export function sourceCostS(s: TransferSource, opts: PricedSourceOpts = {}): number {
+  const per = opts.perSource?.(s);
+  const speed = per?.speedMps ?? opts.speedMps ?? ERRAND_WALK_MPS;
+  const handsS = per?.loadDwellS ?? opts.loadDwellS ?? 0;
+  return costTotalS(priceOf({ journeyS: journeyTimeS(s.d, speed), handsS }));
+}
+
 /**
- * Deterministic source allocation for `qty` units of `glyph`: nearest source
- * first, distance ties toward the LEXICOGRAPHIC lower id (the chooseClaimant
- * law — no RNG, replays identically). Returns one draw per source touched
- * plus the shortfall the sources can't cover (the caller's honest refusal:
- * "we don't have 3 wood").
+ * THE WALK: candidates holding units, cheapest first, LEXICOGRAPHIC-lower id
+ * on ties (the chooseClaimant law — no RNG, replays identically).
+ *
+ * `unitsOf` is the caller's own "does this source offer anything" test, which
+ * is the ONLY thing the three copies legitimately disagreed about: plain stack
+ * units for a spoken order, FREE units for a reservation-aware resolve, one
+ * exact glyph for a furniture request. Everything else — the metric, the
+ * ordering, the tie-break — is now written once.
+ *
+ * Compared with `<`/`>` rather than subtraction so an UNREACHABLE candidate
+ * (speed 0 ⇒ `journeyTimeS` = ∞) ties instead of poisoning the comparator with
+ * `∞ − ∞ = NaN`, which the old `a.d − b.d` would have done.
+ */
+export function rankPricedSources<T extends TransferSource>(
+  sources: readonly T[],
+  unitsOf: (s: T) => number,
+  opts: PricedSourceOpts = {},
+): T[] {
+  return sources
+    .filter((s) => unitsOf(s) > 0)
+    .map((s) => ({ s, c: sourceCostS(s, opts) }))
+    .sort((a, b) =>
+      a.c < b.c ? -1 : a.c > b.c ? 1 : a.s.id < b.s.id ? -1 : a.s.id > b.s.id ? 1 : 0,
+    )
+    .map((r) => r.s);
+}
+
+/**
+ * Deterministic source allocation for `qty` units of `glyph`: CHEAPEST source
+ * first (`rankPricedSources` — nearest-first while the terms are equal, which
+ * is every shipped caller), distance ties toward the LEXICOGRAPHIC lower id.
+ * Returns one draw per source touched plus the shortfall the sources can't
+ * cover (the caller's honest refusal: "we don't have 3 wood").
  */
 export function planTransferSources(
   sources: readonly TransferSource[],
   glyph: string,
   qty: number,
+  price?: PricedSourceOpts,
 ): { draws: Array<{ id: string; take: number }>; shortfall: number } {
-  const ranked = [...sources]
-    .filter((s) => stackUnits(s.stack, glyph) > 0)
-    .sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const ranked = rankPricedSources(sources, (s) => stackUnits(s.stack, glyph), price);
   const draws: Array<{ id: string; take: number }> = [];
   let left = Math.max(0, Math.floor(qty));
   for (const s of ranked) {

@@ -12,6 +12,9 @@
  *      event-aware (weekly repeats re-hit across weeks, one-offs and
  *      schedule changes invalidate); goals keys on date/location.
  *   5. planEntryFresh policy (hash, age, non-empty).
+ *   6. The AUTHORITY DEFERENCE default — emitted into the persona spec for a
+ *      child, absent for an adult, unknown age treated as a child, ranked
+ *      LOWEST in the priority ladder, and a hash input.
  *
  * The LLM calls themselves are exercised through the dual-agent service —
  * these tests cover the deterministic plumbing.
@@ -31,6 +34,8 @@ import {
   dayPartForHour,
   localTimeParts,
   imminentEvents,
+  isChildAge,
+  ADULT_AGE_YEARS,
   PLAN_MAX_AGE_MS,
   type PlanContext,
   type PlanEventOccurrence,
@@ -56,6 +61,7 @@ function makeCtx(overrides: Partial<PlanContext> = {}): PlanContext {
     language: "en",
     languageName: "English",
     studentDataParts: ["Name: Daniel", "Age: 9", "Notes: [\"likes trains\"]"],
+    isChild: true,
     customRules: ["Always greet warmly"],
     autoNotes: ["Working on 2-symbol requests"],
     interestList: ["trains", "astronomy"],
@@ -142,6 +148,82 @@ describe("session-plan — prompt assembly", () => {
   });
 });
 
+describe("session-plan — authority-figure deference default", () => {
+  const identityCore = PLAN_CALLS.find((c) => c.call === "identity_core")!;
+  const child = makeCtx({ isChild: true });
+  const adult = makeCtx({
+    isChild: false,
+    studentDataParts: ["Name: Daniel", "Age: 27", "Notes: [\"likes trains\"]"],
+  });
+
+  it("isChildAge: unknown/unparseable age counts as a child; the threshold is ADULT_AGE_YEARS", () => {
+    expect(isChildAge(undefined)).toBe(true);
+    expect(isChildAge(null)).toBe(true);
+    expect(isChildAge(NaN)).toBe(true);
+    expect(isChildAge(0)).toBe(true);
+    expect(isChildAge(ADULT_AGE_YEARS - 1)).toBe(true);
+    expect(isChildAge(ADULT_AGE_YEARS)).toBe(false);
+    expect(isChildAge(45)).toBe(false);
+  });
+
+  it("emits the deference block inside the persona spec for a child, and not at all for an adult", () => {
+    const forChild = buildPlanCall(identityCore, child, NONCES).systemPrompt;
+    const forAdult = buildPlanCall(identityCore, adult, NONCES).systemPrompt;
+    expect(forChild).toContain("AUTHORITY DEFERENCE");
+    expect(forChild).toContain("when an activity starts or stops");
+    expect(forAdult).not.toContain("AUTHORITY DEFERENCE");
+
+    const open = forChild.indexOf(`[persona-${NONCES.outputNonce}]`);
+    const close = forChild.indexOf(`[/persona-${NONCES.outputNonce}]`);
+    const block = forChild.indexOf("AUTHORITY DEFERENCE — REQUIRED");
+    expect(block).toBeGreaterThan(open);
+    expect(block).toBeLessThan(close);
+  });
+
+  it("carries both safety boundaries: expression is never suppressed, deference stops at safety", () => {
+    const forChild = buildPlanCall(identityCore, child, NONCES).systemPrompt;
+    expect(forChild).toContain("Deference NEVER suppresses the user's expression");
+    expect(forChild).toContain("Distress, refusal, discomfort, pain and disagreement are ALWAYS supported");
+    expect(forChild).toContain("Help the user SAY the objection");
+    expect(forChild).toContain("Deference STOPS at safety");
+    expect(forChild).toContain("safety notes flag as unsafe");
+    expect(forChild).toContain("never covers a user reporting harm");
+  });
+
+  it("ranks the default LOWEST, in the ONE priority ladder — below the CUSTOM clinician list", () => {
+    const forChild = buildPlanCall(identityCore, child, NONCES).systemPrompt;
+    const custom = forChild.indexOf("1. Caretaker-requested behaviors (CUSTOM prompt).");
+    const auto = forChild.indexOf("2. AI-generated background notes (AUTO prompt).");
+    const deference = forChild.indexOf("3. The AUTHORITY DEFERENCE default");
+    expect(custom).toBeGreaterThan(-1);
+    expect(auto).toBeGreaterThan(custom);
+    expect(deference).toBeGreaterThan(auto);
+    expect(forChild).toContain("LOWEST");
+    // Precedence is stated exactly once — no second, competing statement.
+    expect(forChild.match(/Priority ladder/g)?.length).toBe(1);
+  });
+
+  it("adult contexts keep the original two-way CUSTOM > AUTO precedence sentence", () => {
+    const forAdult = buildPlanCall(identityCore, adult, NONCES).systemPrompt;
+    expect(forAdult).toContain("The custom (caretaker-requested) behaviors take priority over the auto");
+    expect(forAdult).not.toContain("Priority ladder");
+  });
+
+  it("still emits the block when no clinician prompt is on file", () => {
+    const bare = buildPlanCall(identityCore, makeCtx({ customRules: [], autoNotes: [] }), NONCES).systemPrompt;
+    expect(bare).toContain("NO clinician-written prompt is on file");
+    expect(bare).toContain("AUTHORITY DEFERENCE");
+  });
+
+  it("is scoped to the persona call — the other three calls carry neither the block nor the extra rung", () => {
+    for (const spec of PLAN_CALLS) {
+      const built = buildPlanCall(spec, child, NONCES).systemPrompt;
+      expect(built.includes("AUTHORITY DEFERENCE")).toBe(spec.call === "identity_core");
+      expect(built.includes("Priority ladder")).toBe(spec.call === "identity_core");
+    }
+  });
+});
+
 describe("session-plan — response parsing", () => {
   const ctx = makeCtx();
   const spec = PLAN_CALLS.find((c) => c.call === "identity_core")!;
@@ -186,6 +268,9 @@ describe("session-plan — hashing", () => {
       .not.toBe(identityHash(base));
     expect(identityHash(makeCtx({ customRules: [] }))).not.toBe(identityHash(base));
     expect(identityHash(makeCtx({ singleGlyphButtons: true }))).not.toBe(identityHash(base));
+    // A user aging past the child threshold must regenerate their identity
+    // sections — otherwise the cached persona keeps the deference default.
+    expect(identityHash(makeCtx({ isChild: false }))).not.toBe(identityHash(base));
   });
 
   it("situationsHash re-hits across weeks for a weekly-repeating schedule", () => {

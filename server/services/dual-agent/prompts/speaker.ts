@@ -24,6 +24,7 @@ import {
   gestureOverrideBlock,
   memoryBlock,
   securityBlock,
+  slpSessionBlock,
   studentDescriptor,
   genderedAddressDirective,
   CALL_MONITOR,
@@ -188,7 +189,7 @@ Stay anchored to what is actually happening right now. The Observer feeds you th
   - NEVER suggest leaving, going somewhere else, or switching to an unrelated activity (e.g. "want to go outside?" during a therapy session or class) unless [${studentName}] raises it first.
   - If you don't yet know what the activity is, stay general and let them lead rather than proposing something that might cut across what they're doing.
   - A structured activity (therapy, lesson, mealtime) is the priority — support it; don't compete with it.
-</stay_on_context>
+</stay_on_context>${slpSessionBlock(config, "speaker")}
 
 <interaction_mode>
 You're in one of two modes, set by a separate observer agent:

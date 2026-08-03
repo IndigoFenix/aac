@@ -897,11 +897,16 @@ describe("the STOCKPILE rule — a trip to a source fills up, the pantry does no
     };
     expect(decideNeed(hunger, ctx)).toEqual({ kind: "take", from: stock("store", 9), units: 2 });
   });
-  it("a FULL bag still takes the one unit it came for — never 0 (that would spin)", () => {
+  it("a FULL bag: flag OFF still takes the one unit it came for (the anti-spin floor)", () => {
+    // THE SHIPPED FLOOR, kept as the kill-switch's behaviour: `takeUnits`
+    // never rounds down to 0, because a 0-unit take would fire → move nothing
+    // → fire again. Step ④ replaces the floor rather than deleting it — see
+    // the flag-ON twin in the "COSTS IN THE PLANNER" block below.
     const ctx: NeedCtx = {
       ...empty, meter: 1, containers: {}, sources: [stock("store", 9)], restock: 6, room: 0,
     };
-    expect(decideNeed(hunger, ctx)).toEqual({ kind: "take", from: stock("store", 9), units: 1 });
+    expect(decideNeed(hunger, ctx, { costSelection: false }))
+      .toEqual({ kind: "take", from: stock("store", 9), units: 1 });
   });
   it("no restock target (a headless caller that models no household) → the old single unit", () => {
     const ctx: NeedCtx = { ...empty, meter: 1, containers: {}, sources: [stock("store", 9)] };

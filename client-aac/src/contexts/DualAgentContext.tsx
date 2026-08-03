@@ -260,9 +260,33 @@ interface DualAgentContextType {
    *  or null when off / before init. Bridged up to home to gate the detector. */
   seizureConfig: import("@shared/aac/seizure-config").ClientSeizureConfig | null;
 
+  /** Automated audio scan, or null when off / before init. The SERVER decides
+   *  whether the feature applies (it requires eyegaze AND the per-student
+   *  setting) and floors the delay — see buildClientAutoScanConfig. Non-null
+   *  means "armed"; the client must not re-derive the gate from aacSettings,
+   *  or the policy lives in two places and the standalone app needs a rebuild
+   *  every time it changes. Bridged up to home for the BoardAudioProvider. */
+  autoAudioScan: { delayMs: number } | null;
+
   // Pause state
   paused: boolean;
   setPaused: (paused: boolean) => void;
+
+  // ---- SLP MODE (per logged-in USER, resolved by the server) -------------
+  /** True when a speech-language pathologist is running this session (the
+   *  logged-in user has SLP mode on). The session never auto-sleeps and the
+   *  header shows the manual wake/sleep control. */
+  slpMode: boolean;
+  /** Whether the session currently reads as asleep, for that control. */
+  sessionAsleep: boolean;
+  /** Toggle the session between awake and asleep. Reuses the existing
+   *  wake/sleep wire protocol, tagged as a human action. */
+  toggleSessionSleep: () => void;
+  /** SLP MODE: an automatic wake was suppressed while asleep — someone is at
+   *  the device but we won't wake on our own. The session is STILL ASLEEP; the
+   *  overlay shows "Ready" and one press wakes it. GLOBAL, so the overlay
+   *  button and the header control can never disagree. */
+  slpWakeReady: boolean;
 
   // Reconnection state (Live API only)
   reconnecting: boolean;
@@ -1164,6 +1188,11 @@ function DualAgentProviderInner({
   const prevSleepStateRef = useRef(attentiveness?.sleepState ?? "awake");
   const notifySleepStateChangeRef = useRef(liveAgent.notifySleepStateChange);
   notifySleepStateChangeRef.current = liveAgent.notifySleepStateChange;
+  // Set by the SLP MODE header control just before it flips the state, so the
+  // ONE notification this effect sends is attributed to the human. Only
+  // `source: "user"` moves the server session (see the coordinator's
+  // handleManualSleepRequest); "system" stays informational.
+  const nextSleepSourceRef = useRef<"system" | "user">("system");
   useEffect(() => {
     if (!attentiveness) return;
     const prev = prevSleepStateRef.current;
@@ -1174,8 +1203,49 @@ function DualAgentProviderInner({
       activityMonitor.triggerNow("wake_check");
     }
     prevSleepStateRef.current = next;
-    notifySleepStateChangeRef.current?.(next, "system");
+    const source = nextSleepSourceRef.current;
+    nextSleepSourceRef.current = "system";
+    notifySleepStateChangeRef.current?.(next, source);
   }, [attentiveness, attentiveness?.sleepState, activityMonitor]);
+
+  // ---- SLP MODE (per logged-in USER; server-resolved) ---------------------
+  // While on: the client's engagement state machine must not drop the session
+  // on its own (long therapy silences are not disengagement), and the header
+  // shows an explicit wake/sleep control instead.
+  const slpMode = liveAgent.clientConfig?.slpMode ?? false;
+  const setAutoSleepEnabledRef = useRef(attentiveness?.setAutoSleepEnabled);
+  setAutoSleepEnabledRef.current = attentiveness?.setAutoSleepEnabled;
+  useEffect(() => {
+    setAutoSleepEnabledRef.current?.(!slpMode);
+  }, [slpMode]);
+
+  // Whether the session currently reads as asleep, for the header control.
+  const sleepState = attentiveness?.sleepState ?? "awake";
+  const sessionAsleep = sleepState === "asleep" || sleepState === "hibernation";
+
+  /** SLP MODE header control: put the session to sleep / wake it back up.
+   *  Reuses the existing wake/sleep wire protocol — the state change flows
+   *  through the same `client_sleep_state_change` notification every other
+   *  transition uses, tagged `source: "user"` so the server acts on it. */
+  const toggleSessionSleep = useCallback(() => {
+    const target = sessionAsleep ? "awake" : "asleep";
+    nextSleepSourceRef.current = "user";
+    if (attentivenessRef.current) {
+      attentivenessRef.current.setSleepState(target);
+    } else {
+      // No attentiveness provider mounted (headless/test): tell the server
+      // directly so the control still works.
+      nextSleepSourceRef.current = "system";
+      notifySleepStateChangeRef.current?.(target, "user");
+    }
+  }, [sessionAsleep]);
+
+  // SLP MODE: an automatic wake was suppressed while asleep — someone is at the
+  // device and we deliberately did not act on it. GLOBAL (it lives in the
+  // attentiveness provider) so the overlay and the header control project from
+  // one value and cannot drift apart. It does NOT mean awake: the session is
+  // still asleep, and one press of either control wakes it.
+  const slpWakeReady = attentiveness?.wakeSuppressed ?? false;
 
   // One-shot startup: the instant the session is live, (1) push whatever the
   // eager identification pass found so the server can match it, and (2) capture
@@ -1336,6 +1406,9 @@ function DualAgentProviderInner({
       pcmDebug={pcmDebug}
       micActive={micStream !== null}
       lastSttTranscript={lastSttTranscript}
+      sessionAsleep={sessionAsleep}
+      toggleSessionSleep={toggleSessionSleep}
+      slpWakeReady={slpWakeReady}
     >
       {children}
     </ProviderShell>
@@ -1388,6 +1461,13 @@ interface ProviderShellProps {
   };
   micActive: boolean;
   lastSttTranscript?: { text: string; confidence: number; at: number } | null;
+  /** SLP MODE header control — current state + toggle. Computed in the outer
+   *  provider (it needs the attentiveness context) and threaded down here. */
+  sessionAsleep: boolean;
+  toggleSessionSleep: () => void;
+  /** SLP MODE: an automatic wake was suppressed while asleep. Still asleep —
+   *  the overlay shows "Ready" and one press wakes it. */
+  slpWakeReady: boolean;
 }
 
 function ProviderShell({
@@ -1416,6 +1496,9 @@ function ProviderShell({
   pcmDebug: pcmDebugProp,
   micActive,
   lastSttTranscript,
+  sessionAsleep,
+  toggleSessionSleep,
+  slpWakeReady,
 }: ProviderShellProps) {
   const value: DualAgentContextType = {
     studentId,
@@ -1545,8 +1628,22 @@ function ProviderShell({
     // pose-based detector. Null when off / before init.
     seizureConfig: agent.clientConfig?.seizure ?? null,
 
+    // Automated audio scan — the server already applied the eyegaze gate and
+    // the delay floor, so its presence alone is the answer.
+    autoAudioScan: agent.clientConfig?.autoAudioScan
+      ? { delayMs: agent.clientConfig.autoAudioScanDelayMs ?? 15000 }
+      : null,
+
     paused: agent.paused,
     setPaused: agent.setPaused,
+
+    // SLP MODE — server-resolved from the logged-in USER (never the student).
+    // Absent from clientConfig when off, so this is false for every normal
+    // session and the header control never renders.
+    slpMode: agent.clientConfig?.slpMode ?? false,
+    sessionAsleep,
+    toggleSessionSleep,
+    slpWakeReady,
 
     reconnecting: agent.reconnecting ?? false,
     safetyBlocked: agent.safetyBlocked ?? false,

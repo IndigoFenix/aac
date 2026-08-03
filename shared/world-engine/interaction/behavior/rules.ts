@@ -180,8 +180,9 @@ export type GoalSpec =
   // THE STACK ECONOMY'S TWO MANIPULATION PRIMITIVES (S3 — "take N = WITHDRAW ×N,
   // deposit N = STOW ×N"; the economy is a units count, not new machinery):
   // walk to the source/container and move `units` of `category` between it and
-  // the ABSTRACT bag (needCarried ↔ containerStock/market/loose — the state the
-  // needs walker already mutates; the executor delegates to its effects).
+  // WHAT THE BODY IS CARRYING — the container in its hands or on its back, or,
+  // with neither, one whole thing in its hands (scope-unification.md §2.1). The
+  // executor delegates to the needs walker's own effects, which own the doors.
   // `affords` selects by FUNCTION instead of category (fun's toy). `tplKey`
   // names the need row acting (kind selection, strike keys, logs) — a spoken
   // command would omit it. Both are TERMINAL micro-goals: one leg + one act,
@@ -198,10 +199,10 @@ export type GoalSpec =
   // as real loose props at the feet (the unload row's "put it down" answer).
   | { kind: "equipUnits"; category: string; tplKey?: string }
   | { kind: "dropUnits"; category: string; units: number; tplKey?: string }
-  // EAT FROM THE BAG (S4): consume one carried unit of `category` — at the
-  // dining station when `at` resolves (the seat show), else where you stand.
-  // The single-item `consume` can't express this: the abstract bag holds no
-  // item ids to resolve.
+  // EAT WHAT YOU ARE CARRYING (S4): consume one carried unit of `category` — at
+  // the dining station when `at` resolves (the seat show), else where you stand.
+  // The single-item `consume` can't express this: it plans toward an item the
+  // resolver can SEE in the world, and a body's own carry is not on that list.
   | { kind: "consumeUnits"; category: string; at?: readonly string[]; tplKey?: string }
   | { kind: "socialAct"; target: CreatureId; act: string } // hug — walk to the target, warmth on arrival
   | { kind: "help"; target: CreatureId } // adopt the target's surfaced need (the general on-behalf rule)

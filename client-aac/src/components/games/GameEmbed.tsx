@@ -32,6 +32,7 @@ import { API_BASE_URL } from "@/lib/api-base";
 import { apiPost } from "@/lib/queryClient";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export interface GameEmbedHandle {
   /** Push a structured message down to the embedded game. */
@@ -96,6 +97,13 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
   // The default context value has gazePosition: null, so this is safe even
   // when no provider is mounted (e.g. path-bypass routes).
   const dwell = useEyeTrackingDwell();
+  // THE STUDENT'S language, not the device's. LanguageContext is the AAC UI
+  // locale, and home.tsx drives it from the student profile's primaryLanguage —
+  // so a Hebrew student on an English-locale tablet gets a Hebrew world. (This
+  // used to send navigator.language, which is the DEVICE's setting and had
+  // nothing to do with the child.) The clinician embed does the same thing:
+  // client/src/features/call/CallGameEmbed.tsx.
+  const { language } = useLanguage();
   const [iframeReady, setIframeReady] = useState(false);
 
   // Expose a single imperative `send` method to parent components.
@@ -200,6 +208,12 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
   // Once the game says it's ready, send an `init` message. Carries locale and
   // (eventually) a license token. The token plumbing is wired but no minting
   // endpoint exists yet — left as a forward-compat hook.
+  //
+  // `language` is in the deps on purpose: a world-engine game chooses its lang
+  // layer when the world BUILDS (dollhouse waits for `init` before loadSpec), so
+  // the locale has to be the one in hand at handshake time. Re-sending on a
+  // later change is harmless — the standing world keeps its language, but
+  // anything the game still translates through `initLocale` follows along.
   useEffect(() => {
     if (!iframeReady) return;
     const iframe = iframeRef.current;
@@ -208,7 +222,7 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
     // union collapses to the common keys and drops locale/dwellMs/params).
     const init = {
       type: "init" as const,
-      locale: typeof navigator !== "undefined" ? navigator.language : undefined,
+      locale: language,
       // Games with their own dwell logic honour the platform's configured dwell time.
       dwellMs: dwell?.dwellTimeMs,
       ...(initParams ? { params: initParams } : {}),
@@ -217,7 +231,7 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
     if (gamePayload !== undefined) {
       sendToGame(iframe, { type: "load_game", game: gamePayload });
     }
-  }, [iframeReady, dwell?.dwellTimeMs, gamePayload, initParams]);
+  }, [iframeReady, language, dwell?.dwellTimeMs, gamePayload, initParams]);
 
   // Forward EYEGAZE position into the iframe's local coordinate space at
   // ~30 Hz. Coordinates produced by the dwell context are page-space; we

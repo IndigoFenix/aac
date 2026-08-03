@@ -185,6 +185,17 @@ import { setCacheablePhrases } from "@/services/tts-cache";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
 import { useQuery } from "@tanstack/react-query";
 import { fetchWithAuth } from "@/lib/queryClient";
+import { pressWireFor } from "@/lib/press-routing";
+import {
+  emptyBoardHistory,
+  receiveBoard,
+  currentBoard as historyCurrentBoard,
+  goBack as historyGoBack,
+  goForward as historyGoForward,
+  canGoBack as historyCanGoBack,
+  canGoForward as historyCanGoForward,
+  type BoardHistory,
+} from "@/lib/board-history";
 
 interface HomeProps {
   studentId: string;
@@ -201,7 +212,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onAutoAudioScanChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -216,6 +227,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, inputGlyphs: Array<{ glyph: string; fallback?: string }> | null, dismiss: () => void) => void;
   onAlarmChange?: (alarm: { level: "alert" | "emergency"; reason: string } | null, cancel: () => void) => void;
   onSeizureConfigChange?: (cfg: import("@shared/aac/seizure-config").ClientSeizureConfig | null) => void;
+  /** Lift the server's automated-audio-scan decision out of the provider —
+   *  BoardAudioProvider is mounted OUTSIDE DualAgentProvider, so it cannot read
+   *  the context itself. Null = the server did not arm the feature. */
+  onAutoAudioScanChange?: (cfg: { delayMs: number } | null) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
@@ -249,7 +264,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
    *  close exactly when the interpreted sentence starts. */
   onVoicingStudentChange?: (voicing: boolean) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, sendGamePress, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, processing, voicingStudent } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, sendGamePress, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, autoAudioScan, processing, voicingStudent } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -258,6 +273,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   useEffect(() => {
     onSeizureConfigChange?.(seizureConfig);
   }, [seizureConfig, onSeizureConfigChange]);
+
+  useEffect(() => {
+    onAutoAudioScanChange?.(autoAudioScan);
+  }, [autoAudioScan, onAutoAudioScanChange]);
 
   useEffect(() => {
     onProcessingChange?.(processing);
@@ -1327,6 +1346,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Per-student seizure-detection config from the server (bridged up from
   // DualAgentContext). Null until the session initializes / when disabled.
   const [serverSeizure, setServerSeizure] = useState<import("@shared/aac/seizure-config").ClientSeizureConfig | null>(null);
+  // Automated audio scan, decided by the SERVER (eyegaze gate + delay floor
+  // applied there) and bridged up the same way, because BoardAudioProvider is
+  // mounted outside DualAgentProvider and can't read the context itself.
+  const [serverAutoScan, setServerAutoScan] = useState<{ delayMs: number } | null>(null);
   const poseConfig = poseWatchActive ? { processingIntervalMs: 66 } : trackerConfig(900);
   const { poses: rawPoses } = usePoseTracking({ videoEl: userVideoEl, enabled: poseEnabled, config: poseConfig }); // default 400ms; heaviest tracker
   const { trackedPoses } = usePoseEvents({ poses: rawPoses, enabled: poseEnabled });
@@ -1715,6 +1738,31 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   };
 
 
+  // ONE routing decision for "the student said this by pressing a button".
+  // lib/press-routing.ts holds the rule and the reasoning: while a world-engine
+  // game owns the screen the press is part of PLAY, so it goes out as
+  // `game_press` — voiced in the student's own voice, logged, published to the
+  // room, a passive note to the Observer, but no Speaker turn and no board
+  // rebuild. The AI does not talk back over the child's game. That already
+  // applied to the game's own locked-board options; it now covers every button
+  // on screen, the quick Yes / No included.
+  //
+  // Returns false when the chosen wire isn't available (no live session) so the
+  // caller can fall back to local TTS.
+  const speakPress = useCallback((
+    text: string,
+    opts?: { glyph?: string; sentences?: Record<string, string> },
+  ): boolean => {
+    if (pressWireFor({ worldEngineGameActive: worldEngineGameActiveRef.current }) === "game_press") {
+      if (!sendGamePressFnRef.current) return false;
+      sendGamePressFnRef.current(text, opts?.glyph, gameVoiceServerRef.current);
+      return true;
+    }
+    if (!voiceFnRef.current) return false;
+    voiceFnRef.current([text], opts?.sentences);
+    return true;
+  }, []);
+
   // Handle AAC board button click — send immediately to server
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
     // A game has the board locked to its options → this press is the student
@@ -1828,19 +1876,19 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
     const sentences = button.sentence ? { [spokenText]: button.sentence } : undefined;
 
-    if (voiceFnRef.current) {
-      // Ambient per-button cue: "processing" until the student voice starts,
-      // then "speaking" until it finishes (driven by voicingStudent). A
-      // timeout backstops the case where no voice ever plays (server error /
-      // repeat-press coalescing). Only the AI path streams utterance audio;
-      // the local `speak` fallback below has no such signal.
+    // Ambient per-button cue: "processing" until the student voice starts,
+    // then "speaking" until it finishes (driven by voicingStudent). A
+    // timeout backstops the case where no voice ever plays (server error /
+    // repeat-press coalescing). Both server wires stream utterance audio, so
+    // the cue works for a game press too; the local `speak` fallback has no
+    // such signal.
+    if (speakPress(spokenText, { glyph: button.sentence || button.glyph, sentences })) {
       if (button.id) setBusyButton({ id: button.id, phase: "processing" });
-      voiceFnRef.current([spokenText], sentences);
       setRecentButtonPresses([]);
     } else {
       speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
     }
-  }, [speak, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
+  }, [speak, speakPress, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
 
   // Sentence-builder Play. While a world-engine game is embedded, try the
   // game's OWN engine first (glyph_input → glyph_result): a parsed sentence
@@ -1888,18 +1936,34 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     }
   }, [recentButtonPresses]);
 
-  // Board history for back navigation
-  const boardHistoryRef = useRef<ParsedBoardData[]>([]);
+  // Board back/forward history + PAUSE. Browser semantics, in lib/board-history:
+  // a list of boards and a cursor. `boardData` is derived from the cursor, so
+  // the history is the single source of truth for what's on screen.
+  //
+  // Paused, the screen does not change at all: an arriving board is stored
+  // AHEAD of the cursor and reached with Forward. See the module header for
+  // why an additive rebuild is exempt while running but not while paused.
+  const [boardHistory, setBoardHistory] = useState<BoardHistory>(emptyBoardHistory);
+  // Live value for callbacks that must not be re-created on every board change.
+  const boardPausedRef = useRef(false);
+  const [boardPaused, setBoardPausedState] = useState(false);
+  const setBoardPaused = useCallback((v: boolean) => {
+    boardPausedRef.current = v;
+    setBoardPausedState(v);
+  }, []);
+
+  const canBoardBack = historyCanGoBack(boardHistory);
+  const canBoardForward = historyCanGoForward(boardHistory);
+
+  // Keep the rendered board in step with the cursor.
+  useEffect(() => {
+    setBoardData(historyCurrentBoard(boardHistory));
+  }, [boardHistory]);
 
   // Handle board data updates from conversation
   const handleBoardUpdate = useCallback((board: ParsedBoardData) => {
     console.log('[Home] Board data received:', board.name, board.pages?.length, 'pages');
-    setBoardData((prev) => {
-      if (prev) {
-        boardHistoryRef.current.push(prev);
-      }
-      return board;
-    });
+    setBoardHistory((h) => receiveBoard(h, board, { paused: boardPausedRef.current }));
   }, []);
 
   // Handle set_board — AI loaded a prebuilt board (separate from regular board updates)
@@ -1917,7 +1981,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
     // Clear AI side-panel board so it starts fresh
     setBoardData(null);
-    boardHistoryRef.current = [];
+    setBoardHistory(emptyBoardHistory());
   }, []);
 
   // Handle unload_board — AI returned to the fully dynamic board
@@ -1927,11 +1991,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     setCurrentTier("latest");
   }, []);
 
-  const handleBoardBack = useCallback(() => {
-    const prev = boardHistoryRef.current.pop();
-    if (prev) {
-      setBoardData(prev);
-    }
+  // Back / Forward just move the cursor — they never record a new entry, so
+  // stepping back and forth can't grow the history or bounce between two boards.
+  const handleBoardBack = useCallback(() => setBoardHistory(historyGoBack), []);
+  const handleBoardForward = useCallback(() => setBoardHistory(historyGoForward), []);
+
+  /** Show a board the student navigated to explicitly (the Home/Back tier
+   *  walk restoring `latestPage`). Routed through the history rather than
+   *  straight to setBoardData, or the cursor and the screen would disagree and
+   *  the next AI board would yank the display somewhere unexpected. Always
+   *  displays — PAUSE holds back the AI, never the student's own press. */
+  const showBoardDirectly = useCallback((b: ParsedBoardData) => {
+    setBoardHistory((h) => receiveBoard(h, b, { paused: false }));
   }, []);
 
   // Handle multi-page board navigation — inform AI of page change
@@ -2232,7 +2303,20 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       applyCalibration={eyeGaze.applyCalibration}
       clearCalibrationData={eyeGaze.clearCalibration}
     >
-    <BoardAudioProvider language={currentLanguage} voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}>
+    <BoardAudioProvider
+      language={currentLanguage}
+      voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+      // Automated audio scan. The SERVER owns this decision (it requires
+      // eyegaze AND the per-student setting, and floors the delay) — see
+      // buildClientAutoScanConfig. Deriving the gate here too would put the
+      // policy in two places, and the standalone AAC app would need a rebuild
+      // every time it changed. Null until the session initializes.
+      autoScan={!!serverAutoScan}
+      autoScanDelayMs={serverAutoScan?.delayMs ?? 15000}
+      // Never start a readout on top of the AI's own turn, or the student's.
+      aiSpeaking={serverProcessing.speaker || serverProcessing.interpret || voicingStudent}
+      boardRebuilding={serverProcessing.board}
+    >
     <div className="h-dvh flex flex-col relative overflow-hidden bg-bg-soft pb-safe pt-safe">
       {/* Eyegaze Provider Detection Notification */}
       <AnimatePresence>
@@ -2795,7 +2879,16 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               )}
             </div>
           ) : boardMode === 'ai' ? (
-            <div className="flex-1 min-w-0 h-full">
+            // While the board is HELD, frame the whole board section in the
+            // same yellow as the lit Hold button. The pairing is the
+            // explanation: the button that is lit is the thing holding this
+            // frame in place. Faint and inset so it never competes with a
+            // button's own focus/selection ring.
+            <div
+              className={`flex-1 min-w-0 h-full ${
+                boardPaused ? "rounded-xl ring-2 ring-inset ring-amber-300/70" : ""
+              }`}
+            >
               <DynamicBoard
                 board={prebuiltBoardData || boardData}
                 boardPatch={prebuiltBoardData ? null : boardPatchData}
@@ -2805,7 +2898,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 busyButtonId={busyButton?.id ?? null}
                 busyPhase={busyButton?.phase ?? null}
                 onButtonClick={handleBoardButtonClick}
-                onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
+                onBack={canBoardBack ? handleBoardBack : undefined}
                 onNavigate={handleBoardNavigate}
                 language={currentLanguage}
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
@@ -2874,6 +2967,20 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               if (voiceFnRef.current) {
                 voiceFnRef.current(["[MORE]"]);
               }
+            } else if (action === "boardback") {
+              // Step back one AI board. Purely client-side navigation through
+              // boards the student has already seen — no utterance, and the AI
+              // is not told, exactly like the [MORE] press produces no speech.
+              handleBoardBack();
+            } else if (action === "boardforward") {
+              // Step forward to a board the student rewound past, or one that
+              // arrived while the board was paused. Also client-side only.
+              handleBoardForward();
+            } else if (action === "boardpause") {
+              // Hold the board still. Arriving boards keep being stored (and
+              // still clear whatever was ahead) — they just aren't shown until
+              // the student presses Forward.
+              setBoardPaused(!boardPausedRef.current);
             } else if (action === "home") {
               // 3-tier Home button navigation
               if (isGuessingMode) {
@@ -2887,7 +2994,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 );
                 if (latestPage) {
                   setPrebuiltBoardData(null);
-                  setBoardData(latestPage);
+                  showBoardDirectly(latestPage);
                   setCurrentTier("latest");
                 }
               } else if (currentTier === "latest") {
@@ -2906,7 +3013,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 // On home page → go to latest page (don't save home as latest)
                 if (latestPage) {
                   setPrebuiltBoardData(null);
-                  setBoardData(latestPage);
+                  showBoardDirectly(latestPage);
                   setCurrentTier("latest");
                 }
               }
@@ -2961,10 +3068,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               }
               pressSuggestionRef.current?.(GUESSING_REJECT);
             } else {
-              // Yes/No — send as button press (server handles TTS if AI session active)
-              if (voiceFnRef.current) {
-                voiceFnRef.current([text], { [text]: text });
-              } else {
+              // Yes/No — a real student utterance, routed exactly like any
+              // board button (server handles TTS if an AI session is active).
+              // speakPress is what keeps it OFF the agents while a world-engine
+              // game is running: no answering the child over their own game.
+              if (!speakPress(text, { sentences: { [text]: text } })) {
                 speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               }
             }
@@ -3010,6 +3118,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           inSentenceBuilder={showConstructionBoard}
           onSpeak={() => setShowConstructionBoard((s) => !s)}
           worldEngineGame={worldEngineGameActive}
+          canGoBack={canBoardBack}
+          canGoForward={canBoardForward}
+          boardPaused={boardPaused}
         />
 
         {/* Pause Overlay — covers board and quick actions when paused */}
@@ -3143,6 +3254,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onBinaryChoiceChange={(options, escapeKind, inputGlyphs, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); setBinaryChoiceInputGlyphs(inputGlyphs); dismissBinaryChoiceRef.current = dismiss; }}
             onAlarmChange={(alarm, cancel) => { setAlarmInfo(alarm); cancelAlarmRef.current = cancel; }}
             onSeizureConfigChange={setServerSeizure}
+            onAutoAudioScanChange={setServerAutoScan}
             onProcessingChange={setServerProcessing}
             onVoicingStudentChange={setVoicingStudent}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
@@ -3252,6 +3364,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 inSentenceBuilder: showConstructionBoard,
                 showSpeakSlot: true,
                 worldEngineGame: worldEngineGameActive,
+                canGoBack: canBoardBack,
+                canGoForward: canBoardForward,
+                boardPaused,
               },
               t,
               direction === "rtl",

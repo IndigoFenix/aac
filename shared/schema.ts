@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real, doublePrecision, varchar, jsonb, index, uniqueIndex, numeric, AnyPgColumn, pgEnum, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, doublePrecision, varchar, jsonb, index, uniqueIndex, numeric, AnyPgColumn, pgEnum, date, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { sql, relations } from "drizzle-orm";
 import { z } from "zod";
@@ -617,6 +617,14 @@ export const customSymbols = pgTable("custom_symbols", {
   description: text("description"),
   isPublic: boolean("is_public").default(false).notNull(),
   isApproved: boolean("is_approved").default(true).notNull(),
+  // True when this image depicts an IDENTIFIABLE PERSON — a staff portrait, a
+  // photo of a real adult. Such symbols may appear on boards inside an
+  // institute-visible package, but never in a public one, and the image itself
+  // is access-gated rather than served to any authenticated caller.
+  // Default false is safe because public packages are a NEW surface: no
+  // existing symbol has ever been publishable.
+  // See planning-docs/aac-packages-plan.md §3.
+  personImage: boolean("person_image").default(false).notNull(),
   createdByUserId: varchar("created_by_user_id").references(() => users.id),
   width: integer("width"),
   height: integer("height"),
@@ -658,6 +666,104 @@ export const instituteSymbolAssociations = pgTable("institute_symbol_association
   index("idx_institute_symbol_assoc_symbol_id").on(table.symbolId),
   index("idx_institute_symbol_assoc_institute_id").on(table.instituteId),
   uniqueIndex("idx_institute_symbol_assoc_unique").on(table.symbolId, table.instituteId),
+]);
+
+// =============================================================================
+// PACKAGES
+// Shareable content bundles owned by an institute. Operational, not PHI — the
+// package row describes content, and member boards carry no student-identifying
+// material (enforced at the package boundary). Distribution to students goes
+// through `packageAssignments` in the private schema.
+// See planning-docs/aac-packages-plan.md.
+// =============================================================================
+
+export const packages = pgTable("packages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Owning institute. NULLABLE: nulled when the package is orphaned (deleted by
+  // its owner while students/grants still link to it) — see the check below.
+  instituteId: varchar("institute_id").references(() => institutes.id),
+  // Primary content kind, for display and search filtering. NOT a constraint on
+  // contents: once other item types exist a package may hold more than one kind.
+  type: text("type").default("board").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  language: text("language").default("en"),
+  // 'institute' — usable by the owning institute (and explicit grants).
+  // 'public'    — usable by anyone, but only once approvalStatus='approved'.
+  // Publicly usable is never publicly editable.
+  visibility: text("visibility").default("institute").notNull(),
+  // What a plain member of the owning institute gets without an explicit grant.
+  // Default 'use' so an institute can use its own packages out of the box.
+  defaultMemberPermission: text("default_member_permission").default("use").notNull(),
+  // Admin review gate for PUBLIC listing only. Institute-scoped packages never
+  // leave the boundary that already governs their boards, so they skip review.
+  // 'none' | 'pending' | 'approved' | 'rejected'
+  approvalStatus: text("approval_status").default("none").notNull(),
+  // Set when visibility flips to public. `publishAttestation` is the compliance
+  // record that a HUMAN confirmed the package carries no images of identifiable
+  // people: { noPersonImages: true, at, byUserId }. The AI may propose a publish
+  // but never complete one — see aac-packages-plan.md §9.3.
+  publishedAt: timestamp("published_at"),
+  publishedByUserId: varchar("published_by_user_id").references(() => users.id),
+  publishAttestation: jsonb("publish_attestation"),
+  // Atomic refcount over packageAssignments + packageGrants. An orphaned package
+  // (deletedAt set) survives until this reaches zero, so deleting a package never
+  // yanks content out from under a student mid-session. Maintained ONLY by
+  // server/services/packages/packageLinks.ts. See plan §1.5.
+  linkCount: integer("link_count").default(0).notNull(),
+  // Non-null = orphaned: frozen (no edits, no new links, no publish) and awaiting
+  // garbage collection once linkCount hits zero.
+  deletedAt: timestamp("deleted_at"),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  // A LIVE package must have an owner; an orphaned one need not.
+  check(
+    "packages_live_has_owner",
+    sql`${table.deletedAt} IS NOT NULL OR ${table.instituteId} IS NOT NULL`,
+  ),
+  index("idx_packages_institute_id").on(table.instituteId),
+  index("idx_packages_visibility_approval").on(table.visibility, table.approvalStatus),
+  index("idx_packages_deleted_at").on(table.deletedAt),
+]);
+
+// Package membership for boards. One link table PER ITEM TYPE (packageApps etc.
+// follow the same shape) rather than a polymorphic itemId — the real FK means a
+// deleted board takes its membership rows with it, with no reconciliation job.
+export const packageBoards = pgTable("package_boards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  packageId: varchar("package_id").references(() => packages.id, { onDelete: "cascade" }).notNull(),
+  // Cross-schema FK: boards.id lives in schema-private.ts.
+  boardId: varchar("board_id").references(() => boards.id, { onDelete: "cascade" }).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  // Per-MEMBERSHIP auto-load, so one board can auto-load in one package and not
+  // another. Effective auto-load = autoLoad && board.automaticSelection.
+  // A board with autoLoad=false stays visible in the student's picker but is
+  // never shown to the AI.
+  autoLoad: boolean("auto_load").default(true).notNull(),
+  addedByUserId: varchar("added_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_package_boards_package_board").on(table.packageId, table.boardId),
+  index("idx_package_boards_board_id").on(table.boardId),
+]);
+
+// Per-member ACL within the owning institute. An 'edit' grant is effectively
+// CO-OWNERSHIP: grants count toward packages.linkCount, so a granted package
+// survives its original owner deleting it. V1 has no cross-institute grants —
+// a package is reachable by its owning institute or by being public.
+export const packageGrants = pgTable("package_grants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  packageId: varchar("package_id").references(() => packages.id, { onDelete: "cascade" }).notNull(),
+  granteeUserId: varchar("grantee_user_id").references(() => users.id).notNull(),
+  permission: text("permission").default("use").notNull(), // 'use' | 'edit'
+  grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_package_grants_package_user").on(table.packageId, table.granteeUserId),
+  index("idx_package_grants_grantee").on(table.granteeUserId),
 ]);
 
 // =============================================================================
@@ -851,6 +957,38 @@ export const updateInstituteSymbolAssociationSchema = createInsertSchema(institu
   updatedAt: true,
 }).partial();
 
+// Package schemas. linkCount/deletedAt/publish* are lifecycle state owned by the
+// server (packageLinks.ts and the publish path) — never client-writable.
+const PACKAGE_SERVER_OWNED = {
+  id: true,
+  linkCount: true,
+  deletedAt: true,
+  publishedAt: true,
+  publishedByUserId: true,
+  publishAttestation: true,
+  approvalStatus: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+export const insertPackageSchema = createInsertSchema(packages).omit(PACKAGE_SERVER_OWNED);
+
+export const updatePackageSchema = createInsertSchema(packages).omit({
+  ...PACKAGE_SERVER_OWNED,
+  instituteId: true, // ownership is not client-transferable
+  visibility: true,  // goes through the publish/unpublish path, never a field write
+}).partial();
+
+export const insertPackageBoardSchema = createInsertSchema(packageBoards).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertPackageGrantSchema = createInsertSchema(packageGrants).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Persona schemas
 export const insertPersonaSchema = createInsertSchema(personas).omit({
   id: true,
@@ -1031,6 +1169,22 @@ export type UpdateCustomSymbol = z.infer<typeof updateCustomSymbolSchema>;
 export type UserSymbolAssociation = typeof userSymbolAssociations.$inferSelect;
 export type InsertUserSymbolAssociation = z.infer<typeof insertUserSymbolAssociationSchema>;
 export type UpdateUserSymbolAssociation = z.infer<typeof updateUserSymbolAssociationSchema>;
+// Package types
+export type Package = typeof packages.$inferSelect;
+export type InsertPackage = z.infer<typeof insertPackageSchema>;
+export type UpdatePackage = z.infer<typeof updatePackageSchema>;
+export type PackageBoard = typeof packageBoards.$inferSelect;
+export type InsertPackageBoard = z.infer<typeof insertPackageBoardSchema>;
+export type PackageGrant = typeof packageGrants.$inferSelect;
+export type InsertPackageGrant = z.infer<typeof insertPackageGrantSchema>;
+
+/** Who may do what with a package. Resolved by packageAccess.resolvePackagePermission. */
+export type PackagePermission = "none" | "use" | "edit";
+/** Package visibility. 'public' additionally requires approvalStatus='approved'. */
+export type PackageVisibility = "institute" | "public";
+/** Admin review state for PUBLIC listing. Ignored while visibility='institute'. */
+export type PackageApprovalStatus = "none" | "pending" | "approved" | "rejected";
+
 export type InstituteSymbolAssociation = typeof instituteSymbolAssociations.$inferSelect;
 export type InsertInstituteSymbolAssociation = z.infer<typeof insertInstituteSymbolAssociationSchema>;
 export type UpdateInstituteSymbolAssociation = z.infer<typeof updateInstituteSymbolAssociationSchema>;
@@ -1055,7 +1209,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'locations' | 'userchat' | 'call' | 'deepAnalysis' | 'shares' | 'insuranceBridge' | 'videoCaption' | 'downloads';
+export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'locations' | 'userchat' | 'call' | 'deepAnalysis' | 'shares' | 'insuranceBridge' | 'videoCaption' | 'downloads' | 'packages';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 

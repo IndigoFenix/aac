@@ -33,6 +33,7 @@ import {
   MessageCircleQuestion,
   MessagesSquare,
   Gamepad2,
+  Package as PackageIcon,
   Sparkles,
   Contact,
   UserCircle,
@@ -146,7 +147,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const aacEnabled = !!perms?.aacEnabled;
   const customAppsEnabled = !!perms?.customAppsEnabled;
   const videoCaptionEnabled = !!perms?.videoCaptionEnabled;
-  const showAacSection = boardsEnabled || aacEnabled || customAppsEnabled || videoCaptionEnabled;
+  const showAacSection = boardsEnabled || aacEnabled || customAppsEnabled || videoCaptionEnabled || !!perms?.packagesEnabled;
 
   const aacBoardItems = [
     // Generate AAC Boards — requires boardMakerEnabled
@@ -171,6 +172,15 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       labelKey: 'nav.customApps',
       feature: 'customApps' as FeatureType,
       testId: 'nav-custom-apps',
+      badge: undefined as string | undefined,
+    }] : []),
+    // Content packages — gated on packagesEnabled. Bundles of boards shared
+    // across an institute and attachable to students.
+    ...(perms?.packagesEnabled ? [{
+      icon: PackageIcon,
+      labelKey: 'nav.packages',
+      feature: 'packages' as FeatureType,
+      testId: 'nav-packages',
       badge: undefined as string | undefined,
     }] : []),
     // AAC Settings — requires aacEnabled AND maxStudents > 0

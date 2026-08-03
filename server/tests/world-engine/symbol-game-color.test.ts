@@ -7,8 +7,17 @@
 // kind-agnostic). Pure — safe in the default `npm test`.
 
 import { describe, it, expect } from "@jest/globals";
-import { compileGoal, type WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
-import { planGoal, goalTarget, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
+import { compileGoal as compileGoalPriced, type GoalPlan, type WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
+import { planGoal as planGoalPriced, goalTarget, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
+import type { CreatureId } from "@shared/world-engine/interaction/behavior/creatures.js";
+import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
+
+// STEP ④ SEAM: a compile carries a `cost` now (goal-selection.ts `GoalPlan`).
+// These cases are about the STEPS the colour goal regresses to, so they read the
+// steps; `plan-costs-and-bags.test.ts` owns the price.
+const stepsOnly = (p: GoalPlan | null) => (p ? { steps: p.steps } : null);
+const planGoal = (g: GoalSpec, self: CreatureId, r: WorldResolver) => stepsOnly(planGoalPriced(g, self, r));
+const compileGoal = (g: GoalSpec, self: CreatureId, r: WorldResolver) => stepsOnly(compileGoalPriced(g, self, r));
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
 
 // bear at origin; a shirt loose at (10,0); a coloring tub at (2,0). `carrier`

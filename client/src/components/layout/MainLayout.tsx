@@ -6,6 +6,7 @@ import { ChatFeature } from '@/features/ChatFeature';
 import { ChatPopup } from '@/features/ChatPopup';
 import { SyntAACxPanel } from '@/features/SyntAACxPanel';
 import { CustomAppPanel } from '@/features/CustomAppPanel';
+import { PackagePanel } from '@/features/PackagePanel';
 import { CommuniAACtePanel } from '@/features/CommuniAACtePanel';
 import { DocuSLPPanel } from '@/features/DocuSLPPanel';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
@@ -159,6 +160,8 @@ export function MainLayout() {
         return <SyntAACxPanel isOpen={isPanelOpen} />;
       case 'customApps':
         return <CustomAppPanel isOpen={isPanelOpen} />;
+      case 'packages':
+        return <PackagePanel isOpen={isPanelOpen} />;
       case 'interpret':
         return <CommuniAACtePanel isOpen={isPanelOpen} />;
       case 'docuslp':

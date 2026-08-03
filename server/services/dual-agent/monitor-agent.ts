@@ -40,6 +40,7 @@ import {
   planEntryFresh,
   dayPartForHour,
   localTimeParts,
+  isChildAge,
   PLAN_CALLS,
   GROUP_SECTION_KEYS,
   type PlanCallSpec,
@@ -415,12 +416,20 @@ export class MonitorAgent {
     })();
 
     // ── Student data lines ──
+    // Age is computed ONCE here: it feeds both the "Age:" prompt line and the
+    // deterministic isChild flag that gates the AUTHORITY DEFERENCE default.
+    // Undefined when no birth date is on file or the stored value is unparseable.
+    const ageYears: number | undefined = (() => {
+      if (!student.birthDate) return undefined;
+      const ms = new Date(student.birthDate).getTime();
+      if (!Number.isFinite(ms)) return undefined;
+      const years = Math.floor((Date.now() - ms) / (365.25 * 24 * 60 * 60 * 1000));
+      return Number.isFinite(years) ? years : undefined;
+    })();
+
     const studentDataParts: string[] = [];
     studentDataParts.push(`Name: ${student.name}`);
-    if (student.birthDate) {
-      const computedAge = Math.floor((Date.now() - new Date(student.birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-      studentDataParts.push(`Age: ${computedAge}`);
-    }
+    studentDataParts.push(ageYears !== undefined ? `Age: ${ageYears}` : `Age: not on file`);
     if (student.gender) studentDataParts.push(`Gender: ${student.gender}`);
     studentDataParts.push(`Primary language: ${languageName} (${language})`);
 
@@ -501,6 +510,7 @@ export class MonitorAgent {
       language,
       languageName,
       studentDataParts,
+      isChild: isChildAge(ageYears),
       customRules,
       autoNotes,
       interestList,

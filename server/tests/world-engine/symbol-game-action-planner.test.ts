@@ -5,9 +5,20 @@
 // old ones when they're migrated. Pure — safe in the default `npm test`.
 
 import { describe, it, expect } from "@jest/globals";
-import { compileGoal, type WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
-import { planGoal, achieve, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
+import { compileGoal as compileGoalPriced, type GoalPlan, type WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
+import { planGoal as planGoalPriced, achieve, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
+import type { CreatureId } from "@shared/world-engine/interaction/behavior/creatures.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
+
+// STEP ④ SEAM: every compile now carries a `cost` (goal-selection.ts
+// `GoalPlan`). The equivalence proof below is about STEPS — that the planner
+// emits what the hand-wired switch emits — so it reads the steps and nothing
+// else. The PRICE gets its own suite at the foot of this file, where the
+// resolver actually carries a price board; every resolver up here is UNPRICED,
+// which is itself the property that keeps these cases byte-identical.
+const steps = (p: GoalPlan | null) => (p ? { steps: p.steps } : null);
+const planGoal = (g: GoalSpec, self: CreatureId, r: WorldResolver) => steps(planGoalPriced(g, self, r));
+const compileGoal = (g: GoalSpec, self: CreatureId, r: WorldResolver) => steps(compileGoalPriced(g, self, r));
 
 // A tiny world: bear at origin, an apple loose at (10,0), a box place at (4,0),
 // mara (recipient) at (6,0). `carrier` lets a test say the actor already holds

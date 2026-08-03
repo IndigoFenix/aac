@@ -4,6 +4,7 @@ import { customSymbolService } from "../services/symbol/custom-symbol-service";
 import { generateSymbolImage } from "../services/symbol/symbol-generator";
 import { symbolEvents } from "../services/symbol/auto-symbol-service";
 import { activityLogService } from "../services/activityLogService";
+import { canReadSymbolImage } from "../services/packages/symbolImageAccess";
 
 class CustomSymbolController {
   // ==================== Symbol CRUD ====================
@@ -17,11 +18,16 @@ class CustomSymbolController {
       const file = (req as any).file as Express.Multer.File | undefined;
       if (!file) return res.status(400).json({ message: "Image file required" });
 
-      const { key, description, isPublic } = req.body;
+      const { key, description, isPublic, personImage } = req.body;
+      const isPersonImage = personImage === "true" || personImage === true;
       const symbol = await customSymbolService.createSymbol(file.buffer, {
         key: key || undefined,
         description: description || undefined,
         isPublic: isPublic === "true" || isPublic === true,
+        // An image of an identifiable person: usable inside the organization,
+        // never in a public package, and access-gated when served.
+        // See planning-docs/aac-packages-plan.md §3.
+        personImage: isPersonImage,
         createdByUserId: userId,
       });
 
@@ -423,11 +429,21 @@ class CustomSymbolController {
   /** GET /api/custom-symbols/:id/image — stream image from S3 */
   async getSymbolImage(req: Request, res: Response) {
     try {
+      // Person imagery (staff portraits) is access-gated; ordinary and public
+      // symbols take the cheap path and stay publicly cacheable. 404 rather
+      // than 403 on refusal, so we don't confirm the id exists.
+      // See server/services/packages/symbolImageAccess.ts.
+      const decision = await canReadSymbolImage(req.params.id, (req as any).user?.id);
+      if (!decision.allowed) return res.status(404).json({ message: "Symbol not found" });
+
       const buffer = await customSymbolService.getSymbolImage(req.params.id);
       if (!buffer) return res.status(404).json({ message: "Symbol not found" });
 
       res.setHeader("Content-Type", "image/png");
-      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader(
+        "Cache-Control",
+        decision.cache === "public" ? "public, max-age=86400" : "private, max-age=300",
+      );
       res.send(buffer);
     } catch (error: any) {
       console.error("[CustomSymbolController] getSymbolImage error:", error);

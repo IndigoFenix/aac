@@ -62,6 +62,7 @@ import { createGeologyBaker, type GeologyBaker } from "./geo-bake";
 import { TEST_WORLDS, DEFAULT_WORLD_ID } from "./worlds";
 import { mountDebugPanel } from "./debug-panel";
 import { mountSpecForm } from "./spec-form";
+import { LAB_LOCALES, LOCALE_STORAGE_KEY, applyLabLocale, normalizeLabLocale } from "./lab-locale";
 import { createFlashWatch } from "./flash-watch";
 import { HdrProbePass } from "./hdr-probe";
 import type { CreatureTier, QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
@@ -74,6 +75,7 @@ import type { CreatureTier, QuestHost3D, QuestSession } from "@shared/world-engi
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const select = $<HTMLSelectElement>("world-select");
+const langSelect = $<HTMLSelectElement>("lang-select");
 const reloadBtn = $<HTMLButtonElement>("reload");
 const pathsBtn = $<HTMLButtonElement>("paths");
 const nationsBtn = $<HTMLButtonElement>("nations");
@@ -2527,6 +2529,7 @@ async function boot(): Promise<void> {
   await paint();
 
   const raw = specForm.getDocument();
+  applyLabLocale(raw, labLocale); // the bar's Language picker wins over the form's Locale field
 
   try {
     const loaded = loadWorldManifest(raw, [ECONOMY_MODULE]);
@@ -2571,6 +2574,18 @@ async function boot(): Promise<void> {
   }
 }
 
+// ── 🗣 LANGUAGE — see lab-locale.ts for what the locale actually drives and
+//    why switching it rebuilds the world instead of retranslating it. ────────
+let labLocale = normalizeLabLocale(localStorage.getItem(LOCALE_STORAGE_KEY));
+
+for (const l of LAB_LOCALES) {
+  const opt = document.createElement("option");
+  opt.value = l.code;
+  opt.textContent = l.label;
+  langSelect.appendChild(opt);
+}
+langSelect.value = labLocale;
+
 // ── Wiring ─────────────────────────────────────────────────────────────────
 for (const w of TEST_WORLDS) {
   const opt = document.createElement("option");
@@ -2587,6 +2602,11 @@ const loadSelected = (): void => {
 };
 select.addEventListener("change", loadSelected);
 reloadBtn.addEventListener("click", () => void boot().then(applyPaths));
+langSelect.addEventListener("change", () => {
+  labLocale = langSelect.value;
+  localStorage.setItem(LOCALE_STORAGE_KEY, labLocale);
+  void boot().then(applyPaths); // build-time choice — rebuild, don't half-translate
+});
 
 // ── 🧭 PATHS — draw what every hosted body is steering at (see
 //    shared/world-engine/path-debug-3d.ts for the colour key). The choice is the

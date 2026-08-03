@@ -572,7 +572,7 @@ export const zh: Translations = {
       wash: "洗",
       tidy: "整理",
       heat: "加热",
-      cool: "冷却",
+      make_cold: "冷却",
       wear: "穿",
       color: "上色",
       brush_teeth: "刷牙",
@@ -767,6 +767,7 @@ export const zh: Translations = {
       understand: "明白",
       confused: "困惑",
       wow: "哇",
+      amazing: "太棒了",
       oops: "哎呀",
       oh_no: "不会吧",
       yuck: "恶心",
@@ -845,6 +846,10 @@ export const zh: Translations = {
   },
 
   quickActions: {
+    forward: "下一个",
+    pauseBoard: "暂停",
+    resumeBoard: "继续",
+    previous: "上一个",
     yes: "是",
     no: "否",
     more: "更多",
@@ -1080,6 +1085,11 @@ export const zh: Translations = {
   audioScan: {
     start: "朗读版面",
     stop: "停止朗读",
+  },
+  slpMode: {
+    ready: "准备就绪",
+    wake: "唤醒",
+    sleep: "让它休息",
   },
   guessing: {
     category: {

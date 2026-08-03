@@ -167,7 +167,7 @@ export interface CompileMeta {
 // the state this transform arrives AT), and `tidy` moves things without changing
 // any state, so neither belongs here.
 const TRANSFORM_STATE: Record<string, string> = {
-  heat: "hot", cook: "hot", cool: "cold", wash: "clean", fill: "full", empty: "empty",
+  heat: "hot", cook: "hot", make_cold: "cold", wash: "clean", fill: "full", empty: "empty",
 };
 // Self-care verbs → a `satisfy` goal the actor's own need machinery serves:
 // eat/drink/sleep/rest the founding motives, play the fun motive (box),

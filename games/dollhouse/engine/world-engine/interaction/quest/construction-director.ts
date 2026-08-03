@@ -187,6 +187,7 @@ import {
   orderQuantity,
   planTransferSources,
   putStock,
+  rankPricedSources,
   runDueTransfers,
   stackHead,
   stackUnits,
@@ -203,6 +204,11 @@ import {
   moveItems,
   type ResolveLocation,
 } from "@shared/world-engine/kernel/town/item-move.js";
+import {
+  bodyCarryView,
+  type BodyCarry,
+} from "@shared/world-engine/kernel/town/scope-shape.js";
+import { priceOf } from "@shared/world-engine/kernel/town/pricing.js";
 import {
   BARTER_LEG_DAY_FRAC,
   barterQuote,
@@ -599,7 +605,7 @@ import {
   type AreaRef, type AreaTest, type Law,
 } from "../behavior/laws.js";
 import { resolveWorldCulture, type WorldCultureSpec } from "../../culture.js";
-import type { QuestSession, QuestBoardView, QuestHostDeps, QuestPresenter } from "./quest-host.js";
+import type { QuestSession, QuestBoardView, QuestHostDeps, QuestPresenter, TownPark } from "./quest-host.js";
 import { constructionGameDays, serviceRadiusM } from "@shared/world-engine/scale.js";
 
 /** Stable tiny hash — deterministic salts (same input, same value forever).
@@ -669,7 +675,13 @@ export const FURN_SETUP_R = 3.2;
 export const SITE_HAUL_FOCUS_R = 60;
 /** A waiting plot re-resolves its missing materials at most this often —
  *  fresh stock (a felled tree hauled to the yard) unsticks it, without
- *  re-posting expired tasks every sweep. */
+ *  re-posting expired tasks every sweep.
+ *
+ *  ⏸️ For the CRAFT JOB this is now the park's `staleAt`-side rate limit only —
+ *  see `craftGatherParkKey` (scope-behaviors.md §2.5.1: the re-gather "re-runs
+ *  `resolveMaterials` on a clock while nothing has moved"). The SITE piles
+ *  still ride it as a plain gate; converting them is the same park at a third
+ *  scope and wants its own pass. */
 export const SITE_HAUL_RETRY_S = 20;
 // ── THE BLOCK CHAIN (phase 3) ───────────────────────────────────────────
 /** Street-days of milling per refined unit, RELATIVE like ANNEX_BUILD_DAYS
@@ -751,6 +763,18 @@ export interface ConstructionDirectorCtx {
       | { kind: "consumed" },
     opts?: { objId?: string; reachAt?: { x: number; y: number }; quiet?: boolean },
   ): { objId: string; glyph: string | null } | null;
+  /** WHAT A BODY HAS ON IT (scope-unification.md §2.1) — the object in its
+   *  hands and the containers it carries or wears. There is no abstract bag to
+   *  read any more, so the director asks the host what the body is really
+   *  holding, and takes units off it through the one door. */
+  bodyCarryOf(session: QuestSession, cid: string): BodyCarry;
+  takeUnitsFromBody(
+    session: QuestSession,
+    cid: string,
+    glyph: string,
+    n: number,
+    opts?: { reachAt?: { x: number; y: number } },
+  ): number;
   fellIfConsumed(session: QuestSession, objId: string): void;
   dropFromStack(session: QuestSession, stack: Record<string, number>, glyph: string, x: number, y: number): string | null;
   creatureMood(cid: string): Personality;
@@ -758,6 +782,19 @@ export interface ConstructionDirectorCtx {
   invalidateTownJobs(): void;
   convoNodeId(): string | null;
   spiritFocusOf(): { x: number; y: number; w: number; h: number } | null;
+  /** ⏸️ THE TOWN-RUNG DEFER PARK (scope-behaviors.md §2.5.1, §7 step 6). The
+   *  host owns the state (`session.townParks`) so both rungs' parks are ONE
+   *  implementation — the director only names its scope and its wake. */
+  parkTown(
+    session: QuestSession,
+    key: string,
+    o: { scope: TownPark["scope"]; why: string; now: number; staleAfterS: number; dueAt?: number },
+  ): void;
+  townParked(session: QuestSession, key: string, now: number): boolean;
+  /** ⏸️ A CONTAINER GAINED UNITS (quest-host `bumpStockEpoch`) — the wake
+   *  signal both rungs' parks read. The UNOBSERVED arms credit stock too, and
+   *  they must say so or the observed and unobserved economies diverge. */
+  bumpStockEpoch(session: QuestSession): void;
 }
 
 /** Everything a build order enumerates against (hoisted out of the factory
@@ -790,11 +827,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
     relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, fellIfConsumed, dropFromStack,
-    takeIntoHands, setDownFromHands,
+    takeIntoHands, setDownFromHands, bodyCarryOf, takeUnitsFromBody,
     creatureMood,
     // Host MUTABLE state, reached through accessors (the four places the
     // verbatim bodies were edited to call these are marked "phase 1a").
     questViewOf, invalidateTownJobs, convoNodeId, spiritFocusOf,
+    parkTown, townParked, bumpStockEpoch,
   } = ctx;
   let world: WorldHost | null = null;
   let lastSites: ConstructionSite[] = [];
@@ -862,8 +900,21 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   /** How long a craft waits on an in-flight haul before assuming the load is
    *  lost and re-gathering. Generous — a carrier crossing a town legitimately
    *  takes a while — but finite, which is the whole point: the job used to wait
-   *  on a vanished haul forever, and an ordered craft simply never happened. */
+   *  on a vanished haul forever, and an ordered craft simply never happened.
+   *
+   *  ⏱️ DELIBERATELY STILL A TIMER (scope-behaviors.md §2.5.1, verbatim):
+   *  "`CRAFT_HAUL_TIMEOUT_S` stays a timeout, because 'a carrier that should
+   *  have arrived has not' is a statement about ELAPSED TIME AND NOTHING ELSE."
+   *  There is no world condition to park on here — the wait is CORRECT while a
+   *  carrier walks ("that is the NORMAL case for as long as a carrier is en
+   *  route"), and what this measures is the carrier's LIVENESS, not the plan's
+   *  price. Converting it would be purity, not honesty. The park-shaped branch
+   *  is the other one — the re-gather; see `craftGatherParkKey`. */
   const CRAFT_HAUL_TIMEOUT_S = 90;
+
+  /** ⏸️ The gather park's key for a house's craft job (scope-behaviors.md
+   *  §2.5.1 — `{scope: "job", holder: hi}`). */
+  const craftGatherParkKey = (hi: number): string => `job|${hi}`;
 
   /** A furniture row as a craft job recipe — the adapter that keeps the
    *  pipeline's original caller unchanged now that the job is recipe-shaped. */
@@ -889,7 +940,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   const fallbackShellFurnPiles = new Map<string, Record<string, number>>();
   const shellFurnPilesOf = (s: QuestSession) =>
     s.town?.deltas.shellFurnPiles ?? fallbackShellFurnPiles;
-  const craftRetryAt = new Map<number, number>();
+  // (craftRetryAt retired — scope-behaviors.md §7 step 6. The 20 s re-gather
+  //  clock is now a DEFER park on `session.townParks`: "the re-gather that
+  //  re-runs `resolveMaterials` on a clock while nothing has moved" waits on
+  //  the two things that CAN move — a container gaining units
+  //  (`needsStockEpoch`) and a claim being released (`releaseEpoch`) — with the
+  //  job's own labour time as the backstop.)
   /** townClock second before a house re-checks its program wants (④). */
   const programCraftAt = new Map<number, number>();
   /** townClock second a SHOWN crafter's walk to the work began — the
@@ -1128,7 +1184,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
 
   /** Material sources a HOUSE's craft may draw on: every container stack
    *  its members may use (their own boxes, communal crates, the yard, wild
-   *  features), nearest the craft spot first. */
+   *  features), nearest the craft spot first BY STREET (`sourceDistanceM` —
+   *  the same geometry the site walk uses; §2.2). */
   function craftMaterialSources(
     session: QuestSession,
     hi: number,
@@ -1143,9 +1200,20 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (!mayUse(member, hi, session.containerOwner.get(boxId))) continue;
       const at = containerAnchor(session, boxId);
       if (!at) continue;
-      sources.push({ id: boxId, stack, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
+      sources.push({ id: boxId, stack, d: sourceDistanceM(session, destAt, at) });
     }
     return sources;
+  }
+
+  /** The labour clock this job WILL be stamped with when it starts. ONE
+   *  definition: START stamps it, and the gather park uses it as its `staleAt`
+   *  (§2.5.1: "`staleAt` = the job's own expected labour time, which is already
+   *  computed"). */
+  function craftLabourSecondsOf(session: QuestSession, hi: number, job: CraftJob): number {
+    return (
+      constructionGameDays(craftLaborDaysFor(job.at, !!houseBench(session, hi)), session.scale) *
+      session.scale.dayLengthS
+    );
   }
 
   /** Advance one house's craft job: gather (resolve + haul or the abstract
@@ -1286,14 +1354,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         for (const id of job.agreements) session.reservations.release(agrHolder(id));
         job.agreements = [];
         job.waitingSince = undefined;
-        craftRetryAt.delete(hi);
+        session.townParks.delete(craftGatherParkKey(hi)); // the load is gone — gather afresh
         missing = shortfallOf(true); // re-measure with the dead rows gone
       } else {
         job.waitingSince = undefined; // there is real fetching to do
       }
       if (Object.keys(shortNow).length) {
-        if (session.townClock < (craftRetryAt.get(hi) ?? -Infinity)) return;
-        craftRetryAt.set(hi, session.townClock + SITE_HAUL_RETRY_S);
+        // ⏸️ THE GATHER PARK (scope-behaviors.md §2.5.1, §7 step 6). What stood
+        // here was `craftRetryAt` + SITE_HAUL_RETRY_S: a 20 s stopwatch that
+        // re-ran the whole source walk "while nothing has moved". The park says
+        // the same thing honestly — a re-gather is worth doing exactly when a
+        // source could now offer a material this job is short of, and there are
+        // only two events that make that true: a container GAINED units
+        // (`needsStockEpoch`) or a claim was RELEASED, freeing units somebody
+        // else had spoken for (`releaseEpoch`). Backstop = the job's own labour
+        // time, so a missed bump costs one piece's worth of waiting at most.
+        if (townParked(session, craftGatherParkKey(hi), session.townClock)) return;
         const anchor = containerAnchor(session, job.spotId);
         if (!anchor) {
           return;
@@ -1306,6 +1382,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           sources,
           ledger: session.reservations,
         });
+        if (!draws.length) {
+          // ⏸️ NOTHING TO DRAW — the walk found no free units for any short
+          // head. Re-walking is worth exactly as much as the world has moved,
+          // so park on the two events that can move it. (A resolve that DID
+          // find draws changes the world itself and never parks: the next
+          // sweep is measuring a different town.)
+          parkTown(session, craftGatherParkKey(hi), {
+            scope: "job",
+            why: `no free source offers ${Object.keys(missing).join(", ") || "the bill"}`,
+            now: session.townClock,
+            staleAfterS: craftLabourSecondsOf(session, hi, job),
+          });
+        }
         if (!draws.length && !job.agreements.length) {
           // STARVED, not waiting (the site piles' rule, applied to the
           // bench): the recipe's bill is known and NOTHING reachable covers
@@ -1372,6 +1461,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                 // free supply for civic resolution mid-craft.
                 session.reservations.reserve(spotHolder, job.spotId, stackHead(g), c);
               }
+              // ⏸️ TWIN PARITY: the watched arm's unload bumps the stock epoch
+              // at the seam; the instant draw is the same fact, unobserved.
+              if (Object.keys(taken).length) bumpStockEpoch(session);
               fellIfConsumed(session, d.endpoint); // a drained kill-source fells
             }
           }
@@ -1404,9 +1496,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // Craft labor in THE SESSION'S OWN DAY × the construction scale — the
       // hardcoded food-day ignored scale.construction entirely (the build
       // sites' unit law, applied to the bench).
-      job.laborS =
-        constructionGameDays(craftLaborDaysFor(job.at, !!bench), session.scale) *
-        session.scale.dayLengthS;
+      job.laborS = craftLabourSecondsOf(session, hi, job);
       job.laborStart = session.townClock;
       // A shown crafter walks to the bench (or the store) and DWELLS there
       // for the labor — the body renders the work; the clock stays the
@@ -1474,7 +1564,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // producing from nothing.
         job.laborStart = undefined;
         job.waitingSince = undefined;
-        craftRetryAt.delete(hi);
+        session.townParks.delete(craftGatherParkKey(hi)); // the spot was raided — gather afresh
         return;
       }
       craftJobsOf(session).delete(hi);
@@ -1625,8 +1715,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
 
   // ═══════ B1-foundNewSite (verbatim from quest-host.ts) ═══════
   /** A spoken "build" in open country: found a new EMPTY site at the avatar —
-   *  deposit the pocket's building materials (and any material piles lying at
-   *  the spot) into its stockpile crate, dismiss the avatar back to spirit,
+   *  deposit the FOUNDER'S OWN building materials (and any material piles lying
+   *  at the spot) into its stockpile crate, dismiss the avatar back to spirit,
    *  and tell the boot to centre on it. One site per session; a town session
    *  is never wilderness. Returns false when founding doesn't apply here. */
   function foundNewSite(session: QuestSession): boolean {
@@ -1636,8 +1726,21 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const day = Math.floor(session.townClock / FOOD_DAY_SEC);
     const seed = (fnv1a(`${session.game.meta.seed ?? 0}|${Math.round(at.x)}|${Math.round(at.y)}`) % 100000) + 1;
     const site = foundSite({ seed, at, day });
-    // The pocket's materials found the stock…
-    depositSiteStock(site, session.pocket);
+    // WHAT THE FOUNDER IS CARRYING founds the stock — the goods in its bag and
+    // the one thing in its hands (there is no abstract pocket to tip out any
+    // more). The BAG itself stays on the body: founding a site is not giving
+    // your basket away. `depositSiteStock` moves only site MATERIALS, so a
+    // sandwich survives the founding.
+    {
+      const cid = session.handsCid;
+      for (const [glyph, n] of Object.entries(bodyCarryView(bodyCarryOf(session, cid)))) {
+        // ASK BEFORE TAKING: only what the site can actually use leaves the
+        // body, so nothing has to be handed back.
+        if (n <= 0 || !isSiteMaterial(glyph)) continue;
+        const took = takeUnitsFromBody(session, cid, glyph, n);
+        if (took > 0) depositSiteStock(site, { [glyph]: took });
+      }
+    }
     pushPocket(session);
     // …and so do material PILES already dropped at the spot (loose props
     // within arm's-reach radius of the founding point).
@@ -2299,6 +2402,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return `agr:${agreementId}`;
   }
 
+  /** The reservation HOLDER a haul's BASKET rides under (step ④ ENABLE) — the
+   *  agreement's id again, so the tool claim lives and dies with the trip.
+   *  Kept DISTINCT from `agrHolder` because the two release at different
+   *  moments: the goods are consumed at the load, the bag at the unload. */
+  function bagHolder(agreementId: string): string {
+    return `bag:${agreementId}`;
+  }
+
   /** LANDING = RESERVATION, atomically (phase 2 step 1). Called from the
    *  haul's unload seam with what ACTUALLY landed, before the agreement is
    *  marked done — so there is no instant in which delivered construction
@@ -2351,11 +2462,69 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return base ? { x: base.x + b.dx + b.w / 2, y: base.y + b.dy + b.h / 2 } : null;
   }
 
+  // ── ⚖️ ONE GEOMETRY FOR SOURCE WALKS (scope-behaviors.md §2.2, §3) ───────
+  //
+  // The survey's exact complaint: the town's nearest-first "is implemented
+  // three times — AND INCONSISTENTLY: construction uses crow-flies `hypot`
+  // while shopping (`sourceOf`) and district deficits use `roadDistance`." The
+  // currency section settles it: "`journeyS` = path length / speed. ROAD
+  // DISTANCE WHERE THE GRAPH EXISTS (the `sourceOf` precedent), CHORD
+  // OTHERWISE."
+  //
+  // PERF — the `sourceOf` discipline, not a per-tick graph walk. goods.ts picks
+  // a house's market by road ONCE and caches it per house, because
+  // `roadDistance` PROJECTS both endpoints onto the street tree every call. A
+  // site's bill re-resolves over every container in town, so the same
+  // arithmetic here would be O(containers × streets) per sweep. Both ends of
+  // every measurement in this file are STABLE POINTS (a container's anchor, a
+  // site centre, a doorstep), so a plain memo on the coordinate pair is a
+  // near-total hit rate after the first sweep — the graph is walked once per
+  // (site, chest) pair for as long as neither moves, and a chest that IS moved
+  // re-measures on its own because its key changed. Cleared when the street
+  // graph itself is replaced (a new town session).
+  let roadMemoNet: unknown = null;
+  const roadMemo = new Map<string, number>();
+  /** Keep the memo from growing without bound across a long session; purely a
+   *  size cap — dropping entries only ever costs a recompute of the same
+   *  number, so determinism is untouched. */
+  const ROAD_MEMO_CAP = 8192;
+
+  /**
+   * ⚖️ Metres between two points as a SOURCE WALK measures them: street metres
+   * where the town has streets, chord where it doesn't (a founded site in the
+   * wilderness, a townless session). ONE function, so construction stops
+   * disagreeing with shopping about what "near" means.
+   */
+  function sourceDistanceM(
+    session: QuestSession,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): number {
+    const t = session.town;
+    const net = t?.plan.streets;
+    if (!net) return Math.hypot(to.x - from.x, to.y - from.y);
+    if (roadMemoNet !== net) {
+      roadMemoNet = net;
+      roadMemo.clear();
+    }
+    // Street coordinates are TOWN-LOCAL (goods.ts / streets.ts convention).
+    const c = t!.stage.center;
+    const ax = from.x - c.x, ay = from.y - c.y, bx = to.x - c.x, by = to.y - c.y;
+    const key = `${ax.toFixed(2)},${ay.toFixed(2)}|${bx.toFixed(2)},${by.toFixed(2)}`;
+    const hit = roadMemo.get(key);
+    if (hit !== undefined) return hit;
+    const d = roadDistance(net, { x: ax, y: ay }, { x: bx, y: by });
+    if (roadMemo.size >= ROAD_MEMO_CAP) roadMemo.clear();
+    roadMemo.set(key, d);
+    return d;
+  }
+
   /** Candidate MATERIAL SOURCES for staging a site (pipeline ②): every
    *  usable container stack — the yard, the site crate, communal chests,
    *  wild features, our own boxes — ownership-gated exactly like a spoken
-   *  transfer order. Distance-ranked to the work spot. Site piles are not
-   *  containers, so a plot never raids another plot's heap. */
+   *  transfer order. Distance-ranked to the work spot BY STREET
+   *  (`sourceDistanceM`). Site piles are not containers, so a plot never raids
+   *  another plot's heap. */
   function siteMaterialSources(
     session: QuestSession,
     destAt: { x: number; y: number },
@@ -2368,7 +2537,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (!mayUse(PLAYER_CREATURE_ID, issuerHouse, owner)) continue;
       const at = containerAnchor(session, boxId);
       if (!at) continue;
-      sources.push({ id: boxId, stack, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
+      sources.push({ id: boxId, stack, d: sourceDistanceM(session, destAt, at) });
     }
     return sources;
   }
@@ -2400,14 +2569,38 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return `${ANNEX_PILE_EP}${ord}`;
   }
 
-  /** How far a CIVIC task recruits (⑥ — "everyone works together"): the
-   *  WHOLE town volunteers for communal construction, not just the bodies
-   *  within earshot of the site — a 205-house town's free lots all sit at
-   *  the edge, far from anyone. The recruited walker is PINNED (busy) for
-   *  the trek. Off a town, the wilderness earshot rule stays. */
+  /**
+   * How far a CIVIC task recruits (⑥ — "everyone works together"): the WHOLE
+   * town volunteers for communal construction, not just the bodies within
+   * earshot of the site — a 205-house town's free lots all sit at the edge, far
+   * from anyone. The recruited walker is PINNED (busy) for the trek. Off a
+   * town, the wilderness earshot rule stays.
+   *
+   * ⚖️ THE MARGIN IS DERIVED (scope-behaviors.md §4.7: "`civicRecruitRadius`'s
+   * literal-plus-geometry, which should be scale-derived like
+   * `serviceRadiusM`"). Two terms, and only one of them was ever a literal:
+   *
+   *   · `plan.radius × 2` — the town's own DIAMETER. Geometry, not a constant:
+   *     a body anywhere in town must be able to answer a call from anywhere
+   *     else in it, which is the whole point of the civic radius.
+   *   · `+ 80` — the reach PAST the edge, and the literal §4.7 sentences. It is
+   *     now `serviceRadiusM(scale, "social")`.
+   *
+   * WHY THE SOCIAL CLOCK. `serviceRadiusM` measures a journey "in units of the
+   * need's own fill clock" (§3), so the question is which drive a work party
+   * is. It is not hunger (nobody walks to a raising because they are hungry)
+   * and not energy (the trek is not the work). "Everyone works together" is a
+   * GATHERING: the drive that already measures how far a body ranges to be
+   * among its neighbours is `social`, and answering a call from the town is the
+   * same act as answering one from a friend. On the shipped street profile that
+   * is 1.6 m/s × 192 s × 0.5 / 2 = **76.8 m** against the old 80 — the same
+   * radius to within 4 %, so no shipped town reshapes; on a world with a slower
+   * appetite or faster legs it now moves with them instead of staying 80.
+   */
   function civicRecruitRadius(session: QuestSession): number {
     const t = session.town;
-    return t ? Math.max(SITE_HAUL_FOCUS_R, t.plan.radius * 2 + 80) : SITE_HAUL_FOCUS_R;
+    const margin = serviceRadiusM(session.scale, "social");
+    return t ? Math.max(SITE_HAUL_FOCUS_R, t.plan.radius * 2 + margin) : SITE_HAUL_FOCUS_R;
   }
 
   /** A designation's building, resolved from its delta key: a plan house
@@ -2578,35 +2771,51 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // the twin draw them itself.
         session.transfers.fail(a.id, "no-executor");
         session.reservations.release(agrHolder(a.id));
+        // ④ MIRRORING THE OBSERVED ARM: the basket this trip spoke for goes
+        // back on the shelf. Without it an unobserved haul that never happened
+        // would hold the town's only bag out of every other porter's reach, and
+        // the observed and unobserved arms would disagree about how much a trip
+        // can carry — which is exactly the double-count this claim exists to
+        // prevent.
+        session.reservations.release(bagHolder(a.id));
         continue;
       }
       const exec = a.executor!;
-      const held = session.needCarried.get(exec) ?? {};
-      const deliver: Record<string, number> = {};
+      // WHAT THE CARRIER IS REALLY HOLDING — the goods in its bag, or the one
+      // whole thing in its hands. A porter with no bag delivers a single unit
+      // per trip, unobserved exactly as it would in view (decision 9).
+      const exCarry = bodyCarryOf(session, exec);
+      const held = bodyCarryView(exCarry);
+      const dstStock = session.containerStock.get(a.to) ?? {};
+      const delivered: Record<string, number> = {};
       for (const [g, n] of Object.entries(a.carried ?? {})) {
-        const give = Math.min(n, stackUnits(held, g));
-        if (give > 0) deliver[g] = give;
+        let give = Math.min(n, stackUnits(held, g));
+        while (give > 0) {
+          // Off the body first, into the pile second — the unobserved half of
+          // the same conservation the walked unload keeps.
+          if (takeUnitsFromBody(session, exec, g, 1) < 1) break;
+          dstStock[g] = (dstStock[g] ?? 0) + 1;
+          delivered[g] = (delivered[g] ?? 0) + 1;
+          give--;
+        }
       }
-      const dropped = moveItems(
-        itemLocOf(session),
-        { kind: "hands", cid: exec },
-        { kind: "container", id: a.to },
-        deliver,
-      );
-      if (!dropped.ok || !Object.keys(dropped.moved).length) {
+      if (!Object.keys(delivered).length) {
         session.transfers.fail(a.id, "missing");
         session.reservations.release(agrHolder(a.id));
+        session.reservations.release(bagHolder(a.id));
         continue;
       }
+      session.containerStock.set(a.to, dstStock);
       // The seam's landing law, unobserved: reserved before "done".
-      onTransferLanded(session, a.id, dropped.moved);
+      onTransferLanded(session, a.id, delivered);
+      // ⏸️ TWIN PARITY: the watched unload bumps the stock epoch, so this one
+      // must too. An unobserved delivery that woke nobody would leave the two
+      // economies disagreeing about whether anything happened.
+      bumpStockEpoch(session);
+      // The bag stays ON the unobserved porter exactly as it would on a watched
+      // one — the claim ends with the trip, the basket does not teleport home.
+      session.reservations.release(bagHolder(a.id));
       session.transfers.complete(a.id);
-      // The carry token in the frozen hands is now empty-handed scenery.
-      if (world) {
-        const npcId = avatarIdOf(exec);
-        const tok = Object.values(world.state.objects).find((ob) => ob.carriedBy === npcId)?.id;
-        if (tok && session.smallProps.has(tok)) removeLooseProp(session, tok);
-      }
     }
   }
 
@@ -2970,6 +3179,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (n > 0) stack[g] = (stack[g] ?? 0) + n;
       delete r.pile[g];
     }
+    // ⏸️ THE MILL DELIVERED — a container gained units. This is the wake the
+    // craft job parked on a refinable bill is actually waiting for: it posted
+    // the refine order, and the blocks landing here is what makes a re-gather
+    // worth doing. (`destId` null ⇒ the deltas' own stock, which no park
+    // reads; bumping either way costs one re-decide and keeps one rule.)
+    bumpStockEpoch(session);
     presenter.toast(`🪚 ${r.count} ${stackHead(r.produces)} milled and stored`, "feedback");
     deltas.removeOrder(r.ord);
   }
@@ -3126,7 +3341,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       session.needStep.delete(builder);
       session.npcTasks.delete(avatarIdOf(builder));
       session.lastDrive.set(avatarIdOf(builder), "build");
-      issueGoalPlan(session, builder, { steps: [{ kind: "moveTo", pos: target }] });
+      // A hand-built one-leg plan: the walk is the whole errand and nothing
+      // chooses between alternatives here, so it carries a ZERO price rather
+      // than a made-up one (step ④ — an unpriced plan is a first-class state).
+      issueGoalPlan(session, builder, { steps: [{ kind: "moveTo", pos: target }], cost: priceOf({}) });
     }
     return b;
   }
@@ -3298,9 +3516,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           x: center.x + wk.dx + wk.w / 2,
           y: center.y + wk.dy + wk.h / 2,
         };
-        const src = siteMaterialSources(session, at)
-          .filter((s) => (s.stack[glyph] ?? 0) > 0)
-          .sort((p2, q) => p2.d - q.d || (p2.id < q.id ? -1 : 1))[0];
+        // ⚖️ THE THIRD COPY, RETIRED (scope-behaviors.md §2.2): the inline
+        // nearest-first sort that used to live here is now the ONE priced walk,
+        // with this call's own "does it hold one" test passed in.
+        const src = rankPricedSources(
+          siteMaterialSources(session, at),
+          (s) => s.stack[glyph] ?? 0,
+        )[0];
         if (src) {
           const a = session.transfers.post({
             from: src.id,
@@ -3322,6 +3544,17 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         }
         // NONE STORED — the craft designation: the family's house makes
         // it (bench-first). Busy crafter ⇒ retry next sweep.
+        //
+        // ⚠️ THE BENCH-FIRST FORK IS ④'s ENABLE COMPARISON, HARD-CODED
+        // (scope-behaviors.md §2.4 — "the workbench bootstrap … enabler-shaped,
+        // hard-coded, correct, and the proof the pattern is wanted"). It is
+        // literally the basket question at a different rung: build the enabler
+        // first because `CRAFT_STATION_FACTOR = 1/3` triples the work rate,
+        // exactly as a basket multiplies the units a trip moves. It stays a
+        // boolean this pass ON PURPOSE — a station's cost is a build order with
+        // its own bill and its own labour clock, and pricing that needs the
+        // station costs that land with §7 step 6. When they do, this fork
+        // FOLDS INTO `haulBagLeg`'s arithmetic rather than living beside it.
         const hi = familyOf(session)?.house ?? t.plan.houses[0]?.index;
         if (hi === undefined || craftJobsOf(session).get(hi)) return "done";
         const target =
@@ -3928,6 +4161,17 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     for (const a of session.transfers.all()) {
       if ((a.status === "done" || a.status === "failed") && isPileDest(a.to)) {
         session.reservations.release(agrHolder(a.id));
+      }
+    }
+    // ④ TOOL-CLAIM GC — a basket spoken for by a haul that is over (or that a
+    // reload lost entirely) is free again. Blind and idempotent: the holder id
+    // names its own agreement, so nothing has to remember which trips took a
+    // bag. Without it one crashed haul would retire a basket permanently.
+    for (const r of session.reservations.toJSON().rows) {
+      if (!r.holder.startsWith("bag:")) continue;
+      const a = session.transfers.get(r.holder.slice(4));
+      if (!a || (a.status !== "pending" && a.status !== "moving")) {
+        session.reservations.release(r.holder);
       }
     }
     // LEGACY-SAVE JANITOR (rewrite 1b): jobs persist on TownDeltas now, so a
@@ -6311,7 +6555,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     buildContext, buildSpotsNow, cancellableSite, cancelWork, structureLabelOf,
     structureCatalogOf, buildMissingMaterials, pendingGrowthRects,
     steeringNear, buildCandidates, buildworkSiteAt, foundedLotAt,
-    pendingAnnexAt, pendingBuildingOf, agrHolder, onTransferLanded, buildDayNow,
+    pendingAnnexAt, pendingBuildingOf, agrHolder, bagHolder, onTransferLanded, buildDayNow,
     isCivicStockDest,
     // THE BLOCK CHAIN's two decision points (phase 5's masonry split): WHERE a
     // raw is worked, and WHICH raw gets worked first. Everything else in the

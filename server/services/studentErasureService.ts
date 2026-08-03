@@ -76,6 +76,7 @@ import {
 import { eq, and, lte, isNotNull, isNull, inArray, sql } from "drizzle-orm";
 import { activityLogService } from "./activityLogService";
 import { s3Service } from "./storage/s3-service";
+import { deleteStudentPackageLinks } from "./packages/packageLinks";
 
 const DEFAULT_WINDOW_DAYS = 30;
 
@@ -419,6 +420,11 @@ export class StudentErasureService {
       await tx.delete(clinicianActivityIntervals).where(eq(clinicianActivityIntervals.studentId, studentId));
       await tx.delete(boards).where(eq(boards.studentId, studentId));
       await tx.delete(customAppAssignments).where(eq(customAppAssignments.studentId, studentId));
+      // Package assignments go through packageLinks, NOT a raw delete: each one
+      // holds a refcount on its package, and an orphaned package waiting on this
+      // student's last link would otherwise leak forever. Passing `tx` keeps it
+      // inside the erasure transaction. See aac-packages-plan.md §1.5.
+      await deleteStudentPackageLinks(studentId, tx);
       await tx.delete(studentShareInvites).where(eq(studentShareInvites.studentId, studentId));
       await tx.delete(objectShares).where(eq(objectShares.studentId, studentId));
       await tx.delete(standingShares).where(eq(standingShares.studentId, studentId));

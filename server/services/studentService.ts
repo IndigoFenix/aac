@@ -60,6 +60,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "fullAttentionMode", "boardManagerLiveModel", "budgetTier",
   "usePcsSymbols", "signLanguage", "multiCameraMode",
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "eyegazeSmoothing", "selectionMethod", "restSpace",
+  "autoAudioScan", "autoAudioScanDelay",
   "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",

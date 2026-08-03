@@ -62,6 +62,7 @@ import {
 } from "./prompts/board-manager";
 import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson, serializeInputGlyphs } from "./interactive-agent";
 import { T } from "../memory-schema/canonical-terms";
+import { MORE_OPTIONS_ICON } from "@shared/button-color";
 import { flowInput, flowTool, flowNote } from "./agent-flow-logger";
 import {
   buildFusionMap,
@@ -113,12 +114,15 @@ function buildSpecialButton(kind: SpecialButtonType): ReturnType<typeof parseBoa
       buttonType: "wordfinder" as any,
     } as ReturnType<typeof parseBoardButtons>[number];
   }
-  // kind === "more"
+  // kind === "more". The RELOAD arrows, not a plus: students read "+" as "one
+  // more of this" and the reload as "show me the rest of the list", which is
+  // what this button actually does. Kept in step with MORE_OPTIONS_ICON, which
+  // both AAC surfaces and the clinician mirror render from.
   return {
     label: "More",
     sentence: "more",
-    iconRef: "fas fa-plus",
-    glyphFallback: "➕",
+    iconRef: "fas fa-arrows-rotate",
+    glyphFallback: MORE_OPTIONS_ICON,
     buttonType: "more" as any,
   } as ReturnType<typeof parseBoardButtons>[number];
 }

@@ -9,6 +9,9 @@ export interface CreateSymbolOptions {
   description?: string;
   isPublic?: boolean;
   isApproved?: boolean;
+  /** Depicts an identifiable person (e.g. a staff portrait). Barred from public
+   *  packages and access-gated when the image is served. See aac-packages-plan.md §3. */
+  personImage?: boolean;
   createdByUserId?: string;
 }
 
@@ -34,6 +37,7 @@ export const customSymbolService = {
       description: options.description || null,
       isPublic: options.isPublic || false,
       isApproved: options.isApproved ?? true,
+      personImage: options.personImage || false,
       createdByUserId: options.createdByUserId || null,
       width: 256,
       height: 256,

@@ -78,7 +78,7 @@ Canonical list: `shared/legal/recipients.ts`. Data classification reflects **act
 ### 3. AKIM information transferred to supplier
 | Clause | Status | Evidence / notes |
 |---|---|---|
-| Data inventory table | 📋 | Must be filled per engagement. Our data classification is in `SECURITY_ARCHITECTURE.md §1` and `shared/schema-private.ts` (55 PHI/PII tables). |
+| Data inventory table | 📋 | Must be filled per engagement. Our data classification is in `SECURITY_ARCHITECTURE.md §1` and `shared/schema-private.ts` (67 tables; note the row-scoped `boards` exception in §1.2.1). |
 
 ### 4. Information transfer process
 | Clause | Status | Evidence / notes |

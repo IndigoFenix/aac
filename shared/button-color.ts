@@ -12,7 +12,7 @@
 //     (e.g. a clinician-picked "#3B82F6").
 //   - The renderer paints `mapColorToHex(button.color)` — named tokens map to a
 //     pastel hex, raw colors pass through untouched.
-//   - Auto-coloring (yes→green, no→red, find→purple, more→gray) applies ONLY
+//   - Auto-coloring (yes→green, no→red, find→purple, more→teal) applies ONLY
 //     when no explicit color is present.
 
 /** Named color tokens the palette understands. */
@@ -41,14 +41,32 @@ export const COLOR_MAP: Record<ColorToken, string> = {
 };
 
 /**
+ * The MORE OPTIONS affordance — one appearance, wherever it comes from.
+ *
+ * The fixed quick-actions "More" button and any AI-authored board button with
+ * `buttonType: "more"` are the SAME promise to the student ("show me other
+ * things I could say"), so they must look the same. Both import these two
+ * constants; neither may re-state the hex or the emoji locally.
+ *
+ * Teal is deliberately outside the rest of the AAC palette (yes-green,
+ * no-red, home-blue, back/guess-violet, speak-amber, exit-red) so "more
+ * options" reads as its own category rather than as neutral chrome.
+ *
+ * The icon is the RELOAD arrows — the same symbol the AI already uses for its
+ * "something else" buttons — because students read a `+` as "add one more of
+ * this thing" rather than "show me other options".
+ */
+export const MORE_OPTIONS_COLOR = "#CCFBF1";
+export const MORE_OPTIONS_ICON = "🔄";
+
+/**
  * Fixed background colors for the meta buttons (the board-embedded twins of the
- * quick-actions Word Finder / More buttons). Kept as explicit hexes so the
- * appearance matches exactly what `DynamicBoard` hardcoded before this moved
- * server-side (`#EDE9FE` / `#E5E7EB`).
+ * quick-actions Word Finder / More buttons). Kept as explicit values so the
+ * appearance matches exactly what `DynamicBoard` renders.
  */
 export const SPECIAL_BUTTON_COLORS: Record<"wordfinder" | "more", string> = {
   wordfinder: "#EDE9FE",
-  more: "#E5E7EB",
+  more: MORE_OPTIONS_COLOR,
 };
 
 /**
@@ -79,7 +97,7 @@ export function detectYesNoDefaultColor(glyph?: string): "green" | "red" | undef
 /**
  * Decide the color TOKEN for a button. Resolution order:
  *   1. Explicit `color` (named token or raw CSS color) — always wins.
- *   2. Special meta buttons: `wordfinder` → purple hex, `more` → gray hex.
+ *   2. Special meta buttons: `wordfinder` → purple hex, `more` → teal hex.
  *   3. Auto yes/no from the glyph: yes → green, no → red.
  *   4. Plain white.
  *

@@ -328,6 +328,7 @@ export const STUDENT_NOTES_FIELD: AgentMemoryFieldArrayWithDB = {
  * All Student_* memory fields with database operations
  */
 import { STUDENT_CUSTOM_APPS_FIELD } from "./student-custom-apps-schema";
+import { STUDENT_PACKAGES_FIELD } from "./student-packages-schema";
 
 export const STUDENT_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
   STUDENT_PEOPLE_FIELD,
@@ -337,6 +338,7 @@ export const STUDENT_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
   STUDENT_PREFERENCES_FIELD,
   STUDENT_NOTES_FIELD,
   STUDENT_CUSTOM_APPS_FIELD,
+  STUDENT_PACKAGES_FIELD,
 ];
 
 /**
@@ -346,8 +348,9 @@ export const STUDENT_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
  * exposed to the clinician AI only when the share grants it, hidden from the
  * schema entirely otherwise (so the AI doesn't even know they exist).
  *
- * Excludes `Student_CustomApps`, which is backed by the assignments table and
- * governed by `custom_app_assignment` access.
+ * Excludes `Student_CustomApps` and `Student_Packages`, which are backed by
+ * their assignment tables and governed by `custom_app_assignment` /
+ * `package_assignment` access rather than by the monitor-note share.
  */
 export const STUDENT_CHAT_MEMORY_FIELD_IDS: ReadonlySet<string> = new Set([
   "Student_People",

@@ -93,6 +93,23 @@ export interface ClientConfig {
    * shared (server resolves the clinician's sensitivity choices into thresholds).
    */
   seizure?: import("@shared/aac/seizure-config").ClientSeizureConfig;
+  /**
+   * SLP MODE is on for the USER who opened this session (`users.slp_mode`) —
+   * a speech-language pathologist is running a therapy session WITH the
+   * student. Absent when off. Consumed in DualAgentContext to (a) suppress the
+   * client sleep state machine's automatic transitions (long silences are the
+   * therapy) and (b) render the manual wake/sleep control in the AAC header.
+   */
+  slpMode?: boolean;
+  /**
+   * Automated audio scan (eyegaze). Absent unless the server decided the
+   * feature applies — it requires BOTH `eyegazeEnabled` and the per-student
+   * `autoAudioScan` setting, and floors the delay. The client treats presence
+   * as "armed" and must not re-derive that gate itself.
+   */
+  autoAudioScan?: boolean;
+  /** Hunt time before the automated scan fires, in ms (server-floored). */
+  autoAudioScanDelayMs?: number;
 }
 
 /**

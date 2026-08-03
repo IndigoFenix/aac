@@ -42,6 +42,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { BoardIR } from '@/types/board-ir';
+import { BoardPackageControl } from './BoardPackageControl';
 
 export function BoardSelector() {
   const [pendingSwitchBoardId, setPendingSwitchBoardId] = useState<string | null>(null);
@@ -494,6 +495,9 @@ export function BoardSelector() {
                   {t('board.saved')}
                 </span>
               )}
+              {/* Package membership + "add to package". Renders nothing without
+                  the packages license or on an unsaved board. */}
+              <BoardPackageControl boardId={board.dbId} isDark={isDark} />
             </div>
           )}
           

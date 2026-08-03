@@ -24,6 +24,7 @@ function input(overrides: Partial<IdleWatchdogInput> = {}): IdleWatchdogInput {
     paused: false,
     asleep: false,
     inSocialSession: false,
+    slpMode: false,
     restAfterMs: REST_AFTER_MS,
     sleepAfterMs: SLEEP_AFTER_MS,
     ...overrides,
@@ -88,6 +89,42 @@ describe("decideIdleTransition", () => {
       expect(
         decideIdleTransition(input({ idleMs: wayPastSleep, inSocialSession: true })),
       ).toBe("none");
+    });
+  });
+
+  // SLP MODE (per logged-in USER, users.slp_mode): a therapy session is full
+  // of long deliberate silences, so the watchdog must never drop the session
+  // on its own — the therapist uses the explicit wake/sleep control instead.
+  describe("SLP mode", () => {
+    it("never rests at the rest threshold", () => {
+      expect(
+        decideIdleTransition(input({ idleMs: REST_AFTER_MS, slpMode: true })),
+      ).toBe("none");
+    });
+
+    it("never sleeps at the sleep threshold", () => {
+      expect(
+        decideIdleTransition(input({ idleMs: SLEEP_AFTER_MS, slpMode: true })),
+      ).toBe("none");
+    });
+
+    it("never sleeps no matter how long the session is idle", () => {
+      expect(
+        decideIdleTransition(input({ idleMs: SLEEP_AFTER_MS * 100, slpMode: true })),
+      ).toBe("none");
+    });
+
+    it("never sleeps a session that is already resting", () => {
+      expect(
+        decideIdleTransition(
+          input({ idleMs: SLEEP_AFTER_MS * 10, sessionProfile: "resting", slpMode: true }),
+        ),
+      ).toBe("none");
+    });
+
+    it("does not suppress anything when off (baseline unchanged)", () => {
+      expect(decideIdleTransition(input({ idleMs: REST_AFTER_MS, slpMode: false }))).toBe("rest");
+      expect(decideIdleTransition(input({ idleMs: SLEEP_AFTER_MS, slpMode: false }))).toBe("sleep");
     });
   });
 });

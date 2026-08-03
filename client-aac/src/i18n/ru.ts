@@ -572,7 +572,7 @@ export const ru: Translations = {
       wash: "\u041c\u044b\u0442\u044c",
       tidy: "Убрать",
       heat: "Нагреть",
-      cool: "Охладить",
+      make_cold: "Охладить",
       wear: "\u041d\u043e\u0441\u0438\u0442\u044c",
       color: "\u041a\u0440\u0430\u0441\u0438\u0442\u044c",
       brush_teeth: "\u0427\u0438\u0441\u0442\u0438\u0442\u044c \u0437\u0443\u0431\u044b",
@@ -767,6 +767,7 @@ export const ru: Translations = {
       understand: "\u041f\u043e\u043d\u0438\u043c\u0430\u044e",
       confused: "\u041d\u0435 \u043f\u043e\u043d\u044f\u043b",
       wow: "\u0412\u0430\u0443",
+      amazing: "\u041a\u0440\u0443\u0442\u043e",
       oops: "\u0423\u043f\u0441",
       oh_no: "\u041e \u043d\u0435\u0442",
       yuck: "\u0424\u0443",
@@ -845,6 +846,10 @@ export const ru: Translations = {
   },
 
   quickActions: {
+    forward: "Вперёд",
+    pauseBoard: "Пауза",
+    resumeBoard: "Продолжить",
+    previous: "Назад",
     yes: "\u0414\u0430",
     no: "\u041d\u0435\u0442",
     more: "\u0415\u0449\u0451",
@@ -1080,6 +1085,11 @@ export const ru: Translations = {
   audioScan: {
     start: "Озвучить доску",
     stop: "Остановить чтение",
+  },
+  slpMode: {
+    ready: "Готово",
+    wake: "Разбудить",
+    sleep: "Дать поспать",
   },
   guessing: {
     category: {

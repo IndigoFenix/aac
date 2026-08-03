@@ -21,8 +21,10 @@ import {
   getDimension,
   MODE_CHIPS,
   defaultModeChip,
+  getVocabularyItemByEmoji,
 } from "../../shared/glyph-registry.js";
 import { expandAlias } from "../../shared/glyph-compositor.js";
+import { resolveEmoji } from "../../shared/emoji-registry.js";
 
 describe("glyph registry", () => {
   it("returns the same item for getVocabularyItem and the listing", () => {
@@ -296,6 +298,97 @@ describe("glyph registry", () => {
     for (const v of listAllVocabulary()) {
       expect(!!v.imagePath || !!v.emoji || !!v.faIcon).toBe(true);
     }
+  });
+
+  // THE SHADOWING RULE. An un-exposed item is addressed BY ITS EMOJI, not by its
+  // key: the sentence builders store `item.emoji` for it (slotKeyForSelection, in
+  // both clients), the relay swaps a glyph key for its emoji when it mints a
+  // button icon, and the compositor turns an emoji slot back into artwork through
+  // getVocabularyItemByEmoji. That reverse map is first-wins, so when two such
+  // items claim one emoji the later one is unreachable — every surface draws the
+  // winner's picture instead, silently. This is how a TABLE button rendered a
+  // chair: `table` also claimed 🪑, and `chair` is declared first.
+  //
+  // The fix for a genuine clash is to expose the item (`exposeToAi`), which makes
+  // it addressable by key — not to hand it a near-miss emoji.
+  it("no two un-exposed items with artwork claim the same emoji", () => {
+    const owner = new Map<string, string>();
+    const clashes: string[] = [];
+    for (const v of listAllVocabulary()) {
+      if (!v.emoji || !v.imagePath || v.exposeToAi) continue;
+      const held = owner.get(v.emoji);
+      if (held) clashes.push(`${v.emoji} claimed by both '${held}' and '${v.key}'`);
+      else owner.set(v.emoji, v.key);
+    }
+    expect(clashes).toEqual([]);
+  });
+
+  it("an un-exposed item's emoji reverse-maps back to that same item", () => {
+    // The round trip every emoji-keyed slot depends on: press `chair` → store 🪑
+    // → render `chair`'s art. A clash breaks it for the shadowed item only, so
+    // assert the identity rather than mere resolvability.
+    for (const v of listAllVocabulary()) {
+      if (!v.emoji || !v.imagePath || v.exposeToAi) continue;
+      expect(getVocabularyItemByEmoji(v.emoji)?.key).toBe(v.key);
+    }
+  });
+
+  it("a key with bundled artwork never resolves to another concept's emoji", () => {
+    // resolveEmoji() decides the picture wherever a key is downgraded to an emoji
+    // (the relay's iconRef swap, the caption validator's fallback). For an item
+    // that HAS art, returning some other item's emoji is strictly worse than
+    // returning nothing — it draws the wrong thing instead of falling back.
+    const mismatches: string[] = [];
+    for (const v of listAllVocabulary()) {
+      if (!v.imagePath) continue;
+      const emoji = resolveEmoji(v.key);
+      if (!emoji) continue; // no emoji at all is fine — the art renders
+      if (v.emoji && emoji === v.emoji) continue;
+      mismatches.push(`${v.key} → ${emoji} (declares ${v.emoji ?? "no emoji"})`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("no AI-visible key CONTAINS \"cool\" — a near-miss key is a trap, not just an equal one", () => {
+    // Regression, twice over. The transform verb first owned the bare `cool` and
+    // wore the COLD snowflake, so every surface asked for the slang "cool!" and
+    // drew cold. Renaming it to `cool_down` did NOT fix it: the model picks from
+    // <bundled_icons> by nearest word, not by exact match, and on 2026-08-03 it
+    // still translated "משחק מחשב, מגניב!" (…, cool!) to `🎮+computer+cool_down`.
+    //
+    // So the invariant is SUBSTRING, not equality — the slang must find nothing
+    // to grab anywhere in the AI's vocabulary and fall through to generation (or
+    // to `wow`, which the model reaches for unprompted once the decoy is gone).
+    const decoys = listAllVocabulary()
+      .filter((v) => v.exposeToAi && v.key.includes("cool"))
+      .map((v) => v.key);
+    expect(decoys).toEqual([]);
+    expect(getVocabularyItem("cool")).toBeUndefined();
+    expect(resolveEmoji("cool")).toBeUndefined();
+  });
+
+  it("the slang has somewhere correct to go — `amazing` is AI-visible", () => {
+    // The other half of the fix. Deleting the ambiguous key stops the model
+    // rendering a compliment as cold, but it does not stop the model REACHING:
+    // with no positive-appraisal reaction in the vocabulary it just picks the
+    // next-closest key. `amazing` is the destination, distinct from `wow`
+    // (surprise) — if it ever leaves the AI-visible list the hole reopens.
+    const amazing = getVocabularyItem("amazing");
+    expect(amazing).toBeDefined();
+    expect(amazing!.exposeToAi).toBe(true);
+    expect(amazing!.categories).toContain("chat");
+    expect(amazing!.modeChips.chat).toContain("react");
+    expect(amazing!.emoji).toBeTruthy();
+  });
+
+  it("the transform verb keeps the cold artwork under its non-decoy key", () => {
+    const makeCold = getVocabularyItem("make_cold");
+    expect(makeCold).toBeDefined();
+    expect(makeCold!.tKey).toBe("aac.glyph.make_cold");
+    expect(makeCold!.imagePath).toBe("adjectives/state/cold");
+    // Still reachable by the AI — the point was to rename the trap, not to drop
+    // the ability to say "cool the food".
+    expect(makeCold!.exposeToAi).toBe(true);
   });
 
   it("composable hand verbs accept noun payloads", () => {

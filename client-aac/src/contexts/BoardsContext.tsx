@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAppInitializationOptional } from "./AppInitializationContext";
+import { apiUrl } from "@/lib/queryClient";
 
 // Board data types (matching PrebuiltBoardSection)
 interface BoardIR {
@@ -39,7 +40,14 @@ interface ButtonIR {
 export interface BoardData {
   id: string;
   name: string;
-  irData: BoardIR;
+  /**
+   * Absent in the LIST response — `/api/boards/student/:id` returns metadata
+   * only, deliberately (a student can have many boards, and each irData is
+   * large). Call `loadBoard(id)` to fill it in on demand.
+   */
+  irData?: BoardIR;
+  /** Set when the board comes from an attached package; groups the picker. */
+  packageName?: string;
 }
 
 interface BoardsContextType {
@@ -49,6 +57,10 @@ interface BoardsContextType {
   selectedBoard: BoardData | null;
   selectBoard: (board: BoardData | null) => void;
   refetch: () => Promise<void>;
+  /** Fetch (and cache) a board's full IR. Returns null when it cannot be loaded. */
+  loadBoard: (boardId: string) => Promise<BoardData | null>;
+  /** True while a specific board's IR is being fetched. */
+  loadingBoardId: string | null;
 }
 
 const BoardsContext = createContext<BoardsContextType | undefined>(undefined);
@@ -109,6 +121,50 @@ export function BoardsProvider({ children, studentId }: BoardsProviderProps) {
     await queryRefetch();
   }, [queryRefetch]);
 
+  // IR cache, keyed by board id. Boards are immutable for the length of a
+  // session in practice, and re-fetching a large IR on every back-navigation
+  // would be felt on a tablet.
+  const irCacheRef = useRef<Map<string, BoardData>>(new Map());
+  const [loadingBoardId, setLoadingBoardId] = useState<string | null>(null);
+
+  const loadBoard = useCallback(
+    async (boardId: string): Promise<BoardData | null> => {
+      const cached = irCacheRef.current.get(boardId);
+      if (cached) return cached;
+
+      const meta = boards.find((b) => b.id === boardId);
+      setLoadingBoardId(boardId);
+      try {
+        // `studentId` lets the server authorise a PACKAGE board the device did
+        // not author — see canReadPackageBoard in boardController.
+        const res = await fetch(
+          apiUrl(`/api/boards/${boardId}?studentId=${encodeURIComponent(studentId)}`),
+          { credentials: "include" },
+        );
+        if (!res.ok) return null;
+        const full = (await res.json()) as { id: string; name: string; irData: BoardIR };
+        const merged: BoardData = {
+          id: full.id,
+          name: full.name ?? meta?.name ?? "",
+          irData: full.irData,
+          packageName: meta?.packageName,
+        };
+        irCacheRef.current.set(boardId, merged);
+        return merged;
+      } catch {
+        return null;
+      } finally {
+        setLoadingBoardId(null);
+      }
+    },
+    [boards, studentId],
+  );
+
+  // A board list refresh invalidates cached IR (a clinician may have edited).
+  useEffect(() => {
+    irCacheRef.current.clear();
+  }, [boards]);
+
   const value: BoardsContextType = {
     boards,
     isLoading,
@@ -116,6 +172,8 @@ export function BoardsProvider({ children, studentId }: BoardsProviderProps) {
     selectedBoard,
     selectBoard,
     refetch,
+    loadBoard,
+    loadingBoardId,
   };
 
   return (

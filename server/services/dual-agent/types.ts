@@ -227,7 +227,10 @@ export interface DualAgentSessionState {
   aiAddedButtonLabels: string[]; // Buttons AI added on top of a loaded custom board (removable by AI)
 
   // Pre-built board selection
-  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; isGenerated?: boolean; grid: { rows: number; cols: number } }>;
+  // `key` is built by shared/board-keys.ts — `slug(name)` for the student's own
+  // boards, `slug(package).slug(board)` for boards reached through a package.
+  // `packageName` is set only for the latter, and groups the prompt listing.
+  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; isGenerated?: boolean; packageName?: string; grid: { rows: number; cols: number } }>;
   loadedBoardId?: string | null;
   loadedBoardData?: ParsedBoardData;
   currentPageId?: string | null;

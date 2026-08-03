@@ -66,6 +66,13 @@ app.get('/health', (_req, res) => {
   const { scheduleSpendThresholdCheck } = await import("./services/providerAlertService");
   scheduleSpendThresholdCheck();
 
+  // Start the daily package link-count reconcile. A backstop only: the live
+  // attach/detach paths keep the counter correct, and drift can strand a
+  // deleted package but never remove one still in use. No-op in tests;
+  // deferred 150s after boot.
+  const { schedulePackageLinkReconcile } = await import("./services/packages/packageLinkCron");
+  schedulePackageLinkReconcile();
+
   // DEVELOPMENT: Use Vite dev server
   if (process.env.NODE_ENV === "development") {
     // Mount the gated games handler BEFORE the Vite catch-all so /games/*

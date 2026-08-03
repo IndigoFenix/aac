@@ -48,6 +48,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/insurance-bridge': 'insuranceBridge',
   '/video-caption': 'videoCaption',
   '/downloads': 'downloads',
+  '/packages': 'packages',
 };
 
 // Feature to URL path mapping
@@ -77,6 +78,7 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   insuranceBridge: '/insurance-bridge',
   videoCaption: '/video-caption',
   downloads: '/downloads',
+  packages: '/packages',
 };
 
 // Feature configurations
@@ -116,6 +118,15 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     hasBottomBar: false,
     isFullScreen: false,
     path: '/custom-apps',
+  },
+  packages: {
+    id: 'packages',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    hasBottomBar: false,
+    isFullScreen: false,
+    path: '/packages',
   },
   docuslp: {
     id: 'docuslp',

@@ -178,6 +178,9 @@ export function DualAgentConversationBox({
     safetyBlocked,
     paused,
     setPaused,
+    slpMode,
+    sessionAsleep,
+    toggleSessionSleep,
     thinkingPulse,
     inputGlyphs,
     socialSession,
@@ -925,6 +928,29 @@ export function DualAgentConversationBox({
             >
               <Ear className="w-8 h-8" />
             </button>
+
+            {/* SLP MODE only: manual wake/sleep. In a therapy session nothing
+                auto-sleeps (long silences are the therapy), so the clinician
+                needs an explicit way to put the AI down and bring it back.
+                Uses the existing wake/sleep wire protocol via the context. */}
+            {slpMode && (
+              <button
+                type="button"
+                data-dwell
+                onClick={toggleSessionSleep}
+                className={`shrink-0 self-center flex items-center justify-center rounded-lg transition-colors ${
+                  sessionAsleep
+                    ? "bg-white/10 text-white/50 hover:bg-white/20"
+                    : "bg-yellow-400/90 text-gray-900 hover:bg-yellow-300"
+                }`}
+                style={{ width: 52, height: 80 }}
+                title={sessionAsleep ? t("slpMode.wake") : t("slpMode.sleep")}
+                aria-label={sessionAsleep ? t("slpMode.wake") : t("slpMode.sleep")}
+                aria-pressed={sessionAsleep}
+              >
+                {sessionAsleep ? <Moon className="w-8 h-8" /> : <Sun className="w-8 h-8" />}
+              </button>
+            )}
 
             {/* Microphone-error indicator — sits to the LEFT of the mirror (right
                 in RTL, since the header row follows the text direction). Shown

@@ -30,7 +30,14 @@
  * Kernel layering: pure data + arithmetic; imports stay inside kernel/town.
  */
 
-import { stackHead, stackUnits, takeStock, type TransferSource } from "./transfer.js";
+import {
+  rankPricedSources,
+  stackHead,
+  stackUnits,
+  takeStock,
+  type PricedSourceOpts,
+  type TransferSource,
+} from "./transfer.js";
 
 // ---------------------------------------------------------------------------
 // The ledger
@@ -66,6 +73,26 @@ export interface ReservationLedger {
   consume(holder: string, endpoint: string, glyph: string, qty: number): number;
   /** Drop EVERY row this holder speaks for (complete / fail / cancel). */
   release(holder: string): void;
+  /**
+   * ⏸️ HOW MANY RELEASES HAVE ACTUALLY FREED UNITS — the town rung's second
+   * wake signal (scope-behaviors.md §2.5.1: a job park "rides the same
+   * `needsStockEpoch` plus the reservation ledger's own version — A RELEASED
+   * CLAIM FREES UNITS FOR SOMEBODY ELSE'S JOB, which is precisely the event
+   * `resolveMaterials` would find").
+   *
+   * A pure READ over bookkeeping the ledger already does; the only additive
+   * behaviour is the counter itself. It counts releases that DROPPED ROWS,
+   * never calls — the sweeps release finished agreement holders every pass and
+   * almost all of those are already empty, so an unconditional counter would
+   * tick every tick and a park keyed to it would never hold. Monotone;
+   * deliberately COARSE (one counter for the whole ledger), exactly like
+   * `needsStockEpoch`: it is a GATE, not the predicate.
+   *
+   * NOT serialized — a reload starts at 0 and every park that reads it is
+   * session-lived too, so the pair can only ever agree (the restore-is-safe
+   * argument the body-rung parks already make).
+   */
+  releaseEpoch(): number;
   /** Total units of `glyph`'s head spoken for on `endpoint`, all holders. */
   reservedUnits(endpoint: string, glyph: string): number;
   /** This holder's live rows, creation order (read-only view). */
@@ -75,6 +102,8 @@ export interface ReservationLedger {
 
 export function createReservationLedger(json?: SerializedReservationLedger): ReservationLedger {
   let serial = json?.serial ?? 0;
+  /** ⏸️ See `releaseEpoch` — session-lived, never serialized. */
+  let releases = 0;
   const rows: ReservationRow[] = (json?.rows ?? []).map((r) => ({ ...r }));
   const drop = (r: ReservationRow) => {
     const i = rows.indexOf(r);
@@ -108,8 +137,12 @@ export function createReservationLedger(json?: SerializedReservationLedger): Res
       return took;
     },
     release(holder) {
-      for (const r of rows.filter((r) => r.holder === holder)) drop(r);
+      const mine = rows.filter((r) => r.holder === holder);
+      if (!mine.length) return; // nothing was freed — no event to report
+      for (const r of mine) drop(r);
+      releases++;
     },
+    releaseEpoch: () => releases,
     reservedUnits(endpoint, glyph) {
       const head = stackHead(glyph);
       return rows
@@ -119,6 +152,26 @@ export function createReservationLedger(json?: SerializedReservationLedger): Res
     holderRows: (holder) => rows.filter((r) => r.holder === holder),
     toJSON: () => ({ serial, rows: rows.map((r) => ({ ...r })) }),
   };
+}
+
+/**
+ * THE HEAD A WHOLE-OBJECT TOOL CLAIM IS SPOKEN UNDER (step ④ ENABLE,
+ * scope-behaviors.md §2.4/§2.6) — "the basket by the yard is mine for this
+ * trip".
+ *
+ * A tool is not goods, so it has no glyph to reserve; but a tool IS a thing
+ * there is exactly ONE of, and "one unit of it on the endpoint that is the tool
+ * itself" is a legal row in this ledger with no new machinery, no new
+ * lifecycle, and the same `release(holder)` every other claim already gets. The
+ * `@` prefix keeps it out of the goods namespace — no glyph starts with one, so
+ * a tool claim can never collide with a material head or be spent as stock.
+ */
+export const TOOL_CLAIM_GLYPH = "@tool";
+
+/** Has anyone spoken for this whole object as a tool? (`endpoint` = the
+ *  object's own id — see `TOOL_CLAIM_GLYPH`.) */
+export function toolClaimed(ledger: ReservationLedger, objId: string): boolean {
+  return ledger.reservedUnits(objId, TOOL_CLAIM_GLYPH) > 0;
 }
 
 /** Units of `glyph`'s head in the stack NOT spoken for — what resolution may
@@ -131,6 +184,39 @@ export function freeUnits(
   glyph: string,
 ): number {
   return Math.max(0, stackUnits(stack, glyph) - ledger.reservedUnits(endpoint, glyph));
+}
+
+/**
+ * Free units over a count the caller ALREADY HAS, rather than over a stack map
+ * — the same subtraction as `freeUnits`, for the two things a stack map cannot
+ * express:
+ *
+ *   · a CATEGORY fold ("food" across apple/banana/cookie) or a derived count
+ *     (a market shelf's units are a closed form over the clock, not a map);
+ *   · `exceptHolder` — units this holder itself speaks for are NOT subtracted.
+ *     A claimant must keep seeing its own reservation or it would re-decide
+ *     away from its own plan the instant it made it, which is a spin, not a
+ *     lock. (`freeUnits` has no such caller: material resolution asks before
+ *     it reserves, never after.)
+ *
+ * Floored at 0, exactly like `freeUnits` — a count that shrank under its
+ * reservations reads empty, and the shortfall surfaces at take time.
+ */
+export function freeUnitsOver(
+  units: number,
+  ledger: ReservationLedger,
+  endpoint: string,
+  glyph: string,
+  exceptHolder?: string,
+): number {
+  const head = stackHead(glyph);
+  let spoken = ledger.reservedUnits(endpoint, head);
+  if (exceptHolder !== undefined) {
+    for (const r of ledger.holderRows(exceptHolder)) {
+      if (r.endpoint === endpoint && r.glyph === head) spoken -= r.qty;
+    }
+  }
+  return Math.max(0, units - Math.max(0, spoken));
 }
 
 /** A COPY of the stack with every reservation on this endpoint taken out
@@ -164,9 +250,10 @@ export interface MaterialDraw {
 }
 
 /**
- * Resolve a recipe's costs against real stacks: nearest source first
- * (distance to the work spot, lexicographic-lower id on ties), FREE units
- * only, reserving every draw under `holder` as it goes. Costs merge by
+ * Resolve a recipe's costs against real stacks: CHEAPEST source first
+ * (`rankPricedSources` — scope-behaviors.md §2.2's one priced walk, which is
+ * nearest-first while every candidate prices the same, i.e. always, today),
+ * FREE units only, reserving every draw under `holder` as it goes. Costs merge by
  * material head (a "wood.wet" cost pays toward "wood") in first-appearance
  * order. Partial resolution is honest: what exists is reserved, `shortfall`
  * names what no free stack covers (the recursion seam — post the tasks that
@@ -178,6 +265,11 @@ export function resolveMaterials(opts: {
   costs: Readonly<Record<string, number>>;
   sources: readonly TransferSource[];
   ledger: ReservationLedger;
+  /** ⚖️ Pricing terms for the source walk (§2.2). Absent = the walk's own
+   *  defaults, which reproduce the shipped nearest-first order exactly. The
+   *  RESERVATION LIFECYCLE is untouched by this: ordering is the only thing
+   *  the priced walk decides here. */
+  price?: PricedSourceOpts;
 }): { draws: MaterialDraw[]; shortfall: Record<string, number> } {
   const { holder, sources, ledger } = opts;
   // Merge costs by head, first-appearance order.
@@ -192,9 +284,11 @@ export function resolveMaterials(opts: {
   const shortfall: Record<string, number> = {};
   for (const head of heads) {
     let left = need[head] ?? 0;
-    const ranked = [...sources]
-      .filter((s) => freeUnits(s.stack, ledger, s.id, head) > 0)
-      .sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const ranked = rankPricedSources(
+      sources,
+      (s) => freeUnits(s.stack, ledger, s.id, head),
+      opts.price,
+    );
     for (const s of ranked) {
       if (left <= 0) break;
       const take = Math.min(left, freeUnits(s.stack, ledger, s.id, head));

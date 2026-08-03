@@ -40,6 +40,8 @@ import { classroomRepository } from "../../repositories/classroomRepository";
 import { requireActiveConsent, ConsentGateError } from "../consent/consentGate";
 import { activityLogService } from "../activityLogService";
 import { logLiveSession } from "./dual-agent-logger";
+import { buildBoardKeys } from "@shared/board-keys";
+import { HOME_BOARD_KEY } from "./default-home-board";
 import { flowCost } from "./agent-flow-logger";
 
 /**
@@ -614,11 +616,12 @@ export class DualAgentService {
         return [];
       }
       try {
-        const boards = await boardRepository.getAutoSelectableBoards(userId, studentId);
+        const boards = await boardRepository.getAutoSelectableBoardsWithPackages(userId, studentId);
+        const keys = buildBoardKeys(boards.map(b => ({ id: b.id, name: b.name, packageName: b.packageName })), [HOME_BOARD_KEY]);
         const mapped = boards.map(b => {
           const irData = b.irData as any;
           const grid = irData?.grid || { rows: 3, cols: 4 };
-          return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
+          return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid };
         });
         logLiveSession("AVAILABLE_BOARDS", `loaded ${mapped.length} auto-selectable board(s) (createNewSession, user=${userId} student=${studentId}) — [${mapped.map(b => b.key).join(", ")}]`);
         return mapped;
@@ -976,11 +979,12 @@ export class DualAgentService {
         // Load auto-selectable boards
         if (state.userId) {
           try {
-            const boards = await boardRepository.getAutoSelectableBoards(state.userId, state.studentId);
+            const boards = await boardRepository.getAutoSelectableBoardsWithPackages(state.userId, state.studentId);
+            const keys = buildBoardKeys(boards.map(b => ({ id: b.id, name: b.name, packageName: b.packageName })), [HOME_BOARD_KEY]);
             state.availableBoards = boards.map(b => {
               const irData = b.irData as any;
               const grid = irData?.grid || { rows: 3, cols: 4 };
-              return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
+              return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid };
             });
             logLiveSession("AVAILABLE_BOARDS", `loaded ${state.availableBoards.length} auto-selectable board(s) (loadSessionFromDB, user=${state.userId} student=${state.studentId}) — [${state.availableBoards.map(b => b.key).join(", ")}]`);
           } catch (err) {
@@ -1500,6 +1504,25 @@ export class DualAgentService {
         try {
           const { name, boardId, irData, hint } = response.generatedBoard;
           let savedBoardId: string;
+
+          // A board that belongs to a package is READ-ONLY to the session AI,
+          // regardless of isGenerated: editing it would change it for every
+          // student in every institute whose package includes it. The prompt
+          // says so too, but a rule with cross-tenant blast radius needs a real
+          // guard behind it. Throwing lands in this block's own catch, so the
+          // rest of the monitor cycle (and the final save) still runs.
+          if (boardId) {
+            const target = await boardRepository.getBoard(boardId);
+            if (target?.scope === "package") {
+              logLiveSession(
+                "AVAILABLE_BOARDS",
+                `REFUSED board edit: ${boardId} "${name}" is a package board (read-only to the session AI)`,
+              );
+              throw new Error(
+                `Board ${boardId} belongs to a package and is read-only to the session AI.`,
+              );
+            }
+          }
 
           if (boardId) {
             // Edit existing generated board

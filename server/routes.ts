@@ -47,6 +47,7 @@ import {
   appDownloadController,
   boardController,
   customAppController,
+  packageController,
   deepAnalysisController,
   onboardingController,
   slpClinicalController,
@@ -439,6 +440,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.patch("/api/profile/update", requireAuth, (req, res) =>
     profileController.updateProfile(req, res)
+  );
+  // SLP MODE — per-USER AAC session behavior (never per-student). Always
+  // targets the authenticated caller; the current value is read back off
+  // `GET /auth/user` (userService.formatUserForResponse).
+  app.patch("/api/profile/slp-mode", requireAuth, (req, res) =>
+    profileController.updateSlpMode(req, res)
   );
 
   // ============= INSTITUTE ROUTES =============
@@ -1335,6 +1342,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.get("/api/custom-apps/:id/assignments", requireAuth, requireCustomApps, (req, res) =>
     customAppController.getAssignments(req, res)
+  );
+
+  // ============= CONTENT PACKAGE ROUTES =============
+  // Shareable bundles of boards, owned by an institute. See
+  // planning-docs/aac-packages-plan.md §5.4.
+  //
+  // `packagesEnabled` gates MANAGEMENT only. Runtime consumption (a session
+  // loading an already-attached package board) is deliberately ungated, so a
+  // lapsed license never breaks a student mid-day.
+  const requirePackages = requireLicensePermission("packagesEnabled");
+  // Static segments first — Express matches in order, so these must precede
+  // the `/:id` routes or "board-candidates" is read as a package id.
+  app.get("/api/packages/board-candidates", requireAuth, requirePackages, (req, res) =>
+    packageController.boardCandidates(req, res)
+  );
+  app.get("/api/packages/student/:studentId/available", requireAuth, requirePackages, (req, res) =>
+    packageController.availableForStudent(req, res)
+  );
+  app.get("/api/packages/search", requireAuth, requirePackages, (req, res) =>
+    packageController.search(req, res)
+  );
+  app.post("/api/packages", requireAuth, requirePackages, (req, res) =>
+    packageController.create(req, res)
+  );
+  app.get("/api/packages", requireAuth, requirePackages, (req, res) =>
+    packageController.list(req, res)
+  );
+  app.get("/api/packages/:id", requireAuth, requirePackages, (req, res) =>
+    packageController.get(req, res)
+  );
+  app.patch("/api/packages/:id", requireAuth, requirePackages, (req, res) =>
+    packageController.update(req, res)
+  );
+  app.delete("/api/packages/:id", requireAuth, requirePackages, (req, res) =>
+    packageController.remove(req, res)
+  );
+  app.get("/api/packages/:id/publish-check", requireAuth, requirePackages, (req, res) =>
+    packageController.publishCheck(req, res)
+  );
+  app.post("/api/packages/:id/publish", requireAuth, requirePackages, (req, res) =>
+    packageController.publish(req, res)
+  );
+  app.post("/api/packages/:id/unpublish", requireAuth, requirePackages, (req, res) =>
+    packageController.unpublish(req, res)
+  );
+  app.get("/api/packages/:id/boards", requireAuth, requirePackages, (req, res) =>
+    packageController.listBoards(req, res)
+  );
+  app.post("/api/packages/:id/boards", requireAuth, requirePackages, (req, res) =>
+    packageController.addBoard(req, res)
+  );
+  app.patch("/api/packages/:id/boards/:boardId", requireAuth, requirePackages, (req, res) =>
+    packageController.updateBoard(req, res)
+  );
+  app.delete("/api/packages/:id/boards/:boardId", requireAuth, requirePackages, (req, res) =>
+    packageController.removeBoard(req, res)
+  );
+  app.get("/api/packages/:id/grants", requireAuth, requirePackages, (req, res) =>
+    packageController.listGrants(req, res)
+  );
+  app.post("/api/packages/:id/grants", requireAuth, requirePackages, (req, res) =>
+    packageController.addGrant(req, res)
+  );
+  app.delete("/api/packages/:id/grants/:grantId", requireAuth, requirePackages, (req, res) =>
+    packageController.removeGrant(req, res)
+  );
+  app.post("/api/packages/:id/assignments", requireAuth, requirePackages, (req, res) =>
+    packageController.assignToStudent(req, res)
+  );
+  app.delete("/api/packages/:id/assignments/:studentId", requireAuth, requirePackages, (req, res) =>
+    packageController.unassignFromStudent(req, res)
+  );
+  // Which packages contain a given board — drives the "shared board" badge in
+  // the board editor.
+  app.get("/api/boards/:id/packages", requireAuth, requirePackages, (req, res) =>
+    packageController.packagesForBoard(req, res)
+  );
+
+  // Public-package moderation. Reuses the public-symbols admin section — same
+  // review posture, no admin-permissions migration.
+  app.get("/api/admin/packages/pending", requireAdminSection("public-symbols"), (req, res) =>
+    packageController.listPending(req, res)
+  );
+  app.post("/api/admin/packages/:id/approve", requireAdminSection("public-symbols"), (req, res) =>
+    packageController.approve(req, res)
+  );
+  app.post("/api/admin/packages/:id/reject", requireAdminSection("public-symbols"), (req, res) =>
+    packageController.reject(req, res)
   );
 
   // ============= DEEP ANALYSIS ROUTES =============

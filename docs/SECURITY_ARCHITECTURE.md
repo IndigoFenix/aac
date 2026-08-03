@@ -10,7 +10,7 @@ For AWS infrastructure detail (VPC, IAM, KMS, ECS vs Lambda, WAF, CloudTrail) se
 
 | Field | Value |
 |---|---|
-| Last updated | 2026-05-06 |
+| Last updated | 2026-08-03 |
 | Document owner | Aivota Engineering |
 | Review cadence | Quarterly, plus before any material processing change |
 | Source of truth | This file lives in the application repo and is updated alongside the code that implements it. |
@@ -30,17 +30,52 @@ The platform handles four classes of data. Tables are split across `shared/schem
 
 ### 1.2 Sensitive table inventory
 
-The PHI/PII tables in `shared/schema-private.ts` (55 tables total) include:
+The PHI/PII tables in `shared/schema-private.ts` (67 tables total) include:
 
 - **Students & care team:** `students`, `aacSettings`, `biometricData`, `studentContacts`, `userStudents`, `instituteStudents`, `studentClassrooms`
 - **Health & education:** `medicalRecords`, `functionalReports`, `educationalReports`, `programs`, `profileDomains`, `baselineMeasurements`, `assessmentSources`, `goals`, `objectives`, `userGoals`, `userObjectives`, `services`, `serviceGoals`, `serviceUsers`, `accommodations`, `progressReports`, `goalProgressEntries`, `dataPoints`, `incidents`, `transitionPlans`, `transitionGoals`, `programContacts`, `meetings`
 - **Consent & verification:** `consentForms`, `studentConsentRecords`, `consentInvitations`, `phoneOtpCodes`
-- **AI & memory:** `chatSessions`, `deepAnalyses`, `persons`, `personChatRooms`, `personChatRoomParticipants`, `personChats`, `personChatPushTokens`, `boards`, `customApps`, `customAppAssignments`
+- **AI & memory:** `chatSessions`, `deepAnalyses`, `persons`, `personChatRooms`, `personChatRoomParticipants`, `personChats`, `personChatPushTokens`, `boards` (row-scoped — see §1.2.1), `customApps`, `customAppAssignments`
 - **Files & integrations:** `dropboxConnections`, `dropboxBackups`
-- **Sharing & invites:** `inviteCodes`, `inviteCodeRedemptions`, `studentShareInvites`, `objectShares`, `standingShares`, `studentSymbolAssociations`
+- **Sharing & invites:** `inviteCodes`, `inviteCodeRedemptions`, `studentShareInvites`, `objectShares`, `standingShares`, `studentSymbolAssociations`, `packageAssignments`
 - **Auth & ops:** `users`, `passwordResetTokens`, `mfaRecoveryTokens`, `activityLogs`
 
-The schema split is enforced by file convention. Public-schema tables (`schema.ts`) carry no PHI; private-schema tables (`schema-private.ts`) require a typed `accessCtx` for reads.
+The schema split is enforced by file convention with one deliberate exception (§1.2.1). Public-schema tables (`schema.ts`) carry no PHI; private-schema tables (`schema-private.ts`) require a typed `accessCtx` for reads.
+
+### 1.2.1 Row-scoped classification: `boards`
+
+`boards` is the one private-schema table whose rows are **not uniformly PHI**. It holds two kinds
+of row, distinguished by a `scope` column:
+
+| `scope` | What it is | Classification | Governance |
+|---|---|---|---|
+| `student` (default) | A communication board authored for a specific student, or for its author's own use | **PHI** | `studentId` / `userId` as before; `irData` routed through external storage |
+| `package` | Shareable content owned by an institute and distributed through `packages` | **Operational** | `packageAccess` resolver; excluded from external storage |
+
+This is enforced structurally, not by convention:
+
+- **A database CHECK constraint** — `boards_package_scope_has_no_student` — asserts that a
+  `scope='package'` row has `student_id IS NULL AND institute_id IS NOT NULL`. A package board
+  therefore *cannot* be student-linked; the invariant is held by Postgres, not by application code.
+- **Content validation at the boundary.** Material identifying a student (references to their
+  contacts' faces) is refused entry to a package at every visibility. Images of identifiable people
+  — e.g. staff portraits — are permitted in institute-visible packages and refused in public ones.
+  Implemented in `shared/package-validation.ts` + `server/services/packages/packageContent.ts`.
+- **Ownership resolution short-circuits** for package rows
+  (`server/external-storage/registry.ts`), so package content is never written to an
+  institute-scoped external backend.
+- **Reads funnel through one resolver.** `server/services/packages/packageAccess.ts` answers every
+  "who may do what" question for package content; student-scoped rows keep the existing
+  `accessCtx` path.
+
+Publication beyond the owning institute additionally requires an explicit human attestation that
+the package contains no images of identifiable people, recorded on the package row and audited as
+`package_published` (§6.1). An LLM agent cannot perform this step. Public listing further requires
+platform-admin review.
+
+**Breach scoping.** Because the split is a column rather than a heuristic, "which rows of `boards`
+were PHI" is a query (`WHERE scope = 'student'`), not a forensic exercise. See
+[`planning-docs/aac-packages-plan.md`](../planning-docs/aac-packages-plan.md) for the full model.
 
 ### 1.3 Identification numbers & redaction
 
@@ -268,6 +303,7 @@ Schema: `event_type, subject_type1/id1, subject_type2/id2, instituteId, userId, 
 - **Consent lifecycle:** `consent_signed`, `consent_revoked`, `consent_re_signed`, `guardian_id_verified`, `minor_threshold_crossed` for `studentConsentRecords`.
 - **Auth events:** `auth_login_success`, `auth_login_failure`, `auth_logout`, `auth_mfa_challenge`, `auth_mfa_success`, `auth_mfa_failure`, `auth_password_reset_requested`, `auth_password_reset_completed`. Logged with IP and user-agent in `details` for forensics; failures log `attemptedEmail` instead of `userId` (privacy-preserving).
 - **Erasure lifecycle:** `student_erasure_requested`, `student_erasure_cancelled`, `student_erasure_completed`. Exempt from retention pruning (compliance evidence — see §6.3).
+- **Content-package publication:** `package_published`, `package_unpublished`, `package_approved`, `package_rejected`. The `package_published` row carries the publisher's attestation (`{ noPersonImages, at, byUserId }`) and the board count — it is the record that content leaving the owning institute did so by an affirmative act of a named person, not a default or an automated one. See §1.2.1.
 
 ### 6.2 Infrastructure audit
 
@@ -397,6 +433,10 @@ Each external-test finding becomes one issue tagged `pen-test-finding`. Producti
 - `server/services/encryption.ts` — application-layer AES-256-GCM
 - `planning-docs/student-consent-onboarding-plan.md` — consent system rationale
 - `planning-docs/cross-institute-sharing-plan.md` — share system rationale
+- [`planning-docs/aac-packages-plan.md`](../planning-docs/aac-packages-plan.md) — content packages: the row-scoped `boards` model (§1.2.1), the content classes, and the publication gate
+- `server/services/packages/packageAccess.ts` — package permission resolver
+- `shared/package-validation.ts`, `server/services/packages/packageContent.ts` — package content gate
+- `server/services/packages/symbolImageAccess.ts` — access gate for person-image symbols
 
 ## 12. Open Items (tracked, must be closed before regulator submission)
 

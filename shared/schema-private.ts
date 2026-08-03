@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real, varchar, jsonb, index, uniqueIndex, numeric, AnyPgColumn, pgEnum, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, varchar, jsonb, index, uniqueIndex, numeric, AnyPgColumn, pgEnum, date, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -327,6 +327,15 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   // user who triggered it. Details carry `{ deviceId, deviceName }`.
   "device_registered",
   "device_deregistered",
+  // Content packages leaving / re-entering the owning institute. `package_published`
+  // carries the human attestation that the package holds no images of
+  // identifiable people — it is the compliance evidence that publication was an
+  // affirmative act by a named person (GDPR Art. 25(2), MoH secondary-use
+  // opt-in). Subject is the package. See planning-docs/aac-packages-plan.md §10.
+  "package_published",
+  "package_unpublished",
+  "package_approved",
+  "package_rejected",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -340,6 +349,8 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "share_invite", "object_share", "standing_share",
   "incident", "monitor_note", "custom_app_assignment",
   "consent_record",
+  // Content packages (planning-docs/aac-packages-plan.md §10).
+  "package", "package_assignment",
 ]);
 
 // =============================================================================
@@ -383,6 +394,20 @@ export const users = pgTable("users", {
   chatMemory: jsonb("chat_memory").default({}), // User-specific memory values for chat
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
+
+  // SLP MODE — a therapist-facing AAC session behavior. Unlike every other AAC
+  // option this is scoped to the LOGGED-IN USER, not the student: it describes
+  // who is sitting at the device (a speech-language pathologist running a
+  // session WITH the student), so it must follow the professional from student
+  // to student rather than sticking to one student record.
+  // When on, for every AAC session this user opens:
+  //   - the session NEVER auto-rests or auto-sleeps on idle (the therapist
+  //     controls engagement, and long silent stretches are part of therapy);
+  //   - an explicit wake/sleep control appears in the AAC header chrome;
+  //   - the live agents' prompts are told a clinician is co-present and
+  //     facilitating, rather than assuming the student is alone with the AI.
+  // See server/services/dual-agent/slp-mode.ts.
+  slpMode: boolean("slp_mode").default(false).notNull(),
 
   // MFA fields
   mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
@@ -655,6 +680,20 @@ export const aacSettings = pgTable("aac_settings", {
   //   'selection_area' — a small eye mark in the button's lower corner, so the
   //                      label can be read without triggering a selection
   selectionMethod: text("selection_method").default("whole_button"),
+  // AUTOMATED AUDIO SCAN (eyegaze). The audio scan (the "ear" control) reads
+  // every button on the board aloud, one at a time. Some eyegaze users hunt
+  // across a board without ever committing a dwell — they can't find the button
+  // they want, and nothing on screen tells the system they're stuck. When this
+  // is on, the client watches for that pattern (gaze crossing several different
+  // buttons with no selection) and starts the scan on its own; the ear control
+  // lights up exactly as if it had been pressed, and any selection — including
+  // pressing the ear — stops it. Only meaningful with eyegazeEnabled.
+  autoAudioScan: boolean("auto_audio_scan").default(false).notNull(),
+  // How long the student must hunt without selecting before the scan fires, in
+  // ms. Longer than a dwell timeout by construction — this is "stuck", not
+  // "reading". Clamped client-side to a sane floor.
+  autoAudioScanDelay: integer("auto_audio_scan_delay").default(15000).notNull(),
+
   // How much space is cut from the corners of board buttons, so the gap where
   // four of them meet forms a circle the student can rest their gaze in.
   //   'large' (default) | 'small' | 'none'
@@ -2256,10 +2295,52 @@ export const boards = pgTable("boards", {
   // whether its layout is learned decide how much space is worth the area.
   restSpace: text("rest_space").default("small"),
   isGenerated: boolean("is_generated").default(false).notNull(), // AI-generated during AAC session
+  // What this board IS, and therefore who may read it.
+  //   'student' (default) — clinician-authored for a student, or for the author's
+  //                         own use. PHI: governed by studentId/userId as before,
+  //                         and irData is routed through external-storage.
+  //   'package'           — shareable content owned by an institute, distributed
+  //                         via `packages`. Carries no student-identifying
+  //                         material (enforced at the package boundary) and is
+  //                         NEVER routed through external-storage extraction —
+  //                         see OWNERSHIP_MAP.boards in server/external-storage.
+  // See planning-docs/aac-packages-plan.md §1.1.
+  scope: text("scope").default("student").notNull(),
+  // Owning institute for scope='package'. Null for scope='student'.
+  // Cross-schema FK: institutes.id lives in schema.ts — constraint via migration.
+  instituteId: varchar("institute_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   loadedAt: timestamp("loaded_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // A package board can never be student-scoped, and must have an owning
+  // institute. This constraint is what makes "package rows are not PHI" a
+  // database invariant rather than a code convention.
+  check(
+    "boards_package_scope_has_no_student",
+    sql`${table.scope} <> 'package' OR (${table.studentId} IS NULL AND ${table.instituteId} IS NOT NULL)`,
+  ),
+  index("idx_boards_scope_institute").on(table.scope, table.instituteId),
+]);
+
+// Package → student attachment. Lives in the private schema because the row
+// itself is PHI-adjacent: it reveals what content a student uses. Mirrors
+// customAppAssignments, including instituteId for cross-institute visibility.
+// Every insert/delete must go through server/services/packages/packageLinks.ts
+// so packages.linkCount stays honest — see aac-packages-plan.md §1.5.
+export const packageAssignments = pgTable("package_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Cross-schema FK: packages.id lives in schema.ts — constraint via migration.
+  packageId: varchar("package_id").notNull(),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  instituteId: varchar("institute_id"),
+  assignedByUserId: varchar("assigned_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_package_assignments_package_student").on(table.packageId, table.studentId),
+  index("idx_package_assignments_student_id").on(table.studentId),
+  index("idx_package_assignments_institute_id").on(table.instituteId),
+]);
 
 // Custom apps (games and other AI-generated apps).
 // `definition` holds the full JSON spec (see shared/custom-app-types.ts).
@@ -2909,6 +2990,12 @@ export const insertCustomAppAssignmentSchema = createInsertSchema(customAppAssig
   createdAt: true,
 });
 
+// Package assignment schemas
+export const insertPackageAssignmentSchema = createInsertSchema(packageAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Invite code schemas
 export const insertInviteCodeSchema = createInsertSchema(inviteCodes).omit({
   id: true,
@@ -3173,6 +3260,11 @@ export type CustomApp = typeof customApps.$inferSelect;
 export type InsertCustomApp = z.infer<typeof insertCustomAppSchema>;
 export type CustomAppAssignment = typeof customAppAssignments.$inferSelect;
 export type InsertCustomAppAssignment = z.infer<typeof insertCustomAppAssignmentSchema>;
+export type PackageAssignment = typeof packageAssignments.$inferSelect;
+export type InsertPackageAssignment = z.infer<typeof insertPackageAssignmentSchema>;
+
+/** Board scope — see boards.scope. */
+export type BoardScope = "student" | "package";
 
 // Content types
 export type InviteCode = typeof inviteCodes.$inferSelect;

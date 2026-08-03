@@ -10,6 +10,8 @@ import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { Glyph } from "@/components/Glyph";
 import { SentenceButton, resolveButtonBackground } from "@/components/SentenceButton";
+// Shared MORE OPTIONS look — kept in lockstep with the fixed quick-actions row.
+import { MORE_OPTIONS_ICON } from "@shared/button-color";
 import { SelectionAreaMark } from "@/components/SelectionAreaMark";
 import { IntentCoreMark } from "@/components/IntentCoreMark";
 import { ratioLevel } from "@shared/button-sizing";
@@ -799,12 +801,14 @@ export default function DynamicBoard({
       const labelText = kind === "wordfinder"
         ? t("quickActions.guess")
         : t("quickActions.more");
-      const icon = kind === "wordfinder" ? "🔍" : "➕";
-      // Color now ships from the server (resolveButtonColorToken → find/more).
-      // Fall back to the legacy constants for any pre-fill / cached board.
-      const bg = button.color
-        ? getButtonColor(button.color, button.glyph)
-        : kind === "wordfinder" ? "#EDE9FE" : "#E5E7EB";
+      // The MORE button wears the SAME reload icon + teal as its quick-actions
+      // twin — one visual for "show me other things I could say", whether the
+      // AI put it on the board or it came from the fixed row.
+      const icon = kind === "wordfinder" ? "🔍" : MORE_OPTIONS_ICON;
+      // Color normally ships from the server (resolveButtonColorToken →
+      // wordfinder/more); resolving through the same shared helper covers any
+      // pre-fill / cached board without restating the hexes here.
+      const bg = resolveButtonBackground(button.color, button.glyph, kind);
       return (
         <ShapedButton
           key={`btn-${kind}-${index}`}
