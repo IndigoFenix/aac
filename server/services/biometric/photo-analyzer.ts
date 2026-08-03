@@ -98,6 +98,21 @@ export class NoFaceDetectedError extends Error {
 }
 
 /**
+ * We never got a verdict — the model was cut off, unreachable, or answered with
+ * something unreadable. Strictly different from NoFaceDetectedError, which IS a
+ * verdict about the image: telling a clinician "no face detected" because our
+ * own call fell over blames their photo for our failure. Callers should surface
+ * this as retryable.
+ */
+export class PhotoAnalysisUnavailableError extends Error {
+  readonly code = "ANALYSIS_UNAVAILABLE" as const;
+  constructor(detail: string) {
+    super(`Photo analysis unavailable: ${detail}`);
+    this.name = "PhotoAnalysisUnavailableError";
+  }
+}
+
+/**
  * Send the image to Gemini, get back structured descriptors.
  * Throws NoFaceDetectedError when the model reports isFace=false.
  */
@@ -115,7 +130,14 @@ export async function analyzeFacePhoto(
         model: ANALYSIS_MODEL,
         config: {
           temperature: 0.2,
-          maxOutputTokens: 512,
+          // Gemini 2.5 deliberates by default and its THOUGHT tokens are spent
+          // out of maxOutputTokens — so a long think leaves too little budget
+          // for the answer and the JSON arrives chopped mid-key, which used to
+          // surface as a 500 on a perfectly good photo. This is fixed-field
+          // extraction from a single image; there is nothing to deliberate
+          // about. Budget 0 keeps the whole allowance for the answer.
+          thinkingConfig: { thinkingBudget: 0 },
+          maxOutputTokens: 1024,
           responseMimeType: "application/json",
           responseSchema: RESPONSE_SCHEMA,
         },
@@ -153,17 +175,33 @@ export async function analyzeFacePhoto(
     }).catch(err => console.error("[PhotoAnalyzer] cost ledger charge failed:", err));
   }
 
+  const finishReason = (response as any)?.candidates?.[0]?.finishReason;
   const text = (response as any)?.text
     ?? (response as any)?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
-    throw new Error("Photo analyzer returned no text");
+    throw new PhotoAnalysisUnavailableError(`no text returned (finishReason=${finishReason ?? "unknown"})`);
   }
 
   let parsed: PhotoAnalysisResult;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error(`Photo analyzer returned non-JSON response: ${text.slice(0, 200)}`);
+    // A truncated answer is a VALID JSON prefix, so "non-JSON" was always a
+    // misleading way to describe it. Name the real cause.
+    throw new PhotoAnalysisUnavailableError(
+      finishReason === "MAX_TOKENS"
+        ? `response cut off at the output limit after ${text.length} chars`
+        : `unreadable response (finishReason=${finishReason ?? "unknown"}): ${text.slice(0, 200)}`,
+    );
+  }
+
+  // A partial-but-parseable object has no verdict in it. Falling through would
+  // reject the clinician's photo for "no face" on the strength of our own
+  // truncated reply.
+  if (typeof parsed.isFace !== "boolean") {
+    throw new PhotoAnalysisUnavailableError(
+      `response carried no isFace verdict (finishReason=${finishReason ?? "unknown"})`,
+    );
   }
 
   if (!parsed.isFace) {

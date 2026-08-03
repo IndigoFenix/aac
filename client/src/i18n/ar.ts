@@ -3863,6 +3863,8 @@ export const ar = {
     photoHint: "يتم تغيير حجمها وتحليلها للتعرف على الوجه.",
     noFaceDetected: "لم يتم اكتشاف وجه",
     noFaceDetectedHint: "يرجى تحميل صورة وجه أوضح.",
+    analysisUnavailable: "التحقق من الصورة غير متاح",
+    analysisUnavailableHint: "تعذّر التحقق من الصورة الآن. يرجى المحاولة مرة أخرى.",
     faceApiError: "فشل تحميل مكتبة اكتشاف الوجه",
     fileTypeError: "يجب أن يكون الملف صورة",
     linkedPhotoHint: "الصورة تأتي من سجل المستخدم/الطالب المرتبط وتُدار هناك.",

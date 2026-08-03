@@ -16,6 +16,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { personRepository } from "./personRepository";
+import { releaseBiometricDataAndImage } from "../services/biometric/recognition-service";
 import { eq, desc, count, sql } from "drizzle-orm";
 import {
   hydrateRecords,
@@ -173,6 +174,14 @@ export class UserRepository {
 
   async deleteUser(id: string): Promise<boolean> {
     try {
+      // Read the biometric link before the row goes: biometric_data is
+      // referenced, not referencing, so once this user is deleted nothing can
+      // find their face record again. Released after the delete below.
+      const [existing] = await db
+        .select({ biometricDataId: users.biometricDataId })
+        .from(users)
+        .where(eq(users.id, id));
+
       // Delete invite code redemptions (foreign key to users)
       await db
         .delete(inviteCodeRedemptions)
@@ -213,6 +222,10 @@ export class UserRepository {
 
       // Finally delete the user
       await db.delete(users).where(eq(users.id, id));
+
+      // Drop the face record + photo now that nothing holds it. A contact of
+      // some student may still link to it (shared person) — release() checks.
+      await releaseBiometricDataAndImage(existing?.biometricDataId);
 
       // Clean up any externally stored data
       await deleteExternalData("users", id, this.ref(id));

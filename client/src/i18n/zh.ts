@@ -3863,6 +3863,8 @@ export const zh = {
     photoHint: "已调整大小并分析以进行面部识别。",
     noFaceDetected: "未检测到面部",
     noFaceDetectedHint: "请上传更清晰的面部照片。",
+    analysisUnavailable: "照片检查不可用",
+    analysisUnavailableHint: "目前无法检查照片，请重试。",
     faceApiError: "面部检测库加载失败",
     fileTypeError: "文件必须是图像",
     linkedPhotoHint: "照片来自链接的用户/学生记录，在那里进行管理。",

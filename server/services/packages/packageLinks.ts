@@ -19,11 +19,9 @@
 
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { packageAssignments, packageGrants, packages } from "@shared/schema";
-import { db } from "../../db";
+import { db, type Executor } from "../../db";
 
-/** A drizzle transaction handle, or the root db when no transaction is open. */
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-export type Executor = typeof db | Tx;
+export type { Executor };
 
 // ---------------------------------------------------------------------------
 // Refcount primitives

@@ -3863,6 +3863,8 @@ export const ko = {
     photoHint: "얼굴 인식을 위해 크기 조정 및 분석됨.",
     noFaceDetected: "얼굴이 감지되지 않음",
     noFaceDetectedHint: "더 선명한 얼굴 사진을 업로드하세요.",
+    analysisUnavailable: "사진 확인을 사용할 수 없습니다",
+    analysisUnavailableHint: "지금은 사진을 확인할 수 없습니다. 다시 시도해 주세요.",
     faceApiError: "얼굴 감지 라이브러리 로드 실패",
     fileTypeError: "파일은 이미지여야 합니다",
     linkedPhotoHint: "사진은 연결된 사용자/학생 기록에서 가져오며 거기서 관리됩니다.",

@@ -424,6 +424,9 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
                   target={{ type: 'contact', studentId, contactId: contact.id }}
                   biometricDataId={contact.biometricDataId}
                   dense
+                  // A first photo mints the contact's biometric record — refetch
+                  // so the list (and this modal's own copy) learns the new id.
+                  onUploaded={invalidate}
                 />
               )}
             </div>

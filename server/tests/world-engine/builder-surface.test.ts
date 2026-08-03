@@ -206,6 +206,41 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
     expect(builderSurfaceFor("", { nouns: NOUNS, category: "verb", group: "food" }).buttons.length).toBeGreaterThan(0);
   });
 
+  it("a group chip wears up to three members — the BEST examples, not the alphabet", () => {
+    const nouns = defaultBuilderNouns();
+    const byId = new Map(
+      (builderSurfaceFor("", { nouns, category: "things" }).groups ?? []).map((g) => [g.id, g]),
+    );
+    const food = byId.get("food")!;
+    // Three faces, best first, and `glyph` stays the single-face shorthand.
+    expect(food.glyphs).toEqual(["apple", "banana", "cookie"]);
+    expect(food.glyph).toBe(food.glyphs![0]);
+    // The prototype prior decides the face, so a category shows its most
+    // ordinary member — never whatever the alphabet or the noun list put first.
+    expect(byId.get("toy")!.glyphs![0]).toBe("ball");
+    expect(byId.get("furniture")!.glyphs).toEqual(["bed", "chair", "table"]);
+    // A refrigerator is a container too, but a box says "container" plainly.
+    expect(byId.get("container")!.glyphs![0]).toBe("box");
+    // Fewer than three members → fewer faces (the chip draws what it has).
+    expect(byId.get("clothing")!.glyphs).toEqual(["shirt", "dress"]);
+  });
+
+  it("the chip's faces are the members' DISPLAY glyphs, so places draw their icon", () => {
+    const places = (builderSurfaceFor("", { nouns: defaultBuilderNouns(), category: "things" }).groups ?? [])
+      .find((g) => g.id === "places")!;
+    // home leads (a place is home outward), and every face is the composed
+    // shell+symbol icon — the bare word would render nothing.
+    expect(places.glyphs![0]).toBe("building(home)");
+    for (const g of places.glyphs!) expect(canResolveGlyph(g)).toBe(true);
+  });
+
+  it("group faces never reorder the group's own expansion", () => {
+    // `members` answers "what could I say next" and stays in surfacing rank;
+    // only the CHIP's face is picked by the prototype prior.
+    const s = builderSurfaceFor("", { nouns: NOUNS, category: "things", group: "creatures" });
+    expect(keys(s)).toEqual(["mara", "papa"]);
+  });
+
   it("group labels localize through the lang layer", () => {
     const nouns = defaultBuilderNouns();
     const en = builderSurfaceFor("", { nouns, category: "things" });

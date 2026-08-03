@@ -35,7 +35,7 @@
 //   weights/roles (ordering carries them).
 
 import { LEXICON, tokenizeSentence } from "./parse-intent.js";
-import { surfaceNext, type SurfaceNoun } from "./surface-next.js";
+import { exemplarOrder, GROUP_EXEMPLARS, surfaceNext, type SurfaceNoun } from "./surface-next.js";
 import { AXIS_WORDS, descriptorAxesFor, type DescriptorAxis } from "../../object-properties.js";
 import { propertiesOf } from "../content/properties.js";
 import {
@@ -75,8 +75,13 @@ export interface BuilderGroupJson {
   id: string;
   /** Localized display label (lang-layer word where one exists). */
   label: string;
-  /** Renderable face for the chip (the first member's composed glyph). */
+  /** Renderable face for the chip — the BEST example of the cluster. Kept as a
+   *  single glyph for clients that draw one face; `glyphs[0]` is the same word. */
   glyph?: string;
+  /** The chip's full face: up to GROUP_EXEMPLARS composed glyphs, best example
+   *  first, so a category can be drawn as a cluster of its members rather than
+   *  as one word standing in for all of them. */
+  glyphs?: string[];
 }
 
 /** What the sentence builder should offer for the current partial sentence. */
@@ -367,11 +372,17 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
     // The surfacer's own label (a noun label it resolved) wins over ours.
     return b.label !== undefined ? { ...w, label: b.label } : w;
   };
-  const groupChip = (id: string, firstSymbol: string | undefined): BuilderGroupJson => ({
-    id,
-    label: baseWord(lang, GROUP_LABEL_HEAD[id] ?? id),
-    ...(firstSymbol !== undefined ? { glyph: wordJson(firstSymbol).key } : {}),
-  });
+  // The chip's face is the members' DISPLAY glyphs (`wordJson().glyph`), not
+  // their keys: a place's picture is its composed shell+symbol icon, and a chip
+  // that drew the bare word would render nothing for it.
+  const groupChip = (id: string, faceSymbols: readonly string[]): BuilderGroupJson => {
+    const glyphs = faceSymbols.slice(0, GROUP_EXEMPLARS).map((s) => wordJson(s).glyph ?? s);
+    return {
+      id,
+      label: baseWord(lang, GROUP_LABEL_HEAD[id] ?? id),
+      ...(glyphs.length ? { glyph: glyphs[0], glyphs } : {}),
+    };
+  };
 
   let buttons: BuilderWordJson[];
   let groups: BuilderGroupJson[] | undefined;
@@ -384,13 +395,18 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
     // A chip must open a real subset (the SpeakMenu's own ≥2 rule).
     groups = [...clusters.entries()]
       .filter(([, members]) => members.length >= 2)
-      .map(([id, members]) => groupChip(id, members[0]!.symbol));
+      .map(([id, members]) =>
+        groupChip(
+          id,
+          exemplarOrder(members, (n) => n.symbol, (n) => n.properties).map((n) => n.symbol),
+        ),
+      );
   } else if (cat && BUILDER_CATEGORIES.includes(cat)) {
     buttons = LEX_KEYS.filter((k) => LEXICON[k]!.cat === cat).map(wordJson);
   } else {
     const active = grp !== undefined ? suggestion.groups.find((g) => g.id === grp) : undefined;
     buttons = (active ? active.members : suggestion.buttons).map(surfaceWord);
-    groups = suggestion.groups.map((g) => groupChip(g.id, g.members[0]?.symbol));
+    groups = suggestion.groups.map((g) => groupChip(g.id, g.exemplars.map((e) => e.symbol)));
   }
 
   const modifiers = modifierRail(tokens, nounByHead, lang);

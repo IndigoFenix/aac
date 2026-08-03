@@ -19,6 +19,7 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
+import { GlyphTriad } from "@client-shared/board/GlyphTriad";
 import { restSpaceRatio } from "@shared/button-shape";
 import type { BoardButtonInput, BoardRenderDeps, GlyphRenderProps, IconVisual } from "@client-shared/board/types";
 // The component lives in the .tsx (the bare `@shared/glyph-compositor`
@@ -518,11 +519,13 @@ function SpeakMenu({
                           onClick={() => setOpenGroupId(g.id)}
                         >
                           <span className="lab-word-icon">
-                            <LabGlyph
-                              glyph={g.members[0]?.symbol ?? ""}
+                            {/* THREE members, best examples first — a category
+                                shows what it holds, not one stand-in word. */}
+                            <GlyphTriad
+                              glyphs={g.exemplars.map((e) => e.symbol)}
+                              GlyphComponent={LabGlyph}
                               fallback={g.id}
                               ariaLabel={GROUP_LABEL[g.id] ?? g.id}
-                              noBackground
                             />
                           </span>
                           <span className="lab-word-label">{GROUP_LABEL[g.id] ?? g.id} ▾</span>

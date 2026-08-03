@@ -106,6 +106,17 @@ export function BiometricPhotoUpload({
           setPreview(null);
           return;
         }
+        // The photo is fine — our own analysis pass failed. Don't let the
+        // clinician go hunting for a better picture.
+        if (data.code === 'ANALYSIS_UNAVAILABLE') {
+          toast({
+            title: t('biometric.analysisUnavailable'),
+            description: t('biometric.analysisUnavailableHint'),
+            variant: 'destructive',
+          });
+          setPreview(null);
+          return;
+        }
         throw new Error(data.message || `Upload failed (${response.status})`);
       }
 

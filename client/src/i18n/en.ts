@@ -3863,6 +3863,8 @@ export const en = {
     photoHint: "Resized + analyzed for face recognition.",
     noFaceDetected: "No face detected",
     noFaceDetectedHint: "Please upload a clearer face photo.",
+    analysisUnavailable: "Photo check unavailable",
+    analysisUnavailableHint: "The photo could not be checked right now. Please try again.",
     faceApiError: "Face detection library failed to load",
     fileTypeError: "File must be an image",
     linkedPhotoHint: "Photo comes from the linked user/student record and is managed there.",

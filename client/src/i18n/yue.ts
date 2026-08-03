@@ -3863,6 +3863,8 @@ export const yue = {
     photoHint: "已調整大小並分析以進行面部識別。",
     noFaceDetected: "未偵測到面部",
     noFaceDetectedHint: "請上載更清晰嘅面部相片。",
+    analysisUnavailable: "相片檢查暫時無法使用",
+    analysisUnavailableHint: "而家未能檢查呢張相，請再試一次。",
     faceApiError: "面部偵測庫載入失敗",
     fileTypeError: "檔案必須係圖像",
     linkedPhotoHint: "相片嚟自連結嘅用戶/學生記錄，喺嗰度管理。",

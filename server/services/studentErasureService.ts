@@ -77,6 +77,7 @@ import { eq, and, lte, isNotNull, isNull, inArray, sql } from "drizzle-orm";
 import { activityLogService } from "./activityLogService";
 import { s3Service } from "./storage/s3-service";
 import { deleteStudentPackageLinks } from "./packages/packageLinks";
+import { releaseBiometricData } from "./biometric/recognition-service";
 
 const DEFAULT_WINDOW_DAYS = 30;
 
@@ -431,6 +432,17 @@ export class StudentErasureService {
       await tx.delete(studentSymbolAssociations).where(eq(studentSymbolAssociations.studentId, studentId));
       await tx.delete(inviteCodeRedemptions).where(eq(inviteCodeRedemptions.studentId, studentId));
       await tx.delete(studentClassrooms).where(eq(studentClassrooms.studentId, studentId));
+      // Contacts carry their OWN biometric_data row (face embedding + photo)
+      // unless they're linked to a user/student, in which case they share that
+      // person's. Deleting the contact rows drops the only reference, so
+      // collect the ids first and release them below — otherwise every contact
+      // face this student enrolled survives the erasure, unreachable.
+      const contactBiometricIds = (
+        await tx
+          .select({ id: studentContacts.biometricDataId })
+          .from(studentContacts)
+          .where(and(eq(studentContacts.studentId, studentId), isNotNull(studentContacts.biometricDataId)))
+      ).map((r) => r.id!);
       await tx.delete(studentContacts).where(eq(studentContacts.studentId, studentId));
       await tx.delete(instituteStudents).where(eq(instituteStudents.studentId, studentId));
       await tx.delete(userStudents).where(eq(userStudents.studentId, studentId));
@@ -490,6 +502,15 @@ export class StudentErasureService {
 
       if (biometricDataId) {
         await tx.delete(biometricData).where(eq(biometricData.id, biometricDataId));
+      }
+
+      // Now that both the contacts and the student are gone, drop every
+      // biometric row they were the last holder of. A row shared with a
+      // surviving user/student (a linked contact) is left alone — that person's
+      // face record isn't this student's to erase.
+      for (const id of contactBiometricIds) {
+        const orphanedKey = await releaseBiometricData(id, tx);
+        if (orphanedKey) s3KeysToDelete.push(orphanedKey);
       }
 
       activityLogService.log({

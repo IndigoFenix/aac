@@ -333,6 +333,32 @@ describe("surfaceNext — group chips", () => {
     expect(b.groups[0]?.members.map((m) => m.symbol)).toEqual(a.groups[0]?.members.map((m) => m.symbol));
   });
 
+  it("each chip carries the members that best REPRESENT it, best first", () => {
+    const s = surfaceNext(["i_me", "want"], { nouns: MANY, capacity: 8 });
+    const byId = new Map(s.groups.map((g) => [g.id, g]));
+    const faces = (id: string) => byId.get(id)!.exemplars.map((e) => e.symbol);
+    // Never more than the chip can draw, and always drawn from the members.
+    for (const g of s.groups) {
+      expect(g.exemplars.length).toBeLessThanOrEqual(3);
+      expect(g.exemplars.length).toBeGreaterThan(0);
+      for (const e of g.exemplars) expect(g.members).toContain(e);
+    }
+    // The prototype prior, not the alphabet: apple/banana/cookie lead the foods
+    // even though bread and milk sort in among them.
+    expect(faces("food")).toEqual(["apple", "banana", "cookie"]);
+    expect(faces("toy")[0]).toBe("ball");
+    expect(faces("clothing")).toEqual(["shirt", "sock"]);
+  });
+
+  it("the chip's face never reorders the chip's expansion", () => {
+    // `members` stays the SURFACING rank (what to say next); the face is picked
+    // FROM it, never imposed ON it — so the expansion is still weight-ordered.
+    for (const g of surfaceNext(["i_me", "want"], { nouns: MANY, capacity: 8 }).groups) {
+      const weights = g.members.map((m) => m.weight);
+      expect(weights).toEqual([...weights].sort((a, b) => b - a));
+    }
+  });
+
   it("every group member still parses to a non-unclear frame", () => {
     for (const start of [[], ["i_me", "want"], ["you", "eat"]] as string[][]) {
       const s = surfaceNext(start, { nouns: MANY, capacity: 8 });

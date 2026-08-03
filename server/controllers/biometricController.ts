@@ -30,6 +30,7 @@ import {
   getLinkableEntitiesForStudent,
   uploadBiometricPhoto,
   NoFaceDetectedError,
+  PhotoAnalysisUnavailableError,
   getBiometricData,
   updateBiometricData,
   getEntitiesForBiometricData,
@@ -38,6 +39,7 @@ import {
   type EntityType,
 } from "../services/biometric";
 import { s3Service } from "../services/storage/s3-service";
+import { sendNotModified } from "../lib/blob-cache";
 import { updateBiometricDataSchema } from "@shared/schema";
 import { insertStudentContactSchema, updateStudentContactSchema } from "@shared/schema";
 import { studentService } from "../services";
@@ -566,9 +568,9 @@ export class BiometricController {
         res.status(404).json({ success: false, message: "No photo stored for this person" });
         return;
       }
+      if (sendNotModified(req, res, faceImageUrl)) return;
       const buffer = await s3Service.download(faceImageUrl);
       res.setHeader("Content-Type", "image/jpeg");
-      res.setHeader("Cache-Control", "private, max-age=300");
       res.send(buffer);
     } catch (error: any) {
       console.error("[BiometricController] getPersonPhoto error:", error);
@@ -857,6 +859,17 @@ export class BiometricController {
         });
         return;
       }
+      // Our analyzer fell over — nothing is wrong with the photo, so say so and
+      // let the clinician retry instead of returning a bare 500.
+      if (err instanceof PhotoAnalysisUnavailableError) {
+        console.error("[BiometricController] photo analysis unavailable:", err.message);
+        res.status(503).json({
+          success: false,
+          code: "ANALYSIS_UNAVAILABLE",
+          message: err.message,
+        });
+        return;
+      }
       throw err;
     }
   }
@@ -953,9 +966,9 @@ export class BiometricController {
         res.status(404).json({ success: false, message: "No photo stored" });
         return;
       }
+      if (sendNotModified(req, res, row.faceImageUrl)) return;
       const buffer = await s3Service.download(row.faceImageUrl);
       res.setHeader("Content-Type", "image/jpeg");
-      res.setHeader("Cache-Control", "private, max-age=300");
       res.send(buffer);
     } catch (error: any) {
       console.error("[BiometricController] getBiometricPhoto error:", error);

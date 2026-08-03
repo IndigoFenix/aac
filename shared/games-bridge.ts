@@ -48,8 +48,12 @@ export interface BuilderGroup {
   id: string;
   /** Localized display label (the engine's lang layer renders it). */
   label: string;
-  /** Optional glyph/emoji face for the chip. */
+  /** Optional glyph/emoji face for the chip — the best example of the group. */
   glyph?: string;
+  /** The chip's full face: up to 3 member glyphs, best example first, drawn as
+   *  a cluster so a category shows what it CONTAINS rather than one stand-in
+   *  word. Clients that draw a single face use `glyph` (= `glyphs[0]`). */
+  glyphs?: string[];
 }
 
 /** The engine's answer to a `builder_state`: what the sentence builder should

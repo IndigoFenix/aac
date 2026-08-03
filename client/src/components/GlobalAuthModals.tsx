@@ -1028,6 +1028,11 @@ export function GlobalAuthModals() {
                   <BiometricPhotoUpload
                     target={{ type: "user", userId: user.id }}
                     biometricDataId={user.biometricDataId}
+                    // A first photo mints the biometric record; without the
+                    // refetch the header avatar has no id to render from.
+                    onUploaded={() =>
+                      queryClient.invalidateQueries({ queryKey: ["/auth/user"] })
+                    }
                   />
                 </div>
               </div>

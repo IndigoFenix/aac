@@ -27,3 +27,8 @@ export const pool = new Pool({
 });
 
 export const db = drizzle(pool, { schema });
+
+/** A drizzle transaction handle, or the root db when no transaction is open. */
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** Anything a query can run on — lets a helper join a caller's transaction. */
+export type Executor = typeof db | Tx;

@@ -7,7 +7,8 @@
 // biometricDataId is write-through-synced at creation time so one real person
 // has one biometric record regardless of how many relationships they appear in.
 
-import { db } from "../../db";
+import { db, type Executor } from "../../db";
+import { s3Service } from "../storage/s3-service";
 import {
   users,
   students,
@@ -345,6 +346,70 @@ export async function deleteBiometricData(id: string): Promise<void> {
 }
 
 /**
+ * Drop a biometric_data row once NOTHING points at it any more.
+ *
+ * biometric_data is referenced, never referencing: users / students /
+ * studentContacts each hold the FK. So a row becomes unreachable the moment its
+ * last holder drops the reference — by being hard-deleted, or (for a contact)
+ * by being re-pointed at a linked person's canonical record. An unreachable row
+ * is a face embedding + face photo that no erasure path can ever find again, so
+ * every place that releases a reference must call this immediately after.
+ *
+ * Call AFTER the reference is gone — this only checks whether any remain. It is
+ * a no-op when the row is still held (a shared/linked person) or already gone.
+ * Pass `x` to join a caller's transaction.
+ *
+ * Returns the S3 face-image key that is now orphaned and must be deleted from
+ * the bucket, or null when nothing was dropped. Blob cleanup is the caller's
+ * (see releaseBiometricDataAndImage for the non-transactional shorthand):
+ * transactional callers have to defer it until after commit.
+ */
+export async function releaseBiometricData(
+  id: string | null | undefined,
+  x: Executor = db,
+): Promise<string | null> {
+  if (!id) return null;
+
+  const [userRef] = await x.select({ id: users.id }).from(users).where(eq(users.biometricDataId, id)).limit(1);
+  if (userRef) return null;
+  const [studentRef] = await x.select({ id: students.id }).from(students).where(eq(students.biometricDataId, id)).limit(1);
+  if (studentRef) return null;
+  const [contactRef] = await x
+    .select({ id: studentContacts.id })
+    .from(studentContacts)
+    .where(eq(studentContacts.biometricDataId, id))
+    .limit(1);
+  if (contactRef) return null;
+
+  const [dropped] = await x
+    .delete(biometricData)
+    .where(eq(biometricData.id, id))
+    .returning({ faceImageUrl: biometricData.faceImageUrl });
+  if (!dropped) return null; // already gone
+
+  console.log(`[Recognition] Released unreferenced biometric_data ${id}`);
+  return dropped.faceImageUrl ?? null;
+}
+
+/**
+ * releaseBiometricData plus the S3 blob delete — for callers that aren't inside
+ * a transaction. The blob delete is best-effort: a failure leaves an
+ * unreferenced JPEG for the bucket sweep, which is strictly better than
+ * aborting the release and leaving the ROW unreachable too.
+ */
+export async function releaseBiometricDataAndImage(
+  id: string | null | undefined,
+): Promise<void> {
+  const key = await releaseBiometricData(id);
+  if (!key) return;
+  try {
+    await s3Service.delete(key);
+  } catch (err: any) {
+    console.warn(`[Recognition] failed to delete orphaned face image ${key}:`, err?.message);
+  }
+}
+
+/**
  * The entities (users and students) that reference a given biometric_data row,
  * for authorizing direct biometric-data access by id. A contact resolves to the
  * student it belongs to (access is granted through that student). Returns the
@@ -410,7 +475,9 @@ export async function ensureBiometricData(
     .where(eq(studentContacts.id, target.id));
   if (!c) throw new Error(`Contact ${target.id} not found`);
 
-  // If linked, sync to the canonical record's biometric_data
+  // If linked, sync to the canonical record's biometric_data. Re-pointing drops
+  // this contact's hold on whatever it carried before — release it, or the
+  // standalone row it used to own (photo included) becomes unreachable.
   if (c.linkedUserId) {
     const bdId = await ensureBiometricData({ type: "user", id: c.linkedUserId });
     if (c.biometricDataId !== bdId) {
@@ -418,6 +485,7 @@ export async function ensureBiometricData(
         .update(studentContacts)
         .set({ biometricDataId: bdId })
         .where(eq(studentContacts.id, target.id));
+      await releaseBiometricDataAndImage(c.biometricDataId);
     }
     return bdId;
   }
@@ -428,6 +496,7 @@ export async function ensureBiometricData(
         .update(studentContacts)
         .set({ biometricDataId: bdId })
         .where(eq(studentContacts.id, target.id));
+      await releaseBiometricDataAndImage(c.biometricDataId);
     }
     return bdId;
   }
@@ -1484,6 +1553,7 @@ export async function updateContact(
       studentId: studentContacts.studentId,
       linkedUserId: studentContacts.linkedUserId,
       linkedStudentId: studentContacts.linkedStudentId,
+      biometricDataId: studentContacts.biometricDataId,
     })
     .from(studentContacts)
     .where(eq(studentContacts.id, id));
@@ -1501,6 +1571,13 @@ export async function updateContact(
     .set({ ...validated, updatedAt: new Date() })
     .where(eq(studentContacts.id, id))
     .returning();
+
+  // Linking a standalone contact to a user/student re-points biometricDataId at
+  // that person's canonical record; the row this contact used to own is now
+  // held by nobody.
+  if (contact && contact.biometricDataId !== current.biometricDataId) {
+    await releaseBiometricDataAndImage(current.biometricDataId);
+  }
   return contact;
 }
 

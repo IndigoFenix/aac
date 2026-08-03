@@ -3863,6 +3863,8 @@ export const pt = {
     photoHint: "Redimensionada e analisada para reconhecimento facial.",
     noFaceDetected: "Nenhum rosto detetado",
     noFaceDetectedHint: "Envie uma foto de rosto mais clara.",
+    analysisUnavailable: "Verificação da foto indisponível",
+    analysisUnavailableHint: "Não foi possível verificar a foto agora. Tente novamente.",
     faceApiError: "Falha ao carregar a biblioteca de deteção facial",
     fileTypeError: "O ficheiro deve ser uma imagem",
     linkedPhotoHint: "A foto vem do registo de utilizador/aluno ligado e é gerida aí.",

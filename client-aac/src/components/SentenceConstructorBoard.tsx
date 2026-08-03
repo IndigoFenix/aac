@@ -59,6 +59,7 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import type { BuilderSurface, BuilderWord } from "@shared/games-bridge";
 import type { EngineBuilderBackend } from "@/lib/engine-builder";
 import { SentenceButton } from "@/components/SentenceButton";
+import { GlyphTriad } from "@client-shared/board/GlyphTriad";
 import { Glyph } from "@/components/Glyph";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
 
@@ -1393,9 +1394,17 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                       : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
                   ].join(" ")}
                 >
-                  {chip.glyph ? (
-                    <span className="w-8 h-8 flex items-center justify-center" aria-hidden>
-                      <Glyph glyph={chip.glyph} noBackground ariaLabel={chip.label} />
+                  {chip.glyph || chip.glyphs?.length ? (
+                    // The chip wears THREE of its members (best examples first,
+                    // engine-ranked) rather than one word standing in for the
+                    // whole category — see GlyphTriad.
+                    <span className="w-12 h-12 flex items-center justify-center" aria-hidden>
+                      <GlyphTriad
+                        glyphs={chip.glyphs ?? (chip.glyph ? [chip.glyph] : [])}
+                        GlyphComponent={Glyph}
+                        fallback={chip.id}
+                        ariaLabel={chip.label}
+                      />
                     </span>
                   ) : (
                     <span className="text-2xl leading-none" aria-hidden>

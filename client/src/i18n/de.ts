@@ -3863,6 +3863,8 @@ export const de = {
     photoHint: "Wird verkleinert und für Gesichtserkennung analysiert.",
     noFaceDetected: "Kein Gesicht erkannt",
     noFaceDetectedHint: "Bitte laden Sie ein klareres Gesichtsfoto hoch.",
+    analysisUnavailable: "Fotoprüfung nicht verfügbar",
+    analysisUnavailableHint: "Das Foto konnte gerade nicht geprüft werden. Bitte versuchen Sie es erneut.",
     faceApiError: "Gesichtserkennungsbibliothek konnte nicht geladen werden",
     fileTypeError: "Datei muss ein Bild sein",
     linkedPhotoHint: "Foto stammt aus dem verknüpften Benutzer-/Schülerdatensatz und wird dort verwaltet.",

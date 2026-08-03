@@ -427,6 +427,14 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                   target={{ type: 'student', studentId: editingStudent.id }}
                   biometricDataId={(editingStudent as any).biometricDataId}
                   dense
+                  // A FIRST photo mints the biometric record, so the id this
+                  // modal was handed is stale until the student is refetched —
+                  // without this the avatar stays empty until a page reload.
+                  onUploaded={() => {
+                    queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+                    queryClient.invalidateQueries({ queryKey: ['/api/students/list'] });
+                    refetchStudent();
+                  }}
                 />
               </div>
             </>

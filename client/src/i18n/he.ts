@@ -3863,6 +3863,8 @@ export const he = {
     photoHint: "תוקטן ותנותח לזיהוי פנים.",
     noFaceDetected: "לא זוהו פנים",
     noFaceDetectedHint: "אנא העלה תמונת פנים ברורה יותר.",
+    analysisUnavailable: "בדיקת התמונה אינה זמינה",
+    analysisUnavailableHint: "לא ניתן היה לבדוק את התמונה כרגע. נסו שוב.",
     faceApiError: "טעינת ספריית זיהוי הפנים נכשלה",
     fileTypeError: "הקובץ חייב להיות תמונה",
     linkedPhotoHint: "התמונה מגיעה מרשומת המשתמש/תלמיד המקושרת ומנוהלת שם.",

@@ -5,13 +5,15 @@
  * onboarding, OAuth, and profile updates.
  */
 
-import { describe, it, expect, afterEach } from '@jest/globals';
+import { describe, it, expect, afterEach, jest } from '@jest/globals';
 import { eq } from 'drizzle-orm';
 import { truncateAll, db } from '../helpers/db.js';
 import { userService, userRepository, makeUser } from '../helpers/factories.js';
 import { personRepository } from '../../repositories/personRepository.js';
+import { s3Service } from '../../services/storage/s3-service.js';
 import {
   users,
+  biometricData,
   persons,
   personChatRooms,
   personChats,
@@ -146,6 +148,28 @@ describe('User integration', () => {
       // The target's message is gone; the other member's survives.
       const msgs = await db.select().from(personChats).where(eq(personChats.roomId, room.id));
       expect(msgs.map((m) => m.id)).toEqual([otherMsg.id]);
+    });
+
+    it('releases the biometric record and its face photo', async () => {
+      // biometric_data is referenced, never referencing: once the user row goes,
+      // nothing can reach their face embedding or photo again.
+      const target = await makeUser();
+      const [bio] = await db
+        .insert(biometricData)
+        .values({ faceImageUrl: 'biometric/deleted-user.jpg' } as any)
+        .returning();
+      await db.update(users).set({ biometricDataId: bio.id }).where(eq(users.id, target.id));
+
+      const deleteSpy = jest.spyOn(s3Service, 'delete').mockResolvedValue(undefined);
+      try {
+        expect(await userRepository.deleteUser(target.id)).toBe(true);
+
+        const [survivor] = await db.select().from(biometricData).where(eq(biometricData.id, bio.id));
+        expect(survivor).toBeUndefined();
+        expect(deleteSpy).toHaveBeenCalledWith('biometric/deleted-user.jpg');
+      } finally {
+        deleteSpy.mockRestore();
+      }
     });
   });
 

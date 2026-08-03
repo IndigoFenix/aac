@@ -102,6 +102,14 @@ export interface SurfaceGroup {
   role: SlotNeed;
   weight: number;
   members: SurfaceButton[];
+  /**
+   * THE CHIP'S FACE: the members that best REPRESENT the cluster, best first
+   * (≤ GROUP_EXEMPLARS). A separate list from `members` on purpose — the
+   * expansion stays in surfacing-rank order (what to say next), while the face
+   * answers a different question (what does this category LOOK like), so
+   * [container] wears a box rather than whichever word sorted first.
+   */
+  exemplars: SurfaceButton[];
 }
 
 /** A sentence-type CONTROL chip (rendered distinct from words) — seeds
@@ -268,6 +276,76 @@ const CORE_RANK: readonly string[] = [
 ];
 const FREQ = new Map(CORE_RANK.map((w, i) => [w, i] as const));
 const freqRank = (symbol: string): number => FREQ.get(symbol) ?? Number.MAX_SAFE_INTEGER;
+
+/**
+ * THE PROTOTYPE PRIOR — the CONCRETE-NOUN counterpart of CORE_RANK, most
+ * familiar first. CORE_RANK covers the function words a child says most; this
+ * covers the things they can point at, which is a different question and needs
+ * its own answer (no ranking of "want" against "apple" is meaningful).
+ *
+ * It never touches the board's word ORDER. Its only job is choosing which
+ * members a group chip WEARS AS ITS FACE, where the question is "what does
+ * this category look like?" — a category answers that best with its most
+ * ordinary member, so [food] shows an apple and [container] a box, instead of
+ * whatever the alphabet happened to put first (a barrel).
+ *
+ * Symbols the running world doesn't know are simply inert, so this stays a
+ * prior over the vocabulary rather than a claim about any one game's contents.
+ */
+const PROTOTYPE_NOUNS: readonly string[] = [
+  // Food and drink — the everyday plate first, the harvest behind it.
+  "apple", "banana", "cookie", "water", "milk", "bread", "grape", "meat", "cheese", "broccoli",
+  // Play
+  "ball", "blocks", "doll", "bear", "puzzle", "car", "train", "boat", "bubbles", "sparks",
+  // Wearing
+  "shirt", "hat", "sock", "shoe", "dress", "coat", "scarf",
+  // The furniture a room is recognized by. Ahead of the places band on
+  // purpose: a couple of words (`bath`) name BOTH a room and the fixture in
+  // it, and as a picture of furniture the tub is the better example.
+  "bed", "chair", "table", "door", "window", "lamp", "shelf",
+  // Places — home outward
+  "home", "house", "bedroom", "kitchen", "bathroom", "living", "yard", "garden",
+  "school", "shop", "park", "street", "town",
+  // Holding things — ahead of the appliances, which hold things only among
+  // everything else they are.
+  "box", "basket", "bag", "satchel", "bowl", "cup", "plate", "chest", "bin", "barrel",
+  // The working end of a house
+  "oven", "refrigerator", "cupboard", "bath", "toilet", "workbench", "anvil", "loom",
+  "stonecutter", "altar",
+  // Reading, making, building
+  "book", "paper", "wood", "stone", "block", "cloth", "wool",
+  // People and animals
+  "mama", "papa", "baby", "girl", "boy", "friend", "person", "dog", "cat", "rabbit", "bird",
+  "frog", "sheep", "cow", "horse",
+];
+const PROTOTYPE = new Map(PROTOTYPE_NOUNS.map((w, i) => [w, i] as const));
+
+/** How many faces a group chip can wear (the builder draws them as a cluster). */
+export const GROUP_EXEMPLARS = 3;
+
+/**
+ * Order candidates by how well each REPRESENTS a category, best first: the
+ * prototype prior, then property PURITY (a thing that is little else besides
+ * this reads as the cleaner example of it — a box says "container" more plainly
+ * than a refrigerator does), then whatever order the caller already had (the
+ * sort is stable, so a ranked list keeps its ranking as the final tiebreak).
+ *
+ * Exported because both group surfaces need the same answer: the surfacer's own
+ * clusters here, and the builder-surface adapter's "things"-tab clusters.
+ */
+export function exemplarOrder<T>(
+  items: readonly T[],
+  symbolOf: (item: T) => string,
+  propertiesOf: (item: T) => readonly string[] | undefined,
+): T[] {
+  const rank = (t: T) => PROTOTYPE.get(headOf(symbolOf(t))) ?? Number.MAX_SAFE_INTEGER;
+  return [...items].sort((a, b) => {
+    const ar = rank(a);
+    const br = rank(b);
+    if (ar !== br) return ar - br;
+    return (propertiesOf(a)?.length ?? 0) - (propertiesOf(b)?.length ?? 0);
+  });
+}
 
 const head = (token: string): string => headOf(token.replace(/#\w+/g, ""));
 const lexOf = (token: string) => LEXICON[head(token)];
@@ -764,7 +842,15 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       const members = [...c.members].sort(byRank);
       const weight =
         members[0]!.weight + Math.min(2, members.length * 0.1) + (subTab === id ? 8 : 0);
-      groups.push({ id, kind: c.kind, role: members[0]!.role, weight, members });
+      // The FACE is picked from the ranked members but ordered by a different
+      // question (what represents the cluster) — the expansion order is
+      // untouched, so opening the chip still offers what to say next.
+      const exemplars = exemplarOrder(
+        members,
+        (b) => b.symbol,
+        (b) => nounBy.get(b.symbol)?.properties,
+      ).slice(0, GROUP_EXEMPLARS);
+      groups.push({ id, kind: c.kind, role: members[0]!.role, weight, members, exemplars });
     }
     groups.sort((a, b) => b.weight - a.weight || (a.id < b.id ? -1 : 1));
     return groups.slice(0, MAX_GROUPS);

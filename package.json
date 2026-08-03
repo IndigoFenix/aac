@@ -25,6 +25,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:create-test": "tsx scripts/create-test-db.ts",
     "db:copy-to-prod": "tsx scripts/copy-tables-to-prod.ts",
+    "db:gc-biometric": "tsx scripts/cleanup-orphan-biometric-data.ts",
     "test": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest",
     "test:client": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.client.js",
     "test:popusim": "vitest run --root games/popusim",

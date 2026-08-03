@@ -13,6 +13,8 @@ import { truncateAll, db } from '../helpers/db.js';
 import { makeUser, makeStudent } from '../helpers/factories.js';
 import {
   createContact,
+  updateContact,
+  releaseBiometricData,
   enrollContactFace,
   findMatchingFace,
   recordContactSighting,
@@ -23,7 +25,7 @@ import {
   updateBiometricData,
   type FaceGalleryEntry,
 } from '../../services/biometric/recognition-service.js';
-import { studentContacts } from '@shared/schema';
+import { studentContacts, biometricData } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
 const EMBEDDING_DIM = 128;
@@ -272,6 +274,72 @@ describe('Face recognition pipeline', () => {
 
     const known = await getKnownPeopleForStudent(studentId);
     expect(known.find(p => p.id === contact.id)!.faceGallery).toHaveLength(0);
+  });
+
+  // --------------------------------------------------------------------------
+  // Biometric record lifecycle
+  // --------------------------------------------------------------------------
+  // biometric_data is referenced, never referencing. Once the last holder lets
+  // go, the row is unreachable — a face embedding and a face photo that no UI
+  // and no erasure path can ever find again. Every release path must clean up.
+
+  describe('releasing biometric records', () => {
+    it('drops the row a contact abandons when it is linked to a user', async () => {
+      const contact = await createContact({ studentId, name: 'Ari' } as any);
+      await enrollContactFace(contact.id, makeEmbedding(3));
+      const ownRecord = await bdIdForContact(contact.id);
+      await updateBiometricData(ownRecord, { faceImageUrl: 'biometric/contact-own.jpg' });
+
+      // Linking re-points the contact at the user's canonical record.
+      const linkTarget = await makeUser();
+      await updateContact(contact.id, { linkedUserId: linkTarget.id } as any);
+
+      const nowPointsAt = await bdIdForContact(contact.id);
+      expect(nowPointsAt).not.toBe(ownRecord);
+
+      const [stranded] = await db
+        .select()
+        .from(biometricData)
+        .where(eq(biometricData.id, ownRecord));
+      expect(stranded).toBeUndefined();
+    });
+
+    it('leaves a record alone while any holder still points at it', async () => {
+      const shared = await makeUser();
+      const contact = await createContact({
+        studentId, name: 'Shared Person', linkedUserId: shared.id,
+      } as any);
+      const bdId = await bdIdForContact(contact.id);
+
+      // The user still holds this record, so releasing on the contact's behalf
+      // must be a no-op — it isn't this contact's to delete.
+      const orphanedKey = await releaseBiometricData(bdId);
+
+      expect(orphanedKey).toBeNull();
+      const [row] = await db.select().from(biometricData).where(eq(biometricData.id, bdId));
+      expect(row).toBeDefined();
+    });
+
+    it('reports the orphaned S3 key so the caller can delete the photo', async () => {
+      const contact = await createContact({ studentId, name: 'Photo Only' } as any);
+      await enrollContactFace(contact.id, makeEmbedding(4));
+      const bdId = await bdIdForContact(contact.id);
+      await updateBiometricData(bdId, { faceImageUrl: 'biometric/orphan-me.jpg' });
+
+      // Drop the only reference, then release.
+      await db.delete(studentContacts).where(eq(studentContacts.id, contact.id));
+      const orphanedKey = await releaseBiometricData(bdId);
+
+      expect(orphanedKey).toBe('biometric/orphan-me.jpg');
+      const [row] = await db.select().from(biometricData).where(eq(biometricData.id, bdId));
+      expect(row).toBeUndefined();
+    });
+
+    it('is a no-op for a missing or null id', async () => {
+      await expect(releaseBiometricData(null)).resolves.toBeNull();
+      await expect(releaseBiometricData(undefined)).resolves.toBeNull();
+      await expect(releaseBiometricData('00000000-0000-0000-0000-000000000000')).resolves.toBeNull();
+    });
   });
 
   it('bumps timesIdentified when recordContactSighting fires', async () => {

@@ -11,7 +11,7 @@ import {
   type EntityType,
   type FaceEmbedding,
 } from "./recognition-service";
-import { analyzeFacePhoto, NoFaceDetectedError } from "./photo-analyzer";
+import { analyzeFacePhoto, NoFaceDetectedError, PhotoAnalysisUnavailableError } from "./photo-analyzer";
 
 // 512×512 is the working resolution for face-api embeddings; no gain from larger
 const TARGET_SIZE = 512;
@@ -99,4 +99,4 @@ export async function uploadBiometricPhoto(
   return { biometricDataId, faceImageUrl: key, faceImageQuality: opts.quality };
 }
 
-export { NoFaceDetectedError };
+export { NoFaceDetectedError, PhotoAnalysisUnavailableError };

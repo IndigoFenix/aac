@@ -25,7 +25,12 @@ import { runActivityLogRetentionCheck } from '../../services/activityLogRetentio
 import { s3Service } from '../../services/storage/s3-service.js';
 import { personRepository } from '../../repositories/personRepository.js';
 import {
+  createContact,
+  enrollContactFace,
+} from '../../services/biometric/recognition-service.js';
+import {
   students,
+  studentContacts,
   userStudents,
   programs,
   goals,
@@ -388,6 +393,79 @@ describe('student erasure', () => {
   });
 
   describe('S3 cleanup', () => {
+    it("erases the student's CONTACTS' face records and photos too", async () => {
+      // A contact's face lives on its own biometric_data row, referenced only by
+      // the contact. Deleting the contacts without releasing those rows leaves
+      // every enrolled face this student's circle ever gave us sitting in the
+      // DB and the bucket, unreachable by any later erasure — Art. 17 residue.
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+
+      const contact = await createContact({ studentId: student.id, name: 'Grandma' } as any);
+      await enrollContactFace(contact.id, new Array(128).fill(0.1));
+      const [contactRow] = await db
+        .select({ bd: studentContacts.biometricDataId })
+        .from(studentContacts)
+        .where(eq(studentContacts.id, contact.id));
+      const contactBdId = contactRow.bd!;
+      await db
+        .update(biometricData)
+        .set({ faceImageUrl: 'biometric/contact-face.jpg' })
+        .where(eq(biometricData.id, contactBdId));
+
+      const deleteSpy = jest.spyOn(s3Service, 'delete').mockResolvedValue(undefined);
+      try {
+        await studentErasureService.softDeleteStudent(student.id, owner.id, null);
+        await db
+          .update(students)
+          .set({ scheduledHardDeleteAt: new Date(Date.now() - ONE_DAY_MS) })
+          .where(eq(students.id, student.id));
+
+        const result = await runStudentErasureSweep();
+        expect(result.hardDeleted).toBe(1);
+
+        // Row gone, and its photo queued for the bucket.
+        const [survivor] = await db
+          .select()
+          .from(biometricData)
+          .where(eq(biometricData.id, contactBdId));
+        expect(survivor).toBeUndefined();
+        expect(deleteSpy).toHaveBeenCalledWith('biometric/contact-face.jpg');
+      } finally {
+        deleteSpy.mockRestore();
+      }
+    });
+
+    it("does not erase a LINKED contact's shared face record", async () => {
+      // The contact is a user in their own right; that person's face record
+      // isn't this student's to erase.
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+      const relative = await makeUser();
+
+      const contact = await createContact({
+        studentId: student.id, name: 'Uncle', linkedUserId: relative.id,
+      } as any);
+      const [contactRow] = await db
+        .select({ bd: studentContacts.biometricDataId })
+        .from(studentContacts)
+        .where(eq(studentContacts.id, contact.id));
+      const sharedBdId = contactRow.bd!;
+
+      await studentErasureService.softDeleteStudent(student.id, owner.id, null);
+      await db
+        .update(students)
+        .set({ scheduledHardDeleteAt: new Date(Date.now() - ONE_DAY_MS) })
+        .where(eq(students.id, student.id));
+      expect((await runStudentErasureSweep()).hardDeleted).toBe(1);
+
+      const [survivor] = await db
+        .select()
+        .from(biometricData)
+        .where(eq(biometricData.id, sharedBdId));
+      expect(survivor).toBeDefined();
+    });
+
     it('passes the biometric S3 key to s3Service.delete after the DB commit', async () => {
       const owner = await makeUser();
       const { student } = await makeStudent(owner.id);

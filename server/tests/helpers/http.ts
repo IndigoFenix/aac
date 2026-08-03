@@ -7,6 +7,8 @@ export interface FakeResponse {
   statusCode: number;
   jsonBody?: unknown;
   ended: boolean;
+  /** Headers the handler set, keyed lower-case. */
+  headers: Record<string, string>;
 }
 
 export function makeReq(opts: {
@@ -42,10 +44,21 @@ export function makeReq(opts: {
 }
 
 export function makeRes(): { res: Response; capture: FakeResponse } {
-  const capture: FakeResponse = { statusCode: 200, ended: false };
+  const capture: FakeResponse = { statusCode: 200, ended: false, headers: {} };
   const res = {
     status(code: number) {
       capture.statusCode = code;
+      return this;
+    },
+    setHeader(name: string, value: string | number) {
+      capture.headers[String(name).toLowerCase()] = String(value);
+      return this;
+    },
+    getHeader(name: string) {
+      return capture.headers[String(name).toLowerCase()];
+    },
+    end() {
+      capture.ended = true;
       return this;
     },
     json(body: unknown) {
