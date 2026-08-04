@@ -34,6 +34,9 @@ import { headOf } from "../../variations.js";
 /** Movement verbs that turn a "where" question into a DESTINATION query ("where are
  *  you going?") rather than an item where-is (parse-intent's MOVEMENT_GOAL_VERBS). */
 const GOING_VERBS = new Set(["go", "come", "run", "walk", "chase"]);
+/** Verbs of POSSESSION. Negated, they answer "I don't have one" (`cant`)
+ *  rather than "I won't" (`refuse`) — a different thing to be told. */
+const HAVE_VERBS = new Set(["have", "hold", "carry"]);
 
 /** Verbs a "what + {creature} + {verb}" question must NOT read as an activity
  *  ask: they query possession/desire ("what do you want/have?"), not doing. */
@@ -142,6 +145,20 @@ export function intentToAct(
     if (verb) return { kind: "invite", verb, glyph };
   }
 
+  // NEGATION IS HALF THE SENTENCE. The parser reads `.not` and sets
+  // `frame.negated`; a mapper that ignores it turns a refusal into its own
+  // opposite — "i_me + give.not + apple" parses as an offer frame, and handing
+  // the apple over is the one answer the speaker did not give. Every negated
+  // shape lands on the words for declining, before any evaluator sees it.
+  if (frame.negated) {
+    // "I don't have one" is a distinct answer from "I won't": what is being
+    // denied is possession, not willingness.
+    if (frame.verb && HAVE_VERBS.has(canonicalVerb(frame.verb))) {
+      return { kind: "cant", itemId: speakerItem, glyph };
+    }
+    return { kind: "refuse", glyph };
+  }
+
   switch (frame.kind) {
     case "request": {
       // A MODAL desire with no thing to hand over ("i_me + want + play" — a
@@ -157,6 +174,17 @@ export function intentToAct(
       // The speaker HANDS OVER its own item (selectAct.offer gives speaker→listener).
       return { kind: "offer", itemId: speakerItem, glyph };
     case "state": {
+      // A SWAP: "apple + for + bread". The `for` relation is the trade word —
+      // the parser binds both sides (object = what I give, target = what I want
+      // back), and reading only the first half made an exchange land as a
+      // disclosure about an apple. Both items must be real, or there is no
+      // trade to propose.
+      if (!frame.verb && frame.relation === "for" && frame.target) {
+        const give = speakerItem ?? (objectSymbol ? heldBy(speakerId, objectSymbol) : undefined);
+        const wantSym = refSymbol(frame.target);
+        const get = wantSym ? heldBy(listenerId, wantSym) : undefined;
+        if (give && get) return { kind: "trade", itemId: get, glyph };
+      }
       // ATTRIBUTE assertions share a generic fact (facts.ts): "mara + hungry" →
       // a condition, "apple + hot" → an item state. The speaker asserts; the
       // listener records (or, told about ITSELF, confirms/corrects). The

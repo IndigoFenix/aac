@@ -318,7 +318,19 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
     case "transfer": {
       // A stock haul (city-expansion ②): the goods + destination ride the
       // goal, so the line phrases without the ledger — "I'll give the wood
-      // to Mara" / "I'll put the wood in the yard".
+      // to Mara" / "I'll carry the block to the house".
+      //
+      // CARRY, not PUT, for a place: the announcement is made at CLAIM time,
+      // before the hauler has touched the goods, and a haul IS a carry — "I'll
+      // put the block in the house" claims hands that are still empty, and it
+      // is the destination, not the container, that the goal names.
+      //
+      // `carry` and not `bring` although bring is the closer word: every glyph
+      // a creature SPEAKS must be drawable through the symbol system, and
+      // `carry` has registry art (`actions/body/carry`) while `bring` — a
+      // parser-lexicon word with no board button — would compose as a ❓ over
+      // the bubble. Both take the directional `to`, so one join serves creature
+      // and place alike.
       const heads = Object.keys(goal.goods).map((g) => headOf(g));
       const obj = heads[0] ?? "thing";
       const toCreature = goal.to.kind === "creature";
@@ -327,9 +339,9 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       const dest = toCreature && goal.to.kind === "creature" ? syms.creature(goal.to.id) : syms.place(goal.to);
       return phrase({
         subject: "i_me",
-        verb: toCreature ? "give" : "put",
+        verb: toCreature ? "give" : "carry",
         object: obj,
-        tail: { join: toCreature ? "to" : "in", symbol: dest },
+        tail: { join: "to", symbol: dest },
       });
     }
   }
@@ -445,7 +457,12 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
     case "give":
       return { verb: "give", object: syms.item(goal.item) };
     case "transfer":
-      return { verb: "give", object: headOf(Object.keys(goal.goods)[0] ?? "") || "thing" };
+      // Same verb split the announcement makes: a haul to a PLACE is a carry,
+      // a hand-off to a creature is a give ("the builder is carrying wood").
+      return {
+        verb: goal.to.kind === "creature" ? "give" : "carry",
+        object: headOf(Object.keys(goal.goods)[0] ?? "") || "thing",
+      };
     case "putIn":
     case "place":
       return { verb: "put", object: syms.item(goal.item) };

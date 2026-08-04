@@ -1,7 +1,7 @@
 // shared/world-engine/kernel/town/scope-shape.ts
 //
 // THE UNIVERSAL SHAPE — the organs every scope has, and the BODY's binding of
-// them (planning-docs/games/scope-unification.md §2–§4, step ③).
+// them (planning-docs/games/world-engine/scope-unification.md §2–§4, step ③).
 //
 // User law (2026-08-02): "Creatures no longer have abstract inventory.
 // Instead, creatures can carry or be equipped with containers (baskets being

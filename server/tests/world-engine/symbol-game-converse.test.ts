@@ -46,6 +46,42 @@ describe("intentToAct — a sentence → a dialogue act (speaker me, listener be
     });
   });
 
+  // NEGATION IS HALF THE SENTENCE. "I won't give you the sock" parses as an
+  // OFFER frame carrying negated:true — reading only the frame kind handed the
+  // sock over, which is the one answer the speaker did not give.
+  it("i_me give.not sock → REFUSE, never the offer the frame looks like", () => {
+    expect(intentToAct(parseSentence("i_me + give.not + sock"), world, "me", "bear", o)).toMatchObject({
+      kind: "refuse",
+    });
+  });
+
+  it("i_me have.not cookie → CANT (denying possession, not willingness)", () => {
+    expect(intentToAct(parseSentence("i_me + have.not + cookie"), world, "me", "bear", o)).toMatchObject({
+      kind: "cant",
+    });
+  });
+
+  it("i_me help.not you → refuse", () => {
+    expect(intentToAct(parseSentence("i_me + help.not + you"), world, "me", "bear", o)).toMatchObject({
+      kind: "refuse",
+    });
+  });
+
+  // A SWAP names both sides: mine before `for`, theirs after. Reading only the
+  // first half made an exchange land as a remark about a sock.
+  it("sock for cookie → propose the TRADE, both items real", () => {
+    expect(intentToAct(parseSentence("sock + for + cookie"), world, "me", "bear", o)).toMatchObject({
+      kind: "trade",
+      itemId: "cookie1",
+    });
+  });
+
+  it("a swap naming something nobody holds is not a trade", () => {
+    expect(intentToAct(parseSentence("sock + for + boat"), world, "me", "bear", o)).not.toMatchObject({
+      kind: "trade",
+    });
+  });
+
   it("where cookie → a where-is query about it", () => {
     expect(intentToAct(parseSentence("where + cookie"), world, "me", "bear", o)).toMatchObject({
       kind: "where-is",

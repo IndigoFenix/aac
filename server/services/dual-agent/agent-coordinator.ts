@@ -133,7 +133,7 @@ import {
 import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities, ProcessingActivity } from "./live-relay";
 import { ProcessingIndicators } from "./processing-indicators";
 import { isCapabilityActive } from "./capability-gate";
-import { buildHeardSpeechTurn, clarityTag, confidenceLabel, describeSttConfidence } from "./speech-text";
+import { buildHeardSpeechTurn, clarityTag, confidenceLabel, describeSttConfidence, matchHeardSpeechTurn, type HeardSpeechTurn } from "./speech-text";
 import { decideGuessingEnter } from "./guessing-enter-policy";
 import { transcribeSegments, createStreamingSession, type SttStreamSession } from "../voice/google-stt-service";
 import { fuseSpeakerLikelihood, renderSpeakerLikelihood, type LipFace, type IdentifiedFaceLite, type VoiceCandidate, type SpeakerLikelihood } from "@shared/aac/speaker-fusion";
@@ -1084,11 +1084,16 @@ export class AgentCoordinator {
    *  note. Reset on each injectHeardSpeech. */
   private drainSinceTranscript = { observer: 0, speaker: 0, boardManager: 0 };
 
-  /** Recogniser score of the most recent [HEARD SPEECH] (undefined = the model
-   *  reported none), with the time it landed. The Observer routes a transcript
-   *  a beat later, so this is what tells the caption how clearly the words were
-   *  heard. Stale entries are ignored — see `currentAsrConfidenceLabel`. */
-  private lastAsrConfidence: { value: number | undefined; at: number } | null = null;
+  /** Recent [HEARD SPEECH] turns with the recogniser's own score (undefined =
+   *  the model reported none), newest last. The Observer routes a transcript a
+   *  beat later — often after pulling audio, by which time NEWER speech has
+   *  landed — so the score must be matched to the turn the transcript actually
+   *  relays, not to whatever arrived most recently. A single slot got this
+   *  wrong; see `currentAsrConfidenceLabel` and `matchHeardSpeechTurn`. */
+  private recentHeardSpeech: HeardSpeechTurn[] = [];
+  /** Enough to cover the Observer's slowest round trip (request_audio, listen,
+   *  route) without holding utterances nobody will ever route. */
+  private static readonly HEARD_SPEECH_HISTORY = 8;
   /** Past this, the held score belongs to an earlier utterance and must not be
    *  attached to a fresh transcript (an Observer turn is a few seconds at most). */
   private static readonly ASR_CONFIDENCE_TTL_MS = 30_000;
@@ -4578,7 +4583,7 @@ export class AgentCoordinator {
     // Held on the event rather than looked up per consumer — recentEvents
     // outlive the hold, and a line rendered later must not silently acquire a
     // newer utterance's clarity.
-    if (event.type === "transcribed") event.asrConfidence = this.currentAsrConfidenceLabel();
+    if (event.type === "transcribed") event.asrConfidence = this.currentAsrConfidenceLabel(event.text);
 
     // Attribution trust gate — BEFORE recordEvent so a demoted attribution
     // never reaches recentEvents (BoardManager context), any agent, the
@@ -5264,10 +5269,16 @@ export class AgentCoordinator {
     // (request_audio) if the text isn't enough. Clears any stale pending pull.
     this.lastSpeechClipId = clipId ?? null;
     this.pendingAudioPullClipId = null;
-    // Hold the recogniser's own score so the transcript the Observer routes
-    // back can be captioned with how clearly the words were HEARD — a separate
-    // axis from the Observer's confidence in who said it (routeTranscribedInner).
-    this.lastAsrConfidence = { value: confidence, at: Date.now() };
+    // Hold the recogniser's own score WITH the words it scored, so the
+    // transcript the Observer routes back can be captioned with how clearly
+    // those words were HEARD — a separate axis from the Observer's confidence
+    // in who said it (routeTranscribedInner). Keyed by text rather than by
+    // recency: the Observer routes late, and a later fragment must not lend
+    // its score to an earlier, cleanly-heard sentence.
+    this.recentHeardSpeech.push({ text, confidence, at: Date.now() });
+    if (this.recentHeardSpeech.length > AgentCoordinator.HEARD_SPEECH_HISTORY) {
+      this.recentHeardSpeech.shift();
+    }
 
     // Refresh speaker attribution from this segment's voice embedding so the
     // next [VOICES HEARD] block — and the Observer's judgment — is current.
@@ -5423,15 +5434,20 @@ export class AgentCoordinator {
     }
   }
 
-  /** Coarse label for the recogniser score behind the transcript being routed
-   *  now. Returns undefined when nothing recent backs it (a stale hold, or a
-   *  transcript with no STT turn behind it at all — e.g. one the Observer
-   *  produced from pulled audio), so the client shows no claim either way. */
-  private currentAsrConfidenceLabel(): "high" | "medium" | "low" | "unknown" | undefined {
-    const held = this.lastAsrConfidence;
-    if (!held) return undefined;
-    if (Date.now() - held.at > AgentCoordinator.ASR_CONFIDENCE_TTL_MS) return undefined;
-    return confidenceLabel(held.value);
+  /** Coarse label for the recogniser score behind THIS transcript — found by
+   *  matching its words against the recent [HEARD SPEECH] turns, not by taking
+   *  the newest score on hand. Returns undefined when nothing recent relays
+   *  those words (a stale hold, or a transcript with no STT turn behind it at
+   *  all — e.g. one the Observer produced from pulled audio), so the client and
+   *  the agents see no claim either way rather than a borrowed one. */
+  private currentAsrConfidenceLabel(text: string): "high" | "medium" | "low" | "unknown" | undefined {
+    const turn = matchHeardSpeechTurn(
+      text,
+      this.recentHeardSpeech,
+      Date.now(),
+      AgentCoordinator.ASR_CONFIDENCE_TTL_MS,
+    );
+    return turn ? confidenceLabel(turn.confidence) : undefined;
   }
 
   private enqueueContextUpdate(event: ContextUpdateEvent): void {

@@ -1,6 +1,6 @@
 // shared/world-engine/planet/refine.ts
 //
-// TIER 1 OF THE HIERARCHICAL SUBSTRATE (planning-docs/games/
+// TIER 1 OF THE HIERARCHICAL SUBSTRATE (planning-docs/games/world-engine/
 // hierarchical-cells.md): refine ONE tier-0 planet cell (~100–200 km) into
 // a flat region grid (~1–4 km cells) and found the VILLAGES between the
 // capitals — the settlement density no global grid can hold.

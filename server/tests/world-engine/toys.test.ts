@@ -1,4 +1,4 @@
-// THE TOY SYSTEM (planning-docs/games/toys-and-song-expansion.md) — the authored
+// THE TOY SYSTEM (planning-docs/games/world-engine/toys-and-song-expansion.md) — the authored
 // toys, the DOLL rule, and the joins that make a doll a real makeable thing.
 //
 // The load-bearing claim under test: a doll is NOT its own kind. It is the same

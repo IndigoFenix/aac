@@ -1,5 +1,5 @@
 // STEP ④, PASS 2 — "COSTS IN THE PLANNER" and "THE BASKET QUESTION"
-// (planning-docs/games/scope-behaviors.md §2.3 PREFER, §2.4 ENABLE, §2.9 BATCH,
+// (planning-docs/games/world-engine/scope-behaviors.md §2.3 PREFER, §2.4 ENABLE, §2.9 BATCH,
 // §5 seats 3–4, §7 steps 3–4).
 //
 // Three things land here and all three are pinned below:

@@ -49,6 +49,48 @@ for (const o of orphans) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Stale shares — reported, never auto-repaired.
+// ---------------------------------------------------------------------------
+// A contact may share someone's biometric record ONLY while a link says it is
+// the same person. An UNLINKED contact sitting on a shared record is a leftover
+// from a link that was removed, and its next photo upload writes over the other
+// person's face (this is how a contact's photo replaced a student's). The live
+// code now hands the record back on unlink and refuses the write; this report
+// catches rows that predate those guards. Splitting one apart is a judgement
+// call about whose face is whose, so it is deliberately left to a human.
+const staleShares = await db
+  .select({
+    contactId: studentContacts.id,
+    name: studentContacts.name,
+    studentId: studentContacts.studentId,
+    biometricDataId: studentContacts.biometricDataId,
+  })
+  .from(studentContacts)
+  .where(
+    sql`${studentContacts.linkedUserId} is null
+     and ${studentContacts.linkedStudentId} is null
+     and ${studentContacts.biometricDataId} is not null
+     and (
+       exists (select 1 from ${users} u where u.biometric_data_id = ${studentContacts.biometricDataId})
+       or exists (select 1 from ${students} s where s.biometric_data_id = ${studentContacts.biometricDataId})
+       or exists (select 1 from ${studentContacts} o
+                   where o.biometric_data_id = ${studentContacts.biometricDataId}
+                     and o.id <> ${studentContacts.id})
+     )`,
+  );
+
+if (staleShares.length) {
+  console.log(`\n⚠  ${staleShares.length} unlinked contact(s) sharing someone else's biometric record:`);
+  for (const s of staleShares) {
+    console.log(`  contact ${s.contactId} "${s.name}" (student ${s.studentId}) → ${s.biometricDataId}`);
+  }
+  console.log('  Their next photo upload would have overwritten the other person\'s face.');
+  console.log('  NOT auto-repaired — deciding whose face is on that record needs a human.');
+} else {
+  console.log('\nNo stale shares: every shared biometric record is backed by a link.');
+}
+
 if (!APPLY) {
   console.log('\nNothing written. Re-run with --apply to delete these rows and their S3 photos.');
   process.exit(0);

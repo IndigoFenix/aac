@@ -941,7 +941,7 @@ const VOCAB: VocabularyItem[] = [
   // ── Furniture ────────────────────────────────────────────────────────────
   // The world-engine's station kinds (kernel/town/stations.ts). Containers all
   // share one silhouette family and differ by construction — see the container
-  // motif in planning-docs/world-engine-icon-gaps.md.
+  // motif in planning-docs/games/world-engine/world-engine-icon-gaps.md.
   // TABLE carries NO emoji and IS exposed to the AI, and both halves matter.
   // Unicode has no table — 🪑 is the CHAIR, which `chair` below rightly claims.
   // While `table` claimed it too, every path that goes through an emoji handed a

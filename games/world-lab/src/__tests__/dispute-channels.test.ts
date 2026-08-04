@@ -1,7 +1,7 @@
 /**
  * The nations-P4 ship gate: the DISPUTE MACHINE — the conquest block
  * generalized into channel-parametric conflict
- * (planning-docs/games/nations-and-empires.md §5/§6/P4).
+ * (planning-docs/games/world-engine/nations-and-empires.md §5/§6/P4).
  *
  * The dual gate:
  *   1. WAR ENABLED — the legacy `coupling.conquest` sugar and the

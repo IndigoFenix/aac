@@ -346,6 +346,32 @@ export async function deleteBiometricData(id: string): Promise<void> {
 }
 
 /**
+ * How many records hold `bdId` right now. `exceptContactId` drops one contact
+ * from the tally, which turns the question into "does anyone OTHER than me hold
+ * this?" — the check that decides whether writing to a record would land on
+ * somebody else's face.
+ */
+async function countHolders(
+  bdId: string,
+  x: Executor,
+  exceptContactId?: string,
+): Promise<number> {
+  const [userRows, studentRows, contactRows] = await Promise.all([
+    x.select({ id: users.id }).from(users).where(eq(users.biometricDataId, bdId)),
+    x.select({ id: students.id }).from(students).where(eq(students.biometricDataId, bdId)),
+    x
+      .select({ id: studentContacts.id })
+      .from(studentContacts)
+      .where(
+        exceptContactId
+          ? and(eq(studentContacts.biometricDataId, bdId), ne(studentContacts.id, exceptContactId))
+          : eq(studentContacts.biometricDataId, bdId),
+      ),
+  ]);
+  return userRows.length + studentRows.length + contactRows.length;
+}
+
+/**
  * Drop a biometric_data row once NOTHING points at it any more.
  *
  * biometric_data is referenced, never referencing: users / students /
@@ -369,17 +395,7 @@ export async function releaseBiometricData(
   x: Executor = db,
 ): Promise<string | null> {
   if (!id) return null;
-
-  const [userRef] = await x.select({ id: users.id }).from(users).where(eq(users.biometricDataId, id)).limit(1);
-  if (userRef) return null;
-  const [studentRef] = await x.select({ id: students.id }).from(students).where(eq(students.biometricDataId, id)).limit(1);
-  if (studentRef) return null;
-  const [contactRef] = await x
-    .select({ id: studentContacts.id })
-    .from(studentContacts)
-    .where(eq(studentContacts.biometricDataId, id))
-    .limit(1);
-  if (contactRef) return null;
+  if ((await countHolders(id, x)) > 0) return null;
 
   const [dropped] = await x
     .delete(biometricData)
@@ -500,8 +516,22 @@ export async function ensureBiometricData(
     }
     return bdId;
   }
-  // Unlinked — own biometric row
-  if (c.biometricDataId) return c.biometricDataId;
+  // Unlinked — this contact owns its record OUTRIGHT. If the record it points at
+  // is also held by someone else, that is a leftover from a link that has since
+  // been removed (setting a link write-through-syncs biometricDataId; clearing
+  // one used to leave the borrowed id in place). Writing into it would overwrite
+  // the OTHER person's face — that is precisely how a contact's uploaded photo
+  // replaced a student's. Take a fresh record instead, and let the previous one
+  // stay with whoever legitimately holds it.
+  if (c.biometricDataId) {
+    const others = await countHolders(c.biometricDataId, db, target.id);
+    if (others === 0) return c.biometricDataId;
+    console.warn(
+      `[Recognition] Contact ${target.id} has no link yet shares biometric_data ` +
+        `${c.biometricDataId} with ${others} other record(s) — minting its own so this ` +
+        `write cannot land on someone else's face.`,
+    );
+  }
   const row = await createBiometricData();
   await db
     .update(studentContacts)
@@ -1488,6 +1518,26 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
 // Contact CRUD with linked-record invariants
 // ============================================================================
 
+export type ContactLinkErrorCode = "BOTH_LINKS" | "SELF_LINK" | "DUPLICATE_LINK";
+
+/**
+ * A contact-link invariant was violated — the caller asked for something that
+ * would misdescribe who a person is, not something that merely failed. Carries
+ * a stable `code` so the API can answer 409 with a message the client
+ * translates, and so the AI's contact-edit path gets a reason instead of a 500.
+ */
+export class ContactLinkError extends Error {
+  constructor(
+    readonly code: ContactLinkErrorCode,
+    message: string,
+    /** For DUPLICATE_LINK: the contact that already claims that account. */
+    readonly existingContactId?: string,
+  ) {
+    super(message);
+    this.name = "ContactLinkError";
+  }
+}
+
 const CONTACT_LINK_ERRORS = {
   bothLinks: "A contact cannot link to both a user and another student",
   selfLink: "A student cannot be their own contact",
@@ -1496,6 +1546,8 @@ const CONTACT_LINK_ERRORS = {
 /**
  * Validate link invariants and resolve biometricDataId based on links.
  * Returns the data to actually insert/update.
+ *
+ * `selfContactId` excludes the row being edited from the duplicate check.
  */
 async function applyLinkInvariants<
   T extends {
@@ -1504,14 +1556,41 @@ async function applyLinkInvariants<
     studentId?: string | null;
     biometricDataId?: string | null;
   },
->(data: T, ownerStudentId?: string): Promise<T> {
+>(data: T, ownerStudentId?: string, selfContactId?: string): Promise<T> {
   if (data.linkedUserId && data.linkedStudentId) {
-    throw new Error(CONTACT_LINK_ERRORS.bothLinks);
+    throw new ContactLinkError("BOTH_LINKS", CONTACT_LINK_ERRORS.bothLinks);
   }
   const sid = ownerStudentId ?? data.studentId ?? null;
   if (data.linkedStudentId && sid && data.linkedStudentId === sid) {
-    throw new Error(CONTACT_LINK_ERRORS.selfLink);
+    throw new ContactLinkError("SELF_LINK", CONTACT_LINK_ERRORS.selfLink);
   }
+
+  // One account, one contact. Choosing an account here means "this contact IS
+  // that person" — so a second contact pointing at the same account claims the
+  // same human twice, and both would then write to that person's face record.
+  // (Users read "linked" as "related to" and made exactly this mistake.)
+  const claim = data.linkedUserId
+    ? eq(studentContacts.linkedUserId, data.linkedUserId)
+    : data.linkedStudentId
+      ? eq(studentContacts.linkedStudentId, data.linkedStudentId)
+      : null;
+  if (claim && sid) {
+    const conds = [eq(studentContacts.studentId, sid), eq(studentContacts.isActive, true), claim];
+    if (selfContactId) conds.push(ne(studentContacts.id, selfContactId));
+    const [dupe] = await db
+      .select({ id: studentContacts.id, name: studentContacts.name })
+      .from(studentContacts)
+      .where(and(...conds))
+      .limit(1);
+    if (dupe) {
+      throw new ContactLinkError(
+        "DUPLICATE_LINK",
+        `That account is already contact "${dupe.name}" for this student. Choosing an account means this contact IS that person, so only one contact may claim it — leave this one unlinked if they are a different person.`,
+        dupe.id,
+      );
+    }
+  }
+
   // Write-through biometricDataId from linked entity
   if (data.linkedUserId) {
     const bdId = await ensureBiometricData({ type: "user", id: data.linkedUserId });
@@ -1564,17 +1643,30 @@ export async function updateContact(
     linkedUserId: "linkedUserId" in data ? data.linkedUserId : current.linkedUserId,
     linkedStudentId: "linkedStudentId" in data ? data.linkedStudentId : current.linkedStudentId,
   };
-  const validated = await applyLinkInvariants(merged, current.studentId);
+  const validated = await applyLinkInvariants(merged, current.studentId, id);
+
+  // Setting a link write-through-syncs biometricDataId to the linked person's
+  // record. REMOVING the link has to hand it back: a contact who is no longer
+  // that person must not keep writing to their face record — an unlinked
+  // contact's photo upload would otherwise replace the student's or user's own
+  // photo. Null it; the contact gets a fresh record when it next enrolls.
+  const hadLink = !!(current.linkedUserId || current.linkedStudentId);
+  const hasLink = !!(validated.linkedUserId || validated.linkedStudentId);
+  const unlinked = hadLink && !hasLink;
 
   const [contact] = await db
     .update(studentContacts)
-    .set({ ...validated, updatedAt: new Date() })
+    .set({
+      ...validated,
+      ...(unlinked ? { biometricDataId: null } : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(studentContacts.id, id))
     .returning();
 
-  // Linking a standalone contact to a user/student re-points biometricDataId at
-  // that person's canonical record; the row this contact used to own is now
-  // held by nobody.
+  // Either direction can strand the record this contact used to point at:
+  // linking abandons the row it owned, unlinking hands back a row someone else
+  // may or may not still hold. release() only deletes when nobody is left.
   if (contact && contact.biometricDataId !== current.biometricDataId) {
     await releaseBiometricDataAndImage(current.biometricDataId);
   }
@@ -1648,6 +1740,9 @@ export interface LinkableEntity {
   type: "user" | "student";
   name: string;
   detail?: string; // email for users, role/relationship context for students
+  /** Set when one of this student's contacts already IS this person. */
+  takenByContactId?: string;
+  takenByContactName?: string;
 }
 
 export async function getLinkableEntitiesForStudent(
@@ -1721,6 +1816,32 @@ export async function getLinkableEntitiesForStudent(
       name: s.name || `${s.firstName || ""} ${s.lastName || ""}`.trim() || "Unknown",
     })),
   ];
+
+  // 4. Mark accounts one of this student's contacts already claims, so the
+  // picker can grey them out rather than letting the save fail (see the
+  // DUPLICATE_LINK guard in applyLinkInvariants).
+  const claimed = await db
+    .select({
+      id: studentContacts.id,
+      name: studentContacts.name,
+      linkedUserId: studentContacts.linkedUserId,
+      linkedStudentId: studentContacts.linkedStudentId,
+    })
+    .from(studentContacts)
+    .where(and(eq(studentContacts.studentId, studentId), eq(studentContacts.isActive, true)));
+
+  const takenBy = new Map<string, { id: string; name: string }>();
+  for (const c of claimed) {
+    if (c.linkedUserId) takenBy.set(`user:${c.linkedUserId}`, { id: c.id, name: c.name });
+    if (c.linkedStudentId) takenBy.set(`student:${c.linkedStudentId}`, { id: c.id, name: c.name });
+  }
+  for (const e of linkable) {
+    const owner = takenBy.get(`${e.type}:${e.id}`);
+    if (owner) {
+      e.takenByContactId = owner.id;
+      e.takenByContactName = owner.name;
+    }
+  }
 
   linkable.sort((a, b) => a.name.localeCompare(b.name));
   return linkable;

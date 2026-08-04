@@ -1,5 +1,5 @@
 /**
- * Tier-1 region refinement (planning-docs/games/hierarchical-cells.md):
+ * Tier-1 region refinement (planning-docs/games/world-engine/hierarchical-cells.md):
  * one planet cell refines into a flat region grid whose terrain IS the
  * planet's render sampler, whose crowds respect the parent budget, whose
  * capitals stay fixed, and whose villages found at day's-walk spacing —

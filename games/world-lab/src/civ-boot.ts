@@ -7,7 +7,7 @@
  * engine source behind the seam, headless. It is the successor of
  * grand-dream's `boot.ts` (grand-dream is retiring; when it goes, this is
  * the binding that remains until the PopuSim core itself moves into
- * shared — port-then-delete, planning-docs/games/nations-and-empires.md
+ * shared — port-then-delete, planning-docs/games/world-engine/nations-and-empires.md
  * §11.5).
  *
  * Headless everywhere: the document shim is imported FIRST (top-level

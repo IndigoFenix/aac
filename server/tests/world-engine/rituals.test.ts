@@ -257,7 +257,7 @@ describe("the culture table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// INVITATIONS — group activity syntax (planning-docs/games/group-activity-syntax.md)
+// INVITATIONS — group activity syntax (planning-docs/games/world-engine/group-activity-syntax.md)
 // ---------------------------------------------------------------------------
 // An invitation introduces no new action and no new phase. It is a PER-BODY
 // WINDOW: the same bar-lowering a culture's mealtime does for everyone, scoped

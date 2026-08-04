@@ -34,6 +34,26 @@ export function electNpcOwner(selfId: string | null, otherIds: Iterable<string>)
   return min;
 }
 
+/**
+ * Who runs the world's simulation. `hostPersonId` is the participant the game
+ * was started FOR hosting (CallGame.hostPersonId — normally the clinician, whose
+ * desktop isn't also running the AAC's camera/voice ML); every client reads it
+ * off the same broadcast CallGame, so the answer is identical everywhere without
+ * coordination. It only counts when that person is actually here (self, or a
+ * connected peer) — otherwise, and when no host was named, this degrades to the
+ * lexicographic election. `selfId` null (call not ready) ⇒ solo ⇒ null.
+ */
+export function resolveWorldOwner(
+  selfId: string | null,
+  otherIds: Iterable<string>,
+  hostPersonId?: string | null,
+): string | null {
+  if (!selfId) return null;
+  const others = [...otherIds];
+  if (hostPersonId && (hostPersonId === selfId || others.includes(hostPersonId))) return hostPersonId;
+  return electNpcOwner(selfId, others);
+}
+
 /** Map an NpcSpec.persona onto the social-bot relay's `initialize` params. */
 export function initParams(spec: NpcSpec, language: string): Record<string, unknown> {
   const p = spec.persona ?? {};

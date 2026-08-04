@@ -1,25 +1,37 @@
 // client/src/features/call/IframeQuestSurface.tsx
 //
-// The clinician's in-call surface for an iframe world game (CallGame.engine
-// "iframe-quest", e.g. the Dollhouse). Every participant mounts the game
-// iframe LOCALLY; this surface is the platform side of the games bridge:
+// THE clinician surface for an iframe world game (CallGame.engine
+// "iframe-quest", e.g. the Dollhouse) — the SAME component and the SAME layout
+// whether the game was opened from the call panel's game room or attached to a
+// live call. A game must not look like a different program depending on how it
+// was reached, so the call's own chrome (peer tiles, call controls) is passed
+// in as OVERLAY slots rather than laid out around the surface.
+//
+// It is the platform side of the games bridge:
 //
 //   - ferries opaque world payloads between the iframe and the call
 //     transports (unreliable `world_data` via the mesh world channel,
 //     reliable `world_cmd` via the call data channel),
-//   - computes the multiplayer role (owner/follower) from the MESH-CONNECTED
-//     peer set and (re)sends `world_session` on every roster change,
+//   - computes the multiplayer role (owner/follower) from the game's nominated
+//     host + the MESH-CONNECTED peer set, and (re)sends `world_session`,
 //   - shows the game's pinned board options as a real AAC-button dock
 //     (clicks are voiced locally and reported back as `board_option_selected`),
-//   - hosts a collapsible engine-driven sentence builder (builder_state →
-//     builder_surface, Play → glyph_input) — no LLM path on the clinician:
-//     an unparsable sentence is simply cleared.
+//   - hosts an engine-driven sentence builder (builder_state → builder_surface,
+//     Play → glyph_input) — no LLM path on the clinician: an unparsable
+//     sentence is simply cleared.
+//
+// GEOMETRY LAW: the iframe's box NEVER changes for the life of the session. The
+// game re-lays-out its whole 3D canvas on resize, so chrome that appears and
+// disappears (the board dock arriving when the game pins options, the builder
+// panel growing as words are added) reads on screen as a flicker. Hence: the
+// dock keeps its width whether or not it has options, and the builder is an
+// absolutely-positioned overlay with a fixed height.
 //
 // The clinician has NO gaze — mouse input reaches the iframe natively, so
 // there is no gaze forwarding and no dwell anywhere in this UI.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Delete, MessageSquarePlus, Play, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Delete, Loader2, MessageSquarePlus, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
@@ -27,7 +39,7 @@ import { Glyph } from "@/components/Glyph";
 import { useClinicianBoardDeps } from "@/components/syntAACx/use-clinician-board-deps";
 import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
 import { createBridgeBuilderBackend, type BridgeBuilderBackend } from "@client-shared/game/engine-builder";
-import { electNpcOwner } from "@shared/social-world/npc-conversation-logic";
+import { resolveWorldOwner } from "@shared/social-world/npc-conversation-logic";
 import type { CallGame } from "@shared/realtime-events";
 import type { BoardOption, BuilderSurface, BuilderWord, GameMessage } from "@shared/games-bridge";
 import type { WorldNetMessage } from "@shared/world-engine/index";
@@ -49,13 +61,30 @@ export { colorHexForId as colorForPeerId } from "@shared/world-engine/peer-color
 /** Debounce for builder_state requests — matches the AAC builder's cadence. */
 const SURFACE_DEBOUNCE_MS = 150;
 
+/** How long the game may take to say `ready` before we tell the user it looks
+ *  stuck rather than slow. Generous: the dollhouse is a ~2 MB bundle and a cold
+ *  first load on a tablet is genuinely slow. */
+const GAME_SLOW_MS = 20_000;
+
 interface Props {
   game: CallGame;
-  /** Detach the game (back to plain video). */
+  /** Detach the game (back to plain video), or close the solo preview. */
   onExit?: () => void;
+  /**
+   * False for a SOLO preview outside a call (the call-panel game room's "open by
+   * myself"): the multiplayer identity is never announced, so the game stays in
+   * its single-player path. The transport ferry below stays wired either way —
+   * with no peers on the mesh it simply carries nothing.
+   */
+  multiplayer?: boolean;
+  /** Call controls, rendered in the surface's own top bar beside the builder
+   *  and exit buttons. Overlay chrome: it never reflows the game. */
+  controls?: ReactNode;
+  /** Peer video tiles, floated over the start edge of the game. */
+  peers?: ReactNode;
 }
 
-export default function IframeQuestSurface({ game, onExit }: Props) {
+export default function IframeQuestSurface({ game, onExit, multiplayer = true, controls, peers }: Props) {
   const { t, language } = useLanguage();
   const {
     selfPersonId,
@@ -70,6 +99,16 @@ export default function IframeQuestSurface({ game, onExit }: Props) {
 
   const embedRef = useRef<CallGameEmbedHandle | null>(null);
   const [ready, setReady] = useState(false);
+  // A packaged game is a multi-megabyte bundle behind a licensed static route:
+  // it can be slow, and it can fail outright (unbuilt game, expired license,
+  // blocked iframe) — in which case the embed is just a black rectangle. Say
+  // which of the two is happening instead of leaving a blank screen.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (ready) return;
+    const timer = setTimeout(() => setSlow(true), GAME_SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [ready]);
 
   // Board dock: the options the game pinned via set_board_options.
   const [boardOptions, setBoardOptions] = useState<BoardOption[] | null>(null);
@@ -139,21 +178,24 @@ export default function IframeQuestSurface({ game, onExit }: Props) {
 
   // ── Multiplayer session identity ───────────────────────────────────────────
 
-  // Role is elected over the MESH-CONNECTED set ([self, ...remoteStreams]) —
-  // that set exists symmetrically on every client (the conversation roster
-  // does NOT reach AAC peers), so all peers converge on the same owner. A
-  // brief dual-owner window while streams are still connecting is fine.
+  // The game's nominated host owns the sim when they're in the call (normally
+  // the clinician who started the game room); otherwise the role falls back to
+  // an election over the MESH-CONNECTED set ([self, ...remoteStreams]) — a set
+  // that exists symmetrically on every client (the conversation roster does NOT
+  // reach AAC peers), so all peers converge on the same owner. A brief
+  // dual-owner window while streams are still connecting is fine.
   const peerIds = useMemo(() => [...remoteStreams.keys()].sort(), [remoteStreams]);
+  const hostPersonId = game.hostPersonId;
 
   useEffect(() => {
-    if (!ready || !selfPersonId) return;
-    const role = electNpcOwner(selfPersonId, peerIds) === selfPersonId ? "owner" : "follower";
+    if (!multiplayer || !ready || !selfPersonId) return;
+    const role = resolveWorldOwner(selfPersonId, peerIds, hostPersonId) === selfPersonId ? "owner" : "follower";
     const peers = peerIds.map((id) => {
       const name = participants.find((p) => p.personId === id)?.name;
       return { id, ...(name ? { name } : {}) };
     });
     embedRef.current?.send({ type: "world_session", selfId: selfPersonId, role, peers });
-  }, [ready, selfPersonId, peerIds, participants]);
+  }, [multiplayer, ready, selfPersonId, peerIds, participants, hostPersonId]);
 
   // ── Board dock ─────────────────────────────────────────────────────────────
 
@@ -221,83 +263,71 @@ export default function IframeQuestSurface({ game, onExit }: Props) {
   const categories = surface?.categories ?? [];
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-col bg-black">
-      <div className="relative flex flex-1 min-h-0">
-        {/* The game itself. */}
-        <div className="relative flex-1 min-w-0">
-          <CallGameEmbed
-            ref={embedRef}
-            gameId={game.appId}
-            src={game.src ?? `/games/${game.appId}/`}
-            onMessage={handleGameMessage}
-            onBoardOptions={handleBoardOptions}
-            onClose={() => onExit?.()}
-            onReady={() => setReady(true)}
-            className="h-full w-full bg-black"
-          />
+    <div className="flex h-full w-full min-h-0 bg-black">
+      {/* The game. Its box is fixed for the session — every piece of chrome
+          below is an overlay inside it, or the constant-width dock beside it. */}
+      <div className="relative flex-1 min-w-0">
+        <CallGameEmbed
+          ref={embedRef}
+          gameId={game.appId}
+          src={game.src ?? `/games/${game.appId}/`}
+          onMessage={handleGameMessage}
+          onBoardOptions={handleBoardOptions}
+          onClose={() => onExit?.()}
+          onReady={() => setReady(true)}
+          className="h-full w-full bg-black"
+        />
 
-          {/* Top-end controls: builder toggle + exit (same visual language as
-              CallGameSurface's exit). */}
-          <div className="absolute top-2 end-2 z-10 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setBuilderOpen((o) => !o)}
-              aria-pressed={builderOpen}
-              aria-label={t("socialWorld.builderTitle")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white shadow",
-                builderOpen ? "bg-amber-500/90 text-gray-900" : "bg-white/15 hover:bg-white/25",
-              )}
-            >
-              <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
-              {t("socialWorld.builderTitle")}
-            </button>
-            {onExit && (
-              <button
-                type="button"
-                onClick={onExit}
-                className="rounded-lg bg-red-600/90 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-red-600"
-              >
-                {t("socialWorld.exit")}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Board dock — the game's pinned options as a real AAC-button grid
-            (up to 8, 2×4). Plain clicks; the press is voiced locally. */}
-        {boardOptions && boardOptions.length > 0 && (
-          <div
-            className="flex w-64 shrink-0 flex-col gap-1 bg-black/40 p-2"
-            aria-label={t("socialWorld.boardDock")}
-          >
-            <div className="truncate px-1 text-center text-xs text-white/70">
-              {boardPrompt || t("socialWorld.boardDock")}
+        {/* Until the game says `ready` the iframe is a black rectangle — name
+            what is happening, and after a while say it looks stuck. */}
+        {!ready && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black px-6 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-white/70" aria-hidden="true" />
+            <div className="text-sm text-white/80">
+              {game.name ?? t("socialWorld.title")}
             </div>
-            <div
-              className="grid min-h-0 flex-1 grid-cols-2 gap-2"
-              style={{ gridTemplateRows: "repeat(4, minmax(0, 1fr))" }}
-            >
-              {boardOptions.slice(0, 8).map((opt) => (
-                <BoardButtonVisual
-                  key={opt.id}
-                  button={{ label: opt.label, glyph: opt.glyph }}
-                  deps={boardDeps}
-                  variant="board"
-                  onClick={() => pressOption(opt)}
-                  iconFontSize="2.25rem"
-                  textFontSize="0.8rem"
-                />
-              ))}
+            <div className="text-xs text-white/50" role="status">
+              {slow ? t("socialWorld.gameStuck") : t("common.loading")}
             </div>
           </div>
         )}
-      </div>
 
-      {/* Collapsible sentence builder — engine-served words, composed strip,
-          Play through the game's own parser. */}
-      {builderOpen && (
-        <div className="flex max-h-[45%] shrink-0 flex-col gap-2 border-t border-white/10 bg-black/60 p-2 text-white">
+        {/* Peer video, floated over the start edge (in a call; nothing solo). */}
+        {peers && <div className="absolute top-2 start-2 z-10 w-28">{peers}</div>}
+
+        {/* Top-end bar: the call's own controls, then the builder toggle and
+            exit. One bar, same place, in a call or alone. */}
+        <div className="absolute top-2 end-2 z-10 flex items-center gap-2">
+          {controls}
+          <button
+            type="button"
+            onClick={() => setBuilderOpen((o) => !o)}
+            aria-pressed={builderOpen}
+            aria-label={t("socialWorld.builderTitle")}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white shadow",
+              builderOpen ? "bg-amber-500/90 text-gray-900" : "bg-white/15 hover:bg-white/25",
+            )}
+            data-testid="game-builder-toggle"
+          >
+            <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
+            {t("socialWorld.builderTitle")}
+          </button>
+          {onExit && (
+            <button
+              type="button"
+              onClick={onExit}
+              className="rounded-lg bg-red-600/90 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-red-600"
+            >
+              {t("socialWorld.exit")}
+            </button>
+          )}
+        </div>
+
+        {/* Sentence builder — an OVERLAY at a fixed height, so composing a
+            sentence never resizes the game underneath it. */}
+        {builderOpen && (
+          <div className="absolute inset-x-0 bottom-0 z-10 flex h-[45%] flex-col gap-2 border-t border-white/10 bg-black/80 p-2 text-white">
           {/* Composed sentence strip + actions. */}
           <div className="flex items-center gap-2">
             <div className="flex min-h-[3rem] flex-1 flex-wrap items-center gap-1 rounded-lg bg-white/10 px-2 py-1">
@@ -383,8 +413,10 @@ export default function IframeQuestSurface({ game, onExit }: Props) {
             </div>
           )}
 
-          {/* Word grid — ranked engine surface for the current partial sentence. */}
-          <div className="flex min-h-0 flex-wrap content-start gap-2 overflow-y-auto">
+          {/* Word grid — ranked engine surface for the current partial sentence.
+              It SCROLLS inside the panel's fixed height; a longer or shorter
+              surface must never change the panel's size. */}
+          <div className="flex min-h-0 flex-1 flex-wrap content-start gap-2 overflow-y-auto">
             {(surface?.buttons ?? []).map((w) => (
               <button
                 key={w.key}
@@ -404,8 +436,39 @@ export default function IframeQuestSurface({ game, onExit }: Props) {
               </button>
             ))}
           </div>
+          </div>
+        )}
+      </div>
+
+      {/* Board dock — the game's pinned options as a real AAC-button grid (up
+          to 8, 2×4). ALWAYS mounted at a constant width: the dollhouse clears
+          and re-pins its board as the focus moves, and a dock that came and
+          went with it resized the game on every change. Empty is a state, not
+          an absence. */}
+      <div
+        className="flex w-64 shrink-0 flex-col gap-1 bg-black/40 p-2"
+        aria-label={t("socialWorld.boardDock")}
+      >
+        <div className="truncate px-1 text-center text-xs text-white/70">
+          {(boardOptions && boardOptions.length > 0 && boardPrompt) || t("socialWorld.boardDock")}
         </div>
-      )}
+        <div
+          className="grid min-h-0 flex-1 grid-cols-2 gap-2"
+          style={{ gridTemplateRows: "repeat(4, minmax(0, 1fr))" }}
+        >
+          {(boardOptions ?? []).slice(0, 8).map((opt) => (
+            <BoardButtonVisual
+              key={opt.id}
+              button={{ label: opt.label, glyph: opt.glyph }}
+              deps={boardDeps}
+              variant="board"
+              onClick={() => pressOption(opt)}
+              iconFontSize="2.25rem"
+              textFontSize="0.8rem"
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

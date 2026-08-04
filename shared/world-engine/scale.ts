@@ -1,6 +1,6 @@
 // shared/world-engine/scale.ts
 //
-// THE one place real↔game scale lives (planning-docs/games/space-time-compression.md).
+// THE one place real↔game scale lives (planning-docs/games/world-engine/space-time-compression.md).
 //
 // Law (§1 of the doc): compression is PHYSICS of the world, not playback —
 // real-world values are the anchor, and every game value is (real anchor ×

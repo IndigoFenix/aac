@@ -1,4 +1,4 @@
-// GROUP ACTIVITY SYNTAX (planning-docs/games/group-activity-syntax.md) — how
+// GROUP ACTIVITY SYNTAX (planning-docs/games/world-engine/group-activity-syntax.md) — how
 // "eat with me", "I will eat with Mara", "we will play together" and their
 // refusals get from a tapped glyph sentence to a shared gathering.
 //

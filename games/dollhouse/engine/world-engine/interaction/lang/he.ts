@@ -46,7 +46,13 @@ const L: Record<string, Lexeme> = {
   want: { w: "רוצה", f: "רוצה", vmpl: "רוצים", vfpl: "רוצות" },
   give: { w: "נותן", f: "נותנת", vmpl: "נותנים", vfpl: "נותנות" },
   take: { w: "לוקח", f: "לוקחת", vmpl: "לוקחים", vfpl: "לוקחות" },
-  get: { w: "מקבל", f: "מקבלת" },
+  // ACQUIRE, not receive: `get` is the fetch verb ("I will get the wood" — the
+  // commonest thing a builder says), and מקבל is what you do when somebody
+  // hands you something. משיג/להשיג is the root this ruleset already used for
+  // the where-do-I-get idiom below; the whole card now agrees with it, and the
+  // infinitive is what the intent periphrasis ("אני הולך להשיג") needs — without
+  // one the `.will` marker was silently dropped and the line came out present.
+  get: { w: "משיג", f: "משיגה", vmpl: "משיגים", vfpl: "משיגות", inf: "להשיג" },
   // "יש" is invariant — possession renders through the יש ל־ construction, so
   // these plural slots only matter if a gloss ever reaches the verb directly.
   have: { w: "יש", vmpl: "יש", vfpl: "יש" },
@@ -261,7 +267,7 @@ const L: Record<string, Lexeme> = {
   wash: { w: "רוחץ", f: "רוחצת", vmpl: "רוחצים", vfpl: "רוחצות", inf: "לרחוץ" },
   tidy: { w: "מסדר", f: "מסדרת", vmpl: "מסדרים", vfpl: "מסדרות", inf: "לסדר" },
   heat: { w: "מחמם", f: "מחממת", vmpl: "מחממים", vfpl: "מחממות", inf: "לחמם" },
-  cool: { w: "מקרר", f: "מקררת", vmpl: "מקררים", vfpl: "מקררות", inf: "לקרר" },
+  make_cold: { w: "מקרר", f: "מקררת", vmpl: "מקררים", vfpl: "מקררות", inf: "לקרר" },
   talk: { w: "מדבר", f: "מדברת", vmpl: "מדברים", vfpl: "מדברות", inf: "לדבר" },
   // Household CHORE verbs the needs templates speak ("אני הולך לבשל את האוכל").
   cook: { w: "מבשל", f: "מבשלת", vmpl: "מבשלים", vfpl: "מבשלות", inf: "לבשל" },
@@ -276,6 +282,35 @@ const L: Record<string, Lexeme> = {
   bedroom: { w: "חדר שינה", g: "m", defw: "חדר השינה" },
   store: { w: "מחסן", g: "m" },
   workshop: { w: "סדנה", g: "f", plw: "סדנאות" },
+  // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
+  // The building trade's words. They shipped as live glyphs with no lexemes,
+  // so a builder here said "אני build את הhouse" — the raw English key inside
+  // a Hebrew sentence, the same failure the furniture kinds had.
+  //
+  // MATERIALS. עץ is both the tree and the timber; the two entries are
+  // deliberate — `wood` is mass (the material), `tree` counts (the thing you
+  // fell). Same word, different grammar, which is exactly what the lexeme card
+  // is for.
+  block: { w: "לבנה", g: "f", plw: "לבנים" },
+  wood: { w: "עץ", g: "m", mass: true },
+  stone: { w: "אבן", g: "f", plw: "אבנים", mass: true },
+  tree: { w: "עץ", g: "m", plw: "עצים" },
+  // STRUCTURES. `house` is the dwelling as an ORDER ("build a house"); `home`
+  // stays the place you go back to.
+  house: { w: "בית", g: "m", plw: "בתים" },
+  farm: { w: "חווה", g: "f", plw: "חוות" },
+  building: { w: "מבנה", g: "m", plw: "מבנים" },
+  storehouse: { w: "מחסן", g: "m" },
+  yard: { w: "חצר", g: "f", plw: "חצרות" },
+  // TRADE VERBS — present tense in four agreement forms + the infinitive the
+  // intent periphrasis ("הולך לבנות") needs.
+  build: { w: "בונה", f: "בונה", vmpl: "בונים", vfpl: "בונות", inf: "לבנות" },
+  make: { w: "מכין", f: "מכינה", vmpl: "מכינים", vfpl: "מכינות", inf: "להכין" },
+  bring: { w: "מביא", f: "מביאה", vmpl: "מביאים", vfpl: "מביאות", inf: "להביא" },
+  carry: { w: "נושא", f: "נושאת", vmpl: "נושאים", vfpl: "נושאות", inf: "לשאת" },
+  cut: { w: "כורת", f: "כורתת", vmpl: "כורתים", vfpl: "כורתות", inf: "לכרות" },
+  // The completion state ("הבית מוכן").
+  finished: { w: "מוכן", f: "מוכנה", mpl: "מוכנים", fpl: "מוכנות" },
 };
 
 function lex(head: string): Lexeme {
@@ -368,16 +403,23 @@ function npText(np: NP, def: boolean): string {
     return `משהו ${[adjForm(np.noun.head, "m", false), ...extra].join(" ")}`;
   }
   const g = nounGender(np.noun);
-  const pl = nounPlural(np.noun);
+  // MORE is a QUANTIFIER, and in Hebrew it governs an INDEFINITE PLURAL: "עוד
+  // לבנים", never "את עוד הלבנה" — a definite singular behind עוד is not
+  // Hebrew at all. So a more-NP pluralizes (where the lexeme carries a plural)
+  // and overrides the caller's definiteness, the same way "more blocks" drops
+  // the article in English. Reached by every bill a building site speaks
+  // ("the kitchen needs more blocks").
+  const pl = nounPlural(np.noun) || (!!np.more && !!lex(np.noun.head).plw);
   const my = np.noun.mods.includes("my");
   const deictic = isDeicticNoun(np.noun);
   const adjs = np.noun.mods
     .filter((m) => m !== "my" && m !== "not" && !isUnspokenMod(m))
     .map((m) => adjForm(m, g, pl));
   // The deictic (.this) is always definite: "התפוח הזה", "השמלה הזאת".
-  const definite = def || my || deictic;
+  const definite = (def || my || deictic) && !np.more;
+  const base = (np.more ? (lex(np.noun.head).plw ?? lex(np.noun.head).w) : lex(np.noun.head).w);
   // Construct nouns override their definite form ("כלי נגינה" → "כלי הנגינה").
-  const noun = definite ? (lex(np.noun.head).defw ?? `ה${lex(np.noun.head).w}`) : lex(np.noun.head).w;
+  const noun = definite ? (lex(np.noun.head).defw ?? `ה${base}`) : base;
   const words = [noun, ...adjs.map((a) => (definite ? `ה${a}` : a))];
   if (deictic) words.push(pl ? "האלה" : g === "f" ? "הזאת" : "הזה");
   if (my) words.push("שלי");
@@ -511,7 +553,10 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
   // (objPrep "to") governs ל־ on its object ("אני עוזר לך", "אני עוזר לדוב");
   // a pronoun object elsewhere takes the אות־ form ("אני אוהב אותך"). PLAY
   // takes ב־ ("משחק בכדור"); TALK takes עם ("מדבר עם מרה").
-  const objDef = f.verb.head !== "want" || f.neg || !!f.tail;
+  // A MORE-quantified object is indefinite by construction ("עוד לבנים"), and
+  // את marks only definite direct objects — "צריך את עוד לבנים" would be
+  // ungrammatical twice over.
+  const objDef = (f.verb.head !== "want" || f.neg || !!f.tail) && !f.object?.more;
   const obj = f.object
     ? ` ${
         f.verb.head === "play" && !isPronoun(f.object.noun.head)

@@ -1,4 +1,4 @@
-// ⚖️ PROPRIETY — "seen, and mildly avoided" (planning-docs/games/
+// ⚖️ PROPRIETY — "seen, and mildly avoided" (planning-docs/games/world-engine/
 // scope-behaviors.md §2.2 SOURCE, §3.1 the calibration).
 //
 // THE DECISION THIS PASS IMPLEMENTS, verbatim (user, 2026-08-03):

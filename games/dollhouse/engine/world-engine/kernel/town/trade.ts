@@ -8,7 +8,7 @@
  * crew was poached — while the PARTNER stays an opaque address:
  *
  *   • `partnerKey` is a string the hierarchical-cells work
- *     (planning-docs/games/hierarchical-cells.md) will bind to a real
+ *     (planning-docs/games/world-engine/hierarchical-cells.md) will bind to a real
  *     neighboring settlement's (region, cell) address once tier-1 lands —
  *     day's-walk villages make caravans between REAL economies; this module's
  *     cycle, depot and streaming stay as-is (the seam is the point).

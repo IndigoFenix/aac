@@ -33,6 +33,83 @@ export function clarityTag(asrConfidence?: ConfidenceLabel): string {
   return "";
 }
 
+/** One [HEARD SPEECH] turn as the recogniser produced it. Held in a short
+ *  history (not a single slot) so the transcript the Observer routes BACK can
+ *  be matched to the turn it actually came from. The Observer answers a beat
+ *  late and often after pulling audio, so by the time it routes, a newer —
+ *  frequently much weaker — turn has usually landed. Keying the score off
+ *  "most recent" therefore stamps the wrong utterance's clarity: on 2026-08-04
+ *  a clean 0.65 request ("רוצים לראות את הלוח") was routed 5s later and
+ *  inherited a 0.41 fragment's score, rendering as "words very uncertain" —
+ *  which is exactly the marker that tells the Board Manager to ignore the
+ *  specifics of what was said. */
+export interface HeardSpeechTurn {
+  text: string;
+  confidence: number | undefined;
+  at: number;
+}
+
+/** Words only — the Observer re-punctuates ("…הלוח" → "…הלוח?"), so punctuation
+ *  must not decide whether a transcript matches the turn behind it. */
+function contentTokens(text: string): Set<string> {
+  return new Set(
+    (text || "")
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean),
+  );
+}
+
+/** Share of the SHORTER side's words the two share. Normalizing by the shorter
+ *  side (rather than the union) keeps a match when the Observer trims filler or
+ *  merges a fragment in — both are ordinary relay behaviour — while still
+ *  needing real word overlap rather than incidental co-occurrence. */
+function overlapScore(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const w of a) if (b.has(w)) shared++;
+  return shared / Math.min(a.size, b.size);
+}
+
+/** Below this the transcript is not a relay of that turn. */
+const HEARD_SPEECH_MATCH_THRESHOLD = 0.6;
+
+/**
+ * Find the [HEARD SPEECH] turn a routed transcript came from, so its recogniser
+ * score can be stamped onto the transcript rather than whatever score happens to
+ * be newest. Entries older than `ttlMs` are ignored.
+ *
+ * Returns undefined when nothing in the window is a plausible source — the
+ * Observer produced those words some other way (pulled audio, a heavy rewrite),
+ * and no score honestly describes them. Undefined renders NO marker, which is
+ * the same rule `clarityTag` already applies to an unscored turn: absence of a
+ * score is not evidence of a bad one. Guessing the newest score instead is what
+ * mislabels good speech as noise.
+ */
+export function matchHeardSpeechTurn(
+  transcriptText: string,
+  history: readonly HeardSpeechTurn[],
+  now: number,
+  ttlMs: number,
+): HeardSpeechTurn | undefined {
+  const wanted = contentTokens(transcriptText);
+  if (wanted.size === 0) return undefined;
+
+  let best: HeardSpeechTurn | undefined;
+  let bestScore = 0;
+  // Oldest → newest, using >= on the score so an equally good later turn wins:
+  // a repeated phrase should resolve to the most recent time it was said.
+  for (const turn of history) {
+    if (now - turn.at > ttlMs) continue;
+    const score = overlapScore(wanted, contentTokens(turn.text));
+    if (score >= HEARD_SPEECH_MATCH_THRESHOLD && score >= bestScore) {
+      best = turn;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 /** Flow-log rendering of a recognizer score — "asr 0.62 (medium)" / "asr n/a".
  *  Keeps the raw number in the log so thresholds can be re-tuned from real
  *  sessions rather than guessed. */

@@ -27,7 +27,10 @@ const L: Record<string, Lexeme> = {
   want: { w: "quero", v3: "quer", v3p: "querem", v1p: "queremos" },
   give: { w: "dou", v3: "dá", v3p: "dão", v1p: "damos" },
   take: { w: "pego", v3: "pega", v3p: "pegam", v1p: "pegamos" },
-  get: { w: "consigo", v3: "consegue", v3p: "conseguem" },
+  // `inf` matters: the intent periphrasis ("vou conseguir a madeira") reads it,
+  // and without one the will-marked fetch — the commonest builder line — came
+  // out as "Eu vou consigo".
+  get: { w: "consigo", v2: "consegues", v3: "consegue", v3p: "conseguem", v1p: "conseguimos", inf: "conseguir" },
   have: { w: "tenho", v3: "tem", v3p: "têm", v1p: "temos" },
   help: { w: "ajudo", v3: "ajuda", v3p: "ajudam" },
   think: { w: "penso", v3: "pensa", v3p: "pensam" },
@@ -203,7 +206,7 @@ const L: Record<string, Lexeme> = {
   wash: { w: "lavo", v2: "lavas", v3: "lava", v3p: "lavam", v1p: "lavamos", inf: "lavar" },
   tidy: { w: "arrumo", v2: "arrumas", v3: "arruma", v3p: "arrumam", inf: "arrumar" },
   heat: { w: "aqueço", v2: "aqueces", v3: "aquece", v3p: "aquecem", inf: "aquecer" },
-  cool: { w: "esfrio", v2: "esfrias", v3: "esfria", v3p: "esfriam", inf: "esfriar" },
+  make_cold: { w: "esfrio", v2: "esfrias", v3: "esfria", v3p: "esfriam", inf: "esfriar" },
   talk: { w: "falo", v2: "falas", v3: "fala", v3p: "falam", v1p: "falamos", inf: "falar" },
   // Household CHORE verbs the needs templates speak ("vou cozinhar a comida").
   cook: { w: "cozinho", v2: "cozinhas", v3: "cozinha", v3p: "cozinham", inf: "cozinhar" },
@@ -218,6 +221,32 @@ const L: Record<string, Lexeme> = {
   bedroom: { w: "quarto", g: "m" },
   store: { w: "despensa", g: "f" },
   workshop: { w: "oficina", g: "f" },
+  // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
+  // The building trade shipped as live glyphs with no lexemes here, so a
+  // builder said "Eu build o house" — the raw English keys inside a Portuguese
+  // sentence, exactly the gap the furniture kinds had.
+  //
+  // MATERIALS: `wood`/`stone` are mass (the material), `block`/`tree` count.
+  block: { w: "bloco", g: "m" },
+  wood: { w: "madeira", g: "f", mass: true },
+  stone: { w: "pedra", g: "f", mass: true },
+  tree: { w: "árvore", g: "f" },
+  // STRUCTURES — `house` is the dwelling as an ORDER; `home` stays the place
+  // a creature goes back to.
+  house: { w: "casa", g: "f" },
+  farm: { w: "fazenda", g: "f" },
+  building: { w: "prédio", g: "m" },
+  storehouse: { w: "armazém", g: "m", plw: "armazéns" },
+  yard: { w: "quintal", g: "m", plw: "quintais" },
+  // TRADE VERBS — 1sg in `w`, plus the infinitive the intent periphrasis
+  // ("vou construir") reads.
+  build: { w: "construo", v2: "constróis", v3: "constrói", v3p: "constroem", v1p: "construímos", inf: "construir" },
+  make: { w: "faço", v2: "fazes", v3: "faz", v3p: "fazem", v1p: "fazemos", inf: "fazer" },
+  bring: { w: "trago", v2: "trazes", v3: "traz", v3p: "trazem", v1p: "trazemos", inf: "trazer" },
+  carry: { w: "levo", v2: "levas", v3: "leva", v3p: "levam", v1p: "levamos", inf: "levar" },
+  cut: { w: "corto", v2: "cortas", v3: "corta", v3p: "cortam", v1p: "cortamos", inf: "cortar" },
+  // The completion state ("a casa está pronta").
+  finished: { w: "pronto", f: "pronta" },
 };
 
 const PT_CONN: Record<string, string> = {

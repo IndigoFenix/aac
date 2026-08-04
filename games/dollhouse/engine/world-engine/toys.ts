@@ -1,7 +1,7 @@
 // shared/world-engine/toys.ts
 //
 // THE TOY REGISTRY — what a toy IS, what it is made of, and the DOLL rule
-// (planning-docs/games/toys-and-song-expansion.md).
+// (planning-docs/games/world-engine/toys-and-song-expansion.md).
 //
 // Two families, one mechanic:
 //

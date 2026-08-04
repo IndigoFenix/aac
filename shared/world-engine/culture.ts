@@ -1,6 +1,6 @@
 /**
  * culture.ts — the world's CULTURAL LAW declaration (nations arc P2,
- * planning-docs/games/nations-and-empires.md §6).
+ * planning-docs/games/world-engine/nations-and-empires.md §6).
  *
  * `game.culture` is the world spec's outermost, unrepealable ring:
  * UNIVERSAL ABSOLUTE TABOOS. An absolute law is a law a member of the

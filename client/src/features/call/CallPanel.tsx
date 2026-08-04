@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Phone, Video, Loader2, Gamepad2, UserPlus, Zap } from "lucide-react";
 import { InvitePeoplePopup } from "./InvitePeoplePopup";
+import { GameRoomPopup } from "./GameRoomPopup";
 import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchContacts, type PersonChatContact } from "@/features/personChat/api";
 import { fetchCallableStudents, type CallableStudent } from "./api";
 import { useCall } from "./CallContext";
+import IframeQuestSurface from "./IframeQuestSurface";
 import CallGameSurface from "@shared/social-world/CallGameSurface";
 import { CallWorldHub } from "@shared/social-world/call-game-net";
-import { NPC_DEMO_GAME } from "@shared/social-world/default-game";
+import type { CallGame } from "@shared/realtime-events";
 
 interface CallPanelProps {
   isOpen?: boolean;
@@ -86,11 +88,17 @@ export function CallPanel({ isOpen }: CallPanelProps) {
 
   const callBusy = callState !== "idle";
 
-  // Dev/test: open the social-world surface on its own — no call, no peers — so
-  // the physics + steering can be exercised without setting up a real video call.
-  // Reuses the in-call game surface in single-player mode (selfPersonId=null →
-  // the canvas runs solo); the hub/sendWorld are inert without a peer.
+  // Game room: pick a world, then either bring people into it (the call starts
+  // with the game already attached) or open it alone.
   const [gameRoomOpen, setGameRoomOpen] = useState(false);
+  // A world chosen for "choose players" — held while the people picker is up,
+  // then handed to startCallWithPeople.
+  const [pendingGame, setPendingGame] = useState<CallGame | null>(null);
+  // A world opened on its own: no call, no peers. For an "aivota-world" game the
+  // in-call surface runs single-player (selfPersonId=null → the canvas runs solo;
+  // the hub/sendWorld are inert without a peer); an "iframe-quest" game mounts
+  // its packaged build with the multiplayer identity withheld.
+  const [soloGame, setSoloGame] = useState<CallGame | null>(null);
   const soloHub = useMemo(() => new CallWorldHub(), []);
 
   return (
@@ -117,11 +125,12 @@ export function CallPanel({ isOpen }: CallPanelProps) {
           variant="ghost"
           className="gap-1.5"
           onClick={() => setGameRoomOpen(true)}
-          aria-label={t("socialWorld.testGameRoom")}
-          data-testid="open-test-game-room"
+          disabled={callBusy}
+          aria-label={t("socialWorld.gameRoom")}
+          data-testid="open-game-room"
         >
           <Gamepad2 className="w-4 h-4" />
-          <span className="hidden sm:inline">{t("socialWorld.testGameRoom")}</span>
+          <span className="hidden sm:inline">{t("socialWorld.gameRoom")}</span>
         </Button>
       </div>
 
@@ -135,16 +144,44 @@ export function CallPanel({ isOpen }: CallPanelProps) {
       )}
 
       {gameRoomOpen && (
+        <GameRoomPopup
+          onPlayTogether={(g) => setPendingGame(g)}
+          onPlayAlone={(g) => setSoloGame(g)}
+          onClose={() => setGameRoomOpen(false)}
+        />
+      )}
+
+      {/* Who plays. The call starts with the chosen world already attached, so
+          every AAC student lands straight in the game (their client launches the
+          matching app on `call:game`). */}
+      {pendingGame && (
+        <InvitePeoplePopup
+          title={pendingGame.name ?? t("socialWorld.gameRoom")}
+          confirmLabel={t("socialWorld.start")}
+          onConfirm={(personIds, autoAccept) => { void startCallWithPeople(personIds, autoAccept, pendingGame); }}
+          onClose={() => setPendingGame(null)}
+        />
+      )}
+
+      {soloGame && (
         <div className="fixed inset-0 z-[100] bg-black">
-          <CallGameSurface
-            game={NPC_DEMO_GAME}
-            selfPersonId={null}
-            sendWorld={() => {}}
-            hub={soloHub}
-            npcBrainWsUrl={resolveWsUrl("/ws/social-bot")}
-            onExit={() => setGameRoomOpen(false)}
-            t={t}
-          />
+          {soloGame.engine === "iframe-quest" ? (
+            <IframeQuestSurface
+              game={soloGame}
+              multiplayer={false}
+              onExit={() => setSoloGame(null)}
+            />
+          ) : (
+            <CallGameSurface
+              game={soloGame}
+              selfPersonId={null}
+              sendWorld={() => {}}
+              hub={soloHub}
+              npcBrainWsUrl={resolveWsUrl("/ws/social-bot")}
+              onExit={() => setSoloGame(null)}
+              t={t}
+            />
+          )}
         </div>
       )}
 

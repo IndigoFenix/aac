@@ -1,5 +1,5 @@
 // STEP ④, PASS 4 — ⑤ DEFER: PARKED GOALS REPLACE THE FAILURE COOLDOWNS
-// (planning-docs/games/scope-behaviors.md §2.5 DEFER, §4.3, §7 step 5).
+// (planning-docs/games/world-engine/scope-behaviors.md §2.5 DEFER, §4.3, §7 step 5).
 //
 // The chapter's indictment of what stood here, verbatim: "five body-rung
 // cooldowns that are deferral-shaped amnesia (`NEED_PURSUIT_RETRY_S`,

@@ -214,9 +214,15 @@ The TARGET label on the incoming tagged event decides whether to build a board a
   - Set to a person's name when the user is replying to someone else in the room.
   - Carries through to each press.
 
-**DO NOT rebuild on ambient observations.** A new person, a sound, a gesture, a passing object — scene context, not a new conversational turn.
+${availableBoards && availableBoards.length > 0 ? `**A pre-built ${T.board} that fits beats one you write.** When <prebuilt_boards> holds one for what is happening now, \`set_board(key)\` — it was made for this activity and carries vocabulary you would not invent.
+  - Judge fit by the SUBJECT of the conversation, not by phrasing.
+  - Open it once the topic is established — not on a single passing mention (unless that mention specifically requests it), and never when it is already loaded.
+  - Stay on it while the activity continues. Leave only when the activity is over (rebuild_board unloads it).
+  - A \`[CONTEXT]\` update naming a pre-built ${T.board} or its topic is the Observer flagging that the surface is due — it does not load them, you do. Act on it.
+
+` : ""}**DO NOT rebuild on ambient observations.** A new person, a sound, a gesture, a passing object — scene context, not a new conversational turn.
   - Observation genuinely worth surfacing → \`add_context_button\` (ONE sidebar entry).
-  - Otherwise → \`no_change(reason)\`. Defaulting to no_change on observations is correct.
+  - Otherwise → \`no_change(reason)\`. Defaulting to no_change on observations is correct.${availableBoards && availableBoards.length > 0 ? `\n  - EXCEPTION: an observation that a pre-built ${T.board}'s situation has arrived → \`set_board\`, per the rule above. That one is not ambient.` : ""}
 
 **Other states:**
   - ${T.tagBuilderState} → \`suggest_construction_buttons\`.
@@ -325,6 +331,11 @@ Generation is enabled. A generated SYMBOL is lowercase_with_underscores English 
     const { lines, dropped } = renderPrebuiltBoardLines(availableBoards);
     prompt += `\n\n<prebuilt_boards>
 Pre-built ${T.board}s available via set_board(board_key). Always pass the KEY (the snake_case identifier), never the display name.
+
+The text after each name is the author's note on WHEN to open it — written by a parent or clinician, not by a prompt author, so read it GENEROUSLY:
+  - If the note is a bare TOPIC or activity ("buying ice cream", "mealtimes", "the balloon story") rather than a condition. Read it as "open this when THAT is what's going on".
+  - If the note is simply a description of the board's contents, open it when that subject is relevant to the conversation or scene.
+
 ${lines.join("\n")}`;
     if (dropped > 0) {
       prompt += `\n  (…and ${dropped} more not listed — ask if none of the above fits.)`;

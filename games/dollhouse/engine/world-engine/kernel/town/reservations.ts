@@ -1,6 +1,6 @@
 /**
  * reservations.ts — the SPOKEN-FOR ledger over abstract stock (construction
- * pipeline ①, planning-docs/games/construction-pipeline.md).
+ * pipeline ①, planning-docs/games/world-engine/construction-pipeline.md).
  *
  * Task-pool claims lock TASKS and ItemState.ownerId locks materialized
  * items, but nothing locked the UNITS a pending haul or build intends to

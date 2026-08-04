@@ -1,5 +1,5 @@
 // STEP ④, PASS 5 — ⑥ SOURCE/EXCHANGE PRICING AT THE TOWN RUNG
-// (planning-docs/games/scope-behaviors.md §2.2 SOURCE, §2.7 EXCHANGE, §3, §4.7,
+// (planning-docs/games/world-engine/scope-behaviors.md §2.2 SOURCE, §2.7 EXCHANGE, §3, §4.7,
 //  §7 step 6).
 //
 // The chapter's indictment of what stood here, verbatim:

@@ -265,7 +265,7 @@ const L: Record<string, Lexeme> = {
   wash: { w: "wash", inf: "wash" },
   tidy: { w: "tidy", inf: "tidy" },
   heat: { w: "heat", inf: "heat" },
-  cool: { w: "cool", inf: "cool" },
+  make_cold: { w: "cool", inf: "cool" },
   talk: { w: "talk", inf: "talk" },
   // Household CHORE verbs the needs templates speak ("I will cook the food").
   cook: { w: "cook", inf: "cook" },
@@ -280,6 +280,40 @@ const L: Record<string, Lexeme> = {
   bedroom: { w: "bedroom" },
   store: { w: "storeroom" },
   workshop: { w: "workshop" },
+  // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
+  // Every word a building site can SAY. These shipped as live glyphs long
+  // before they had lexemes, so the whole trade spoke raw English keys inside
+  // the other rulesets ("אני build את הhouse") — English only ever LOOKED
+  // right because `baseWord` falls back to the glyph id, which is an English
+  // word. Same lesson the furniture kinds taught above.
+  //
+  // The MATERIALS. `wood`/`stone` are mass ("we don't have wood", never "a
+  // wood"); `block` counts, because a bill is a number of them.
+  block: { w: "block" },
+  wood: { w: "wood", mass: true },
+  stone: { w: "stone", mass: true },
+  tree: { w: "tree" },
+  // The STRUCTURES a build order can name (town-play's catalogue `glyph`s).
+  // `house` is the spoken word for a dwelling ORDER; `home` stays the place a
+  // creature returns to — two words because they are two things.
+  house: { w: "house", plw: "houses" },
+  farm: { w: "farm" },
+  market: { w: "market" },
+  building: { w: "building" },
+  storehouse: { w: "storehouse" },
+  // The builders' YARD — where a town's materials pile up between orders, and
+  // the default destination of a haul with no site to name.
+  yard: { w: "yard" },
+  // The TRADE VERBS. `build` raises a structure, `make` produces a piece (user
+  // law: you make a toy, you build a house), `bring` is the haul — fetch first,
+  // then deliver — and `cut` fells the tree the chain starts at.
+  build: { w: "build", inf: "build" },
+  make: { w: "make", inf: "make" },
+  bring: { w: "bring", inf: "bring" },
+  carry: { w: "carry", v3: "carries", inf: "carry" },
+  cut: { w: "cut", inf: "cut" },
+  // The completion state ("the house is finished").
+  finished: { w: "finished" },
 };
 
 function pluralize(w: string): string {

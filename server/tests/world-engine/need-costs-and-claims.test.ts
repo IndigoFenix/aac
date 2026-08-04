@@ -1,4 +1,4 @@
-// STEP ④ AT THE BODY RUNG — "costs in the planner" (planning-docs/games/
+// STEP ④ AT THE BODY RUNG — "costs in the planner" (planning-docs/games/world-engine/
 // scope-behaviors.md §2.6 CLAIM, §2.3 PREFER, §3 the currency, §5 seats 1–2).
 //
 // Two things land in this pass and both are pinned here:

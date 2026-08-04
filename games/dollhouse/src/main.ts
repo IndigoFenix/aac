@@ -216,9 +216,13 @@ const island: BoardIsland = mountIsland();
 const sharedBoard: SharedBoard = {
   island,
   claim(handlers) {
-    // EVERY user command flows through this one slot — wrap it here so a
-    // FOLLOWER boot relays its commands instead of mutating its frozen replica.
-    const wrapped = wrapHandlersForMultiplayer(handlers);
+    // Handed straight through. Whether a press or a sentence acts here or
+    // travels to the owner is the ENGINE's rule now — every input resolves to
+    // one PlayerAction and meets one gate inside the host (see
+    // quest-host `performPlayerAction`). This game used to answer that question
+    // a second time, in its own vocabulary, which is how a follower's
+    // glyphless presses came to be silently dropped.
+    const wrapped = handlers;
     boardHandlers = wrapped;
     return () => {
       if (boardHandlers !== wrapped) return; // a newer claim took over
@@ -270,47 +274,13 @@ let mpTarget: MpSession | null = null; // the latest identity the platform sent
 let bootedMp: MpSession | null = null; // what the LIVE quest was booted with
 let closed = false; // request_close received — never boot again
 
-/** FOLLOWER COMMAND RELAY — wraps the SharedBoard handlers (the ONE chokepoint
- *  every user command flows through: island taps, bridge board presses, glyph
- *  sentences). Single-player and OWNER boots pass straight through. On a
- *  FOLLOWER:
- *   • speak: still calls the host (it voices the student's own words and
- *     returns BEFORE parse/dispatch — engine caveat), then relays the sentence
- *     as a reliable `world_cmd` speak stamped with THIS peer's own addressee
- *     (quest.localAddressee()) so the owner injects it at the SENDER's target.
- *   • select: NEVER reaches host.select (selects are ungated — they would
- *     mutate the frozen replica). The pressed option is resolved from the
- *     CURRENT sidebar view; one carrying a composed glyph sentence rides the
- *     same speak-relay path; options without a glyph are dropped. (The sidebar
- *     pager is main.ts-local chrome and never reaches these handlers.)
- *   • selectPocket / selectFamilyMember stay local — the family chip feeds
- *     localAddressee, the pocket strip is display. */
-function wrapHandlersForMultiplayer(handlers: BoardHandlers): BoardHandlers {
-  const follower = (): boolean => bootedMp?.role === "follower";
-  const relaySpeak = (sentence: string, opts?: { spokenExternally?: boolean }): void => {
-    handlers.speak(sentence, opts); // local voicing/echo only — the follower host returns early
-    const from = bootedMp?.selfId;
-    if (!from) return;
-    const target = quest?.localAddressee();
-    sendToParent({
-      type: "world_cmd",
-      cmd: { kind: "speak", from, sentence, ...(target ? { target } : {}) },
-    });
-  };
-  return {
-    select(id, opts) {
-      if (!follower()) return handlers.select(id, opts);
-      const opt = bridgeView?.options.find((o) => o.id === id);
-      if (opt?.glyph) relaySpeak(opt.glyph, opts);
-    },
-    speak(sentence, opts) {
-      if (!follower()) return handlers.speak(sentence, opts);
-      relaySpeak(sentence, opts);
-    },
-    selectPocket(entityId) { handlers.selectPocket(entityId); },
-    selectFamilyMember(memberId) { handlers.selectFamilyMember(memberId); },
-  };
-}
+// (The follower command relay that used to live here is GONE. It answered
+// "does this act here or at the owner?" a second time, in the game's own
+// vocabulary — resolving presses off the sidebar view, relaying them as
+// sentences, and dropping any option that had no glyph. That question has one
+// answer now, in the engine: every input resolves to a PlayerAction and passes
+// `performPlayerAction`. The game just presses and speaks.)
+
 // EYEGAZE smoothing only — a mouse-mode sample is already deliberate. Matches
 // the goal-tree player's tuning. (After reset() the first sample SEEDS the
 // smoother — gaze-kit snaps, it never eases from an origin.)
@@ -561,6 +531,11 @@ function buildWorld(): void {
             // Outbound engine wire messages → the platform's unreliable
             // world channel (fanned out verbatim to every peer).
             net: { send: (msgs: unknown[]) => sendToParent({ type: "world_data", msgs }) },
+            // Outbound COMMANDS → the platform's reliable pipe. The engine
+            // sends a follower's gaze instructions (the world-mutating cells of
+            // the dwell table) here; board presses and built sentences take the
+            // same pipe through wrapHandlersForMultiplayer above.
+            sendCommand: (cmd) => sendToParent({ type: "world_cmd", cmd }),
           }
         : undefined,
     );

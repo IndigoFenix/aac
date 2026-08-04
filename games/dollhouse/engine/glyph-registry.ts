@@ -688,7 +688,17 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { do: ["hands"] }, tone: "request", emoji: "🔥", exposeToAi: true,
     imagePath: "adjectives/state/hot",
     composable: { accepts: ["noun"], suggestCategories: ["what"] } },
-  { key: "cool", tKey: "aac.glyph.cool", pos: "verb", categories: ["do"],
+  // KEYED `make_cold` — the key must not CONTAIN "cool" either, not just differ
+  // from it. This entry owned the bare `cool` first and rendered every slang
+  // "that's cool!" as the COLD snowflake; renaming it to `cool_down` did not
+  // help, because the model does not match keys exactly — it scans the
+  // AI-visible list for the nearest word and `cool_down` was still the nearest
+  // thing to "cool". (Observed 2026-08-03: "משחק מחשב, מגניב!" translated to
+  // `🎮+computer+cool_down`. The model's FIRST pass had correctly used `wow`;
+  // an unrelated validator retry re-rolled the board and it took the decoy.)
+  // A near-miss key is a trap for a fuzzy matcher, so the fix is a name with no
+  // shared substring — "make cold" is also exactly what TRANSFORM_STATE does.
+  { key: "make_cold", tKey: "aac.glyph.make_cold", pos: "verb", categories: ["do"],
     modeChips: { do: ["hands"] }, tone: "request", emoji: "❄️", exposeToAi: true,
     imagePath: "adjectives/state/cold",
     composable: { accepts: ["noun"], suggestCategories: ["what"] } },
@@ -931,9 +941,18 @@ const VOCAB: VocabularyItem[] = [
   // ── Furniture ────────────────────────────────────────────────────────────
   // The world-engine's station kinds (kernel/town/stations.ts). Containers all
   // share one silhouette family and differ by construction — see the container
-  // motif in planning-docs/world-engine-icon-gaps.md.
+  // motif in planning-docs/games/world-engine/world-engine-icon-gaps.md.
+  // TABLE carries NO emoji and IS exposed to the AI, and both halves matter.
+  // Unicode has no table — 🪑 is the CHAIR, which `chair` below rightly claims.
+  // While `table` claimed it too, every path that goes through an emoji handed a
+  // table the chair's picture: the reverse-emoji map (BY_EMOJI_NONEXPOSED) is
+  // first-wins and `chair` is declared first; the sentence builders store the
+  // emoji rather than the key for un-exposed items (slotKeyForSelection); and the
+  // relay swaps a glyph key for its emoji when minting a button icon. Exposure is
+  // what makes it addressable at all — it is precisely an item "no single emoji
+  // captures", which is the bar for this flag, and the bundled art always renders.
   { key: "table", tKey: "aac.glyph.table", pos: "noun", categories: ["what"],
-    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🪑",
+    modeChips: { what: ["all", "things"] }, tone: "comment", exposeToAi: true,
     imagePath: "things/furniture/table" },
   { key: "box", tKey: "aac.glyph.box", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "📦",
@@ -1692,15 +1711,25 @@ const VOCAB: VocabularyItem[] = [
   // Reactions / discourse markers
   { key: "wow", tKey: "aac.glyph.wow", pos: "noun", categories: ["chat"],
     modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "😮", exposeToAi: true },
+  // AMAZING is the positive APPRAISAL, as distinct from `wow`'s surprise: "that
+  // was great", not "I didn't expect that". It exists because the AI kept needing
+  // one and had nowhere to put it — every English slang "cool!" and its
+  // equivalents (מגניב, genial, 太棒了) landed on whatever key read closest, which
+  // is how a cooling-verb icon ended up on a compliment. A vocabulary with a hole
+  // in it doesn't make the model stop reaching; it makes the model reach WRONG.
+  { key: "amazing", tKey: "aac.glyph.amazing", pos: "noun", categories: ["chat"],
+    modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "🤩", exposeToAi: true },
   { key: "oops", tKey: "aac.glyph.oops", pos: "noun", categories: ["chat"],
     modeChips: { chat: ["all", "react"] }, tone: "comment", emoji: "😬", exposeToAi: true },
   { key: "oh_no", tKey: "aac.glyph.oh_no", pos: "noun", categories: ["chat"],
     modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "😱", exposeToAi: true },
-  // NOTE `cool` is NOT here — it is the TRANSFORM VERB (to cool the food), the
-  // counterpart of `heat`, and lives with the other actions above. It sat in this
-  // reaction row as the slang "cool!" 😎 by mistake, which is why a cooling
-  // sentence used to render as sunglasses. If the slang reaction is wanted back
-  // it needs its OWN key — one word cannot be both.
+  // NOTE the word "cool" appears in NO key in this registry, in either sense —
+  // not as `cool`, not inside a longer key. The TRANSFORM VERB (to cool the food)
+  // is `make_cold` with the other actions above; the slang goes to `amazing`
+  // (or `wow`), which is a picture that actually means what it says. This row
+  // held "cool" as 😎 once and the verb row held it as ❄️ twice — each time a
+  // sentence in the OTHER sense rendered wrong. Removing the ambiguous key is
+  // only half the fix; `amazing` is the half that gives the AI somewhere to go.
   { key: "yuck", tKey: "aac.glyph.yuck", pos: "noun", categories: ["chat"],
     modeChips: { chat: ["all", "react"] }, tone: "feeling", emoji: "🤢", exposeToAi: true },
   { key: "look", tKey: "aac.glyph.look", pos: "noun", categories: ["chat"],

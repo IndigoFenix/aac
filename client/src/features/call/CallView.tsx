@@ -219,6 +219,110 @@ export function CallView() {
 
   const isConnecting = callState === "ringing-out" || callState === "connecting";
   const isActive = callState === "active";
+
+  // AN IFRAME WORLD GAME OWNS THE SCREEN. It renders through the very same
+  // surface the call panel's game room opens — one game, one interface, however
+  // you got to it — so the call's chrome goes INSIDE the surface as overlays
+  // instead of a stack of rows the game has to share the page with (which also
+  // meant every roster or board change resized the game).
+  if (isActive && game && game.engine === "iframe-quest") {
+    return (
+      <div
+        className="fixed inset-0 z-[100] bg-black text-white"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("call.title")}
+      >
+        <IframeQuestSurface
+          game={game}
+          onExit={stopGame}
+          peers={
+            gameSidebar.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {gameSidebar.map(([pid, stream]) => (
+                  <PeerVideoTile
+                    key={pid}
+                    stream={stream}
+                    name={participants.find((p) => p.personId === pid)?.name ?? null}
+                    gain={peerGains.get(pid) ?? 1}
+                    muted={outputMuted}
+                    borderColor={colorForPeerId(pid)}
+                  />
+                ))}
+              </div>
+            ) : null
+          }
+          controls={
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="icon"
+                variant={audioEnabled ? "secondary" : "destructive"}
+                onClick={() => toggleAudio(!audioEnabled)}
+                aria-label={audioEnabled ? t("call.mute") : t("call.unmute")}
+                aria-pressed={!audioEnabled}
+                data-testid="call-toggle-audio"
+              >
+                {audioEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant={videoEnabled ? "secondary" : "destructive"}
+                onClick={() => toggleVideo(!videoEnabled)}
+                aria-label={videoEnabled ? t("call.cameraOff") : t("call.cameraOn")}
+                aria-pressed={!videoEnabled}
+                data-testid="call-toggle-video"
+              >
+                {videoEnabled ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant={outputMuted ? "destructive" : "secondary"}
+                onClick={() => setOutputMuted((m) => !m)}
+                aria-label={outputMuted ? t("call.unmuteSpeaker") : t("call.muteSpeaker")}
+                aria-pressed={outputMuted}
+                data-testid="call-toggle-output"
+              >
+                {outputMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                onClick={() => setInvitePopupOpen(true)}
+                aria-label={t("call.invitePeople")}
+                data-testid="call-invite-people"
+              >
+                <UserPlus className="w-4 h-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="destructive"
+                onClick={() => hangUp()}
+                aria-label={t("call.hangUp")}
+                data-testid="call-hang-up"
+              >
+                <PhoneOff className="w-4 h-4" />
+              </Button>
+            </div>
+          }
+        />
+
+        {invitePopupOpen && (
+          <InvitePeoplePopup
+            title={t("call.invitePeople")}
+            confirmLabel={t("call.invite")}
+            excludePersonIds={[selfPersonId, ...participants.map((p) => p.personId)].filter(Boolean) as string[]}
+            onConfirm={(personIds, autoAccept) => { void invitePeopleIntoCall(personIds, autoAccept); }}
+            onClose={() => setInvitePopupOpen(false)}
+          />
+        )}
+      </div>
+    );
+  }
   const statusText =
     callState === "ringing-out"
       ? t("call.calling")
@@ -391,13 +495,9 @@ export function CallView() {
 
           {/* Social-game surface — fills the main area when a game is attached
               (the call panel IS the game panel). Peers are in the sidebar; "End
-              game" detaches it back to plain video. An iframe world game
-              (engine "iframe-quest") mounts its packaged game locally instead
-              of the in-page world canvas. */}
-          {isActive && game && game.engine === "iframe-quest" && (
-            <IframeQuestSurface game={game} onExit={stopGame} />
-          )}
-          {isActive && game && game.engine !== "iframe-quest" && (
+              game" detaches it back to plain video. (An iframe world game never
+              reaches here — it takes the whole screen, above.) */}
+          {isActive && game && (
             <CallGameSurface
               game={game}
               selfPersonId={selfPersonId}

@@ -199,6 +199,15 @@ export interface WorldHostDeps {
    *  WHAT to do, never where to stand. (Talk-at-a-distance is the game layer's
    *  job — see the quest host's spirit dispatcher.) */
   stationary?: boolean;
+  /** MULTIPLAYER + SPIRIT: where this peer actually IS, when that is NOT its
+   *  local avatar's position. A stationary spirit's avatar never moves (`aim`
+   *  is forced null below), so the streamed packet would pin every peer's light
+   *  to the spawn point for the whole session — they'd see each other exist and
+   *  never see each other move. Returning the spirit's hover point makes the
+   *  broadcast follow the player. Applied to the OUTBOUND packet only: the sim
+   *  is untouched, so nothing here can shove a body or change a distance rule.
+   *  Return null to stream the avatar's own position (the default). */
+  netLocalPos?: () => Vec2 | null;
 }
 
 /** A running world loop. Feed it peer state + input; it renders and emits outbound. */
@@ -1154,7 +1163,17 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       // Avatar + toys/possession → mesh. Everyone streams their avatar so all
       // render regardless of A/V proximity (only audio/video is range-gated).
       if (now - lastSend >= SEND_INTERVAL_MS) {
-        net.send(collectOutbound(state, pendingEvents, ownedAvatarIds));
+        const msgs = collectOutbound(state, pendingEvents, ownedAvatarIds);
+        // SPIRIT: broadcast where the player IS, not where their formless
+        // avatar is parked (see netLocalPos). Velocity stays 0 — the receiver
+        // eases onto each fresh point rather than dead-reckoning past it.
+        const here = deps.netLocalPos?.();
+        if (here) {
+          for (const m of msgs) {
+            if (m.t === "avatar" && m.id === localId) { m.x = here.x; m.y = here.y; }
+          }
+        }
+        net.send(msgs);
         pendingEvents = [];
         lastSend = now;
       }

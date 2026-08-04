@@ -270,7 +270,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
           // showing the ring popup (the client already holds the incoming call).
           setAudioEnabled(true);
           setVideoEnabled(true);
-          void clientRef.current?.accept();
+          // accept() acquires camera+mic before it answers, and on this device
+          // that can fail (the session's own vision pipeline holds the camera,
+          // a kiosk with no mic, a revoked permission). An unhandled rejection
+          // here used to leave the student showing NO ring and NO call while
+          // the caller rang until timeout — the failure has to become visible.
+          // The client keeps `incoming` until the answer is actually sent, so
+          // falling back to the ring popup still lets them accept by hand.
+          void clientRef.current?.accept().catch((err: any) => {
+            console.error("[call] auto-accept failed, falling back to ring:", err);
+            setError({ code: "accept_failed", message: err?.message ?? "Could not open the call" });
+            setIncoming(event.call);
+          });
         } else {
           setIncoming(event.call);
         }

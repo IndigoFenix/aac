@@ -214,7 +214,10 @@ const EXTRA_EMOJIS: Record<string, string> = {
   spoon: "🥄",
   star: "⭐",
   sticker: "⭐",
-  table: "🪑",
+  // No `table` here. It is a glyph-registry item with bundled art, so this map
+  // never needed to cover it — and the 🪑 it used to carry is the CHAIR, which is
+  // what a table button actually rendered as everywhere resolveEmoji() decides
+  // the picture (the relay's iconRef swap, the caption validator's fallback).
   teddy_bear: "🧸",
   tissue: "🧻",
   toilet: "🚽",

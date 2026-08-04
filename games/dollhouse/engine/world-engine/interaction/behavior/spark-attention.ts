@@ -1,6 +1,6 @@
 // shared/world-engine/interaction/behavior/spark-attention.ts
 //
-// SOFT CONTROL VIA THE SPARK — the attention field (planning-docs/games/
+// SOFT CONTROL VIA THE SPARK — the attention field (planning-docs/games/world-engine/
 // attention-spark.md). The player's spark is an ABSTRACT CREATURE: pointing or
 // looking at a thing to draw others' interest to it is a behavior every creature
 // shares, not a spark power. Hovering near an object draws nearby creatures'

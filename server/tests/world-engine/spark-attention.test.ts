@@ -1,6 +1,6 @@
 // server/tests/world-engine/spark-attention.test.ts
 //
-// The pure attention-field mapping (planning-docs/games/attention-spark.md):
+// The pure attention-field mapping (planning-docs/games/world-engine/attention-spark.md):
 // object → motive, ramp/decay, and the effective-meter bonus. The host wiring
 // (hover detection, ctx.meter injection, announce) is covered in the quest-host
 // suites; this pins the pure core.

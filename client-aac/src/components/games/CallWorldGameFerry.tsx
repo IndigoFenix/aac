@@ -14,7 +14,7 @@
 
 import { useEffect, useRef } from "react";
 import type { MutableRefObject, RefObject } from "react";
-import { electNpcOwner } from "@shared/social-world/npc-conversation-logic";
+import { resolveWorldOwner } from "@shared/social-world/npc-conversation-logic";
 import type { WorldCommandMessage } from "@shared/call/call-data-messages";
 import { useCall } from "@/contexts/CallContext";
 import type { GameEmbedHandle } from "./GameEmbed";
@@ -93,14 +93,18 @@ export function CallWorldGameFerry({
     });
   }, [active, gameId, worldCmdHub, embedRef]);
 
-  // Multiplayer identity: exactly one owner per call, elected as the smallest
-  // personId among MESH-CONNECTED peers (self + remoteStreams) — the same
-  // basis on every client, so all peers converge on one owner as streams
-  // land. Re-sent on roster change and on a slow heartbeat.
+  // Multiplayer identity: exactly one owner per call. The game's nominated host
+  // (CallGame.hostPersonId — normally the clinician who started the game room,
+  // whose machine isn't also running this device's camera/voice ML) owns it
+  // while they're connected; with no host named, or once they've left, it's the
+  // smallest personId among MESH-CONNECTED peers (self + remoteStreams). Both
+  // rules read the same inputs on every client, so all peers converge on one
+  // owner as streams land. Re-sent on roster change and on a slow heartbeat.
+  const hostPersonId = game?.hostPersonId;
   useEffect(() => {
     if (!active || !selfPersonId) return;
     const send = () => {
-      const ownerId = electNpcOwner(selfPersonId, remoteStreams.keys());
+      const ownerId = resolveWorldOwner(selfPersonId, remoteStreams.keys(), hostPersonId);
       embedRef.current?.send({
         type: "world_session",
         selfId: selfPersonId,
@@ -114,7 +118,7 @@ export function CallWorldGameFerry({
     send();
     const timer = setInterval(send, SESSION_RESEND_MS);
     return () => clearInterval(timer);
-  }, [active, selfPersonId, remoteStreams, contacts, embedRef]);
+  }, [active, selfPersonId, remoteStreams, contacts, embedRef, hostPersonId]);
 
   return null;
 }

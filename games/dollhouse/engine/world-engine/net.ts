@@ -25,6 +25,7 @@ import {
   type WorldEvent,
   type WorldState,
 } from "./engine.js";
+import { parsePlayerAction, type PlayerAction } from "./player-action.js";
 
 // ---------------------------------------------------------------------------
 // Wire messages (short keys — these go out ~15×/sec per peer)
@@ -225,35 +226,23 @@ export function claimMessage(id: string, body: string | null): WorldNetMessage {
 
 /** A follower's intent, relayed (reliably) to the owning peer.
  *  `from` is always the sender's network id (its personId on the wire). */
-export type WorldCommand =
-  /** The peer spoke a composed sentence. `target` is the creature id the
-   *  SENDER resolved from ITS OWN gaze/addressed state — the owner must obey
-   *  it rather than re-resolving against the owner's gaze. */
-  | { kind: "speak"; from: string; sentence: string; target?: string }
-  /** The peer's spark claimed avatar `body` (`null` = released). The same fact
-   *  as the mesh `claim` message, on the reliable pipe. */
-  | { kind: "claim"; from: string; body: string | null };
+/**
+ * A relayed command IS a `PlayerAction` plus WHO performed it — there is no
+ * separate wire vocabulary for "things a peer did". The owner runs it through
+ * the same executor as its own actions; see player-action.ts for the line
+ * between what travels and what stays local.
+ */
+export type WorldCommand = PlayerAction & { from: string };
 
 /** Parse an untrusted relayed payload into a WorldCommand, or null — tolerant
- *  of malformed and future-versioned shapes (never throws). */
+ *  of malformed and future-versioned shapes (never throws). The action half is
+ *  the shared `parsePlayerAction`; all this layer adds is the sender. */
 export function parseWorldCommand(raw: unknown): WorldCommand | null {
   if (!raw || typeof raw !== "object") return null;
-  const c = raw as { kind?: unknown; from?: unknown; sentence?: unknown; target?: unknown; body?: unknown };
-  if (typeof c.from !== "string" || !c.from) return null;
-  if (c.kind === "speak") {
-    if (typeof c.sentence !== "string" || !c.sentence.trim()) return null;
-    return {
-      kind: "speak",
-      from: c.from,
-      sentence: c.sentence,
-      ...(typeof c.target === "string" && c.target ? { target: c.target } : {}),
-    };
-  }
-  if (c.kind === "claim") {
-    if (typeof c.body !== "string" && c.body !== null) return null;
-    return { kind: "claim", from: c.from, body: c.body as string | null };
-  }
-  return null; // unknown kind — version skew, ignore
+  const from = (raw as { from?: unknown }).from;
+  if (typeof from !== "string" || !from) return null;
+  const action = parsePlayerAction(raw);
+  return action ? { ...action, from } : null;
 }
 
 /**

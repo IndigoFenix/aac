@@ -8,7 +8,7 @@
 // LLM is a renderer, never the decider (social-bot's stated design) — so a creature
 // and a social peer differ only in their PERCEPTION front-end and their TEXT
 // surface, not in their personality or decision math. See
-// planning-docs/games/creature-personality.md for the unification plan; the intent
+// planning-docs/games/world-engine/creature-personality.md for the unification plan; the intent
 // is to lift this genome + the affect engine into a truly shared module and delete
 // this mirror.
 //

@@ -92,7 +92,8 @@ interface CallContextValue {
 
   /** Social game attached to the active call (null = plain video chat). */
   game: CallGame | null;
-  /** Attach a game to the active call (defaults to the built-in social world). */
+  /** Attach a game to the active call (defaults to the built-in social world).
+   *  This client is stamped as the game's HOST (it runs the simulation). */
   startGame: (game?: CallGame) => void;
   /** Detach the game (back to plain video chat). */
   stopGame: () => void;
@@ -144,8 +145,10 @@ interface CallContextValue {
    *  `autoAccept` opens it automatically on the student's device instead of ringing. */
   startCallToStudent: (contactId: string, studentName: string, personId: string, autoAccept?: boolean) => Promise<void>;
   /** Start a group call with one or more people. `autoAccept` opens it automatically
-   *  on AAC invitees instead of ringing. */
-  startCallWithPeople: (selections: InviteSelection[], autoAccept?: boolean) => Promise<void>;
+   *  on AAC invitees instead of ringing. `game` is attached the moment the call
+   *  goes active (a "game room": everyone lands straight in the world), with this
+   *  client as its host. */
+  startCallWithPeople: (selections: InviteSelection[], autoAccept?: boolean, game?: CallGame) => Promise<void>;
   /** Ring more people into the active call. */
   invitePeopleIntoCall: (selections: InviteSelection[], autoAccept?: boolean) => Promise<void>;
   accept: () => Promise<void>;
@@ -239,6 +242,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // restarting its interval on every connect.
   const remoteStreamsRef = useRef(remoteStreams);
   remoteStreamsRef.current = remoteStreams;
+  // A game queued by "start a game room": the call is still ringing, so there is
+  // no session to attach it to yet. Applied on the transition to "active"
+  // (late joiners get it from accept()'s call:game catch-up).
+  const pendingGameRef = useRef<CallGame | null>(null);
+  // Our own personId, readable from callbacks that must not re-create per render.
+  const selfPersonIdRef = useRef<string | null>(null);
 
   const clearStreams = useCallback(() => {
     setLocalStream(null);
@@ -260,12 +269,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
     npcHubRef.current.clear();
     worldCmdHubRef.current.clear();
     presenceChannelRef.current.clear();
+    pendingGameRef.current = null;
   }, []);
 
   const handleEvent = useCallback((event: CallClientEvent) => {
     switch (event.type) {
       case "ready":
         setSelfPersonId(event.selfPersonId);
+        selfPersonIdRef.current = event.selfPersonId;
         break;
       case "incoming":
         setIncoming(event.call);
@@ -274,6 +285,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
         break;
       case "state":
         setCallState(event.state);
+        // Game room: the call we started with a game queued is now up — attach
+        // it, so everyone lands in the world instead of a plain video call.
+        if (event.state === "active" && pendingGameRef.current) {
+          clientRef.current?.setGame(pendingGameRef.current);
+          pendingGameRef.current = null;
+        }
         if (event.state === "idle" || event.state === "ended") {
           clearStreams();
           setActiveContactName(null);
@@ -487,12 +504,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // (they aren't institute members, so the room path 403s for them); institute
   // CONTACTS go in a person-chat room. `autoAccept` asks AAC invitees to open
   // without ringing.
-  const startCallWithPeople = useCallback(async (selections: InviteSelection[], autoAccept = false) => {
+  const startCallWithPeople = useCallback(async (selections: InviteSelection[], autoAccept = false, game?: CallGame) => {
     const client = clientRef.current;
     if (!client || selections.length === 0) return;
     const contacts = selections.filter((s) => !s.contactId);
     const students = selections.filter((s) => s.contactId);
     const media: CallMediaFlags = { audio: true, video: true, pose: false };
+    // Queue the game room's world; the "active" transition attaches it. We host
+    // it — this window isn't also running the AAC's on-device ML stack.
+    pendingGameRef.current = game
+      ? { ...game, hostPersonId: game.hostPersonId ?? selfPersonIdRef.current ?? undefined }
+      : null;
     setError(null);
     setActiveContactName(selections.length === 1 ? null : `${selections.length} people`);
     setAudioEnabled(true);
@@ -516,6 +538,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         catch (err) { console.error("[call] startCallWithPeople invite:", err); }
       }
     } catch (err: any) {
+      pendingGameRef.current = null;
       setError({ code: "start_failed", message: err?.message ?? "Could not start the call" });
       setActiveContactName(null);
     }
@@ -577,11 +600,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setAddresseeState(personId);
   }, []);
 
+  // Attaching a game from THIS window also nominates it as the simulation host
+  // (an owner-authoritative world runs its whole sim on the owner's device).
   const startGame = useCallback((g: CallGame = DEFAULT_SOCIAL_GAME) => {
-    clientRef.current?.setGame(g);
+    clientRef.current?.setGame({
+      ...g,
+      hostPersonId: g.hostPersonId ?? selfPersonIdRef.current ?? undefined,
+    });
   }, []);
 
   const stopGame = useCallback(() => {
+    pendingGameRef.current = null;
     clientRef.current?.setGame(null);
   }, []);
 

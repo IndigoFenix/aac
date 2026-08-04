@@ -161,6 +161,12 @@ const POS: Record<string, SymPos> = {
   // ("the place is not good" — place + good.not).
   put: "verb",
   good: "adj",
+  // THE COMPLETION STATE ("the house is finished") — a predicate adjective, the
+  // same slot every other state word sits in, so it agrees in gender and number
+  // for free. It is core AAC vocabulary (the glyph registry has drawn it all
+  // along) and had no outbound reading at all: without this entry the finished
+  // shell reported "house finished" as two loose words.
+  finished: "adj",
   // Phase ①a: the explicit "I don't understand" terminal fallback
   // ("i_me + understand.not") — never silence, never a misleading "okay".
   understand: "verb",

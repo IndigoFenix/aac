@@ -15,7 +15,7 @@
 // gaze feed drives the SAME pointer pipeline the mouse uses, and `setPaused`.
 
 import { avatarKind, type LoadedWorld } from "@shared/world-engine/kernel/manifest";
-import { parseWorldCommand } from "@shared/world-engine/net";
+import { parseWorldCommand, type WorldCommand } from "@shared/world-engine/net";
 import { furnitureUsePoseDump, type UseDumpWorld } from "@shared/world-engine/furniture-use";
 import {
   DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale, type WorldScaleSpec,
@@ -79,6 +79,9 @@ export interface QuestMultiplayer {
   role: "owner" | "follower";
   /** Outbound transport: engine wire messages → bridge `world_data`. */
   net: { send(msgs: unknown[]): void };
+  /** Outbound reliable COMMANDS → bridge `world_cmd`. A FOLLOWER's gaze
+   *  instructions travel here for the owner to run; an owner sends none. */
+  sendCommand?: (cmd: WorldCommand) => void;
 }
 
 /** The session scale: the document's `game.scale` declaration, else the

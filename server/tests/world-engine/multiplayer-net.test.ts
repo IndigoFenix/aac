@@ -3,7 +3,7 @@
 //   • the rare `claim` message (net.ts): a peer's spark→body ride, tracked in
 //     WorldState.peerClaims, released with body:null, and TOLERANT of unknown
 //     message kinds (peers run vendored engine snapshots of different ages);
-//   • parseWorldCommand: the reliable-relay command envelope (speak/claim),
+//   • parseWorldCommand: the reliable-relay command envelope (speak/claim/act),
 //     tolerant of malformed and future-versioned payloads;
 //   • peer-colors: ONE FNV-1a hue family for every identity tint (2D disc, 3D
 //     capsule, remote spark, video-tile border) — colorHexForId is pure and
@@ -22,6 +22,7 @@ import {
   sayMessage,
   type WorldNetMessage,
 } from "@shared/world-engine/net.js";
+import { parsePlayerAction, PLAYER_ACTION_KINDS } from "@shared/world-engine/player-action.js";
 import { colorHexForId, peerHueForId } from "@shared/world-engine/peer-colors.js";
 import { resolveAddressee } from "@shared/world-engine/interaction/quest/addressee.js";
 import { parseSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
@@ -86,9 +87,9 @@ describe("claim messages — spark→body rides on the wire", () => {
 });
 
 describe("parseWorldCommand — the reliable relay envelope", () => {
-  it("parses a speak command, with and without an explicit target", () => {
-    expect(parseWorldCommand({ kind: "speak", from: "p1", sentence: "go + home", target: "resident_0_1" }))
-      .toEqual({ kind: "speak", from: "p1", sentence: "go + home", target: "resident_0_1" });
+  it("parses a speak command, with and without an addressee", () => {
+    expect(parseWorldCommand({ kind: "speak", from: "p1", sentence: "go + home", gesture: { addressee: "resident_0_1" } }))
+      .toEqual({ kind: "speak", from: "p1", sentence: "go + home", gesture: { addressee: "resident_0_1" } });
     expect(parseWorldCommand({ kind: "speak", from: "p1", sentence: "hi" }))
       .toEqual({ kind: "speak", from: "p1", sentence: "hi" });
   });
@@ -118,9 +119,102 @@ describe("parseWorldCommand — the reliable relay envelope", () => {
     }
   });
 
-  it("drops a non-string target instead of failing the whole command", () => {
-    expect(parseWorldCommand({ kind: "speak", from: "p1", sentence: "hi", target: 9 }))
+  it("drops a non-string addressee instead of failing the whole command", () => {
+    expect(parseWorldCommand({ kind: "speak", from: "p1", sentence: "hi", gesture: { addressee: 9 } }))
       .toEqual({ kind: "speak", from: "p1", sentence: "hi" });
+  });
+
+  // A relayed command IS a PlayerAction plus who did it — one vocabulary for
+  // a press, a sentence and a gaze instruction, on both sides of the wire.
+  it("parses a board press, carrying the glyph that survives the trip", () => {
+    expect(parseWorldCommand({ kind: "board", from: "p2", optionId: "annex:3:kitchen", glyph: "build + kitchen" }))
+      .toEqual({ kind: "board", from: "p2", optionId: "annex:3:kitchen", glyph: "build + kitchen" });
+    expect(parseWorldCommand({ kind: "board", from: "p2", optionId: "grow:bedroom" }))
+      .toEqual({ kind: "board", from: "p2", optionId: "grow:bedroom" });
+  });
+
+  // An utterance is a glyph AND a gesture: who was addressed, the ground
+  // indicated, the chest being reached into. Two players indicate different
+  // things right up until the order is issued, so it travels with the order.
+  it("an utterance carries the gesture that completes it", () => {
+    const gesture = { addressee: "resident_0_1", place: { x: 3, y: -4.5 }, container: "obj_chest_4", spot: "lot_2" };
+    expect(parseWorldCommand({ kind: "board", from: "p2", optionId: "take:apple", gesture }))
+      .toEqual({ kind: "board", from: "p2", optionId: "take:apple", gesture });
+    expect(parseWorldCommand({ kind: "speak", from: "p2", sentence: "you + go + there", gesture: { place: { x: 1, y: 2 } } }))
+      .toEqual({ kind: "speak", from: "p2", sentence: "you + go + there", gesture: { place: { x: 1, y: 2 } } });
+  });
+
+  it("keeps the parts of a gesture that arrived intact, and drops an empty one", () => {
+    // One garbled part must not cost the speaker the rest of what they meant.
+    expect(parseWorldCommand({ kind: "board", from: "p2", optionId: "x", gesture: { addressee: "c1", place: { x: 1, y: "2" } } }))
+      .toEqual({ kind: "board", from: "p2", optionId: "x", gesture: { addressee: "c1" } });
+    // No gesture at all is left off entirely, so a plain press stays plain.
+    expect(parseWorldCommand({ kind: "board", from: "p2", optionId: "x", gesture: {} }))
+      .toEqual({ kind: "board", from: "p2", optionId: "x" });
+    expect(parseWorldCommand({ kind: "board", from: "p2", optionId: "x", gesture: 7 }))
+      .toEqual({ kind: "board", from: "p2", optionId: "x" });
+  });
+
+  // A conversation option is an INDEX into the act list the presser's own
+  // device projected, and choosing one never went through the parser — so the
+  // act itself has to travel, not the index and not the sentence on the button.
+  it("carries the dialogue act itself, not the button that chose it", () => {
+    const act = { kind: "request", glyph: "want + apple", itemId: "apple_1" };
+    expect(parseWorldCommand({ kind: "converse", from: "p2", cid: "resident_0_1", act }))
+      .toEqual({ kind: "converse", from: "p2", cid: "resident_0_1", act });
+    for (const bad of [
+      { kind: "converse", from: "p2", cid: "c1" }, // no act
+      { kind: "converse", from: "p2", cid: "c1", act: {} }, // no kind or glyph
+      { kind: "converse", from: "p2", cid: "c1", act: { kind: "request" } }, // nothing said
+      { kind: "converse", from: "p2", cid: "c1", act: { glyph: "hi" } }, // no kind
+      { kind: "converse", from: "p2", act: { kind: "bye", glyph: "bye" } }, // nobody addressed
+    ]) {
+      expect(parseWorldCommand(bad)).toBeNull();
+    }
+  });
+
+  it("parses each relayed gaze instruction", () => {
+    expect(parseWorldCommand({ kind: "sendTo", from: "p2", cid: "resident_0_1", x: 3, y: -4.5 }))
+      .toEqual({ kind: "sendTo", from: "p2", cid: "resident_0_1", x: 3, y: -4.5 });
+    expect(parseWorldCommand({ kind: "attendObject", from: "p2", cid: "resident_0_1", id: "obj_7", x: 1, y: 2 }))
+      .toEqual({ kind: "attendObject", from: "p2", cid: "resident_0_1", id: "obj_7", x: 1, y: 2 });
+    expect(parseWorldCommand({ kind: "attendCreature", from: "p2", cid: "resident_0_1", id: "resident_0_2" }))
+      .toEqual({ kind: "attendCreature", from: "p2", cid: "resident_0_1", id: "resident_0_2" });
+  });
+
+  it("rejects a half-read instruction rather than acting on what is missing", () => {
+    for (const bad of [
+      { kind: "board", from: "p2" }, // no option
+      { kind: "board", from: "p2", optionId: "" },
+      { kind: "sendTo", from: "p2", cid: "c1" }, // no place
+      { kind: "sendTo", from: "p2", cid: "c1", x: 1, y: "2" }, // place not a number
+      { kind: "sendTo", from: "p2", cid: "c1", x: 1, y: NaN }, // not finite
+      { kind: "sendTo", from: "p2", cid: "", x: 1, y: 2 }, // no creature
+      { kind: "attendObject", from: "p2", cid: "c1", x: 1, y: 2 }, // no object
+      { kind: "attendCreature", from: "p2", cid: "c1" }, // no other creature
+      { kind: "shove", from: "p2", cid: "c1" }, // unknown action
+      { kind: "sendTo", cid: "c1", x: 1, y: 2 }, // nobody sent it
+    ]) {
+      expect(parseWorldCommand(bad)).toBeNull();
+    }
+  });
+
+  // The union is closed on purpose: a new way to reach the simulation is a new
+  // variant, never a new path around the gate.
+  it("every action kind the engine can perform round-trips through the wire", () => {
+    const sample: Record<(typeof PLAYER_ACTION_KINDS)[number], unknown> = {
+      speak: { kind: "speak", sentence: "go + home" },
+      board: { kind: "board", optionId: "build:farm" },
+      converse: { kind: "converse", cid: "c1", act: { kind: "request", glyph: "want + apple" } },
+      sendTo: { kind: "sendTo", cid: "c1", x: 0, y: 0 },
+      attendObject: { kind: "attendObject", cid: "c1", id: "o1", x: 0, y: 0 },
+      attendCreature: { kind: "attendCreature", cid: "c1", id: "c2" },
+      claim: { kind: "claim", body: null },
+    };
+    for (const kind of PLAYER_ACTION_KINDS) {
+      expect(parsePlayerAction(sample[kind])).not.toBeNull();
+      expect(parseWorldCommand({ ...(sample[kind] as object), from: "p2" })).toMatchObject({ kind, from: "p2" });
+    }
   });
 });
 

@@ -39,6 +39,9 @@ interface LinkableEntity {
   type: 'user' | 'student';
   name: string;
   detail?: string;
+  /** Set when another of this student's contacts already IS this person. */
+  takenByContactId?: string;
+  takenByContactName?: string;
 }
 
 export interface ContactEditorModalProps {
@@ -174,6 +177,14 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
   const linkables = linkablesQuery.data?.entities || [];
   const isLinked = !!(form.linkedUserId || form.linkedStudentId);
 
+  /** The account this contact itself claims never counts as taken. */
+  const takenByOther = (e: LinkableEntity) =>
+    !!e.takenByContactId && e.takenByContactId !== contact?.id;
+
+  /** Server rejects a same-person clash with a code; show it in the user's language. */
+  const errorMessage = (data: any): string =>
+    data?.code === 'DUPLICATE_LINK' ? t('contacts.duplicateLink') : data?.message || t('common.error');
+
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', studentId, 'contacts'] });
 
@@ -185,7 +196,7 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
         formToPayload(form),
       );
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.message || 'Failed to create');
+      if (!response.ok || !data.success) throw new Error(errorMessage(data));
       return data.contact as StudentContact;
     },
     onSuccess: () => {
@@ -207,7 +218,7 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
         formToPayload(form),
       );
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.message || 'Failed to update');
+      if (!response.ok || !data.success) throw new Error(errorMessage(data));
       return data.contact as StudentContact;
     },
     onSuccess: () => {
@@ -293,9 +304,19 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
                       {t('contacts.users')}
                     </div>
                     {grouped.users.map((e) => (
-                      <SelectItem key={`user:${e.id}`} value={`user:${e.id}`}>
+                      <SelectItem
+                        key={`user:${e.id}`}
+                        value={`user:${e.id}`}
+                        disabled={takenByOther(e)}
+                      >
                         {e.name}
-                        {e.detail && <span className="text-muted-foreground text-xs ms-2">{e.detail}</span>}
+                        {takenByOther(e) ? (
+                          <span className="text-muted-foreground text-xs ms-2">
+                            {t('contacts.alreadyContact', { name: e.takenByContactName || '' })}
+                          </span>
+                        ) : (
+                          e.detail && <span className="text-muted-foreground text-xs ms-2">{e.detail}</span>
+                        )}
                       </SelectItem>
                     ))}
                   </>
@@ -306,8 +327,17 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
                       {t('contacts.otherStudents')}
                     </div>
                     {grouped.students.map((e) => (
-                      <SelectItem key={`student:${e.id}`} value={`student:${e.id}`}>
+                      <SelectItem
+                        key={`student:${e.id}`}
+                        value={`student:${e.id}`}
+                        disabled={takenByOther(e)}
+                      >
                         {e.name}
+                        {takenByOther(e) && (
+                          <span className="text-muted-foreground text-xs ms-2">
+                            {t('contacts.alreadyContact', { name: e.takenByContactName || '' })}
+                          </span>
+                        )}
                       </SelectItem>
                     ))}
                   </>

@@ -22,6 +22,7 @@ import {
   getPeopleDirectoryForStudent,
   getPersonFaceImageUrlForStudent,
   createContact,
+  ContactLinkError,
   getContact,
   getContactsByStudent,
   updateContact,
@@ -636,6 +637,15 @@ export class BiometricController {
         res.status(400).json({ success: false, message: "Invalid data", errors: error.errors });
         return;
       }
+      if (error instanceof ContactLinkError) {
+        res.status(409).json({
+          success: false,
+          code: error.code,
+          message: error.message,
+          existingContactId: error.existingContactId,
+        });
+        return;
+      }
       res.status(500).json({ success: false, message: "Failed to create contact" });
     }
   }
@@ -719,6 +729,15 @@ export class BiometricController {
       console.error("[BiometricController] updateStudentContact error:", error);
       if (error.name === "ZodError") {
         res.status(400).json({ success: false, message: "Invalid data", errors: error.errors });
+        return;
+      }
+      if (error instanceof ContactLinkError) {
+        res.status(409).json({
+          success: false,
+          code: error.code,
+          message: error.message,
+          existingContactId: error.existingContactId,
+        });
         return;
       }
       res.status(500).json({ success: false, message: "Failed to update contact" });

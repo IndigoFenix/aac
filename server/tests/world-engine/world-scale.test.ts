@@ -1,4 +1,4 @@
-// The space-time-compression coherence diagnostics (planning-docs/games/
+// The space-time-compression coherence diagnostics (planning-docs/games/world-engine/
 // space-time-compression.md §7): the dimensionless ratios where scale
 // incoherence hides, asserted so they are documentation instead of ambushes.
 //

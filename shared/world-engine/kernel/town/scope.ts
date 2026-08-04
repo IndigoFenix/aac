@@ -1,7 +1,7 @@
 // shared/world-engine/kernel/town/scope.ts
 //
 // THE SCOPE NODE — one shape for a body, a chest, a building, a district, a
-// town (planning-docs/games/scope-unification.md, step ①).
+// town (planning-docs/games/world-engine/scope-unification.md, step ①).
 //
 // User law (2026-08-02): "A creature is the same shape as a structure. A
 // building, a district, a town — all of these have inventories. Those

@@ -47,9 +47,10 @@ export const DOLLHOUSE_CALL_GAME: CallGame = {
 export const NPC_DEMO_WORLD_SPEC_KEY = "social-field-npcs";
 
 /**
- * CallGame reference for the NPC demo world. NOT a default call game — it's the
- * target of the clinician "Test game room" button, so NPC steering can be driven
- * solo before owner election wires NPCs into real multiplayer calls (Phase 2).
+ * CallGame reference for the NPC demo world. NOT a default call game and NOT in
+ * the server's option list — the clinician's game room appends it client-side,
+ * so the AI characters can be exercised (alone, or with people) without an
+ * institute app behind them.
  */
 export const NPC_DEMO_GAME: CallGame = {
   appId: DEFAULT_SOCIAL_GAME_APP_ID,

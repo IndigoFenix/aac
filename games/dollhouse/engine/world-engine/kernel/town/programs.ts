@@ -1,6 +1,6 @@
 /**
  * programs.ts — ROOM & STRUCTURE PROGRAMS (construction pipeline ④,
- * planning-docs/games/construction-pipeline.md "Function from contents").
+ * planning-docs/games/world-engine/construction-pipeline.md "Function from contents").
  *
  * ONE table read in BOTH directions:
  *  - FORWARD (program → furniture): "bedroom" names a GOAL — a room holding

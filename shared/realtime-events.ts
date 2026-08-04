@@ -88,6 +88,16 @@ export interface CallGame {
   /** Optional player cap (from the app's multiplayer spec). */
   maxPlayers?: number;
   /**
+   * personId of the participant whose device should HOST the simulation (the
+   * owner-authoritative peer for an iframe-quest world). Set by whoever attaches
+   * the game — a clinician's desktop is a far better host than an AAC tablet,
+   * which is already running the on-device camera/voice ML stack. Every
+   * participant receives the same CallGame, so this is a symmetric ground truth;
+   * clients fall back to the lexicographic election when it is absent or the
+   * named host is not in the call (see resolveWorldOwner).
+   */
+  hostPersonId?: string;
+  /**
    * When true, the world forms proximity-based CONVERSATION CIRCLES: each client
    * dynamically connects only to peers within range (the circle solver / media
    * gate), so multiple conversations form in parallel. When false/absent the

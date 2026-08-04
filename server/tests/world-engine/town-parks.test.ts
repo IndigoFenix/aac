@@ -1,5 +1,5 @@
 // STEP ④, PASS 5 — ⑥ THE TOWN-RUNG DEFER PARKS
-// (planning-docs/games/scope-behaviors.md §2.5 DEFER, §2.5.1, §7 step 6).
+// (planning-docs/games/world-engine/scope-behaviors.md §2.5 DEFER, §2.5.1, §7 step 6).
 //
 // Pass 4 shipped the park at the BODY rung and MAPPED the town's two waits
 // without touching them. §2.5.1, verbatim, is the design this file pins as

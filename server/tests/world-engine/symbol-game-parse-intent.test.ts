@@ -218,6 +218,27 @@ describe("sequences + verbless defaults", () => {
     expect(p("apple", { classifyEntity }).kind).toBe("request"); // want the apple
   });
 
+  // THE SHAPE THE ATTENTION GATE KEYS ON. Naming a thing and nothing else is the
+  // spoken twin of settling the gaze on it (quest-host `attendTo`), so the host
+  // has to be able to tell a bare noun from a full request: both are `request`
+  // frames, and the VERB is the only difference. Without the classifier a bare
+  // noun reads as a `state` instead — which is why the host always passes one.
+  it("a bare item noun is a VERBLESS request; a said one keeps its verb", () => {
+    const classifyEntity = () => "item" as const;
+    const bare = p("apple", { classifyEntity });
+    expect(bare.kind).toBe("request");
+    expect(bare.verb).toBeUndefined();
+    expect(bare.object).toMatchObject({ kind: "entity", symbol: "apple" });
+    expect(bare.relation).toBeUndefined();
+    expect(bare.modifiers).toHaveLength(0);
+
+    const said = p("i_me + want + apple", { classifyEntity });
+    expect(said.kind).toBe("request");
+    expect(said.verb).toBe("want");
+
+    expect(p("apple", {}).kind).toBe("state"); // no classifier — not what the game sees
+  });
+
   it("a verbless item in BUILDING mode → build it", () => {
     const classifyEntity = () => "item" as const;
     expect(p("house", { classifyEntity, mode: "building" }).kind).toBe("command");

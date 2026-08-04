@@ -241,6 +241,15 @@ import {
   WHO_DO_YOU_MEAN,
 } from "@shared/world-engine/interaction/dialogue/host-lines.js";
 import { noStock, type LeveledGlyphs } from "@shared/world-engine/interaction/dialogue/dialogue-gen.js";
+// WHAT A SITE SAYS (construction-lines.ts): the bill, the empty stock, the mill
+// covering the gap, the finished shell — each in the glyph shape that reads as
+// THAT claim. Never "{material} + in + {place}", which is the locative.
+import {
+  needsMaterialLine,
+  noSourceLine,
+  structureDoneLine,
+  willMakeLine,
+} from "@shared/world-engine/interaction/dialogue/construction-lines.js";
 import type { BuildingSpec } from "@shared/world-engine/index.js";
 import {
   buildingRoomPlan,
@@ -971,6 +980,28 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return resolveRoomPrograms(programOverridesOf(session.town?.config.architecture));
   }
 
+  /**
+   * ONE GATE FOR EVERY CONSTRUCTION UTTERANCE: speak a leveled line as `cid`'s
+   * bubble, at the session's syntax level.
+   *
+   * Two conditions. The body must be REGISTERED as a creature — an abstract twin
+   * has no mouth. And `shown` is the CALLER's own observability judgement: a
+   * house sweep already knows whether it is watched, and an unwatched site
+   * talking to nobody is not silence-must-be-explicit, it is noise (the toast
+   * already carries the fact to the HUD). A caller that speaks through a body it
+   * just found STANDING at the work passes `true` — that body is observable by
+   * construction.
+   */
+  function speakLine(
+    session: QuestSession,
+    cid: string,
+    line: LeveledGlyphs,
+    shown: boolean,
+  ): void {
+    if (!shown || !session.creatures?.nodeByCreature.has(cid)) return;
+    npcChatBubble(session, cid, line[session.game.meta.syntax ?? "b"]);
+  }
+
   /** Units of `glyph` stored across a house's containers. */
   function houseStored(session: QuestSession, hi: number, glyph: string): number {
     let n = 0;
@@ -1417,11 +1448,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                 `🪵 making the ${job.label} needs ${bill} — and there is none to fetch`,
                 "feedback",
               );
+              // …and the CRAFTER SAYS IT (silence must be explicit). The toast
+              // is the HUD's channel; a child reading glyphs needs the fact in
+              // the world, from the body it belongs to. THIS branch's fact is
+              // emptiness — the bill is known and no chain can reach it — so the
+              // line is the town's, not the piece's: "we don't have blocks".
+              const dry = Object.keys(rest)[0];
+              if (dry) speakLine(session, member, noSourceLine(stackHead(dry)), isShown);
             } else if (milling > 0) {
               presenter.toast(
                 `🪚 milling ${milling} ${BLOCK_GLYPH} for the ${job.label}`,
                 "feedback",
               );
+              speakLine(session, member, willMakeLine(BLOCK_GLYPH, milling > 1), isShown);
             }
           }
           return;
@@ -4605,11 +4644,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     } else if (session.foundedSite) {
       refreshWildFounded(session);
     }
+    // THE BUILDER ANNOUNCES IT. Completion was a toast alone — the HUD's
+    // channel — so a glyph reader watching the walls go up got no word when
+    // they stopped. The crew that banked the labour is exactly who should say
+    // it, and the copula frame ("the house is finished") agrees in every
+    // ruleset because `finished` is a state word, not a bare noun.
+    let announcer: string | undefined;
     for (const [taskId, ord] of [...session.buildTaskOrds]) {
       if (ord !== b.ord) continue;
+      announcer ??= session.taskPool.get(taskId)?.claimedBy ?? undefined;
       session.taskPool.complete(taskId);
       session.buildTaskOrds.delete(taskId);
     }
+    if (announcer && spec) speakLine(session, announcer, structureDoneLine(spec.glyph), true);
     presenter.toast(`🏛️ the ${spec?.label ?? b.type} is finished`, "feedback");
   }
 
@@ -4891,7 +4938,25 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       presenter.toast(`💬 "${sentence}" — can't do that here`, "feedback");
       return true;
     }
-    if (walker && speakerFor) npcChatBubble(session, walker, "ok"); // the RESERVED okay — an accepted order
+    // THE ACCEPTED ORDER SPEAKS. A bare "ok" is right when the order can start
+    // — nothing is outstanding. When it is STAKED AND SHORT, the builder names
+    // what the structure is waiting on instead ("the house needs more blocks"):
+    // the shortfall was only ever a toast, so a glyph reader was told the order
+    // was accepted and never told why nothing then happened. `need` is the verb
+    // that makes it a request rather than an assertion about where the blocks
+    // already are.
+    const shortHead = Object.entries(missing)[0];
+    if (walker && speakerFor) {
+      if (b.laborStartDay === undefined && shortHead) {
+        npcChatBubble(
+          session,
+          walker,
+          needsMaterialLine(spec.glyph, stackHead(shortHead[0]), shortHead[1] > 1)[syntax],
+        );
+      } else {
+        npcChatBubble(session, walker, "ok"); // the RESERVED okay — an accepted order
+      }
+    }
     presenter.toast(
       b.laborStartDay !== undefined
         ? `🏗️ building the ${spec.label} — builders to work`

@@ -131,11 +131,22 @@ export function sharedOptionEntities(): EntityDef[] {
  * symbol). The generator derives every syntax level from the same structure:
  *
  *   a — the single most informative slot (`key`; default object → verb).
- *   b — two content slots: object + tail when a tail exists (the relation is
- *       the teaching point), else verb + object, else subject + verb.
+ *   b — the VERB plus its object and tail when a tail exists (the relation is
+ *       the teaching point, and the verb is what makes it a directive rather
+ *       than an assertion), else verb + object, else subject + verb.
  *   c — the full, proper sentence: subject + verb + object (+ tail), capped
  *       at 3 CONTENT slots (joins like "to"/"in" bind free) — the subject
  *       drops first when a tail complement would push past three.
+ *
+ * ⚠️ A TAILED clause MUST KEEP ITS VERB. Level b used to drop it, leaving a
+ * bare "{noun} + {prep} + {noun}" — which is a shape the frame layer already
+ * OWNS as the locative assertion ("the ball is in the blue house", lang/core
+ * `pp`). So a construction haul announced itself as "The block is in the
+ * kitchen": the exact opposite of the delivery it meant, and unfalsifiable
+ * from the child's side. One glyph shape, one meaning: a verbless
+ * "{item} + in + {place}" says where a thing IS, and nothing else may borrow
+ * it. A genuinely verbless phrase (the presence fact) keeps its SUBJECT
+ * instead — "in + kitchen" alone names nobody.
  *
  * This is deliberately the ONE place GLYPH order lives: `order` is "svo" today;
  * a future SOV/VSO locale reorders slots here. SPOKEN word order is separate —
@@ -169,7 +180,9 @@ export function phrase(p: PhraseSpec, order: "svo" = "svo"): LeveledGlyphs {
     (p.bFull
       ? c
       : p.tail
-        ? join([p.object ?? p.verb, ...tail])
+        ? p.verb
+          ? join([p.verb, p.object, ...tail]) // "put + block + in + kitchen"
+          : join([p.object ?? p.subject, ...tail]) // "mara + in + kitchen"
         : p.verb && p.object
           ? join([p.verb, p.object])
           : join([p.subject, p.verb ?? p.object]));

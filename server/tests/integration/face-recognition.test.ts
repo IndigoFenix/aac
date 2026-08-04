@@ -10,16 +10,26 @@
 
 import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { truncateAll, db } from '../helpers/db.js';
-import { makeUser, makeStudent } from '../helpers/factories.js';
+import {
+  makeUser,
+  makeStudent,
+  makeInstitute,
+  addUserToInstitute,
+  enrollStudent,
+} from '../helpers/factories.js';
 import {
   createContact,
   updateContact,
+  deleteContact,
+  ContactLinkError,
   releaseBiometricData,
+  ensureBiometricData,
   enrollContactFace,
   findMatchingFace,
   recordContactSighting,
   getKnownPeopleForStudent,
   getPeopleDirectoryForStudent,
+  getLinkableEntitiesForStudent,
   growFaceGalleryForEntity,
   penalizeFaceMatch,
   updateBiometricData,
@@ -335,10 +345,141 @@ describe('Face recognition pipeline', () => {
       expect(row).toBeUndefined();
     });
 
+    it('hands the record back when a contact is UNLINKED', async () => {
+      // Setting a link makes the contact share the linked person's record.
+      // Removing it must hand that record back — otherwise the contact keeps
+      // writing to a face that is no longer theirs.
+      const other = await makeUser();
+      const contact = await createContact({ studentId, name: 'Was Linked' } as any);
+      await updateContact(contact.id, { linkedUserId: other.id } as any);
+      const shared = await bdIdForContact(contact.id);
+      expect(shared).toBe(await ensureBiometricData({ type: 'user', id: other.id }));
+
+      await updateContact(contact.id, { linkedUserId: null } as any);
+
+      const [after] = await db
+        .select({ bd: studentContacts.biometricDataId })
+        .from(studentContacts)
+        .where(eq(studentContacts.id, contact.id));
+      expect(after.bd).toBeNull();
+
+      // The user still holds their own record — handing it back must not delete it.
+      const [stillThere] = await db.select().from(biometricData).where(eq(biometricData.id, shared));
+      expect(stillThere).toBeDefined();
+    });
+
+    it("never lets an unlinked contact write into someone else's record", async () => {
+      // Reproduces the reported failure: a contact left pointing at a student's
+      // record (by a link that was removed before this guard existed) uploaded a
+      // photo, and it replaced the STUDENT's face.
+      const contact = await createContact({ studentId, name: 'Stale Share' } as any);
+      const studentRecord = await ensureBiometricData({ type: 'student', id: studentId });
+      await updateBiometricData(studentRecord, { faceImageUrl: 'biometric/the-student.jpg' });
+      // Force the bad state the old unlink path used to leave behind.
+      await db
+        .update(studentContacts)
+        .set({ biometricDataId: studentRecord })
+        .where(eq(studentContacts.id, contact.id));
+
+      // What a photo upload does first.
+      const writeTarget = await ensureBiometricData({ type: 'contact', id: contact.id });
+
+      expect(writeTarget).not.toBe(studentRecord);
+      expect(await bdIdForContact(contact.id)).toBe(writeTarget);
+      // The student's record is untouched — photo included.
+      const [student] = await db.select().from(biometricData).where(eq(biometricData.id, studentRecord));
+      expect(student.faceImageUrl).toBe('biometric/the-student.jpg');
+    });
+
+    it('still reuses the record an unlinked contact holds alone', async () => {
+      const contact = await createContact({ studentId, name: 'Sole Owner' } as any);
+      const own = await ensureBiometricData({ type: 'contact', id: contact.id });
+
+      expect(await ensureBiometricData({ type: 'contact', id: contact.id })).toBe(own);
+    });
+
     it('is a no-op for a missing or null id', async () => {
       await expect(releaseBiometricData(null)).resolves.toBeNull();
       await expect(releaseBiometricData(undefined)).resolves.toBeNull();
       await expect(releaseBiometricData('00000000-0000-0000-0000-000000000000')).resolves.toBeNull();
+    });
+  });
+
+  describe('one account, one contact', () => {
+    // Choosing an account says "this contact IS that person". Two contacts of
+    // the same student pointing at one account claim the same human twice —
+    // and both would write to that person's face record.
+    it('refuses a second contact claiming an account another contact already is', async () => {
+      const account = await makeUser();
+      await createContact({ studentId, name: 'Mum', linkedUserId: account.id } as any);
+
+      const err = await createContact({
+        studentId, name: 'Mum again', linkedUserId: account.id,
+      } as any).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ContactLinkError);
+      expect(err.code).toBe('DUPLICATE_LINK');
+      expect(err.message).toContain('Mum');
+    });
+
+    it('refuses an UPDATE that moves a contact onto a taken account', async () => {
+      const account = await makeUser();
+      await createContact({ studentId, name: 'Dad', linkedUserId: account.id } as any);
+      const other = await createContact({ studentId, name: 'Uncle' } as any);
+
+      const err = await updateContact(other.id, { linkedUserId: account.id } as any).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ContactLinkError);
+      expect(err.code).toBe('DUPLICATE_LINK');
+    });
+
+    it('lets a contact keep the account it already claims', async () => {
+      const account = await makeUser();
+      const contact = await createContact({
+        studentId, name: 'Sister', linkedUserId: account.id,
+      } as any);
+
+      // Editing any other field re-validates the same link — must not self-trip.
+      const updated = await updateContact(contact.id, { relationship: 'sister' } as any);
+      expect(updated!.linkedUserId).toBe(account.id);
+
+      const resent = await updateContact(contact.id, { linkedUserId: account.id } as any);
+      expect(resent!.linkedUserId).toBe(account.id);
+    });
+
+    it('frees the account again once the claiming contact is removed', async () => {
+      const account = await makeUser();
+      const first = await createContact({ studentId, name: 'Nanny', linkedUserId: account.id } as any);
+      await deleteContact(first.id);
+
+      const second = await createContact({
+        studentId, name: 'Nanny (again)', linkedUserId: account.id,
+      } as any);
+      expect(second.linkedUserId).toBe(account.id);
+    });
+
+    it('scopes the rule to one student — another student may list the same person', async () => {
+      const account = await makeUser();
+      const { student: otherStudent } = await makeStudent(userId);
+      await createContact({ studentId, name: 'Therapist', linkedUserId: account.id } as any);
+
+      const theirs = await createContact({
+        studentId: otherStudent.id, name: 'Therapist', linkedUserId: account.id,
+      } as any);
+      expect(theirs.linkedUserId).toBe(account.id);
+    });
+
+    it('greys the taken account out in the picker instead of waiting for the save', async () => {
+      const { institute } = await makeInstitute(userId);
+      await enrollStudent(institute.id, studentId, userId);
+      const account = await makeUser();
+      await addUserToInstitute(institute.id, account.id);
+      const contact = await createContact({ studentId, name: 'Grandad', linkedUserId: account.id } as any);
+
+      const entities = await getLinkableEntitiesForStudent(studentId);
+      const entry = entities.find((e) => e.type === 'user' && e.id === account.id);
+      expect(entry?.takenByContactId).toBe(contact.id);
+      expect(entry?.takenByContactName).toBe('Grandad');
     });
   });
 
