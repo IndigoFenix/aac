@@ -32,7 +32,7 @@
 import { containerDefOfGlyph, INSTANCE_SLOTS } from "../../kernel/town/containers.js";
 import { furnitureItemOf, furnitureKindOfGlyph } from "../../kernel/town/stations.js";
 import type { ObjectInteraction, ObjectSpec } from "../../types.js";
-import { drawnMakeable } from "./makeable.js";
+import { drawnGlyph } from "./makeable.js";
 
 /** The radius a loose, non-furniture item stands at. ONE number, because it is
  *  the same apple whether it is on a table, in a hand or on the floor — the
@@ -90,7 +90,7 @@ export function itemObjectSpec(
       ...contains,
     };
   }
-  // `drawnMakeable` is the identity for everything that reaches here (a stack
+  // `drawnGlyph` is the identity for everything that reaches here (a stack
   // whose head needs redrawing is furniture, handled above) — it stays because
   // the DRAWING RULE belongs in one place, not because this branch bends it.
   return {
@@ -99,7 +99,7 @@ export function itemObjectSpec(
     y: at.y,
     shape: "sphere",
     radius: LOOSE_ITEM_R,
-    glyph: drawnMakeable(glyph),
+    glyph: drawnGlyph(glyph),
     interactions,
     ...contains,
   };

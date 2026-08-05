@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ProfileSetupProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
   });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useLanguage();
 
   const createStudentMutation = useMutation({
     mutationFn: async (studentData: any) => {
@@ -31,15 +33,15 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
     onSuccess: (student) => {
       queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       toast({
-        title: "Profile Created",
-        description: "Welcome to Synapse! Your profile has been saved.",
+        title: t('profile.profileCreatedTitle'),
+        description: t('profile.profileCreatedDescription'),
       });
       onComplete(student.id);
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to create profile",
+        title: t('common.error'),
+        description: error.message || t('profile.failedToCreateProfile'),
         variant: "destructive",
       });
     },
@@ -86,10 +88,10 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
           >
             <div className="text-center mb-6">
               <h2 className="text-2xl font-bold text-text-primary mb-2">
-                Welcome to Synapse
+                {t('profile.welcomeHeading')}
               </h2>
               <p className="text-text-secondary">
-                Let's set up your communication profile
+                {t('profile.setupSubtitle')}
               </p>
             </div>
             
@@ -97,12 +99,12 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="profile-first-name" className="block text-sm font-medium text-text-primary mb-2">
-                    First Name *
+                    {t('profile.firstNameLabel')}
                   </label>
                   <Input
                     id="profile-first-name"
                     type="text"
-                    placeholder="First name"
+                    placeholder={t('profile.firstNamePlaceholder')}
                     value={formData.firstName}
                     onChange={(e) => handleInputChange("firstName", e.target.value)}
                     required
@@ -111,12 +113,12 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
                 </div>
                 <div>
                   <label htmlFor="profile-last-name" className="block text-sm font-medium text-text-primary mb-2">
-                    Last Name
+                    {t('profile.lastNameLabel')}
                   </label>
                   <Input
                     id="profile-last-name"
                     type="text"
-                    placeholder="Last name"
+                    placeholder={t('profile.lastNamePlaceholder')}
                     value={formData.lastName}
                     onChange={(e) => handleInputChange("lastName", e.target.value)}
                     className="text-lg"
@@ -126,12 +128,12 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
 
               <div>
                 <label htmlFor="profile-age" className="block text-sm font-medium text-text-primary mb-2">
-                  Age (optional)
+                  {t('profile.ageLabel')}
                 </label>
                 <Input
                   id="profile-age"
                   type="number"
-                  placeholder="Age"
+                  placeholder={t('settings.age')}
                   value={formData.age}
                   onChange={(e) => handleInputChange("age", e.target.value)}
                   min="1"
@@ -142,11 +144,11 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
 
               <div>
                 <label htmlFor="profile-preferences" className="block text-sm font-medium text-text-primary mb-2">
-                  Favorite Things (optional)
+                  {t('profile.favoriteThingsLabel')}
                 </label>
                 <Textarea
                   id="profile-preferences"
-                  placeholder="Tell us about your favorite foods, activities, people..."
+                  placeholder={t('profile.favoriteThingsPlaceholder')}
                   value={formData.preferences}
                   onChange={(e) => handleInputChange("preferences", e.target.value)}
                   rows={3}
@@ -162,7 +164,7 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
                   onClick={onSkip}
                   disabled={createStudentMutation.isPending}
                 >
-                  Skip for Now
+                  {t('profile.skipForNow')}
                 </Button>
                 <Button
                   type="submit"
@@ -172,10 +174,10 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
                   {createStudentMutation.isPending ? (
                     <div className="flex items-center space-x-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                      <span>Saving...</span>
+                      <span>{t('settings.saving')}</span>
                     </div>
                   ) : (
-                    "Save Profile"
+                    t('profile.saveProfile')
                   )}
                 </Button>
               </div>

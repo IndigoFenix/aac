@@ -86,6 +86,45 @@ export type PlayerAction =
    * in the first place. The act is what the player actually did.
    */
   | { kind: "converse"; cid: string; act: DialogueAct; gesture?: Gesture }
+  /**
+   * WHAT THIS PLAYER DID TO THEIR PLACE IN A CONVERSATION: they joined creature
+   * `cid`'s conversation, they left it, or — ⑫④ — they turned to `cid` and made
+   * them the person they are talking TO.
+   *
+   * OPENING A BOARD is local — it is a view of a conversation, and views live
+   * above this line. BELONGING to one is not: the roster lives with the
+   * simulation, because the creature answers ITS members, holds one shared
+   * memory of the exchange, and projects each member's turn at that member's
+   * own syntax level. So a follower relays the membership change and the owner
+   * maintains the roster; the per-member state comes back over the mesh as a
+   * `convo` message (net.ts).
+   *
+   * ★ ⑫④ — `address` IS THE LOOK CROSSING THE GATE
+   * (conversation-in-motion.md build-order ④). ★
+   *
+   * `cid` names the FELLOW MEMBER being addressed, not the conversation: the
+   * owner resolves the conversation from the SPEAKER's own membership (it holds
+   * the roster; the sender does not have to tell it what it already knows), and
+   * writes `ConvoMember.addressing` on the speaker's row — the durable answer to
+   * "whom is this member talking to" that conversation.ts law 5 built the field
+   * for.
+   *
+   * WHY IT IS AN OP AND NOT A NINTH KIND. It is a fact about this player's place
+   * in one conversation, exactly like joining and leaving it, and it belongs on
+   * the same variant so the three cannot drift apart. And it is deliberately NOT
+   * `attendCreature`: that commands a THIRD PARTY to go and attend somebody
+   * (writing a spark row and sending a body across the square), whereas this
+   * changes nothing in the world but who the next sentence is said to.
+   *
+   * ⚠️ DEGRADATION, BY DESIGN. `parsePlayerAction`'s convo arm rejects an op it
+   * does not recognise, so an OLD owner drops this action whole rather than
+   * guessing at it — and the cost is nil, because the sentence that follows
+   * carries its own `Gesture.addressee` (stamped by the gate from this device's
+   * own gaze) and the owner honours that as an explicit target. The address is
+   * simply not DURABLE against an old owner: it lasts the utterance instead of
+   * lasting until the child looks elsewhere.
+   */
+  | { kind: "convo"; cid: string; op: "join" | "leave" | "address" }
   /** Gaze: send the creature this player is talking to, to this spot. */
   | { kind: "sendTo"; cid: string; x: number; y: number }
   /** Gaze: point it at a thing (need-gated where it lands). */
@@ -97,7 +136,7 @@ export type PlayerAction =
 
 /** Every action kind, so a reader can see the whole surface at once. */
 export const PLAYER_ACTION_KINDS = [
-  "speak", "board", "converse", "sendTo", "attendObject", "attendCreature", "claim",
+  "speak", "board", "converse", "convo", "sendTo", "attendObject", "attendCreature", "claim",
 ] as const;
 
 function str(v: unknown): v is string {
@@ -158,6 +197,16 @@ export function parsePlayerAction(raw: unknown): PlayerAction | null {
       if (!str(act.kind) || !str(act.glyph)) return null;
       return attach({ kind: "converse", cid: a.cid, act: a.act as DialogueAct });
     }
+    case "convo":
+      // A conversation act names a creature AND what happened — an op we don't
+      // recognise is version skew, dropped like an unknown kind rather than
+      // guessed at (guessing "join" would seat a player in a conversation their
+      // device never opened, and guessing "address" would put words in their
+      // mouth aimed at somebody they never looked at). ⑫④'s `address` rides
+      // this same guard, which is exactly what makes an old owner degrade
+      // safely — see the variant's doc.
+      if (!str(a.cid) || (a.op !== "join" && a.op !== "leave" && a.op !== "address")) return null;
+      return { kind: "convo", cid: a.cid, op: a.op };
     case "sendTo":
       if (!str(a.cid) || !num(a.x) || !num(a.y)) return null;
       return { kind: "sendTo", cid: a.cid, x: a.x, y: a.y };

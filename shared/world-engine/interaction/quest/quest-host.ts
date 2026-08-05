@@ -30,7 +30,7 @@ import { useContractFor } from "../../furniture-use.js";
 // same contract (the arrival SPOT, never a ring around the whole piece), so the
 // walk can never stop where the anchor can't reach.
 import { withinEngageReach } from "./furniture-anchor.js";
-import { fixtureKindForWord, fixtureWord, type FixtureKind, type ObjectSpec } from "../../types.js";
+import { fixtureKindForWord, fixtureWord, type FixtureKind, type ObjectSpec, type RoadPath, type WorldSpec } from "../../types.js";
 // THE SAME QUESTION THE RENDERER ASKS. A spawner that guesses whether an
 // identity has a model can disagree with what render3d actually builds; asking
 // the model registry itself is the only way the two can't drift (phase 5:
@@ -263,6 +263,7 @@ import {
   type WildSource,
 } from "./wilderness.js";
 import { createPossession, type Possession } from "./possession.js";
+import { LOCAL_PLAYER_CID, isPlayerCid, peerIdOf, playerCidOf } from "./player-identity.js";
 import {
   assignTownJobs,
   attendanceFactor,
@@ -329,13 +330,14 @@ import {
 import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, requireSpecies, speciesBodyRadius } from "../../creatures/species.js";
 import { drinkGlyphs, naturalSourceOf, sourceKillExhausted, sourcesForGood, takeUnitsOf } from "../../products.js";
 import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
+import { hashSeed, mulberry32 } from "@shared/prng.js";
 import { buildConcepts } from "@shared/world-engine/interaction/content/concepts.js";
 import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
 import {
   craftRecipeOf,
-  drawnMakeable,
+  drawnGlyph,
   makeableGlyph,
-  spokenMakeable,
+  spokenWord,
 } from "@shared/world-engine/interaction/content/makeable.js";
 import { itemObjectSpec } from "@shared/world-engine/interaction/content/item-prop.js";
 import {
@@ -368,10 +370,12 @@ import {
 import {
   auditScopeTree,
   parseScopeId,
+  scopeStockIndex,
+  unitsOf,
   walkScopeTree,
   type ScopeId,
   type ScopeNode,
-  type ScopeTreeInput,
+  type ScopeStockInput,
 } from "@shared/world-engine/kernel/town/scope.js";
 import { genderFor } from "@shared/world-engine/interaction/behavior/gender.js";
 import { createGlyphImageSource } from "../../glyph-images.js";
@@ -379,7 +383,14 @@ import type { ImageResolver } from "@shared/glyph-compositor.js";
 import { dwellBubble, dwellBubbleGlyphs, restDoneBubble } from "@shared/world-engine/interaction/quest/activity-bubble.js";
 import { createDwellTracker } from "../../dwell.js";
 import { runWorldHost, type WorldHost, type WorldHostNet } from "../../world-host.js";
-import { claimMessage, sayMessage, type WorldCommand, type WorldNetMessage } from "../../net.js";
+import {
+  claimMessage,
+  convoMessage,
+  sayMessage,
+  type ConvoShared,
+  type WorldCommand,
+  type WorldNetMessage,
+} from "../../net.js";
 import type { Gesture, PlayerAction } from "../../player-action.js";
 import { resolveAddressee } from "./addressee.js";
 import type { WorldView } from "../../world-view.js";
@@ -389,7 +400,9 @@ import {
   clearWorldBubble,
   dropObject,
   expandWorldBuildings,
-  faceEachOther,
+  faceGroup,
+  faceToward,
+  headingHeldByLegs,
   placeInContainer,
   routeThroughDoors,
   buildingAt,
@@ -432,7 +445,6 @@ import {
   notePlacement,
   openNeeds,
   pendingTransfers,
-  PLAYER_CREATURE_ID,
   planVillageBuildings,
   projectDialogue,
   seeItem,
@@ -470,7 +482,11 @@ import {
   type IntentFrame,
   type Ref,
   intentToAct,
-  chooseSpeakerAct,
+  chooseSpeakerMove,
+  // ⑫⑤'s tight set of acts that need a NAMED PERSON to execute — read by ⑫④ to
+  // answer "is the name worth a glyph slot?" when a busy creature won't stop.
+  ADDRESSEE_REQUIRED_ACTS,
+  speakInConversation,
   makePersonality,
   type Personality,
   type CreatureGoalState,
@@ -478,7 +494,8 @@ import {
   type GoalStep,
   type WorldResolver,
   type VillagePlan,
-  type ConversationMemo,
+  type DeviceBoardState,
+  type CreatureEvent,
   type CreatureNeed,
   type CreatureWorld,
   type DerivedCreatures,
@@ -534,8 +551,50 @@ import {
   type StationCandidate,
   type StockCandidate,
   type GoalSpec,
+  // ⑫⑧ — `GoalSpec` plus the goals a creature can only ever assign ITSELF
+  // (today: `address`). The pursuit loop, the planner and the plan pricer all
+  // speak this wider vocabulary; commands and rules still speak `GoalSpec`.
+  type PursuitGoal,
   type PlaceRef,
 } from "@shared/world-engine/interaction/index.js";
+// The conversation ENTITY (not re-exported through the barrel — it is a new
+// module with its own generic names like `Tick`, and the barrel is flat).
+import {
+  addressingOf,
+  conversationIdle,
+  createConversation,
+  DEFAULT_ENGAGEMENT,
+  joinConversation,
+  leaveConversation,
+  memberOf,
+  soleOther,
+  type ConversationId,
+  type ConversationState,
+} from "@shared/world-engine/interaction/dialogue/conversation.js";
+// HOW A CIRCLE FORMS (§3f) — the pure half of phase ⑧. Same reason as above: a
+// new module with generic names (`FormCandidate`, `RingSlot`), outside the barrel.
+import {
+  CONV_FORM,
+  bystanderJoins,
+  mayJoin,
+  pickConversationFocus,
+  pickOpener,
+  ringSlotFor,
+  type FocusCandidate,
+  type FormCandidate,
+  type RingBody,
+} from "@shared/world-engine/interaction/dialogue/conversation-form.js";
+// ⑫④ — WHICH CHANNEL a speaker addresses somebody through (dyad / look / name /
+// floor). Beside the arbitration dials in `respond.ts`, outside the barrel for
+// the same reason the two modules above are.
+// ⑫⑧ adds `engagementOf` (the ONE writer of `ConvoMember.engagement` calls it
+// from `stepGroup`) and `ARBITRATION` — for `courtesyTicks`, the decay curve the
+// "somebody just asked me something" bonus shares with courtesy itself.
+import {
+  ARBITRATION,
+  chooseAddressChannel,
+  engagementOf,
+} from "@shared/world-engine/interaction/dialogue/respond.js";
 import { planGoal, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
 import { needPursuitGoals, tasteBonusS } from "@shared/world-engine/interaction/behavior/need-goals.js";
 import { driveValueS, goodsValueS, journeyTimeS, netValueS, priceOf } from "@shared/world-engine/kernel/town/pricing.js";
@@ -543,16 +602,20 @@ import { probesOn } from "@shared/world-engine/perf-probes.js";
 import {
   objectMotive,
   attentionActions,
-  attentionBonus,
+  attentionBonusOf,
+  attentivenessAny,
+  engagementToward,
   ramp,
   decayStrength,
   SPARK,
   type AttentionMotive,
   type AttentionTargetInfo,
+  type AuthorAttention,
+  type AuthorDraws,
   type SparkDraw,
   type SparkFocus,
 } from "@shared/world-engine/interaction/behavior/spark-attention.js";
-import { isRtlLocale, speakDirections, speakerGender, translateGlyph, type Gender } from "@shared/world-engine/interaction/lang/index.js";
+import { glyphLabel, isRtlLocale, languageFor, speakDirections, speakerGender, translateGlyph, type Gender } from "@shared/world-engine/interaction/lang/index.js";
 import { creditDelivery } from "@shared/world-engine/interaction/town/town-quests.js";
 import { buildTownPlay, foundedHouseRow, TOWN_PLAY_STRUCTURES, type TownFamilyMember, type TownFamilyPet, type TownPlay } from "@shared/world-engine/interaction/town/town-play.js";
 import {
@@ -680,6 +743,36 @@ const NOT_UNDERSTOOD_LINE = "i_me + understand.not";
 /** A household member's standing toward its GUIDING SPIRIT — real authority
  *  (shared by the placement gate and the task pool's volunteer gate). */
 const FAMILY_RELATION: Relation = { affinity: 0.5, trust: 0.8, authority: 0.8 };
+
+/**
+ * THE AUTHORED PLAYER STANDING (multi-entity-conversations.md §2 decision 2) —
+ * what an AUTHOR is worth to a creature that has never dealt with them.
+ *
+ * This is the pedagogy knob the fuzzy gates are only safe with. Every
+ * willingness verdict now rolls against a curve that is monotone and SATURATING
+ * (willingness.ts `passesGate`), so a game that seeds high authority/affinity
+ * lands every score far up the curve and gets near-certainty back: ask, and it
+ * happens. A FIXED game — a lesson where cause and effect has to be learnable,
+ * where a child who says the right thing must SEE the right thing happen —
+ * declares `meta.playerRelation`. FREE PLAY declares nothing and keeps the fuzz,
+ * because there the creature's own disposition IS the content.
+ *
+ * Precedence, and why it is this way round:
+ *   • a WARMED row (session.relations) always wins — it is what actually
+ *     happened in play, and no authored default may overwrite earned standing;
+ *   • the KNOB beats the family/stranger fallback — it is the game's deliberate
+ *     statement about who the player is here;
+ *   • unset AXES fall back to `DEFAULT_RELATION`, not to the fallback relation,
+ *     so `{authority: 0.9}` means exactly "high authority", never "high
+ *     authority plus whatever affinity the household happened to grant".
+ * Pure and exported so the knob is testable without a canvas.
+ */
+export function authoredRelation(
+  meta: { playerRelation?: Partial<Relation> },
+  fallback: Relation = DEFAULT_RELATION,
+): Relation {
+  return meta.playerRelation ? { ...DEFAULT_RELATION, ...meta.playerRelation } : fallback;
+}
 // Motive batch (stay-with + escort) tuning.
 const STAY_RADIUS = 5;  // "with" distance for the stay-with dwell
 const STAY_SECONDS = 8; // company time until "I'm okay, thank you!"
@@ -759,7 +852,7 @@ const SIT_DWELL_S = 8; // seconds a commanded "sit" holds the chair
  * (`place.kind === "point"`) poses in place and names no piece; a table or chest is
  * a `reach` use the body stands beside, so neither takes the tighter contract.
  */
-function onFixtureUseTargetOf(state: WorldState, goal: GoalSpec): string | null {
+function onFixtureUseTargetOf(state: WorldState, goal: PursuitGoal): string | null {
   if (goal.kind !== "rest" || goal.place.kind !== "named") return null;
   return onFixturePieceId(state, goal.place.id);
 }
@@ -858,18 +951,24 @@ const NEED_DECIDE_CAP_S = 1.5;
  *  `need_toilet` renders as a NEED phrase ("I need the bathroom") rather than
  *  a copula adjective — core AAC vocabulary, worth the special frame. */
 const MOTIVE_CONDITIONS = new Set(["hungry", "thirsty", "tired", "lonely", "bored", "dirty", "need_toilet", "sad", "scruffy"]);
-// Ambient NPC↔NPC chatter (idle townsfolk talk among themselves).
-const CHAT_INTERVAL = 9;        // seconds between exchange ATTEMPTS
-const CHAT_COOLDOWN = 22;       // per-creature quiet time after speaking/replying
-const CHAT_PAIR_RADIUS = 6;     // two NPCs must be within this to talk
-const CHAT_VISIBLE_RADIUS = 24; // the speaker must be roughly on-screen (near player)
-const CHAT_REPLY_MS = 1500;     // stagger before the listener's reply bubble
-// How long an ambient exchange counts as a STANDING conversation for the
-// dollhouse camera. Pinned to the WORDS: the opener's bubble lives 5 s and the
-// reply lands 1.5 s in, so 7 s is "until the last line has faded" plus a beat.
-// The camera adds its own hysteresis on top — this number is about the fiction
-// (are they still talking?), not about camera smoothing.
-const CHAT_FOCUS_S = 7;
+// Ambient NPC↔NPC conversation (idle townsfolk talk among themselves). The
+// dials a CIRCLE turns — who is let in, how wide the ring is, when it gets bored
+// — live in `CONV_FORM` (conversation-form.ts) so the whole shape of a group
+// conversation reads in one block; these four are the host's own.
+const CHAT_INTERVAL = 9;        // seconds between FORMATION attempts
+const CHAT_COOLDOWN = 22;       // per-creature quiet time after a conversation breaks up
+const CHAT_PAIR_RADIUS = 6;     // two NPCs must be within this to open one
+const CHAT_VISIBLE_RADIUS = 24; // the opener must be roughly on-screen (near player)
+/** Stagger before the answerer's reply bubble, scaled by the OPENER's length —
+ *  a sim-clock mirror of speechEstimateMs so bubbles and TTS stay roughly in
+ *  step. Sim seconds, never a wall timer (multi-entity-conversations.md §3f). */
+function chatReplyDelayS(openerGlyph: string): number {
+  const tokens = openerGlyph.split("+").length;
+  return Math.min(3.5, Math.max(0.8, 0.9 + 0.35 * tokens));
+}
+// (`CHAT_FOCUS_S` retired with `chatFocus` — how long a conversation stays the
+//  camera's business after its last word is `CONV_FORM.focusHoldS`, the same 7,
+//  read by `pickConversationFocus`. One dial, one owner.)
 
 // Glyph SENTENCES are spoken as PROPER language via the shared translation
 // rulesets (shared/symbol-game/lang): "i_me + want + apple" → "I want an
@@ -882,7 +981,12 @@ const CHAT_FOCUS_S = 7;
  *  cleared when the goal completes; a command carries none). */
 export interface Pursuit {
   source: "command" | "need";
-  goal: GoalSpec;
+  /** ⑫⑧ — `PursuitGoal`, not `GoalSpec`: a pursuit may also drive a goal that
+   *  only a creature can assign itself. The pairing with `source` is the whole
+   *  of the chapter's first free consequence — an `address` can never appear
+   *  under `source: "command"`, because it is not in the vocabulary a command
+   *  is written in. */
+  goal: PursuitGoal;
   glyph: string;
   tplKey?: string;
   acts?: number;
@@ -1235,6 +1339,23 @@ export interface QuestSession {
    *  reason" surface. Session-lived; nothing serializes it (a reload simply
    *  picks afresh). */
   needGoalPick: Map<string, { tplKey: string; key: string }>;
+  /**
+   * ⑫⑧ — THE OUTBID CLOCK: cid → the taskClock tick at which this member's
+   * address row STARTED losing, or absent when it is not losing at all (no
+   * row, or the row won).
+   *
+   * Leaving a conversation is "the integral of that row losing" (law ③), and
+   * this is the integral — one number, started when the row first loses and
+   * wiped whenever it wins or stops existing. The 9 s sweep reads it against
+   * `OUTBID_LEAVE_S` and marks the member `leaving`, which routes it through
+   * the unchanged goodbye branch: it says bye on its next turn and walks off,
+   * as a decision rather than an eviction.
+   *
+   * Session-lived, and losing it on a reload is the safe direction: a lost
+   * clock costs one member a delayed goodbye, a persisted stale one would evict
+   * somebody from a conversation they had just joined.
+   */
+  addressOutbid: Map<string, number>;
   /** ON-THE-CLOCK DORMANCY (view-distance-lod-tiers.md step 2): cid → the
    *  sleep a NULL decide armed. `due` = townClock of the earliest possible new
    *  fire — the exact meter crossing, capped by NEED_DECIDE_CAP_S when a
@@ -1309,18 +1430,33 @@ export interface QuestSession {
    *  makes the deadline's promised fallback ("the head feeds itself") real.
    *  A spoken invitation CLEARS it — an explicit ask outranks the damper. */
   ritualRetry: Map<string, number>;
-  /** SOFT CONTROL — the spark's attention field (spark-attention.ts). `sparkDraw`
-   *  = attention aimed at a hovered object's MOTIVE; `sparkFocus` = the ENGAGED
-   *  creature — the ONE the player has drawn into attention (by conversing,
-   *  hovering, or oscillating). ENGAGEMENT is the gate: only the engaged creature
-   *  responds, and it responds strongly; nobody is pulled in unselected. Both
-   *  decay each frame. Session-layer (spatial + timed), never on CreatureState. */
-  sparkDraw: SparkDraw | null;
-  sparkFocus: SparkFocus | null;
-  /** townClock until which ENGAGEMENT is HELD at full (a conversation or a
-   *  deliberate directive) — it doesn't decay while held, so "leave a
-   *  conversation, then select an object" still lands. */
-  sparkEngageHold: number;
+  /**
+   * SOFT CONTROL — the spark's attention field (spark-attention.ts), PER AUTHOR
+   * (⑩, multi-entity-conversations.md §3f "Attention").
+   *
+   * `sparkDraws` = each author's attention aimed at a hovered object's MOTIVE;
+   * `sparkAttention` = each author's ENGAGED creature — the ONE that author has
+   * drawn into attention (by conversing, hovering, or oscillating). ENGAGEMENT
+   * is the gate: only an engaged creature responds, and it responds strongly;
+   * nobody is pulled in unselected. Both decay each frame.
+   *
+   * 🚨 THE PAIRING LAW (spark-attention.ts): a draw is only ever read together
+   * with the engagement OF THE SAME AUTHOR. These were two session singletons,
+   * which was the same bug as `PLAYER_CREATURE_ID`: whichever device hovered
+   * last owned everybody's attention, and — worse — Ann's engaged creature
+   * paired with Ben's drawn bread would have sent MARA to eat, an instruction
+   * neither child gave. Every read goes through `attentionBonusOf` /
+   * `attentivenessOf` (ONE author) or the `*Any` pair (the need loop, which asks
+   * about a CREATURE and does not care whose gaze moved it).
+   *
+   * Session-layer (spatial + timed), never on CreatureState.
+   */
+  sparkDraws: AuthorDraws;
+  sparkAttention: AuthorAttention;
+  /** Per author: the townClock until which that author's ENGAGEMENT is HELD at
+   *  full (a conversation or a deliberate directive) — it doesn't decay while
+   *  held, so "leave a conversation, then select an object" still lands. */
+  sparkEngageHold: Map<string, number>;
   /** Attention aimed at a CHORE object (a loose thing to tidy, a box to fill).
    *  Stock/mess motives have no meter, so the ENGAGED idle creature is promoted
    *  to the chore (`stepSparkDirect`). Decays like the draw. */
@@ -1429,6 +1565,8 @@ export interface QuestSession {
   familyHudSig: string;
   /** Last pushed Speak-menu nouns signature (same diff-gate pattern). */
   nounsSig: string;
+  /** ⑫ — last pushed conversation roster (same diff-gate pattern). */
+  addresseesSig: string;
   /** Seconds an idle, un-owned resident has lingered with nothing to do —
    *  past HOME_IDLE_GRACE_S it walks home (a finished command parked it). */
   idleAway: Map<string, number>;
@@ -1609,6 +1747,13 @@ export interface QuestPresenter {
    *  semantics (concepts.ts) so the builder's SURFACER (surface-next.ts) can
    *  rank meaningful continuations. */
   nouns?(list: { symbol: string; label: string; kind?: "place" | "item" | "creature" | "unknown"; affords?: string[]; properties?: string[] }[]): void;
+  /** ⑫ — WHO IS STANDING IN THIS CONVERSATION, as the words the child would
+   *  press (conversation-in-motion.md law ②). Two or more of them means a crowd,
+   *  where a request has to say WHOM it is for — so the builder opens its
+   *  addressee slot and keeps a name one press away. Empty (or one) restores
+   *  today's board exactly: in a dyad there is nobody to disambiguate from.
+   *  Diff-gated, like `nouns`. */
+  addressees?(list: string[]): void;
   /** DOLLHOUSE family HUD (family-hud.ts): one emoji-state chip per household
    *  member, re-pushed whenever a state changes. Chips double as the ADDRESS
    *  targets for spoken commands (`selectFamilyMember`). Never called outside
@@ -1620,9 +1765,69 @@ export interface QuestPresenter {
   city?(chips: CityHudChip[]): void;
 }
 
+/**
+ * What a VIEW needs to know about the session it is being built for — the
+ * headless counterpart of the `createWorld3DView` argument list. Deliberately
+ * MINIMAL: only what the 3D construction actually consumes that a non-GL view
+ * could also want. Everything else the GL block passes (model factories, the
+ * composed scene overlay, the glyph image source, the render host) is 3D
+ * chrome with no headless meaning, so it never crosses this seam.
+ */
+export interface QuestViewCtx {
+  /** The generated world the engine simulates — buildings, objects, manifold.
+   *  Same object the 3D view is constructed with (`session.embedding.spec`). */
+  spec: WorldSpec;
+  /** The local avatar's id in that spec (always PLAYER_ID today). A view must
+   *  know whose eyes it renders from — it is what the reveal rule keys on. */
+  localId: string;
+  /** SPIRIT session: the player is a formless observer, so interiors reveal by
+   *  ACCESSIBILITY rather than by the room the body stands in (render3d's
+   *  `revealedInteriors`). A headless view must apply the same rule, because
+   *  `revealedBuildings()` gates resident embodiment. */
+  spirit: boolean;
+  /** DOLLHOUSE focus rect (world coords) when the spirit frames ONE house;
+   *  null = the whole world (the renderer's own default framing). Narrows the
+   *  reveal exactly as it does in 3D. */
+  spiritFrame: { x: number; y: number; w: number; h: number } | null;
+  /** The living town's street ribbons, or null outside a town. Render-only in
+   *  3D; carried across so a headless view can describe where a lane runs. */
+  roads: RoadPath[] | null;
+}
+
+/**
+ * THE HEADLESS-VIEW SEAM. Pass `view` instead of `canvas` and the quest-host
+ * builds with NO WebGL and NO DOM: the same sim, the same world-host loop, only
+ * the rendering surface swapped. The GL path is untouched — with `view` absent
+ * every branch resolves to exactly the canvas code that has always run.
+ */
+export interface QuestViewSeam {
+  /** Build the view for a (re)built session. Called once per buildHost, i.e.
+   *  on every world reload — the previous view was already disposed. */
+  create(ctx: QuestViewCtx): WorldView;
+  /** The viewport to size the world-host to. Omit for 1280x720 @ dpr 1 — a
+   *  headless view has no element to measure, and the host only needs SOME
+   *  finite viewport (it feeds screen-space picking, which nothing drives
+   *  without a pointer). */
+  size?(): { w: number; h: number; dpr: number };
+}
+
 export interface QuestHostDeps {
-  canvas: HTMLCanvasElement;
+  /** The GL surface. Omit ONLY when passing `view` (headless) — the host
+   *  throws if neither is present. */
+  canvas?: HTMLCanvasElement;
   presenter: QuestPresenter;
+  /** HEADLESS VIEW: build the world's view from this instead of creating the
+   *  Three.js one over `canvas`. Absent = today's 3D path, byte-identical. */
+  view?: QuestViewSeam;
+  /** The frame pump. Return value cancels the scheduled frame. Absent =
+   *  today's default (requestAnimationFrame / cancelAnimationFrame). */
+  scheduleFrame?: (cb: (now: number) => void) => () => void;
+  /** The clock the loop reads, in ms. Absent = today's default
+   *  (`performance.now`). */
+  now?: () => number;
+  /** NPC randomness. Absent = the world-host's default (`Math.random`) —
+   *  the host has never passed one, so omitting it changes nothing. */
+  npcRng?: () => number;
   /** Symbol→artwork resolver for glyph rasters (each app bundles its own
    *  icons; omit for the compositor's emoji fallback). */
   resolveImage?: ImageResolver;
@@ -1686,7 +1891,7 @@ export interface QuestHostDeps {
   multiplayer?: {
     /** This peer's NETWORK identity (its personId) — the wire id its avatar,
      *  speech and claims stream under. Internal session ids (PLAYER_ID,
-     *  PLAYER_CREATURE_ID) are untouched; the translation happens at the net
+     *  LOCAL_PLAYER_CID) are untouched; the translation happens at the net
      *  boundary (see mpWireOut). */
     localId: string;
     role: "owner" | "follower";
@@ -1701,14 +1906,203 @@ export interface QuestHostDeps {
   };
 }
 
-/** A live creature conversation. Keyed by the CREATURE, because the people
- *  talking to it can be more than one — dialogue is a projection of that
- *  creature's state, re-computed after every act, and `memo`/`level` are what
- *  it remembers of the exchange. */
-interface CreatureConversation {
+/**
+ * A live conversation as the HOST holds it — ONE shape for both kinds
+ * (multi-entity-conversations.md §3f, phase ⑧).
+ *
+ * ═══ WHY ONE MAP AND NOT TWO ════════════════════════════════════════════════
+ * ⑥ keyed conversations by the CREATURE a player was facing, which is exactly
+ * right for a board and exactly wrong for a circle of four townsfolk that no
+ * player opened. Two maps would have been the cheap answer, and it would have
+ * broken the one law that matters here: ONE CONVERSATION PER CREATURE ANYWHERE.
+ * With two books nothing can enforce it, and a creature would end up answering a
+ * child on one board while replying to its neighbour in another record.
+ *
+ * So there is one id-keyed home (`conversations`) and one index
+ * (`convoOfCreature`). A PLAYER-opened record keeps `id === nodeId` — the
+ * creature's node id, byte-identical to ⑥'s keying — so every existing lookup,
+ * every seeded stream and every wire message is unchanged. A GROUP record gets a
+ * synthesized `conv:<n>` id and carries the extra `group` half below.
+ *
+ * EVERYTHING IN `convo` IS SHARED. Nothing about any one DEVICE survives in it —
+ * no open sub-menu, no act list, and no syntax level (that is per MEMBER, on
+ * `convo.members`). A device's view is `ConvoView` below, and the two are
+ * separate objects precisely so that one player closing their board cannot take
+ * anything away from anyone else (§3a law 1, §4.6).
+ */
+interface HostConversation {
+  /** The conversation's identity — the map key, the camera's latch key and the
+   *  seeded stream's key. A player-facing record's id IS its creature's node id. */
+  id: ConversationId;
+  /** The creature whose dialogue this projects: the addressee of a board press
+   *  for a player record, the OPENER for a group. */
   nodeId: string;
-  level: SyntaxLevel;
-  memo: ConversationMemo;
+  /**
+   * The shared record every member's turn lands in — and, since §4.7, the
+   * TURN COUNTER too.
+   *
+   * There used to be a `turn: number` here, keying the seeded stream, only
+   * because nothing recorded utterances: `convo.nextSeq` sat at 0 forever and
+   * would have keyed every draw in a conversation to the same stream (ask twice,
+   * get the same answer — the one thing a per-decision key exists to prevent).
+   * `speakInConversation` records now, so the counter collapsed into `nextSeq`
+   * exactly as §4.5 said it would, and the keying is unchanged in shape.
+   */
+  convo: ConversationState;
+  /** PRESENT ⇔ this is a live ambient circle the sim is driving: the ring, the
+   *  turn clock and the dispersal timers. Absent = a player-opened board, whose
+   *  turns are driven by presses and which ends by `conversationSpent`. */
+  group?: GroupCircle;
+  /**
+   * ⑩ — WHICH CREATURE EACH AUTHOR IS FACING, for the authors that joined a
+   * CIRCLE. A player-opened record needs no row: its `nodeId` IS the creature
+   * everyone in it is facing. A circle has no such creature — four people are
+   * standing in it — so the one a player dwelled on to get in is remembered
+   * here, and it is that player's board, their default addressee and the `cid`
+   * their `convo` sync is keyed on.
+   *
+   * Per AUTHOR, not per device: two children can join the same circle from
+   * opposite sides and each be talking to a different person in it.
+   */
+  faced?: Map<string, string>;
+}
+
+/**
+ * The SIM half of a group conversation — everything a circle needs that a
+ * player-opened board does not (§3f "Formation / Ring / End").
+ *
+ * ⑫ — THE CIRCLE FOLLOWS ITS PEOPLE. `anchor` was set once at formation and never
+ * moved, which made the 8 m drift leash a rule against WALKING: two creatures who
+ * strolled were ejected for strolling. It now eases toward the members' centroid
+ * (`stepGroupAnchor`), so the leash measures against where the group actually IS
+ * and a conversation can travel. The RING still only breathes.
+ */
+interface GroupCircle {
+  /** Where the circle stands — the midpoint of the two who opened it, and after
+   *  that an eased centroid of the members. Ring slots and every radius test
+   *  (join, drift, focus distance) measure from here. */
+  anchor: { x: number; y: number };
+  /** `session.taskClock` at which the next turn is taken. Sim seconds: a paused
+   *  tab, a compression window and a replay all keep the transcript. */
+  nextTurnAt: number;
+  /** Seconds of collective nothing-to-say. At `CONV_FORM.boreS` the circle breaks
+   *  up — see `runGroupTurn`. Reset by any real turn. */
+  dullS: number;
+  /** Each member's ring angle in radians (`ringSlotFor`). Existing members KEEP
+   *  their angle forever — a newcomer takes the largest gap and nobody swaps
+   *  places (conversation-form.ts "never a dance"). */
+  slots: Map<string, number>;
+  /** The radius the whole ring currently runs at — grows as the circle does. */
+  ringR: number;
+  /** Bystander dwell seconds inside `joinRadiusM`, by cid. Walking PAST a circle
+   *  is not joining it (`CONV_FORM.joinDwellS`). */
+  dwell: Map<string, number>;
+  /** Creatures WALKING to a ring slot. Not members yet: floor rights come with
+   *  the seat, so the roster row is written on ARRIVAL and nowhere else. */
+  incoming: Map<string, number>;
+  /** The one reply in flight, riding the sim clock (`chatReplyDelayS`). This is
+   *  where the old host-wide `chatReplies` list dissolved to: a reply belongs to
+   *  the conversation it answers, not to a global queue. */
+  pending: {
+    speakerCid: string;
+    glyph: string;
+    text?: string;
+    pointAt: { x: number; y: number } | null;
+    dueIn: number;
+  } | null;
+  /** Whose line the circle is currently turned toward, and to whom — reasserted
+   *  every frame by `faceGroup` (bodies drift; a listener facing away reads as
+   *  ignoring the talker). */
+  facing: { speakerCid: string; addresseeCid?: string } | null;
+  /** Members who turned away from this turn's speaker (`SilentReaction`
+   *  `turn-away`). Cleared at the next turn — a refusal lasts one turn, not
+   *  forever. */
+  turnedAway: Set<string>;
+  /** Members that have lost their place (a need, a task) but are STILL STANDING
+   *  here: they get the floor next to say goodbye. A member that has physically
+   *  gone never lands here — it left, and that is what leaving looks like. */
+  leaving: Set<string>;
+  /** `session.taskClock` of the last thing SAID here — the camera's and the
+   *  TTS's `lastWordsAgoS` (`pickConversationFocus`). */
+  lastWordsAt: number;
+}
+
+/**
+ * ONE ROW OF `conversationAudit()` — a `console.table`-shaped read of one live
+ * conversation (⑪, multi-entity-conversations.md §5 "GL: `__questLab_convos()`
+ * dump"). Every field is a scalar a console prints legibly; the group-only
+ * fields are ABSENT rather than zero on a player-opened board, because "this
+ * record has no circle" and "this circle's timer is at zero" are different
+ * things and a GL run is exactly where that distinction is being checked.
+ */
+export interface ConversationAuditRow {
+  /** The map key / camera latch key / seeded-stream key. */
+  id: string;
+  /** The creature this record projects: the board's addressee, or the OPENER. */
+  nodeId: string;
+  /** TRUE ⇔ an ambient circle the sim drives. False ⇔ a player-opened board. */
+  group: boolean;
+  /**
+   * The roster, in the conversation's own deterministic order:
+   * `"cid@level>addressee~engagement,cid@level,…"`. Rungs are per member — the
+   * world holds every rung at once — so a mixed circle SHOULD show mixed
+   * letters here.
+   *
+   * ⑫④ — the `>addressee` tail is `ConvoMember.addressing`, read LIVE, and it is
+   * ABSENT when that member is talking to the room. That is one of the four
+   * things only a device can answer (chapter §5): whether a creature that
+   * visibly stopped and turned is the one the record says it turned to, and
+   * whether the address dies when it walks off (it should) or when it merely
+   * reaches for something (it should not — that rung answers null without
+   * deleting).
+   */
+  members: string;
+  /** GROUP ONLY — `session.taskClock` at which the next turn is taken. */
+  nextTurnAt?: number;
+  /** GROUP ONLY — seconds of collective nothing-to-say (`CONV_FORM.boreS` ends
+   *  it). A number that climbs and never resets is a circle about to break up. */
+  dullS?: number;
+  /** GROUP ONLY — where the ring stands, `"x,y"` at one decimal. */
+  anchor?: string;
+  /** `convo.nextSeq` — how many utterances this conversation has recorded, and
+   *  the counter the per-turn rng keys on. Frozen across turns = nothing is
+   *  being said. */
+  seq: number;
+}
+
+/**
+ * ONE DEVICE'S VIEW of one conversation — the board it has open on it.
+ *
+ * The other half of the split. `ui` is which sub-menu and page this player is
+ * sitting on and `acts` is the option list THIS device projected, both of them
+ * facts about a screen and not about the world: two students talking to the same
+ * shopkeeper may be on different pages of the same "where is…" list, and copying
+ * either one across would make each board jump under the other's thumb. So this
+ * never enters `HostConversation`, and the only piece of it that ever
+ * crosses the wire is the `ui` TRANSITION a member's own turn produced, handed
+ * back to the one device that asked for it (net.ts `convo`).
+ *
+ * `cid` names the CREATURE this device's board is aimed at — the one the player
+ * dwelled on — and `convoId` names the RECORD that board is a view of.
+ *
+ * 🚨 ⑩ SPLIT THEM. Until the player could join a circle the two were the same
+ * string (`id === nodeId` for every player-opened record), so every view↔record
+ * resolution went `conversationOf(view.cid)` and got away with it. A player
+ * seated in an ambient circle breaks that identity in one move: the record is
+ * `conv:7`, keyed on nobody, while the board still faces the one townsperson the
+ * child chose. Resolving by `cid` there finds the circle only by luck (the index
+ * happens to point at it) and finds the WRONG thing the moment the faced
+ * creature leaves. So the view carries the record's own id, and every resolution
+ * goes through `viewRecord()`.
+ */
+interface ConvoView {
+  cid: string;
+  /** The record this board is a view OF — `HostConversation.id`. Equal to `cid`
+   *  for a player-opened conversation; a `conv:<n>` for a joined circle. */
+  convoId: ConversationId;
+  /** This device's board navigation — never shared, never broadcast. */
+  ui: DeviceBoardState;
+  /** The acts this device last projected — what its `act_<i>` presses index. */
   acts: DialogueAct[];
 }
 
@@ -1897,6 +2291,19 @@ export interface QuestHost3D {
   /** The whole session's stock, summed by glyph across that tree — the
    *  conservation probe. `__questLab.stockAudit()`. */
   stockAudit(): Record<string, number>;
+  /**
+   * EVERY LIVE CONVERSATION IN THE WORLD, one flat row each — the ⑪ GL probe
+   * (`__questLab_convos()`, multi-entity-conversations.md §5). Player-opened
+   * boards and ambient circles come out of the SAME book, because since ⑧ they
+   * ARE the same book; `group` is what tells them apart.
+   *
+   * Readonly and flat by design: `HostConversation` is closure-private and
+   * carries live Maps/Sets a console cannot usefully print, so this projects
+   * the questions a GL run actually asks — who is in it, at what rung, whose
+   * turn is due, is it going dull, where is the ring — into `console.table`
+   * scalars. Reading it can never move the sim.
+   */
+  conversationAudit(): ConversationAuditRow[];
   /** WHAT ONE BODY HAS ON IT, merged for display (scope-unification.md §2.1):
    *  the object in its hands plus the stacks of the containers it carries or
    *  wears. There is no `needCarried` map to read any more — a body's carry is
@@ -2408,7 +2815,7 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     // carry of whatever creature the player is being right now — a claimed
     // avatar while it rides one, its own walker body otherwise — read live
     // through `bodyCarryOf`. There is no map here to shadow it with.
-    handsCid: PLAYER_CREATURE_ID,
+    handsCid: LOCAL_PLAYER_CID,
     selectedPocketGlyph: null,
     wornBags: new Map(),
     smallProps: new Map(),
@@ -2431,6 +2838,7 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     townParks: new Map(),
     partnerStockEpoch: 0,
     needGoalPick: new Map(),
+    addressOutbid: new Map(),
     needDecideDorm: new Map(),
     needsPropsEpoch: 0,
     needsStockEpoch: 0,
@@ -2439,9 +2847,9 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     ritualSeat: new Map(),
     ritualInvites: new Map(),
     ritualRetry: new Map(),
-    sparkDraw: null,
-    sparkFocus: null,
-    sparkEngageHold: 0,
+    sparkDraws: new Map(),
+    sparkAttention: new Map(),
+    sparkEngageHold: new Map(),
     sparkChore: null,
     sparkActing: new Set(),
     sparkExplicitUntil: 0,
@@ -2464,6 +2872,7 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     addressedFamily: null,
     familyHudSig: "",
     nounsSig: "",
+    addresseesSig: "",
     idleAway: new Map(),
     lastDrive: new Map(),
     relations: new Map(),
@@ -2636,6 +3045,16 @@ interface DescendProbeRec {
 }
 const DESCEND_PROBE_FRAMES = 300;
 let descendProbe: DescendProbeRec | null = null;
+/** THE DIAGNOSTIC WALL CLOCK — probe phase timings and log stamps ONLY.
+ *
+ *  SIM WORK MAY ONLY BE TIME-SLICED BY THE HOST'S CLOCK (`simNow`, built from
+ *  `deps.now` inside createQuestHost3D). Under an injected clock a frame is
+ *  ATOMIC — `now()` is constant until the driver advances it between frames —
+ *  so an `elapsed > ms` break can never fire and only the deterministic count
+ *  budgets apply (text-mode.md §5). Reading `performance.now` to decide how
+ *  much SIMULATION to do makes the world a function of machine speed: the
+ *  streamer's errand drain did exactly that, and one of 54 bodies landed ~4 cm
+ *  off between two same-seed headless runs by frame 8. */
 const descendNow = (): number =>
   typeof performance !== "undefined" ? performance.now() : 0;
 
@@ -2722,7 +3141,16 @@ function simFlush(): void {
 }
 
 export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
-  const { canvas, presenter } = deps;
+  // ONE of the two is required: a canvas (the GL view) or an injected view
+  // (headless). Checked here rather than in the type so a JS caller that drops
+  // both fails with a sentence instead of a null deref 18k lines later.
+  if (!deps.canvas && !deps.view) {
+    throw new Error("quest-host: pass canvas (GL) or view (headless)");
+  }
+  // null ONLY on the headless path; every canvas read below is either guarded
+  // or lives inside the GL branch the guard above certifies.
+  const canvas = deps.canvas ?? null;
+  const { presenter } = deps;
   // Free client-side TTS for in-game characters. NPC dialogue is voiced even
   // under an AAC companion — the live AI never reads NPC lines, so there's no
   // double audio. `null` = a deliberately silent host.
@@ -2730,6 +3158,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // ONE gate for intent announcements (phase ①a §3) — hosts may tune it later;
   // the default announces on pooled-task claims only.
   const announceCriteria = deps.announceCriteria ?? defaultAnnounceCriteria;
+
+  // ── THE HOST'S CLOCK ──────────────────────────────────────────────────────
+  // The single `now` this session runs on: handed to the world-host's frame
+  // loop below, and the ONLY clock any sim-side time slice may read. Absent
+  // from deps it IS `performance.now`, so a GL session reads exactly what it
+  // always did.
+  //
+  // SIM WORK MAY ONLY BE TIME-SLICED BY THE HOST'S CLOCK — under an injected
+  // clock (the headless text driver hands one in) a frame is ATOMIC: `now()`
+  // is constant until the driver advances it between frames, so an
+  // `elapsed > ms` break can never fire and only the deterministic count
+  // budgets apply (text-mode.md §5). `descendNow` above stays for DIAGNOSTICS
+  // — probe phase timings, log stamps — and must never gate simulation.
+  const simNow: () => number = deps.now ?? descendNow;
 
   // ── MULTIPLAYER (owner-authoritative — see QuestHostDeps.multiplayer) ────
   const mp = deps.multiplayer ?? null;
@@ -2887,7 +3329,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const possession: Possession = createPossession({
     isSpirit: () => spirit && sess?.dollhouse === null,
     creatureExists: (cid) =>
-      !!sess?.creatures?.world.creatures[cid] && cid !== PLAYER_CREATURE_ID,
+      !!sess?.creatures?.world.creatures[cid] && !isPlayerCid(cid),
     apply: (cid, prev) => applyPossession(cid, prev),
   });
   /** Spirit-mode affordances apply NOW (spirit session and nobody possessed). */
@@ -2912,7 +3354,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // baker and the strip shows what the baker carries (and what you gather
     // stays with the baker when you let go). No transfer happens here — there
     // is nothing to transfer, because there was never a second account.
-    s.handsCid = cid ?? PLAYER_CREATURE_ID;
+    s.handsCid = cid ?? LOCAL_PLAYER_CID;
     s.selectedPocketGlyph = null; // the armed stack belonged to the old hands
     pushPocket(s); // the strip now shows the new body's inventory
     if (cid) {
@@ -2962,8 +3404,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** How an action was produced. `spokenExternally` = the player's own device
    *  already said the words (an embedding AAC frame, or a peer before it
-   *  relayed); `targetId` = the addressee the SENDER resolved. */
-  type ActionOpts = { spokenExternally?: boolean; targetId?: string };
+   *  relayed); `targetId` = the addressee the SENDER resolved; `speakerCid` =
+   *  the AUTHOR's player-creature id when the action arrived over the wire
+   *  (absent = the local author). Threaded ahead of the singleton sweep
+   *  (multi-entity-conversations.md §3e) — nothing consumes it yet. */
+  type ActionOpts = { spokenExternally?: boolean; targetId?: string; speakerCid?: string };
 
   /** The glyph the board is currently showing for an option id, if any — the
    *  sentence that press speaks. Read off the live board so a relayed press
@@ -3002,6 +3447,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const stamped = UTTERANCE_KINDS.has(action.kind)
       ? { ...action, gesture: { ...currentGesture(opts.targetId), ...((action as { gesture?: Gesture }).gesture ?? {}) } }
       : action;
+    // WHAT THIS PLAYER SAID, SAID WHERE EVERYONE CAN SEE IT. An utterance was
+    // only ever voiced on the device that made it, so peers watched creatures
+    // answer questions nobody visibly asked. Mirroring happens on BOTH roles
+    // and BEFORE the fork, because the reason is the same either way: the
+    // sentence belongs over the speaker's own body, on every other screen.
+    relayPlayerUtterance(stamped);
     if (mpFollower()) {
       mp?.sendCommand?.({ ...stamped, from: mp.localId });
       return true;
@@ -3013,6 +3464,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The actions that are UTTERANCES — the ones a gesture completes. (A gaze
    *  instruction already carries its own subject and place in the action.) */
   const UTTERANCE_KINDS = new Set<PlayerAction["kind"]>(["speak", "board", "converse"]);
+
+  /**
+   * MULTIPLAYER: put this player's utterance over this player's own avatar, on
+   * every OTHER device — the same one-shot `say` a creature's line rides
+   * (mpWireOut swaps PLAYER_ID for this peer's network id, so the bubble lands
+   * on the right body). The glyph IS the sentence, whichever input produced it;
+   * the text is its first-person reading, because a peer's board is showing
+   * what the speaker meant, not what a creature would have meant by it.
+   *
+   * DISPLAY-ONLY and lossy by design: the ACT still travels on the reliable
+   * pipe (a follower's command) or runs here (the owner's). Nothing is voiced
+   * or bubbled locally by this — the local path already did that — and the mesh
+   * never loops a message back to its sender (applyNetInbound additionally
+   * drops any inbound id equal to our own). Single player: `mpNet` is null, so
+   * this is dead code and the session stays byte-identical.
+   */
+  function relayPlayerUtterance(action: PlayerAction): void {
+    if (!mpNet) return;
+    const glyph =
+      action.kind === "speak" ? action.sentence
+      : action.kind === "board" ? action.glyph ?? boardGlyphOf(action.optionId)
+      : action.kind === "converse" ? action.act.glyph
+      : null;
+    // A press whose sentence didn't survive the trip says nothing — better
+    // silence on the peers' screens than an empty bubble over a body.
+    if (!glyph) return;
+    mpNet.send([sayMessage(PLAYER_ID, playerStatement(glyph), glyph)]);
+  }
 
   /**
    * What this player is indicating RIGHT NOW. Read once, at the moment of
@@ -3079,6 +3558,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * the owner (or in a single-player session) for every action, its own and
    * every peer's: one action, one meaning, one implementation.
    */
+  /** WHOSE act this is — the relayed speaker, else this device's author. */
+  const authorOf = (opts: ActionOpts): string => opts.speakerCid ?? LOCAL_PLAYER_CID;
+
   function applyPlayerAction(action: PlayerAction, opts: ActionOpts = {}): void {
     switch (action.kind) {
       case "speak":
@@ -3092,36 +3574,74 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       case "board":
         withGesture(action.gesture, () => api.applyBoardOption(action.optionId, opts, action.glyph));
         break;
-      case "converse":
-        // The creature answers whoever addressed it. `inConversationWith` runs
-        // the turn in THAT creature's conversation — the shared one — without
-        // moving this player's board when the turn wasn't taken here.
+      case "converse": {
+        // The creature answers whoever addressed it. `withConversationTurn` runs
+        // the turn in THAT creature's conversation — the shared one — seating
+        // the speaker on its roster and leaving this player's board where they
+        // left it when the turn wasn't taken here.
+        const speaker = opts.speakerCid ?? LOCAL_PLAYER_CID;
         withGesture(action.gesture, () =>
-          inConversationWith(action.cid, () => {
+          withConversationTurn(action.cid, speaker, () => {
             const said = playerStatement(action.act.glyph);
             if (opts.spokenExternally) yieldToStatement(said);
             else speakPlayerStatement(said);
-            runCreatureAct(action.act);
+            runCreatureAct(action.act, speaker);
           }),
         );
         break;
+      }
       // The three gaze instructions are the SAME gate a spoken noun reaches —
       // calling attention to a place, a thing, or somebody. `by` is the
       // creature whose attention it is: the one this player is talking to.
+      //
+      // ⑩ — and `author` is WHOSE gaze gave the instruction. These three are the
+      // only actions that arrive already naming a body, which is exactly why
+      // they are the ones that can honestly write a REMOTE author's engagement
+      // row: a peer looking at Mara and pointing at the bread engages Mara for
+      // THAT peer, and the owner's own engaged creature is untouched.
       case "sendTo":
-        if (sess) attendTo(sess, { kind: "place", x: action.x, y: action.y }, { by: action.cid });
+        if (sess) attendTo(sess, { kind: "place", x: action.x, y: action.y }, { by: action.cid, author: authorOf(opts) });
         break;
       case "attendObject":
-        if (sess) attendTo(sess, { kind: "object", objId: action.id, at: { x: action.x, y: action.y } }, { by: action.cid });
+        if (sess) {
+          attendTo(
+            sess,
+            { kind: "object", objId: action.id, at: { x: action.x, y: action.y } },
+            { by: action.cid, author: authorOf(opts) },
+          );
+        }
         break;
       case "attendCreature":
-        if (sess) attendTo(sess, { kind: "creature", cid: action.id }, { by: action.cid });
+        if (sess) attendTo(sess, { kind: "creature", cid: action.id }, { by: action.cid, author: authorOf(opts) });
         break;
       case "claim":
         // Reserved: a peer's spark taking a body. The owner records the claim
         // for rendering (applyRemoteCommand); driving another peer's possession
         // needs per-peer session state, which does not exist yet.
         break;
+      case "convo": {
+        // MEMBERSHIP — and, since ⑫④, WHOM THIS MEMBER IS TALKING TO — on the
+        // owner's roster. A follower's board is a VIEW; being IN the
+        // conversation, and having turned to somebody inside it, are facts about
+        // the simulation, so they arrive here like any other act, from whichever
+        // author sent them.
+        const member = playerCidOf(opts.speakerCid ?? "", mp?.localId);
+        if (action.op === "join") {
+          // Joining IS the answer: the sync `conversationWith` triggers tells
+          // the new member what the conversation already knows, so a board that
+          // opens mid-exchange opens on the exchange rather than on a greeting.
+          syncConvoMembers(conversationWith(action.cid, member));
+        } else if (action.op === "address") {
+          // ⑫④ — THE LOOK, LANDED. `cid` is the person, not the conversation:
+          // the owner holds the roster, so it resolves which conversation this
+          // author is standing in rather than trusting a follower to say.
+          setMemberAddress(member, action.cid);
+        } else {
+          const c = conversationOf(action.cid);
+          if (c) departConversation(c, member);
+        }
+        break;
+      }
     }
   }
 
@@ -3135,6 +3655,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *      each frame, so the park wins over the glide. */
   function stepMultiplayerFrame(state: WorldState, dt: number) {
     if (!mp || !mpNet) return;
+    stepFollowerConvoSync(state);
     mpClaimT += dt;
     if (mpClaimT >= 5) {
       mpClaimT = 0;
@@ -3166,15 +3687,97 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
+  /** The last sync SEQ this device applied, per creature — the "have I already
+   *  seen this?" half of the follower re-projection. Per creature because that
+   *  is what the owner counts turns in. */
+  const convoSyncSeen = new Map<string, number>();
+
+  /**
+   * FOLLOWER RE-PROJECTION (§4.6) — the answer to the frozen board.
+   *
+   * A follower runs no turns: its presses are relayed and the OWNER answers
+   * them, which is why its conversation board used to open once and then sit
+   * there while the creature it was showing carried on talking. The owner's
+   * `convo` message is the missing half; this is where it lands. What arrives is
+   * this device's own member row (its rung — which the owner may have dropped
+   * because this player pressed "I don't understand"), what the CONVERSATION now
+   * remembers, and, when the sync answers this device's own turn, the board
+   * transition that turn produced. Merged into the local mirror, the ordinary
+   * projection then runs against the (frozen) local world and the board moves.
+   *
+   * Silent — the creature's LINE arrived separately as a `say` over the speaker's
+   * own body, on the beat it was spoken. Re-speaking it here would double every
+   * line a follower hears.
+   *
+   * Never runs for the owner (it is the one sending these) or in single player
+   * (there is no `convoSync` at all): the world stays byte-identical.
+   */
+  function stepFollowerConvoSync(state: WorldState) {
+    if (!mpFollower() || !sess) return;
+    const view = convoView;
+    if (!view) return;
+    const sync = state.convoSync?.[mp!.localId];
+    if (!sync || sync.cid !== view.cid) return;
+    if (sync.seq <= (convoSyncSeen.get(view.cid) ?? -1)) return; // already applied / a straggler
+    convoSyncSeen.set(view.cid, sync.seq);
+    const c = conversationWith(view.cid);
+    view.convoId = c.id;
+    convo = c;
+    const me = memberOf(c.convo, LOCAL_PLAYER_CID);
+    if (me) {
+      me.level = sync.level;
+      // ⑫④ — THE OWNER'S ANSWER TO "WHOM AM I TALKING TO", replacing this
+      // device's optimistic echo. REPLACED, not merged, and an ABSENT field
+      // means NOBODY rather than "unchanged": the address died on the owner (the
+      // target left, or this member walked off), and a mirror that kept the old
+      // pointer would go on aiming sentences at somebody the simulation has
+      // already stopped aiming them at. This is the one half of the round trip
+      // ⑫④ adds; the local echo covers the flight time.
+      if (sync.addressing) me.addressing = sync.addressing;
+      else delete me.addressing;
+    }
+    // The SHARED half, merged rather than replaced: this mirror may hold a
+    // reveal from a line that reached us before the sync did, and a conversation
+    // never un-hears something.
+    Object.assign(c.convo.revealed, sync.shared.revealed);
+    Object.assign(c.convo.pairs, sync.shared.pairs);
+    // …and the one piece of BOARD state that legitimately crosses the wire: the
+    // transition our own press produced, run for us by the owner.
+    if (sync.ui) view.ui = sync.ui;
+    presentCreatureTurn(undefined, { speak: false, bubble: false });
+  }
+
   // The active question (a choose/converse `present-choice`, or one
   // SYNTHESIZED for a creature conversation — the camera/leave-dwell
   // machinery keys on it).
   let choice: { nodeId: string; posedByEntityId: string; prompt: string; options: ChoiceOptionView[] } | null = null;
   // A live need-based creature conversation (fulfill nodes) — dialogue is a
   // PROJECTION of creature state, re-computed after every act. It belongs to
-  // the CREATURE (convosByCreature), so more than one player can take turns in
-  // it; `convo` is simply the one THIS device's board is showing.
-  let convo: CreatureConversation | null = null;
+  // the CREATURE (`conversationOf`), so more than one player can take turns in
+  // it; `convo` is the SHARED record the turn being executed belongs to —
+  // normally the one this device's board is showing, and briefly somebody
+  // else's while `withConversationTurn` runs their turn.
+  let convo: HostConversation | null = null;
+  /** THIS DEVICE's open conversation board: which creature, which sub-menu,
+   *  which acts. Opened and closed together with `convo`, and deliberately NOT
+   *  swapped while another member's turn runs — a peer's page-turn is not ours
+   *  to apply (§4.6). Null = no conversation board is up here. */
+  let convoView: ConvoView | null = null;
+  /**
+   * ⑩ — THE FELLOW MEMBER THIS PLAYER IS TALKING TO, inside the conversation on
+   * this screen (§3f "gaze at a fellow member = set them as the player's current
+   * ADDRESSEE"). Null = the creature the board faces, which is every dyad and
+   * every circle the child has not looked around in yet.
+   *
+   * Device-side by construction: it is set by THIS device's gaze, it steers only
+   * what THIS device's player says, and it never crosses the wire — a peer's
+   * addressee rides their own utterances as the creature they faced.
+   *
+   * Cleared when the board closes or switches (`closeConvoView`) and when that
+   * member leaves the roster (`liveConvoAddressee`), because addressing somebody
+   * who has walked away is not addressing anybody.
+   */
+  let convoAddressee: string | null = null;
   // The OPEN FURNITURE board (bug #5): the piece the gaze rests on — its object id +
   // the glyph stacks on show, contents first, the thing itself last. A press takes one;
   // walking/looking away closes it, like a convo. Furniture with NO stock (a chair, an
@@ -3332,11 +3935,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // frozen frame. Only a win clears it.
   const pointerLive = () => !isWon;
 
+  /** CLIENT→VIEW origin: where the view's top-left sits in client coords, so a
+   *  client point can be expressed in view-local pixels. Only `left`/`top` are
+   *  ever read (both call sites subtract the origin and nothing else), so a
+   *  headless view — which has no element to measure — is simply at the client
+   *  origin: its own pixel space IS the client space. */
+  const clientOrigin = (): { left: number; top: number } =>
+    canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
+
   /** Push the current pointer into the world host (or clear it when paused/won). */
   function feedPointer() {
     if (!world) return;
     if (lastClient && pointerLive()) {
-      const r = canvas.getBoundingClientRect();
+      const r = clientOrigin();
       world.setPointer(lastClient.x - r.left, lastClient.y - r.top);
     } else {
       world.clearPointer();
@@ -3413,12 +4024,39 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     voice?.pause(speechEstimateMs(spokenText));
   }
 
+  /**
+   * 🏷️ THE LABEL A THING WEARS ON A BUTTON — the player's own language.
+   *
+   * A board option's `label` is what the child READS (and, with no `spokenText`,
+   * what the button says): it must be a word, in their language, not the glyph
+   * key. Keys are English by accident of authoring — the engine's own lexicons
+   * are the only place a thing's word exists in he/es/pt — so a Hebrew board was
+   * showing "workbench" beside buttons that read כיסא. `id`/`glyph` stay the
+   * language-invariant handles; this is display text.
+   *
+   * Single-glyph input renders as a BARE noun phrase (no article, no full stop —
+   * lang/core `labelWith`), which is exactly a button's worth of text, and the
+   * facets survive the trip: `shirt.color_red` labels "red shirt".
+   */
+  function labelOfGlyph(glyph: string): string {
+    return glyphLabel(drawnGlyph(glyph), sess?.game.meta.locale);
+  }
+
   /** An NPC's statement for a glyph — translation + the speaker's agreement. */
-  function npcStatement(glyph: string, speakerSymbol?: string, speakerCid?: string): string {
+  function npcStatement(
+    glyph: string,
+    speakerSymbol?: string,
+    speakerCid?: string,
+    /** ⑫⑦ — the leading name in this glyph is an ADDRESS, not a subject. The
+     *  lang layer may not guess it ("mara + go + home" is Mara going home), so
+     *  the one place that KNOWS says so. */
+    vocative?: boolean,
+  ): string {
     const locale = sess?.game.meta.locale;
     return translateGlyph(glyph, locale, {
       speaker: npcSpeakerGender(speakerSymbol, speakerCid),
       ...(sess ? { names: sessionNames(sess) } : {}),
+      ...(vocative ? { vocative: true } : {}),
     });
   }
 
@@ -3452,7 +4090,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const village = session.village;
     if (!village || !session.creatures) return undefined;
     const item = session.creatures.world.items[itemId];
-    if (!item || item.ownerId === PLAYER_CREATURE_ID) return undefined;
+    if (!item || item.ownerId === LOCAL_PLAYER_CID) return undefined;
     if (item.ownerId) {
       // Creature ids ARE fulfill node ids — its room is where it lives.
       const zoneId = session.world.sites[item.ownerId];
@@ -3546,6 +4184,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
     return byName;
+  }
+
+  /**
+   * ⑫ — THE ROSTER, AS WORDS: the fellow members of `speakerCid`'s conversation,
+   * in the vocabulary the child actually presses (`nameOfCid`, else the creature's
+   * own glyph). Empty when the speaker is in no conversation.
+   *
+   * This is the one input that lets the parser tell talking TO somebody from
+   * talking ABOUT them, and the board know whether a name is worth a slot. It is
+   * deliberately NAMES rather than ids: the whole channel is "say who you mean",
+   * and a creature nobody can name cannot be addressed by name — which is honest,
+   * and is what makes learning a name worth something.
+   */
+  function rosterWords(speakerCid: string): string[] {
+    const s = sess;
+    if (!s) return [];
+    const c = conversationOf(speakerCid);
+    if (!c) return [];
+    const out: string[] = [];
+    for (const m of c.convo.members) {
+      if (m.id === speakerCid || isPlayerCid(m.id)) continue;
+      const word = nameOfCid(s, m.id) ?? creatureGlyph(s, m.id);
+      if (word && !out.includes(word)) out.push(word);
+    }
+    return out;
   }
 
   /** cid → its spoken NAME (reverse book — actual names only, never species
@@ -3697,7 +4360,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cid: string,
   ): { verb: string; object?: string } | undefined {
     const pursuit = session.pursuits.get(cid);
-    if (pursuit) return goalActivity(pursuit.goal, intentLineSyms(session)) ?? undefined;
+    // ⑫⑧ — an `address` has no activity reading and must not claim one: a body
+    // that stopped to face somebody is not DOING a thing, it is listening, and
+    // "what are you doing?" should fall through to whatever it was doing before
+    // (the need step below) rather than answer with the turn.
+    if (pursuit && pursuit.goal.kind !== "address") {
+      return goalActivity(pursuit.goal, intentLineSyms(session)) ?? undefined;
+    }
     const step = session.needStep.get(cid);
     if (step) {
       const act = stepActivity(step);
@@ -3705,7 +4374,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     const going = creatureGoing(session, cid);
     if (going) {
-      if (going.kind === "fetch") return { verb: "get", object: headOf(going.good) };
+      if (going.kind === "fetch") return { verb: "get", object: spokenWord(going.good) };
       if (going.kind === "activity") return { verb: going.verb, ...(going.object ? { object: going.object } : {}) };
       const dest = going.kind === "home" ? "home" : going.kind === "room" ? going.room : going.place;
       return { verb: "go", object: dest };
@@ -3816,7 +4485,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  🚨 RETURNS FALSE WHEN THERE IS NO ROOM, and takes nothing (decision 7 —
    *  refusal conserves). A body with full hands and no bag genuinely cannot
    *  accept a gift, and the giver must keep it rather than watch it vanish. */
-  function giftResidentGood(session: QuestSession, cid: string, glyph: string): boolean {
+  function giftResidentGood(session: QuestSession, cid: string, glyph: string, giver: string = LOCAL_PLAYER_CID): boolean {
     if (!cid.startsWith("resident_")) return false;
     if (giveUnitsToBody(session, cid, glyph, 1) < 1) {
       console.log(`[needs] ${cid} REFUSED a gifted ${glyph} — nothing free to carry it in`);
@@ -3829,7 +4498,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     );
     if (need) need.fulfilled = true;
     // Kindness is remembered — the receiver warms toward the giver.
-    warmRelations(session, cid, PLAYER_CREATURE_ID, { affinity: 0.1, trust: 0.05 });
+    warmRelations(session, cid, giver, { affinity: 0.1, trust: 0.05 });
     return true;
   }
 
@@ -3841,32 +4510,66 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     );
   }
 
-  /** (Re)present the projection for the active creature conversation. When the
-   *  creature just REACTED (a clue, a refusal, a thank-you), the reaction IS the
-   *  spoken line for this turn — re-projecting must not clobber it. `present`
-   *  suppresses the spoken line / bubble for a SILENT board refresh (the
-   *  directions answer voices + bubbles itself, then refreshes the acts). */
-  function presentCreatureTurn(lineOverride?: string, present: { speak?: boolean; bubble?: boolean } = {}) {
+  /**
+   * (Re)present the projection for the active creature conversation, FOR ONE
+   * MEMBER. When the creature just REACTED (a clue, a refusal, a thank-you), the
+   * reaction IS the spoken line for this turn — re-projecting must not clobber
+   * it. `present` suppresses the spoken line / bubble for a SILENT board refresh
+   * (the directions answer voices + bubbles itself, then refreshes the acts).
+   *
+   * `memberCid` is WHOSE turn is being presented, and it decides three things at
+   * once: whose perception the face-to-face sight writes into, which syntax rung
+   * the line is phrased at (per-member, law 2), and whether any of this reaches
+   * a screen here. A REMOTE member's presentation still runs — the creature
+   * speaks out loud, in the world, where everyone hears it — but the board and
+   * the camera-holding `choice` are this device's own and belong to the local
+   * author alone. Their board is refreshed by the sync that follows, on their
+   * own machine.
+   */
+  function presentCreatureTurn(
+    lineOverride?: string,
+    present: { speak?: boolean; bubble?: boolean } = {},
+    memberCid: string = LOCAL_PLAYER_CID,
+  ) {
     const doSpeak = present.speak ?? true;
     const doBubble = present.bubble ?? true;
     const session = sess!;
     if (!convo || !session.creatures || !world) return;
-    const node = session.creatures.nodeByCreature.get(convo.nodeId);
+    const c = convo;
+    // ⑩ — A BOARD IS AIMED AT A PERSON, not at a record. In a dyad that is the
+    // record's own creature (unchanged); in a joined circle it is the one THIS
+    // member walked up to, which is what `facedBy` answers.
+    const nodeId = facedBy(c, memberCid);
+    const node = session.creatures.nodeByCreature.get(nodeId);
     if (!node) return;
+    const forLocal = memberCid === LOCAL_PLAYER_CID;
+    const view = turnViewOf(memberCid, c);
+    // ⑩ — THE BOARD, THE ACTION AND THE SYNC KEY MUST NAME THE SAME PERSON. When
+    // the creature this member was facing walks out of the circle, `facedBy`
+    // hands the board to whoever is still standing there; the view's `cid` (what
+    // a board press travels as, and what a follower matches its sync against) has
+    // to follow, or the next press would be addressed to somebody who left.
+    if (view.cid !== nodeId) {
+      view.cid = nodeId;
+      if (c.group) (c.faced ??= new Map()).set(memberCid, nodeId);
+    }
     // Standing in front of a creature, EVERYTHING it holds is visible — sight
     // is knowledge, so every held item is requestable (it may refuse). The same
     // sight carries each item's visible STATES ("the apple is hot") through the
-    // generic fact channel (facts.ts — creature-knowledge.md).
+    // generic fact channel (facts.ts — creature-knowledge.md). It is the MEMBER
+    // being presented to who does the seeing: a peer standing in the same
+    // conversation learns what the creature holds, and the local player does not
+    // learn it on their behalf.
     for (const item of Object.values(session.creatures.world.items)) {
-      if (item.ownerId === convo.nodeId) {
-        seeItem(session.creatures.world, PLAYER_CREATURE_ID, item.id, {
+      if (item.ownerId === nodeId) {
+        seeItem(session.creatures.world, memberCid, item.id, {
           kind: "held",
-          by: convo.nodeId,
+          by: nodeId,
         });
         for (const s of item.states) {
           const axis = STATE_AXES[s];
           if (axis) {
-            perceiveFact(session.creatures.world, PLAYER_CREATURE_ID, {
+            perceiveFact(session.creatures.world, memberCid, {
               kind: "itemState",
               item: item.id,
               axis,
@@ -3879,28 +4582,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // Face to face, each side sees the other's CONDITION (a hungry housemate
     // looks hungry) — the "how is Mara" answer a third party can later ask for.
     {
-      const partner = session.creatures.world.creatures[convo.nodeId];
+      const partner = session.creatures.world.creatures[nodeId];
       if (partner) {
-        perceiveFact(session.creatures.world, PLAYER_CREATURE_ID, {
+        perceiveFact(session.creatures.world, memberCid, {
           kind: "condition",
-          creature: convo.nodeId,
+          creature: nodeId,
           condition: partner.condition ?? null,
         });
       }
     }
     const proj = projectDialogue(
       session.creatures.world,
-      convo.nodeId,
-      PLAYER_CREATURE_ID,
-      convo.level,
+      nodeId,
+      memberCid,
+      levelOf(c, memberCid),
       creatureProjectionOpts(session, node.announce),
-      convo.memo,
+      // The same turn's stream, handed over for symmetry — a projection is a
+      // READ (what could be said), so nothing in it draws today. It gets a FRESH
+      // generator on the same key rather than the act's partially-consumed one,
+      // so re-presenting a board can never move a verdict: presenting twice and
+      // presenting once look identical to every future draw.
+      { convo: c.convo, ui: view.ui, rng: convoRng(session, c) },
     );
     // Hearing a want stated is knowledge — it feeds other creatures' where-is.
     // "Stated" = the line names the need item's glyph (covers want/give lines,
     // placement "{item} + in + {box}" and on-behalf "{item} + to + {who}";
     // a hidden-need greeting names nothing).
-    const needItem = session.creatures.nodeByCreature.get(convo.nodeId)?.needItemEntityId;
+    const needItem = session.creatures.nodeByCreature.get(nodeId)?.needItemEntityId;
     const needGlyph = needItem ? session.entities.get(needItem)?.glyph : undefined;
     if (needItem && needGlyph && proj.lineGlyph.includes(needGlyph)) {
       session.heardWants.add(needItem);
@@ -3908,45 +4616,43 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // (an active objective → prioritised) and the way back to this asker's
       // home. The player can now ask any townsperson the way.
       learnSubject(session, `buy:${needItem}`, true);
-      learnSubject(session, `home:${convo.nodeId}`);
+      learnSubject(session, `home:${nodeId}`);
     }
     // An AMBIENT resident states a shopping want (§8): hearing it teaches WHERE to buy
     // that good, so the board gains a "where is food?" option that points to the
     // market. (Residents have no `needItemEntityId`; their want is a resource type.)
-    const resGood = residentGood(session, convo.nodeId);
+    const resGood = residentGood(session, nodeId);
     if (resGood) learnSubject(session, `buy:good:${resGood.key}`, true);
-    convo.acts = proj.acts;
+    view.acts = proj.acts;
     const line = lineOverride ?? proj.lineGlyph;
-    // The camera/leave-dwell machinery keys on the active choice — synthesize one.
+    const npcSym = session.entities.get(node.npcEntityId)?.glyph;
+    // This turn's line, through the ONE creature-line chokepoint so peers see
+    // and hear it too. Written caption = the PROPER translation; the glyph
+    // image stays the language-invariant symbol sentence. A nav-silent refresh
+    // (both flags off) presents nothing and therefore mirrors nothing. Spoken
+    // whoever the turn belonged to: it happens in the WORLD.
+    sayNpcLine(session, nodeId, { glyph: line, ttl: 6, bubble: doBubble, speak: doSpeak });
+    // ── FROM HERE DOWN IT IS A SCREEN, AND THE SCREEN IS THIS DEVICE'S ───────
+    // A peer's turn moves neither this board nor this camera. (`choice` is what
+    // the camera dolly and the leave-dwell key on, so it would drag the local
+    // view onto a conversation the local player is not in.)
+    if (!forLocal) return;
     choice = {
-      nodeId: convo.nodeId,
+      nodeId: nodeId,
       posedByEntityId: node.npcEntityId,
       prompt: line,
       options: [],
     };
-    const npcSym = session.entities.get(node.npcEntityId)?.glyph;
-    const at = poserPos(session, convo.nodeId);
-    if (at && doBubble) {
-      showWorldBubble(world.state, `char:${node.npcEntityId}`, {
-        anchor: { kind: "point", x: at.x, y: at.y },
-        // Written caption = the PROPER translation; the glyph image stays the
-        // language-invariant symbol sentence.
-        text: npcStatement(line, npcSym, convo.nodeId),
-        glyph: line,
-        ttl: 6,
-      });
-    }
-    if (doSpeak) speakNpc(line, npcSym, convo.nodeId);
     pushBoard(
       {
         kind: "acts",
-        nodeId: convo.nodeId,
+        nodeId: nodeId,
         posedByEntityId: node.npcEntityId,
         prompt: line,
-        promptText: npcStatement(line, npcSym, convo.nodeId),
+        promptText: npcStatement(line, npcSym, nodeId),
         // label + spokenText carry the translated statement (written caption
         // and the board's voice); `glyph` stays the invariant symbol string.
-        options: convo.acts.map((a, i) => ({
+        options: view.acts.map((a, i) => ({
           id: `act_${i}`,
           label: playerStatement(a.glyph),
           glyph: a.glyph,
@@ -3970,9 +4676,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  thing in the house are speakable from the first frame — without them the
    *  builder can't even compose "you get the apple". Diff-gated (re-pushed only
    *  when the list changes), so the tick may call it every frame. */
+  /** ⑫ — push the LOCAL author's roster to the board, diff-gated like the nouns.
+   *  Two or more fellow members is a crowd, and a crowd is the only shape where
+   *  a name is load-bearing (law ④). */
+  function pushAddressees(session: QuestSession) {
+    if (!presenter.addressees) return;
+    const words = rosterWords(LOCAL_PLAYER_CID);
+    const sig = words.join("|");
+    if (sig === session.addresseesSig) return;
+    session.addresseesSig = sig;
+    presenter.addressees(words);
+  }
+
   function pushKnownNouns(session: QuestSession) {
     if (!presenter.nouns) return;
     type NounKind = "place" | "item" | "creature" | "unknown";
+    // THE WORD LIST IS READ, SO IT IS WRITTEN IN THE PLAYER'S LANGUAGE. Every
+    // caller below hands in an English label because the glyph key IS an English
+    // word — which is invisible until the board is Hebrew and every button but
+    // these ones reads Hebrew. The lexicon answers for anything that is a word;
+    // a NAME (a family member's, a pet's) has no lexeme and stays itself.
+    const nounLang = languageFor(session.game.meta.locale);
     const seen = new Set<string>();
     const out: { symbol: string; label: string; kind: NounKind; affords: string[]; properties: string[] }[] = [];
     // A STATION's OWN act verbs — the ones its need template satisfies
@@ -4044,14 +4768,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     ) => {
       if (!symbol || seen.has(symbol)) return;
       seen.add(symbol);
-      const head = headOf(symbol);
+      // The SPOKEN head — a `furn.<kind>` symbol is a chair, and `furn` is a
+      // concept nothing has ever registered (no affordances, no properties, no
+      // art), so the head lookup has to see through the storage prefix too.
+      const head = spokenWord(symbol);
       const m = meta ?? conceptMeta(head);
-      out.push({ symbol, label, kind: m.kind, affords: m.affords, properties: m.properties ?? propertiesOf(head) });
+      out.push({
+        symbol,
+        label: nounLang.lexicon[head]?.w ?? label,
+        kind: m.kind,
+        affords: m.affords,
+        properties: m.properties ?? propertiesOf(head),
+      });
     };
     const add = (id: string | undefined) => {
       if (!id) return;
       const glyph = session.entities.get(id)?.glyph;
-      if (glyph) addRaw(glyph, headOf(glyph));
+      if (glyph) addRaw(drawnGlyph(glyph), spokenWord(glyph));
     };
     const creature = { kind: "creature" as NounKind, affords: CREATURE_AFFORDS };
     // KNOWN PEOPLE are speakable TARGETS wherever a family exists — not only
@@ -4102,7 +4835,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // modifier word ("wear + shirt + red"), already in the lexicon.
       addRaw("clothing", "clothing");
       for (const k of CLOTHING_HEADS) addRaw(k, k);
-      for (const [, rec] of session.smallProps) addRaw(drawnMakeable(rec.glyph), spokenMakeable(rec.glyph));
+      for (const [, rec] of session.smallProps) addRaw(drawnGlyph(rec.glyph), spokenWord(rec.glyph));
     }
     // BUILDABLE STRUCTURES (①b): at a town / founded site, the catalog's
     // nouns are speakable — the sentence builder can compose "build house"
@@ -4139,9 +4872,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const lead = out.length; // family + house stay first; learned things sort after
     if (session.creatures) {
       const w = session.creatures.world;
-      const player = w.creatures[PLAYER_CREATURE_ID];
+      const player = w.creatures[LOCAL_PLAYER_CID];
       if (player) for (const id of Object.keys(player.knowledge)) add(id);
-      for (const [id, it] of Object.entries(w.items)) if (it.ownerId === PLAYER_CREATURE_ID) add(id);
+      for (const [id, it] of Object.entries(w.items)) if (it.ownerId === LOCAL_PLAYER_CID) add(id);
       if (convo) add(session.creatures.nodeByCreature.get(convo.nodeId)?.needItemEntityId);
     }
     // THE LIBRARY IS KNOWN BY DEFAULT (language-expansion.md): every pool
@@ -4163,19 +4896,28 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * at max yaw speed) and raise the NPC's arm, then refresh the board silently —
    * the direction WAS this turn's utterance.
    */
-  function answerDirections(session: QuestSession, subjectId: string) {
+  function answerDirections(
+    session: QuestSession,
+    subjectId: string,
+    memberCid: string = LOCAL_PLAYER_CID,
+    /** WHO is answering (⑩): in a circle the arbitration may hand the question
+     *  to somebody other than the person it was asked of. Defaults to the
+     *  record's own creature, which is every dyad. */
+    answererId?: string,
+  ) {
     if (!convo || !world) return;
+    const answerer = answererId ?? convo.nodeId;
     const fact = session.placeFacts.get(subjectId);
-    const node = session.creatures?.nodeByCreature.get(convo.nodeId);
+    const node = session.creatures?.nodeByCreature.get(answerer);
     const player = world.state.avatars[PLAYER_ID];
     if (!fact || !session.town || !player || !node) {
-      presentCreatureTurn(); // subject vanished — fall back to a normal refresh
+      presentCreatureTurn(undefined, {}, memberCid); // subject vanished — fall back to a normal refresh
       return;
     }
     learnSubject(session, subjectId); // asking bumps it to most-recent
     // A NEIGHBOR resident answers from ITS OWN town — its streets/center, and
     // a `buy:good:*` subject re-aimed at its own market (window coords).
-    const rc = neighborCtxOf(session, convo.nodeId);
+    const rc = neighborCtxOf(session, answerer);
     const f = rc ? neighborPlaceFact(rc, fact) : fact;
     const ans = answerPlaceDirections(
       rc ? rc.plan.streets : session.town.plan.streets,
@@ -4186,34 +4928,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const locale = session.game.meta.locale;
     const npcSym = session.entities.get(node.npcEntityId)?.glyph;
     const text = speakDirections(fact.thingGlyph, ans.proximity, ans.cardinal, locale, {
-      speaker: npcSpeakerGender(npcSym, convo.nodeId),
+      speaker: npcSpeakerGender(npcSym, answerer),
     });
-    // Voice it (already localised — skip glyph translation) + bubble it.
+    // Cut whatever it was saying — it is answering now — then out through the
+    // ONE creature-line chokepoint: the prose voiced and captioned as-is
+    // (already localised, so no glyph translation), the symbol strip showing
+    // the THING rather than the sentence, and the same line mirrored to peers.
     voice?.cancel();
-    voice?.speak(text, { lang: locale, ...speakerVoiceOpts(convo.nodeId) });
-    const at = poserPos(session, convo.nodeId);
-    if (at) {
-      showWorldBubble(world.state, `char:${node.npcEntityId}`, {
-        anchor: { kind: "point", x: at.x, y: at.y },
-        text,
-        glyph: fact.thingGlyph, // the symbol strip shows the thing, not the prose
-        ttl: 6,
-      });
-    }
+    sayNpcLine(session, answerer, { glyph: fact.thingGlyph, text, ttl: 6 });
     // Point: swivel the camera toward the target (over-the-shoulder, max yaw)
     // and raise the NPC's arm. The camera reverts to facing the speaker after.
     world.pointAt({ x: ans.pointAtWorld.x, y: ans.pointAtWorld.y });
-    pointNpcArm(convo.nodeId, ans.pointAtWorld);
+    pointNpcArm(answerer, ans.pointAtWorld);
     // A RARE import's directions carry the judgment as a second line —
     // "cookie... rare" (the far-away good is scarce, and everyone knows it).
+    // ⑪ GREP-GATE VERDICT: a wall-clock delay on a BUBBLE ONLY, timed against
+    // the audio already speaking — the same verdict, for the same reasons, as
+    // the follow-up timer in `runCreatureAct`. See that comment for the rule.
     if (subjectId.startsWith("buy:import:")) {
-      const nodeId = convo.nodeId;
+      const nodeId = answerer;
       setTimeout(() => {
-        if (!world || sess !== session || convo?.nodeId !== nodeId) return;
+        if (!world || sess !== session || !conversationOf(nodeId)) return;
         npcChatBubble(session, nodeId, `${fact.thingGlyph} + rare`);
       }, speechEstimateMs(text));
     }
-    presentCreatureTurn(undefined, { speak: false, bubble: false });
+    presentCreatureTurn(undefined, { speak: false, bubble: false }, memberCid);
   }
 
   /** Re-aim a `buy:good:*` fact at the answering NEIGHBOR's own source (its
@@ -4248,9 +4987,42 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     };
   }
 
+  /**
+   * THIS DEVICE leaves the conversation it has open.
+   *
+   * 🚨 It does NOT delete the shared record. That was the bug this whole phase
+   * exists to kill: one player pressing BACK used to wipe the conversation out
+   * from under everybody else in it, taking the roster, the revealed needs and
+   * every quoted price with it. Leaving drops exactly one membership row (law 1,
+   * conversation.ts); the record dies only when nobody is left in it or it has
+   * gone quiet — `sweepConversation` decides that, and it decides it the same
+   * way whoever left.
+   */
   function closeCreatureConvo() {
-    if (convo) convosByCreature.delete(convo.nodeId);
+    const view = convoView;
+    const c = view ? conversations.get(view.convoId) : null;
+    closeConvoView();
+    if (!view || !c) return;
+    // BELONGING lives with the simulation: a follower relays the change and the
+    // OWNER drops the row (and answers the remaining members). Doing it locally
+    // too would leave the two rosters disagreeing about who is in the room.
+    if (mpFollower()) {
+      performPlayerAction({ kind: "convo", cid: view.cid, op: "leave" });
+      return;
+    }
+    departConversation(c, LOCAL_PLAYER_CID);
+  }
+
+  /** Tear down the LOCAL board/camera state of a conversation — the view half,
+   *  and nothing else. Split out because a membership change and a view close
+   *  are two different events that used to be one function. */
+  function closeConvoView() {
     convo = null;
+    convoView = null;
+    // ⑩ — the gaze-set addressee is a fact about ONE open conversation. It goes
+    // when the board does, so re-opening never inherits whom the last one was
+    // being spoken to.
+    convoAddressee = null;
     choice = null;
     clearBoard();
     world?.setConversation(null);
@@ -4258,55 +5030,617 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     feedPointer();
   }
 
-  // ── MULTI-PLAYER CONVERSATION (PLACEHOLDER) ──────────────────────────────
+  // ── CONVERSATION MEMBERSHIP (multi-entity-conversations.md §4.6, §4.8) ────
   // A conversation belongs to the CREATURE, not to the player who opened it.
   // Every turn anyone takes lands in the same record, so the creature answers
-  // both players out of one memory and one syntax level, and a player whose
-  // board is already open on it sees the exchange advance.
+  // everybody out of one memory — while each member keeps its OWN syntax rung
+  // (the world holds every rung at once) and its own board.
   //
-  // This is deliberately the SMALL version of a real multi-party model. What it
-  // does NOT do yet: tell the two speakers apart (both address the creature as
-  // PLAYER_CREATURE_ID, so "who asked?" has one answer), hold separate threads
-  // per player, or arbitrate turn-taking — two people talking at once are
-  // simply two turns in arrival order. Those need a conversation MEMBERSHIP
-  // model; see the multi-member conversation work.
-  const convosByCreature = new Map<string, CreatureConversation>();
+  // ⑧ made it ONE BOOK for every conversation in the world, player-opened or
+  // not, keyed by the conversation's own id (`HostConversation.id`). A
+  // player-facing record's id IS its creature's node id, so `conversations.get(
+  // nodeId)` is exactly the lookup ⑥ wrote and nothing about the board paths
+  // moved; an ambient circle gets a `conv:<n>` id and lives in the same map.
+  //
+  // The map is the owner's roster book. On a follower it holds MIRRORS: records
+  // this device opened a board on, kept in step by the owner's `convo` syncs
+  // (stepFollowerConvoSync) rather than by turns run here.
+  const conversations = new Map<ConversationId, HostConversation>();
 
-  /** The creature's conversation — the one everybody is in. Created on first
-   *  turn; syntax level comes from the game's meta (the sandbox/world knob). */
-  function conversationWith(nodeId: string): CreatureConversation {
-    const existing = convosByCreature.get(nodeId);
-    if (existing) return existing;
-    const fresh: CreatureConversation = {
-      nodeId,
-      level: sess?.game.meta.syntax ?? "b",
-      memo: {},
-      acts: [],
-    };
-    convosByCreature.set(nodeId, fresh);
-    return fresh;
+  /**
+   * 🚨 ONE CONVERSATION PER CREATURE, ANYWHERE — the index that makes the law
+   * checkable instead of hoped for (§3a, §6 "one conversation per creature v1").
+   *
+   * cid → the id of the conversation it is in. Written by `seatMember` and
+   * cleared by `unseatMember`, which are the ONLY two doors into the roster, so
+   * "is this creature already talking to somebody?" is a map lookup rather than a
+   * scan over every record — which matters because the formation sweep asks it of
+   * every eligible creature in town, every 9 seconds.
+   *
+   * PLAYERS ARE IN IT TOO. A player is in exactly one conversation at a time by
+   * the same rule; the difference is only that a player's membership is created
+   * by opening a board rather than by walking into a circle.
+   */
+  const convoOfCreature = new Map<string, ConversationId>();
+
+  /** THE conversation this creature is in, whatever kind it is — the read half of
+   *  the index. Falls back to the id-keyed lookup so a player record found by its
+   *  creature's node id behaves exactly as it did before ⑧. */
+  function conversationOf(cid: string): HostConversation | undefined {
+    const id = convoOfCreature.get(cid);
+    return (id !== undefined ? conversations.get(id) : undefined) ?? conversations.get(cid);
+  }
+
+  /** Join `cid` to `c` and record it in the index. The one door in: joining is
+   *  idempotent (conversation.ts), and a creature already seated ELSEWHERE is
+   *  moved, never duplicated — the law is per creature, not per record. */
+  function seatMember(c: HostConversation, cid: string, tick: number, level: SyntaxLevel) {
+    const prior = convoOfCreature.get(cid);
+    if (prior !== undefined && prior !== c.id) {
+      const old = conversations.get(prior);
+      if (old) leaveConversation(old.convo, cid);
+    }
+    convoOfCreature.set(cid, c.id);
+    return joinConversation(c.convo, cid, tick, level);
+  }
+
+  /** Drop `cid` from `c`'s roster and from the index (law 1: the RECORD survives
+   *  — history, reveals and everybody else's quotes belong to the conversation). */
+  function unseatMember(c: HostConversation, cid: string) {
+    leaveConversation(c.convo, cid);
+    if (convoOfCreature.get(cid) === c.id) convoOfCreature.delete(cid);
+  }
+
+  /** Forget a whole record: the roster index first (so nobody is left pointing at
+   *  a record that is gone), then the record itself.
+   *
+   *  ⑩ — and the BOARD goes with it when this device was looking at that record.
+   *  `sweepConversation` refuses to drop one under an open board, but a CIRCLE
+   *  the player joined ends by its own dynamics (`disperseGroup`), which do not
+   *  ask: the conversation the child was in genuinely broke up, and a board left
+   *  pointing at a deleted record would answer nothing. */
+  function dropConversation(c: HostConversation) {
+    for (const m of c.convo.members) {
+      if (convoOfCreature.get(m.id) === c.id) convoOfCreature.delete(m.id);
+    }
+    conversations.delete(c.id);
+    if (convoView?.convoId === c.id) closeConvoView();
+  }
+
+  /** Ids for ambient circles. Monotone for the same reason `convoSyncSeq` is: a
+   *  circle forms and disperses and forms again in the same square, and a reused
+   *  id would let the camera latch onto the new one as though it were the old. */
+  let convoIdSeq = 0;
+
+  /**
+   * SYNC SEQUENCE — monotone across the whole HOST, stamped on every
+   * owner→follower `convo` message. A follower re-projects only on a NEW one,
+   * which is what makes the mesh's reordering and duplication harmless: a
+   * repeat is ignored, a straggler cannot rewind a board.
+   *
+   * Host-wide rather than per-record on purpose. A conversation's record is
+   * created and swept and created again — the same two people walking up to the
+   * same shopkeeper twice — and a counter living on the record would restart at
+   * zero each time, which reads at the far end as a batch of stale packets and
+   * freezes exactly the board this whole mechanism exists to keep moving. A
+   * counter that only ever goes up cannot say that.
+   */
+  let convoSyncSeq = 0;
+
+  /**
+   * The creature's conversation, with `memberCid` in it — created on first
+   * contact, joined idempotently on every later one.
+   *
+   * Joins ride `session.taskClock`, the sim-seconds clock: member order, the
+   * idle sweep and (later) courtesy decay all key on it, and every one of them
+   * needs a clock that stops when the sim does. The rung a member joins at is
+   * the game's meta syntax; it moves only when that member says it is lost
+   * (`confused`), and only for them.
+   */
+  function conversationWith(nodeId: string, memberCid: string = LOCAL_PLAYER_CID): HostConversation {
+    const session = sess;
+    const tick = session?.taskClock ?? 0;
+    const level = session?.game.meta.syntax ?? "b";
+    // A REMOTE author has no body and no row in the creature world until it
+    // speaks here — register it the way a streamed resident is registered, on
+    // first need, so relations/knowledge/debts have somewhere to land.
+    if (session && isPlayerCid(memberCid) && memberCid !== LOCAL_PLAYER_CID) {
+      ensurePlayerCreature(session, memberCid);
+    }
+    // ★ ⑩ — THE PLAYER JOINS THE CIRCLE ★
+    //
+    // ⑧ did the opposite, and flagged it as the thing this phase reverses: a
+    // child opening a board on somebody standing in an ambient circle PULLED
+    // THAT PERSON OUT of it (and dispersed the circle if that left one soul
+    // standing). It answered the child, and it deleted the very thing walking up
+    // to was interesting. Walking up to a group of people talking is JOINING
+    // them; it was never a reason to take one of them away.
+    //
+    // So the author is SEATED IN THE CIRCLE'S OWN RECORD. Everything follows from
+    // that one move: the board is a view of the circle, the turn loop carries on
+    // around them, what the child says arrives as an ordinary member utterance
+    // that anybody there may answer, and the creature they walked up to is simply
+    // their default addressee.
+    //
+    // A RING SLOT, only for a body. An embodied player takes a place on the ring
+    // like anyone else (`ringSlotFor` via `reserveSlot`, which grows the circle
+    // to fit); a FORMLESS SPIRIT takes none — there is nothing standing there, so
+    // reserving ground for it would open a gap in a circle of people who are
+    // actually present.
+    const circle = conversationOf(nodeId);
+    if (circle?.group) {
+      const already = convoOfCreature.get(memberCid) === circle.id;
+      if (!already) {
+        (circle.faced ??= new Map()).set(memberCid, nodeId);
+        if (authorEmbodied(memberCid)) reserveSlot(circle, memberCid);
+      }
+      seatMember(circle, memberCid, tick, level);
+      return circle;
+    }
+    let c = conversations.get(nodeId);
+    if (!c) {
+      // The creature is a member of its own conversation from the first tick —
+      // it is the one being talked TO, and the roster is what "present" means.
+      const shared = createConversation(nodeId, tick);
+      c = { id: nodeId, nodeId, convo: shared };
+      conversations.set(nodeId, c);
+      seatMember(c, nodeId, tick, level);
+    }
+    seatMember(c, memberCid, tick, level);
+    return c;
   }
 
   /**
-   * Take a turn in a creature's conversation WITHOUT disturbing this device's
-   * own board or camera. Used when the turn wasn't taken here — a peer spoke to
-   * someone this player isn't looking at — so the creature answers out loud (in
-   * world, which every peer sees and hears) while the local board stays where
-   * the local player left it. When the turn IS in the open conversation this
-   * runs it directly, so the board refreshes as it always has.
+   * WHICH CREATURE `memberCid` IS FACING in `c` — its BOARD, and the `cid` its
+   * `convo` sync is keyed on. A player-opened record answers with its own
+   * creature (the two are the same thing there, which is why ⑥–⑨ never needed
+   * this); a joined circle answers with the one that member walked up to.
+   *
+   * 🚨 ⑫③ — THE BOARD'S AIM IS NOT THE SENTENCE'S ADDRESSEE, and this function
+   * lost that third job. It still always answers somebody, because a board must
+   * always be aimed at somebody and a wire message must always have a key; whom
+   * a line is SAID TO is `memberAddressee`, which is allowed to answer nobody.
+   * Routing a sentence back through here is the bug ⑫ exists to remove: it makes
+   * addressing free, and something free is never chosen.
+   *
+   * A faced creature that has since LEFT the circle falls through to whoever is
+   * still standing there: the player whose board was aimed at Ada when Ada
+   * walked off gets a board aimed at whoever is left rather than at a hole.
    */
-  function inConversationWith<T>(nodeId: string, run: () => T): T {
-    if (convo?.nodeId === nodeId) return run();
-    const prevConvo = convo;
+  function facedBy(c: HostConversation, memberCid: string): string {
+    const faced = c.faced?.get(memberCid);
+    if (faced && memberOf(c.convo, faced)) return faced;
+    if (!c.group) return c.nodeId;
+    return c.convo.members.find((m) => !isPlayerCid(m.id))?.id ?? c.nodeId;
+  }
+
+  /**
+   * ⑩ — THE GAZE-SET ADDRESSEE, if it is still real. A member the player picked
+   * with a look and who has since walked out of the circle addresses nobody, so
+   * the row is dropped.
+   *
+   * ⑫③ — A LOCAL OPTIMISTIC ECHO, no longer the truth. The durable answer to
+   * "whom is this member talking to" is `ConvoMember.addressing`, on the roster,
+   * where every device can see it; this variable is one device's guess about its
+   * OWN player, applied the instant the gaze settles and before any round trip.
+   * It may therefore be briefly wrong about the local player (the address has not
+   * been recorded yet, or was refused), and it is never consulted about anybody
+   * else — a peer's addressee rides their own utterances and their own roster
+   * row. Read it last, and only for `LOCAL_PLAYER_CID`.
+   */
+  function liveConvoAddressee(): string | null {
+    const a = convoAddressee;
+    if (!a) return null;
+    const c = viewRecord();
+    if (c && memberOf(c.convo, a)) return a;
+    convoAddressee = null;
+    return null;
+  }
+
+  /** How long the addressed member holds its glance back at the player before
+   *  the circle's own stance reclaims it. A GLANCE, not a stare: long enough to
+   *  read as "yes, you", short enough that the ring doesn't come apart. */
+  const CONVO_GLANCE_S = 1.5;
+  /** `townClock` until which the glance above is asserted each frame. */
+  let convoGlanceUntil = 0;
+
+  /**
+   * ⑩ — THE GAZE PICKS THE PARTNER, INSIDE A ROSTER (§3f). A settled look at a
+   * fellow member makes them whom the next thing said is said TO. Nothing is
+   * handed anywhere: the roster does not change and nobody leaves anything.
+   *
+   * The acknowledgment is a GLANCE and nothing else — that member turns to the
+   * player for a beat. No bubble: nobody said anything, and putting a word in
+   * their mouth for a look would be the engine speaking for a creature.
+   */
+  function setConvoAddressee(session: QuestSession, cid: string) {
+    const c = viewRecord();
+    if (!c || !memberOf(c.convo, cid)) return;
+    // ⑫④ — the ECHO, logged apart from the durable write `setMemberAddress`
+    // makes a moment later, so the two lines in the console read as what they
+    // are: this device's guess, then the simulation's answer.
+    if (convoAddressee !== cid) console.log(`[convo] look → ${cid}`);
+    convoAddressee = cid;
+    convoGlanceUntil = session.townClock + CONVO_GLANCE_S;
+    glanceAtLocalPlayer(cid);
+  }
+
+  /** Turn `cid` toward this device's player — the whole of the acknowledgment.
+   *  ⑫ — withheld from a body whose legs or hands already own its heading: an
+   *  acknowledging glance is a courtesy, and a courtesy never moonwalks. The
+   *  child's look still lands (`convoAddressee` is set either way); it simply
+   *  goes unacknowledged by a body that is busy, which is honest. */
+  function glanceAtLocalPlayer(cid: string) {
+    const state = world?.state;
+    if (!state) return;
+    if (headingSpokenFor(cid)) return; // ⑫ — ONE predicate for law ①'s two claims
+    const av = memberAvatar(state, cid);
+    const me = state.avatars[avatarIdOf(LOCAL_PLAYER_CID)];
+    if (av && me) faceToward(av, { x: me.x, y: me.y });
+  }
+
+  /**
+   * ★ ⑫③ — WHOM `memberCid` IS TALKING TO in `c`, OR NOBODY. ★
+   *
+   * THE CHANNEL ORDER (conversation-in-motion.md law ②), absent an explicit
+   * override (a spoken vocative, a relayed target — those preempt everything):
+   *
+   *     dyad  →  the heading is spoken for ⇒ null  →  addressing  →  echo  →  null
+   *
+   *   ① DYAD (law ④, free) — one other person, nothing to disambiguate.
+   *   ② THE HEADING IS SPOKEN FOR (law ①) — the LOOK channel costs a beat, and a
+   *     body whose legs or hands already own its heading has not paid it. This
+   *     rung is why `addressing` sits BELOW it: an address expires when you move,
+   *     and moving is a thing somebody did.
+   *   ③ `addressing` — the durable fact on the roster, read live so a departed
+   *     target answers nothing (conversation.ts law 5). ⑫④ wires its writers.
+   *   ④ THE LOCAL GAZE ECHO — this device's optimistic guess about its own
+   *     player, and only about them.
+   *   ⑤ NOBODY. The line goes to the FLOOR, where arbitration decides whether
+   *     anyone picks it up — and may decide nobody does. That is an outcome, not
+   *     a hole: `speakInConversation`'s `addresseeId` has always been optional,
+   *     and "no one member owes an answer" is exactly what an absent one means.
+   *
+   * 🚨 The faced creature is NOT the bottom rung any more. `facedBy` answers a
+   * different question — which person this member's board is aimed at — and
+   * borrowing it here is what made addressing free.
+   *
+   * PLAYERS ARE EXEMPT FROM RUNG ② (chapter §6): the sim never turns a child's
+   * body, so their address channel is the GAZE, which genuinely does not require
+   * stopping. They pay in dwell instead. Charging a walking child's gaze against
+   * their legs would silence them for walking.
+   */
+  function memberAddressee(c: HostConversation, memberCid: string): string | null {
+    const sole = soleOther(c.convo, memberCid);
+    if (sole) return sole;
+    if (!isPlayerCid(memberCid) && headingSpokenFor(memberCid)) return null;
+    const held = addressingOf(c.convo, memberCid);
+    if (held) return held;
+    if (memberCid === LOCAL_PLAYER_CID && convoView?.convoId === c.id) {
+      const picked = liveConvoAddressee();
+      if (picked) return picked;
+    }
+    return null;
+  }
+
+  /** ⑫ — IS THIS BODY'S HEADING ALREADY OWNED (law ①)? The legs while it walks,
+   *  the hands while it reaches — the same two claims `glanceAtLocalPlayer` and
+   *  `reassertGroupFacing` decline to fight. A body with no avatar at all (an
+   *  unstreamed creature, a formless spirit) has no heading to spend, so nothing
+   *  holds it. */
+  function headingSpokenFor(cid: string): boolean {
+    if (sess?.actionHold.has(cid)) return true;
+    const state = world?.state;
+    const av = state ? memberAvatar(state, cid) : undefined;
+    return !!av && headingHeldByLegs(av);
+  }
+
+  /**
+   * ★ ⑫④ — THE ONE WRITER OF `ConvoMember.addressing`. ★
+   *
+   * `memberCid` is now talking to `targetCid` — the durable fact conversation.ts
+   * law 5 built the field for, written on the OWNER's roster and synced out.
+   * Every channel that costs something lands here: the child's dwell (through
+   * the gate, `convo`/`address`), and a creature's own turn-and-face beat
+   * (`beginAddress`). Nothing else may write the field, because a fact that two
+   * places set is a fact neither of them owns.
+   *
+   * It refuses three things, all of them silently and all of them for the same
+   * reason — an address that is not a live fact about two people standing in one
+   * conversation is not an address:
+   *   • a speaker who is in no conversation (or not on its roster),
+   *   • a target who is not a FELLOW MEMBER of that same conversation,
+   *   • addressing yourself.
+   *
+   * IDEMPOTENT: re-asserting the same address writes nothing and syncs nothing,
+   * so a dwell that re-fires while the child keeps looking costs no traffic.
+   * Returns whether the roster actually moved.
+   */
+  function setMemberAddress(memberCid: string, targetCid: string): boolean {
+    if (memberCid === targetCid) return false;
+    const c = conversationOf(memberCid);
+    if (!c) return false;
+    const me = memberOf(c.convo, memberCid);
+    if (!me || !memberOf(c.convo, targetCid)) return false;
+    if (me.addressing === targetCid) return false;
+    me.addressing = targetCid;
+    console.log(`[convo] ${memberCid} addressing ${targetCid}`);
+    syncConvoMembers(c);
+    return true;
+  }
+
+  /**
+   * ⑫④ — AN ADDRESS LASTS UNTIL YOU LOOK ELSEWHERE OR UNTIL YOU MOVE. There is
+   * no timeout, because both expiries are things somebody DID; this is the
+   * second one.
+   *
+   * 🚨 THE LEGS, NOT `headingSpokenFor`. The predicate that covers both of law
+   * ①'s claims is the right one for READING an addressee (`memberAddressee`
+   * rung ②, where a busy body simply answers nobody for as long as it is busy) —
+   * but it is the wrong one for DELETING the fact, because the address beat
+   * itself is an action hold: clearing on `headingSpokenFor` would have a
+   * creature erase the very address it just stopped and turned to buy. Walking
+   * is what "you moved" means, so `headingHeldByLegs` is what clears it.
+   *
+   * PLAYERS ARE EXEMPT (chapter §6). The sim never turns a child's body and
+   * their channel is the GAZE, which does not require standing still; expiring
+   * their address for walking would silence them for walking.
+   */
+  function expireAddressesOnMove(c: HostConversation) {
+    const state = world?.state;
+    if (!state) return;
+    for (const m of c.convo.members) {
+      if (m.addressing === undefined || isPlayerCid(m.id)) continue;
+      // A PINNED BODY IS NOT WALKING, whatever the integrator still has on it.
+      // `beginAction` parks the body with a dwell errand and its velocity takes
+      // a frame or two to bleed off, so a body that was mid-stride when it
+      // stopped to turn would otherwise erase its own address on the very frame
+      // the beat wrote it — and then buy it again next turn, forever.
+      if (sess?.actionHold.has(m.id)) continue;
+      const av = memberAvatar(state, m.id);
+      if (av && headingHeldByLegs(av)) delete m.addressing;
+    }
+  }
+
+  /** Has this author a BODY that stands on the ground? A formless spirit has
+   *  none — it rides a parked light — so it takes no ring slot. */
+  function authorEmbodied(cid: string): boolean {
+    if (cid === LOCAL_PLAYER_CID) return !spiritNow();
+    const peer = peerIdOf(cid);
+    return !!peer && !!world?.state.peerClaims?.[peer];
+  }
+
+  /** The MEMBER's avatar, under whichever id convention carries it: an author's
+   *  body is whatever its spark drives, a creature's is `npc_<cid>` or its bare
+   *  streamed id. */
+  function memberAvatar(state: WorldState, cid: string) {
+    return isPlayerCid(cid) ? state.avatars[avatarIdOf(cid)] : chatAvatar(state, cid);
+  }
+
+  /** THE RECORD THIS DEVICE'S BOARD IS A VIEW OF — the ONE view↔record
+   *  resolution (⑩). Never `conversationOf(view.cid)`: in a joined circle the
+   *  faced creature does not key the record. */
+  function viewRecord(): HostConversation | null {
+    return convoView ? (conversations.get(convoView.convoId) ?? null) : null;
+  }
+
+  /** This member's own syntax rung, or the game's default if the roster somehow
+   *  hasn't got them (a turn from a client that never announced its join —
+   *  `withConversationTurn` seats them, so this is belt and braces). */
+  function levelOf(c: HostConversation, memberCid: string): SyntaxLevel {
+    return memberOf(c.convo, memberCid)?.level ?? sess?.game.meta.syntax ?? "b";
+  }
+
+  /**
+   * IS THERE STILL ANYBODY IN THIS ROOM? — the delete predicate.
+   *
+   * A PLAYER-OPENED conversation is kept alive by its PLAYERS. The creature is
+   * always a member of its own conversation, so "the roster is empty" is never
+   * the test; the test is that no member is an AUTHOR (`isPlayerCid`), which is
+   * exactly the state a creature standing alone is in. Idle-expiry is the second
+   * door: a conversation nobody has spoken in for `DEFAULT_IDLE_TTL` sim-seconds
+   * is over whoever is nominally still in it.
+   *
+   * 🚨 ⑧ — AN ALL-NPC CIRCLE IS NOT SPENT. The player-authorship test was written
+   * when a conversation with nobody in it but creatures could only be a leftover;
+   * with group conversations, that is the normal state of most of them. A circle
+   * ends by ITS OWN dynamics (boredom, drift, a need pulling somebody away, a
+   * roster under two — `stepGroup`), so this predicate steps back from them
+   * entirely rather than deleting a live one out from under the sim.
+   *
+   * Kept as one expression so it can be mirrored in a test — quest-host itself
+   * cannot be value-imported from jest (JSX in its import chain).
+   */
+  function conversationSpent(c: HostConversation, tick: number): boolean {
+    const hasAuthor = c.convo.members.some((m) => isPlayerCid(m.id));
+    if (c.group) {
+      // ⑩ — A CIRCLE THE PLAYER HAS JOINED follows the PLAYER rules for the
+      // player's own membership, and the circle's own dynamics for everybody
+      // else's. Leaving is a membership change and never a dispersal (law 1), so
+      // nothing here fires while the child is standing in it; and once they are
+      // gone the record is a plain circle again, whose end is `stepGroup`'s
+      // business (boredom, drift, a need pulling somebody away) — which is what
+      // ⑧'s blanket `return false` was protecting.
+      //
+      // The ONE state neither set of rules covers is the one joining created: an
+      // author left standing in a ring with no creature in it (the last
+      // townsperson drifted off between sweeps). Nobody speaks in it, no sweep
+      // touches it, and no dwell can end it. THAT is spent, by exactly the
+      // player rule — there is nobody left to talk to.
+      return hasAuthor && !c.convo.members.some((m) => !isPlayerCid(m.id));
+    }
+    return !hasAuthor || conversationIdle(c.convo, tick);
+  }
+
+  /** Drop the record if nothing is left in it. Returns whether it was dropped —
+   *  a dropped record has nobody to sync to. Never drops one THIS device still
+   *  has a board open on: the local player is a member of that by construction,
+   *  so this is only ever a guard against an idle sweep pulling the record out
+   *  from under a board mid-turn. */
+  function sweepConversation(c: HostConversation): boolean {
+    if (convoView?.convoId === c.id) return false;
+    if (!conversationSpent(c, sess?.taskClock ?? 0)) return false;
+    dropConversation(c);
+    return true;
+  }
+
+  /** The idle sweep, run where the map is already being touched (a turn) rather
+   *  than on a frame loop of its own — conversations only change on turns, so a
+   *  per-frame pass would be 60 walks a second over a map that hasn't moved. */
+  function sweepConversations() {
+    if (mpFollower()) return; // a follower's records are mirrors; the owner sweeps
+    for (const c of [...conversations.values()]) sweepConversation(c);
+  }
+
+  /**
+   * OWNER → FOLLOWERS: where each REMOTE member of this conversation now stands.
+   *
+   * One message per remote member, because the two halves of what they need are
+   * per-member: `level` is their own rung (a conversation-wide one would demote
+   * the abler speaker the moment they shared a room) and `shared` is what the
+   * CONVERSATION has heard aloud and quoted, which is common to all of them.
+   * `turn` names the member whose own turn just ran, and only THAT member's
+   * message carries the board transition it produced.
+   *
+   * Fire-and-forget on the lossy mesh: the owner holds the conversation, so a
+   * dropped packet costs one board refresh and never any state. Single player /
+   * follower: no `mpNet`, nothing sent, byte-identical.
+   */
+  function syncConvoMembers(c: HostConversation, turn?: { memberCid: string; ui?: DeviceBoardState }) {
+    if (!mpNet || mpFollower()) return;
+    // A snapshot, not the live objects: the send may serialize later, and by
+    // then the next turn may already have written into them.
+    const shared: ConvoShared = { revealed: { ...c.convo.revealed }, pairs: { ...c.convo.pairs } };
+    const seq = ++convoSyncSeq;
+    const out: WorldNetMessage[] = [];
+    for (const m of c.convo.members) {
+      // peerIdOf answers null for the local author AND for a creature — the two
+      // cases with no network id to send to, which is the same answer here.
+      const peer = peerIdOf(m.id);
+      if (!peer) continue;
+      // ⑫④ — WHOM THAT MEMBER IS TALKING TO, read LIVE (`addressingOf` never
+      // answers a departed target), so the message says "nobody" by simply not
+      // carrying the key. That is why no separate "your address is over"
+      // message exists: the next sync is the clearing.
+      const addressing = addressingOf(c.convo, m.id);
+      out.push(
+        // ⑩ — KEYED ON THE CREATURE THAT MEMBER IS FACING, which for every
+        // player-opened record is `c.nodeId` and therefore byte-identical to ⑥.
+        // A joined CIRCLE has no such creature of its own, and a follower matches
+        // the message against the board it has open (`view.cid`), so sending the
+        // circle's opener would look to that device like a sync for somebody
+        // else's conversation and freeze exactly the board this mechanism exists
+        // to keep moving.
+        convoMessage(facedBy(c, m.id), peer, m.level, shared, {
+          ...(turn?.memberCid === m.id && turn.ui ? { ui: turn.ui } : {}),
+          ...(addressing ? { addressing } : {}),
+          seq,
+        }),
+      );
+    }
+    if (out.length) mpNet.send(out);
+  }
+
+  /**
+   * THE CONVERSATION'S SEEDED STREAM (multi-entity-conversations.md §3d) — one
+   * FRESH generator per TURN, keyed by the world seed, the conversation (its
+   * creature's node id) and the SEQ the next utterance will take.
+   *
+   * `nextSeq` is the turn counter now that `speakInConversation` records what is
+   * said (§4.7), which is why the generator must be built BEFORE the utterance
+   * is recorded: the stream belongs to the turn that is about to happen.
+   *
+   * Per-turn, not per-session: a session-long generator makes every draw depend
+   * on how many unrelated things happened before it, so two devices that
+   * projected a different number of boards would diverge, and a replay that
+   * skipped one greeting would answer a later question differently. Keying each
+   * decision instead means the same question asked at the same point of the same
+   * conversation always gets the same answer, on every device and every replay —
+   * which is exactly the property "everything fuzzy" is only acceptable with.
+   *
+   * The stream reaches the pure layer as `DialogueCtx.rng` and is consumed by the
+   * willingness gates (`request`/`invite`); a caller with no stream keeps the old
+   * hard thresholds, so ambient chatter is untouched.
+   *
+   * ⑧ keys it on the CONVERSATION'S ID rather than its creature's node id. For a
+   * player-opened record the two are the same string, so every existing seed is
+   * byte-identical; an ambient circle has no one creature to key on, and keying
+   * one on its opener would give two circles opened by the same townsperson the
+   * same stream.
+   */
+  function convoRng(session: QuestSession, c: HostConversation): () => number {
+    return mulberry32(hashSeed(session.game.meta.seed ?? 0, "convo", c.id, c.convo.nextSeq));
+  }
+
+  /**
+   * RUN ONE MEMBER'S TURN in a creature's conversation.
+   *
+   * Two jobs, and they answer two different questions:
+   *
+   *   • WHO — `speakerCid` is seated on the roster before the turn runs. A turn
+   *     is the strongest possible evidence that somebody is in a conversation,
+   *     so an unannounced speaker (a peer whose `convo` join was lost, or a
+   *     client old enough never to have sent one) is joined here rather than
+   *     answered as a stranger. Joining is idempotent, so the normal case —
+   *     they announced themselves and are already seated — costs a lookup.
+   *
+   *   • WHOSE SCREEN — the creature answers OUT LOUD, in the world, where every
+   *     peer sees and hears it; but this device's board and camera hold still
+   *     unless the turn is in the conversation THIS player has open. That is
+   *     what `boardMuted` says, and it is keyed on the CONVERSATION (is this the
+   *     one I'm looking at?), never on the speaker (a peer talking to the
+   *     creature I'm facing should still advance my board).
+   *
+   * The board NAVIGATION a turn produces is a third question again, and it is
+   * answered per-speaker in `runCreatureAct` — see `turnViewOf`.
+   */
+  function withConversationTurn<T>(nodeId: string, speakerCid: string, run: () => T): T {
     const prevMuted = boardMuted;
-    convo = conversationWith(nodeId);
-    boardMuted = true; // the creature speaks; this player's board doesn't move
+    const c = conversationWith(nodeId, speakerCid);
+    convo = c;
+    // ⑩ — keyed on the RECORD, not on the creature. In a joined circle a fellow
+    // member may be addressed by a name this device's board is not aimed at, and
+    // that is still THIS conversation: muting it would freeze the child's own
+    // board in the middle of the conversation they are standing in.
+    boardMuted = prevMuted || convoView?.convoId !== c.id;
     try {
       return run();
     } finally {
       boardMuted = prevMuted;
-      convo = prevConvo;
+      // Back to whatever this device is actually looking at — DERIVED from the
+      // view rather than stashed, because the turn may have ended the local
+      // conversation (a goodbye), and restoring a saved pointer would resurrect
+      // a record whose board is already gone.
+      convo = viewRecord();
+      turnScratch = null;
     }
+  }
+
+  /**
+   * The SCRATCH board state a turn writes into when it is not this device's own.
+   * Established lazily for the duration of one `withConversationTurn` (which
+   * throws it away) so the two halves of a turn — `selectAct`'s transition and
+   * the re-projection that reads it back — agree with each other, and so that
+   * nothing a peer did to their menu can reach this player's.
+   */
+  let turnScratch: ConvoView | null = null;
+
+  /**
+   * WHOSE BOARD does a turn by `memberCid` move?
+   *
+   * This device's own view only when the LOCAL author is the one acting AND the
+   * conversation is the one on this screen. Everything else — a peer's turn, or
+   * the local author speaking to somebody whose board isn't up — writes into the
+   * scratch. A peer's page-turn is not ours to apply; it travels back to them as
+   * the `ui` field of their own `convo` sync (net.ts).
+   */
+  function turnViewOf(memberCid: string, c: HostConversation): ConvoView {
+    if (memberCid === LOCAL_PLAYER_CID && convoView?.convoId === c.id) return convoView;
+    const cid = facedBy(c, memberCid);
+    if (turnScratch?.convoId !== c.id || turnScratch.cid !== cid) {
+      turnScratch = { cid, convoId: c.id, ui: {}, acts: [] };
+    }
+    return turnScratch;
   }
 
   /**
@@ -4943,6 +6277,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     tplKey: string,
     o: { scope: NeedPark["scope"]; why: string; dueAt?: number },
   ): void {
+    // ★ ⑫⑧ — AN OUTBID ROW MUST NOT PARK. ★
+    //
+    // The address row is the one row in the engine whose failure is not a fact
+    // about the world: it loses because something else was worth more THIS
+    // TICK, and a tick later the meal is eaten, the crate is down, or somebody
+    // says the creature's name. Parking it would set that momentary verdict
+    // down as a condition and wait for an epoch to move — and nothing about a
+    // conversation lulling moves an epoch, so the creature would keep working
+    // through a circle that had gone quiet and never look up again.
+    //
+    // So it re-decides AT FULL PRICE every tick, and THAT is what sends a
+    // creature back to the conversation the moment its work stops being worth
+    // more. (The row is also cheap to re-decide by construction — see
+    // `addressNeedCtx`: no world search, one station, no sweeps. The DEFER seat
+    // exists because a ctx is expensive; this one is not.)
+    if (isAddressKey(tplKey)) return;
     // THE BACKSTOP, DERIVED: one full fill cycle of THIS row's own drive. The
     // same clock the value side prices the row against (`needClockKeyOf`), so
     // a hunger park expires in a hunger's worth of seconds and a hygiene park
@@ -5162,7 +6512,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  missing thing ("we don't have the banana"), never a silent stall. Covers the
    *  whole carried-item family — the thing that couldn't be reached is the
    *  goal's own item. */
-  function pursuitBlockLine(goal: GoalSpec): LeveledGlyphs | string {
+  function pursuitBlockLine(goal: PursuitGoal): LeveledGlyphs | string {
     const item =
       goal.kind === "consume" || goal.kind === "fetch" || goal.kind === "give" || goal.kind === "putIn"
         ? goal.item
@@ -5375,7 +6725,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.walk.delete(cid);
       const step = next.step;
       const last = next.last;
-      if (step.kind === "rest" || step.kind === "processStack") {
+      if (step.kind === "address") {
+        // ⑫⑧ — NOT WRAPPED IN `beginAction`, and the reason is mechanical:
+        // `beginAddress` opens its OWN action hold (`ADDRESS_HOLD_S`, effect at
+        // the top so the turn lands first) and refuses outright while one is
+        // already running. Wrapping it would install the generic 0.8 s crouch,
+        // whose own `actionHold` entry would then make `beginAddress` decline —
+        // the body would stand still for a beat and never turn.
+        applyGoalStep(session, cid, step);
+      } else if (step.kind === "rest" || step.kind === "processStack") {
         // REST and the stack PROCESS are long POSED DWELLS, not 0.8 s crouches:
         // apply directly (each sets its own dwell errand + pose show), never
         // wrapped in beginAction (whose 0.8 s pin would cut the dwell short).
@@ -5972,6 +7330,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (shown) {
         for (const tpl of templates) {
           if (tpl.drive.kind !== "meter") continue;
+          // A DUTY HAS NO METER (⑫⑧, and `ritualAttendTemplate` before it): a
+          // rate-0 row does not accumulate, so seeding and re-adding zero to it
+          // every frame only writes rows nobody reads — one per address target,
+          // for as long as the session lasts.
+          if (tpl.drive.rate <= 0) continue;
           const k = `${cid}|${tpl.key}`;
           if (!session.needMeters.has(k)) {
             session.needMeters.set(
@@ -5989,7 +7352,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // climbing), so nothing here may special-case a motive.
         const levels: number[] = [];
         for (const tpl of templates) {
-          if (tpl.drive.kind === "meter") {
+          // 🚨 A ZERO THRESHOLD IS A DUTY, NOT A DEFICIT, and it contributes no
+          // pressure. `ritualAttendTemplate` and ⑫⑧'s address row both fire on
+          // `meter >= 0` with nothing accumulating behind them, so dividing by
+          // their threshold is a divide by zero — Infinity (or NaN from a zero
+          // meter), which `needPressure`'s max carries straight into `stress`
+          // and pins a resident at distress for as long as the row exists.
+          // This is NOT a special case for a motive (the rule the block's own
+          // note forbids): it is the arithmetic refusing to measure a deficit
+          // that has no scale.
+          if (tpl.drive.kind === "meter" && tpl.drive.threshold > 0) {
             levels.push((session.needMeters.get(`${cid}|${tpl.key}`) ?? 0) / tpl.drive.threshold);
           }
         }
@@ -6115,7 +7487,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             if (isPetCid(cid) || isPetCid(pid)) {
               showWorldBubble(state, `social:${cid}`, { anchor: { kind: "avatar", id: cid }, text: "💗", ttl: 2 });
             } else {
-              runNpcExchange(session, cid, pid);
+              // ⑧ — a REAL conversation, not a canned pair of lines: the two of
+              // them open (or join) a circle that keeps going, that a passer-by
+              // may be drawn into, and that the camera can settle on.
+              seedConversation(session, cid, pid);
             }
             session.needMeters.set(`${cid}|${step.tplKey}`, 0);
             session.needMeters.set(`${pid}|social`, 0);
@@ -6184,8 +7559,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         session.townClock < dorm.due &&
         dorm.epoch === session.needsPropsEpoch &&
         !wasSparkActing &&
-        !session.sparkDraw &&
-        session.sparkFocus?.cid !== cid
+        // ⑩ — ANYBODY's draw, ANYBODY's engagement. This is the NEED loop: the
+        // question is about the CREATURE ("is somebody demanding this body's
+        // attention?"), not about one author's gaze, so it reads the `*Any`
+        // side of the per-author store. Two children on two devices both keep a
+        // body awake.
+        session.sparkDraws.size === 0 &&
+        attentivenessAny(session.sparkAttention, cid) <= 0
       ) {
         continue;
       }
@@ -6228,6 +7608,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           },
         },
       );
+      // ⑫⑧ — THE INTEGRAL OF THE ADDRESS ROW LOSING (law ③: "leaving is the
+      // integral of that row losing, not a third thing with a price of its
+      // own"). Read here, at the ONE seat that knows the verdict, and acted on
+      // by the sweep — a decision, never an eviction.
+      noteAddressOutcome(session, cid, templates, decided?.tpl);
       // PROVISIONING STAYS ON THE CLOCK while the house is UNWATCHED
       // (view-distance-lod-tiers.md): an unwatched household's restocking is the
       // BUILDING's need — the goods clock already walks a real shopper down the
@@ -6465,8 +7850,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const nr = makeGoalResolver(session, cid); // NEED-scoped: own household + arm's reach
           const goal = chooseNeedGoal(session, cid, tpl.key, candidates, nr);
           if (goal) {
-            if (probesOn() && !session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key} → pursuit)`);
-            session.liveNeedBodies.add(cid);
+            // ⑫⑧ — AN ADDRESS PROMOTES NOBODY. Turning to face somebody is not
+            // a household episode: promoting for it would hand the household's
+            // shopping to the live loop for the length of a glance, and the
+            // very next decide (the row retires the instant the beat lands)
+            // would DEMOTE — banking carried units, re-anchoring the house
+            // goods and walking the body home, out of the conversation it had
+            // just turned toward. It still CLEARS the step and the walk below,
+            // which is the part that is genuinely "stopping its activity".
+            if (goal.kind !== "address") {
+              if (probesOn() && !session.liveNeedBodies.has(cid)) console.log(`[needs] ${cid} PROMOTED to live (${tpl.key} → pursuit)`);
+              session.liveNeedBodies.add(cid);
+            }
             clearNeedStep(session, cid);
             session.walk.delete(cid); // the pursuit starts its walk fresh
             session.pursuits.set(cid, { source: "need", tplKey: tpl.key, goal, glyph: tpl.key });
@@ -6476,6 +7871,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           }
         }
       }
+      // ⑫⑧ — THE ADDRESS ROW HAS NO LEGACY HALF, and must never borrow one.
+      // Its intent is `socialize`, which the walker below reads as "walk to
+      // that person and talk" — the very journey the LOOK channel exists to
+      // avoid paying (law ②). A plan that could not be made (a formless spirit
+      // has no body to face; the target streamed out mid-tick) is simply a turn
+      // not taken this tick, and the row re-decides at full price on the next
+      // one — see `parkNeed`'s no-park rule.
+      if (isAddressKey(tpl.key)) continue;
       const goodKey = tpl.item.category ?? "";
       if (intent.kind === "consumeHere") {
         applyNeedStepEffect(session, state, cid, { tplKey: tpl.key, kind: "consume", goodKey, units: 1 });
@@ -7026,6 +8429,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       });
       out.push(...adoptionTemplates(session, houseIndex, `resident_${houseIndex}_${member}`));
     }
+    // ⑫⑧ — THE ADDRESS DUTY, derived from the live conversation exactly as the
+    // ritual and adoption rows above are derived from live events. Outside the
+    // dollhouse gate on purpose: any resident may end up in a circle, and a
+    // creature that cannot afford to turn toward the person talking to it is
+    // the whole subject of this chapter wherever it stands.
+    out.push(...addressRowsFor(session, `resident_${houseIndex}_${member}`));
     return out;
   }
 
@@ -7218,7 +8627,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * target matches anything (the tidy chore's untyped sweep).
    */
   function matchesNeedItem(glyph: string, target: NeedTarget): boolean {
-    const head = headOf(glyph);
+    // THE WORD, both sides. A target's `kind` arrives as a spoken noun (a board
+    // press, a template's authored item) while the thing it is matched against
+    // is a STACK — and a stored piece of furniture stacks under `furn.<kind>`,
+    // so head-matching could never satisfy "the workbench" with a workbench.
+    // Identical to `headOf` for every other glyph the world contains.
+    const head = spokenWord(glyph);
     if (target.affords) {
       return !!CONCEPT_LIBRARY.get(head)?.affords.includes(target.affords);
     }
@@ -7799,6 +9213,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       case "thirst": return "thirst";
       case "energy": return "energy";
       case "social": return "social";
+      // ⑫⑧ — an address is a SOCIAL duty, so it is ceilinged by the social
+      // clock like every other one. (The ceiling never binds at the rungs this
+      // row runs at — 2…3 × 40 s against a 192 s clock — which is the right
+      // shape: the row is decided by the ladder, not by the cap.)
+      case "address": return "social";
       case "fun": return "fun";
       case "waste": return "waste";
       case "hygiene": return "hygiene";
@@ -7906,11 +9325,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     all: readonly NeedTemplate[] | undefined,
   ): NeedPrice {
     const satisfyS =
-      tpl.satisfy.kind === "rest" || tpl.satisfy.kind === "transform" || tpl.satisfy.kind === "use"
-        ? restDwellFor(tpl.key, session.scale)
-        : tpl.satisfy.kind === "consume"
-          ? EAT_SHOW_S
-          : BOX_ACT_DWELL_S;
+      // ⑫⑧ — the address row's satisfy IS the turn, priced at one turn of the
+      // circle. Asked FIRST because it shares `satisfy.kind === "social"` with
+      // the ordinary loneliness row, which is a walk to a housemate and costs
+      // the reach at the far end of it; the motive is what tells them apart.
+      isAddressKey(tpl.key)
+        ? ADDRESS_DWELL_S
+        : tpl.satisfy.kind === "rest" || tpl.satisfy.kind === "transform" || tpl.satisfy.kind === "use"
+          ? restDwellFor(tpl.key, session.scale)
+          : tpl.satisfy.kind === "consume"
+            ? EAT_SHOW_S
+            : BOX_ACT_DWELL_S;
     return {
       walkMps: walkSpeedMps(session.scale),
       fillS: needFillS(session.scale, needClockKeyOf(tpl.key)),
@@ -7928,6 +9353,225 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     };
   }
 
+  // ═══ ⑫⑧ THE DECISION ECONOMICS — stopping to face somebody, as a ROW ══════
+  //
+  // *(user direction, verbatim)*: "In a conversation with multiple strong
+  // users, working while conversing should have a cost… I meant that it costs
+  // in a decision-making sense. A creature must decide if it is worth stopping
+  // its activity to focus on the conversation, or ending the conversation to
+  // perform its work. If it cannot turn toward another creature or name them,
+  // its statements will be ambiguous."
+  //
+  // 🚨 SO THERE IS NO MULTIPLIER ANYWHERE IN THIS BLOCK, and there must never
+  // be one. Nothing below slows a distracted creature's work, nothing fines it
+  // and nothing gates it. What lands is ONE MORE ROW in the argmax that has
+  // decided every other thing a body does since step ④ — and the cost the user
+  // is describing is the thing that row DISPLACES when it wins, which is what
+  // an opportunity cost is. Law ③, stated as code: *"stopping to face somebody
+  // is a priced goal row competing against the work row in the argmax that
+  // already exists."*
+  //
+  // WHERE THE DECISION LIVES, and why it is the between-rows one: "keep
+  // working or turn and talk" compares TWO WANTS, and `decideNeeds` is the
+  // only seat that does that. `chooseNeedGoal` picks between candidates FOR a
+  // row (already decided to eat — which meal?) and `chooseSpeakerMove` picks
+  // whom and what ONCE YOU HAVE THE FLOOR. Neither can see the work.
+
+  /** ⑫⑧ — what "somebody just asked me something" adds to the address row's
+   *  rung, before it decays. ONE FULL PRIORITY POINT, which at
+   *  `NEED_PRESSURE_S` is 40 hand-seconds — the same unit `PROPRIETY_PENALTY_S`
+   *  is quoted in, and the same "constant reduction/addition in priority" the
+   *  user's own direction for that term asked for. See `addressPriority`. */
+  const ADDRESS_ASKED_BONUS = 1;
+
+  /** Is this a ⑫⑧ address duty row? The key is `address:<target>` — the target
+   *  rides the KEY so a body that turns to somebody else is a different row
+   *  (new park state, new hysteresis seat, new claim), which is exactly right:
+   *  facing Ada and facing Bram are different decisions. */
+  function isAddressKey(tplKey: string): boolean {
+    return tplKey.startsWith("address:");
+  }
+
+  /** Whom an address row is for, off its key. */
+  function addressTargetOf(tplKey: string): string {
+    return tplKey.slice("address:".length);
+  }
+
+  /**
+   * ⑫⑧ — THE DERIVED DUTY ROW: "stop and face the person who is talking".
+   *
+   * Derived per tick from the live conversation and never stored, exactly like
+   * `adoptionTemplates` and `ritualRowsFor` — and for the same reason: it is a
+   * fact about the world right now, not a property of the creature.
+   *
+   * It exists only when there is genuinely something to buy:
+   *   • A 3+ ROSTER. Law ④ — a conversation of two needs no addressing at all,
+   *     so a dyad member never even sees the row. This is the law made
+   *     mechanical rather than checked twice.
+   *   • A LIVE TARGET: the last OTHER member to have said anything here, still
+   *     on the roster. That is who a reply would be to and who the circle is
+   *     already oriented on (`g.facing.speakerCid`), so it is who "turning to
+   *     the conversation" means.
+   *   • NOT ALREADY FACING THEM. An address is DURABLE (conversation.ts law 5)
+   *     — bought once, held until you look elsewhere or move — so the row
+   *     retires the instant the beat lands. That is also what stops an idle
+   *     circle member re-buying the same turn every four seconds.
+   *
+   * THE DRIVE is the always-firing duty shape `ritualAttendTemplate` already
+   * uses (`meter`, rate 0, threshold 0): `needFires` reads `0 >= 0` and
+   * `urgencyOf` answers 1 with the comment it was written for — *"there is no
+   * deficit to measure, only a duty"*. A duty has no meter because there is
+   * nothing about a person waiting to be looked at that accumulates in the
+   * looker.
+   */
+  function addressRowsFor(session: QuestSession, cid: string): NeedTemplate[] {
+    const c = conversationOf(cid);
+    // Law ④ — nothing to disambiguate in a pair, so nothing to charge for.
+    if (!c || c.convo.members.length < 3) return [];
+    const target = lastOtherSpeakerIn(c, cid);
+    if (!target) return [];
+    // Paid already: the durable address is standing, so there is no beat to buy.
+    if (addressingOf(c.convo, cid) === target) return [];
+    return [
+      {
+        key: `address:${target}`,
+        item: {},
+        drive: { kind: "meter", rate: 0, threshold: 0 }, // always firing while the row exists
+        // The partner IS the station (`decideNeed`'s social arm), and
+        // `needPursuitGoals` reads the motive to know the journey is not part
+        // of it — see its `socialize` arm.
+        satisfy: { kind: "social" },
+        acquire: [],
+        priority: addressPriority(session, c, cid),
+      },
+    ];
+  }
+
+  /**
+   * ⑫⑧ — WHAT TURNING TO THE CONVERSATION IS WORTH, on the priority ladder.
+   *
+   *   `socialTemplate`'s own rung (2) — because that is what this world already
+   *   says being with people is worth, and inventing a second social number
+   *   would be the "comparison spelled as a magic number" the cost pass exists
+   *   to remove …
+   *   + ONE RUNG, decaying, when somebody has JUST ASKED ME SOMETHING.
+   *
+   * The bonus is exactly `1`, which at `NEED_PRESSURE_S` is 40 hand-seconds —
+   * the same "one full priority point" `PROPRIETY_PENALTY_S` is worth, stated
+   * in the same currency. Being asked something directly is worth one rung; it
+   * is not worth two, and it is certainly not worth outbidding a meal.
+   *
+   * It decays on `ARBITRATION.courtesyTicks` off `lastAddressedTick` — the
+   * field written since ⑦ and, until this phase, read by nothing. Same curve as
+   * `courtesy` and as `engagementOf`'s recall term, because all three are the
+   * same clock: how long ago did this exchange touch me.
+   *
+   * MEASURED SPACING against the live ladder (value = urgency × priority ×
+   * `NEED_PRESSURE_S`, urgency 1, under each row's own fill clock):
+   *
+   *   cold  2.0 → 80 s  beats fun (40), relieve (32), tidy (48), laundry (56),
+   *                     the ritual seat (60) and hygiene (72); TIES the
+   *                     loneliness row (80) — which is honest, they are the
+   *                     same want; loses to every provisioning and survival row.
+   *   hot   3.0 → 120 s additionally beats prep/stow (112) and ties provision
+   *                     (120) before their walks are subtracted — and their
+   *                     walks are what the bonus is really beating.
+   *   never              outbids dress (128), cook (132), energy (160), waste
+   *                     (180), unload (184), thirst (192) or hunger (200).
+   *
+   * 🚨 Which is the ONE claim worth making about this number: **a firing hunger
+   * always wins.** A creature does not stop starving to be polite, and that is
+   * not a special case — it is 200 against 120.
+   */
+  function addressPriority(session: QuestSession, c: HostConversation, cid: string): number {
+    const base = socialTemplate(0).priority; // the world's own answer, not a literal
+    const asked = memberOf(c.convo, cid)?.lastAddressedTick;
+    if (asked === undefined) return base;
+    const since = Math.max(0, session.taskClock - asked);
+    return base + ADDRESS_ASKED_BONUS * Math.exp(-since / ARBITRATION.courtesyTicks);
+  }
+
+  /** The last member OTHER than `cid` to have said anything here, still on the
+   *  roster. Mirrors `creature-converse.ts`'s own `lastOtherSpeaker` (which is
+   *  private to it) and adds the liveness re-check every roster read needs. */
+  function lastOtherSpeakerIn(c: HostConversation, cid: string): string | undefined {
+    for (let i = c.convo.history.length - 1; i >= 0; i--) {
+      const u = c.convo.history[i]!;
+      if (u.speakerId === cid) continue;
+      if (!memberOf(c.convo, u.speakerId)) continue; // they have left — nobody to face
+      return u.speakerId;
+    }
+    return undefined;
+  }
+
+  /**
+   * ⑫⑧ — ONE DECIDE'S VERDICT ON THE ADDRESS ROW, folded into the outbid clock.
+   *
+   * Three outcomes and three answers, and the asymmetry is the design:
+   *   • NO ROW AT ALL — a dyad, nobody to face, or the address already bought.
+   *     Nothing is being lost, so the clock is WIPED. A member who turned to
+   *     somebody last tick is not on its way out.
+   *   • THE ROW WON — it is about to stop and face them. Wiped, for the same
+   *     reason and more obviously.
+   *   • THE ROW LOST — start the clock if it is not already running, and
+   *     otherwise LEAVE IT ALONE. That is what makes it an integral rather than
+   *     a stopwatch that a single lucky tick resets: what accumulates is the
+   *     unbroken run of losing, and only actually turning to somebody ends it.
+   *
+   * ⚠️ IT COUNTS DECISIONS, NOT SECONDS, and the difference is deliberate. A
+   * body that never reaches the decide loop at all — recruited, mid-errand, or
+   * obeying a spoken order — never STARTS a clock, because it never chose
+   * against this conversation; it was never asked. (A clock already running
+   * keeps running through such a spell, which is also right: the creature chose
+   * its work, and then somebody handed it more of it.)
+   */
+  function noteAddressOutcome(
+    session: QuestSession,
+    cid: string,
+    templates: readonly NeedTemplate[],
+    won: NeedTemplate | undefined,
+  ): void {
+    const row = templates.find((t) => isAddressKey(t.key));
+    if (!row || (won && isAddressKey(won.key))) {
+      session.addressOutbid.delete(cid);
+      return;
+    }
+    if (!session.addressOutbid.has(cid)) session.addressOutbid.set(cid, session.taskClock);
+  }
+
+  /**
+   * ⑫⑧ — the ctx for an address row. Tiny on purpose: the row acquires
+   * nothing, deposits nothing and searches no world. The one fact it resolves
+   * is the PERSON, listed as the station the walker's social arm decides on —
+   * `d: 0`, because turning to somebody you are standing in a ring with is a
+   * turn and not a journey (`achieve`'s `addressed` arm emits no walk leg for
+   * the same reason, so the two prices agree by construction).
+   *
+   * 🚨 `forgoneS` STAYS 0, like every other row, and here that is a LAW rather
+   * than a not-yet: **the argmax IS the opportunity cost.** What this creature
+   * gives up by turning is whatever row it would otherwise have acted on, and
+   * that row is sitting in the same comparison with its own value already
+   * counted. Charging the same forgone work again inside this row would
+   * double-count it — the body would refuse to look up from a chore twice over,
+   * once because the chore won and once because it was fined for the chore.
+   */
+  function addressNeedCtx(session: QuestSession, cid: string, tpl: NeedTemplate): NeedCtx {
+    const target = addressTargetOf(tpl.key);
+    return {
+      carried: 0,
+      containers: {},
+      sources: [],
+      stations: [{ id: target, place: { kind: "creature", id: target }, kind: "member", waiting: 0, d: 0 }],
+      price: {
+        walkMps: walkSpeedMps(session.scale),
+        fillS: needFillS(session.scale, needClockKeyOf(tpl.key)),
+        unitValueS: 0, // not a goods row — nothing is moved
+        shortage: 0,
+        handsS: { container: 0, source: 0, loose: 0, satisfy: ADDRESS_DWELL_S },
+      },
+    };
+  }
+
   function residentNeedCtx(
     session: QuestSession,
     state: WorldState,
@@ -7938,6 +9582,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
      *  use (a toy mid-play) from real clutter. Omitted on single-row probes. */
     allTemplates?: readonly NeedTemplate[],
   ): NeedCtx {
+    // ⑫⑧ — the address row resolves against the ROSTER, not the household, so
+    // it takes its own (very small) ctx and none of the world sweeps below.
+    if (isAddressKey(tpl.key)) return addressNeedCtx(session, cid, tpl);
     const goodKey = tpl.item.category ?? "";
     const P = (id: string) => ({ kind: "named" as const, id });
     const rc = residentTownCtx(session, houseIndex)!; // the OWNING town's books
@@ -9290,16 +10937,42 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   }
 
-  function ensureResidentCreature(session: QuestSession, residentId: string) {
+  /**
+   * Lazily register a REMOTE PLAYER's author as a creature — the spark-set twin
+   * of `ensureResidentCreature`, and modeled on it deliberately: a peer arrives
+   * the same way a streamed townsperson does, on first contact, and needs the
+   * same thing from the creature world (somewhere for its relations, debts and
+   * knowledge to live). Idempotent; the row persists for the session.
+   *
+   * What it does NOT get is the resident's whole life: no needs, no likes, no
+   * fulfill node, no entry in `nodeByCreature`. A player is a SPARK — it has no
+   * body, wants nothing of its own, and is not somebody you can walk up to and
+   * talk to. Seeding it with a hunger or a favourite fruit would put a hungry
+   * ghost in the town's need loops.
+   */
+  function ensurePlayerCreature(session: QuestSession, playerCid: string) {
+    const creatures = ensureCreatureWorld(session);
+    if (creatures.world.creatures[playerCid]) return;
+    creatures.world.creatures[playerCid] = createCreatureWorld([{ id: playerCid }], []).creatures[playerCid]!;
+  }
+
+  /** The session's creature world, created empty-but-for-the-local-author on
+   *  first use. Shared by both lazy registrations above. */
+  function ensureCreatureWorld(session: QuestSession): NonNullable<QuestSession["creatures"]> {
     let creatures = session.creatures;
     if (!creatures) {
       creatures = {
-        world: createCreatureWorld([{ id: PLAYER_CREATURE_ID }], []),
+        world: createCreatureWorld([{ id: LOCAL_PLAYER_CID }], []),
         creatureByNode: new Map(),
         nodeByCreature: new Map(),
       };
       session.creatures = creatures;
     }
+    return creatures;
+  }
+
+  function ensureResidentCreature(session: QuestSession, residentId: string) {
+    const creatures = ensureCreatureWorld(session);
     if (creatures.world.creatures[residentId]) return;
     // An ambient resident's SHOPPING want IS a conversation need (one behavior model,
     // npc-behavior-and-town-economy.md §8): a runner carries a resource-type need for
@@ -9350,10 +11023,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     creatures.nodeByCreature.set(residentId, node);
   }
 
+  /** THIS DEVICE opens a board on a creature's conversation — and joins it.
+   *  Opening a VIEW is local (a board is a screen), but BELONGING is not: the
+   *  roster lives with the simulation, because the creature answers its members
+   *  and remembers one exchange for all of them. So a follower relays the join
+   *  and the owner seats it; the answer comes back as a `convo` sync. */
   function openCreatureConvo(nodeId: string, opts: { present?: boolean } = {}) {
     // A fresh conversation: whatever another creature was still saying is stale.
     voice?.cancel();
     convo = conversationWith(nodeId);
+    // ⑩ — the board FACES the creature the child chose; the record it is a view
+    // of may be a whole circle that creature was standing in.
+    convoView = { cid: nodeId, convoId: convo.id, ui: {}, acts: [] };
+    convoAddressee = null;
+    // A fresh open listens fresh: whatever seq this device last applied for this
+    // creature belongs to a conversation that is over, and holding on to it
+    // would make the owner's first sync for the NEW one look like a straggler.
+    convoSyncSeen.delete(nodeId);
+    if (mpFollower()) performPlayerAction({ kind: "convo", cid: nodeId, op: "join" });
+    else syncConvoMembers(convo);
     // `present: false` = the caller is about to run an act of its own (a
     // SPOKEN conversational move) — skip the greeting turn so the creature's
     // first line is the ANSWER, not "hi" talked over by the reply.
@@ -9368,31 +11056,166 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** Run ONE dialogue act against the conversation partner — the shared path a board
    *  press takes. A SPOKEN sentence (mapped by `intentToAct`) drives the creature
    *  through this identical path, so speaking a request/question replies the same
-   *  way picking it from the board would. */
-  function runCreatureAct(act: DialogueAct) {
+   *  way picking it from the board would. `speakerCid` is WHO took the turn —
+   *  a relayed peer's player-creature id, defaulting to the local author. */
+  function runCreatureAct(
+    act: DialogueAct,
+    speakerCid: string = LOCAL_PLAYER_CID,
+    /** ⑩ — an EXPLICIT addressee that preempts the member's own (a spoken
+     *  vocative, a relayed target). Absent = `memberAddressee` decides, and ⑫③
+     *  lets it decide NOBODY. */
+    addresseeOverride?: string,
+  ) {
     const session = sess!;
     if (!convo || !session.creatures || !world) return;
-    const node = session.creatures.nodeByCreature.get(convo.nodeId);
+    const c = convo;
+    // ★ ⑩/⑫③ — WHOM THIS TURN IS ADDRESSED TO, OR NOBODY ★
+    //
+    // THE ORDER IS: vocative > the channel order (`memberAddressee`). A spoken
+    // name is the most deliberate act of addressing there is, so it preempts
+    // everything (the same law §3b gives the addressee stack); under it, ⑫③'s
+    // dyad → heading → `addressing` → echo, which is allowed to answer NOBODY.
+    // A dyad still answers with the creature whose conversation this is, so ⑦
+    // is byte-identical.
+    const addresseeId = addresseeOverride ?? memberAddressee(c, speakerCid);
+    // …AND WHICH CREATURE THIS TURN IS ABOUT — a different question (⑫③). The
+    // board, the node whose projection phrases the reply, the body a transfer
+    // animates from: all of those need SOMEBODY, and a line said to the floor is
+    // still said in front of the person this member is standing with. The
+    // addressee answers it when there is one (so a vocative still redirects the
+    // whole turn, unchanged), and `facedBy` — which always answers — otherwise.
+    const nodeId = addresseeId ?? facedBy(c, speakerCid);
+    const node = session.creatures.nodeByCreature.get(nodeId);
+    // The board this turn may move: this player's own, or a scratch when the
+    // turn is somebody else's (§4.6 — a peer's page-turn is not ours to apply).
+    const view = turnViewOf(speakerCid, c);
 
     if (act.kind === "confused") {
-      convo.level = convo.level === "c" ? "b" : "a";
-      presentCreatureTurn();
+      // "I don't understand" drops the rung of the ONE MEMBER who said it. A
+      // conversation-wide level would demote everybody else in the room for one
+      // student's lost thread — the precise failure per-member levels exist to
+      // prevent (conversation.ts law 2).
+      const me = memberOf(c.convo, speakerCid);
+      if (me) me.level = me.level === "c" ? "b" : "a";
+      presentCreatureTurn(undefined, {}, speakerCid);
+      syncConvoMembers(c, { memberCid: speakerCid });
       return;
     }
-    const res = selectAct(
+    // ★ THE TURN ★ — recorded, arbitrated, answered (§4.7). The seeded stream is
+    // built FIRST, keyed on the seq this utterance is about to take, and it is
+    // the SAME stream the arbitration draw and the reply's willingness gates
+    // both come off: one turn, one stream, so a replay and a second device agree
+    // and the next "give me the cookie" is a genuinely new question.
+    //
+    // The two host stand-ins §4.6 left behind die here. The `turn` counter is
+    // now `convo.nextSeq`, and the manual `lastActivityTick` bump is
+    // `recordUtterance`'s job — a conversation's idle clock restarts because
+    // somebody SPOKE, not because a host remembered to say so.
+    const spoken = speakInConversation(
       session.creatures.world,
-      convo.nodeId,
-      PLAYER_CREATURE_ID,
+      c.convo,
+      speakerCid,
       act,
-      convo.level,
+      // ⑩/⑫③ — WHOM the speaker is talking to, resolved above. In a dyad it is
+      // the creature whose conversation this is (⑦, unchanged); in a circle it
+      // is the fellow member a channel was spent on — and `undefined` when none
+      // was, which the record reads as THE FLOOR: no one member owes an answer,
+      // and everyone overhears.
+      addresseeId ?? undefined,
       creatureProjectionOpts(session, node?.announce),
-      convo.memo,
+      {
+        tick: session.taskClock,
+        rng: convoRng(session, c),
+        personalityOf: creatureMood,
+        relationOf: (observer, subject) => relationToward(session, observer, subject),
+      },
+      { ui: view.ui },
     );
-    convo.memo = res.memo;
+    // WHO ANSWERED — or nobody. Every branch below reads the answerer's result
+    // exactly as it read `selectAct`'s before; what is new is that there may not
+    // be one.
+    const res = spoken.response?.result;
+    // ⑩ — WHO answered. In a dyad the arbitration has exactly one candidate (the
+    // creature; players are never candidates), so this IS the addressee and
+    // every line below lands exactly where ⑦ put it. In a joined CIRCLE somebody
+    // else in the room may pick the question up, and the line belongs over THEIR
+    // head.
+    const responderId = spoken.response?.responderId ?? nodeId;
+    // Shared effects (a revealed need, a quoted price) were written straight
+    // into the conversation record; what comes back is the SPEAKER's board
+    // navigation, and only when the act moved it.
+    if (res?.ui) view.ui = res.ui;
+    // …and every OTHER device in this conversation is told where it now stands:
+    // its own rung, what the conversation has heard aloud, and — for the peer
+    // whose turn this was — the board transition their press produced.
+    syncConvoMembers(c, { memberCid: speakerCid, ...(res?.ui ? { ui: res.ui } : {}) });
+    // ─────────────────────────────────────────────────────────────────────────
+    // ★ ⑫⑤ — AMBIGUITY, ANSWERED ★ (conversation-in-motion.md build-order ⑤)
+    //
+    // The line needed a NAMED PERSON to execute — "give me the cookie", "come
+    // and eat with me" — and it named nobody, in a room where nobody is a real
+    // answer. The pure layer recorded it and stopped: no arbitration, no draw,
+    // no reply. There is nothing to undo and nothing to render.
+    //
+    // What is owed is the QUESTION BACK, and then the way out of it. Before ⑫⑤
+    // this landed as a "…" silent thought and the child had no way to tell "it
+    // heard me and had no answer" from "whom did you mean?" — two different
+    // things that looked identical.
+    //
+    // WHO SAYS IT: `nodeId`, which on this path IS `facedBy` (the addressee is
+    // absent by definition here) — whoever the board is aimed at. A toast would
+    // not do: the audience may not read, so a host verdict on something the
+    // child SAID is spoken by a creature (outstanding-bugs-family-mode). Through
+    // `sayNpcLine`, the speech chokepoint, so it voices and MIRRORS to peers
+    // exactly like any other creature line, at that creature's own rung.
+    //
+    // 🚨 DELIBERATELY NOT the `confused` act kind. Its arm above drops the
+    // SPEAKER's syntax rung, and being ambiguous about whom you meant is not a
+    // comprehension failure on the child's part — they said a perfectly good
+    // sentence into a room with three people in it. Demoting them for it would
+    // punish the exact skill this chapter is teaching.
+    //
+    // THEN THE BOARD COMES BACK, silently (the line above is this turn's
+    // speech): THE WORLD NARROWS, IT NEVER REJECTS — the answer is one press
+    // away. Two ways out of it today: re-aim the board, or spend the LOOK
+    // channel through the dwell `address` cell (⑫④). ⑫⑥ adds the third and best
+    // one — the addressee's own NAME as a plain word on the board, so "mara +
+    // give + apple" is sayable in a single move.
+    if (spoken.underSpecified) {
+      sayNpcLine(session, nodeId, { glyph: WHO_DO_YOU_MEAN[levelOf(c, nodeId)], ttl: 6 });
+      presentCreatureTurn(undefined, { speak: false, bubble: false }, speakerCid);
+      if (speakerCid !== LOCAL_PLAYER_CID && convoView?.convoId === c.id) {
+        presentCreatureTurn(undefined, { speak: false, bubble: false });
+      }
+      sweepConversations();
+      return;
+    }
+    if (!res) {
+      // ★ NOBODY ANSWERED ★ — an OUTCOME, never a dropped press. A child who
+      // speaks and gets nothing cannot tell "it heard me and had no answer" from
+      // "it is broken", and for this audience that difference is the product
+      // (§3c). So the non-answer is SHOWN: a "…" thought over whoever came
+      // closest to answering.
+      //
+      // A THOUGHT IS NOT SPEECH. It deliberately does NOT go through
+      // `sayNpcLine` — nothing is voiced and nothing is mirrored to peers,
+      // because nothing was said. (A follower therefore just sees the creature
+      // not answer, which is exactly what happened; a per-peer render of the
+      // thought is §4.9 presentation work.)
+      for (const reaction of spoken.silent) showNpcThought(session, reaction.id);
+      // …and the board still re-presents: a non-answer is still a turn, and the
+      // player must be able to take another one.
+      presentCreatureTurn(undefined, { speak: false, bubble: false }, speakerCid);
+      if (speakerCid !== LOCAL_PLAYER_CID && convoView?.convoId === c.id) {
+        presentCreatureTurn(undefined, { speak: false, bubble: false });
+      }
+      sweepConversations();
+      return;
+    }
     // ASKED FOR DIRECTIONS: voice the phrase, swivel the camera + point, then
     // refresh the board. The pure layer handed us just the subject.
     if (res.askedDirections) {
-      answerDirections(session, res.askedDirections);
+      answerDirections(session, res.askedDirections, speakerCid, responderId);
       return;
     }
     // AN ACCEPTED INVITATION ("eat with me" → "ok"): mark it, and the ordinary
@@ -9402,14 +11225,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // joining one. Marked here rather than inside selectAct so the pure
     // dialogue layer keeps knowing nothing about the world's tables and seats.
     if (act.kind === "invite" && act.verb && res.responseGlyph === "ok") {
-      acceptInvitation(session, convo.nodeId, act.verb, PLAYER_CREATURE_ID);
+      acceptInvitation(session, nodeId, act.verb, speakerCid);
     }
     // ESCORT (motive batch): agreeing to "take me to {dest}" starts the follow —
     // the creature trails the player until it reaches the destination (onFrame).
     if (act.kind === "agree") {
-      const creature = session.creatures.world.creatures[convo.nodeId];
+      const creature = session.creatures.world.creatures[nodeId];
       if (creature && openNeeds(creature).some((n) => n.escort && n.atPlace)) {
-        session.escorting.add(convo.nodeId);
+        session.escorting.add(nodeId);
       }
     }
     for (const event of res.events) {
@@ -9417,12 +11240,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         console.log(`[symbol-game] transfer-pending: ${event.from} → ${event.to}: ${event.itemId}`);
       }
       if (event.type === "item-transferred") {
-        // In creature worlds, transfers TO the player only conclude by TAKING —
+        // In creature worlds, transfers TO an author only conclude by TAKING —
         // the hand-over behavior (onFrame) does the physical delivery.
-        if (event.to === PLAYER_CREATURE_ID && !session.creatures) {
-          deliverStock(session, convo.nodeId, event.itemId);
-        } else if (event.from === PLAYER_CREATURE_ID) {
-          handOverItem(session, convo.nodeId, event.itemId);
+        if (event.to === speakerCid && !session.creatures) {
+          deliverStock(session, nodeId, event.itemId);
+        } else if (event.from === speakerCid) {
+          handOverItem(session, nodeId, event.itemId);
         }
       } else if (event.type === "need-fulfilled") {
         fulfillIfContent(event.creatureId);
@@ -9438,60 +11261,106 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // goes back to the giver — `presentSelected` reads the same ownership flag to
     // decide whether the stack was spent — and the refusal is said out loud, so a
     // player never watches an offer disappear into a shrug.
-    if (act.kind === "offer" && res.responseGlyph === "thank_you" && convo.nodeId.startsWith("resident_")) {
+    if (act.kind === "offer" && res.responseGlyph === "thank_you" && nodeId.startsWith("resident_")) {
       const glyph = act.itemId ? liveItemGlyph(session, act.itemId) : undefined;
-      if (glyph && !giftResidentGood(session, convo.nodeId, glyph)) {
+      if (glyph && !giftResidentGood(session, nodeId, glyph, speakerCid)) {
         const it = act.itemId ? session.creatures?.world.items[act.itemId] : undefined;
-        if (it) it.ownerId = PLAYER_CREATURE_ID; // the offer is handed straight back
-        npcChatBubble(session, convo.nodeId, "no");
+        if (it) it.ownerId = speakerCid; // the offer is handed straight back to its giver
+        npcChatBubble(session, nodeId, "no");
         presenter.toast("💬 can't carry any more", "feedback");
       }
     }
     if (res.close) {
-      // A parting reaction (sad / ok / thanks) stays on screen after closing.
-      if (res.responseGlyph) {
-        const npcSym = node ? session.entities.get(node.npcEntityId)?.glyph : undefined;
-        const at = poserPos(session, convo.nodeId);
-        if (at && node) {
-          showWorldBubble(world.state, `char:${node.npcEntityId}`, {
-            anchor: { kind: "point", x: at.x, y: at.y },
-            text: npcStatement(res.responseGlyph, npcSym, convo.nodeId),
-            glyph: res.responseGlyph,
-            ttl: 4,
-          });
-        }
-        speakNpc(res.responseGlyph, npcSym, convo.nodeId);
-      }
-      closeCreatureConvo();
-    } else if (convo) {
+      // A parting reaction (sad / ok / thanks) stays on screen after closing —
+      // shorter than a turn (ttl 4), and through the chokepoint so the peers
+      // watching this exchange see the goodbye instead of a creature that just
+      // stops talking.
+      // …over whoever said it (⑩): in a dyad that is the addressee, and in a
+      // circle it is whichever member answered the goodbye.
+      if (res.responseGlyph) sayNpcLine(session, responderId, { glyph: res.responseGlyph, ttl: 4 });
+      // "Bye" ends the SPEAKER's membership and nobody else's. The shared record
+      // outlives it, and this device's board closes only if the local author is
+      // the one who left (law 1 — the bug §4.6 exists to kill).
+      departConversation(c, speakerCid);
+    } else {
       // Opening or paging the "where is…" list is silent navigation — refresh
       // the board without re-greeting. Otherwise the reaction (a clue, "yes", a
       // refusal) IS this turn's spoken line.
       const navSilent = act.kind === "directions-menu" || act.kind === "more";
-      presentCreatureTurn(res.responseGlyph, navSilent ? { speak: false, bubble: false } : {});
+      // ⑩ — SOMEBODY ELSE IN THE CIRCLE PICKED IT UP. The line belongs over the
+      // person who said it, so it goes out through the chokepoint on THEIR body
+      // and the board refreshes silently underneath: re-presenting it as the
+      // faced creature's line would put another creature's words in its mouth.
+      // In a dyad `responderId` is the addressee and this branch never runs.
+      if (!navSilent && responderId !== facedBy(c, speakerCid)) {
+        if (res.responseGlyph) sayNpcLine(session, responderId, { glyph: res.responseGlyph, ttl: 6 });
+        presentCreatureTurn(undefined, { speak: false, bubble: false }, speakerCid);
+      } else {
+        presentCreatureTurn(res.responseGlyph, navSilent ? { speak: false, bubble: false } : {}, speakerCid);
+      }
+      // A PEER took that turn in a conversation this device is also in: the
+      // creature's answer was spoken in the world, so the local board should
+      // catch up with it — silently, at the LOCAL member's own rung, and without
+      // touching the local menu the peer's press moved on their machine.
+      if (speakerCid !== LOCAL_PLAYER_CID && convoView?.convoId === c.id) {
+        presentCreatureTurn(res.responseGlyph, { speak: false, bubble: false });
+      }
       if (res.followUpGlyph && node) {
         // A second line (the building clue) follows the first: its audio just
         // QUEUES behind the response (the speech queue serializes); the bubble
         // swaps over when the response is estimated to have finished.
+        //
+        // ⑪ GREP-GATE VERDICT — this `setTimeout` STAYS, and it is the only
+        // shape of timer that may (see also `answerDirections`' rare-import
+        // line, the other one). The ⑧ rule is that the SIM is tick-driven:
+        // whose turn it is, when a reply is due, when a circle breaks up — all
+        // of that moved onto `session.taskClock` so a paused tab, a compression
+        // window and a replay produce the same transcript. This is not the sim.
+        // It changes NOTHING in the world — no utterance is recorded, no
+        // knowledge moves, no ownership changes — it swaps a BUBBLE, and it is
+        // timed against `speechEstimateMs`, i.e. against WALL-CLOCK AUDIO that
+        // is already playing. Putting it on sim ticks would desynchronise the
+        // caption from the voice the moment time compressed, which is the
+        // opposite of correct. The guards below are the price: a torn-down
+        // session, a dead world or an ended conversation drops it silently.
         const npcSym = session.entities.get(node.npcEntityId)?.glyph;
         const followUp = res.followUpGlyph;
-        const nodeId = convo.nodeId;
-        speakNpc(followUp, npcSym, nodeId);
-        const delay = speechEstimateMs(npcStatement(res.responseGlyph ?? "", npcSym, nodeId));
+        const speaksIt = responderId;
+        speakNpc(followUp, npcSym, speaksIt);
+        const delay = speechEstimateMs(npcStatement(res.responseGlyph ?? "", npcSym, speaksIt));
         setTimeout(() => {
           if (!world || sess !== session) return;
-          if (convo?.nodeId !== nodeId) return; // walked away
-          const at = poserPos(session, nodeId);
-          if (!at) return;
-          showWorldBubble(world.state, `char:${node.npcEntityId}`, {
-            anchor: { kind: "point", x: at.x, y: at.y },
-            text: npcStatement(followUp, npcSym, nodeId),
-            glyph: followUp,
-            ttl: 6,
-          });
+          if (!conversationOf(speaksIt)) return; // the conversation is over
+          // Audio was queued above; the delayed bubble routes through the
+          // chokepoint (speak: false) so the follow-up line MIRRORS to peers
+          // on the same beat it appears here.
+          sayNpcLine(session, speaksIt, { glyph: followUp, ttl: 6, speak: false });
         }, delay);
       }
     }
+    // The map is already in hand — the cheapest place there is to retire the
+    // conversations that have gone quiet or empty (no frame loop of its own).
+    sweepConversations();
+  }
+
+  /**
+   * ONE MEMBER LEAVES creature `c`'s conversation — by saying goodbye, by
+   * closing their board, or by a relayed `convo` leave.
+   *
+   * The record is NOT deleted with them (law 1): history, revealed needs and
+   * everybody else's quotes belong to the conversation, and the others are still
+   * using them. Only THIS device's board closes, and only if the local author is
+   * the one leaving.
+   */
+  function departConversation(c: HostConversation, memberCid: string) {
+    // ⑩ — leaving a CIRCLE goes out through the circle's own door, so the ring
+    // slot is released and the reservation/dwell bookkeeping is cleaned up with
+    // it. `departGroup` also asks whether what is left is still a conversation.
+    if (c.group) departGroup(c, memberCid, { spoken: true });
+    else unseatMember(c, memberCid);
+    if (memberCid === LOCAL_PLAYER_CID && convoView?.convoId === c.id) closeConvoView();
+    if (!conversations.has(c.id)) return; // the last departure took the record with it
+    if (!sweepConversation(c)) syncConvoMembers(c);
   }
 
   /** The live position of a node's embodied NPC, else its layout figure spot.
@@ -9595,7 +11464,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return projectDialogue(
       session.creatures.world,
       target.nodeId,
-      PLAYER_CREATURE_ID,
+      LOCAL_PLAYER_CID,
       "b",
       creatureProjectionOpts(session, node?.type === "fulfill" ? node.announce : undefined),
     ).lineGlyph;
@@ -9634,6 +11503,40 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function leaveActiveConvo(nodeId: string) {
     if (convo) closeCreatureConvo();
     else dispatchInput({ type: "cancel-choice", nodeId });
+  }
+
+  /**
+   * ★ ⑩ — IDLE LAPSES MEMBERSHIP, NOT THE CONVERSATION ★
+   *
+   * `CONVO_IDLE_END_S` used to CLOSE whatever the player had open, which was the
+   * only honest answer while every conversation was the player's own: nobody
+   * else was in it, so a child who wandered off left nothing behind.
+   *
+   * A CIRCLE IS NOT THE PLAYER'S. Three townsfolk were talking before the child
+   * walked up and will go on talking after they drift away, so what lapses is the
+   * MEMBERSHIP: the seat is given up, the ring closes, the board goes, and the
+   * conversation carries on without them (§3f "Player idle (12 s) lapses their
+   * membership; the conversation may continue without them"). A dyad the player
+   * opened has no such life of its own — nothing is happening in it that the
+   * child is not doing — so it keeps today's close exactly.
+   */
+  function lapseConvoMembership(nodeId: string) {
+    const c = viewRecord();
+    if (!c?.group) {
+      leaveActiveConvo(nodeId);
+      return;
+    }
+    convoIdleS = 0;
+    console.log(`[convo] idle — leaving ${c.id}`);
+    // BELONGING lives with the simulation (the same rule `closeCreatureConvo`
+    // follows): a follower relays the leave and the owner drops the row.
+    if (mpFollower()) {
+      const cid = convoView?.cid;
+      closeConvoView();
+      if (cid) performPlayerAction({ kind: "convo", cid, op: "leave" });
+      return;
+    }
+    departConversation(c, LOCAL_PLAYER_CID);
   }
 
   function poserPos(session: QuestSession, nodeId: string): { x: number; y: number } | null {
@@ -9801,8 +11704,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  same reason `avatarIdOf` resolves the player to that body. Released, the
    *  body answers as its own creature again. */
   function creatureOfAvatar(avatarId: string): string {
-    if (avatarId === PLAYER_ID) return PLAYER_CREATURE_ID;
-    if (world && avatarId === world.drivenBody()) return PLAYER_CREATURE_ID;
+    if (avatarId === PLAYER_ID) return LOCAL_PLAYER_CID;
+    if (world && avatarId === world.drivenBody()) return LOCAL_PLAYER_CID;
     return avatarId.startsWith("npc_") ? avatarId.slice(4) : avatarId;
   }
 
@@ -9876,7 +11779,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // The act eases the MOTIVE it serves — playing together fills fun, a
     // hug/chat fills social. Both warm the relation the same way.
     const meter = act === "play" ? "fun" : "social";
-    if (from !== PLAYER_CREATURE_ID) {
+    if (!isPlayerCid(from)) {
       warmRelations(session, from, to, { affinity: 0.08, trust: 0.03 });
       session.needMeters.set(`${from}|${meter}`, 0);
     }
@@ -9930,6 +11833,73 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // names the fixture, so the anchor slides the body on) — the dinner case,
     // where the effect must land on a body already seated, not crouched beside.
     session.actionHold.set(cid, { t: 0, dur: hold, effectAt, applied: false, apply, label, ...(opts?.seatId ? { seatId: opts.seatId } : {}) });
+  }
+
+  /**
+   * ⑫④ — HOW LONG STOPPING TO FACE SOMEBODY TAKES.
+   *
+   * Half a carry's `ACTION_HOLD_S`, because it is HALF THE MOVEMENT: a turn, not
+   * a reach. There is no crouch to cover, no grasp to hold out and nothing to
+   * put down afterwards — the body stops, swings its heading onto the person it
+   * is talking to, and the rest of the hold is the follow-through that stops it
+   * walking straight off again mid-word.
+   */
+  const ADDRESS_HOLD_S = 0.8;
+
+  /**
+   * ★ ⑫④ — A CREATURE TURNS TO SOMEBODY, AND IT COSTS A BEAT. ★
+   *
+   * The LOOK channel (law ②) made physical: `cid` visibly STOPS, TURNS, and only
+   * then speaks. Three existing rules do all the work and none of them is new:
+   *
+   *   • `beginAction` PINS the body for the hold, and both driving loops
+   *     (`stepPursuit`, `stepNeeds`) leave a body alone while it holds one — so
+   *     the beat is genuinely taken out of whatever the creature was doing. THAT
+   *     is the price; nothing is multiplied and nothing is fined (law ③).
+   *   • ⑫① keeps the circle from turning a body mid-hold, so the heading this
+   *     lands is the heading that survives — which is the whole reason the turn
+   *     can cost anything at all.
+   *   • `setMemberAddress` records the durable fact, so the NEXT turn reads
+   *     `already === intended` and speaks for free.
+   *
+   * 🚨 `effectAt: 0` — THE OPPOSITE OF THE REACH CASE, deliberately. A carry
+   * lands its effect part-way in (`ACTION_EFFECT_S`) because the effect is the
+   * touch at the bottom of the crouch. Here the effect IS the turn: it has to
+   * land at the START and the hold is the follow-through after it. Landing a
+   * facing at the end of the pin would have the creature stand still for most of
+   * a second and then snap round as it walks away.
+   *
+   * 🚨 A BODY WHOSE HANDS ARE MID-ACTION DOES NOT STOP TO TURN, and that is not
+   * a tuning choice — `beginAction` REPLACES a half-done hold in place, so
+   * charging one here would silently drop whatever the creature was picking up
+   * as it reached for it. It uses the NAME instead, which is exactly what law
+   * ②'s table says the name is for ("always: hands full, facing away, walking").
+   *
+   * Returns whether the beat was taken. A creature already addressing that
+   * member pays nothing (the address is durable), and neither does one with no
+   * body to turn — see `planAddress` for what each refusal falls back to.
+   */
+  function beginAddress(session: QuestSession, cid: string, targetCid: string): boolean {
+    const state = world?.state;
+    if (!state) return false;
+    if (session.actionHold.has(cid)) return false; // the hands own it — see above
+    const c = conversationOf(cid);
+    if (!c || !memberOf(c.convo, cid) || !memberOf(c.convo, targetCid)) return false;
+    if (addressingOf(c.convo, cid) === targetCid) return false; // paid already
+    beginAction(
+      session,
+      cid,
+      "address",
+      () => {
+        // THE TURN, and the fact it buys — together, at the top of the hold.
+        const av = memberAvatar(state, cid);
+        const at = memberAvatar(state, targetCid);
+        if (av && at) faceToward(av, { x: at.x, y: at.y });
+        setMemberAddress(cid, targetCid);
+      },
+      { hold: ADDRESS_HOLD_S, effectAt: 0 },
+    );
+    return true;
   }
 
   /** Advance every action hold: at `effectAt` the effect lands ONCE (`applied`
@@ -10422,6 +12392,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const npcId = avatarIdOf(cid); // residents wear their bare cid — never `npc_resident_*`
     if (step.kind === "socialAct") {
       applySocialAct(session, cid, step.target, step.act);
+      return;
+    }
+    if (step.kind === "address") {
+      // ⑫⑧ — THE ARGMAX'S ANSWER, PERFORMED. `beginAddress` is ⑫④'s beat,
+      // unchanged and un-duplicated: it pins the body, swings the heading at
+      // the top of the hold and records the durable address through the ONE
+      // writer. What ⑧ adds is only that a decision, rather than a coin, is
+      // what asked for it.
+      beginAddress(session, cid, step.target);
       return;
     }
     if (step.kind === "pick") {
@@ -11037,7 +13016,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // wandered since planning — the pursuit walked, but a step of drift is
       // possible). A PET on either side skips the dialogue engine (company IS the
       // exchange: a heart, warmth, meters clear). Ensure both are creatures so
-      // runNpcExchange has nodes to work with.
+      // `seedConversation` has nodes to work with.
       const state = world.state;
       const body = state.avatars[npcId];
       const pid = step.target;
@@ -11055,7 +13034,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (isPetCid(cid) || isPetCid(pid)) {
         showWorldBubble(state, `social:${cid}`, { anchor: { kind: "avatar", id: npcId }, text: "💗", ttl: 2 });
       } else {
-        runNpcExchange(session, cid, pid);
+        // ⑧ — the command SEEDS a conversation (§3f). "You two, talk" now hands
+        // the player a live, joinable circle instead of two canned lines; the
+        // spark's A↔B oscillation arrives here too (`performAttentionInteract`
+        // sets exactly this `converse` pursuit).
+        seedConversation(session, cid, pid);
       }
       // Both loneliness meters ease IF the body runs one (a commanded NPC may not).
       for (const c of [cid, pid]) {
@@ -11092,10 +13075,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const item = cworld?.items[entityId];
       // To the PLAYER: drop within reach + the pending mark, so the gaze
       // auto-take absorbs it into the pocket (the shipped gift path).
-      if (step.to === PLAYER_CREATURE_ID) {
+      if (step.to === LOCAL_PLAYER_CID) {
         dropObject(world.state, o, c.x, c.y);
         fireCarryGesture(npcId, "putdown", { x: c.x, y: c.y });
-        if (item) item.pendingTransferTo = PLAYER_CREATURE_ID;
+        if (item) item.pendingTransferTo = LOCAL_PLAYER_CID;
         return;
       }
       if (step.to.startsWith("resident_")) ensureResidentCreature(session, step.to);
@@ -11108,7 +13091,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const accepted =
         cworld && item && cworld.creatures[step.to] ? giveItem(cworld, cid, step.to, entityId).accepted : false;
       if (!accepted) {
-        const thing = headOf(item?.kind ?? liveItemGlyph(session, entityId));
+        const thing = spokenWord(item?.kind ?? liveItemGlyph(session, entityId));
         npcChatBubble(session, step.to, `i_me + want.not + ${thing}`); // "I don't want the X."
         return; // the giver keeps it — never forced on an unwilling receiver
       }
@@ -11196,7 +13179,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           ? {
               kind: "place",
               place:
-                action.to === PLAYER_CREATURE_ID
+                action.to === LOCAL_PLAYER_CID
                   ? "you"
                   : (session.entities.get(session.creatures?.nodeByCreature.get(action.to)?.npcEntityId ?? "")
                       ?.glyph ?? "there"),
@@ -11227,7 +13210,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  addressed) must move THAT body — not the spark's own formless, parked one,
    *  which would walk an invisible nothing across the map. */
   function avatarIdOf(cid: string): string {
-    if (cid === PLAYER_CREATURE_ID) return world?.drivenBody() ?? PLAYER_ID;
+    if (cid === LOCAL_PLAYER_CID) return world?.drivenBody() ?? PLAYER_ID;
+    // A REMOTE author's body: the creature its spark claims (peerClaims), else
+    // its streamed spark avatar — which rides under the peer's own network id.
+    if (isPlayerCid(cid)) {
+      const peer = peerIdOf(cid)!;
+      return world?.state.peerClaims?.[peer] ?? peer;
+    }
     return cid.startsWith("resident_") || cid.startsWith("pet_") ? cid : `npc_${cid}`;
   }
 
@@ -11329,9 +13318,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const me = host.state.avatars[PLAYER_ID];
           let best: { x: number; y: number } | null = null;
           let bestD = Infinity;
-          // Head of an object's glyph, `#`-instance-stripped, null for none.
+          // The WORD an object's glyph answers to, `#`-instance-stripped, null
+          // for none. `spokenWord`, because the board offers "workbench" while
+          // a piece waiting on the floor is stacked as `furn.workbench` — a
+          // head match would never find the thing the child just named.
           const objHead = (glyph: string | undefined) =>
-            glyph ? headOf(glyph.split("#")[0]!) : null;
+            glyph ? spokenWord(glyph.split("#")[0]!) : null;
           // Board words that answer to a differently-named object: the AAC
           // core word "bathroom" IS the toilet fixture; "yard" is the
           // builder's-yard crate (town) / the site stockpile (wilderness);
@@ -11553,6 +13545,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       case "moveTo":
       case "faceHold":
         return 0;
+      case "address":
+        // ⑫⑧ — THE PRICE OF FACING SOMEBODY. Derived, never invented: see
+        // `ADDRESS_DWELL_S`. Note it is NOT `ADDRESS_HOLD_S` (0.8 s, the length
+        // of the animation) — what the creature spends is the TURN OF THE
+        // CIRCLE it has bought, not the time its neck takes.
+        return ADDRESS_DWELL_S;
       case "withdraw":
         // A market stall is a TRANSACTION, a box is a reach. The id carries
         // which — the same split `needPriceOf` prices the two acquire branches
@@ -11735,19 +13733,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session: QuestSession,
     cid: string,
     tplKey: string,
-    candidates: readonly GoalSpec[],
+    candidates: readonly PursuitGoal[],
     r: WorldResolver,
-  ): GoalSpec | undefined {
+  ): PursuitGoal | undefined {
     // THE KILL-SWITCH, shared with the two body-rung seats (`decideNeeds` /
     // `acquireFrom`): off, this is the shipped `candidates.find(compileGoal)`
     // byte for byte — first compilable, in the list's own order.
     if (!NEED_COST_SELECTION) return candidates.find((g) => compileGoal(g, cid, r));
     const standing = session.needGoalPick.get(cid);
-    const keyOf = (g: GoalSpec) => JSON.stringify(g);
-    let group: GoalSpec[] = [];
+    const keyOf = (g: PursuitGoal) => JSON.stringify(g);
+    let group: PursuitGoal[] = [];
     let groupKind: string | null = null;
-    let best: { goal: GoalSpec; net: number } | undefined;
-    const settle = (): GoalSpec | undefined => {
+    let best: { goal: PursuitGoal; net: number } | undefined;
+    const settle = (): PursuitGoal | undefined => {
       if (!best) return undefined;
       session.needGoalPick.set(cid, { tplKey, key: keyOf(best.goal) });
       return best.goal;
@@ -11816,13 +13814,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     for (const g of session.town?.stage.goods ?? []) {
       if (kindsOf(g.good.key).includes(sym) || g.good.key === sym) return "item";
     }
+    // The SPOKEN word of each stack, not its storage head: a piece waiting on
+    // the floor is a `furn.<kind>` stack, and the child says "workbench".
     for (const [, rec] of session.smallProps) {
-      if ((headOf(rec.glyph)).toLowerCase() === sym) return "item";
+      if (spokenWord(rec.glyph).toLowerCase() === sym) return "item";
     }
     const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
-    if (Object.keys(onMe).some((g) => (headOf(g)).toLowerCase() === sym)) return "item";
+    if (Object.keys(onMe).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
     for (const stock of session.containerStock.values()) {
-      if (Object.keys(stock).some((g) => (headOf(g)).toLowerCase() === sym)) return "item";
+      if (Object.keys(stock).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
     }
     return "unknown";
   }
@@ -11923,7 +13923,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // gratitude (the debt/willingness machinery reads item value).
       if (TREAT_KINDS.includes(kind)) it.value = 3;
     }
-    session.entities.set(id, { id, kind: "item", label: kind, glyph });
+    // The entity's LABEL is display/spoken text (`speakRaw(entity.label)`), so
+    // it is the piece's word — while the creature-world item above keeps the
+    // storage `kind`, which is what needs and stacks match on.
+    session.entities.set(id, { id, kind: "item", label: spokenWord(glyph), glyph });
     return id;
   }
 
@@ -11952,9 +13955,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           glyph,
           count,
           // DISPLAY face, not the stack key (see presentContainer): a carried
-          // `furn.<kind>` piece is a chair, not a "furn".
-          icon: drawnMakeable(glyph),
-          label: spokenMakeable(glyph),
+          // `furn.<kind>` piece is a chair, not a "furn" — and the strip's word
+          // is READ, so it is written in the player's language.
+          icon: drawnGlyph(glyph),
+          label: labelOfGlyph(glyph),
           selected: session.selectedPocketGlyph === glyph,
         })),
     );
@@ -12169,7 +14173,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function playerGroup(session: QuestSession): string[] {
     const out: string[] = [];
     const add = (cid?: string | null) => {
-      if (cid && cid !== PLAYER_CREATURE_ID && !out.includes(cid)) out.push(cid);
+      if (cid && !isPlayerCid(cid) && !out.includes(cid)) out.push(cid);
     };
     add(possession.creatureId); // the body being ridden is the nearest thing to "me"
     for (const c of session.party) add(c);
@@ -12193,7 +14197,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (spec.kind === "group") return playerGroup(session);
     const out: string[] = [];
     for (const id of spec.ids) {
-      const cid = id === PLAYER_CREATURE_ID ? possession.creatureId : id;
+      // Any AUTHOR resolves to the body it rides; only the local author's
+      // possession is known on this device (a peer's ridden body arrives with
+      // per-peer claims, a later phase) — a formless author names nobody.
+      const cid = id === LOCAL_PLAYER_CID ? possession.creatureId : isPlayerCid(id) ? null : id;
       if (cid && !out.includes(cid)) out.push(cid);
     }
     return out;
@@ -12616,6 +14623,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
+   * 🪑 FURNITURE LYING IN A HOUSE — pieces the household owns that are not
+   * standing anywhere.
+   *
+   * The SAME containment rule the scope tree uses (`buildingAt` on the prop's
+   * own position, as `scopeTreeOf`'s `buildingOfContainer` does), so what the
+   * inventory COUNTS and what a placement can SPEND are the same set. A prop in
+   * hands or inside a box is neither: the first belongs to the body, the second
+   * is already a stack row.
+   */
+  function looseFurnitureOf(
+    session: QuestSession,
+    houseIndex: number,
+  ): Array<{ id: string; glyph: string; x: number; y: number }> {
+    if (!world) return [];
+    const key = `h_${houseIndex}`;
+    const out: Array<{ id: string; glyph: string; x: number; y: number }> = [];
+    for (const [objId, rec] of session.smallProps) {
+      if (!furnitureKindOfGlyph(rec.glyph)) continue;
+      const o = world.state.objects[objId];
+      if (!o || o.carriedBy || o.containedIn) continue;
+      if (buildingAt(world.state, o.x, o.y)?.id !== key) continue;
+      out.push({ id: objId, glyph: rec.glyph, x: o.x, y: o.y });
+    }
+    return out;
+  }
+
+  /**
    * "put + chair + near + table" (construction v1) — a directed PLACEMENT.
    * GUIDANCE, not an RTS order: the player names only the piece and a
    * relation+anchor; the creature searches its own house with the SAME
@@ -12732,9 +14766,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
 
-    // STOCK pre-gate: an unplaced piece must exist as a `furn.<kind>` stack
-    // in one of the house's own containers (storage — the ONE container
-    // abstraction). Nothing stored ⇒ "I don't have a chair."
+    // ═══ STOCK pre-gate: HAS THIS HOUSEHOLD GOT ONE ═══
+    //
+    // The scope's question, not the boxes' (scope-unification.md). A piece the
+    // household owns is a piece it can put down, and it makes no difference to
+    // anyone whether the unit is stowed in a chest or lying on the floor of the
+    // room — one is a stack row and the other is a prop, and item-prop.ts's
+    // whole law is that those are ONE THING IN TWO SITUATIONS.
+    //
+    // Reading only the boxes is what stranded every craft a WATCHED house made:
+    // the arrival drops the finished piece as a prop beside the bench (which is
+    // where a just-finished thing would actually be), leaving zero in stock, so
+    // the install that was meant to follow answered "I don't have a workbench"
+    // while one lay at the resident's feet (2026-08-05).
+    //
+    // The BOX is still preferred when both exist — a stowed unit is the tidy
+    // one to spend, and it keeps the walk-to-the-chest errand that makes the
+    // act legible.
     const glyph = furnitureGlyph(kind);
     let sourceBox: string | null = null;
     for (const objId of houseContainerKeys(session, house.index)) {
@@ -12744,7 +14792,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         break;
       }
     }
+    // …ELSE ONE LYING IN THE HOUSE. Nearest to the placer, so the errand is the
+    // short one and two residents never converge on the same prop by accident.
+    let sourceProp: string | null = null;
     if (!sourceBox) {
+      const placer = state.avatars[avatarIdOf(cid)];
+      let bestD = Infinity;
+      for (const p of looseFurnitureOf(session, house.index)) {
+        if (p.glyph !== glyph) continue;
+        const d = placer ? Math.hypot(p.x - placer.x, p.y - placer.y) : 0;
+        if (d < bestD - 1e-9 || (Math.abs(d - bestD) <= 1e-9 && sourceProp && p.id < sourceProp)) {
+          bestD = d;
+          sourceProp = p.id;
+        }
+      }
+    }
+    if (!sourceBox && !sourceProp) {
       speakLine(placementVerdictLine(thing, { kind: "cannot", reason: "have-not" })!);
       return "refused";
     }
@@ -12832,13 +14895,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // the stage's delta watcher raises the real fixture the same frame.
     speakLine(PLACEMENT_OK);
     const spot = verdict.spot;
-    const box = state.objects[sourceBox];
+    // WHERE THE PIECE IS NOW — a box to open, or a piece lying on the floor.
+    // One walk either way; only the take at the near end differs.
+    const source = sourceBox ? state.objects[sourceBox] : sourceProp ? state.objects[sourceProp] : null;
+    const box = sourceBox ? state.objects[sourceBox] : undefined;
     const npcId = avatarIdOf(cid);
     clearNeedStep(session, cid);
     session.npcTasks.delete(npcId);
     session.lastDrive.set(cid, "command");
     const points = [
-      ...(box ? [{ x: box.x, y: box.y, dwell: 0.8 }] : []),
+      ...(source ? [{ x: source.x, y: source.y, dwell: 0.8 }] : []),
       { x: spot.x, y: spot.y, dwell: 0.4 },
     ];
     // THE PIECE COMES OUT OF THE BOX WHERE THE BOX IS. This used to take the
@@ -12848,10 +14914,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // box was visible and furniture coming OUT of one was not, which is exactly
     // what it looked like. The take is now an event at the box, and the piece
     // is in hands for the walk.
-    const boxIndex = box ? 0 : -1;
+    const sourceIndex = source ? 0 : -1;
     let took = false;
     let carried: string | null = null;
+    /** TAKE THE UNIT OUT OF THE WORLD'S BOOKS. A stack row is decremented here;
+     *  a PROP is not touched at all — the prop IS the unit (item-prop.ts), so
+     *  this only answers whether it is still there to take, and the take itself
+     *  is `takeIntoHands`. Either way, if it is already gone (somebody got there
+     *  first) the whole errand is an honest no-op. */
     const drawStock = (): boolean => {
+      if (sourceProp) {
+        const o = state.objects[sourceProp];
+        return !!o && !o.carriedBy && session.smallProps.has(sourceProp);
+      }
+      if (took) return true;
       const stock = session.containerStock.get(sourceBox!) ?? {};
       if ((stock[glyph] ?? 0) <= 0) return false; // someone took it meanwhile
       stackTake(stock, glyph);
@@ -12862,19 +14938,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     enqueueNpcErrand(session, npcId, {
       points,
       onArrive: (i) => {
-        if (i !== boxIndex || !box || !drawStock()) return;
+        if (i !== sourceIndex || !source || !drawStock()) return;
         carried = takeIntoHands(
           session,
           npcId,
-          { kind: "glyph", glyph, at: { x: box.x, y: box.y } },
-          { reachAt: box },
+          sourceProp
+            ? { kind: "object", objId: sourceProp }
+            : { kind: "glyph", glyph, at: { x: source.x, y: source.y } },
+          { reachAt: source },
         );
       },
       onDone: () => {
-        // No box standing in the world to walk to (an unstreamed container):
+        // 🚨 A PROP BECOMES THE ROW ONLY IF IT REALLY LEFT THE FLOOR. There is
+        // no stack decrement to prove the unit was spent, so the hands are the
+        // proof: raising a fixture while the prop still lies there would be one
+        // workbench twice, which is the one thing that must never happen.
+        if (sourceProp && !carried) return;
+        // Nothing standing in the world to walk to (an unstreamed container):
         // the unit still has to leave the stack, and there was never anything
-        // to see. Otherwise the take already happened, at the box.
-        if (!took && !drawStock()) return; // honest no-op
+        // to see. Otherwise the take already happened, at the source.
+        if (!sourceProp && !took && !drawStock()) return; // honest no-op
         // The piece leaves the hands and BECOMES the fixture — one thing, two
         // situations, never two things. It lands DELIVERED (setUp:false), so it
         // stands as its real model on its side and the setup sweep rises it
@@ -13111,9 +15194,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const glyph = session.selectedPocketGlyph;
     if (!glyph || !convo) return;
     if (!(bodyCarryView(bodyCarryOf(session, session.handsCid))[glyph] ?? 0)) return;
-    const entityId = materialize(session, glyph, PLAYER_CREATURE_ID);
+    const entityId = materialize(session, glyph, LOCAL_PLAYER_CID);
     runCreatureAct({ kind: "offer", itemId: entityId, glyph });
-    const accepted = session.creatures?.world.items[entityId]?.ownerId !== PLAYER_CREATURE_ID;
+    const accepted = session.creatures?.world.items[entityId]?.ownerId !== LOCAL_PLAYER_CID;
     if (accepted) {
       takeUnitsFromBody(session, session.handsCid, glyph, 1); // the gift left the giver
       clearSelectionIfSpent(session);
@@ -13613,7 +15696,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function hoverObjectMotive(session: QuestSession, objId: string): AttentionMotive | null {
     const prop = session.smallProps.get(objId);
     if (prop) {
-      const head = headOf(prop.glyph);
+      // `spokenWord`, not `headOf`: a piece waiting on the floor stacks as
+      // `furn.<kind>`, and no concept is filed under `furn` — so a loose bed
+      // afforded nothing at all until the prefix was folded away.
+      const head = spokenWord(prop.glyph);
       return objectMotive({
         affords: CONCEPT_LIBRARY.get(head)?.affords ?? [],
         properties: propertiesOf(prop.glyph),
@@ -13650,10 +15736,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  decay what is left. `blocked` (a conversation / open container / menu) means
    *  the spark draws nothing this frame; the field just fades. */
   function stepSparkAttention(session: QuestSession, host: WorldHost, dt: number, blocked: boolean) {
+    // ⑩ — THIS DEVICE'S GAZE WRITES THIS DEVICE'S ROW, and nobody else's. A
+    // hover is not on the wire, so in practice only the local row ever carries a
+    // draw; the map is per-author because the PAIRING LAW demands it, and a
+    // future hover-sync fills the other rows without touching this function.
+    const me = LOCAL_PLAYER_CID;
+    const myDraw = session.sparkDraws.get(me) ?? null;
     // A deliberate BOARD SELECTION (Phase 3) holds its explicit draw at full
     // strength — the gaze doesn't override a pressed word until the hold lapses.
     if (session.townClock < session.sparkExplicitUntil) {
-      if (session.sparkDraw) session.sparkDraw = { ...session.sparkDraw, strength: 1 };
+      if (myDraw) session.sparkDraws.set(me, { ...myDraw, strength: 1 });
       return;
     }
     const gz = host.getGaze();
@@ -13679,21 +15771,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // DRAW — ramp the hovered object's motive (fresh strength on an object
     // switch — a new target starts its own ramp), else fade.
     if (target) {
-      const d = session.sparkDraw;
+      const d = myDraw;
       const prev = d && d.motive === target.motive && d.objId === target.objId ? d.strength : 0;
-      session.sparkDraw = {
+      session.sparkDraws.set(me, {
         motive: target.motive,
         x: target.x,
         y: target.y,
         objId: target.objId,
         strength: ramp(prev, dt),
-      };
-    } else if (session.sparkDraw) {
-      const s = decayStrength(session.sparkDraw.strength, dt, SPARK.drawDecayS);
-      session.sparkDraw = s > 0 ? { ...session.sparkDraw, strength: s } : null;
-      // Draw episode over — the refusal latch resets (a fresh point at the
-      // same thing may refuse aloud again).
-      if (!session.sparkDraw) session.sparkRefused.clear();
+      });
+    } else if (myDraw) {
+      const s = decayStrength(myDraw.strength, dt, SPARK.drawDecayS);
+      if (s > 0) session.sparkDraws.set(me, { ...myDraw, strength: s });
+      else {
+        session.sparkDraws.delete(me);
+        // Draw episode over — the refusal latch resets (a fresh point at the
+        // same thing may refuse aloud again).
+        session.sparkRefused.clear();
+      }
     }
     // CHORE — same ramp/fade for a hovered storage/clutter object.
     if (choreTarget) {
@@ -13707,16 +15802,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // ENGAGEMENT — hovering a creature engages it; else hold (a conversation /
     // directive) or decay. Switching to a different creature drops any held
     // engagement on the previous one.
+    const f = session.sparkAttention.get(me) ?? null;
     if (engageCid) {
-      const f = session.sparkFocus;
       const prev = f && f.cid === engageCid ? f.strength : 0;
-      if (!f || f.cid !== engageCid) session.sparkEngageHold = 0;
-      session.sparkFocus = { cid: engageCid, strength: ramp(prev, dt) };
-    } else if (session.townClock < session.sparkEngageHold) {
-      if (session.sparkFocus) session.sparkFocus = { ...session.sparkFocus, strength: 1 };
-    } else if (session.sparkFocus) {
-      const s = decayStrength(session.sparkFocus.strength, dt, SPARK.engageDecayS);
-      session.sparkFocus = s > 0 ? { ...session.sparkFocus, strength: s } : null;
+      if (!f || f.cid !== engageCid) session.sparkEngageHold.delete(me);
+      session.sparkAttention.set(me, { cid: engageCid, strength: ramp(prev, dt) });
+    } else if (session.townClock < (session.sparkEngageHold.get(me) ?? 0)) {
+      if (f) session.sparkAttention.set(me, { ...f, strength: 1 });
+    } else if (f) {
+      const s = decayStrength(f.strength, dt, SPARK.engageDecayS);
+      if (s > 0) session.sparkAttention.set(me, { ...f, strength: s });
+      else session.sparkAttention.delete(me);
     }
   }
 
@@ -13746,11 +15842,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   }
 
-  /** Engage `cid` at full strength and hold it for `holdS` (a conversation / a
-   *  directive) — so a follow-up selection still lands on this creature. */
-  function engageCreature(session: QuestSession, cid: string, holdS: number) {
-    session.sparkFocus = { cid, strength: 1 };
-    session.sparkEngageHold = session.townClock + holdS;
+  /**
+   * Engage `cid` at full strength and hold it for `holdS` (a conversation / a
+   * directive) — so a follow-up selection still lands on this creature.
+   *
+   * ⑩ — IT IS ONE AUTHOR'S ENGAGEMENT. `authorCid` defaults to this device's,
+   * which is every local gesture; a RELAYED instruction (`attendCreature` /
+   * `sendTo` / `attendObject`, which carry their own `cid`) passes the SENDER's
+   * author cid, so a peer's gaze gates that peer's creature responses and never
+   * silently rewrites the owner's row. That is the seam ⑧'s per-author storage
+   * was built for.
+   */
+  function engageCreature(session: QuestSession, cid: string, holdS: number, authorCid: string = LOCAL_PLAYER_CID) {
+    session.sparkAttention.set(authorCid, { cid, strength: 1 });
+    session.sparkEngageHold.set(authorCid, session.townClock + holdS);
+  }
+
+  /**
+   * HOW MUCH OF `cid`'s ATTENTION `authorCid` HOLDS, 0..1 — the one question the
+   * gates below ask, answered from whichever record actually knows.
+   *
+   * ROSTER-IS-ENGAGEMENT (spark-attention.ts `engagementToward`): sitting in the
+   * same conversation IS mutual attention, so a fellow member answers from the
+   * roster and never from a hover that has been fading for the whole
+   * conversation. Outside a shared roster the author's OWN spark row answers,
+   * and when neither knows them the answer is zero — the no-ambient-response law.
+   */
+  function authorEngagement(session: QuestSession, authorCid: string, cid: string): number {
+    const c = conversationOf(authorCid);
+    return engagementToward(c?.convo.members, session.sparkAttention, authorCid, cid);
   }
 
   /** Promote an ENGAGED idle creature to run a household CHORE — but only if it
@@ -13833,7 +15953,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function attentionTargetInfo(session: QuestSession, objId: string): AttentionTargetInfo | null {
     const prop = session.smallProps.get(objId);
     if (prop) {
-      const head = headOf(prop.glyph);
+      const head = spokenWord(prop.glyph); // the piece, never the `furn` prefix
       const it = session.creatures?.world.items[prop.entityId];
       const f = glyphFacets(prop.glyph);
       const o = world?.state.objects[objId];
@@ -14042,11 +16162,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cid: string,
     pt: { x: number; y: number },
     objId: string | null,
-    opts: { command?: boolean } = {},
+    opts: { command?: boolean; author?: string } = {},
   ) {
     if (!world) return;
     if (!opts.command && !idleForDirect(session, cid)) return;
-    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S);
+    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S, opts.author ?? LOCAL_PLAYER_CID);
     if (objId && performAttentionAction(session, cid, objId, opts)) return;
     // A bare point (or an object asking nothing) — go there, if it's a real move.
     const body = world.state.avatars[cid];
@@ -14061,9 +16181,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** Direct creature `cid` at ANOTHER CREATURE (the oscillation with a body on
    *  the point side): a target with a BLOCKED, stated need → help it (the
    *  adoption rows); else, social — talk to it (willing-gated, refuses aloud). */
-  function performAttentionInteract(session: QuestSession, cid: string, targetCid: string) {
+  function performAttentionInteract(
+    session: QuestSession,
+    cid: string,
+    targetCid: string,
+    authorCid: string = LOCAL_PLAYER_CID,
+  ) {
     if (!world || cid === targetCid) return;
-    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S);
+    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S, authorCid);
     // HELP: the target has announced an unmet need (its blocked beg) and this
     // creature's adoption rows can actually supply it.
     const targetBlocked = [...session.dlogged].some((k) => k.startsWith(`needs:blocked:${targetCid}|`));
@@ -14090,8 +16215,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** WHO a board selection addresses: the LAST creature the player started a
    *  conversation with — while its body is still on screen (streamed in) —
-   *  else the engaged creature, else the nearest idle body present. */
-  function attentionAddressee(session: QuestSession, pt: { x: number; y: number }): string | null {
+   *  else the engaged creature, else the nearest idle body present. `authorCid`
+   *  is WHOSE selection it is (⑩): a relayed press reads the SENDER's engaged
+   *  creature, never the owner's. */
+  function attentionAddressee(
+    session: QuestSession,
+    pt: { x: number; y: number },
+    authorCid: string = LOCAL_PLAYER_CID,
+  ): string | null {
     if (!world) return null;
     const last = session.lastConvoCid;
     if (
@@ -14102,8 +16233,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     ) {
       return last;
     }
-    const engaged = session.sparkFocus;
-    if (engaged && engaged.strength >= ENGAGE_MIN && idleForDirect(session, engaged.cid)) return engaged.cid;
+    const engaged = session.sparkAttention.get(authorCid);
+    if (engaged && authorEngagement(session, authorCid, engaged.cid) >= ENGAGE_MIN && idleForDirect(session, engaged.cid)) {
+      return engaged.cid;
+    }
     return nearestIdleGroupCreature(session, world.state, pt, ATTEND_REACH_M);
   }
 
@@ -14136,7 +16269,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // `command` = a DELIBERATE selection (a press, a named thing) — it may
     // override an errand in progress. A settled gaze is not: it waits for an
     // idle body, so simply looking around never yanks someone off a task.
-    opts: { by?: string | null; command?: boolean } = {},
+    // `author` = WHOSE attention this is (⑩): the engagement it leaves behind is
+    // written into that author's row, so a peer's instruction gates that peer's
+    // creature and never rewrites the owner's engaged body.
+    opts: { by?: string | null; command?: boolean; author?: string } = {},
   ): void {
     if (!world) return;
     // WHERE the attention is pointed — it decides who is near enough to take it.
@@ -14150,18 +16286,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             : subject.at;
     const point = at ? { x: at.x, y: at.y } : (playerWorldPos(session) ?? null);
     if (!point) return;
-    const cid = opts.by ?? attentionAddressee(session, point);
+    const author = opts.author ?? LOCAL_PLAYER_CID;
+    const cid = opts.by ?? attentionAddressee(session, point, author);
     if (!cid) return;
-    const command = { ...(opts.command ? { command: true } : {}) };
+    const command = { ...(opts.command ? { command: true } : {}), author };
     switch (subject.kind) {
       case "glyph":
-        attendGlyph(session, cid, subject.glyph, point);
+        attendGlyph(session, cid, subject.glyph, point, author);
         break;
       case "object":
         directCreatureTo(session, cid, point, subject.objId, command);
         break;
       case "creature":
-        performAttentionInteract(session, cid, subject.cid);
+        performAttentionInteract(session, cid, subject.cid, author);
         break;
       case "place":
         directCreatureTo(session, cid, point, null, command);
@@ -14177,11 +16314,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cid: string,
     glyph: string,
     at: { x: number; y: number },
+    authorCid: string = LOCAL_PLAYER_CID,
   ) {
     if (!world) return;
     const boxId = `${at.x.toFixed(1)},${at.y.toFixed(1)}`; // refusal-key only
-    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S);
-    const head = headOf(glyph);
+    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S, authorCid);
+    // ATTENTION IS PAID TO A THING, and a thing is named by its word. Pressing a
+    // stashed piece hands in its STACK key (`furn.chair`), whose head is not a
+    // noun and whose "descriptor" would be the kind — an unsatisfiable target.
+    glyph = drawnGlyph(glyph);
+    const head = spokenWord(glyph);
     const f = glyphFacets(glyph);
     const match: NeedTarget = {
       kind: head,
@@ -14229,18 +16371,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  fire threshold), it performs the object's table act on THAT instance;
    *  a hovered storage/clutter object promotes its chore. */
   function stepSparkDirect(session: QuestSession, state: WorldState) {
-    const f = session.sparkFocus;
-    if (!f || f.strength < ENGAGE_MIN) return; // no engaged creature → nobody acts
+    // ⑩ — THE LOCAL GAZE'S OWN ROW. This step IS the local hover pipeline (the
+    // draw it reads is written by `stepSparkAttention` from this device's gaze),
+    // so both halves come from the local author and the pairing law is satisfied
+    // by construction.
+    const me = LOCAL_PLAYER_CID;
+    const f = session.sparkAttention.get(me);
+    if (!f || authorEngagement(session, me, f.cid) < ENGAGE_MIN) return; // no engaged creature → nobody acts
     if (!idleForDirect(session, f.cid)) return;
-    const d = session.sparkDraw;
+    const d = session.sparkDraws.get(me) ?? null;
     if (d && d.motive && d.objId) {
       const tpl = motiveTemplate(session, f.cid, d.motive);
       if (tpl && tpl.drive.kind === "meter") {
         const raw = session.needMeters.get(`${f.cid}|${tpl.key}`) ?? 0;
-        const bonus = attentionBonus(d, f, f.cid, tpl.key);
+        const bonus = attentionBonusOf(session.sparkDraws, session.sparkAttention, me, f.cid, tpl.key);
         if (raw + bonus >= tpl.drive.threshold) {
           if (performAttentionAction(session, f.cid, d.objId)) {
-            session.sparkDraw = null; // consumed
+            session.sparkDraws.delete(me); // consumed
             session.sparkExplicitUntil = 0;
           }
         }
@@ -14375,14 +16522,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  dash density). Empty when nothing is engaged. Debug-only; read each frame
    *  while path debug is on. */
   function attentionDebugLinks(session: QuestSession): AttentionDebugLink[] {
-    const engage = session.sparkFocus;
+    // The LOCAL author's row — this overlay draws what THIS screen's gaze is
+    // doing; a peer's engagement belongs on a peer's screen.
+    const engage = session.sparkAttention.get(LOCAL_PLAYER_CID);
     if (!world || !engage || engage.strength <= 0) return [];
     const av = world.state.avatars[engage.cid];
     if (!av) return [];
     const from = { x: av.x, y: av.y, floor: av.floor };
     let to: { x: number; y: number } | null = null;
     let trigger = 0;
-    const draw = session.sparkDraw;
+    const draw = session.sparkDraws.get(LOCAL_PLAYER_CID) ?? null;
     const chore = session.sparkChore;
     if (draw && draw.motive && draw.strength > 0) {
       to = { x: draw.x, y: draw.y };
@@ -14401,7 +16550,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  it). A loose prop speaks its glyph; a fixture its station kind. */
   function objectWord(session: QuestSession, objId: string): string {
     const prop = session.smallProps.get(objId);
-    if (prop) return drawnMakeable(prop.glyph); // an unplaced piece IS a chair, not a "furn"
+    if (prop) return drawnGlyph(prop.glyph); // an unplaced piece IS a chair, not a "furn"
     if (isWellId(objId)) return "water";
     const ws = wildSourceOf(session, objId);
     if (ws) return ws.species; // a wild source IS its species (oak, sheep)
@@ -14565,13 +16714,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // The STACK's own key stays the id (that is what a take moves); the
           // word and the picture are its DISPLAY face — a stored piece of
           // furniture is a `furn.<kind>` stack whose head is bookkeeping, so it
-          // would otherwise read "furn" with no artwork behind it.
-          const head = spokenMakeable(glyph);
+          // would otherwise read "furn" with no artwork behind it. The word is
+          // the LOCALE's (glyphLabel), because a label is read, not parsed.
+          const word = labelOfGlyph(glyph);
           return {
             id: `take:${glyph}`,
-            label: count > 1 ? `${head} ×${count}` : head,
-            glyph: drawnMakeable(glyph),
-            spokenText: "",
+            label: count > 1 ? `${word} ×${count}` : word,
+            glyph: drawnGlyph(glyph),
+            // What the press SAYS is the player's own naming of the stack — the
+            // same line the host speaks when it owns the voice, so a press
+            // sounds the same wherever the board is drawn. (It was left empty,
+            // which on the AAC's surface meant a pressed button said nothing.)
+            spokenText: playerStatement(drawnGlyph(glyph)),
           };
         }),
         // A WILD, unowned product animal offers the CLAIM (step ④ taming):
@@ -14580,16 +16734,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const wa = wildAnimalOf(session, container.objId);
           if (!wa || session.containerOwner.get(container.objId)) return [];
           const g = `${wa.species}.my`;
-          return [{ id: `tame:${container.objId}`, label: g, glyph: g, spokenText: "" }];
+          return [{ id: `tame:${container.objId}`, label: labelOfGlyph(g), glyph: g, spokenText: playerStatement(g) }];
         })()),
         // Phase 3 (attention-spark.md): the FURNITURE ITSELF, after its contents —
         // pressing it draws the family's attention to the thing (a fill-check)
         // rather than taking from it. On a stock-less piece it is the whole board.
         {
           id: `attend:${container.objId}`,
-          label: objectWord(session, container.objId),
+          label: labelOfGlyph(objectWord(session, container.objId)),
           glyph: objectWord(session, container.objId),
-          spokenText: "",
+          spokenText: playerStatement(objectWord(session, container.objId)),
         },
       ],
     }, () => closeContainer()); // BACK puts the thing down
@@ -14624,7 +16778,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     const avId = avatarIdOf(ownerCid);
     if (world.state.avatars[avId]) {
-      const g = `${headOf(glyph)}.my`;
+      const g = `${spokenWord(glyph)}.my`;
       const ownerSym = creatureGlyph(session, ownerCid);
       showWorldBubble(world.state, `mine:${objId}`, {
         anchor: { kind: "avatar", id: avId },
@@ -14658,7 +16812,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const cOwner = session.containerOwner.get(objId);
     // Your OWN private property never objects to you (a tamed animal's owner
     // milks it freely); everyone else's still does.
-    if (isPrivateOwner(cOwner) && world && !mayUse(PLAYER_CREATURE_ID, null, cOwner)) {
+    if (isPrivateOwner(cOwner) && world && !mayUse(LOCAL_PLAYER_CID, null, cOwner)) {
       const objector = objectingOwner(cOwner, containerStandpoint(world.state, objId));
       if (objector) {
         refusePrivateTake(session, objId, glyph, objector);
@@ -14787,7 +16941,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const c = wildAnimalOf(session, objId);
     if (!c || !world) return;
     if (session.containerOwner.get(objId)) return; // already someone's
-    session.containerOwner.set(objId, `creature:${PLAYER_CREATURE_ID}`);
+    session.containerOwner.set(objId, `creature:${LOCAL_PLAYER_CID}`);
     // Re-tether: same body id (model cache holds), grazing close to the
     // spot of the claim.
     const av = world.state.avatars[objId];
@@ -14917,11 +17071,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   // ── Ambient NPC↔NPC conversation ──────────────────────────────────────────
-  // Idle townsfolk talk among themselves using the SAME dialogue engine the player
-  // drives: the speaker picks a move off its own board (chooseSpeakerAct), by its
-  // personality; the listener replies through selectAct. Purely expressive — the
-  // only world writes allowed are monotone knowledge (gossip about where things are),
-  // never a transfer, so ambient chatter can't disturb puzzle/quest state.
+  // Idle townsfolk hold LIVE GROUP CONVERSATIONS through the SAME machinery a
+  // player's board drives: a member picks a move (`chooseSpeakerMove`), the
+  // circle answers it (`speakInConversation`), and the record it all lands in is
+  // the same `ConversationState` a child's board writes to.
+  //
+  // ⑧ REPLACED A BURST WITH A CONVERSATION. What used to be here was
+  // `runNpcExchange`: exactly two utterances between the two nearest idle bodies,
+  // every nine seconds, with a global pending-reply list and a camera latch of
+  // its own. It had no record, so nobody could join it, overhear it, or answer
+  // anybody but the person who spoke; and it refused to EXECUTE anything, so a
+  // townsperson could ask a neighbour for bread forever and never be handed one.
+  // (multi-entity-conversations.md §3f, §4.8.)
 
   /** A stable per-creature TEMPERAMENT hashed from its id — each townsperson chooses
    *  what to say consistently, with no personality data field (same dial board as any
@@ -14939,34 +17100,104 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
   }
 
-  /** Show a bubble + voice a glyph line above a converse creature (live position).
-   *  `preText` = an already-localized sentence (the directions prose) — shown and
-   *  voiced as-is while the glyph strip still models the symbols. */
-  function npcChatBubble(session: QuestSession, cid: string, glyph: string, preText?: string) {
-    if (!world || !glyph) return;
+  /**
+   * ★ THE CREATURE-LINE CHOKEPOINT ★ — one line said by one creature, in all
+   * three places it has to land: the world bubble, the voice, and (owner) the
+   * mirror that puts the same line on every peer's screen.
+   *
+   * MULTIPLAYER: the owner runs the creatures, so their lines happen HERE only.
+   * Each is mirrored over the wire as an ordinary avatar `say`, and followers
+   * render it through the same applyInbound → setAvatarSpeech path a remote
+   * player's speech takes. Lines that went around this had peers watching a
+   * creature answer a question nobody visibly asked.
+   *
+   *   • `text` — an ALREADY-LOCALIZED sentence (the directions prose) shown and
+   *     voiced as-is, while the glyph strip still models the symbols. Absent =
+   *     the glyph translated with this speaker's agreement.
+   *   • `anchor` — where the bubble hangs; default the creature's live poser
+   *     point (no poser and no anchor ⇒ no bubble, but it still speaks).
+   *   • `bubble`/`speak` — default on. Both off is a SILENT board refresh: it
+   *     presents no line, so it must not mirror one either.
+   */
+  function sayNpcLine(
+    session: QuestSession,
+    cid: string,
+    line: {
+      glyph: string;
+      text?: string;
+      ttl?: number;
+      anchor?: { kind: "avatar"; id: string } | { kind: "point"; x: number; y: number };
+      bubble?: boolean;
+      speak?: boolean;
+      /** ⑫⑦ — the glyph opens with a VOCATIVE (the name channel). */
+      vocative?: boolean;
+    },
+  ) {
+    if (!world || !line.glyph) return;
     const node = session.creatures?.nodeByCreature.get(cid);
     if (!node) return;
+    const doBubble = line.bubble ?? true;
+    const doSpeak = line.speak ?? true;
+    if (!doBubble && !doSpeak) return;
     const sym = session.entities.get(node.npcEntityId)?.glyph;
-    const at = poserPos(session, cid);
-    const text = preText ?? npcStatement(glyph, sym, cid);
-    if (at) {
-      showWorldBubble(world.state, `char:${node.npcEntityId}`, {
-        anchor: { kind: "point", x: at.x, y: at.y },
-        text,
-        glyph,
-        ttl: 5,
-      });
+    const text = line.text ?? npcStatement(line.glyph, sym, cid, line.vocative);
+    if (doBubble) {
+      const at = line.anchor ? null : poserPos(session, cid);
+      const anchor = line.anchor ?? (at ? ({ kind: "point", x: at.x, y: at.y } as const) : null);
+      if (anchor) {
+        showWorldBubble(world.state, `char:${node.npcEntityId}`, {
+          anchor,
+          text,
+          glyph: line.glyph,
+          ttl: line.ttl ?? 5,
+        });
+      }
     }
-    // MULTIPLAYER: the owner runs the creatures, so their lines happen HERE —
-    // mirror each one over the wire as an ordinary avatar `say`, and followers
-    // render the bubble through the same applyInbound → setAvatarSpeech path a
-    // remote player's speech takes. This is THE NPC-dialogue chokepoint.
     if (mp?.role === "owner" && mpNet) {
       const avatarId = avatarIdOf(cid);
-      if (world.state.avatars[avatarId]) mpNet.send([sayMessage(avatarId, text, glyph)]);
+      if (world.state.avatars[avatarId]) mpNet.send([sayMessage(avatarId, text, line.glyph)]);
     }
-    if (preText) voice?.speak(preText, { lang: session.game.meta.locale, ...speakerVoiceOpts(cid) });
-    else speakNpc(glyph, sym, cid);
+    if (doSpeak) {
+      if (line.text) voice?.speak(line.text, { lang: session.game.meta.locale, ...speakerVoiceOpts(cid) });
+      else speakNpc(line.glyph, sym, cid);
+    }
+  }
+
+  /** Show a bubble + voice a glyph line above a converse creature (live position).
+   *  `preText` = an already-localized sentence (the directions prose) — shown and
+   *  voiced as-is while the glyph strip still models the symbols. The ambient /
+   *  chore / refusal path into `sayNpcLine`; ttl 5, anchored at the poser. */
+  function npcChatBubble(session: QuestSession, cid: string, glyph: string, preText?: string) {
+    sayNpcLine(session, cid, { glyph, ...(preText ? { text: preText } : {}) });
+  }
+
+  /**
+   * ★ VISIBLE SILENCE ★ — a creature that took in a turn and did not answer it
+   * (multi-entity-conversations.md §3c). A "…" over its head, dashed and
+   * circle-tailed, for two seconds.
+   *
+   * DELIBERATELY NOT `sayNpcLine`. That is the chokepoint for SPEECH: it voices
+   * the line and mirrors it to every peer as an avatar `say`. A thought is
+   * neither — it has no words, so there is nothing to speak and nothing a peer
+   * would be right to hear. It shares the `char:` bubble key on purpose, so the
+   * creature's next real line replaces the thought rather than fighting it for
+   * the same patch of screen.
+   *
+   * (Same style as the Request-c want scaffold, which is the other place in this
+   * host where a creature has something in its head and nothing in its mouth.)
+   */
+  function showNpcThought(session: QuestSession, cid: string) {
+    if (!world) return;
+    const node = session.creatures?.nodeByCreature.get(cid);
+    if (!node) return;
+    const at = poserPos(session, cid);
+    if (!at) return; // no body on screen ⇒ nowhere to hang it
+    showWorldBubble(world.state, `char:${node.npcEntityId}`, {
+      anchor: { kind: "point", x: at.x, y: at.y },
+      text: "…",
+      ttl: 2,
+      style: "thought",
+    });
   }
 
   /** The EXPLICIT terminal fallback (phase ①a §1): an utterance no responder
@@ -15088,113 +17319,89 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return false;
   }
 
-  /** Ambient acts that only SPEAK or spread monotone knowledge — safe to execute
-   *  between NPCs. A transfer move (request/offer/trade) is spoken as flavour but not
-   *  run, so no puzzle/quest item ever moves on its own. */
-  const CHAT_SAFE_ACTS = new Set<DialogueAct["kind"]>([
-    "how-are-you",
-    "where-is",
-    "where-going",
-    "ask-directions", // the answer is knowledge + a pointed arm — no world effect
-    "directions-pick",
-    "tell",
-    "why",
-    "bye",
-    "confused",
-  ]);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GROUP CONVERSATIONS — how a circle forms, talks and breaks up
+  // (multi-entity-conversations.md §3f, §4.8)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // The pure halves are `conversation-form.ts` (who opens, who is let in, where
+  // they stand, which circle the camera is for) and `creature-converse.ts` (what
+  // somebody says, and who answers). Everything below is the HOST's half: the
+  // clock, the bodies, the bubbles and the walking.
+  //
+  // 🚨 WHAT CHANGED IN THE ACTS THEMSELVES. `CHAT_SAFE_ACTS` is gone (decision 4,
+  // "NPC↔NPC acts execute everything"). An ambient request, offer or trade now
+  // runs through the SAME willingness-gated `selectAct` a player's press runs,
+  // and its events are applied for real — so a hungry townsperson can actually be
+  // handed bread by a neighbour who has some, which is the whole reason a town
+  // talks. The one surviving guard is PUZZLE INTEGRITY, and it is an item-class
+  // check rather than a blanket refusal of whole act kinds (`applyGroupEvents`).
 
-  /** One ambient exchange: `speaker` says a personality-chosen move to `listener`,
-   *  who replies a beat later. */
-  function runNpcExchange(session: QuestSession, speaker: string, listener: string) {
-    if (!world || !session.creatures) return;
-    // Square the pair up: two idle creatures talking turn to FACE EACH OTHER
-    // for the exchange (both stand still, so the heading holds through the
-    // reply). Sim-side facing state — the renderer applies the game-angle→yaw
-    // mirror. Reasserted at the reply below in case a body has drifted.
-    const sAvatar = chatAvatar(world.state, speaker);
-    const lAvatar = chatAvatar(world.state, listener);
-    if (sAvatar && lAvatar) faceEachOther(sAvatar, lAvatar);
-    // WHO IS TALKING, for the dollhouse camera. An ambient exchange is a BURST
-    // (both lines are posted from this one call), so there is no standing state
-    // to read — the pair is LATCHED here for as long as its words are on screen
-    // and republished every frame by `publishConversationPair`. This is the only
-    // moment in the whole host that knows two BODIES just started talking.
-    if (sAvatar && lAvatar) {
-      chatFocus = { a: avatarIdOf(speaker), b: avatarIdOf(listener), hold: CHAT_FOCUS_S };
-    }
-    const cworld = session.creatures.world;
-    const level = sess?.game.meta.syntax ?? "b";
-    const lNode = session.creatures.nodeByCreature.get(listener);
-    const opts = {
-      ...creatureProjectionOpts(session, lNode?.announce),
-      // An NPC asks from the town's COMMON knowledge of places — not from the
-      // list the PLAYER happens to have heard of (which starts empty and kept
-      // ambient direction-asking from ever happening).
-      askDirections: [...session.placeFacts.values()]
-        .slice(0, 8)
-        .map((f) => ({ id: f.id, glyph: f.thingGlyph })),
-    };
-    const act = chooseSpeakerAct(cworld, speaker, listener, level, opts, {
-      personality: creatureMood(speaker),
-    });
-    if (!act) return;
-    session.chatCooldown.set(speaker, CHAT_COOLDOWN);
-    session.chatCooldown.set(listener, CHAT_COOLDOWN);
-    npcChatBubble(session, speaker, act.glyph);
-
-    // The reply: run the safe acts for real (a `tell` gossips a location into the
-    // listener's knowledge); a wanting/offering line is not EXECUTED between NPCs
-    // (no puzzle item may move on its own), so the listener politely DECLINES —
-    // "okay" is reserved for accepted orders (phase ①a §1), never a generic ack.
-    const res = CHAT_SAFE_ACTS.has(act.kind)
-      ? selectAct(cworld, listener, speaker, act, level, opts, {})
-      : null;
-    let reply = res ? res.responseGlyph : "no";
-    let replyText: string | undefined;
-    let pointAt: { x: number; y: number } | null = null;
-    // A DIRECTIONS answer comes back as a subject, not a glyph (the pure layer
-    // can't measure the town) — resolve it HERE like the player path does:
-    // the SAME spoken prose the player would hear ("The blue house is far, to
-    // the north."), never a broken glyph-pair gloss, + the pointing arm.
-    if (res?.askedDirections && session.town) {
-      const fact = session.placeFacts.get(res.askedDirections);
-      const av = chatAvatar(world.state, listener);
-      if (fact && av) {
-        // The ANSWERER's own town: a neighbor listener measures/aims by its
-        // streets, with `buy:good:*` re-aimed at its own market.
-        const rc = neighborCtxOf(session, listener);
-        const f = rc ? neighborPlaceFact(rc, fact) : fact;
-        const ans = answerPlaceDirections(
-          rc ? rc.plan.streets : session.town.plan.streets,
-          rc ? rc.center : session.town.stage.center,
-          { x: av.x, y: av.y },
-          f,
-        );
-        // The rare import's directions carry the judgment: "cookie, north — rare."
-        const rareTail = fact.id.startsWith("buy:import:") ? " + rare" : "";
-        reply = `${fact.thingGlyph}${rareTail}`; // the strip models the THING
-        const lSym = session.entities.get(lNode?.npcEntityId ?? "")?.glyph;
-        replyText = speakDirections(fact.thingGlyph, ans.proximity, ans.cardinal, session.game.meta.locale, {
-          speaker: npcSpeakerGender(lSym, listener),
-        });
-        pointAt = f.worldPos;
-      }
-    }
-    if (!reply) return;
-    const target = pointAt;
-    const text = replyText;
-    setTimeout(() => {
-      if (!world || sess !== session) return;
-      if (choice) return; // the player started a conversation — don't talk over it
-      // Still facing each other as the listener answers (both were idle; this
-      // corrects for any small drift since the opener).
-      const sAv = chatAvatar(world.state, speaker);
-      const lAv = chatAvatar(world.state, listener);
-      if (sAv && lAv) faceEachOther(sAv, lAv);
-      npcChatBubble(session, listener, reply!, text);
-      if (target) pointNpcArm(listener, target);
-    }, CHAT_REPLY_MS);
-  }
+  /** Seconds between turns in a circle that is talking. A beat longer than the
+   *  longest reply delay (`chatReplyDelayS` tops out at 3.5), so the answer to the
+   *  last line has landed before the next one starts — a conversation, not two
+   *  people talking over each other. */
+  const GROUP_TURN_GAP_S = 4;
+  /**
+   * ★ ⑫⑧ — WHAT STOPPING TO FACE SOMEBODY COSTS, in hand-seconds. ★
+   *
+   * **DERIVED, NOT INVENTED: it IS `GROUP_TURN_GAP_S`.** The price of facing
+   * somebody is the length of the thing you are buying — one turn of the
+   * circle, the beat between one line and the next. A creature that stops to
+   * face a fellow member has bought exactly that much conversation and has
+   * spent exactly that much of its hands' time; a second number here would be
+   * two answers to one question, and the first time somebody retuned the turn
+   * gap the two would part company.
+   *
+   * ⚠️ NOT `ADDRESS_HOLD_S` (0.8 s). That is how long the ANIMATION pins the
+   * body — the stop, the swing, the follow-through — and it is what the beat
+   * looks like, not what it is worth. Charging the animation would make
+   * addressing nearly free, which is the bug this chapter exists to remove.
+   *
+   * The exchange, which is what to judge it by: at the villager's 1.6 m/s and
+   * `NEED_PRESSURE_S = 40`, 4 s is a tenth of a priority rung and about 6.4 m
+   * of walking. So the price is genuinely SMALL — the decision this phase is
+   * about is settled by the VALUE side (which want is pressing) and by the
+   * argmax, exactly as law ③ says it must be. Turning is cheap; what it costs
+   * is the thing you were doing instead.
+   */
+  const ADDRESS_DWELL_S = GROUP_TURN_GAP_S;
+  /**
+   * ⑫⑧ — sim seconds a member's address row may keep LOSING the argmax before
+   * the sweep marks it `leaving`.
+   *
+   * Leaving is "the integral of that row losing" (law ③) and this is the only
+   * number in that integral. 20 s is five turns of the circle
+   * (`GROUP_TURN_GAP_S`) — long enough that a body finishing one errand and
+   * coming back is not thrown out, short enough that a member who has quietly
+   * stopped choosing this conversation says so while the conversation is still
+   * happening. Read on the 9 s sweep, so the goodbye lands on the third sweep
+   * after the clock starts (≈27 s), never on the exact tick — which is honest:
+   * nobody notices they have drifted out of a conversation at a precise moment.
+   */
+  const OUTBID_LEAVE_S = 20;
+  /** Seconds before a circle that found nothing to say tries again. Three of
+   *  these reach `CONV_FORM.boreS`, so a circle that has run dry breaks up after
+   *  three visible beats of nobody speaking rather than the instant it runs out. */
+  const GROUP_DULL_RETRY_S = 2;
+  /** Sim seconds a newcomer has to reach its ring slot. A body that cannot get
+   *  there (a wall, a dropped errand) must not hold its reserved angle forever —
+   *  the reservation is what stops the NEXT newcomer standing on top of it. */
+  const GROUP_WALK_TIMEOUT_S = 20;
+  /** ⑫ — Ease rate (1/s) of the circle's anchor toward its members' centroid.
+   *  Deliberately SLOW relative to a walk: the anchor is where the conversation
+   *  is, not where any one body is this instant, so it must not jitter with a
+   *  sidestep or lurch when somebody joins. At 0.7/s it covers about half the gap
+   *  a second — a group that genuinely moves off drags it along within a couple
+   *  of steps, and a shuffle in place moves it nowhere worth measuring. */
+  const GROUP_ANCHOR_RATE = 0.7;
+  /** ⑫ — How far outside the ring an IDLE member may stand before it walks back
+   *  to the conversation. Measured from the anchor, so it is a band around the
+   *  group rather than a leash on a person: `ringRadius(5) = 2.15` at the design
+   *  cap, and this leaves a stride of slack on top so nobody paces in and out
+   *  over a rounding error. Far below `driftLeaveM` (8) — station-keeping is what
+   *  keeps a member from ever REACHING the leash. */
+  const GROUP_KEEP_BAND_M = 3.5;
 
   /** A converse creature's live avatar, under either id convention: a quest poser is
    *  `npc_<cid>`, a streamed town resident's body id IS the bare `cid` (`resident_*`). */
@@ -15202,58 +17409,1145 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return state.avatars[`npc_${cid}`] ?? state.avatars[cid];
   }
 
-  /** The AMBIENT pair the dollhouse camera is currently framing, with the
-   *  seconds left on its latch. Set by `runNpcExchange`, counted down and
-   *  published by `publishConversationPair`. */
-  let chatFocus: { a: string; b: string; hold: number } | null = null;
+  /** Ambient-chat determinism (multi-entity-conversations.md §3f): every roll in
+   *  the FORMATION path draws from a seeded stream keyed by the game seed and a
+   *  monotone attempt counter — never Math.random — so a seed reproduces the same
+   *  town. (A conversation's own turns draw from `convoRng` instead, keyed by the
+   *  conversation and its next seq, so they survive a replay that formed a
+   *  different number of circles first.) */
+  let chatTurn = 0;
+  function chatRng(session: QuestSession): () => number {
+    return mulberry32(hashSeed(session.game.meta.seed ?? 0, "chat", chatTurn++));
+  }
 
   /**
-   * WHO IS TALKING → the camera (construction phase 5 step 5). Runs once a
-   * frame and hands the world host the ONE pair of bodies in a conversation.
+   * The conversation the camera and the TTS are currently on
+   * (`publishConversationFocus`). Read by `groupVoiceOn` — a circle across the
+   * square is seen, not heard.
    *
-   * There is no standing "conversation" record anywhere in the sim to read:
-   * an ambient exchange is a burst (`runNpcExchange`, latched into `chatFocus`
-   * above) and the player's conversation is an open QUESTION (`choice`), not a
-   * pair. So this is where the two are reconciled into the single fact a camera
-   * needs. The PLAYER's conversation wins — it is the deliberate one, and the
-   * ambient chatter is already suppressed while it stands (stepNpcChatter's
-   * early return), so the two can never fight over the frame.
+   * ⑨ TTS FOCUS POLICY, verified: **stop queueing on switch, never cancel
+   * mid-line.** This variable is the whole of the gate, and it is read in exactly
+   * one place — `groupVoiceOn`, called from `sayGroupLine` as a NEW line goes
+   * out. Nothing on the focus path touches `voice.cancel()`: the five cancels in
+   * this host are the player answering (`speakPlayerStatement`), a creature
+   * cutting its own line to give directions (`answerDirections`), opening a
+   * conversation, opening a container, and `stop()`. So when the focus moves, the
+   * sentence already in the air finishes — half a word of a townsperson chopped
+   * off is exactly the artefact this policy exists to prevent — and it is the
+   * NEXT line that goes quiet.
    *
-   * The player side publishes BOTH ids even though the spirit has no body: the
-   * renderer frames whichever of the pair it can actually see, so a formless
+   * Deferred (⑨, needs a mesh message): per-FOLLOWER silence rendering. A
+   * follower draws no "…" thought bubble, because a thought is not speech and
+   * therefore never mirrors; carrying one would need its own `WorldNetMessage`.
+   */
+  let focusedConvoId: ConversationId | null = null;
+
+  // ── Who may be in a circle ────────────────────────────────────────────────
+
+  /** 0..1 SOCIAL NEED — how much this creature wants company right now, the
+   *  first half of `openerScore`. Meters are keyed `cid|tplKey` and the template
+   *  owns the threshold, so the level is `meter / threshold` exactly as the
+   *  motive projection reads it. A creature with no need book at all (a quest
+   *  poser, a game with no motives) reads as 0.5: neither lonely nor content —
+   *  0 would make whole games structurally silent, and 1 would have posers
+   *  opening every conversation in town. */
+  function socialMeter01(session: QuestSession, cid: string): number {
+    const key = [...session.needMeters.keys()].find((k) => k.startsWith(`${cid}|social`));
+    if (!key) return 0.5;
+    const tpl = motiveTemplate(session, cid, "social");
+    const th = tpl && tpl.drive.kind === "meter" ? tpl.drive.threshold : 1;
+    const meter = session.needMeters.get(key) ?? 0;
+    return th > 0 ? Math.min(1, meter / th) : 0;
+  }
+
+  /** May this creature be pulled into a NEW conversation? A creature already
+   *  talking is already talking (the one-conversation law), a cooled-down one just
+   *  finished, and a body that is mid-errand or carrying something has its hands
+   *  and its feet full.
+   *
+   *  ⑫ — PARTY MEMBERSHIP IS NO LONGER A BAR. It was the only reason "follow me,
+   *  and let's talk while we walk" could not happen: the party-follow loop IS
+   *  station-keeping, so a companion walking beside you is the best-placed body in
+   *  the world to be talking to you. The ban dated from a model where a
+   *  conversation was a ring of statues. */
+  function chatEligible(session: QuestSession, state: WorldState, cid: string): boolean {
+    if (isPlayerCid(cid)) return false; // a player joins by dwelling, not by being drafted
+    if (convoOfCreature.has(cid)) return false;
+    if ((session.chatCooldown.get(cid) ?? 0) > 0) return false;
+    if (!chatAvatar(state, cid)) return false;
+    return standingAndFree(session, state, cid);
+  }
+
+  /** Is this body FREE to be drawn into a conversation — idle, empty-handed, with
+   *  nowhere it has been told to be? The DRAFT test only: a quest poser mid-errand
+   *  keeps to its task; residents mill freely (the town stage drives their bodies —
+   *  a bubble doesn't interrupt them). Body ids go through `avatarIdOf` (a
+   *  resident's body is its bare cid). */
+  function standingAndFree(session: QuestSession, state: WorldState, cid: string): boolean {
+    if (!chatAvatar(state, cid)) return false;
+    if ((session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0) return false;
+    if (npcCarrying(avatarIdOf(cid))) return false;
+    return true;
+  }
+
+  /**
+   * ⑫ — Is this member still PHYSICALLY HERE? The question a SEATED member is
+   * asked, and it is only about presence: a streamed-out body is not in the room,
+   * and there is nobody standing there to talk to.
+   *
+   * 🚨 AVAILABILITY IS DELIBERATELY NOT ASKED, and the omission is the chapter.
+   * Being busy used to mean being evicted — the sweep marked any member with an
+   * errand `leaving`, so a companion who took one step to catch up was thrown out
+   * of the conversation it was walking in. Working while talking is legal now, and
+   * what it costs is paid in the argmax and in the FLOOR a busy body's lines land
+   * on (laws ② and ③), never in an eviction. The DRAFT test (`standingAndFree`)
+   * still asks it, which is where it always belonged: a body with somewhere to be
+   * should not be press-ganged into a chat, but it may certainly stay in one.
+   */
+  function standingHere(session: QuestSession, state: WorldState, cid: string): boolean {
+    return !!chatAvatar(state, cid);
+  }
+
+  // ── The ring ──────────────────────────────────────────────────────────────
+
+  /** Everyone the ring has an angle for — seated members AND the newcomers
+   *  walking to a reserved slot. Reservations count: the whole point of the gap
+   *  rule is that the next arrival does not walk into somebody. */
+  function ringBodies(c: HostConversation): RingBody[] {
+    const g = c.group!;
+    const out: RingBody[] = [];
+    for (const [cid, angle] of g.slots) {
+      out.push({ id: cid, angle, radiusM: world?.npcRadiusOf(avatarIdOf(cid)) ?? DEFAULT_BODY_RADIUS_M });
+    }
+    return out;
+  }
+
+  /** Where a slot angle puts a body, in world metres. */
+  function ringPoint(g: GroupCircle, angle: number): { x: number; y: number } {
+    return { x: g.anchor.x + g.ringR * Math.cos(angle), y: g.anchor.y + g.ringR * Math.sin(angle) };
+  }
+
+  /** Reserve the next slot on the ring for `cid` and hand back where it is. The
+   *  ring may GROW to fit (`ringSlotFor` returns the radius the whole circle now
+   *  runs at); everybody keeps their angle and slides out along their own spoke,
+   *  which is why nothing has to be re-walked when somebody joins. */
+  function reserveSlot(c: HostConversation, cid: string): { x: number; y: number } {
+    const g = c.group!;
+    const slot = ringSlotFor(ringBodies(c), {
+      radiusM: world?.npcRadiusOf(avatarIdOf(cid)) ?? DEFAULT_BODY_RADIUS_M,
+    });
+    g.slots.set(cid, slot.angle);
+    g.ringR = slot.ringR;
+    return ringPoint(g, slot.angle);
+  }
+
+  // ── Formation ─────────────────────────────────────────────────────────────
+
+  /**
+   * TWO CREATURES START TALKING — the birth of a circle.
+   *
+   * The anchor is the MIDPOINT of the two, so the conversation happens where the
+   * two people already are rather than dragging them somewhere. The opener is
+   * seated at its real bearing from that midpoint and the partner's slot comes
+   * back from `ringSlotFor` as the opposite spoke — which is where it is already
+   * standing. So the ring the pure layer describes and the ring on the ground are
+   * the same ring from the first frame, and the third person to walk up takes a
+   * gap that is genuinely empty.
+   *
+   * Nobody walks at formation: these two were within `CHAT_PAIR_RADIUS` of each
+   * other to begin with. Walking is for BYSTANDERS (`inviteToCircle`).
+   */
+  function openGroup(session: QuestSession, state: WorldState, opener: string, partner: string): HostConversation | null {
+    if (!world || !session.creatures) return null;
+    const a = chatAvatar(state, opener);
+    const b = chatAvatar(state, partner);
+    if (!a || !b) return null;
+    const tick = session.taskClock;
+    const level = session.game.meta.syntax ?? "b";
+    const id = `conv:${convoIdSeq++}`;
+    const c: HostConversation = {
+      id,
+      nodeId: opener,
+      convo: createConversation(id, tick),
+      group: {
+        anchor: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        nextTurnAt: tick, // the opener speaks on the very next step
+        dullS: 0,
+        slots: new Map(),
+        ringR: CONV_FORM.ringRadius(2),
+        dwell: new Map(),
+        incoming: new Map(),
+        pending: null,
+        facing: null,
+        turnedAway: new Set(),
+        leaving: new Set(),
+        lastWordsAt: tick,
+      },
+    };
+    conversations.set(id, c);
+    const g = c.group!;
+    g.slots.set(opener, Math.atan2(a.y - g.anchor.y, a.x - g.anchor.x));
+    const partnerSlot = ringSlotFor(ringBodies(c), {
+      radiusM: world.npcRadiusOf(avatarIdOf(partner)) ?? DEFAULT_BODY_RADIUS_M,
+    });
+    g.slots.set(partner, partnerSlot.angle);
+    g.ringR = partnerSlot.ringR;
+    seatMember(c, opener, tick, level);
+    seatMember(c, partner, tick, level);
+    g.facing = { speakerCid: opener, addresseeCid: partner };
+    reassertGroupFacing(state, c);
+    console.log(`[chat] ${id} formed: ${opener} + ${partner}`);
+    return c;
+  }
+
+  /**
+   * A BYSTANDER IS DRAWN IN — it walks to its slot and joins ON ARRIVAL.
+   *
+   * The reservation is made now (so the next newcomer takes a different gap) but
+   * the ROSTER ROW is written by `arriveAtCircle`, at the far end of the walk.
+   * That ordering is the design: floor rights come with the seat. A creature that
+   * joined on the roll would be answering questions from thirty feet away, and
+   * `faceGroup` would have the whole circle turning to look at somebody who is
+   * still walking.
+   *
+   * ONE walkTo, through the ordinary errand queue — the same door a commanded
+   * walk goes through, so door-routing, the one-task-at-a-time rule and the
+   * arrival callback all come for free.
+   */
+  function inviteToCircle(session: QuestSession, c: HostConversation, cid: string) {
+    if (!world) return;
+    const g = c.group!;
+    const spot = reserveSlot(c, cid);
+    g.incoming.set(cid, session.taskClock + GROUP_WALK_TIMEOUT_S);
+    g.dwell.delete(cid);
+    enqueueNpcErrand(session, avatarIdOf(cid), {
+      points: [spot],
+      onArrive: () => arriveAtCircle(session, c, cid),
+    });
+  }
+
+  /** …and it gets there. The roster row, the greeting, and a place in the ring.
+   *  Guarded on the circle still existing and still expecting this body: a walk
+   *  outlives the conversation that started it often enough to matter. */
+  function arriveAtCircle(session: QuestSession, c: HostConversation, cid: string) {
+    const g = c.group;
+    if (!g || !conversations.has(c.id) || !g.incoming.has(cid)) return;
+    g.incoming.delete(cid);
+    if (!mayJoin(c.convo.members.map((m) => m.id), cid)) {
+      g.slots.delete(cid);
+      return;
+    }
+    seatMember(c, cid, session.taskClock, session.game.meta.syntax ?? "b");
+    sayGroupLine(session, c, cid, { glyph: "hi", ttl: 4 });
+    if (world) reassertGroupFacing(world.state, c);
+  }
+
+  // ── Leaving ───────────────────────────────────────────────────────────────
+
+  /** ONE MEMBER LEAVES a circle. `spoken` = it said goodbye first (the turn loop's
+   *  job); a silent leave is a body that walked off or was pulled onto a task, and
+   *  making it stop to say goodbye would be a lie about what happened.
+   *
+   *  The RECORD survives (law 1) — the remaining members are still using its
+   *  history and its reveals — but a circle of one is not a conversation, so the
+   *  under-two check disperses what is left. */
+  function departGroup(c: HostConversation, cid: string, opts: { spoken?: boolean } = {}) {
+    const g = c.group;
+    if (!g) return;
+    unseatMember(c, cid);
+    g.slots.delete(cid);
+    g.incoming.delete(cid);
+    g.dwell.delete(cid);
+    g.turnedAway.delete(cid);
+    g.leaving.delete(cid);
+    // ⑫⑧ — and the outbid clock goes with the seat. A run of losing belongs to
+    // ONE conversation; carrying it into the next circle this creature joins
+    // would have it say goodbye to strangers for something it decided elsewhere.
+    sess?.addressOutbid.delete(cid);
+    if (g.pending?.speakerCid === cid) g.pending = null;
+    c.faced?.delete(cid);
+    // A COOLDOWN IS A CREATURE'S REST from being drafted into circles (⑧'s
+    // formation sweep reads it). An AUTHOR is never drafted — they join by
+    // dwelling — so stamping one on a player would mean nothing and read as
+    // though the child were on a timeout.
+    if (sess && !isPlayerCid(cid)) sess.chatCooldown.set(cid, CHAT_COOLDOWN);
+    if (!opts.spoken) console.log(`[chat] ${c.id}: ${cid} left`);
+    if (c.convo.members.length < 2) disperseGroup(c);
+  }
+
+  /** THE CIRCLE BREAKS UP. Everyone takes the cooldown (so the same four do not
+   *  re-form the same circle on the next 9-second sweep), the reservations are
+   *  released, and the record goes — a group conversation's state belongs to the
+   *  circle, and there is no circle. */
+  function disperseGroup(c: HostConversation) {
+    const g = c.group;
+    if (!g) return;
+    for (const m of c.convo.members) {
+      if (!isPlayerCid(m.id)) sess?.chatCooldown.set(m.id, CHAT_COOLDOWN); // authors are never drafted
+    }
+    for (const cid of g.incoming.keys()) sess?.chatCooldown.set(cid, CHAT_COOLDOWN);
+    dropConversation(c);
+    console.log(`[chat] ${c.id} dispersed`);
+  }
+
+  // ── Presentation ──────────────────────────────────────────────────────────
+
+  /**
+   * THE MUTE RULE, and it is a PRESENTATION rule now (⑧ decision).
+   *
+   * It used to be a sim rule: `stepNpcChatter` returned early whenever the player
+   * had a board open, so the town went silent — and, worse, so did its
+   * simulation. That is the sim reading local UI, which is exactly the thing a
+   * shared world cannot do: two devices with different boards open would have
+   * stepped different towns.
+   *
+   * So the circles keep talking, and what the board suppresses is the VOICE.
+   * Bubbles stay (a child can see the town is alive), and TTS is reserved for the
+   * one conversation the camera is on, with no question of the player's own
+   * waiting for an answer. Nothing here is read by the sim — `groupVoiceOn` is
+   * called from the speaking path and nowhere else.
+   */
+  function groupVoiceOn(c: HostConversation): boolean {
+    // ⑩ — …unless the child is IN this circle. The board suppression exists so a
+    // conversation across the square doesn't talk over the one the player is
+    // having; once they have joined, this IS the one they are having, and going
+    // silent the moment they open their own board would mute the circle they
+    // just walked into.
+    if (choice && !c.convo.members.some((m) => m.id === LOCAL_PLAYER_CID)) return false;
+    return focusedConvoId === c.id;
+  }
+
+  /** A circle member's line: always a bubble (and always mirrored to peers),
+   *  voiced only when this is the conversation being listened to. */
+  function sayGroupLine(
+    session: QuestSession,
+    c: HostConversation,
+    cid: string,
+    line: { glyph: string; text?: string; ttl?: number; vocative?: boolean },
+  ) {
+    const g = c.group;
+    sayNpcLine(session, cid, { ...line, speak: groupVoiceOn(c) });
+    if (g) g.lastWordsAt = session.taskClock;
+  }
+
+  /** ⑫⑦ — the WORD a creature is addressed by, or undefined when nobody can
+   *  name it. A creature with no name cannot be addressed by name — which is
+   *  honest, and is exactly what makes learning a name worth something. */
+  function nameGlyphOf(cid: string): string | undefined {
+    const s = sess;
+    if (!s) return undefined;
+    return nameOfCid(s, cid);
+  }
+
+  /**
+   * THE CIRCLE'S STANCE, reasserted every frame (`faceGroup`'s own contract:
+   * bodies drift and rosters change, so this is a per-tick write, not a one-off).
+   *
+   * `turn-away` is the one exception: a member that refused the floor in dislike
+   * looks the OTHER way — the mirror of the speaker through its own position —
+   * until the next turn clears the set. A refusal that still faced the speaker
+   * would read as attention.
+   *
+   * ⑫ — THE LEGS OWN THE HEADING, and so do the HANDS. `faceGroup` withholds the
+   * turn from a body whose velocity is already aiming it (`headingHeldByLegs`);
+   * the two hand-written `faceToward`s below need the same guard, plus one this
+   * file alone can make: a body mid-ACTION-HOLD is pointed at the thing it is
+   * reaching into, and turning it away mid-reach is the moonwalk from the other
+   * end. A heading belongs to WHAT THE BODY IS DOING; a conversation borrows one
+   * that is free and never takes one.
+   */
+  function reassertGroupFacing(state: WorldState, c: HostConversation) {
+    const g = c.group;
+    if (!g?.facing) return;
+    const speaker = chatAvatar(state, g.facing.speakerCid);
+    if (!speaker) return;
+    const bodies = [];
+    for (const m of c.convo.members) {
+      // ⑩ — A PLAYER'S BODY IS NEVER TURNED BY THE SIM. The child aims their own
+      // head (and a formless spirit has none to aim); rotating it under them
+      // would fight the camera every frame the circle reasserts its stance.
+      // They are still faced TOWARD as an addressee — see below.
+      if (isPlayerCid(m.id)) continue;
+      if (g.turnedAway.has(m.id)) continue;
+      if (sess?.actionHold.has(m.id)) continue; // ⑫ — the hands own it
+      const av = chatAvatar(state, m.id);
+      if (av) bodies.push(av);
+    }
+    const addressee = g.facing.addresseeCid ? memberAvatar(state, g.facing.addresseeCid) : undefined;
+    faceGroup(bodies, speaker, addressee);
+    for (const cid of g.turnedAway) {
+      if (sess?.actionHold.has(cid)) continue;
+      const av = chatAvatar(state, cid);
+      // The point directly opposite the speaker, through this body: "away" with a
+      // definite direction, so the turn is legible rather than a random heading.
+      // A refusal by a body on the move simply has no body language — the silence
+      // still counts, it just isn't rendered as a turn.
+      if (av && !headingHeldByLegs(av)) faceToward(av, { x: 2 * av.x - speaker.x, y: 2 * av.y - speaker.y });
+    }
+    // ⑩ — THE ADDRESSEE'S GLANCE outlives one frame. The stance above is
+    // reasserted every tick, so a `faceToward` written once would be gone before
+    // it was drawn; this holds it for `CONVO_GLANCE_S` and then lets the circle
+    // have its listener back.
+    const picked = convoAddressee;
+    if (picked && sess && sess.townClock < convoGlanceUntil && c.convo.members.some((m) => m.id === LOCAL_PLAYER_CID)) {
+      glanceAtLocalPlayer(picked);
+    }
+  }
+
+  // ── Acts that execute for real ────────────────────────────────────────────
+
+  /** 🚨 IS THIS A PUZZLE ITEM? — the ONE thing an NPC↔NPC act may not move
+   *  (decision 4: "Quest/puzzle items stay excluded — an item-class check, not a
+   *  blanket act refusal"). `convItems` is exactly the staged cast of an authored
+   *  game: the cookie the player has to find, the stock a vendor sells, the gift
+   *  a quest turns on. Ambient life may talk about all of it and may not carry any
+   *  of it off. */
+  function isPuzzleItem(session: QuestSession, entityId: string): boolean {
+    for (const it of session.convItems.values()) if (it.entityId === entityId) return true;
+    return false;
+  }
+
+  /**
+   * WHAT A CIRCLE'S TURN DID TO THE WORLD.
+   *
+   * Everything `selectAct` emits is applied, with one filter in front of it: a
+   * transfer of a PUZZLE item is dropped before it lands. The pure layer has
+   * already moved the ownership row in the creature world — that is its business
+   * and its bookkeeping — but the PROP does not move, and a puzzle is made of
+   * props: what the player has to find is still where the game put it.
+   */
+  function applyGroupEvents(session: QuestSession, res: { events: readonly CreatureEvent[] }) {
+    for (const event of res.events) {
+      if (event.type === "item-transferred" || event.type === "transfer-pending") {
+        if (isPuzzleItem(session, event.itemId)) continue;
+        if (event.type === "transfer-pending") continue; // a promise; the give itself is the move
+        // Either end may be null (an item that had no owner, or one released
+        // back to the world); with no RECEIVER there is no hand-off to perform.
+        if (event.to) moveGroupItem(session, event.from ?? "", event.to, event.itemId);
+      } else if (event.type === "need-fulfilled") {
+        fulfillIfContent(event.creatureId);
+      }
+    }
+  }
+
+  /** The PHYSICAL half of an NPC↔NPC hand-over: the prop leaves one pair of hands
+   *  and arrives in the other (or at the receiver's feet when it has none to
+   *  spare) — the same two-act hand-off the commanded `give` step performs, for
+   *  the same reason: `carryObject` refuses an object that is already carried, so
+   *  a single call could never fire. */
+  function moveGroupItem(session: QuestSession, from: string, to: string, entityId: string) {
+    if (!world) return;
+    const objId = objIdOfEntity(session, entityId);
+    if (!objId) return;
+    const fromBody = avatarIdOf(from);
+    const toBody = avatarIdOf(to);
+    const at = world.state.avatars[toBody] ?? world.state.objects[objId];
+    if (!at) return;
+    if (world.state.objects[objId]?.carriedBy === fromBody) {
+      setDownFromHands(session, fromBody, { kind: "ground", x: at.x, y: at.y }, { objId });
+    }
+    const recip = session.creatures?.world.creatures[to];
+    if (recip && canGrasp(recip) && world.state.avatars[toBody] && !npcCarrying(toBody)) {
+      takeIntoHands(session, toBody, { kind: "object", objId }, { reachAt: { x: at.x, y: at.y } });
+    }
+  }
+
+  // ── One turn ──────────────────────────────────────────────────────────────
+
+  /** The projection options a circle's turns run under. Deliberately WITHOUT an
+   *  `announce` override: `announce` describes the creature being projected FOR,
+   *  and in a circle neither the addressee (`chooseSpeakerMove` picks it) nor the
+   *  responder (arbitration picks it) is known before the call. The town's COMMON
+   *  place knowledge is what an NPC asks directions from — not the list the PLAYER
+   *  happens to have heard of, which starts empty and kept ambient
+   *  direction-asking from ever happening. */
+  function groupProjectionOpts(session: QuestSession) {
+    return {
+      ...creatureProjectionOpts(session),
+      askDirections: [...session.placeFacts.values()].slice(0, 8).map((f) => ({ id: f.id, glyph: f.thingGlyph })),
+    };
+  }
+
+  /** What ⑫④ decided a speaker should do with the turn it has just planned:
+   *  SPEAK it (possibly re-aimed at the floor), or spend the turn buying the
+   *  look. */
+  type AddressPlan =
+    | { speakNow: false }
+    | { speakNow: true; move: { act: DialogueAct; addresseeId?: string }; named?: true };
+
+  /**
+   * ★ ⑫④ — WHICH CHANNEL THIS SPEAKER ADDRESSES THROUGH, AND WHAT IT COSTS. ★
+   *
+   * `chooseAddressChannel` (respond.ts) is the pure decision — ONE seeded draw
+   * off this turn's own stream, and only when a BUSY body has something to
+   * decide, so every default path leaves the stream exactly where it found it
+   * (the chapter's byte-identity bar). This is what the four answers DO:
+   *
+   *   `dyad`  — nothing. Law ④: one other person, nothing to disambiguate, so
+   *             no channel is spent and none is recorded. Speak.
+   *   `look`  — the beat. `beginAddress` stops the body, turns it and records
+   *             the address; THAT is this whole turn, and the line lands on the
+   *             next one ~`ADDRESS_HOLD_S` later. Stop, turn, THEN speak.
+   *             Already addressing them ⇒ `chooseAddressChannel` answers `look`
+   *             for free, `beginAddress` declines to charge twice, and the line
+   *             goes out now. THAT is what "durable" buys.
+   *   `name`  — the address is recorded (so arbitration weights the right person
+   *             and the record agrees with the room) but the body does not stop.
+   *             🚧 TODO ⑫⑦ — THE NAME IS NOT SPOKEN YET. The outbound half is
+   *             `Perspective.channel` + `addressedTo()`, and it is GATED on the
+   *             direct-address construction landing in the en/es/he/pt rulesets:
+   *             a leading bare name is not a construction they know and would
+   *             render as glyph soup. Until then this channel is an address
+   *             without its vocative — honest, and silent about the name.
+   *   `floor` — the CONSEQUENCE, never a fine (law ③). The speaker would not
+   *             stop working and the act does not need a named person, so the
+   *             line goes to the room and arbitration decides whether anybody
+   *             picks it up — which it may decide nobody does.
+   *
+   * THE NEXT TURN SAYS THE SAME THING. `convoRng` keys on `convo.nextSeq`, and a
+   * beat records no utterance, so the stream replays from the same seed: the
+   * same mover picks the same move, and now `already === intended` returns
+   * `look` before the draw. No pending-move state is needed anywhere — the
+   * determinism the conversation already has IS the memory.
+   *
+   * 🚨 A REFUSED BEAT FALLS BACK, IT NEVER ADDRESSES FOR FREE. `beginAddress`
+   * declines for two very different reasons: the address is already bought
+   * (free, and the line goes out now), or the body cannot take the beat at all
+   * (its hands are mid-action, or it has no body). Only the FIRST may speak with
+   * its addressee intact; the second drops to `name`/`floor` like any other body
+   * that kept working, because a look nobody paid for is the exact bug this
+   * chapter exists to remove.
+   */
+  /**
+   * ⑫⑧ — WHOM THE ARGMAX DECIDED THIS BODY MAY STOP FOR, or undefined.
+   *
+   * The STANCE: the standing `address` pursuit is the between-rows decision's
+   * own output, so reading it is reading the decision rather than re-taking it.
+   * Deliberately NOT a new session map — a fact two places set is a fact
+   * neither of them owns, and the pursuit already IS the record of "this body
+   * has chosen to turn to that person".
+   *
+   * Short-lived by construction: the pursuit clears the moment its one step
+   * fires, and from then on `addressingOf` (the durable address ⑫④ bought)
+   * answers the same question for free at rung ③.
+   */
+  function addressStance(cid: string): string | undefined {
+    const goal = sess?.pursuits.get(cid)?.goal;
+    return goal?.kind === "address" ? goal.target : undefined;
+  }
+
+  function planAddress(
+    session: QuestSession,
+    c: HostConversation,
+    cid: string,
+    move: { act: DialogueAct; addresseeId?: string },
+    rng: () => number,
+  ): AddressPlan {
+    const target = move.addresseeId;
+    const channel = chooseAddressChannel({
+      others: c.convo.members.length - 1,
+      ...(target ? { intended: target } : {}),
+      ...(addressingOf(c.convo, cid) ? { already: addressingOf(c.convo, cid)! } : {}),
+      // ★ ⑫⑧ — ONE DECISION, NOT TWO SYSTEMS. ★
+      //
+      // The argmax decides whether the body is free; this function only READS
+      // that. A creature whose address row won is standing an `address`
+      // pursuit — it has BOUGHT the pause — so for the purposes of the channel
+      // it is not busy, and rung ④ hands back `look` without touching the rng.
+      // Without this read the two would fight: the row would win the argmax and
+      // stop the body, and then the channel would still roll a coin on whether
+      // the body could be stopped, and could answer no.
+      busy: headingSpokenFor(cid) && addressStance(cid) !== target,
+      requiresAddressee: ADDRESSEE_REQUIRED_ACTS.has(move.act.kind),
+      personality: creatureMood(cid),
+      relation: target ? relationToward(session, cid, target) : DEFAULT_RELATION,
+      engagement: memberOf(c.convo, cid)?.engagement ?? DEFAULT_ENGAGEMENT,
+      rng,
+    });
+    if (!target || channel === "dyad") return { speakNow: true, move };
+    // THE TWO ANSWERS A BODY THAT KEPT WORKING GIVES. `name` SAYS the name (⑫⑦ —
+    // the lang gate is open: every ruleset renders direct address); `floor`
+    // re-aims the line at the room, act untouched.
+    const keepWorking = (named?: true): AddressPlan => {
+      if (!ADDRESSEE_REQUIRED_ACTS.has(move.act.kind)) return { speakNow: true, move: { act: move.act } };
+      setMemberAddress(cid, target);
+      return named ? { speakNow: true, move, named } : { speakNow: true, move };
+    };
+    if (channel === "floor") return keepWorking();
+    // ⑫⑦ — THE NAME CHANNEL PAYS IN WORDS. A body that would not stop can still
+    // say WHOM it means, and that is the whole point of a name: it needs no
+    // heading and no free hands. It costs a glyph slot in the sentence, which is
+    // the honest price — and at rung `a` there is no slot, so a one-word speaker
+    // who cannot turn goes to the floor. The mechanic has teeth at the lowest
+    // rung, which is correct: that is exactly the child who most needs to learn
+    // that names do something.
+    if (channel === "name") return keepWorking(nameGlyphOf(target) ? true : undefined);
+    // `look`. A beat that is genuinely taken costs the turn.
+    if (beginAddress(session, cid, target)) return { speakNow: false };
+    // It declined. Either the channel was bought on an earlier turn — free, by
+    // design, and the line goes out now — or the body could not take it at all
+    // (hands mid-action, no body to turn), in which case the LOOK was never
+    // actually paid and the line must fall back rather than address for free.
+    // Addressing for free is the bug this whole chapter removes.
+    return addressingOf(c.convo, cid) === target ? { speakNow: true, move } : keepWorking();
+  }
+
+  /**
+   * ★ ONE TURN OF A CIRCLE ★ — somebody speaks, somebody answers, or nobody does.
+   *
+   * WHO MOVES. Members are tried in seeded-shuffled order and the FIRST whose
+   * `chooseSpeakerMove` comes back with something takes the floor. That is the
+   * honest v1 of "weight by urge to speak": `speakerActWeight` already weighs
+   * WHAT each of them would say, so a member with nothing to say drops out of the
+   * running by returning null, and the shuffle keeps the order from being a
+   * pecking order. (A softmax over per-member urge is the richer version and
+   * wants an urge that exists as a number first.)
+   *
+   * ONE STREAM PER TURN, keyed by the conversation and the seq the utterance is
+   * about to take (`convoRng`) — the mover search, the move, the arbitration and
+   * the reply's willingness gates all draw from it in order, so the same seed
+   * replays the same transcript on every device.
+   *
+   * NOBODY MOVED is not a bug. It accumulates `dullS`, and at `CONV_FORM.boreS`
+   * the warmest member says goodbye and the circle breaks up — the end of a
+   * conversation as the last words fading, not as bodies teleporting apart.
+   */
+  function runGroupTurn(session: QuestSession, state: WorldState, c: HostConversation) {
+    const g = c.group;
+    if (!g || !session.creatures || !world) return;
+    const cworld = session.creatures.world;
+    const opts = groupProjectionOpts(session);
+    const rng = convoRng(session, c);
+    g.turnedAway.clear();
+
+    // SOMEBODY IS ON THEIR WAY OUT and is still standing here: they get the floor
+    // to say goodbye, which is the whole of this turn.
+    const leaver = c.convo.members.find((m) => g.leaving.has(m.id));
+    if (leaver) {
+      speakGroupMove(session, state, c, leaver.id, { act: { kind: "bye", glyph: "bye" } }, opts, rng);
+      g.leaving.delete(leaver.id);
+      departGroup(c, leaver.id, { spoken: true });
+      g.nextTurnAt = session.taskClock + GROUP_TURN_GAP_S;
+      return;
+    }
+
+    const movers = c.convo.members.map((m) => m.id).filter((id) => !isPlayerCid(id));
+    for (let i = movers.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [movers[i], movers[j]] = [movers[j]!, movers[i]!];
+    }
+    for (const cid of movers) {
+      const move = chooseSpeakerMove(cworld, c.convo, cid, opts, {
+        personality: creatureMood(cid),
+        relationTo: (id: string) => relationToward(session, cid, id),
+        // ⑫⑧ — a body whose legs or hands are spoken for weighs `bye` higher,
+        // so the COIN and the CLOCK read the same fact: the sweep's outbid
+        // deadline is the same creature's same situation, counted instead of
+        // rolled. It changes no other weight and draws no extra number.
+        busy: headingSpokenFor(cid),
+        rng,
+      });
+      if (!move) continue;
+      // ★ ⑫④ — WHICH CHANNEL, AND WHAT IT COSTS. ★
+      //
+      // The speaker has picked WHOM and WHAT; this is the one decision left.
+      // `planAddress` answers it with one seeded draw off THIS TURN'S OWN
+      // STREAM, and may take a beat instead of speaking — see its doc for why
+      // the next turn then says the same thing.
+      const plan = planAddress(session, c, cid, move, rng);
+      if (!plan.speakNow) {
+        // THE BEAT IS THE TURN. Not dull — something visibly happened, and the
+        // circle's boredom clock must not tick toward breaking up because
+        // somebody stopped to face the person they were about to talk to.
+        g.dullS = 0;
+        g.nextTurnAt = session.taskClock + ADDRESS_HOLD_S;
+        return;
+      }
+      speakGroupMove(session, state, c, cid, plan.move, opts, rng, plan.named);
+      g.dullS = 0;
+      g.nextTurnAt = session.taskClock + GROUP_TURN_GAP_S;
+      // SAYING GOODBYE IS LEAVING. `bye` is a live option on every speaker's own
+      // board (`speakerActWeight` gives it a standing 0.3, which is what makes
+      // idle speakers drift off), and a circle where somebody says goodbye and
+      // then keeps standing there is the one thing that would read as broken.
+      if (move.act.kind === "bye") departGroup(c, cid, { spoken: true });
+      return;
+    }
+
+    // NOBODY HAD ANYTHING TO SAY.
+    g.dullS += GROUP_DULL_RETRY_S;
+    g.nextTurnAt = session.taskClock + GROUP_DULL_RETRY_S;
+    if (g.dullS < CONV_FORM.boreS) return;
+    // The WARMEST member closes it — the one who cares most that there were
+    // people here is the one who marks that there aren't any more.
+    let closer = c.convo.members[0]?.id;
+    let best = -Infinity;
+    for (const m of c.convo.members) {
+      if (isPlayerCid(m.id)) continue;
+      const w = creatureMood(m.id).warmth;
+      if (w > best) { best = w; closer = m.id; }
+    }
+    if (closer) speakGroupMove(session, state, c, closer, { act: { kind: "bye", glyph: "bye" } }, opts, rng);
+    disperseGroup(c);
+  }
+
+  /**
+   * SOMEBODY SAYS IT, and the circle answers — the presentation half of a turn.
+   *
+   * The record, the arbitration, the reply and the overhearing are all
+   * `speakInConversation`'s (§4.7): this puts the result on screen. The line, the
+   * facing, the reply a beat later, the silent reactions, and — because
+   * ambient acts EXECUTE now — whatever the reply did to the world.
+   */
+  function speakGroupMove(
+    session: QuestSession,
+    state: WorldState,
+    c: HostConversation,
+    speakerCid: string,
+    move: { act: DialogueAct; addresseeId?: string },
+    opts: ReturnType<typeof groupProjectionOpts>,
+    rng: () => number,
+    /** ⑫⑦ — the NAME channel: say whom this is for, because the body cannot. */
+    named?: boolean,
+  ) {
+    const g = c.group;
+    if (!g || !session.creatures) return;
+    const spoken = speakInConversation(
+      session.creatures.world,
+      c.convo,
+      speakerCid,
+      move.act,
+      move.addresseeId,
+      opts,
+      {
+        tick: session.taskClock,
+        rng,
+        personalityOf: creatureMood,
+        relationOf: (observer: string, subject: string) => relationToward(session, observer, subject),
+      },
+    );
+    // THE ADDRESSEE CUE IS THE FACING (§3f): the speaker turns to whoever it is
+    // talking to, everyone else turns to the speaker, and the whole stance is
+    // re-asserted every frame from here until the next turn.
+    g.facing = { speakerCid, ...(move.addresseeId ? { addresseeCid: move.addresseeId } : {}) };
+    // ⑫⑦ — THE NAME GOES IN FRONT OF THE SENTENCE. The strip shows it too, which
+    // is the point: what the creature says is a sentence the child could have
+    // composed, name and all (the ONE-VOCABULARY law). `vocative` tells the lang
+    // layer this leading name is an ADDRESS and not a subject — it may not guess,
+    // because "mara + go + home" is Mara going home.
+    const nameGlyph = named && move.addresseeId ? nameGlyphOf(move.addresseeId) : undefined;
+    sayGroupLine(session, c, speakerCid, {
+      glyph: nameGlyph ? `${nameGlyph} + ${move.act.glyph}` : move.act.glyph,
+      ttl: 6,
+      ...(nameGlyph ? { vocative: true } : {}),
+    });
+
+    const res = spoken.response?.result;
+    const responderId = spoken.response?.responderId;
+    if (res) applyGroupEvents(session, res);
+
+    // WHO REACTED WITHOUT SPEAKING. A glance is the facing this circle already
+    // reasserts; a turn-away is recorded so the reassertion inverts it until the
+    // next turn.
+    for (const reaction of spoken.silent) {
+      if (reaction.kind === "turn-away") g.turnedAway.add(reaction.id);
+    }
+    if (!res) {
+      // ★ NOBODY ANSWERED ★ — visible, never nothing (§3c, ⑦). The "…" goes over
+      // the one who was ASKED when somebody was; over every silent reactor when
+      // the line went to the floor and nobody picked it up.
+      //
+      // ⑫⑤ — NO `underSpecified` ARM HERE, and that is not an omission. An NPC's
+      // move comes from `chooseSpeakerMove`, which RESTORES the addressee on any
+      // act that names a person (`FLOOR_SAFE_ACTS`), so an NPC can never put an
+      // `ADDRESSEE_REQUIRED_ACTS` line on the floor in the first place — the two
+      // rules were designed against each other. If one ever arrives, it lands
+      // here as an unanswered line with no reactors, which is the honest
+      // rendering of what happened; asking a creature "who do you mean?" on
+      // behalf of another creature is not this host's business.
+      const thinkers = move.addresseeId
+        ? spoken.silent.filter((r) => r.id === move.addresseeId)
+        : spoken.silent;
+      for (const r of thinkers) showNpcThought(session, r.id);
+      reassertGroupFacing(state, c);
+      return;
+    }
+
+    // THE REPLY, a beat later on the SIM clock — the beat scaled by the opener's
+    // length, exactly as the dyadic path did it. This is where the old host-wide
+    // `chatReplies` list went: one pending reply, on the conversation it answers.
+    let reply = res.responseGlyph;
+    let replyText: string | undefined;
+    let pointAt: { x: number; y: number } | null = null;
+    // A DIRECTIONS answer comes back as a SUBJECT, not a glyph (the pure layer
+    // can't measure a town) — resolved here exactly as the player path resolves
+    // it: the same spoken prose a child would hear, plus the pointing arm.
+    if (res.askedDirections && session.town && responderId) {
+      const fact = session.placeFacts.get(res.askedDirections);
+      const av = chatAvatar(state, responderId);
+      if (fact && av) {
+        // The ANSWERER's own town: a neighbor answers by ITS streets, with
+        // `buy:good:*` re-aimed at its own market.
+        const rc = neighborCtxOf(session, responderId);
+        const f = rc ? neighborPlaceFact(rc, fact) : fact;
+        const ans = answerPlaceDirections(
+          rc ? rc.plan.streets : session.town.plan.streets,
+          rc ? rc.center : session.town.stage.center,
+          { x: av.x, y: av.y },
+          f,
+        );
+        const rareTail = fact.id.startsWith("buy:import:") ? " + rare" : "";
+        reply = `${fact.thingGlyph}${rareTail}`; // the strip models the THING
+        const rSym = session.entities.get(session.creatures.nodeByCreature.get(responderId)?.npcEntityId ?? "")?.glyph;
+        replyText = speakDirections(fact.thingGlyph, ans.proximity, ans.cardinal, session.game.meta.locale, {
+          speaker: npcSpeakerGender(rSym, responderId),
+        });
+        pointAt = f.worldPos;
+      }
+    }
+    if (reply && responderId) {
+      g.pending = {
+        speakerCid: responderId,
+        glyph: reply,
+        ...(replyText ? { text: replyText } : {}),
+        pointAt,
+        dueIn: chatReplyDelayS(move.act.glyph),
+      };
+    }
+    reassertGroupFacing(state, c);
+  }
+
+  // ── The per-frame step ────────────────────────────────────────────────────
+
+  /** One live circle, one frame: the reply in flight, the stance, the bystander
+   *  dwell clocks, and the turn when it comes due. Everything that costs a scan
+   *  of the town (who may join, who has drifted) rides the 9-second sweep
+   *  instead — see `sweepGroups`. */
+  /**
+   * ⑫ — THE CIRCLE FOLLOWS ITS PEOPLE, and the people keep up with the circle.
+   *
+   * The anchor eases toward the centroid of the members who HAVE bodies, so a
+   * conversation that walks takes its geometry with it: the drift leash, the join
+   * radius and the camera's distance all keep measuring against where the group
+   * actually is. Eased rather than snapped because the anchor is where the
+   * CONVERSATION is, not where any one body is this instant — a sidestep must not
+   * move it, and a newcomer arriving must not yank it.
+   *
+   * Then station-keeping, which is the whole of "walking together": an IDLE
+   * member that has fallen outside the band walks back toward the anchor through
+   * the ONE `walkTo`. Nobody leads and nothing is scripted — one creature heading
+   * off on an errand drags the centroid, and its idle companion follows the
+   * centroid. That is a stroll, and it emerges from two rules that were each
+   * needed anyway.
+   *
+   * ⚠️ A member driving its OWN pursuit is never station-kept. Its legs are
+   * spoken for (law ①) and its errand is its own business; if that errand takes
+   * it past the leash it leaves the conversation, which is honest — you cannot
+   * work at opposite ends of the town and keep talking.
+   */
+  function stepGroupAnchor(state: WorldState, c: HostConversation, dt: number) {
+    const g = c.group;
+    const session = sess;
+    if (!g || !session) return;
+    let sumX = 0;
+    let sumY = 0;
+    let n = 0;
+    for (const m of c.convo.members) {
+      const av = memberAvatar(state, m.id);
+      if (!av) continue; // a formless spirit anchors nothing
+      sumX += av.x;
+      sumY += av.y;
+      n++;
+    }
+    if (n === 0) return;
+    const k = 1 - Math.exp(-GROUP_ANCHOR_RATE * dt);
+    g.anchor.x += (sumX / n - g.anchor.x) * k;
+    g.anchor.y += (sumY / n - g.anchor.y) * k;
+    // KEEPING UP. Only bodies with nothing else to do — a busy one is busy.
+    for (const m of c.convo.members) {
+      if (isPlayerCid(m.id)) continue; // the child walks itself
+      if (session.pursuits.has(m.id)) continue;
+      if ((session.npcTasks.get(avatarIdOf(m.id))?.length ?? 0) > 0) continue;
+      if (session.actionHold.has(m.id)) continue;
+      if (g.incoming.has(m.id)) continue; // already walking in
+      const av = memberAvatar(state, m.id);
+      if (!av) continue;
+      if (Math.hypot(av.x - g.anchor.x, av.y - g.anchor.y) <= GROUP_KEEP_BAND_M) continue;
+      // Aim at its OWN slot on the ring so a group that walks keeps its shape
+      // instead of collapsing into a heap on the anchor.
+      const angle = g.slots.get(m.id) ?? Math.atan2(av.y - g.anchor.y, av.x - g.anchor.x);
+      walkTo(session, m.id, ringPoint(g, angle), dt);
+    }
+  }
+
+  /**
+   * ★ ⑫⑧ — THE ONE WRITER OF `ConvoMember.engagement`. ★
+   *
+   * The field shipped with the roster, is read everywhere (it is `attend`'s
+   * live term, so it reaches every response urge, the channel choice, and —
+   * through `engagementToward` — the spark's directable set), and until this
+   * phase was set to `DEFAULT_ENGAGEMENT = 1` at join and never touched again.
+   * Every member of every circle claimed the conversation's whole attention,
+   * including the one hauling a crate past it.
+   *
+   * ONE writer, HERE, in the per-frame conversation walk that already visits
+   * every record (beside `expireAddressesOnMove`, which is there for the same
+   * reason) — so the number is fresh on the frame anything reads it, and there
+   * is exactly one place to look when it is wrong. It is
+   * BOOKKEEPING, not a fine (law ③): nothing below slows a busy creature's work
+   * or shortens its turn; the field simply stops asserting something untrue,
+   * and the consequence — a busy member answers ~13% less often at neutral
+   * dials — falls out of arithmetic that was already there.
+   *
+   * The PLAYER is skipped. A child's engagement with the conversation is not
+   * something the sim gets to grade, and their body is not driven by it (⑩,
+   * and §6's exemption from the heading rung for the same reason).
+   */
+  function stepEngagement(session: QuestSession, c: HostConversation) {
+    for (const m of c.convo.members) {
+      if (isPlayerCid(m.id)) continue;
+      m.engagement = engagementOf({
+        // The SAME predicate the channel choice reads (law ①) — the two must
+        // never disagree about what a busy body is.
+        busy: headingSpokenFor(m.id),
+        personality: creatureMood(m.id),
+        tick: session.taskClock,
+        ...(m.lastAddressedTick !== undefined ? { lastAddressedTick: m.lastAddressedTick } : {}),
+      });
+    }
+  }
+
+  function stepGroup(session: QuestSession, state: WorldState, c: HostConversation, dt: number) {
+    const g = c.group;
+    if (!g) return;
+    if (g.pending) {
+      g.pending.dueIn -= dt;
+      if (g.pending.dueIn <= 0) {
+        const r = g.pending;
+        g.pending = null;
+        // Facing the answerer as it answers: the reply is its turn to hold.
+        g.facing = { speakerCid: r.speakerCid, ...(g.facing ? { addresseeCid: g.facing.speakerCid } : {}) };
+        sayGroupLine(session, c, r.speakerCid, { glyph: r.glyph, ...(r.text ? { text: r.text } : {}) });
+        if (r.pointAt) pointNpcArm(r.speakerCid, r.pointAt);
+      }
+    }
+    stepGroupAnchor(state, c, dt);
+    reassertGroupFacing(state, c);
+    // A BYSTANDER'S DWELL. Accrued per frame (walking PAST a circle must not
+    // count), rolled on the sweep — `CONV_FORM.joinDwellS` is a stopwatch, not a
+    // sampling interval.
+    for (const cid of session.creatures?.nodeByCreature.keys() ?? []) {
+      if (isPlayerCid(cid) || convoOfCreature.has(cid) || g.incoming.has(cid)) continue;
+      const av = chatAvatar(state, cid);
+      const near = !!av && Math.hypot(av.x - g.anchor.x, av.y - g.anchor.y) <= CONV_FORM.joinRadiusM;
+      if (!near) { g.dwell.delete(cid); continue; }
+      g.dwell.set(cid, (g.dwell.get(cid) ?? 0) + dt);
+    }
+    if (session.taskClock >= g.nextTurnAt) runGroupTurn(session, state, c);
+  }
+
+  /**
+   * THE 9-SECOND SWEEP over every live circle: who has left it, and who may join.
+   *
+   * The scans that cost something live here rather than in `stepGroup`, and the
+   * cadence is also the honest one for both questions. A member pulled onto an
+   * errand does not stop talking mid-syllable, and a bystander's join is a
+   * decision it makes once in a while rather than sixty times a second — which is
+   * also what keeps the errand that WALKED somebody into a circle (a commanded
+   * `converse`) from reading as "this member is busy" on the frame it arrives.
+   */
+  function sweepGroups(session: QuestSession, state: WorldState, rng: () => number) {
+    for (const c of [...conversations.values()]) {
+      const g = c.group;
+      if (!g) continue;
+      // WALKS THAT NEVER ARRIVED release their reservation.
+      for (const [cid, deadline] of [...g.incoming]) {
+        if (session.taskClock < deadline) continue;
+        g.incoming.delete(cid);
+        g.slots.delete(cid);
+      }
+      // WHO IS NO LONGER IN THIS CONVERSATION. Drift is the leash (§3f: a member
+      // more than `driftLeaveM` from the anchor has left whatever it thinks it is
+      // doing); the rest is eligibility — a need or a task pulled them out.
+      for (const m of [...c.convo.members]) {
+        if (isPlayerCid(m.id)) continue;
+        if (!conversations.has(c.id)) break; // the last departure dispersed it
+        const av = chatAvatar(state, m.id);
+        const drifted = !av || Math.hypot(av.x - g.anchor.x, av.y - g.anchor.y) > CONV_FORM.driftLeaveM;
+        // ⑫ — the leash now measures against a MOVING anchor, so this catches a
+        // body that left the group, never a group that walked.
+        if (drifted || !standingHere(session, state, m.id)) { departGroup(c, m.id); continue; }
+        // ★ ⑫⑧ — LEAVING IS A DECISION, NOT AN EVICTION. ★
+        //
+        // ⑫② stopped throwing busy members out (`standingHere` asks about
+        // presence and nothing else), which left the sweep with no exit at all
+        // for a member who has simply stopped choosing this conversation. This
+        // is that exit, and it is the integral of law ③: the address row has
+        // been losing the argmax for `OUTBID_LEAVE_S`, so the creature keeps
+        // deciding its work is worth more than turning to these people, and the
+        // honest reading of that is that it is done here.
+        //
+        // 🚨 IT MARKS `leaving`, IT DOES NOT DEPART. The whole point is that the
+        // member goes through the UNCHANGED leaver branch in `runGroupTurn`: it
+        // gets the floor, it says goodbye, and THEN it walks. A conversation
+        // somebody vanishes from is a bug; a conversation somebody leaves is a
+        // conversation.
+        const outbidSince = session.addressOutbid.get(m.id);
+        if (outbidSince !== undefined && session.taskClock - outbidSince >= OUTBID_LEAVE_S) {
+          session.addressOutbid.delete(m.id); // the clock is spent; the goodbye is owed
+          g.leaving.add(m.id);
+          console.log(`[chat] ${c.id}: ${m.id} outbid for ${OUTBID_LEAVE_S}s — leaving`);
+        }
+      }
+      if (!conversations.has(c.id)) continue; // it dispersed under us
+      // WHO IS DRAWN IN. A dwell that has run its course is a roll, and a failed
+      // roll starts the stopwatch again: this creature has to keep standing here.
+      for (const [cid, dwelled] of [...g.dwell]) {
+        if (dwelled < CONV_FORM.joinDwellS) continue;
+        g.dwell.set(cid, 0);
+        if (!chatEligible(session, state, cid)) continue;
+        if (!mayJoin(c.convo.members.map((m) => m.id), cid)) continue;
+        const mood = creatureMood(cid);
+        if (!bystanderJoins(mood.openness, mood.warmth, rng)) continue;
+        inviteToCircle(session, c, cid);
+      }
+    }
+  }
+
+  /**
+   * SEED A CONVERSATION between two named creatures — the door a COMMAND
+   * ("talk to Ada"), the social NEED step and the attention spark's A↔B
+   * oscillation all come through (§3f: "commanded converse and the spark's A↔B
+   * oscillation now SEED a conversation").
+   *
+   * They walked here themselves, so nobody walks again: if one of them is already
+   * in a circle the other JOINS it on the spot (the walk that brought it is the
+   * walk-in), and otherwise the two of them open one. Which means "you two, talk"
+   * hands the player a joinable, ongoing conversation rather than a canned pair of
+   * lines — and a third creature strolling past may be drawn into it.
+   */
+  function seedConversation(session: QuestSession, a: string, b: string): HostConversation | null {
+    if (!world) return null;
+    const state = world.state;
+    const existingA = conversationOf(a);
+    const existingB = conversationOf(b);
+    if (existingA && existingA === existingB) return existingA;
+    const tick = session.taskClock;
+    const level = session.game.meta.syntax ?? "b";
+    // One of them is already talking: the other takes a seat in THAT circle.
+    for (const [inside, outside] of [[existingA, b], [existingB, a]] as const) {
+      if (!inside?.group) continue;
+      if (!mayJoin(inside.convo.members.map((m) => m.id), outside)) return inside;
+      if (conversationOf(outside)) return inside; // already busy elsewhere — leave it be
+      reserveSlot(inside, outside);
+      seatMember(inside, outside, tick, level);
+      sayGroupLine(session, inside, outside, { glyph: "hi", ttl: 4 });
+      reassertGroupFacing(state, inside);
+      return inside;
+    }
+    if (existingA || existingB) return null; // one of them is on a player's board
+    return openGroup(session, state, a, b);
+  }
+
+  /**
+   * WHO IS TALKING → the camera and the speech queue (§3f "Camera/render").
+   *
+   * Every live conversation is a candidate — the player's own board and every
+   * circle in town — and `pickConversationFocus` ranks them: the player's own
+   * always wins, else the nearest one that has said something recently. The
+   * answer drives BOTH the dolly (through `setConversationFocus`, whose latch
+   * keys on the id, so a join never restarts the move) and the TTS gate
+   * (`groupVoiceOn`), because a camera on one conversation and a voice on another
+   * is two conversations at once.
+   *
+   * `chatFocus` — the hand-rolled pair latch with its own countdown — is gone: a
+   * circle now knows when it last spoke (`lastWordsAt`), so "is this still
+   * happening?" is a question about the fiction rather than about a timer the
+   * renderer kept.
+   *
+   * The player's side publishes BOTH ids even though the spirit may have no body:
+   * the renderer frames whichever of them it can actually see, so a formless
    * spirit talking to Ada frames Ada alone — exactly right — while an EMBODIED
    * player talking to Ada frames the two of them.
    */
-  function publishConversationPair(dt: number) {
-    if (!world) return;
-    if (chatFocus) {
-      chatFocus.hold -= dt;
-      if (chatFocus.hold <= 0) chatFocus = null;
+  function publishConversationFocus() {
+    if (!world || !sess) return;
+    const session = sess;
+    const here = playerWorldPos(session);
+    const cands: FocusCandidate[] = [];
+    // ⑩ — the RECORD this device's board is a view of. A joined CIRCLE is already
+    // a candidate below (with its real anchor distance and its own last-words
+    // clock, and `hasLocalPlayer` true because the child is on its roster), so
+    // pushing it twice would put two rows for one conversation in front of the
+    // ranker.
+    const mine = convoView?.convoId ?? null;
+    const mineRec = mine ? conversations.get(mine) : null;
+    if (mine && !mineRec?.group) cands.push({ id: mine, hasLocalPlayer: true, distM: 0, lastWordsAgoS: 0 });
+    for (const c of conversations.values()) {
+      const g = c.group;
+      if (!g) continue;
+      cands.push({
+        id: c.id,
+        hasLocalPlayer: c.convo.members.some((m) => m.id === LOCAL_PLAYER_CID),
+        distM: here ? Math.hypot(g.anchor.x - here.x, g.anchor.y - here.y) : Infinity,
+        lastWordsAgoS: session.taskClock - g.lastWordsAt,
+      });
     }
-    const partnerCid = choice ? choice.nodeId : null;
-    if (partnerCid) {
-      // A player conversation SUPERSEDES the ambient latch outright — otherwise
-      // a chat that started a beat earlier would keep the camera on strangers
-      // while the student is mid-turn with someone else.
-      chatFocus = null;
-      world.setConversationPair({ a: world.drivenBody(), b: avatarIdOf(partnerCid) });
+    const id = pickConversationFocus(cands);
+    focusedConvoId = id;
+    if (!id) {
+      world.setConversationFocus(null);
       return;
     }
-    world.setConversationPair(chatFocus ? { a: chatFocus.a, b: chatFocus.b } : null);
+    if (id === mine && !mineRec?.group) {
+      world.setConversationFocus({ id, members: [world.drivenBody(), avatarIdOf(convoView!.cid)] });
+      return;
+    }
+    const c = conversations.get(id);
+    if (!c) {
+      world.setConversationFocus(null);
+      return;
+    }
+    world.setConversationFocus({
+      id,
+      members: c.convo.members.map((m) => avatarIdOf(m.id)),
+      ...(c.group?.facing ? { speaker: avatarIdOf(c.group.facing.speakerCid) } : {}),
+    });
   }
 
-  /** Idle townsfolk talk among themselves. Each frame: decay cooldowns; on the
-   *  interval, register nearby streamed residents (so they can chat before the player
-   *  has ever spoken to them), then pick a visible, off-cooldown converse creature and
-   *  its nearest eligible neighbour and run one exchange. Silent while the PLAYER is in
-   *  a conversation — never talk over the student's own turn. */
+  /**
+   * IDLE TOWNSFOLK TALK AMONG THEMSELVES — the ambient loop, every frame.
+   *
+   * Three things happen here and they run on two different clocks. Cooldowns and
+   * every live circle step EVERY frame (a reply is due when it is due, and a
+   * stance that is not reasserted drifts); FORMATION is attempted on the 9-second
+   * interval, which is also when the town-wide scans run.
+   *
+   * 🚨 IT NO LONGER STOPS FOR A BOARD. The old version returned early whenever the
+   * player was in a conversation, which made the local UI an input to the
+   * simulation — see `groupVoiceOn` for where that rule went instead.
+   */
   function stepNpcChatter(session: QuestSession, state: WorldState, dt: number) {
     if (!world) return;
     for (const [k, v] of session.chatCooldown) {
       if (v <= dt) session.chatCooldown.delete(k);
       else session.chatCooldown.set(k, v - dt);
     }
-    if (choice) return; // player mid-conversation — hold ambient chatter
+    for (const c of [...conversations.values()]) {
+      // ⑫④ — AN ADDRESS LASTS UNTIL YOU LOOK ELSEWHERE OR UNTIL YOU MOVE, and
+      // this is the second half. In EVERY record, not only in a circle: a
+      // player-opened conversation stops being a dyad the moment a second peer
+      // joins it, and an address held by somebody walking away is not an
+      // address. (Owner only — this whole step sits inside the follower freeze,
+      // and a follower's records are mirrors of the owner's.)
+      expireAddressesOnMove(c);
+      // ⑫⑧ — THE ONE WRITER of `ConvoMember.engagement`, and here for the same
+      // reason its neighbour above is: in EVERY record, not only in a circle. A
+      // player-opened conversation stops being a dyad the moment a second peer
+      // joins it, and the member whose hands are full is exactly as busy there.
+      stepEngagement(session, c);
+      if (c.group) stepGroup(session, state, c, dt);
+    }
     session.chatClock += dt;
     if (session.chatClock < CHAT_INTERVAL) return;
     session.chatClock = 0;
@@ -15272,23 +18566,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     if (!session.creatures) return;
 
-    const eligible = (cid: string): boolean => {
-      if (session.party.has(cid)) return false;
-      if (convo?.nodeId === cid) return false;
-      if ((session.chatCooldown.get(cid) ?? 0) > 0) return false;
-      if (!chatAvatar(state, cid)) return false;
-      // A quest poser mid-errand keeps to its task; residents mill freely (the town
-      // stage drives their bodies — a bubble doesn't interrupt them). Body ids go
-      // through avatarIdOf (a resident's body is its bare cid).
-      if ((session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0) return false;
-      if (npcCarrying(avatarIdOf(cid))) return false;
-      return true;
-    };
-    const cids = [...session.creatures.nodeByCreature.keys()].filter(eligible);
+    const rng = chatRng(session);
+    sweepGroups(session, state, rng);
+
+    const cids = [...session.creatures.nodeByCreature.keys()].filter((cid) => chatEligible(session, state, cid));
     if (cids.length < 2) return;
 
-    // Speakers on-screen (near the player), tried in random order so a speaker with
-    // no neighbour this tick doesn't waste the whole interval.
+    // Speakers on-screen (near the player), tried in seeded-random order so a
+    // speaker with no neighbour this tick doesn't waste the whole interval.
     const near = me
       ? cids.filter((cid) => {
           const av = chatAvatar(state, cid)!;
@@ -15296,51 +18581,65 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         })
       : cids.slice();
     for (let i = near.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(rng() * (i + 1));
       [near[i], near[j]] = [near[j]!, near[i]!];
     }
+    // MARKET REMARK (the more/less comparatives, spoken) — unchanged, and still a
+    // SOLO: a speaker near the food stall sometimes comments on the shelf ("more
+    // food" when it's piled high, "less food" when it runs thin), and a remark is
+    // that speaker's whole utterance. It starts no conversation, so it stays
+    // outside the formation path entirely.
     for (const speaker of near) {
       const sav = chatAvatar(state, speaker)!;
-      // MARKET REMARK (the more/less comparatives, spoken): a speaker near the
-      // food stall sometimes comments on the shelf — "more food" when it's
-      // piled high, "less food" when it runs thin (attendance/scarcity made
-      // audible). A remark is this tick's whole utterance.
       const store = state.objects["store:food"];
-      if (store && Math.hypot(store.x - sav.x, store.y - sav.y) <= 10 && Math.random() < 0.25) {
-        const units = marketStoreUnits(session, "store:food");
-        // NATIONS P6: when the shelf is thin AND this town's food routes are
-        // paused, the remark carries its CAUSE — "less food because they
-        // don't give food". That two-clause line is the whole macro event
-        // made legible from the street: a child hears the embargo without
-        // anyone naming an embargo. Routes flowing (or none at all) keeps
-        // the plain scarcity comparative, byte-identical to before.
-        const remark =
-          units <= 2
-            ? inboundRouteHealth(session.transfers.active(), "food") < 1
-              ? embargoRemarkLine("food")[session.game.meta.syntax ?? "b"]
-              : "less + food"
-            : units >= STORE_DISPLAY_CAP
-              ? "more + food"
-              : null;
-        if (remark) {
-          session.chatCooldown.set(speaker, CHAT_COOLDOWN);
-          npcChatBubble(session, speaker, remark);
-          return;
-        }
-      }
-      let listener: string | null = null;
-      let best = CHAT_PAIR_RADIUS;
-      for (const cid of cids) {
-        if (cid === speaker) continue;
-        const av = chatAvatar(state, cid)!;
-        const d = Math.hypot(av.x - sav.x, av.y - sav.y);
-        if (d <= best) { best = d; listener = cid; }
-      }
-      if (listener) {
-        runNpcExchange(session, speaker, listener);
+      if (!store || Math.hypot(store.x - sav.x, store.y - sav.y) > 10 || rng() >= 0.25) continue;
+      const units = marketStoreUnits(session, "store:food");
+      // NATIONS P6: when the shelf is thin AND this town's food routes are
+      // paused, the remark carries its CAUSE — "less food because they don't give
+      // food". That two-clause line is the whole macro event made legible from the
+      // street: a child hears the embargo without anyone naming an embargo.
+      const remark =
+        units <= 2
+          ? inboundRouteHealth(session.transfers.active(), "food") < 1
+            ? embargoRemarkLine("food")[session.game.meta.syntax ?? "b"]
+            : "less + food"
+          : units >= STORE_DISPLAY_CAP
+            ? "more + food"
+            : null;
+      if (remark) {
+        session.chatCooldown.set(speaker, CHAT_COOLDOWN);
+        npcChatBubble(session, speaker, remark);
         return;
       }
     }
+
+    // ★ FORMATION ★ — WHO OPENS is a seeded softmax over social need ×
+    // expressiveness (`pickOpener`), drawn over the creatures that actually have
+    // somebody to talk to. Pre-filtering by "has a partner in range" rather than
+    // drawing first and checking after is what stops a lonely soul standing alone
+    // in a field from eating the whole 9-second interval every time.
+    const partnerOf = new Map<string, string>();
+    for (const cid of near) {
+      const av = chatAvatar(state, cid)!;
+      let best = CHAT_PAIR_RADIUS;
+      let found: string | null = null;
+      for (const other of cids) {
+        if (other === cid) continue;
+        const oav = chatAvatar(state, other)!;
+        const d = Math.hypot(oav.x - av.x, oav.y - av.y);
+        if (d <= best) { best = d; found = other; }
+      }
+      if (found) partnerOf.set(cid, found);
+    }
+    if (partnerOf.size === 0) return;
+    const forms: FormCandidate[] = [...partnerOf.keys()].map((cid) => ({
+      id: cid,
+      social: socialMeter01(session, cid),
+      expressiveness: creatureMood(cid).expressiveness,
+    }));
+    const opener = pickOpener(forms, rng);
+    const partner = opener ? partnerOf.get(opener) : undefined;
+    if (opener && partner) openGroup(session, state, opener, partner);
   }
 
   /**
@@ -15631,10 +18930,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
-  /** (Re)build the world host for a session: 3D view + quest overlay + the wall
-   *  constraint + the per-frame quest detection. Same loop as the social world. */
-  function buildHost(session: QuestSession) {
-    world?.stop(); // also disposes the previous view
+  /** THE 3D VIEW, whole — every render-only construction the GL path needs:
+   *  the goal-tree / path-debug / attention / zone / build overlays composed
+   *  into the view's single overlay slot, the glyph image source that
+   *  feeds in-world speech bubbles, and the Three.js view itself.
+   *
+   *  Lifted out of buildHost VERBATIM so the headless seam can stand beside it;
+   *  it still assigns the same outer closure lets (overlay, pathDebug,
+   *  attentionDebug, questView) every downstream use optional-chains. */
+  function buildGlView(session: QuestSession): WorldView {
     overlay = new GoalTreeOverlay3D({
       layout: session.embedding.layout,
       world: session.world,
@@ -15750,9 +19054,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       ...(deps.groundAt ? { groundAt: deps.groundAt } : {}),
     });
     overlays.push(buildOverlay);
-    const view = (questView = createWorld3DView(
+    return (questView = createWorld3DView(
       {
-        canvas,
+        // Non-null by construction: this function runs only when `deps.view` is
+        // absent, and the constructor guard then requires `deps.canvas`.
+        canvas: canvas!,
         localId: PLAYER_ID,
         faceFor: () => null,
         labelFor: (id) => (id === PLAYER_ID ? "You" : ""),
@@ -15807,6 +19113,39 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         ...(session.town ? { roads: session.town.stage.roads } : {}),
       },
     ));
+  }
+
+  /** THE HEADLESS VIEW (deps.view): no GL, so none of the 3D chrome exists —
+   *  the overlays and `questView` are explicitly nulled rather than left over
+   *  from a previous GL session. Every downstream use of them optional-chains,
+   *  and `questView` is specifically the THREE handle (camera drive, cutaway
+   *  debug, avatar hiding), none of which a text view can answer.
+   *
+   *  The seam receives only QuestViewCtx — what a view genuinely needs to know
+   *  about the session; model factories / overlays / glyph rasters are 3D
+   *  chrome and never cross. */
+  function buildHeadlessView(session: QuestSession): WorldView {
+    overlay = null;
+    pathDebug = null;
+    attentionDebug = null;
+    questView = null;
+    return deps.view!.create({
+      spec: session.embedding.spec,
+      localId: PLAYER_ID,
+      spirit,
+      spiritFrame,
+      roads: session.town ? session.town.stage.roads : null,
+    });
+  }
+
+  /** (Re)build the world host for a session: the view (the 3D one, or the
+   *  injected headless one) + the wall constraint + the per-frame quest
+   *  detection. Same loop as the social world. */
+  function buildHost(session: QuestSession) {
+    world?.stop(); // also disposes the previous view
+    // ONE seam: the injected view (headless) or the Three.js one. With
+    // `deps.view` absent this is exactly the call that has always run.
+    const view = deps.view ? buildHeadlessView(session) : buildGlView(session);
     const host = runWorldHost({
       view,
       spec: session.embedding.spec,
@@ -15886,8 +19225,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             const st = session.creatures.world.items[item.entityId];
             // The ONE exception to the veto: an item pending transfer TO you —
             // taking it is how the transfer concludes.
-            if (st?.pendingTransferTo === PLAYER_CREATURE_ID) return true;
-            ownerNodeId = st?.ownerId && st.ownerId !== PLAYER_CREATURE_ID ? st.ownerId : null;
+            if (st?.pendingTransferTo === LOCAL_PLAYER_CID) return true;
+            ownerNodeId = st?.ownerId && st.ownerId !== LOCAL_PLAYER_CID ? st.ownerId : null;
           } else if (item.kind === "stock" && !session.granted.has(objectId)) {
             ownerNodeId = item.forNodeId;
           }
@@ -15914,7 +19253,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const glyph = entity?.glyph ? `${entity.glyph}.my` : undefined;
           const creatureOwner = session.creatures?.world.items[item.entityId]?.ownerId;
           const ownerNode =
-            creatureOwner && creatureOwner !== PLAYER_CREATURE_ID ? creatureOwner : item.forNodeId;
+            creatureOwner && creatureOwner !== LOCAL_PLAYER_CID ? creatureOwner : item.forNodeId;
           const npcId = `npc_${ownerNode}`;
           if (world.state.avatars[npcId]) {
             const ownerSym = creatureGlyph(session, ownerNode);
@@ -16144,13 +19483,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               console.log(`[errand-sample] ${f.errands.slice(0, 5).map((e) => e.npcId).join(", ")}${f.errands.length > 5 ? ` (+${f.errands.length - 5})` : ""}`);
             }
             let _routed = 0;
-            const _rt0 = descendNow();
+            const _rt0 = simNow();
             for (const [npcId, pts] of clockErrandQueue) {
               // TIME-budgeted as well as count-budgeted: one cross-town door
               // route can cost ~20 ms alone (the readout's 14 k-probe frames),
               // so four of them in a frame is a visible hitch — stop routing
               // once this frame has spent its slice; the rest wait their turn.
-              if (_routed >= ERRAND_ROUTE_BUDGET || descendNow() - _rt0 > 5) break;
+              //
+              // The slice reads the HOST'S clock (`simNow`), never
+              // `performance.now`: this is the one place a wall-clock read
+              // decided how much SIM ran, and it made the cast's positions a
+              // function of machine speed (text-mode.md §5 hole 1). Under the
+              // default clock `simNow` IS `performance.now` — GL behaviour is
+              // unchanged. Under an injected clock the frame is atomic
+              // (`simNow() - _rt0 === 0`), so only ERRAND_ROUTE_BUDGET applies
+              // and a same-seed run routes the same trips in the same order.
+              if (_routed >= ERRAND_ROUTE_BUDGET || simNow() - _rt0 > 5) break;
               clockErrandQueue.delete(npcId);
               // A LIVE-driven body ignores the clock's feed until demote (§13 — the
               // need loop owns it; no double-drive); a RECRUITED one follows the
@@ -16221,7 +19569,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             session.tapCooldown.set(objId, TAP_COOLDOWN_S);
             const cur = dev.states.find((s) => DEVICE_ANTONYM[s]) ?? "off";
             const target = DEVICE_ANTONYM[cur] ?? "on";
-            const events = toggleDevice(cworld, PLAYER_CREATURE_ID, item.entityId, target);
+            const events = toggleDevice(cworld, LOCAL_PLAYER_CID, item.entityId, target);
             const toggled = events.some((e) => e.type === "item-transformed");
             const newGlyph = liveItemGlyph(session, item.entityId);
             const specObj = state.spec.objects.find((o) => o.id === objId);
@@ -16248,7 +19596,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               for (const s of dev.states) {
                 const axis = STATE_AXES[s];
                 if (axis) {
-                  perceiveFact(cworld, PLAYER_CREATURE_ID, { kind: "itemState", item: item.entityId, axis, state: s });
+                  perceiveFact(cworld, LOCAL_PLAYER_CID, { kind: "itemState", item: item.entityId, axis, state: s });
                 }
               }
             }
@@ -16282,9 +19630,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // (ownership + debt); a loose item is CLAIMED (provenance rules).
             const st = session.creatures.world.items[item.entityId];
             const events =
-              st?.pendingTransferTo === PLAYER_CREATURE_ID
-                ? concludeTransfer(session.creatures.world, PLAYER_CREATURE_ID, item.entityId)
-                : claimItem(session.creatures.world, PLAYER_CREATURE_ID, item.entityId, {
+              st?.pendingTransferTo === LOCAL_PLAYER_CID
+                ? concludeTransfer(session.creatures.world, LOCAL_PLAYER_CID, item.entityId)
+                : claimItem(session.creatures.world, LOCAL_PLAYER_CID, item.entityId, {
                     takerAcceptsAnything: true,
                   }).events;
             for (const ev of events) {
@@ -16302,8 +19650,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (session.creatures) {
           for (const [objId, rec] of [...session.smallProps]) {
             if (state.objects[objId]?.carriedBy !== PLAYER_ID) continue;
-            if (session.creatures.world.items[rec.entityId]?.pendingTransferTo === PLAYER_CREATURE_ID) {
-              concludeTransfer(session.creatures.world, PLAYER_CREATURE_ID, rec.entityId);
+            if (session.creatures.world.items[rec.entityId]?.pendingTransferTo === LOCAL_PLAYER_CID) {
+              concludeTransfer(session.creatures.world, LOCAL_PLAYER_CID, rec.entityId);
             }
             pocketLoose(session, objId);
           }
@@ -16423,7 +19771,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             for (const need of open) {
               const conv = [...session.convItems.values()].find((i) => i.entityId === need.itemId);
               if (!conv || state.objects[conv.objectId]?.containedIn?.objectId !== d.objectId) continue;
-              const events = notePlacement(cworld, PLAYER_CREATURE_ID, need.itemId, d.entityId);
+              const events = notePlacement(cworld, LOCAL_PLAYER_CID, need.itemId, d.entityId);
               for (const ev of events) {
                 if (ev.type !== "need-fulfilled") continue;
                 const npcId = `npc_${ev.creatureId}`;
@@ -16476,7 +19824,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             for (const cid of [...session.creatures.nodeByCreature.keys()].sort()) {
               const need = openNeeds(cworld.creatures[cid]!).find((n) => n.atPlace && !n.stay && !n.escort);
               if (!need?.atPlace || session.world.sites[need.atPlace] !== zone) continue;
-              const events = noteArrival(cworld, PLAYER_CREATURE_ID, need.atPlace);
+              const events = noteArrival(cworld, LOCAL_PLAYER_CID, need.atPlace);
               for (const ev of events) {
                 if (ev.type !== "need-fulfilled") continue;
                 const npcId = `npc_${ev.creatureId}`;
@@ -16514,7 +19862,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             session.stayDwell.set(cid, t);
             if (t < STAY_SECONDS) continue;
             session.stayDwell.delete(cid);
-            const events = noteArrival(cworld, PLAYER_CREATURE_ID, need.atPlace!);
+            const events = noteArrival(cworld, LOCAL_PLAYER_CID, need.atPlace!);
             if (!events.some((e) => e.type === "need-fulfilled")) continue;
             const npcSym = creatureGlyph(session, cid);
             showWorldBubble(state, `thanks:${cid}`, {
@@ -16551,7 +19899,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // It lives here now — home moves, so it doesn't wander back.
               const staged = session.staging.get(cid);
               if (staged) staged.home = { x: npc.x, y: npc.y };
-              const events = noteArrival(cworld, PLAYER_CREATURE_ID, need.atPlace);
+              const events = noteArrival(cworld, LOCAL_PLAYER_CID, need.atPlace);
               if (events.some((e) => e.type === "need-fulfilled")) {
                 const npcSym = creatureGlyph(session, cid);
                 showWorldBubble(state, `thanks:${cid}`, {
@@ -16585,7 +19933,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             if (!state.avatars[npcId] || playerAv === undefined) continue;
             if ((session.npcTasks.get(npcId)?.length ?? 0) > 0 || npcCarrying(npcId)) continue;
             const pending = pendingTransfers(session.creatures.world, cid).find(
-              (p) => p.pendingTransferTo === PLAYER_CREATURE_ID,
+              (p) => p.pendingTransferTo === LOCAL_PLAYER_CID,
             );
             if (!pending) continue;
             const conv = [...session.convItems.values()].find((i) => i.entityId === pending.id);
@@ -16643,7 +19991,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             for (const [objId, rec] of session.smallProps) pendings.push({ objId, entityId: rec.entityId });
             for (const { objId, entityId } of pendings) {
               const st = session.creatures.world.items[entityId];
-              if (st?.pendingTransferTo !== PLAYER_CREATURE_ID) continue;
+              if (st?.pendingTransferTo !== LOCAL_PLAYER_CID) continue;
               const obj = state.objects[objId];
               if (!obj || obj.carriedBy) continue;
               if (!spiritNow() && Math.hypot(obj.x - playerAv.x, obj.y - playerAv.y) > 2.6) continue;
@@ -16792,6 +20140,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           stepCohortWalkers(session); // ④ sampled district street life (cosmetic-only)
           _sp.cohort = descendNow() - _sm;
           pushKnownNouns(session); // the Speak menu tracks the house (diff-gated)
+          pushAddressees(session); // ⑫ — and tracks who is standing in the circle
           for (const [k, v] of Object.entries(_sp)) simMark(`n.${k}`, v); // TEMP → sim-blocks
           // DOLLHOUSE HEARTBEAT: a 5-second household state line per member, so
           // a playtest can SEE why someone isn't home — embodied? which clock
@@ -16859,10 +20208,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // Idle townsfolk chat among themselves (ambient, personality-driven). Runs
         // unconditionally — it registers nearby residents into the dialogue world.
         stepNpcChatter(session, state, dt);
-        // …and tell the camera who is talking (dollhouse conversation dolly).
-        // Immediately after the chatter step so a pair latched THIS frame is
+        // …and tell the camera (and the TTS) which conversation to hold.
+        // Immediately after the chatter step so a circle formed THIS frame is
         // published the same frame it starts speaking.
-        publishConversationPair(dt);
+        publishConversationFocus();
         // UNTARGETED-ORDER TASK POOL (phase ①a §2): expiry, claims, completion.
         stepTaskPool(session, dt);
         simMark("chatter", descendNow() - _bm); _bm = descendNow(); // TEMP
@@ -16951,8 +20300,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             for (const phase of ["short", "long"] as const) {
               const fired = phase === "short" ? shortRes.fired : longRes.fired;
               if (!fired || firedPhases.has(phase)) continue;
+              // ⑩ — THE ROSTER GOES INTO THE TABLE. Three facts, and they are
+              // the three the ⑩ cells split on: who else is standing in MY
+              // conversation (`members` — a hovered fellow member is
+              // `address`ed, never switched to), whether the hovered body is in
+              // SOMEBODY's conversation (`targetInConversation` — the `join`
+              // discriminant), and whom I am already talking to
+              // (`currentAddressee` — dwelling them says nothing new). All three
+              // are optional and absence reproduces the dyadic table exactly.
+              const myConvo = viewRecord();
+              const roster = myConvo?.convo.members.map((m) => m.id);
+              const hovered = target?.kind === "creature" ? target.id : undefined;
+              const addressee = liveConvoAddressee();
               const acts = dwellInteraction(target, phase, {
                 conversingWith: partnerCid,
+                ...(roster?.length ? { members: roster } : {}),
+                ...(hovered && convoOfCreature.has(hovered) ? { targetInConversation: true } : {}),
+                ...(addressee ? { currentAddressee: addressee } : {}),
                 building: buildMode,
                 buildSpot: hoverSpotId,
               });
@@ -16968,18 +20332,55 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                   }
                   break;
                 case "talk": {
+                  // ⑩ — `join` is INFORMATIONAL. `openTalk` reaches
+                  // `conversationWith`, which seats the player in whatever
+                  // conversation this creature is already in, so joining and
+                  // opening are the same call; the discriminant only says which
+                  // of the two just happened, for the log.
                   const t = talkTargetOf(session, state, meAv);
-                  if (t && t.nodeId === act.id) openTalk(session, t);
+                  if (t && t.nodeId === act.id) {
+                    if (act.join) console.log(`[convo] joining ${act.id}'s conversation`);
+                    openTalk(session, t);
+                  }
                   break;
                 }
                 case "switch": {
                   const t = talkTargetOf(session, state, meAv);
                   if (t && t.nodeId === act.id && partnerCid) {
+                    if (act.join) console.log(`[convo] leaving for ${act.id}'s conversation`);
                     leaveActiveConvo(partnerCid);
                     openTalk(session, t);
                   }
                   break;
                 }
+                case "address":
+                  // ⑩ — I AM TALKING TO YOU NOW. Nothing is handed anywhere and
+                  // nobody is commanded: we are already in the same circle, so
+                  // the only thing a look inside it can mean is a change of
+                  // addressee. The acknowledgment is DELIBERATELY small — the
+                  // addressed member glances back, and that is all. A bubble
+                  // would put words in their mouth that nobody said.
+                  //
+                  // ★ ⑫④ — AND NOW IT CROSSES THE GATE, like its three
+                  // neighbours. ★ This was the ONE cell of the table that never
+                  // did: the look left no `PlayerAction`, no wire message and no
+                  // record, so in a shared world nobody but this device ever
+                  // knew whom the child had turned to.
+                  //
+                  // BOTH LINES, IN THIS ORDER, AND BOTH ARE LOAD-BEARING:
+                  //   1. THE LOCAL OPTIMISTIC ECHO (`setConvoAddressee`) — the
+                  //      child's own board must never wait a round trip to know
+                  //      who they are talking to. It is a guess about our own
+                  //      player and it is read last (`memberAddressee` rung ④),
+                  //      so the owner's answer always wins when it lands.
+                  //   2. THE DURABLE FACT, through `performPlayerAction` — the
+                  //      owner writes `ConvoMember.addressing` on this player's
+                  //      roster row and syncs it back. `cid` is the person being
+                  //      addressed; the owner already knows which conversation
+                  //      this player is in.
+                  setConvoAddressee(session, act.id);
+                  performPlayerAction({ kind: "convo", cid: act.id, op: "address" });
+                  break;
                 // THE THREE THAT CHANGE THE WORLD — through the gate, exactly
                 // like a press or a sentence. The gaze that chose them was this
                 // peer's, so the instruction is genuinely theirs; the sim it
@@ -17020,7 +20421,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // act above.
           if (partnerCid) {
             convoIdleS += dt;
-            if (convoIdleS > CONVO_IDLE_END_S) leaveActiveConvo(partnerCid);
+            if (convoIdleS > CONVO_IDLE_END_S) lapseConvoMembership(partnerCid);
           } else {
             convoIdleS = 0;
           }
@@ -17103,7 +20504,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               for (const s of cworld.items[id]?.states ?? []) {
                 const axis = STATE_AXES[s];
                 if (axis) {
-                  perceiveFact(cworld, PLAYER_CREATURE_ID, { kind: "itemState", item: id, axis, state: s });
+                  perceiveFact(cworld, LOCAL_PLAYER_CID, { kind: "itemState", item: id, axis, state: s });
                 }
               }
             };
@@ -17111,12 +20512,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             const node = ownerNodeId ? session.creatures.nodeByCreature.get(ownerNodeId) : undefined;
             if (node) {
               for (const id of node.stockEntityIds ?? []) {
-                seeItem(cworld, PLAYER_CREATURE_ID, id, { kind: "held", by: node.id });
+                seeItem(cworld, LOCAL_PLAYER_CID, id, { kind: "held", by: node.id });
                 seeStates(id);
               }
               for (const id of node.propEntityIds ?? []) {
                 if (cworld.items[id]?.ownerId === null) {
-                  seeItem(cworld, PLAYER_CREATURE_ID, id, { kind: "loose" });
+                  seeItem(cworld, LOCAL_PLAYER_CID, id, { kind: "loose" });
                   seeStates(id);
                 }
               }
@@ -17125,13 +20526,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           dispatchInput(input);
         }
       },
-      scheduleFrame: (cb) => {
-        const id = requestAnimationFrame(cb);
-        return () => cancelAnimationFrame(id);
-      },
-      now: () => performance.now(),
+      // THE CLOCK: injectable so a headless host can be driven by a test clock
+      // (or a plain timer) instead of a display's vsync. Absent = today's rAF.
+      scheduleFrame:
+        deps.scheduleFrame ??
+        ((cb) => {
+          const id = requestAnimationFrame(cb);
+          return () => cancelAnimationFrame(id);
+        }),
+      now: simNow,
+      // NPC randomness: forwarded ONLY when given, so single-player keeps the
+      // world-host's own `Math.random` default (spreading `undefined` would
+      // read the same, but the absent key says it plainly).
+      ...(deps.npcRng ? { npcRng: deps.npcRng } : {}),
     });
-    host.resize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
+    // VIEWPORT: the canvas's measured box in GL, the seam's declared size (or a
+    // plain 1280x720) headless — a view with no element still needs a finite
+    // viewport for the host's screen-space picking.
+    if (deps.view) {
+      const s = deps.view.size?.() ?? { w: 1280, h: 720, dpr: 1 };
+      host.resize(s.w, s.h, s.dpr);
+    } else {
+      host.resize(canvas!.clientWidth, canvas!.clientHeight, window.devicePixelRatio || 1);
+    }
     if (deps.host) {
       // HOST-EMBED: the space-flight composer owns the rAF and drives us via
       // QuestHost3D.step. Start GROUNDED — WALKING owns the shared camera until
@@ -17159,6 +20576,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ) {
     spirit = !!opts.spirit;
     if (possession.creatureId) possession.dismiss(); // a new session is never born possessed
+    // CONVERSATIONS DIE WITH THEIR WORLD. The roster book keys on creature ids
+    // that the next town rebuilds from scratch, and the sync counters restart at
+    // zero on the owner — a carried-over `seen` would make a follower ignore the
+    // new session's first syncs as stale.
+    conversations.clear();
+    convoOfCreature.clear();
+    convoSyncSeen.clear();
+    focusedConvoId = null; // …and the camera/TTS is not still holding a dead circle
+    convo = null;
+    convoView = null;
     // BUILD MODE (⑦) is per-session view state — a replay starts with the
     // lights out and nothing lit from the town that just ended.
     buildMode = false;
@@ -17329,7 +20756,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let creatures = session.creatures;
     if (!creatures) {
       creatures = {
-        world: createCreatureWorld([{ id: PLAYER_CREATURE_ID }], []),
+        world: createCreatureWorld([{ id: LOCAL_PLAYER_CID }], []),
         creatureByNode: new Map(),
         nodeByCreature: new Map(),
       };
@@ -17527,7 +20954,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       ensureWildCreature(session, cid);
       // Family standing toward the guiding spirit — the group obeys and
       // volunteers (task-pool compliance reads this book).
-      session.relations.set(`${cid}|${PLAYER_CREATURE_ID}`, FAMILY_RELATION);
+      session.relations.set(`${cid}|${LOCAL_PLAYER_CID}`, FAMILY_RELATION);
       const body = avatarIdOf(cid);
       if (world!.state.avatars[body]) return;
       const member = settlerMemberOf(session, cid);
@@ -17602,16 +21029,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** A creature's directed relation toward a task ISSUER: the warmed book
-   *  first, else the household bond when the issuer is this family's guiding
-   *  spirit (the same standing handlePlaceOrder grants), else a neutral
-   *  stranger. No other player special-case — creature issuers read the same
-   *  book. */
+   *  first, else the game's AUTHORED player standing (`meta.playerRelation`),
+   *  else the household bond when the issuer is this family's guiding spirit
+   *  (the same standing handlePlaceOrder grants), else a neutral stranger. No
+   *  other player special-case — creature issuers read the same book. */
   function relationToward(session: QuestSession, cid: string, issuer: string): Relation {
     const rec = session.relations.get(`${cid}|${issuer}`);
     if (rec) return rec;
-    if (issuer === PLAYER_CREATURE_ID && cid.startsWith("resident_")) {
-      const fam = familyOf(session);
-      if (fam && fam.house === Number(cid.split("_")[1])) return FAMILY_RELATION;
+    if (isPlayerCid(issuer)) {
+      // EVERY author gets the household bond (co-op decision, multi-entity-
+      // conversations.md §2.5): guests in a shared dollhouse are family, not
+      // strangers a creature would ignore. The authored knob, when a game sets
+      // one, speaks over it — see `authoredRelation`.
+      let fallback = DEFAULT_RELATION;
+      if (cid.startsWith("resident_")) {
+        const fam = familyOf(session);
+        if (fam && fam.house === Number(cid.split("_")[1])) fallback = FAMILY_RELATION;
+      }
+      return authoredRelation(session.game.meta, fallback);
     }
     return DEFAULT_RELATION;
   }
@@ -17638,7 +21073,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  encode it in the id; everything else defaults to the town's constructing
    *  species. Never throws — a reference must resolve for any creature. */
   function speciesOf(session: QuestSession, cid: string): string {
-    if (cid === PLAYER_CREATURE_ID || cid === PLAYER_ID) return SPARK_SPECIES_ID;
+    if (isPlayerCid(cid) || cid === PLAYER_ID) return SPARK_SPECIES_ID;
     const ov = familyOverrides(session)?.get(cid)?.species;
     if (ov) return ov;
     const settler = settlerMemberOf(session, cid)?.species;
@@ -17664,7 +21099,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  own group; two creatures share a group when they live in the same house. */
   function inSameGroup(session: QuestSession, speaker: string, target: string): boolean {
     if (speaker === target) return true;
-    if (speaker === PLAYER_CREATURE_ID || speaker === PLAYER_ID) {
+    if (isPlayerCid(speaker) || speaker === PLAYER_ID) {
       // A named member the host can name belongs to the observed family — the
       // player's own group (inPlayerGroup also admits an explicit party).
       return inPlayerGroup(session, target) || nameOfCid(session, target) !== undefined;
@@ -17679,8 +21114,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  so no creature is ever voiced as "the there". The LISTENER (player) maps to
    *  the "you" deixis before the rule runs. */
   function creatureReference(session: QuestSession, speakerCid: string | undefined, targetCid: string): string {
-    if (targetCid === PLAYER_CREATURE_ID || targetCid === PLAYER_ID) return "you";
-    const speaker = speakerCid ?? PLAYER_CREATURE_ID;
+    // "you" is the LOCAL author (the member this line is being presented to).
+    // A REMOTE author is a third party here and falls through to the name/
+    // pronoun rule — with N players, "any player is you" stopped being true.
+    if (targetCid === LOCAL_PLAYER_CID || targetCid === PLAYER_ID) return "you";
+    const speaker = speakerCid ?? LOCAL_PLAYER_CID;
     const targetSpecies = speciesOf(session, targetCid);
     return creatureReferenceGlyph(
       { species: speciesOf(session, speaker), gender: genderFor(speaker), speciesWord: "" },
@@ -17725,10 +21163,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         session.smallProps.has(o.id) || /^furn_\d+_/.test(o.id) || isWellId(o.id);
       if (!nameable) continue;
       const d = Math.hypot(o.x - p.x, o.y - p.y);
-      if (d <= bestD) {
-        bestD = d;
-        bestId = o.id;
-      }
+      if (d > bestD) continue;
+      // A DOOR IS A WAY THROUGH A PLACE, NOT A PLACE. A hung leaf (construction
+      // phase 5) is furniture like any other and stands exactly where bodies
+      // pass, so it wins every naming contest at a threshold — "the chair is in
+      // the door". Skipping it falls through to the ROOM, which is what
+      // somebody standing in a doorway is actually in.
+      if (objectWord(session, o.id) === "door") continue;
+      bestD = d;
+      bestId = o.id;
     }
     if (bestId) {
       const word = objectWord(session, bestId);
@@ -17750,8 +21193,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return {
       item: (ref) =>
         "id" in ref
-          ? `${liveItemGlyph(session, ref.id)}${opts.deixis ? ".this" : ""}`
-          : [ref.match.kind ?? ref.match.category ?? "thing", ...(ref.match.descriptors ?? [])].join("."),
+          ? `${drawnGlyph(liveItemGlyph(session, ref.id))}${opts.deixis ? ".this" : ""}`
+          : // A MATCH is written in STORAGE terms — a furniture want matches the
+            // `furn.<kind>` stacks in the house, so its `kind` is the bookkeeping
+            // prefix and its descriptors carry the piece. `drawnGlyph` folds that
+            // back into the thing being talked about ("I'll put the CHAIR by the
+            // table"); the match itself must keep saying `furn`, or it stops
+            // finding what it is looking for.
+            drawnGlyph(
+              [ref.match.kind ?? ref.match.category ?? "thing", ...(ref.match.descriptors ?? [])].join("."),
+            ),
       place: (p) => {
         if (p.kind === "named") {
           // A world-object id speaks its WORD ("furn_3_bed_0" → "bed", a prop
@@ -17804,7 +21255,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  so it states its intent even though routine self-directed behavior stays
    *  quiet. Intent syntax + deixis: "I will eat this apple." Ungated, unlike
    *  announceIntent's task-claim criteria. */
-  function announceSparkIntent(session: QuestSession, cid: string, goal: GoalSpec) {
+  function announceSparkIntent(session: QuestSession, cid: string, goal: PursuitGoal) {
+    // ⑫⑧ — TURNING TO SOMEBODY ANNOUNCES ITSELF. The turn IS the statement of
+    // intent ("stop, turn, THEN speak" — ⑫④), so putting "I will look at Mara"
+    // in a bubble first would be the creature narrating its own body language.
+    // It also has no intent line, being outside the command vocabulary
+    // (`AddressGoal`), which is the type system agreeing.
+    if (goal.kind === "address") return;
     const line = goalIntentLine(goal, intentLineSyms(session, { deixis: true, speaker: cid }));
     if (!line) return;
     if (isPetCid(cid)) ensurePetCreature(session, cid);
@@ -17982,7 +21439,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           })());
       const candidates: TaskCandidate[] = [];
       for (const cid of session.creatures.nodeByCreature.keys()) {
-        if (cid === PLAYER_CREATURE_ID || cid === possession.creatureId) continue;
+        if (isPlayerCid(cid) || cid === possession.creatureId) continue;
         if (session.party.has(cid) || session.escorting.has(cid)) continue;
         if (pool.claimedBy(cid)) continue; // one task per body
         const mind = session.creatures.world.creatures[cid];
@@ -18255,9 +21712,73 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * (spelled `TOWN_SCOPE`, as ownership.ts spells it), buildings hang off it,
    * containers hang off their building, bodies off their household.
    */
-  function scopeTreeOf(session: QuestSession): ScopeTreeInput {
+  function scopeTreeOf(session: QuestSession): ScopeStockInput {
     const t = session.town;
+    /** WHICH SCOPE A PROP OR BOX HANGS OFF. Hoisted because the containment
+     *  rule and the loose census must be the SAME rule — a prop counted under a
+     *  parent the tree disagrees with is a unit in two places or none. */
+    const parentOfObject = (objectId: string): ScopeId | null => {
+      // A CONTAINER ON SOMEBODY BELONGS TO THEM (step ②/③) — the basket a
+      // body carries and the satchel it wears ARE its inventory, and hang off
+      // the body rather than off whatever room it happens to be standing in.
+      // This is the whole law in one line: a scope's inventory is the sum of
+      // the containers it holds. A WORN bag has no world object to ask, so
+      // the wear register answers for it.
+      for (const [cid, w] of session.wornBags) {
+        if (w.objId === objectId) return `${POCKET_EP}${cid}`;
+      }
+      const o = world?.state.objects[objectId];
+      if (!o || !world) return null;
+      if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
+      return buildingAt(world.state, o.x, o.y)?.id ?? null;
+    };
+    /**
+     * THE LOOSE CENSUS, built ONCE per tree and read by id.
+     *
+     * ⚠️ Built prop-first, never scope-first. Answering "what is lying in THIS
+     * scope" by scanning every prop per scope is `ids × props × buildingAt` —
+     * on a 200-house town with a floor full of things that is tens of millions
+     * of point-in-rect tests a second. Each prop knows its own parent; bucket
+     * them once and every scope's answer is a map lookup.
+     */
+    let censusMemo: Map<ScopeId, Record<string, number>> | null = null;
+    const census = (): Map<ScopeId, Record<string, number>> => {
+      if (censusMemo) return censusMemo;
+      censusMemo = new Map();
+      if (!world) return censusMemo;
+      for (const [objId, rec] of session.smallProps) {
+        const o = world.state.objects[objId];
+        if (!o || o.containedIn) continue; // in a box: counted as that box's stack
+        const parent = parentOfObject(objId);
+        if (!parent) continue;
+        let bucket = censusMemo.get(parent);
+        if (!bucket) {
+          bucket = {};
+          censusMemo.set(parent, bucket);
+        }
+        bucket[rec.glyph] = (bucket[rec.glyph] ?? 0) + 1;
+      }
+      return censusMemo;
+    };
     return {
+      /**
+       * 🧺 WHAT IS LYING IN THIS SCOPE — the census scope.ts asks for, and the
+       * half of a building's inventory that had no reader at all.
+       *
+       * A loose prop is ONE UNIT OF ITS OWN GLYPH (item-prop.ts's law: one
+       * thing, three situations). `containerStock` answers what a prop
+       * CONTAINS — a barrel's water — and never what it IS, so a workbench
+       * standing on the kitchen floor was invisible to every "have we got one"
+       * gate in the engine while being perfectly visible to the player.
+       *
+       * The parent rule is the containment rule above, deliberately: a prop in
+       * a body's hands belongs to the BODY (and reaches the building through
+       * it, since a resident hangs off its household), one on the floor belongs
+       * to the room it stands in, and one inside a box is not loose at all —
+       * its unit is already on that box's stack, and counting it here would be
+       * the same chair twice.
+       */
+      looseIn: (id) => census().get(id) ?? null,
       ids: () => {
         const out = new Set<ScopeId>();
         if (t) {
@@ -18280,7 +21801,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // player is always listed; every other body earns its node by wearing
         // or holding a container, which is the only way a body can have goods
         // on it at all.
-        out.add(`${POCKET_EP}${PLAYER_CREATURE_ID}`);
+        out.add(`${POCKET_EP}${LOCAL_PLAYER_CID}`);
         for (const cid of session.wornBags.keys()) out.add(`${POCKET_EP}${cid}`);
         for (const [objId, o] of Object.entries(world?.state.objects ?? {})) {
           if (o.carriedBy && session.containers.has(objId)) {
@@ -18295,21 +21816,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const hi = houseIndexOfCid(cid);
         return Number.isFinite(hi) ? hi : null;
       },
-      buildingOfContainer: (objectId) => {
-        // A CONTAINER ON SOMEBODY BELONGS TO THEM (step ②/③) — the basket a
-        // body carries and the satchel it wears ARE its inventory, and hang off
-        // the body rather than off whatever room it happens to be standing in.
-        // This is the whole law in one line: a scope's inventory is the sum of
-        // the containers it holds. A WORN bag has no world object to ask, so
-        // the wear register answers for it.
-        for (const [cid, w] of session.wornBags) {
-          if (w.objId === objectId) return `${POCKET_EP}${cid}`;
-        }
-        const o = world?.state.objects[objectId];
-        if (!o || !world) return null;
-        if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
-        return buildingAt(world.state, o.x, o.y)?.id ?? null;
-      },
+      buildingOfContainer: parentOfObject,
       buildingOfOrder: (ord) => {
         // A FOUNDED order has no building yet — it IS one being made, on ground
         // that belongs to the town. Every other order grows or shrinks an
@@ -18319,6 +21826,72 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       },
       townId: () => (t ? TOWN_SCOPE : null),
     };
+  }
+
+  /**
+   * ═══ WHAT A BUILDING OWNS ═══ (scope-unification.md — the law, as a call)
+   *
+   * "A scope's inventory is not a field on the scope. It is the sum of its
+   * containers." Every gate that means *"has this household got one of these"*
+   * asks this, at any rung: a house, a work shell, and (through the same
+   * function on a `pocket:` id) a body.
+   *
+   * TWO QUESTIONS, AND THEY ARE NOT THE SAME ONE:
+   *   • `"stored"`   — only what is PUT AWAY, in the scope's containers. The
+   *                    reconciler's budget (`reconcileFurnishing`'s `stored`)
+   *                    means exactly this, because it is ALREADY handed the
+   *                    loose pieces as `standing`; counting them twice would
+   *                    have the household install and carry the same chair.
+   *   • `"anywhere"` — the whole scope: its boxes, the floor of its rooms, the
+   *                    hands and bags of the people in it, its delivery pile.
+   *                    Every "do we need to make one" gate means THIS, and
+   *                    asking the narrow question is what had a family crafting
+   *                    a workbench every 90 seconds while three of them lay on
+   *                    the kitchen floor (2026-08-05).
+   *
+   * ONE ROLL-UP PER TOWN-SECOND, then map lookups (`scopeStockIndex`). Asking
+   * per building would be a full walk of every id in the town per question, and
+   * a 200-house town asks constantly — which is how these gates came to be
+   * written as id-prefix regexes in the first place.
+   */
+  const buildingStockMemo = new WeakMap<
+    QuestSession,
+    {
+      sig: string;
+      anywhere: Map<ScopeId, Record<string, number>> | null;
+      stored: Map<ScopeId, Record<string, number>> | null;
+    }
+  >();
+  function buildingUnits(
+    session: QuestSession,
+    buildingKey: string,
+    glyph: string,
+    where: "stored" | "anywhere",
+  ): number {
+    // THE EVENTS THAT MATTER ARE IN THE KEY, and the clock is only a backstop.
+    // A piece appearing on a floor or a new stack opening changes a map SIZE, so
+    // the answer to "have we got one" is never stale about the thing it is
+    // asked for; the coarse clock catches units moving between stacks that
+    // already exist, and it is coarse because every caller is a sweep with a
+    // 45–90 s backoff of its own. (Rebuilding per town-second cost ~10% of the
+    // whole sim step on a 200-house town; per stock epoch was far worse, since
+    // it rebuilt mid-tick for each household in turn.)
+    const sig = `${session.containerStock.size}|${session.smallProps.size}|${Math.floor(session.townClock / 5)}`;
+    let memo = buildingStockMemo.get(session);
+    if (!memo || memo.sig !== sig) {
+      memo = { sig, anywhere: null, stored: null };
+      buildingStockMemo.set(session, memo);
+    }
+    // LAZY per flavour: the gates ask "anywhere" constantly and "stored" only
+    // when a reconcile actually runs, so building both up front doubled the
+    // cost of the common case for nothing.
+    let idx = memo[where];
+    if (!idx) {
+      const tree = scopeTreeOf(session);
+      idx = scopeStockIndex(where === "anywhere" ? tree : { ...tree, looseIn: undefined });
+      memo[where] = idx;
+    }
+    return unitsOf(idx.get(buildingKey) ?? {}, glyph);
   }
 
   /** WHAT THIS SESSION HOLDS, ALL IN — every stack in the tree, summed by glyph.
@@ -18567,7 +22140,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
       if (stackUnits(stack, goodsHead) <= 0) continue;
       const owner = session.containerOwner.get(boxId);
-      if (!mayUse(PLAYER_CREATURE_ID, issuerHouse, owner)) {
+      if (!mayUse(LOCAL_PLAYER_CID, issuerHouse, owner)) {
         foreignOwner = owner ?? foreignOwner;
         continue;
       }
@@ -18579,7 +22152,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // that actually holds the goods. (It may already be in the `containerStock`
     // sweep above; the id check keeps it from being offered twice, and the
     // player's own bag is never foreign to the player.)
-    const myBag = activeBagOf(session, PLAYER_CREATURE_ID);
+    const myBag = activeBagOf(session, LOCAL_PLAYER_CID);
     if (myBag && myBag.objId !== destId && !sources.some((s) => s.id === myBag.objId) && stackUnits(myBag.stock, goodsHead) > 0) {
       const at = playerWorldPos(session);
       if (at) sources.push({ id: myBag.objId, stack: myBag.stock, d: Math.hypot(at.x - destAt.x, at.y - destAt.y) });
@@ -18616,6 +22189,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     qty: number,
     sentence: string,
     explicitHauler: string | null,
+    issuer: string = LOCAL_PLAYER_CID,
   ): boolean {
     if (!world || !session.creatures) return false;
     if (!("match" in goal.item)) return false; // an exact instance rides the legacy paths
@@ -18631,7 +22205,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const dest = stockEndpointOf(session, destId);
     if (!dest?.at) return false;
     // Someone else's PRIVATE box is not a drop target — refused, named.
-    if (isPrivateOwner(dest.owner) && !mayUse(PLAYER_CREATURE_ID, familyOf(session)?.house ?? null, dest.owner)) {
+    if (isPrivateOwner(dest.owner) && !mayUse(LOCAL_PLAYER_CID, familyOf(session)?.house ?? null, dest.owner)) {
       const ownerCid = ownerCidsOf(dest.owner)[0];
       const who = (ownerCid && creatureGlyph(session, ownerCid)) || "someone";
       if (explicitHauler) npcChatBubble(session, explicitHauler, "no");
@@ -18677,7 +22251,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         from: d.id,
         to: destId,
         goods: { [head]: d.take },
-        issuer: PLAYER_CREATURE_ID,
+        issuer,
         mode: "haul",
         now: session.taskClock,
         sourceGlyph: sentence,
@@ -18689,7 +22263,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const willing =
         explicitHauler.startsWith("resident_") ||
         session.bondedCreatures.has(explicitHauler) ||
-        compliance(relationToward(session, explicitHauler, PLAYER_CREATURE_ID), creatureMood(explicitHauler)) >=
+        compliance(relationToward(session, explicitHauler, issuer), creatureMood(explicitHauler)) >=
           VOLUNTEER_COMPLIANCE;
       if (!willing) {
         for (const a of posted) session.transfers.fail(a.id, "no-executor");
@@ -18716,7 +22290,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       postPooledTask(
         session,
         { kind: "transfer", agreementId: a.id, goods: a.goods, to: transferDestPlaceRef(session, destId) },
-        PLAYER_CREATURE_ID,
+        issuer,
         focus,
         sentence,
       );
@@ -18891,7 +22465,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // no-op for agreements that reserved nothing).
               session.reservations.consume(agrHolder(agreementId), agr.from, g, c);
             }
-            if (agr.from === activeBagOf(session, PLAYER_CREATURE_ID)?.objId) pushPocket(session);
+            if (agr.from === activeBagOf(session, LOCAL_PLAYER_CID)?.objId) pushPocket(session);
             fellIfConsumed(session, agr.from); // a hauled-empty kill-source is felled
             // `carried` is now a MANIFEST — what this haul is meant to be
             // delivering — never the storage itself. The goods are on the body.
@@ -18957,7 +22531,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // "no free source offers wood" and the housemate whose pantry row went
         // begging are waiting on exactly this event.
         bumpStockEpoch(session);
-        if (agr.to === activeBagOf(session, PLAYER_CREATURE_ID)?.objId) pushPocket(session);
+        if (agr.to === activeBagOf(session, LOCAL_PLAYER_CID)?.objId) pushPocket(session);
         else {
           // A resident recipient re-decides with the goods on it — the gift
           // path's law: the live loop eats it or walks it home.
@@ -19180,6 +22754,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     partnerWord: string,
     quantityWord: string | undefined,
     sentence: string,
+    issuer: string = LOCAL_PLAYER_CID,
   ): boolean {
     if (!("match" in goal.item)) return false;
     const head = goal.item.match.kind ?? goal.item.match.category;
@@ -19194,7 +22769,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       from: townEndpointId(partner.key),
       to: homeId,
       goods: { [head]: perDay },
-      issuer: PLAYER_CREATURE_ID, // the sovereign's decree — a POLITY issuer at P4
+      issuer, // the sovereign's decree — a POLITY issuer at P4
       mode: "scheduled",
       now: session.taskClock,
       every: FOOD_DAY_SEC,
@@ -19229,6 +22804,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     goal: Extract<GoalSpec, { kind: "trade" }>,
     quantityWord: string | undefined,
     sentence: string,
+    issuer: string = LOCAL_PLAYER_CID,
   ): boolean {
     const homeId = tradeHomeEndpointId(session);
     if (!homeId) return false;
@@ -19304,7 +22880,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       from: homeId,
       to: townEndpointId(partner.key),
       goods: { [give]: giveN },
-      issuer: PLAYER_CREATURE_ID,
+      issuer,
       mode: "scheduled",
       now: session.taskClock,
       // The caravan takes TRAVEL TIME: the shipment lands a leg out, and a
@@ -20229,7 +23805,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // reference them here; nothing calls the director until the frame loop.)
   const director = createConstructionDirector({
     presenter, deps, possession,
-    avatarIdOf, npcChatBubble, containerAnchor, houseContainerKeys,
+    avatarIdOf, npcChatBubble, containerAnchor, houseContainerKeys, buildingUnits,
     stockEndpointOf, postPooledTask, playerWorldPos, familyOf,
     playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
@@ -20300,9 +23876,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // so the index is meaningless anywhere else — and the sentence on the
       // button can't stand in for it, because choosing an act never went
       // through the parser. Resolving it is local; the act is what travels.
-      if (convo && id.startsWith("act_")) {
-        const act = convo.acts[Number(id.slice(4))];
-        if (act) performPlayerAction({ kind: "converse", cid: convo.nodeId, act }, opts);
+      if (convoView && id.startsWith("act_")) {
+        const act = convoView.acts[Number(id.slice(4))];
+        if (act) performPlayerAction({ kind: "converse", cid: convoView.cid, act }, opts);
         return;
       }
       // Everything else is an ACT ON THE WORLD, and it carries WHERE THIS
@@ -20690,11 +24266,36 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     applySpokenSentence(sentence, opts = {}) {
       const s = sess;
       if (!s || !world) return;
+      // WHO is speaking: a relayed peer's player-creature id, else the local
+      // author. Every author-of-act site below reads `speaker` — and when the
+      // speaker is REMOTE, the device-local context (gaze, family chip, open
+      // conversation, possession, nearest) is the OWNER's state, not the
+      // speaker's, so it is withheld: a relayed utterance stands on the
+      // addressee/gesture it carried (multi-entity-conversations.md §3e).
+      const speaker = opts.speakerCid ?? LOCAL_PLAYER_CID;
+      const speakerIsLocal = speaker === LOCAL_PLAYER_CID;
+      const localPossessed = speakerIsLocal ? possession.creatureId : null;
+      const localChip = speakerIsLocal ? s.addressedFamily : null;
+      const localGazed = speakerIsLocal ? gazeCreature(s) : null;
+      // The conversation THIS DEVICE has a board on — `convoView`, not `convo`,
+      // which is briefly somebody else's while their turn runs.
+      const localConvo = speakerIsLocal ? (convoView?.cid ?? null) : null;
+      const localNearest = speakerIsLocal ? nearestCreature(s) : null;
       // The household NAME BOOK (family, pets, species words) — built up front:
       // the PARSER's classifier needs it (animacy: "mara + give + apple" makes
       // Mara the agent) and the binder resolves through it below.
       const byName = nameBook(s);
-      const frame = parseSentence(sentence, { classifyEntity: (sym) => classifySpokenNoun(s, byName, sym) });
+      const frame = parseSentence(sentence, {
+        classifyEntity: (sym) => classifySpokenNoun(s, byName, sym),
+        ...(rosterWords(speaker).length ? { addressees: rosterWords(speaker) } : {}),
+      });
+      // A SPOKEN NAME preempts every other addressing signal (vocative >
+      // relayed target > family chip > gaze > conversation > possession >
+      // nearest): saying a name is the most deliberate act of addressing
+      // there is, and it works the same relayed as local. An unresolvable
+      // vocative falls through to the ordinary stack.
+      const vocativeCid =
+        frame.vocative?.kind === "entity" ? (byName.get(frame.vocative.symbol.toLowerCase()) ?? null) : null;
 
       // A DIALOGUE TURN follows WHO WAS ADDRESSED, not whose board is open. A
       // conversational move (request / where / hi / yes / no / bye) makes the
@@ -20727,16 +24328,45 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         frame.object?.kind === "entity"
       ) {
         const place = activeGesture?.place;
-        attendTo(s, { kind: "glyph", glyph: frame.object.symbol, ...(place ? { at: place } : {}) }, { command: true });
+        attendTo(
+          s,
+          { kind: "glyph", glyph: frame.object.symbol, ...(place ? { at: place } : {}) },
+          { command: true, author: speaker },
+        );
         return;
       }
 
-      const spokenTo = opts.targetId ?? convo?.nodeId ?? null;
+      // ⑩ — WHOM THIS SENTENCE IS SAID TO, in the conversation this device has
+      // open. THE ORDER IS: vocative > relayed target > convoAddressee > the
+      // faced creature. The top two are §3b's law unchanged (a spoken name is the
+      // most deliberate act of addressing there is, so it preempts everything —
+      // including the fellow member the gaze picked). The new rung is the third:
+      // inside a circle, the person the child last looked at is who they are
+      // talking to until they look at somebody else.
+      //
+      // ⑫③ deliberately left this stack alone, and ⑫⑤ leaves THIS half of it
+      // alone too. An UTTERANCE carries its own gesture addressee and hands it
+      // to `runCreatureAct` as an override, so a spoken sentence still reaches
+      // the board's creature when nothing else answers; the nullable channel
+      // order governs a BOARD PRESS, which carries no gesture, and that is the
+      // press ⑫⑤'s `underSpecified` answers. What ⑫⑤ DID change is the
+      // out-of-conversation half below (`possessed`/`nearest`), which had no
+      // gesture behind it at all — see the stack comment there.
+      const localAddressee = speakerIsLocal ? liveConvoAddressee() : null;
+      const spokenTo = vocativeCid ?? opts.targetId ?? localAddressee ?? localConvo;
       if (spokenTo && s.creatures?.world.creatures[spokenTo]) {
         const node = s.creatures.nodeByCreature.get(spokenTo);
-        const act = intentToAct(frame, s.creatures.world, PLAYER_CREATURE_ID, spokenTo, creatureProjectionOpts(s, node?.announce));
+        const act = intentToAct(
+          frame,
+          s.creatures.world,
+          { speakerId: speaker, addresseeId: spokenTo },
+          creatureProjectionOpts(s, node?.announce),
+        );
         if (act) {
-          inConversationWith(spokenTo, () => runCreatureAct(act));
+          // The resolved addressee travels WITH the turn: `runCreatureAct` would
+          // otherwise re-resolve it from the board, and a vocative would lose to
+          // the very gaze it is supposed to preempt.
+          withConversationTurn(spokenTo, speaker, () => runCreatureAct(act, speaker, spokenTo));
           return;
         }
       }
@@ -20747,25 +24377,51 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // target — deliberate beats incidental), then whom you're LOOKING at,
       // else in conversation, else — POSSESSED — the player's own avatar
       // creature (you can always talk to the body you ride), else nearest.
-      const target = resolveAddressee(opts.targetId, {
-        addressedFamily: s.addressedFamily,
-        gaze: gazeCreature(s),
-        convo: convo?.nodeId ?? null,
-        possessed: possession.creatureId,
-        nearest: nearestCreature(s),
+      //
+      // ★ ⑫⑤ — AND INSIDE A CIRCLE THE STACK STOPS AT THE CONVERSATION RUNG. ★
+      //
+      // `possessed` and `nearest` are OUT-OF-CONVERSATION fallbacks: they exist
+      // so a spirit with nobody in front of it can still say "stop" or "follow
+      // me" and have it land somewhere. Letting them reach INTO a roster of
+      // three or more silently re-fills the very hole this feature is made of —
+      // the sentence would land on the body you happen to be riding, or on
+      // whoever is standing closest, neither of whom anybody addressed, and the
+      // child would never learn that naming a person is a thing they can do.
+      //
+      // So in a circle the stack ends at `convo`, and a command with no channel
+      // spent falls through to the WHO_DO_YOU_MEAN answers the goal arms below
+      // already speak ("look at a family member, then …"). Same verdict, same
+      // line, one rung earlier — and the same line ⑫⑤ speaks for an
+      // under-specified conversational act, which is the point: one answer to
+      // "whom did you mean?", wherever the question comes up.
+      //
+      // A VOCATIVE and a RELAYED TARGET still preempt everything — those are
+      // deliberate acts of addressing, not fallbacks — and a DYAD is untouched
+      // (law ④: with one other person there is nothing to disambiguate, so the
+      // old stack is exactly right there and ⑦ stays byte-identical).
+      const speakerInCircle = (conversationOf(speaker)?.convo.members.length ?? 0) > 2;
+      const target = resolveAddressee(vocativeCid ?? opts.targetId, {
+        addressedFamily: localChip,
+        gaze: localGazed,
+        // ⑩ — the fellow member the gaze picked outranks "whoever's board is
+        // open", for the same reason it does above: it is the more specific
+        // answer to the same question.
+        convo: localAddressee ?? localConvo,
+        possessed: speakerInCircle ? null : localPossessed,
+        nearest: speakerInCircle ? null : localNearest,
       });
       // "there" → the ground THE SPEAKER indicated ("you go there"). It comes
       // off the utterance's own gesture, never this device's live gaze: the
       // eyes that chose the place may be on another machine, and by the time an
       // order arrives even the local ones have moved on.
-      const look = activeGesture?.place ?? world.getGaze?.().committedWorld ?? null;
+      const look = activeGesture?.place ?? (speakerIsLocal ? (world.getGaze?.().committedWorld ?? null) : null);
       const gazePlace = look ? ({ kind: "point", x: look.x, y: look.y } as const) : null;
       // NAMES bind: a spoken family member's NAME ("Mara + eat", "give + apple
       // + to + Mara") resolves to its creature — wrapped over the default
       // binder so every subject/recipient slot understands the household.
       const binder = defaultBinder({
-        player: PLAYER_CREATURE_ID,
-        listener: target ?? PLAYER_CREATURE_ID,
+        player: speaker,
+        listener: target ?? speaker,
         gazePlace,
       });
       if (byName.size) {
@@ -20873,7 +24529,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (compiled.kind === "law") {
         const area = forbidArea(s, frame);
         const book = s.town?.deltas.laws ?? s.foundedSite?.deltas.laws ?? s.laws;
-        addLaw(book, { tier: "law", forbid: compiled.forbid, area, issuer: PLAYER_CREATURE_ID });
+        addLaw(book, { tier: "law", forbid: compiled.forbid, area, issuer: speaker });
         if (target && s.creatures?.nodeByCreature.has(target)) npcChatBubble(s, target, LAW_ACCEPTED);
         const where =
           area.kind === "town" ? " — here in town"
@@ -20899,13 +24555,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const act = intentToAct(
             frame,
             s.creatures.world,
-            PLAYER_CREATURE_ID,
-            target,
+            { speakerId: speaker, addresseeId: target },
             creatureProjectionOpts(s, node?.announce),
           );
           if (act) {
-            openCreatureConvo(target, { present: false });
-            runCreatureAct(act);
+            // Opening the BOARD is the local author's own doing — a peer's
+            // sentence must not raise a conversation panel on this screen. The
+            // TURN runs either way, seating whoever spoke on the roster.
+            if (speakerIsLocal) openCreatureConvo(target, { present: false });
+            withConversationTurn(target, speaker, () => runCreatureAct(act, speaker, target));
             return;
           }
         }
@@ -20936,7 +24594,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // its own group to a gathering. It cannot be a head itself (no body,
           // no seat), so it does the one thing it honestly can: it ASKS, and
           // whichever member accepts declares the ritual in the ordinary way.
-          const { accepted, tpl } = askToGather(s, goal.need, resolveCompanions(s, goal.with), PLAYER_CREATURE_ID);
+          const { accepted, tpl } = askToGather(s, goal.need, resolveCompanions(s, goal.with), speaker);
           if (accepted.length) {
             presenter.toast(`▶ ${sentence}`, "feedback");
           } else if (!tpl && DEFAULT_VOICE_POLICY.inertCompany) {
@@ -20996,8 +24654,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
       // A hug FROM THE SPIRIT (the player is formless — no walk): warmth lands
       // directly; a member/pet actor walks over instead (compileGoal socialAct).
-      if (goal.kind === "socialAct" && actor === PLAYER_CREATURE_ID) {
-        applySocialAct(s, PLAYER_CREATURE_ID, goal.target, goal.act);
+      if (goal.kind === "socialAct" && actor === speaker) {
+        applySocialAct(s, speaker, goal.target, goal.act);
         presenter.toast(`▶ ${sentence}`, "feedback");
         return;
       }
@@ -21007,12 +24665,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // dollhouse keeps its family semantics and every embodied session keeps
       // the party recruit).
       if (goal.kind === "follow") {
-        const joiner = actor !== PLAYER_CREATURE_ID ? actor : target;
+        const joiner = actor !== speaker ? actor : target;
         if (!joiner) {
           saySystem(s, WHO_DO_YOU_MEAN, `💬 look at a creature, then "you follow i_me"`);
           return;
         }
-        if (spiritNow() && s.dollhouse === null) {
+        // Possession is DEVICE-LOCAL: only the local speaker's "follow me"
+        // rides a body. A peer's spirit taking a body needs per-peer session
+        // state that doesn't exist yet (flagged in multi-entity-conversations.md)
+        // — a relayed follow recruits to the party instead.
+        if (speakerIsLocal && spiritNow() && s.dollhouse === null) {
           const res = possession.possess(joiner);
           if (res.ok) s.bondedCreatures.add(joiner); // family bond — it volunteers for pooled tasks
           presenter.toast(
@@ -21030,8 +24692,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // "stop" → DISMISS: the possessed avatar first (back to the spirit),
       // else the addressed/named member, else the whole party.
       if (goal.kind === "stay") {
-        const stopper = actor !== PLAYER_CREATURE_ID ? actor : target;
-        if (possession.creatureId && (!stopper || stopper === possession.creatureId)) {
+        const stopper = actor !== speaker ? actor : target;
+        // Dismissing the ridden body is the LOCAL speaker's move — a peer's
+        // "stop" must never unseat this device's possession.
+        if (speakerIsLocal && possession.creatureId && (!stopper || stopper === possession.creatureId)) {
           const prev = possession.creatureId;
           possession.dismiss();
           presenter.toast(`👻 ${prev} stays — you are the spirit again`, "feedback");
@@ -21055,7 +24719,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // to a visible caravan. Host-instant like zone — town policy, not a
       // body errand. "trade all wood …" makes the route STANDING.
       if (goal.kind === "trade") {
-        if (orderTrade(s, goal, frame.quantity, sentence)) return;
+        if (orderTrade(s, goal, frame.quantity, sentence, speaker)) return;
         saySystem(s, CANT_HERE, `💬 "${sentence}" — no one to trade with here`);
         return;
       }
@@ -21074,11 +24738,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // ridden body, the tapped chip, the gazed/conversing creature.
         // Nobody explicit → the order pools (never "nearest grabs it").
         const explicitBuilder =
-          (frame.subject !== undefined && actor !== PLAYER_CREATURE_ID ? actor : null) ??
-          possession.creatureId ??
-          s.addressedFamily ??
-          gazeCreature(s) ??
-          convo?.nodeId ??
+          (frame.subject !== undefined && actor !== speaker ? actor : null) ??
+          localPossessed ??
+          localChip ??
+          localGazed ??
+          localConvo ??
           null;
         if (orderBuild(s, goal.structure, sentence, explicitBuilder)) return;
         saySystem(s, CANT_HERE, `💬 "${sentence}" — can't build here`);
@@ -21095,11 +24759,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // speaker slot, which made the acknowledgement bubble address a creature
         // id that never existed.
         const explicitMaker =
-          (frame.subject !== undefined && actor !== PLAYER_CREATURE_ID ? actor : null) ??
-          possession.creatureId ??
-          s.addressedFamily ??
-          gazeCreature(s) ??
-          convo?.nodeId ??
+          (frame.subject !== undefined && actor !== speaker ? actor : null) ??
+          localPossessed ??
+          localChip ??
+          localGazed ??
+          localConvo ??
           null;
         if (orderCraft(s, goal.glyph, explicitMaker)) return;
         saySystem(s, CANT_HERE, `💬 "${sentence}" — can't make that here`);
@@ -21122,7 +24786,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           saySystem(s, CANT_HERE, `💬 "${sentence}" — can't take that down`);
           return;
         }
-        const b = spokenBuildingOf(s, [actor, target, s.addressedFamily]);
+        const b = spokenBuildingOf(s, [actor, target, localChip]);
         const room = b ? spokenRoomOf(s, b.plan, roomKind) : null;
         if (!b || !room) {
           // No building in focus, or no room of that kind in it. Which of the
@@ -21174,7 +24838,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if ((goal.kind === "give" || goal.kind === "putIn") && "match" in goal.item) {
         const fromBound = frame.bound?.find((b) => b.relation === "from");
         const fromWord = fromBound?.ref.kind === "entity" ? fromBound.ref.symbol : null;
-        if (fromWord && orderTribute(s, goal, fromWord, frame.quantity, sentence)) return;
+        if (fromWord && orderTribute(s, goal, fromWord, frame.quantity, sentence, speaker)) return;
       }
       // A TRANSFER-SHAPED order (city-expansion ②): "give/bring <goods> to
       // <house/yard/person>", "put <goods> in <endpoint>", with quantities —
@@ -21183,14 +24847,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // drops at a spot) fall through to the shipped paths below.
       if ((goal.kind === "give" || goal.kind === "putIn") && "match" in goal.item) {
         const explicitHauler =
-          (frame.subject !== undefined && actor !== PLAYER_CREATURE_ID && actor !== possession.creatureId
+          (frame.subject !== undefined && actor !== speaker && actor !== localPossessed
             ? actor
             : null) ??
-          s.addressedFamily ??
-          gazeCreature(s) ??
-          convo?.nodeId ??
+          localChip ??
+          localGazed ??
+          localConvo ??
           null;
-        if (orderTransfer(s, goal, orderQuantity(frame.quantity), sentence, explicitHauler)) {
+        if (orderTransfer(s, goal, orderQuantity(frame.quantity), sentence, explicitHauler, speaker)) {
           return;
         }
       }
@@ -21204,13 +24868,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const dollTarget = s.dollhouse !== null && dollActor ? [dollActor] : [];
       const explicit =
         actor.startsWith("resident_") &&
-        (actor === s.addressedFamily || (frame.subject !== undefined && actor !== (target ?? PLAYER_CREATURE_ID)));
+        (actor === localChip || (frame.subject !== undefined && actor !== (target ?? speaker)));
       // A DELIBERATELY addressed creature (selected chip / looked-at / conversing
       // / ridden — NOT the incidental `nearestCreature` fallback) obeys a body
       // errand directly, even as a non-resident, non-party stranger: "tell
       // someone to do X" should drive that someone, not silently pool the order.
       // A truly UNADDRESSED order still falls to the task pool below.
-      const addressed = s.addressedFamily ?? gazeCreature(s) ?? convo?.nodeId ?? possession.creatureId ?? null;
+      const addressed = localChip ?? localGazed ?? localConvo ?? localPossessed ?? null;
       const members =
         explicit ? [actor]
         : s.party.size ? [...s.party]
@@ -21223,7 +24887,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // creature inside the area may claim it (stepTaskPool); unclaimable
         // tasks expire back to the player ("no one can do that").
         const focus = playerFocusArea(s);
-        const posted = focus ? postPooledTask(s, goal, PLAYER_CREATURE_ID, focus, sentence) : null;
+        const posted = focus ? postPooledTask(s, goal, speaker, focus, sentence) : null;
         presenter.toast(
           posted
             ? `🪧 ${sentence} — anyone nearby may take it`
@@ -21283,7 +24947,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
     pickEntityAt(clientX, clientY) {
       if (!world) return null;
-      const r = canvas.getBoundingClientRect();
+      const r = clientOrigin();
       return world.pickAt(clientX - r.left, clientY - r.top);
     },
     debugProbe() {
@@ -21514,8 +25178,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // Everything else goes through the SAME executor as this device's own
       // actions — one action, one meaning, whoever performed it. The sender's
       // device already voiced whatever it said (spokenExternally), and any
-      // target it resolved travels inside the action.
-      applyPlayerAction(cmd, { spokenExternally: true });
+      // target it resolved travels inside the action. WHO performed it rides
+      // along as that peer's player-creature id (multi-entity-conversations.md
+      // §3e) — the singleton sweep consumes it; nothing reads it yet.
+      applyPlayerAction(cmd, { spokenExternally: true, speakerCid: playerCidOf(cmd.from, mp.localId) });
     },
     multiplayerRole() {
       return mp?.role ?? null;
@@ -21528,7 +25194,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return resolveAddressee(null, {
         addressedFamily: s.addressedFamily,
         gaze: gazeCreature(s),
-        convo: convo?.nodeId ?? null,
+        // ⑩ — the fellow member the gaze picked inside the circle, else the
+        // creature the board faces. Same order as `applySpokenSentence`, because
+        // this IS the gesture that utterance carries.
+        convo: liveConvoAddressee() ?? convoView?.cid ?? null,
         possessed: possession.creatureId,
         nearest: nearestCreature(s),
       });
@@ -21547,6 +25216,40 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
     stockAudit() {
       return sess ? sessionStockAudit(sess) : {};
+    },
+    conversationAudit() {
+      // A pure projection of the book — no sweep, no tick, no side effect. A
+      // probe that changed what it measured would be worse than no probe.
+      return [...conversations.values()].map((c) => ({
+        id: c.id,
+        nodeId: c.nodeId,
+        group: !!c.group,
+        members: c.convo.members
+          .map((m) => {
+            // ⑫④ — through `addressingOf`, never off the row: a pointer at
+            // somebody who has left is not an address, and a probe that showed
+            // one would be reporting a state the engine does not act on.
+            const to = addressingOf(c.convo, m.id);
+            // ⑫⑧ — the engagement tail (`~0.60`) is the one number a GL run
+            // needs to answer "does a hauling resident LOOK like it is in the
+            // conversation": the field is honest state now, so a member below 1
+            // should be visibly busy on screen and a member at 1 should be
+            // standing still. Absent at full engagement — the ordinary case,
+            // and a row of `~1.00` on every member would bury the one that is
+            // not.
+            const eng = m.engagement < 1 ? `~${m.engagement.toFixed(2)}` : "";
+            return `${m.id}@${m.level}${to ? `>${to}` : ""}${eng}`;
+          })
+          .join(","),
+        ...(c.group
+          ? {
+              nextTurnAt: +c.group.nextTurnAt.toFixed(2),
+              dullS: +c.group.dullS.toFixed(2),
+              anchor: `${c.group.anchor.x.toFixed(1)},${c.group.anchor.y.toFixed(1)}`,
+            }
+          : {}),
+        seq: c.convo.nextSeq,
+      }));
     },
     carryOf(cid) {
       return sess ? bodyCarryView(bodyCarryOf(sess, cid)) : {};

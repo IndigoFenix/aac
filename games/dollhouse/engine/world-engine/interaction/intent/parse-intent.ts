@@ -73,6 +73,16 @@ export interface IntentFrame {
   joint?: boolean;
   subject?: Ref;
   object?: Ref;
+  /** VOCATIVE — WHOM the utterance is addressed to ("hi + mara": the greeting
+   *  goes TO Mara). Neither a subject nor an object: Mara is not doing the
+   *  greeting and nothing is being done to her, she is the one being spoken
+   *  to. Only an ADDRESSING social act (greet/farewell) that names an animate
+   *  binds one — a creature-classified noun, or the deictic "you" — and it is
+   *  order-free like every other role ("hi + mara" == "mara + hi"). Lazy like
+   *  every other `Ref`: resolving it to a concrete creature id is the world's
+   *  job, and saying a name is the most deliberate act of addressing there is,
+   *  so it outranks the rest of the addressee stack. */
+  vocative?: Ref;
   /** Recipient / destination / located-at, when a relation binds one. */
   target?: Ref;
   /** The relation that bound `target` ("to", "in", "with"…). */
@@ -132,6 +142,19 @@ export interface ParseContext {
   /** Classify a fringe noun so a VERBLESS utterance can pick a default verb.
    *  Absent ⇒ a bare noun stays a `state` (a mention), leaving the verb to the world. */
   classifyEntity?: (symbol: string) => "place" | "item" | "creature" | "unknown";
+  /**
+   * ⑫ — THE ROSTER: the fellow members of the speaker's own conversation, as
+   * spoken symbols. Absent or empty ⇒ every rule below falls back to today's
+   * reading, byte-identical.
+   *
+   * It answers the ONE question syntax cannot: naming somebody is *talking to*
+   * them if they are standing in the conversation, and *talking about* them if
+   * they are not. "Mara, give me the apple" and "Mara gives the apple" are the
+   * same words; only the roster tells them apart — which is why a position rule
+   * or a special operator could never have done this job.
+   * (conversation-in-motion.md law ②, the NAME channel.)
+   */
+  addressees?: readonly string[];
   /** The designated language's canonical word order, for the conformance score
    *  (concept-parser.md). Defaults to "svo" (the shipped glyph order). */
   wordOrder?: WordOrder;
@@ -225,6 +248,13 @@ const MOVEMENT_GOAL_VERBS = new Set(["go", "come", "walk", "follow", "run", "cha
  *  ("stop + eat" = cease eating — never a command to eat). */
 const MODAL_VERBS = new Set(["want", "need", "like"]);
 const MOTION_AUX = new Set(["go", "come"]);
+
+/** ADDRESSING social acts: the moves that open and close a conversation, and
+ *  the only ones where a named creature beside them is a VOCATIVE rather than a
+ *  participant. Deliberately just these two — "yes + mara" or "sorry + mara"
+ *  mean other things (an answer about Mara, an apology for her), so they keep
+ *  today's shape until they earn a rule of their own. */
+const ADDRESSING_ACTS = new Set<IntentKind>(["greet", "farewell"]);
 
 /** SYNONYM FAMILIES: words that name the SAME primitive (they compile to the
  *  same GoalSpec) reduce to one canonical head, so a premise check never denies
@@ -650,16 +680,24 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
   const stateVerb = (verb !== undefined && STATE_VERBS.has(verb)) || modal !== undefined;
   const classify = (r: Ref | undefined): "place" | "item" | "creature" | "unknown" | undefined =>
     r?.kind === "entity" && ctx.classifyEntity ? ctx.classifyEntity(r.symbol) : undefined;
+  /** ⑫ — is this noun somebody the speaker is CURRENTLY IN A CONVERSATION WITH?
+   *  The one question that separates talking TO from talking ABOUT. */
+  const inRoster = (r: Ref | undefined): boolean =>
+    r?.kind === "entity" && !!ctx.addressees?.some((a) => a.toLowerCase() === r.symbol.toLowerCase());
   // NB: inferring an ABSENT subject (is a bare "come i_me" me-coming or you-come-to-me?)
   // is context-dependent and deliberately DEFERRED — compose an explicit "you" for now.
   const movementGoal = verb !== undefined && MOVEMENT_GOAL_VERBS.has(verb);
+  // A fringe noun BEFORE the verb that the world says is a CREATURE. Computed
+  // once for both the agent rule below and the ⑫ vocative rule (Stage 3.6):
+  // whichever of the two claims it, it is a PERSON in the sentence and never a
+  // thing — see the state-verb consumption immediately after.
+  const creaturePre = entities.find(
+    (e) => (verbIndex < 0 || e.index < verbIndex) && classify(e.ref) === "creature",
+  );
   if (!subject && !stateVerb) {
     // ANIMACY over position: a fringe noun BEFORE the verb that the world says
     // is a CREATURE is the agent, whatever the verb class ("mara + give +
     // apple" = Mara gives). Needs the classifier; a name is opaque otherwise.
-    const creaturePre = entities.find(
-      (e) => (verbIndex < 0 || e.index < verbIndex) && classify(e.ref) === "creature",
-    );
     if (creaturePre) {
       subjectEntityIndex = creaturePre.index;
       subject = creaturePre.ref;
@@ -675,6 +713,20 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
         subject = entities[0]!.ref;
       }
     }
+  }
+
+  // ⑫ — A NAMED PERSON IS NEVER THE THING WANTED. With a STATE verb the desire is
+  // the speaker's, so the animacy rule above deliberately declines to promote a
+  // noun to subject ("want + play + ball" = I want to play ball) — but that left
+  // a named creature sitting in the entity list with no role, and the object rule
+  // below takes the FIRST unclaimed noun, so "mara + want + apple" came out as
+  // wanting MARA and silently dropped the apple. A creature named before a state
+  // verb is a PERSON in the sentence: the one being addressed (Stage 3.6 binds it
+  // as the vocative when the roster says it is present) or the one being spoken
+  // about. Either way it is consumed here, so the thing wanted is the thing.
+  let vocativeEntityIndex = -1;
+  if (stateVerb && creaturePre && entities.length >= 2) {
+    vocativeEntityIndex = creaturePre.index;
   }
 
   // A transfer's RECIPIENT/SOURCE or a movement verb's DESTINATION: the person after
@@ -698,9 +750,11 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
   // (a CREATURE takes "to", a PLACE takes "in", a SOURCE is a creature or a
   // container/place); without one, position decides (object first, argument
   // last).
-  let objectEntry = entities.find((e) => e.index !== subjectEntityIndex);
+  const unclaimed = (e: { index: number }) =>
+    e.index !== subjectEntityIndex && e.index !== vocativeEntityIndex;
+  let objectEntry = entities.find(unclaimed);
   if (implied && !target) {
-    const free = entities.filter((e) => e.index !== subjectEntityIndex);
+    const free = entities.filter(unclaimed);
     if (free.length >= 2) {
       const wantClasses: readonly string[] =
         implied === "to" ? ["creature"] : implied === "in" ? ["place"] : ["creature", "place"];
@@ -752,6 +806,10 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
     persons.some((p) => p.deixis === "companions") ||
     bound.some((b) => b.relation === "with" && animate(b.ref));
 
+  // The ADDRESSING act actually spoken ("hi" / "bye"), kept so that naming a
+  // creature can't silently turn "bye + mara" into a greeting.
+  const addressingAct = socials.find((s) => ADDRESSING_ACTS.has(s));
+
   // Stage 3.5 — classify the move.
   let kind: IntentKind;
   if (question || isQuestionOp) {
@@ -764,7 +822,45 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
     // what's forbidden; area/issuer are the compiler's/world's concern.
     kind = "forbid";
   } else {
-    ({ kind, subject } = classifyPredicate({ verb, directive, transfer, modal, subject, object, target, attrs, entities, ctx }));
+    ({ kind, subject } = classifyPredicate({ verb, directive, transfer, modal, subject, object, target, attrs, entities, ctx, social: addressingAct }));
+  }
+
+  // Stage 3.6 — the VOCATIVE. An addressing act that NAMES an animate is spoken
+  // TO it: "hi + mara", "mara + hi" and a bare "mara" (naming a creature is
+  // already a greeting, above) all address Mara; "hi + you" addresses the
+  // listener — a no-op referent, but a well-formed one. PURELY ADDITIVE: the
+  // noun keeps whatever other role the frame already gave it, this only records
+  // WHOM. Needs the classifier — without one a name is opaque and the parser
+  // never guesses animacy, so "hi + ball" binds nobody.
+  let vocative: Ref | undefined;
+  if (!verb && (kind === "greet" || kind === "farewell")) {
+    vocative =
+      entities.find((e) => classify(e.ref) === "creature")?.ref ??
+      persons.find((p) => p.deixis === "listener")?.ref;
+  } else if (kind === "command" || kind === "request" || kind === "state") {
+    // ⑫ — THE NAME CHANNEL (conversation-in-motion.md law ②). Naming somebody
+    // who is standing in your conversation is ADDRESSING them: it is the channel
+    // that survives full hands and a body facing the wrong way, which is exactly
+    // why a name is worth learning.
+    //
+    // PURELY ADDITIVE, and it has to be: for a DIRECTIVE the imperative's subject
+    // and the utterance's addressee are ALREADY the same creature (an imperative
+    // with no named subject defaults to the listener, and a recipient-less "give"
+    // already lands on the speaker). So "mara + give + apple" needed no
+    // reinterpretation — the animacy rule has been computing the addressee under
+    // another name all along, and this only writes down what it found. Nothing is
+    // reassigned and no pinned reading moves.
+    //
+    // THE ROSTER IS THE GATE, and no amount of syntax could replace it: a name in
+    // the conversation is a person spoken TO, a name outside it is a person
+    // spoken ABOUT. A recipient behind the verb is never the addressee, which
+    // falls out for free — "pip + give + apple + to + mara" binds pip.
+    const named = subject?.kind === "entity" && inRoster(subject) ? subject : undefined;
+    const addressed =
+      vocativeEntityIndex >= 0 && inRoster(entities.find((e) => e.index === vocativeEntityIndex)?.ref)
+        ? entities.find((e) => e.index === vocativeEntityIndex)?.ref
+        : undefined;
+    vocative = named ?? addressed;
   }
 
   return {
@@ -776,6 +872,7 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
     joint: joint || undefined,
     subject,
     object,
+    vocative,
     target,
     relation,
     ...(bound.length ? { bound } : {}),
@@ -803,6 +900,9 @@ function classifyPredicate(a: {
   attrs: string[];
   entities: { ref: Ref }[];
   ctx: ParseContext;
+  /** The ADDRESSING act spoken alongside the nouns (greet/farewell), when one
+   *  was — it decides which social move a named creature belongs to. */
+  social?: IntentKind;
 }): { kind: IntentKind; subject?: Ref } {
   const isPlayer = (r?: Ref) => r?.kind === "player";
   const isListener = (r?: Ref) => r?.kind === "listener";
@@ -816,7 +916,10 @@ function classifyPredicate(a: {
         case "place":
           return { kind: "command", subject: a.subject ?? { kind: "listener" } };
         case "creature":
-          return { kind: "greet", subject: a.subject };
+          // Naming a creature ADDRESSES it (the caller binds the vocative). The
+          // move is a greeting unless the utterance said otherwise — "bye +
+          // mara" is a FAREWELL, and used to come out as a hello.
+          return { kind: a.social ?? "greet", subject: a.subject };
         case "item":
           return a.ctx.mode === "building"
             ? { kind: "command", subject: a.subject ?? { kind: "listener" } }

@@ -511,10 +511,16 @@ export function nextCraftKind(opts: {
 /** The glyph a stacked (unplaced) piece of furniture carries. */
 export const furnitureGlyph = (kind: StationKind): string => `furn.${kind}`;
 
-/** The station kind inside a furniture glyph — null for any other glyph. */
+/** The station kind inside a furniture glyph — null for any other glyph.
+ *
+ *  FACET-TOLERANT: the kind is the FIRST modifier, and anything after it is an
+ *  ordinary facet (`furn.chair.color_red` is a red chair). Matching the whole
+ *  tail meant one painted piece read as "not furniture at all" — it kept the
+ *  bookkeeping head `furn` through every word, icon and property lookup, which
+ *  is the exact failure this prefix was supposed to be invisible to. */
 export function furnitureKindOfGlyph(glyph: string): StationKind | null {
   if (!glyph.startsWith("furn.")) return null;
-  const kind = glyph.slice("furn.".length);
+  const kind = glyph.slice("furn.".length).split(".")[0] ?? "";
   return FURNITURE_ITEMS.some((f) => f.kind === kind) ? (kind as StationKind) : null;
 }
 
@@ -608,6 +614,41 @@ export const FURNITURE_ITEMS: ReadonlyArray<FurnitureItemDef> = [
 
 export const furnitureItemOf = (kind: StationKind): FurnitureItemDef | undefined =>
   FURNITURE_ITEMS.find((f) => f.kind === kind);
+
+/**
+ * IS THIS A WORKING STATION — a piece other things are made AT?
+ *
+ * The ENABLER test, asked from the spec side (never a kind list): a workbench
+ * is a tool a household needs standing before it can work, a chair is a chair.
+ * `craft.at` already declares the relation on every recipe, so this is the same
+ * fact read in the other direction, and adding a forge or a loom recipe makes
+ * that station an enabler with no edit here.
+ *
+ * The one caller that matters is the blueprint's "a place for the tools we own"
+ * layer: a drawing that has nowhere to stand a bench is why a bench the family
+ * MADE could never be stood up, and why the bump rule ate the one that was
+ * (2026-08-05). Décor is deliberately excluded — a household standing up every
+ * spare chair it owns is the blanket auto-place the user removed.
+ */
+export const isCraftStation = (kind: StationKind): boolean =>
+  FURNITURE_ITEMS.some((f) => f.craft?.at === kind);
+
+/** The room a station's own cluster belongs to (`workbench` → `workshop`), from
+ *  the placement rows that already say so. Undefined for a kind no house or work
+ *  row places — a piece with no natural room, which the caller answers for.
+ *  Typed off `ANNEX_ROOM_KIND` rather than importing `HouseRoom` (rooms.ts reads
+ *  this module; the arrow must not point back). */
+export type StationRoomKind = (typeof ANNEX_ROOM_KIND)[AnnexCluster] | "living";
+export const stationRoomKind = (kind: StationKind): StationRoomKind | undefined => {
+  const row =
+    HOUSE_STATIONS.find((s) => s.kind === kind) ?? WORK_STATIONS.find((s) => s.kind === kind);
+  const cluster = row?.cluster;
+  return cluster && cluster in ANNEX_ROOM_KIND
+    ? ANNEX_ROOM_KIND[cluster as AnnexCluster]
+    : cluster === "communal"
+      ? "living"
+      : undefined;
+};
 
 // ── THE OCCUPANT PROGRAM ────────────────────────────────────────────────
 // A building's program is derived from WHO occupies it and what their

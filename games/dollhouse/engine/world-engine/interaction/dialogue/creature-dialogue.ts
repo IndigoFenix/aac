@@ -58,6 +58,7 @@ import {
   type NeedTarget,
 } from "@shared/world-engine/interaction/behavior/creatures.js";
 import { headOf } from "../../variations.js";
+import { spokenWord } from "../content/makeable.js";
 import {
   willingnessToGive,
   willingnessToJoin,
@@ -73,6 +74,17 @@ import {
   type FactQuery,
 } from "@shared/world-engine/interaction/behavior/facts.js";
 import { canonicalVerb } from "@shared/world-engine/interaction/intent/parse-intent.js";
+// The SHARED half of a conversation's state (conversation.ts). Value imports —
+// this layer MUTATES the record in place (the RelationBook convention), it does
+// not hand a new one back. conversation.ts imports only TYPES from here, so the
+// cycle is erased at build and there is no runtime import loop.
+import {
+  markRevealed,
+  pairKey,
+  pairMemo,
+  type ConversationState,
+  type PairMemos,
+} from "@shared/world-engine/interaction/dialogue/conversation.js";
 
 // ---------------------------------------------------------------------------
 // Projection shapes
@@ -154,18 +166,61 @@ export interface DialogueProjection {
   acts: DialogueAct[];
 }
 
-/** Per-conversation presentation state the CALLER holds (resets on walk-away). */
-export interface ConversationMemo {
-  /** A price the creature stated this conversation (the trade counter). */
-  statedPrice?: { kind: "need" | "return"; itemId: ItemId };
-  /** A hidden (announce:"after") need revealed by small talk this conversation. */
-  revealed?: boolean;
+/**
+ * THIS DEVICE'S board navigation — never shared, never synced.
+ *
+ * Which sub-menu one player has open is not a fact about the conversation: two
+ * students talking to the same shopkeeper may sit on different pages of the
+ * "where is…" list at the same moment, and syncing that would make each one's
+ * board jump under the other's thumb. It rides beside the shared record
+ * (`DialogueCtx.ui`) rather than inside it precisely so it CANNOT be broadcast
+ * by accident. (multi-entity-conversations.md §3a.)
+ */
+export interface DeviceBoardState {
   /** The trade-for-what pick list is open. */
   tradeMenu?: boolean;
   /** A generic paginated pick-list is open (e.g. the "where is…" directions
    *  menu). `menu` selects the item provider; `page` is the 0-based page,
    *  wrapped on overflow. */
   list?: { menu: string; page: number };
+}
+
+/**
+ * The context a dialogue turn happens IN — what is remembered, and by whom.
+ *
+ * The old `ConversationMemo` bundled four fields that answer three different
+ * questions, and the bundle is what made a conversation a private thing between
+ * two parties. They split by WHO OWNS THE FACT:
+ *
+ *   • board navigation (`tradeMenu`/`list`) is the DEVICE's → `ui`,
+ *   • a revealed need is EVERYONE PRESENT's (it was said out loud) → `convo.revealed`,
+ *   • a stated price is the ASKER's alone (a quote to Ann is not Ben's) → `convo.pairs`.
+ *
+ * Both fields are optional, and the no-context call is a real supported mode:
+ * with no `convo` the shared reads answer "nothing revealed, nothing quoted" and
+ * the shared writes land in a scratch object that dies with the call — exactly
+ * what passing a fresh `{}` memo used to do, and exactly what ambient NPC
+ * chatter wants (a throwaway dyadic exchange that remembers nothing).
+ */
+export interface DialogueCtx {
+  /** The shared conversation this turn belongs to; absent = a throwaway dyadic
+   *  exchange (ambient NPC chatter) — revealed/statedPrice then live only for
+   *  the call. */
+  convo?: ConversationState;
+  /** THIS device's board navigation state. */
+  ui?: DeviceBoardState;
+  /**
+   * The SEEDED draw for this turn — `mulberry32(hashSeed(worldSeed, "convo",
+   * convoId, turn))`, one fresh stream per turn (§3d). Consumed by the
+   * willingness gates: `request` (generosity) and `invite` (sociability) roll
+   * against the soft edge instead of comparing to a hard threshold.
+   *
+   * ABSENT is a supported mode and means the OLD hard thresholds, unchanged —
+   * ambient chatter and every caller that has no stream to offer keep the
+   * deterministic verdict. Never `Math.random`: a world is a function of its
+   * seed, and a replay, a certifier run and a second device all have to agree.
+   */
+  rng?: () => number;
 }
 
 export interface ProjectionOpts {
@@ -175,8 +230,12 @@ export interface ProjectionOpts {
   announce?: "before" | "after" | "never";
   /** Resolve an item id to its glyph SYMBOL (world layer owns the mapping). */
   symbolOf: (itemId: ItemId) => string;
-  /** Resolve a creature id to its glyph SYMBOL (for "the rabbit has it" clues). */
-  symbolOfCreature?: (creatureId: CreatureId) => string;
+  /** Resolve a creature id to its glyph SYMBOL (for "the rabbit has it" clues).
+   *  `speaker` is WHO is talking, so the choice of name-vs-pronoun can be made
+   *  from the actual speaker's vantage (name if in the SPEAKER's household,
+   *  he/she if the same species, else the species word) — see `makeWhoSym`.
+   *  A hook that ignores it keeps working; the parameter is optional. */
+  symbolOfCreature?: (creatureId: CreatureId, speaker?: CreatureId) => string;
   /** Items OTHER creatures asked for — the state-2 where-is menu. */
   askableWhere?: ItemId[];
   /** The player's KNOWN direction subjects (places they've heard of), MOST-
@@ -184,8 +243,11 @@ export interface ProjectionOpts {
    *  the blue house?"). Already filtered to subjects THIS creature can answer
    *  (town common knowledge + own). Empty/undefined = no directions option. */
   askDirections?: { id: string; glyph: string }[];
-  /** Physical gate on OFFERS/trades: only items actually IN HAND. */
-  offerFilter?: (itemId: ItemId) => boolean;
+  /** Physical gate on OFFERS/trades: only items actually IN HAND. `holderId` is
+   *  WHOSE hand is being asked about — with more than one player in a
+   *  conversation, "in hand" stopped being answerable from the item alone. A
+   *  single-player hook that ignores it behaves exactly as before. */
+  offerFilter?: (itemId: ItemId, holderId?: CreatureId) => boolean;
   /**
    * Resolve an item to its PLACE symbol ("home.color_blue") — the building the
    * item (or its holder) is in. World layer owns the mapping; undefined = no
@@ -580,13 +642,63 @@ function visibleNeed(
   world: CreatureWorld,
   creatureId: CreatureId,
   opts: ProjectionOpts,
-  memo: ConversationMemo,
+  revealed: boolean,
 ) {
   const creature = world.creatures[creatureId];
   const need = creature ? openNeeds(creature)[0] : undefined;
   if (!need) return undefined;
   if (opts.announce === "never") return undefined;
-  return opts.announce === "after" && !memo.revealed ? undefined : need;
+  return opts.announce === "after" && !revealed ? undefined : need;
+}
+
+// ---------------------------------------------------------------------------
+// The shared half of the context (conversation.ts), read and written SAFELY
+// when there is no conversation at all.
+// ---------------------------------------------------------------------------
+
+/**
+ * Has this creature's hidden need been said out loud here? Law 4: spoken aloud
+ * = everyone present heard it, so the answer is the CONVERSATION's, not the
+ * asker's. With no conversation the answer is always "no" — which is precisely
+ * what a fresh `{}` memo used to say.
+ */
+function revealedIn(ctx: DialogueCtx | undefined, creatureId: CreatureId): boolean {
+  return ctx?.convo ? !!ctx.convo.revealed[creatureId] : false;
+}
+
+/**
+ * The owner→asker memo for READING. Deliberately NOT `pairMemo`: projecting a
+ * board is a read, and get-or-create would scatter an empty row into `pairs` for
+ * every viewer who so much as looked at a creature. Absent (or conversation-less)
+ * ⇒ nothing has been quoted.
+ */
+function readPair(
+  ctx: DialogueCtx | undefined,
+  ownerId: CreatureId,
+  askerId: CreatureId,
+): PairMemos[string] | undefined {
+  return ctx?.convo?.pairs[pairKey(ownerId, askerId)];
+}
+
+/**
+ * The owner→asker memo for WRITING — CALLED ONLY WHEN THERE IS SOMETHING TO
+ * WRITE, since `pairMemo` creates the row on touch and a turn that quotes
+ * nothing must leave no trace (`bye` in a five-member conversation would
+ * otherwise mint five empty rows).
+ *
+ * With a conversation this is the real row (mutations stick, and only for THIS
+ * asker — a price quoted to Ann is not honored for Ben). Without one it is a
+ * throwaway object: the write happens, nothing observes it after the call
+ * returns, and the turn is stateless. That is the exact behavior every caller
+ * who passed a fresh `{}` memo already had, so ambient chatter needs no special
+ * case — it just passes no context.
+ */
+function writePair(
+  ctx: DialogueCtx | undefined,
+  ownerId: CreatureId,
+  askerId: CreatureId,
+): PairMemos[string] {
+  return ctx?.convo ? pairMemo(ctx.convo, ownerId, askerId) : {};
 }
 
 /** The persistent sad emote of a creature that never states its want. */
@@ -596,28 +708,78 @@ const SAD_GREET: LeveledGlyphs = { a: "sad", b: "i_me + sad", c: "i_me + sad" };
  *  (phase ①a §1: a THIN emotional-state report; richer moods come later). */
 const CONTENT_LINE: LeveledGlyphs = { a: "happy", b: "i_me + happy", c: "i_me + happy" };
 
+/** WHO an utterance is from and at. Deixis is a property of the UTTERANCE, not
+ *  of the conversation: in a multi-member conversation "you" is valid only for
+ *  the member THIS line is aimed at — everyone else is named. An absent
+ *  addressee is the floor (spoken to everyone; nobody is "you").
+ *  See planning-docs/games/world-engine/multi-entity-conversations.md §3b. */
+export interface Perspective {
+  speakerId: CreatureId;
+  /** Whom THIS utterance is aimed at. Undefined = the floor. */
+  addresseeId?: CreatureId;
+  /** Everyone present (reserved for a future plural "you"; unused today). */
+  audience?: readonly CreatureId[];
+  /**
+   * ⑫⑦ — HOW the addressee is being singled out (conversation-in-motion.md
+   * law ②). The body and the name are two channels for one job:
+   *   • absent / `"look"` / `"dyad"` — the BODY is the cue, so deixis suffices
+   *     and the addressee is "you" (⑦ behaviour, byte for byte).
+   *   • `"name"` — the body is unavailable (hands full, facing away, walking),
+   *     so the addressee is NAMED like any third party. This is the designed
+   *     `youPolicy` knob, earned as a per-UTTERANCE fact rather than a per-game
+   *     setting: whether "you" is legible is a question about this sentence,
+   *     not about this world.
+   * The positional pair stays the one source of truth for WHO; the channel only
+   * says HOW — which is why this does not violate the note on the two call sites.
+   */
+  channel?: "dyad" | "look" | "name" | "floor";
+}
+
+/** Person deixis under a perspective: the SPEAKER is "i_me", the ADDRESSEE is
+ *  "you", every third party keeps its creature symbol. The speaker is passed
+ *  to the symbol hook so name-vs-pronoun choice can be made from the actual
+ *  speaker's vantage (name if in the SPEAKER's group, etc.).
+ *
+ *  ⑫⑦ — under the `name` channel the addressee falls through to its SYMBOL
+ *  instead of "you": the body could not point at anybody, so the word has to.
+ *  "You" is only legible when something makes it so, and a name always is. */
+export function makeWhoSym(
+  p: Perspective,
+  symbolOfCreature?: (id: CreatureId, speaker?: CreatureId) => string,
+): (id: CreatureId) => string {
+  const deictic = p.channel !== "name";
+  return (id) =>
+    id === p.speakerId ? "i_me"
+    : id === p.addresseeId && deictic ? "you"
+    : (symbolOfCreature?.(id, p.speakerId) ?? "there");
+}
+
 export function projectDialogue(
   world: CreatureWorld,
   creatureId: CreatureId,
   playerId: CreatureId,
   level: SyntaxLevel,
   opts: ProjectionOpts,
-  memo: ConversationMemo = {},
+  ctx?: DialogueCtx,
 ): DialogueProjection {
   const creature = world.creatures[creatureId];
   if (!creature) return { lineGlyph: "hi", acts: [] };
   const sym = opts.symbolOf;
   const syms = makeSyms(world, sym, creature.likes);
-  // Person deixis: a reference to the SPEAKER is "i_me", to the LISTENER
-  // (the player) "you"; only third parties keep their creature symbol.
-  const whoSym = (id: CreatureId): string =>
-    id === creatureId ? "i_me" : id === playerId ? "you" : (opts.symbolOfCreature?.(id) ?? "there");
+  // The creature speaks these lines at the viewer being projected for. The
+  // POSITIONAL pair is the one source of truth for deixis — DialogueCtx
+  // deliberately carries no Perspective of its own.
+  const whoSym = makeWhoSym({ speakerId: creatureId, addresseeId: playerId }, opts.symbolOfCreature);
+  // Board navigation is THIS device's; the price quoted to THIS asker is the
+  // conversation's, per-pair.
+  const ui = ctx?.ui;
+  const statedPrice = readPair(ctx, creatureId, playerId)?.statedPrice;
   const carried = Object.values(world.items)
-    .filter((i) => i.ownerId === playerId && (opts.offerFilter?.(i.id) ?? true))
+    .filter((i) => i.ownerId === playerId && (opts.offerFilter?.(i.id, playerId) ?? true))
     .map((i) => i.id)
     .sort();
   const known = knownHoldings(world, playerId, creatureId);
-  const need = visibleNeed(world, creatureId, opts, memo);
+  const need = visibleNeed(world, creatureId, opts, revealedIn(ctx, creatureId));
   // ANY carried instance matching an open possession need counts as "holding
   // the need" — multi-item needs share one symbol across instances, and the
   // visible need is merely the first. State needs (placement / on-behalf) are
@@ -641,12 +803,12 @@ export function projectDialogue(
 
   // -- the line ---------------------------------------------------------------
   let lineGlyph: string;
-  if (memo.statedPrice) {
+  if (statedPrice) {
     lineGlyph =
-      memo.statedPrice.kind === "return"
-        ? at(giveAsk(syms.now(memo.statedPrice.itemId)), level)
-        : at(wantAsk(syms.now(memo.statedPrice.itemId)), level);
-  } else if (memo.tradeMenu && need) {
+      statedPrice.kind === "return"
+        ? at(giveAsk(syms.now(statedPrice.itemId)), level)
+        : at(wantAsk(syms.now(statedPrice.itemId)), level);
+  } else if (ui?.tradeMenu && need) {
     lineGlyph = at(tradeWhat(syms.want(need)), level); // "cookie for…?"
   } else if (need) {
     if (need.placedAt) {
@@ -727,11 +889,11 @@ export function projectDialogue(
   // A generic paginated pick-list is open (the "where is…" directions menu, and
   // future list menus): show ONLY that page — picks + more + back — like the
   // trade menu's own early return below.
-  if (memo.list) {
-    return { lineGlyph, acts: listActs(memo.list, opts, level, maxActs) };
+  if (ui?.list) {
+    return { lineGlyph, acts: listActs(ui.list, opts, level, maxActs) };
   }
 
-  if (memo.tradeMenu && need) {
+  if (ui?.tradeMenu && need) {
     // The trade pick list: "cookie for {item}?" per known holding, plus back.
     for (const itemId of known) {
       if (world.items[itemId]?.bound) continue;
@@ -837,8 +999,8 @@ export function projectDialogue(
     for (const itemId of known) {
       push("request", requestAsk(syms.now(itemId)), itemId);
     }
-    if (memo.statedPrice && !carried.includes(memo.statedPrice.itemId)) {
-      push("cant", cantGlyph(syms.now(memo.statedPrice.itemId)), memo.statedPrice.itemId);
+    if (statedPrice && !carried.includes(statedPrice.itemId)) {
+      push("cant", cantGlyph(syms.now(statedPrice.itemId)), statedPrice.itemId);
     }
     for (const itemId of opts.askableWhere ?? []) {
       if (carried.includes(itemId) || world.items[itemId]?.ownerId === playerId) continue;
@@ -949,7 +1111,17 @@ export interface ActResult {
    *  which resolves the geometry, speaks the phrase, and swivels the camera. */
   askedDirections?: string;
   close?: boolean;
-  memo: ConversationMemo;
+  /**
+   * BOARD NAVIGATION the PRESSING DEVICE should now apply (open the trade menu,
+   * turn the page, back out). Absent = navigation unchanged.
+   *
+   * The SHARED effects of an act — a need revealed, a price quoted — are not
+   * here: `selectAct` writes those straight into `ctx.convo` in place, the same
+   * mutate-the-record convention `RelationBook` uses. Handing them back would
+   * mean every caller re-merges them by hand, and one caller forgetting to is
+   * the whole class of bug the split exists to end.
+   */
+  ui?: DeviceBoardState;
 }
 
 /** Apply a selected act; the caller re-projects afterwards (or closes). */
@@ -960,16 +1132,37 @@ export function selectAct(
   act: DialogueAct,
   level: SyntaxLevel,
   opts: ProjectionOpts,
-  memo: ConversationMemo = {},
+  ctx?: DialogueCtx,
 ): ActResult {
   const sym = opts.symbolOf;
   const syms = makeSyms(world, sym, world.creatures[creatureId]?.likes);
-  const whoSym = (id: CreatureId): string =>
-    id === creatureId ? "i_me" : id === playerId ? "you" : (opts.symbolOfCreature?.(id) ?? "there");
+  // The creature answers the member who took this turn. The POSITIONAL pair is
+  // the source of truth for perspective — ctx carries none.
+  const whoSym = makeWhoSym({ speakerId: creatureId, addresseeId: playerId }, opts.symbolOfCreature);
   const creature = world.creatures[creatureId];
+  const ui = ctx?.ui;
+  // ── the per-pair quote (§6) — READ freely, CREATE the row only on a quote ──
+  /** What THIS creature has quoted THIS asker; another asker's row is theirs. */
+  const quotedPrice = () => readPair(ctx, creatureId, playerId)?.statedPrice;
+  /** Quote a price to THIS asker (writes through to the conversation, or into
+   *  scratch when there is none — the stateless ambient mode). */
+  const quote = (price: { kind: "need" | "return"; itemId: ItemId }) => {
+    writePair(ctx, creatureId, playerId).statedPrice = price;
+  };
+  /** The counter is settled — for this asker alone. */
+  const clearQuote = () => {
+    const p = readPair(ctx, creatureId, playerId);
+    if (p) delete p.statedPrice;
+  };
+  /** The need was just said OUT LOUD: everyone in the conversation heard it
+   *  (law 4). A no-conversation turn reveals to nobody, which is what a fresh
+   *  `{}` memo did — the reveal died with the call. */
+  const reveal = () => {
+    if (ctx?.convo) markRevealed(ctx.convo, creatureId);
+  };
   switch (act.kind) {
     case "offer": {
-      if (!act.itemId) return { events: [], memo };
+      if (!act.itemId) return { events: [] };
       // A state need is not fulfilled hand-to-hand — redirect to the box /
       // the recipient.
       const placeNeed = creature?.needs.find((n) => !n.fulfilled && n.placedAt && n.itemId === act.itemId);
@@ -982,7 +1175,6 @@ export function selectAct(
               : wantPlace(syms.want(placeNeed), sym(placeNeed.placedAt!)),
             level,
           ),
-          memo,
         };
       }
       const behalfNeed = creature?.needs.find((n) => !n.fulfilled && n.forCreature && n.itemId === act.itemId);
@@ -990,7 +1182,6 @@ export function selectAct(
         return {
           events: [],
           responseGlyph: at(wantFor(syms.want(behalfNeed), whoSym(behalfNeed.forCreature!)), level),
-          memo,
         };
       }
       const res = giveItem(world, playerId, creatureId, act.itemId);
@@ -1009,19 +1200,27 @@ export function selectAct(
             const w = wantFacets(n, world);
             if (!sameSort(w, oItem)) continue;
             if (w.state && !oItem.states.includes(w.state)) {
-              return { events: [], responseGlyph: at(wrongVariant(headOf(offered), w.state), level), memo };
+              return { events: [], responseGlyph: at(wrongVariant(spokenWord(offered), w.state), level) };
             }
             const missing = (w.descriptors ?? []).find((d) => !(oItem.descriptors ?? []).includes(d));
             if (missing) {
-              return { events: [], responseGlyph: at(wrongVariant(headOf(offered), missing), level), memo };
+              return { events: [], responseGlyph: at(wrongVariant(spokenWord(offered), missing), level) };
             }
           }
         }
-        return { events: [], responseGlyph: at(declineOffer(offered), level), memo };
+        return { events: [], responseGlyph: at(declineOffer(offered), level) };
       }
       const settled = settleObligations(world, creatureId);
-      const cleared = memo.statedPrice?.itemId === act.itemId ? { revealed: memo.revealed } : memo;
-      return { events: [...res.events, ...settled], responseGlyph: "thank_you", memo: cleared };
+      // Paying the quoted price CLOSES the counter — and closes it for THIS
+      // asker only; another member's own quote is a different row and stands.
+      // Board navigation resets with it, as the whole-memo reset used to.
+      const paidQuote = quotedPrice()?.itemId === act.itemId;
+      if (paidQuote) clearQuote();
+      return {
+        events: [...res.events, ...settled],
+        responseGlyph: "thank_you",
+        ...(paidQuote ? { ui: {} } : {}),
+      };
     }
     case "invite": {
       // "eat with me" — asked in two separately-decided halves so the answer can
@@ -1035,21 +1234,25 @@ export function selectAct(
       // the gathering, because a ritual introduces no new action. All that
       // happens here is the answer being spoken.
       const verb = act.verb;
-      if (!creature || !verb) return { events: [], memo };
+      if (!creature || !verb) return { events: [] };
       const accepted =
         (opts.canJoin?.(creatureId, verb) ?? false) &&
         willingnessToJoin({
           personality: opts.personalityOf?.(creatureId),
           relation: opts.relationOf?.(creatureId, playerId),
+          // The turn's seeded stream (§3d): with one, "will you come?" is a draw
+          // against the sociability curve; without one, the old hard bar. A
+          // creature that WANTS the activity accepts either way — that branch
+          // never reaches the draw.
+          rng: ctx?.rng,
         });
       return {
         events: [],
         responseGlyph: accepted ? "ok" : (ACTIVITY_REFUSAL[verb] ?? at(CONFUSED_GLYPH, level)),
-        memo,
       };
     }
     case "request": {
-      if (!creature || (!act.itemId && !act.target)) return { events: [], memo };
+      if (!creature || (!act.itemId && !act.target)) return { events: [] };
       // §4b — the GENEROSITY GATE decides give / redirect / decline; the debt-only
       // `requestItem` stays the FOUNDATION (it teaches the want and covers the
       // settlement path); relational gives (affinity/surplus) grant ABOVE it via
@@ -1076,14 +1279,20 @@ export function selectAct(
       if (candidates.length === 0) {
         // Can't give what it doesn't have (§6 — the failed precondition IS the
         // reply): a known PROVIDER turns it into directions; else the honest no.
-        if (provider) return { events: [], askedDirections: provider, memo };
+        if (provider) return { events: [], askedDirections: provider };
         const thing = act.target ? targetGlyph(act.target) : syms.now(act.itemId!);
-        return { events: [], responseGlyph: at(noStock(thing), level), memo };
+        return { events: [], responseGlyph: at(noStock(thing), level) };
       }
       const gateInput = {
         relation: opts.relationOf?.(creatureId, playerId),
         personality: opts.personalityOf?.(creatureId),
         knowsSource: !!provider,
+        // The turn's seeded stream (§3d) — only the GENEROSITY step draws on it;
+        // bound / covering-debt / own-need stay hard, so a candidate refused by
+        // one of those costs no draw at all. Several candidates therefore consume
+        // several draws from the same turn's stream, in the fixed id order the
+        // sort above pins: reproducible, and never a source of cross-turn drift.
+        rng: ctx?.rng,
       };
       let best: { item: ItemState; verdict: GiveResponse } = {
         item: candidates[0]!,
@@ -1100,23 +1309,28 @@ export function selectAct(
       // and asking TEACHES the want either way (knownWants), so obligations still
       // settle later even after a no.
       const out = requestItem(world, playerId, creatureId, best.item.id);
-      if (out.kind === "accept") return { events: out.events, responseGlyph: "yes", memo };
+      if (out.kind === "accept") return { events: out.events, responseGlyph: "yes" };
       // Friendship beats commerce: a warm owner gifts a liked asker outright.
       if (best.verdict.kind === "give" && best.verdict.reason === "affinity") {
-        return { events: grantItem(world, creatureId, playerId, best.item.id), responseGlyph: "yes", memo };
+        return { events: grantItem(world, creatureId, playerId, best.item.id), responseGlyph: "yes" };
       }
       // Commerce beats charity: an owner with something to ask for TRADES (the
       // stated price / return counter) before gifting a mere spare — this keeps a
       // vendor's displayed stock a lesson, not a giveaway.
       if (out.kind === "price") {
-        return { events: [], memo: { ...memo, statedPrice: out.price } };
+        // Quoted TO THIS ASKER. Per-pair by law (§6): "bring me the cookie and
+        // it's yours" said to Ann is not a standing offer Ben can walk up and
+        // collect on — a shared price is how a quote becomes a duplication
+        // exploit.
+        quote(out.price);
+        return { events: [] };
       }
       if (best.verdict.kind === "give") {
         // surplus — nothing to ask in return, so the spare is simply given.
-        return { events: grantItem(world, creatureId, playerId, best.item.id), responseGlyph: "yes", memo };
+        return { events: grantItem(world, creatureId, playerId, best.item.id), responseGlyph: "yes" };
       }
       if (best.verdict.kind === "redirect" && provider) {
-        return { events: [], askedDirections: provider, memo };
+        return { events: [], askedDirections: provider };
       }
       // A plain decline, with the honest reason: a keepsake ("my X"), its own
       // need ("I want X"), or simple unwillingness ("I won't give X") — never a
@@ -1127,7 +1341,7 @@ export function selectAct(
           : best.verdict.kind === "decline" && best.verdict.reason === "own-need"
             ? wantAsk(syms.now(best.item.id))
             : refuseGlyph(syms.now(best.item.id));
-      return { events: [], responseGlyph: at(refusal, level), memo };
+      return { events: [], responseGlyph: at(refusal, level) };
     }
     case "trade":
     case "trade-pick": {
@@ -1148,33 +1362,36 @@ export function selectAct(
       const needItemId =
         tradeNeeds.map((n) => n.itemId).find((id) => world.items[id]?.ownerId === playerId) ??
         tradeNeeds[0]?.itemId;
-      if (!act.itemId || !needItemId) return { events: [], memo: { ...memo, tradeMenu: false } };
+      if (!act.itemId || !needItemId) return { events: [], ui: { ...ui, tradeMenu: false } };
       const give = giveItem(world, playerId, creatureId, needItemId);
       if (!give.accepted) {
-        return { events: [], responseGlyph: "no", memo: { ...memo, tradeMenu: false } };
+        return { events: [], responseGlyph: "no", ui: { ...ui, tradeMenu: false } };
       }
       const ask = requestItem(world, playerId, creatureId, act.itemId);
       const askEvents = ask.kind === "accept" ? ask.events : [];
       const settled = settleObligations(world, creatureId);
+      // The swap settles the counter and shuts the menu; what was REVEALED here
+      // is the conversation's and survives (law 4).
+      clearQuote();
       return {
         events: [...give.events, ...askEvents, ...settled],
         responseGlyph: "yes",
-        memo: { revealed: memo.revealed },
+        ui: {},
       };
     }
     case "trade-menu":
-      return { events: [], memo: { ...memo, tradeMenu: true } };
+      return { events: [], ui: { ...ui, tradeMenu: true } };
     case "back":
       // Leave whichever sub-menu is open (trade counter / directions list).
-      return { events: [], memo: { ...memo, tradeMenu: false, list: undefined } };
+      return { events: [], ui: { ...ui, tradeMenu: false, list: undefined } };
     case "directions-menu":
       // Open the "where is…" pick list at its first page.
-      return { events: [], memo: { ...memo, list: { menu: "where-is", page: 0 } } };
+      return { events: [], ui: { ...ui, list: { menu: "where-is", page: 0 } } };
     case "more":
       // Advance the open list a page (projection wraps on overflow).
       return {
         events: [],
-        memo: { ...memo, list: memo.list ? { ...memo.list, page: memo.list.page + 1 } : undefined },
+        ui: { ...ui, list: ui?.list ? { ...ui.list, page: ui.list.page + 1 } : undefined },
       };
     case "ask-directions":
     case "directions-pick":
@@ -1182,17 +1399,17 @@ export function selectAct(
       // host, which resolves the town geometry, speaks the phrase, and points.
       // Close any open list; the answer is a single spoken turn.
       return act.subjectId
-        ? { events: [], askedDirections: act.subjectId, memo: { ...memo, list: undefined } }
-        : { events: [], memo: { ...memo, list: undefined } };
+        ? { events: [], askedDirections: act.subjectId, ui: { ...ui, list: undefined } }
+        : { events: [], ui: { ...ui, list: undefined } };
     case "agree":
-      return { events: [], responseGlyph: "thank_you", close: true, memo };
+      return { events: [], responseGlyph: "thank_you", close: true };
     case "refuse":
-      return { events: [], responseGlyph: at(REJECTED_LINE, level), close: true, memo };
+      return { events: [], responseGlyph: at(REJECTED_LINE, level), close: true };
     case "cant":
       // "I don't have it" — a calm parting, distinct from the refusal's sad.
       // "ok" is RESERVED for confirming an accepted order (phase ①a §1) and is
       // no longer a generic acknowledgment.
-      return { events: [], responseGlyph: "goodbye", close: true, memo };
+      return { events: [], responseGlyph: "goodbye", close: true };
     case "how-are-you": {
       // "Are you okay?" surfaces the creature's EMOTIONAL STATE (dialogue-states +
       // phase ①a §1 — a THIN layer over the needs/mood machinery). A NEVER-announcer
@@ -1203,12 +1420,14 @@ export function selectAct(
       // positive state ("I am happy") — never a generic "ok".
       const need = creature ? openNeeds(creature)[0] : undefined;
       if (need && opts.announce === "never") {
-        return { events: [], responseGlyph: at(SAD_GREET, level), memo };
+        return { events: [], responseGlyph: at(SAD_GREET, level) };
       }
       if (creature?.condition) {
-        return { events: [], responseGlyph: at(conditionLine(creature.condition), level), memo: { ...memo, revealed: true } };
+        reveal();
+        return { events: [], responseGlyph: at(conditionLine(creature.condition), level) };
       }
       if (need) {
+        reveal();
         return {
           events: [],
           responseGlyph: at(
@@ -1225,13 +1444,12 @@ export function selectAct(
                   : wantAsk(syms.wantOf(need)),
             level,
           ),
-          memo: { ...memo, revealed: true },
         };
       }
-      return { events: [], responseGlyph: at(CONTENT_LINE, level), memo };
+      return { events: [], responseGlyph: at(CONTENT_LINE, level) };
     }
     case "where-is": {
-      if (!creature) return { events: [], memo };
+      if (!creature) return { events: [] };
       // A TYPE question ("where is food?" — §2b query(type)) follows the fallback
       // CHAIN: a KNOWN instance matching the predicate → its location clue; else a
       // known PROVIDER (`provides` fact) → directions to the source; else the
@@ -1244,7 +1462,7 @@ export function selectAct(
         // happens to lie; the instance clue stays the fallback.
         if (act.source) {
           const provider = knownProvider(creature, [act.target.kind, act.target.category]);
-          if (provider) return { events: [], askedDirections: provider, memo };
+          if (provider) return { events: [], askedDirections: provider };
         }
         const typeNeed: CreatureNeed = { itemId: "", value: 0, target: act.target };
         itemId = Object.keys(creature.knowledge)
@@ -1256,13 +1474,13 @@ export function selectAct(
         if (!itemId) {
           const provider = knownProvider(creature, [act.target.kind, act.target.category]);
           return provider
-            ? { events: [], askedDirections: provider, memo }
-            : { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+            ? { events: [], askedDirections: provider }
+            : { events: [], responseGlyph: at(DONT_KNOW, level) };
         }
       }
       // Nothing resolved (the asker named something this world has no instance
       // of) — the honest don't-know, never silence.
-      if (!itemId) return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+      if (!itemId) return { events: [], responseGlyph: at(DONT_KNOW, level) };
       // DECOUPLED from the designated instance: a TARGET need is answered by a
       // KNOWN item that ACTUALLY MATCHES the want IN ITS CURRENT STATE — a cold
       // apple never answers "where is something hot" (the creature simply
@@ -1285,13 +1503,13 @@ export function selectAct(
           // and the player's own directions answer (bug #2). A learned `provides`
           // fact answers the same way WITHOUT the host hook (NPC↔NPC). Else it
           // truly can't say.
-          if (act.subjectId) return { events: [], askedDirections: act.subjectId, memo };
+          if (act.subjectId) return { events: [], askedDirections: act.subjectId };
           const provider = knownProvider(creature, [
             ownTargetNeed.target?.kind,
             ownTargetNeed.target?.category,
           ]);
-          if (provider) return { events: [], askedDirections: provider, memo };
-          return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+          if (provider) return { events: [], askedDirections: provider };
+          return { events: [], responseGlyph: at(DONT_KNOW, level) };
         }
         itemId = match;
       }
@@ -1301,7 +1519,7 @@ export function selectAct(
       const place = opts.placeOf?.(itemId);
       if (fact?.kind === "held" && fact.by === creatureId) {
         // First person — never its own name ("I have it", not "rabbit has it").
-        return { events: [], responseGlyph: at(clueSelf(syms.now(itemId)), level), memo };
+        return { events: [], responseGlyph: at(clueSelf(syms.now(itemId)), level) };
       }
       if (fact?.kind === "held") {
         // whoSym: the player reads as "you", third parties keep their symbol.
@@ -1315,7 +1533,6 @@ export function selectAct(
           events: [],
           responseGlyph: at(clueHolder(whoSym(fact.by), syms.now(itemId)), level),
           ...followUp,
-          memo,
         };
       }
       if (fact?.kind === "loose") {
@@ -1324,10 +1541,9 @@ export function selectAct(
         return {
           events: [],
           responseGlyph: place ? at(cluePlace(syms.now(itemId), place), level) : "there",
-          memo,
         };
       }
-      return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+      return { events: [], responseGlyph: at(DONT_KNOW, level) };
     }
     case "why": {
       // Reveal the cause. Effect clause = the creature's sad state ("i_me sad").
@@ -1348,7 +1564,6 @@ export function selectAct(
         return {
           events: [],
           responseGlyph: at(causalPhrase(eff, factNeed.causalFact.connective, cause), level),
-          memo,
         };
       }
       if (creature?.condition) {
@@ -1365,7 +1580,7 @@ export function selectAct(
             ? { subject: "you", verb: "stay", tail: { join: "with", symbol: "i_me" } }
             : effect;
         const condClause: PhraseSpec = { subject: "i_me", verb: creature.condition, key: creature.condition };
-        return { events: [], responseGlyph: at(causalPhrase(clause, "because", condClause), level), memo };
+        return { events: [], responseGlyph: at(causalPhrase(clause, "because", condClause), level) };
       }
       // PREFERENCE fallback (fruit likes): no authored fact, no condition — a
       // want voiced through a like answers itself through the likes Clause:
@@ -1375,7 +1590,7 @@ export function selectAct(
         const kind = likedWantKind(world, creature, likedNeed)!;
         const eff: PhraseSpec = { subject: "i_me", verb: "want", object: syms.wantOf(likedNeed) };
         const cause = clauseSpec({ kind: "likes", creature: creatureId, facet: kind }, whoSym, syms);
-        return { events: [], responseGlyph: at(causalPhrase(eff, "because", cause), level), memo };
+        return { events: [], responseGlyph: at(causalPhrase(eff, "because", cause), level) };
       }
       // NOTHING TO EXPLAIN — no causal fact, no condition, no liked want. Say
       // so ("I don't know"), like every other act branch: asking a creature
@@ -1383,7 +1598,7 @@ export function selectAct(
       // presenter falls back to re-speaking the idle line, which reads worse.
       // An honest floor is the rule here (see `dont-understand`), and this was
       // the one branch that broke it.
-      return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+      return { events: [], responseGlyph: at(DONT_KNOW, level) };
     }
     case "tell": {
       // ASSERT (semantic-behavior.md §4) — the SPEAKER shares a fact with the
@@ -1399,24 +1614,24 @@ export function selectAct(
       if (act.itemId && speaker && creature) {
         const fact = speaker.knowledge[act.itemId];
         if (fact && !creature.knowledge[act.itemId]) {
-          return { events: tellAbout(world, creatureId, act.itemId, fact), responseGlyph: "thank_you", memo };
+          return { events: tellAbout(world, creatureId, act.itemId, fact), responseGlyph: "thank_you" };
         }
       }
-      return { events: [], responseGlyph: "thank_you", memo };
+      return { events: [], responseGlyph: "thank_you" };
     }
     case "where-going": {
       // Answer from the creature's errand destination (world layer resolves it):
       // "I am going to get {good}" / "I am going home" / "I am going to {place}".
       // Not en route ⇒ "I'm here". No world effect, no close.
       const dest = creature ? opts.goingOf?.(creatureId) : undefined;
-      return { events: [], responseGlyph: at(dest ? goingLine(dest) : HERE_STAY, level), memo };
+      return { events: [], responseGlyph: at(dest ? goingLine(dest) : HERE_STAY, level) };
     }
     case "what-doing": {
       // "What is {X} doing / eating?" (semantic-tests §Questions) — answered
       // from the LIVE world, premise-checked, never fabricated: no such
       // creature → say so; the wrong presumed activity → correct it ("the dog
       // is not eating"); can't tell → the honest don't-know.
-      if (!act.about) return { events: [], responseGlyph: at(NOT_UNDERSTOOD, level), memo };
+      if (!act.about) return { events: [], responseGlyph: at(NOT_UNDERSTOOD, level) };
       if (act.about.id === undefined) {
         // Not a creature. A real THING isn't doing anything ("the ball
         // doesn't eat"); a symbol naming nothing → "there is no {X}".
@@ -1427,7 +1642,6 @@ export function selectAct(
         return {
           events: [],
           responseGlyph: at(isItem ? notDoing(symbol, act.verb ?? "do") : noSuch(symbol), level),
-          memo,
         };
       }
       const who = whoSym(act.about.id);
@@ -1438,16 +1652,16 @@ export function selectAct(
             if (verbs === undefined) return undefined; // can't tell
             return verbs.length ? { verb: verbs[0]! } : null; // [] = verifiably idle
           })();
-      if (activity === undefined) return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+      if (activity === undefined) return { events: [], responseGlyph: at(DONT_KNOW, level) };
       // Synonym-family match (parse-intent VERB_FAMILY): "what dog take?" is
       // confirmed by a creature whose live verb reads "get" — same primitive,
       // different word. The correction still speaks the ASKED word back.
       if (act.verb && (activity === null || canonicalVerb(activity.verb) !== canonicalVerb(act.verb))) {
-        return { events: [], responseGlyph: at(notDoing(who, act.verb), level), memo };
+        return { events: [], responseGlyph: at(notDoing(who, act.verb), level) };
       }
       if (activity === null) {
         // Broad "what are you doing?" while idle — "I'm not doing (anything)".
-        return { events: [], responseGlyph: at(notDoing(who, "do"), level), memo };
+        return { events: [], responseGlyph: at(notDoing(who, "do"), level) };
       }
       return {
         events: [],
@@ -1455,18 +1669,17 @@ export function selectAct(
           phrase({ subject: who, verb: activity.verb, ...(activity.object ? { object: activity.object } : {}) }),
           level,
         ),
-        memo,
       };
     }
     case "ask-fact": {
       // A generic KNOWLEDGE query (facts.ts): answer what the creature knows,
       // or the honest don't-know. Never fabricated (creature-knowledge.md).
-      if (!act.query) return { events: [], memo };
+      if (!act.query) return { events: [] };
       const q = act.query;
       if (q.kind === "presence") {
         // Asked where IT is ("where is Mara?" to Mara) — "I'm here."
         if (q.creature === creatureId) {
-          return { events: [], responseGlyph: at(HERE_STAY, level), memo };
+          return { events: [], responseGlyph: at(HERE_STAY, level) };
         }
         // The household ROSTER is common knowledge (household-duties §1): a
         // housemate knows the schedule ("Mara is at work") ahead of any stale
@@ -1475,11 +1688,11 @@ export function selectAct(
         if (oracle) {
           const known: Fact = { kind: "presence", creature: q.creature, place: oracle };
           const learned = playerId !== creatureId ? tellFact(world, playerId, known) : [];
-          return { events: learned, responseGlyph: at(factLine(known, whoSym, syms), level), memo };
+          return { events: learned, responseGlyph: at(factLine(known, whoSym, syms), level) };
         }
       }
       const known = knowsFact(world, creatureId, q);
-      if (!known) return { events: [], responseGlyph: at(DONT_KNOW, level), memo };
+      if (!known) return { events: [], responseGlyph: at(DONT_KNOW, level) };
       // POLAR ask ("apple hot?" / "Mara hungry?"): yes/no against the claim.
       if (act.expect !== undefined) {
         const actual =
@@ -1489,40 +1702,41 @@ export function selectAct(
               ? (known.condition ?? "ok")
               : undefined;
         if (actual !== undefined) {
-          return { events: [], responseGlyph: actual === act.expect ? "yes" : "no", memo };
+          return { events: [], responseGlyph: actual === act.expect ? "yes" : "no" };
         }
       }
-      // Hearing the answer IS knowledge — the fact spreads to the asker
-      // (the askWhere law: asking teaches).
+      // Hearing the answer IS knowledge — the fact spreads to the asker (the
+      // asking-teaches law). ⚠️ ONLY to the asker: this is the documented gap
+      // pinned in conversation-turns.test.ts, and since ⑪ deleted `askWhere`
+      // the where-is arm below has no spread of its own at all.
       const learned = playerId !== creatureId ? tellFact(world, playerId, known) : [];
-      return { events: learned, responseGlyph: at(factLine(known, whoSym, syms), level), memo };
+      return { events: learned, responseGlyph: at(factLine(known, whoSym, syms), level) };
     }
     case "tell-fact": {
       // ASSERT a generic fact — telling writes what a sighting would. A claim
       // about the LISTENER ITSELF is checked against its own truth: confirmed
       // ("yes") or gently corrected ("i_me + hungry.not"), never absorbed wrong.
-      if (!act.fact) return { events: [], memo };
+      if (!act.fact) return { events: [] };
       if (act.fact.kind === "condition" && act.fact.creature === creatureId && act.fact.condition) {
         const claimed = act.fact.condition;
         return creature?.condition === claimed
-          ? { events: [], responseGlyph: "yes", memo }
+          ? { events: [], responseGlyph: "yes" }
           : {
               events: [],
               responseGlyph: at(
                 phrase({ subject: "i_me", verb: `${claimed}.not`, key: `${claimed}.not` }),
                 level,
               ),
-              memo,
             };
       }
       const events = tellFact(world, creatureId, act.fact);
       // Information received is THANKED (the tell convention, phase ①a §1).
-      return { events, responseGlyph: "thank_you", memo };
+      return { events, responseGlyph: "thank_you" };
     }
     case "dont-understand":
       // The utterance had no honest interpretation — say so (never silence,
       // never a misleading small-talk answer). No world effect, no close.
-      return { events: [], responseGlyph: at(NOT_UNDERSTOOD, level), memo };
+      return { events: [], responseGlyph: at(NOT_UNDERSTOOD, level) };
     case "deny-doing":
       // "Why are you building?" while verifiably NOT building — correct the
       // premise ("i_me + build.not"), the same gentle-correction convention
@@ -1531,13 +1745,12 @@ export function selectAct(
         ? {
             events: [],
             responseGlyph: at(phrase({ subject: "i_me", verb: `${act.verb}.not`, key: `${act.verb}.not` }), level),
-            memo,
           }
-        : { events: [], responseGlyph: at(NOT_UNDERSTOOD, level), memo };
+        : { events: [], responseGlyph: at(NOT_UNDERSTOOD, level) };
     case "confused":
-      return { events: [], memo }; // caller re-projects one level down
+      return { events: [] }; // caller re-projects one level down
     case "bye":
       // The parting is returned in kind ("bye-bye") — never a generic "ok".
-      return { events: [], responseGlyph: "goodbye", close: true, memo };
+      return { events: [], responseGlyph: "goodbye", close: true };
   }
 }

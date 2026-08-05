@@ -23,7 +23,7 @@ import { classify, INTENT_MOD, parseSentence, posOf, type Gender } from "../lang
 import type { CreatureId } from "../behavior/creatures.js";
 import type { GoalSpec, ItemRef, PlaceRef } from "../behavior/rules.js";
 import { headOf } from "../../variations.js";
-import { spokenMakeable } from "../content/makeable.js";
+import { spokenWord } from "../content/makeable.js";
 
 // ---------------------------------------------------------------------------
 // CREATURE REFERENCE resolution — how a speaker NAMES a target creature
@@ -290,7 +290,7 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       // `rabbit.toy.material_cloth` → "rabbit"), the same head convention every
       // other line here follows; a doll's `toy` descriptor can't ride a plain
       // symbol string, so "make the rabbit" is as close as this shape gets.
-      return phrase({ subject: "i_me", verb: "make", object: spokenMakeable(goal.glyph) });
+      return phrase({ subject: "i_me", verb: "make", object: spokenWord(goal.glyph) });
     case "demolish":
       // The unmaking half (④): "I'll break the bedroom". The room word is the
       // spoken one, so it is already a lexeme in every ruleset.
@@ -331,7 +331,7 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       // parser-lexicon word with no board button — would compose as a ❓ over
       // the bubble. Both take the directional `to`, so one join serves creature
       // and place alike.
-      const heads = Object.keys(goal.goods).map((g) => headOf(g));
+      const heads = Object.keys(goal.goods).map((g) => spokenWord(g));
       const obj = heads[0] ?? "thing";
       const toCreature = goal.to.kind === "creature";
       // A creature recipient resolves deixis-ready ("you"/its symbol); a
@@ -461,7 +461,7 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
       // a hand-off to a creature is a give ("the builder is carrying wood").
       return {
         verb: goal.to.kind === "creature" ? "give" : "carry",
-        object: headOf(Object.keys(goal.goods)[0] ?? "") || "thing",
+        object: spokenWord(Object.keys(goal.goods)[0] ?? "") || "thing",
       };
     case "putIn":
     case "place":
@@ -514,7 +514,7 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
     case "build":
       return { verb: "build", ...(goal.structure !== "town" ? { object: goal.structure } : {}) };
     case "craft":
-      return { verb: "make", object: spokenMakeable(goal.glyph) };
+      return { verb: "make", object: spokenWord(goal.glyph) };
     case "demolish":
       return { verb: "break", object: goal.room };
     case "emptyRoom":

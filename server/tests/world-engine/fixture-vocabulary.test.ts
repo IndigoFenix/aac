@@ -19,7 +19,7 @@ import { dwellBubble, restDoneBubble } from "@shared/world-engine/interaction/qu
 import { en, es, he, pt, parseSentence } from "@shared/world-engine/interaction/lang/index.js";
 import { baseWord } from "@shared/world-engine/interaction/lang/core.js";
 import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
-import { makeableGlyph, spokenMakeable } from "@shared/world-engine/interaction/content/makeable.js";
+import { makeableGlyph, spokenWord } from "@shared/world-engine/interaction/content/makeable.js";
 
 /** Every fixture the world can stand in a room. */
 const ALL_FIXTURES = [
@@ -95,7 +95,7 @@ describe("the vocabulary word walks back to its fixture kind", () => {
 
   it("`make + cabinet` reaches the cupboard recipe", () => {
     expect(makeableGlyph("cabinet")).toBe(makeableGlyph("cupboard"));
-    expect(spokenMakeable(makeableGlyph("cabinet")!)).toBe("cabinet");
+    expect(spokenWord(makeableGlyph("cabinet")!)).toBe("cabinet");
   });
 });
 

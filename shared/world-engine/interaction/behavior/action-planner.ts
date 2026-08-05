@@ -20,7 +20,7 @@
 // family; movement/social/host-policy goals stay in compileGoal.
 
 import type { CreatureId, ItemId } from "@shared/world-engine/interaction/behavior/creatures.js";
-import type { GoalSpec, PlaceRef } from "@shared/world-engine/interaction/behavior/rules.js";
+import type { PlaceRef, PursuitGoal } from "@shared/world-engine/interaction/behavior/rules.js";
 import type { GoalPlan, GoalStep, WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
 import { journeyTimeS, priceOf } from "@shared/world-engine/kernel/town/pricing.js";
 import type { VerbCost } from "@shared/world-engine/kernel/town/scope-shape.js";
@@ -58,6 +58,10 @@ export type Predicate =
   | { kind: "worn"; item: ItemId } // the garment is ON the body
   | { kind: "colored"; item: ItemId; color: string } // the item carries the colour facet
   | { kind: "socialized"; partner: CreatureId } // the actor has exchanged with the partner
+  // ⑫⑧ — the actor is FACING the member it is talking to. The mirror of
+  // `socialized` with the journey taken out: same person, no walk, and the
+  // price is the turn (`ADDRESS_DWELL_S`).
+  | { kind: "addressed"; target: CreatureId }
   // Stack-economy micro-targets (S3): `units` of `category` moved between the
   // named store and the actor's own CARRY — the container it is holding or
   // wearing, else its hands (scope-unification.md §2.1). Terminal by design — one leg, one
@@ -228,6 +232,20 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
       const to = r.positionOf(target.partner);
       return to ? [...legTo(to), { kind: "converse", target: target.partner }] : null;
     }
+    case "addressed": {
+      // ⑫⑧ — TURN, WHERE YOU STAND. **No `legTo`, on purpose**: addressing is
+      // the channel you buy WITHOUT going anywhere (law ② — the look is a
+      // beat, not a journey), and emitting a walk leg here would quietly turn
+      // it into `converse` and price it as one. So the plan is ONE step, and
+      // `pricePlan` therefore reports `journeyS: 0` on its own arithmetic
+      // rather than on a special case — which is the honest reading: the
+      // distance to somebody you are already standing in a ring with is not
+      // what stopping to face them costs.
+      //
+      // A target with no position at all is somebody who is not here to be
+      // faced ⇒ null (blocked), the same answer `socialized` gives.
+      return r.positionOf(target.target) ? [{ kind: "address", target: target.target }] : null;
+    }
     case "unitsTaken": {
       // Walk to the store and WITHDRAW — the executor moves the units onto the
       // body (market accounting, lid access, carry bounds all its own).
@@ -321,7 +339,7 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
 /** The item-errand family the planner OWNS. Movement (goHome/goTo/follow/stay),
  *  social acts, and host-policy goals (build/area/trade/help/place) stay in
  *  compileGoal — they aren't precondition chains over a carried item. */
-export function goalTarget(goal: GoalSpec, self: CreatureId, r: WorldResolver): Predicate | null {
+export function goalTarget(goal: PursuitGoal, self: CreatureId, r: WorldResolver): Predicate | null {
   const resolve = (ref: Parameters<WorldResolver["resolveItem"]>[0], from?: PlaceRef) =>
     r.resolveItem(ref, self, from);
   switch (goal.kind) {
@@ -370,6 +388,8 @@ export function goalTarget(goal: GoalSpec, self: CreatureId, r: WorldResolver): 
     }
     case "converse":
       return { kind: "socialized", partner: goal.target };
+    case "address":
+      return { kind: "addressed", target: goal.target };
     case "takeUnits":
       return {
         kind: "unitsTaken",
@@ -471,7 +491,7 @@ export function pricePlan(steps: readonly GoalStep[], self: CreatureId, r: World
 /** The step list for a goal by target-predicate regression, or null when it
  *  isn't an item errand (caller falls back to compileGoal) or can't be reached
  *  right now. `planGoal` is this plus the price. */
-export function planSteps(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalStep[] | null {
+export function planSteps(goal: PursuitGoal, self: CreatureId, r: WorldResolver): GoalStep[] | null {
   const target = goalTarget(goal, self, r);
   if (!target) return null;
   return achieve(target, self, r);
@@ -480,7 +500,7 @@ export function planSteps(goal: GoalSpec, self: CreatureId, r: WorldResolver): G
 /** Plan a goal into body steps by target-predicate regression, or null when it
  *  isn't an item errand (caller falls back to compileGoal) or can't be reached
  *  right now. The deterministic twin of compileGoal for the item family. */
-export function planGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalPlan | null {
+export function planGoal(goal: PursuitGoal, self: CreatureId, r: WorldResolver): GoalPlan | null {
   const steps = planSteps(goal, self, r);
   return steps ? { steps, cost: pricePlan(steps, self, r) } : null;
 }
@@ -513,7 +533,7 @@ export type PursuitStep =
  * instance appears, the item is taken, an easier path opens). This is the whole
  * of "each step evaluated separately, interruptions resume, easier paths taken".
  */
-export function pursue(goal: GoalSpec, self: CreatureId, r: WorldResolver): PursuitStep {
+export function pursue(goal: PursuitGoal, self: CreatureId, r: WorldResolver): PursuitStep {
   const plan = planGoal(goal, self, r);
   if (!plan) return { kind: "blocked" };
   if (plan.steps.length === 0) return { kind: "done" };

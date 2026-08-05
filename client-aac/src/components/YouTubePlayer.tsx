@@ -27,6 +27,7 @@ import {
   useRef,
 } from "react";
 import { API_BASE_URL, IS_PACKAGED_APP } from "@/lib/api-base";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 /**
  * Keep the latest callbacks in a ref so the player-init effects can depend on
@@ -127,6 +128,7 @@ export default YouTubePlayer;
 
 const RelayPlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(
   function RelayPlayer({ videoId, onReady, onPlayingChange, onError, className }, ref) {
+    const { t } = useLanguage();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const cbs = useLatestCallbacks({ onReady, onPlayingChange, onError });
 
@@ -201,7 +203,7 @@ const RelayPlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(
         // No border, fill the parent; caller positions the surface.
         style={{ border: 0, width: "100%", height: "100%" }}
         allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-        title="YouTube video"
+        title={t("youtubeApp.videoTitle")}
         onLoad={() => console.log(`[YouTubePlayer] relay iframe loaded: ${src}`)}
       />
     );

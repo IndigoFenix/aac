@@ -7,7 +7,12 @@
 //   • every peer broadcasts its OWN avatar and any toy IT owns (possessed or
 //     free-rolling) — high-frequency, latest-wins, loss-tolerant,
 //   • discrete possession changes (grab / release / rest / leave) ride the same
-//     channel; collectOutbound turns a tick's events into them.
+//     channel; collectOutbound turns a tick's events into them,
+//   • plus the rare ONE-SHOTS that are display or view state rather than
+//     physics — `say` (a speech bubble: a player's own utterance and a
+//     creature's line alike), `claim` (whose body a spark rides) and `convo`
+//     (owner→follower conversation sync). Sent when something happens, never
+//     streamed, and every one of them is safe to lose.
 //
 // Possession arbitration here is PHASE-1 peer-to-peer: deterministic "lower
 // participant id wins" so both sides converge on the same owner without a
@@ -26,6 +31,60 @@ import {
   type WorldState,
 } from "./engine.js";
 import { parsePlayerAction, type PlayerAction } from "./player-action.js";
+// TYPE-ONLY (erased at build): the conversation sync carries the dialogue
+// layer's own records, so the wire never re-describes them. This layer stays
+// dependency-free at runtime.
+import type { ConversationState } from "./interaction/dialogue/conversation.js";
+import type { DeviceBoardState } from "./interaction/dialogue/creature-dialogue.js";
+import type { SyntaxLevel } from "./interaction/dialogue/dialogue-gen.js";
+
+/**
+ * The SHARED half of a conversation — the only half that crosses the wire.
+ *
+ * `revealed` (what was said out loud, so everyone present heard it) and `pairs`
+ * (what each owner quoted each asker) belong to the conversation, so a follower
+ * needs them to project its own board. The other half of the old memo — which
+ * sub-menu this device has open — is `DeviceBoardState`, and it deliberately has
+ * no wire shape at all: syncing one player's open pick-list would make the
+ * other's board jump under their thumb. What is not sendable cannot be sent by
+ * accident. (multi-entity-conversations.md §3a.)
+ */
+export type ConvoShared = Pick<ConversationState, "revealed" | "pairs">;
+
+/**
+ * CONVERSATION SYNC (owner-authoritative worlds) — what the owner last told us
+ * about each conversation member, keyed by that member's WIRE id: which
+ * creature they are talking to, the syntax level their turn is projected at,
+ * the shared state the conversation has accumulated, and — when the sync
+ * ANSWERS that member's own turn — the board transition that turn produced.
+ *
+ * `seq` is monotone PER CONVERSATION, which is what lets the reader tell a
+ * fresh sync from one the mesh delivered late: this channel is unreliable and
+ * unordered, so "the last packet to arrive" and "the last state the owner was
+ * in" are not the same thing. A follower re-projects only on a NEW seq, so a
+ * duplicate costs nothing and a straggler can never rewind a board.
+ *
+ * Declared here rather than in engine.ts because nothing in the ENGINE reads
+ * it — it is wire state parked on the state object beside `peerClaims`, for the
+ * game layer to pick up (see the applyInbound arm).
+ */
+declare module "./engine.js" {
+  interface WorldState {
+    convoSync?: Record<
+      string,
+      {
+        cid: string;
+        level: SyntaxLevel;
+        shared: ConvoShared;
+        ui?: DeviceBoardState;
+        /** ⑫④ — WHOM THAT MEMBER IS TALKING TO, as the OWNER has it. Absent =
+         *  nobody: the member's next line goes to the floor. */
+        addressing?: string;
+        seq: number;
+      }
+    >;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Wire messages (short keys — these go out ~15×/sec per peer)
@@ -47,7 +106,44 @@ export type WorldNetMessage =
   // Emitted on every claim/release AND rebroadcast ~5-secondly by the claim
   // holder, so a late joiner converges without a state sync. Display-only —
   // it feeds WorldState.peerClaims, which only the render layer reads.
-  | { t: "claim"; id: string; body: string | null };
+  | { t: "claim"; id: string; body: string | null }
+  // OWNER→FOLLOWER conversation sync: how the owner is projecting ONE member's
+  // place in creature `cid`'s conversation — `member` is that member's wire id,
+  // `level` its own syntax tier (the world holds every rung at once, so two
+  // students in one conversation keep different ones) and `shared` what the
+  // CONVERSATION remembers (revealed needs + per-pair quotes). Sent when the
+  // record changes, never streamed. Loss-tolerant like the rest of this channel:
+  // the owner holds the conversation, so a dropped packet costs a board refresh,
+  // never state. Without it a follower's conversation board freezes the moment
+  // it opens.
+  //
+  // `ui` is the ONE exception to "board navigation never crosses the wire", and
+  // it proves the rule: it is present only when this sync answers THIS member's
+  // OWN turn, and it carries that turn's transition (open the trade menu, turn
+  // the page) back to the device that asked for it. The owner ran the turn, so
+  // the owner is the only one who knows what it did to the board — but the
+  // result belongs to exactly one device and is never copied to the others.
+  // `seq` is monotone per conversation (see convoSync above).
+  //
+  // ⑫④ — `addressing` is WHOM THAT MEMBER IS TALKING TO, on the owner's roster:
+  // the durable answer the LOOK channel buys (conversation-in-motion.md law ②),
+  // sent so a follower's own `ConvoMember.addressing` stops being an optimistic
+  // guess and becomes the owner's answer. ABSENT = nobody — the floor — which is
+  // a real state and not a missing field, so a reader must treat "no key" as
+  // "addressing nobody" and not as "unchanged". PURELY ADDITIVE on the wire: an
+  // older owner sends none and `validConvo` never asks for it, so the sync it
+  // does send still lands (see the seq/ui reasoning there — same rule, same
+  // reason).
+  | {
+      t: "convo";
+      cid: string;
+      member: string;
+      level: SyntaxLevel;
+      shared: ConvoShared;
+      ui?: DeviceBoardState;
+      addressing?: string;
+      seq: number;
+    };
 
 export interface NetOptions {
   /** Cooldown applied to a peer that loses possession, to damp re-grab churn. */
@@ -194,6 +290,39 @@ export function applyInbound(
       break;
     }
 
+    case "convo": {
+      // STORED, not acted on: the host re-projects a follower's board from this
+      // on its own frame (quest-host, multi-entity-conversations.md §4.6).
+      // Nothing in the engine or the renderer reads it.
+      //
+      // Latest-wins per member, but "latest" means the HIGHEST SEQ and not the
+      // last packet through the door: this channel reorders, and applying a
+      // straggler would rewind a follower's board to a state the owner has
+      // already left. A sync for a DIFFERENT conversation always wins — that is
+      // the member walking away from one creature and up to another, and its
+      // seq counts a different conversation's turns.
+      if (!validConvo(msg)) break;
+      const sync = (state.convoSync ??= {});
+      const seq = typeof msg.seq === "number" && Number.isFinite(msg.seq) ? msg.seq : 0;
+      const prev = sync[msg.member];
+      if (prev && prev.cid === msg.cid && prev.seq > seq) break;
+      const ui = readConvoUi((msg as { ui?: unknown }).ui);
+      // ⑫④ — a garbled `addressing` costs the ADDRESS and nothing else, exactly
+      // as a garbled `ui` costs the transition: it reads as the floor, which is
+      // a legitimate state a follower can render. Anything that is not a
+      // non-empty string is not somebody.
+      const addressing = (msg as { addressing?: unknown }).addressing;
+      sync[msg.member] = {
+        cid: msg.cid,
+        level: msg.level,
+        shared: msg.shared,
+        ...(ui ? { ui } : {}),
+        ...(typeof addressing === "string" && addressing.length > 0 ? { addressing } : {}),
+        seq,
+      };
+      break;
+    }
+
     // VERSION-SKEW TOLERANCE: peers run vendored engine snapshots of different
     // ages, so an unknown message kind from a newer peer must be silently
     // ignored, never a crash. (The type says this is unreachable; the wire does
@@ -212,6 +341,90 @@ export function sayMessage(id: string, text: string, glyph?: string): WorldNetMe
  *  spark claims avatar `body` (`null` = released back to its own light). */
 export function claimMessage(id: string, body: string | null): WorldNetMessage {
   return { t: "claim", id, body };
+}
+
+/**
+ * Build the owner→follower sync for ONE member of creature `cid`'s conversation
+ * — that member's own syntax level and the conversation's shared state.
+ *
+ * Board navigation crosses only as `opts.ui`, and only for the member whose own
+ * turn produced it (see the message type). `seq` defaults to 0 so a caller that
+ * keeps no counter still builds a well-formed message; a real owner passes its
+ * conversation's monotone one.
+ *
+ * ⑫④ — `opts.addressing` is whom that member is talking to, and it is LEFT OFF
+ * when there is nobody, because "no key" IS the floor. An owner that passes it
+ * unconditionally from a live read (`addressingOf`, which answers undefined for
+ * a departed target) therefore says "nobody" the moment the address dies,
+ * without a second message shape for the clearing.
+ */
+export function convoMessage(
+  cid: string,
+  member: string,
+  level: SyntaxLevel,
+  shared: ConvoShared,
+  opts: { ui?: DeviceBoardState; addressing?: string; seq?: number } = {},
+): WorldNetMessage {
+  return {
+    t: "convo",
+    cid,
+    member,
+    level,
+    shared,
+    ...(opts.ui ? { ui: opts.ui } : {}),
+    ...(opts.addressing ? { addressing: opts.addressing } : {}),
+    seq: opts.seq ?? 0,
+  };
+}
+
+/** Is this convo sync well-formed? The mesh is untrusted and version-skewed —
+ *  the TYPE says these fields are there, the wire does not — so a malformed one
+ *  is dropped exactly like an unknown kind, never half-applied. Both halves of
+ *  `shared` are checked: a payload missing `pairs` would otherwise land as a
+ *  conversation whose price lookups throw on the first quote.
+ *
+ *  `seq`, `ui` and `addressing` are deliberately NOT grounds for rejection. All
+ *  three are newer than the message itself, so an older owner sends none of
+ *  them, and dropping its syncs would freeze exactly the board this message
+ *  exists to un-freeze — a missing seq reads as 0, a garbled `ui` is left off
+ *  (see readConvoUi) and a garbled `addressing` reads as the floor. */
+function validConvo(msg: Extract<WorldNetMessage, { t: "convo" }>): boolean {
+  const m = msg as { cid: unknown; member: unknown; level: unknown; shared: unknown };
+  if (
+    typeof m.cid !== "string" || m.cid.length === 0 ||
+    typeof m.member !== "string" || m.member.length === 0 ||
+    !(m.level === "a" || m.level === "b" || m.level === "c") ||
+    !m.shared || typeof m.shared !== "object"
+  ) {
+    return false;
+  }
+  const s = m.shared as { revealed: unknown; pairs: unknown };
+  return !!s.revealed && typeof s.revealed === "object" && !!s.pairs && typeof s.pairs === "object";
+}
+
+/**
+ * Read a board transition off the wire — field by field, keeping what arrived
+ * intact and dropping what didn't.
+ *
+ * Unlike `shared`, a bad `ui` is not worth failing the whole sync over: it is
+ * OPTIONAL by construction (absent = the board stays where it is), so the level
+ * and the shared state still land and the follower is merely a page behind
+ * rather than frozen. A half-read `list`, on the other hand, IS dropped whole —
+ * a menu name with no page (or a page with no menu) would open a pick-list
+ * nobody can navigate.
+ */
+function readConvoUi(raw: unknown): DeviceBoardState | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const u = raw as { tradeMenu?: unknown; list?: unknown };
+  const l = u.list as { menu?: unknown; page?: unknown } | undefined;
+  const ui: DeviceBoardState = {
+    ...(u.tradeMenu === true ? { tradeMenu: true } : {}),
+    ...(l && typeof l === "object" && typeof l.menu === "string" && l.menu.length > 0 &&
+    typeof l.page === "number" && Number.isFinite(l.page)
+      ? { list: { menu: l.menu, page: l.page } }
+      : {}),
+  };
+  return Object.keys(ui).length ? ui : undefined;
 }
 
 // ---------------------------------------------------------------------------

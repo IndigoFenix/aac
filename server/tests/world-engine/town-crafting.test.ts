@@ -14,7 +14,9 @@ import {
   FURNITURE_ITEMS,
   furnitureGlyph,
   furnitureItemOf,
+  isCraftStation,
   nextCraftKind,
+  stationRoomKind,
 } from "@shared/world-engine/kernel/town/stations.js";
 import { buildingChainGlyphs } from "@shared/world-engine/products.js";
 
@@ -94,5 +96,39 @@ describe("nextCraftKind — bench-first automation", () => {
     const b = nextCraftKind({ day: 7, salt: 3, hasBench: true, stored: none });
     expect(a).toEqual(b);
     expect(a).not.toBeNull();
+  });
+});
+
+describe("the ENABLER rule — which pieces the drawing owes a place", () => {
+  // Layer 3 of the blueprint draws a place for a TOOL the household owns and
+  // has nowhere to stand. The set is asked from the spec side (`craft.at`)
+  // rather than named, so a forge recipe would enrol its forge with no edit —
+  // and, just as importantly, so that "a place for everything we own" can never
+  // widen into the blanket auto-place the user removed in 2026-07-28.
+  it("a station is a piece other things are MADE AT — never a chair", () => {
+    expect(isCraftStation("workbench")).toBe(true);
+    for (const kind of ["chair", "bed", "table", "chest", "box", "barrel", "bin"] as const) {
+      expect([kind, isCraftStation(kind)]).toEqual([kind, false]);
+    }
+  });
+
+  it("every recipe's station IS one, by construction", () => {
+    // The two directions of `craft.at` must agree, or a recipe could name a
+    // station the enabler test does not recognise and the tool it needs would
+    // never be drawn a home.
+    for (const f of FURNITURE_ITEMS) {
+      if (!f.craft?.at) continue;
+      expect([f.kind, isCraftStation(f.craft.at)]).toEqual([f.kind, true]);
+    }
+  });
+
+  it("names the room a station belongs in, from the placement rows", () => {
+    // The hard-coded "workshop, else store, else living" search that used to
+    // live in the install sweep is now a fact about the piece, read from the
+    // registry row that places it.
+    expect(stationRoomKind("workbench")).toBe("workshop");
+    expect(stationRoomKind("bed")).toBe("bedroom");
+    expect(stationRoomKind("oven")).toBe("kitchen");
+    expect(stationRoomKind("table")).toBe("living"); // the communal cluster
   });
 });

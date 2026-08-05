@@ -463,8 +463,12 @@ const RANK_EPS = 1e-3;
  * the growth buys at most the whole fill clock.
  *
  *   meter  `meter / threshold` — the meter IS the deficit, in cycles owed. A
- *          zero threshold (an always-firing derived row, `attend`) presses
- *          exactly once: there is no deficit to measure, only a duty.
+ *          zero threshold (an always-firing derived row — `attend` at a ritual,
+ *          `address:<who>` in a conversation) presses exactly once: there is no
+ *          deficit to measure, only a duty. Which is why such a row is decided
+ *          entirely by its PRIORITY, and why the ⑫⑧ address row carries its
+ *          "somebody just asked me" bonus there rather than in a meter nobody
+ *          would ever tick down.
  *   stock  `1 − held / below` — the shortfall FRACTION, so a shelf one unit
  *          short presses gently and an empty one presses flat out. Counts what
  *          is in hand (the drive's `of` category when it names one) exactly as

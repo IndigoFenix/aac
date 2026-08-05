@@ -30,7 +30,7 @@
 // the preference exists for.
 
 import type { NeedIntent, NeedTemplate } from "@shared/world-engine/interaction/behavior/needs.js";
-import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
+import type { GoalSpec, PursuitGoal } from "@shared/world-engine/interaction/behavior/rules.js";
 
 /** Motives (the template key's prefix before ":") that ride the unified pursuit
  *  engine. THE S2 FLAG: remove a motive to revert it to the legacy walker. */
@@ -41,6 +41,13 @@ export const NEED_PURSUIT_MOTIVES: ReadonlySet<string> = new Set([
   "waste",
   "hygiene",
   "social",
+  // ⑫⑧ — STOPPING TO FACE SOMEBODY, the conversation-in-motion duty row. It
+  // rides the pursuit for the same reason `attend` does: the price the chapter
+  // is about (`ADDRESS_DWELL_S`) is a PLAN price, and only the pursuit path
+  // carries one. Its `satisfy` is `social` — the partner IS the station — so
+  // the walker's own social arm decides it and this file only says which goal
+  // that decision names.
+  "address",
   // ATTENDING a ritual (rituals.ts) — a rest at a named station, the same shape
   // as the toilet and the bath, and it belongs here for a specific reason: the
   // pursuit is the path that carries the ON-FIXTURE ARRIVAL CONTRACT
@@ -106,7 +113,7 @@ export const HOT_MEAL_TASTE_S = 30;
  *  the pursuit argmax. Zero for everything but a cooked meal; the knowledge of
  *  WHICH candidate is the hot one stays here, beside the ordering it replaces,
  *  rather than leaking into the host as a peek at `goal.item.match.state`. */
-export function tasteBonusS(goal: GoalSpec): number {
+export function tasteBonusS(goal: PursuitGoal): number {
   if (goal.kind !== "consume") return 0;
   const m = "match" in goal.item ? goal.item.match : undefined;
   return m?.state === "hot" ? HOT_MEAL_TASTE_S : 0;
@@ -129,7 +136,7 @@ export interface NeedGoalOpts {
  * slice; run the legacy needStep path". The caller tries each with compileGoal
  * and installs the first that plans (source: "need").
  */
-export function needPursuitGoals(tpl: NeedTemplate, intent: NeedIntent, opts: NeedGoalOpts): GoalSpec[] {
+export function needPursuitGoals(tpl: NeedTemplate, intent: NeedIntent, opts: NeedGoalOpts): PursuitGoal[] {
   const motive = tpl.key.split(":")[0]!;
   const stack = NEED_PURSUIT_STACK_MOTIVES.has(motive);
   if (!NEED_PURSUIT_MOTIVES.has(motive) && !stack) return [];
@@ -207,7 +214,15 @@ export function needPursuitGoals(tpl: NeedTemplate, intent: NeedIntent, opts: Ne
     }
     case "socialize":
       // The partner IS the station candidate (the ctx lists housemates there).
-      return [{ kind: "converse", target: intent.station.id }];
+      //
+      // ⑫⑧ — …and the ADDRESS row is the same shape with the journey taken
+      // out. Both are "go and be social with THAT person"; they differ in
+      // whether you have to go, which is exactly the difference the chapter
+      // prices. Reading the motive rather than adding a second satisfy kind
+      // keeps the walker's social arm the one decision for both.
+      return motive === "address"
+        ? [{ kind: "address", target: intent.station.id }]
+        : [{ kind: "converse", target: intent.station.id }];
     case "processAt":
       // The wash at the tub / the pot at the oven: walk to the decided station
       // and dwell the work out — the facet edit comes from the template's own

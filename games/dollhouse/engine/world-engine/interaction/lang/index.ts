@@ -16,6 +16,7 @@ import { pt } from "./pt.js";
 import {
   directionsFrame,
   genderOf,
+  labelWith,
   NO_NAMES,
   translateWith,
   type DirCardinal,
@@ -61,6 +62,13 @@ export function translateGlyph(glyph: string, locale: string | undefined, opts?:
   return translateWith(languageFor(locale), glyph, opts);
 }
 
+/** The locale's NAME for one thing — a button's worth of text, no article and
+ *  no full stop (lang/core `labelWith`). What a strip, a chip or a board option
+ *  puts under the picture; `translateGlyph` is for anything anybody SAYS. */
+export function glyphLabel(glyph: string, locale: string | undefined, opts?: SpeakOpts): string {
+  return labelWith(languageFor(locale), glyph, opts);
+}
+
 /**
  * Speak the "asking for directions" answer in the locale: a thing GLYPH
  * ("home.color_blue", "toy") + the proximity + cardinal resolved by the host
@@ -80,6 +88,9 @@ export function speakDirections(
     addressee: opts?.addressee ?? "m",
     firstPerson: opts?.firstPerson ?? false,
     names: opts?.names ?? NO_NAMES,
+    // ⑫ — a directions ANSWER carries no leading name to peel (the frame is
+    // built here, not parsed), so the address marker is always off.
+    vocative: false,
   });
 }
 

@@ -135,8 +135,7 @@ const actOf = (s: string) =>
   intentToAct(
     parseSentence(s, { classifyEntity: (sym) => (CREATURES.has(sym) ? "creature" : "item") }),
     emptyWorld,
-    "child",
-    "bear",
+    { speakerId: "child", addresseeId: "bear" },
     actOpts,
   );
 
@@ -161,8 +160,7 @@ describe("an invitation is one move, however it is said", () => {
     const act = intentToAct(
       parseSentence("i_me + want + play + with + you"),
       emptyWorld,
-      "child",
-      "bear",
+      { speakerId: "child", addresseeId: "bear" },
       { ...actOpts, jointActivities: [] },
     );
     expect(act).not.toMatchObject({ kind: "invite" });

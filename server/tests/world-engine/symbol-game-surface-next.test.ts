@@ -114,6 +114,89 @@ describe("surfaceNext — continuations", () => {
   });
 });
 
+// ⑫ (conversation-in-motion.md law ②) — THE NAME CHANNEL on the board. A request
+// aimed at one person in a crowd needs that person's name, and the name has to be
+// reachable in one press or the channel is theoretical. The roster rides the SAME
+// field the parser reads, so the board and the frame can never disagree.
+describe("⑫ surfaceNext — a crowd puts the NAME within one press", () => {
+  const NOUNS3: SurfaceNoun[] = [
+    ...NOUNS,
+    { symbol: "pip", kind: "creature", affords: ["talk", "help", "hug", "give", "follow"] },
+  ];
+  /** In a 3+ conversation with Mara and Pip. */
+  const circle = (extra: Partial<SurfaceContext> = {}): SurfaceContext => ({
+    nouns: NOUNS3,
+    parse: { addressees: ["mara", "pip"] },
+    ...extra,
+  });
+  /** A dyad — one fellow member. */
+  const dyad = (): SurfaceContext => ({ nouns: NOUNS3, parse: { addressees: ["mara"] } });
+
+  it("the addressee role is OPEN on a request being built in a crowd", () => {
+    const s = surfaceNext(["i_me", "want"], circle());
+    expect(s.open).toContain("addressee");
+  });
+
+  it("…and a member's name is actually on the board", () => {
+    const s = surfaceNext(["i_me", "want"], circle());
+    expect(s.buttons.some((b) => b.role === "addressee" && ["mara", "pip"].includes(b.symbol))).toBe(true);
+  });
+
+  it("a name is an OPENER too — 'mara + give + i_me + apple' starts with it", () => {
+    const s = surfaceNext([], circle());
+    expect(s.buttons.some((b) => b.role === "addressee" && ["mara", "pip"].includes(b.symbol))).toBe(true);
+  });
+
+  it("A DYAD OFFERS NO NAME — there is nobody to disambiguate from (law ④)", () => {
+    const s = surfaceNext(["i_me", "want"], dyad());
+    expect(s.open).not.toContain("addressee");
+  });
+
+  it("no roster at all ⇒ the board is byte-identical to today", () => {
+    const plain = { nouns: NOUNS3 } as SurfaceContext;
+    expect(surfaceNext(["i_me", "want"], plain)).toEqual(surfaceNext(["i_me", "want"], plain));
+    expect(surfaceNext(["i_me", "want"], plain).open).not.toContain("addressee");
+  });
+
+  it("once a name is SAID the slot closes — the question has been answered", () => {
+    const s = surfaceNext(["mara", "give"], circle());
+    expect(s.open).not.toContain("addressee");
+  });
+
+  it("only people STANDING THERE are offered — never a creature from the wider world", () => {
+    // `mara` and `pip` are members; a creature noun outside the roster is not an
+    // addressee, because naming somebody absent is talking ABOUT them.
+    const s = surfaceNext(["i_me", "want"], {
+      nouns: NOUNS3,
+      parse: { addressees: ["pip", "ada"] },
+    });
+    const named = s.buttons.filter((b) => b.role === "addressee").map((b) => b.symbol);
+    expect(named).not.toContain("mara");
+  });
+
+  it("the quota keeps names from flooding the grid", () => {
+    const many = ["mara", "pip", "ada", "ben"];
+    const person = (symbol: string): SurfaceNoun => ({
+      symbol,
+      kind: "creature",
+      affords: ["talk", "help", "hug", "give", "follow"],
+    });
+    const s = surfaceNext(["i_me", "want"], {
+      nouns: [...NOUNS3, person("ada"), person("ben")],
+      parse: { addressees: many },
+    });
+    expect(s.buttons.filter((b) => b.role === "addressee").length).toBeLessThanOrEqual(2);
+  });
+
+  it("stays deterministic and never duplicates a button", () => {
+    const a = surfaceNext(["i_me", "want"], circle());
+    const b = surfaceNext(["i_me", "want"], circle());
+    expect(a).toEqual(b);
+    const syms = a.buttons.map((x) => x.symbol);
+    expect(new Set(syms).size).toBe(syms.length);
+  });
+});
+
 describe("surfaceNext — determinism, budget, completeness", () => {
   it("same input twice → identical output; noun order does not matter", () => {
     const a = surfaceNext(["you", "eat"], ctx());

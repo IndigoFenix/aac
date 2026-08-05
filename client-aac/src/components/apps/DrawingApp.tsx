@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { X, Eraser, Trash2, Pencil } from "lucide-react";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const COLORS = [
   { name: "Black", hex: "#222222" },
@@ -39,6 +40,7 @@ interface DrawingAppProps {
 }
 
 export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppProps) {
+  const { t } = useLanguage();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeColor, setActiveColor] = useState(COLORS[0].hex);
   const [isEraser, setIsEraser] = useState(false);
@@ -338,7 +340,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
         {gazeDrawing && dwellMode !== "off" && (
           <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-white/90 rounded-full px-2.5 py-1.5 shadow-md pointer-events-none">
             <Pencil size={16} style={{ color: isEraser ? "#6B7280" : activeColor }} />
-            <span className="text-xs font-medium text-gray-600">Drawing</span>
+            <span className="text-xs font-medium text-gray-600">{t("appsBoard.appNames.drawing")}</span>
           </div>
         )}
       </div>
@@ -367,7 +369,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
           data-dwell
           onClick={() => setIsEraser(true)}
           className={`${btnBase} w-14 h-14 bg-gray-200 ${isEraser ? "ring-4 ring-gray-800 scale-110" : ""}`}
-          aria-label="Eraser"
+          aria-label={t("apps.drawing.eraser")}
         >
           <Eraser size={28} className="text-gray-700" />
         </button>
@@ -377,7 +379,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
           data-dwell
           onClick={clearCanvas}
           className={`${btnBase} w-14 h-14 bg-yellow-100`}
-          aria-label="Clear"
+          aria-label={t("apps.drawing.clear")}
         >
           <Trash2 size={28} className="text-yellow-700" />
         </button>
@@ -387,7 +389,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
           data-dwell
           onClick={onClose}
           className={`${btnBase} w-14 h-14 bg-red-500 text-white`}
-          aria-label="Close"
+          aria-label={t("common.close")}
         >
           <X size={28} />
         </button>

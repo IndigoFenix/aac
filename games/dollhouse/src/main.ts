@@ -81,7 +81,10 @@ function sidebarOptions(view: QuestBoardView): BoardOption[] {
   const pages = Math.ceil(view.options.length / PER_PAGE);
   const page = bridgePage % pages; // wraps — More on the last page returns to the first
   const slice = view.options.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
-  return [...slice.map(toOption), { id: PAGE_OPTION_ID, label: "More", glyph: "more" }];
+  // The pager wears the `more` lexeme, not the English word: every other button
+  // on this sidebar arrives localized, and one that doesn't is the odd one out.
+  const more = baseWord(languageFor(initLocale), "more");
+  return [...slice.map(toOption), { id: PAGE_OPTION_ID, label: more, glyph: "more", spokenText: more }];
 }
 
 /** Push a board view (or a clear) to the AAC sidebar — the embedded island's
@@ -109,6 +112,9 @@ function pushSidebarBoard(view: QuestBoardView | null): void {
 // Captured by wrapping/replacing the island setters — the host stays unaware
 // of the bridge. ─────────────────────────────────────────────────────────────
 let knownNouns: NounEntry[] = [];
+/** ⑫ — the fellow members of the child's own conversation, as spoken words. Two
+ *  or more means a crowd, where a request has to say WHOM it is for. */
+let convoAddressees: string[] = [];
 let familyMembers: FamilyHudEntry[] = [];
 let pocketItems: PocketEntry[] = [];
 let cityChips: CityHudChip[] = [];
@@ -134,7 +140,10 @@ function pushWorldHud(): void {
       layout: "chips",
       items: cityChips.map((c) => ({
         id: String(c.district),
-        label: c.label,
+        // The chip's label is a WORD (a zone category, "town", "city") — the
+        // pure HUD builder has no locale, so it is localized here, beside the
+        // family chips' state words.
+        label: baseWord(lang, c.label),
         glyph: c.glyph,
         emoji: c.emoji, // the aggregated wellbeing face
         note: `👥 ${c.population}`,
@@ -200,6 +209,7 @@ function mountIsland(): BoardIsland {
       ...raw,
       setNouns: (nouns) => { knownNouns = nouns; raw.setNouns(nouns); },
       setFamily: (members) => { familyMembers = members; raw.setFamily(members); },
+      setAddressees: (list) => { convoAddressees = list; raw.setAddressees?.(list); },
     };
   }
   return {
@@ -208,6 +218,7 @@ function mountIsland(): BoardIsland {
     setPocket: (items) => { pocketItems = items; pushWorldHud(); },
     setFamily: (members) => { familyMembers = members; pushWorldHud(); },
     setCity: (chips) => { cityChips = chips; pushWorldHud(); },
+    setAddressees: (list) => { convoAddressees = list; },
     dispose: () => {},
   };
 }
@@ -421,6 +432,10 @@ onPlatformMessage((msg: PlatformMessage) => {
         // older surfacer simply ignores the extra opt; the final engine
         // re-sync makes it live).
         ...(msg.group !== undefined ? { group: msg.group } : {}),
+        // ⑫ — in a crowd the builder opens an ADDRESSEE slot so a request can
+        // name whom it is for. Same forward-compatibility note as `group`: an
+        // older vendored surfacer ignores the extra opt.
+        ...(convoAddressees.length ? { addressees: convoAddressees } : {}),
       } as BuilderSurfaceOpts);
       sendToParent({ type: "builder_surface", requestId: msg.requestId, surface });
       break;

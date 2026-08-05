@@ -10,7 +10,7 @@
 // the optional `QuestPresenter.city` channel — board/HUD is engine chrome.
 
 import { DEFAULT_DISTRICT, type CohortRow } from "@shared/world-engine/kernel/town/population.js";
-import { headOf } from "../../variations.js";
+import { unitsOf } from "@shared/world-engine/kernel/town/scope.js";
 
 /** One stock cell on a chip. */
 export interface CityHudStock {
@@ -105,14 +105,12 @@ export interface CityHudView {
   city: CityHudChip;
 }
 
-/** Units of a glyph's head in a stack (fractional pools display floored). */
+/** Units of a glyph in a stack, facets and all (fractional pools display
+ *  floored). PREFIX-EXACT (`unitsOf`), not head-matched: every piece of
+ *  furniture shares the storage head `furn`, so head-matching answered a query
+ *  for beds with the chairs and benches too. */
 function headUnits(stack: Readonly<Record<string, number>>, glyph: string): number {
-  const head = headOf(glyph);
-  let n = 0;
-  for (const [g, c] of Object.entries(stack)) {
-    if (headOf(g) === head) n += Math.max(0, c);
-  }
-  return Math.floor(n);
+  return Math.floor(unitsOf(stack, glyph));
 }
 
 /** THE UNLOCK: aggregate displays appear once the city crossed the line —

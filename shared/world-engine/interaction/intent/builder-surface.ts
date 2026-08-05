@@ -138,6 +138,11 @@ export interface BuilderSurfaceOpts {
   group?: string;
   /** Main-grid budget (the surfacer default is 16). */
   capacity?: number;
+  /** ⑫ — the fellow members of the speaker's own conversation, as spoken
+   *  symbols. In a 3+ roster it opens the ADDRESSEE slot so a request can name
+   *  whom it is for; absent or a dyad ⇒ today's board exactly
+   *  (conversation-in-motion.md law ②/④). */
+  addressees?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +342,12 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
     const key = !lex && noun ? noun.symbol : symbol;
     return {
       key,
-      label: noun?.label ?? baseWord(lang, head),
+      // THE LEXICON OUTRANKS THE HOST'S LABEL for anything that is a WORD. The
+      // host's `label` is a display name for what no lexicon can hold — a
+      // person's name, a pet's — and it is written in English; letting it win
+      // put "chair" on a Hebrew board next to buttons that read כיסא. A name
+      // has no lexeme, so it still falls through and stays itself.
+      label: lang.lexicon[head]?.w ?? noun?.label ?? baseWord(lang, head),
       glyph: noun?.glyph ?? key,
       category: lex ? lex.cat : "things",
       ...(!lex && noun?.kind ? { kind: noun.kind } : {}),
@@ -358,6 +368,7 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
   const suggestion = surfaceNext(tokens, {
     nouns: surfaceNouns,
     ...(opts.capacity !== undefined ? { capacity: opts.capacity } : {}),
+    ...(opts.addressees?.length ? { parse: { addressees: opts.addressees } } : {}),
   });
 
   // ── Buttons + group chips (the SpeakMenu's hierarchy, wire-shaped) ─────────
@@ -369,8 +380,11 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
   //                      exactly like the SpeakMenu tabs — no sub-groups).
   const surfaceWord = (b: { symbol: string; label?: string }): BuilderWordJson => {
     const w = wordJson(b.symbol);
-    // The surfacer's own label (a noun label it resolved) wins over ours.
-    return b.label !== undefined ? { ...w, label: b.label } : w;
+    // The surfacer's own label (a noun label it resolved) wins over ours — but
+    // it is the HOST's English label travelling under another name, so the
+    // lexicon outranks it here for the same reason it does in `wordJson`.
+    const named = b.label !== undefined && !lang.lexicon[headOf(b.symbol)];
+    return named ? { ...w, label: b.label! } : w;
   };
   // The chip's face is the members' DISPLAY glyphs (`wordJson().glyph`), not
   // their keys: a place's picture is its composed shell+symbol icon, and a chip

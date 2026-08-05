@@ -365,6 +365,21 @@ function bootQuestGame(
     return rows;
   };
 
+  // EVERY LIVE CONVERSATION, one row each — the ⑪ GL probe
+  // (multi-entity-conversations.md §5). The circles a town forms are the one
+  // part of the conversation work that has no board to look at: the evidence
+  // that a ring formed, admitted somebody, kept taking turns and then went
+  // quiet is a handful of numbers on a record nothing renders. This prints
+  // them. `__questLab_convos()` — `group` false is a player-opened board,
+  // `members` shows each member's OWN rung, a frozen `seq` means nobody is
+  // talking and a climbing `dullS` means the circle is about to break up.
+  (window as unknown as Record<string, unknown>).__questLab_convos = () => {
+    const rows = host?.conversationAudit() ?? [];
+    // eslint-disable-next-line no-console
+    console.table(rows);
+    return rows;
+  };
+
   // Pointer-as-gaze: the mouse is the gaze. A walker steers toward it; a spirit
   // just looks (the host ignores steering in stationary mode). Under the
   // LADDER, the raw pointer feeds the ladder instead — it forwards to the
@@ -502,6 +517,7 @@ function bootQuestGame(
       releaseBoard(); // blank + un-route the persistent board (never unmount it)
       delete (window as unknown as Record<string, unknown>).__questLab;
       delete (window as unknown as Record<string, unknown>).__questLab_pose;
+      delete (window as unknown as Record<string, unknown>).__questLab_convos;
       delete (window as unknown as Record<string, unknown>).__spiritLadder;
       root.remove();
     },

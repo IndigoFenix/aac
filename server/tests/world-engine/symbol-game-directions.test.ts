@@ -18,7 +18,7 @@ import {
   createCreatureWorld,
   projectDialogue,
   selectAct,
-  type ConversationMemo,
+  type DeviceBoardState,
   type DialogueAct,
 } from "@shared/world-engine/interaction/index.js";
 import type { TownStreets } from "@shared/world-engine/kernel/town/streets.js";
@@ -161,13 +161,14 @@ describe("directions dialogue acts — single ask vs paginated list", () => {
     const opts = { symbolOf: sym, askDirections: subjects };
     const world = npcWorld();
 
-    // Open the list.
+    // Paging is DEVICE state (`ui`), never the conversation's — it rides the
+    // ActResult's `ui` and back into the pressing device's own board state.
     const openAct: DialogueAct = { kind: "directions-menu", glyph: "place#question" };
     const opened = selectAct(world, "npc", PLAYER, openAct, "b", opts, {});
-    expect(opened.memo.list).toEqual({ menu: "where-is", page: 0 });
+    expect(opened.ui?.list).toEqual({ menu: "where-is", page: 0 });
 
     // Page 0: pageSize (maxActs 8 − 3) = 5 picks + more + back + confused.
-    let proj = projectDialogue(world, "npc", PLAYER, "b", opts, opened.memo);
+    let proj = projectDialogue(world, "npc", PLAYER, "b", opts, { ui: opened.ui });
     const picks0 = proj.acts.filter((a) => a.kind === "directions-pick");
     expect(picks0).toHaveLength(5);
     expect(proj.acts.some((a) => a.kind === "more")).toBe(true);
@@ -176,25 +177,25 @@ describe("directions dialogue acts — single ask vs paginated list", () => {
 
     // MORE → page 1 shows the remaining 2.
     const moreAct: DialogueAct = { kind: "more", glyph: "more" };
-    const more = selectAct(world, "npc", PLAYER, moreAct, "b", opts, opened.memo);
-    expect(more.memo.list?.page).toBe(1);
-    proj = projectDialogue(world, "npc", PLAYER, "b", opts, more.memo);
+    const more = selectAct(world, "npc", PLAYER, moreAct, "b", opts, { ui: opened.ui });
+    expect(more.ui?.list?.page).toBe(1);
+    proj = projectDialogue(world, "npc", PLAYER, "b", opts, { ui: more.ui });
     expect(proj.acts.filter((a) => a.kind === "directions-pick")).toHaveLength(2);
 
     // BACK closes the list.
     const backAct: DialogueAct = { kind: "back", glyph: "no" };
-    const back = selectAct(world, "npc", PLAYER, backAct, "b", opts, more.memo);
-    expect(back.memo.list).toBeUndefined();
+    const back = selectAct(world, "npc", PLAYER, backAct, "b", opts, { ui: more.ui });
+    expect(back.ui?.list).toBeUndefined();
   });
 
   it("picking a place hands the subject up to the host (askedDirections) and closes the list", () => {
     const opts = { symbolOf: sym, askDirections: [{ id: "buy:cookie", glyph: "cookie" }] };
     const world = npcWorld();
     const pick: DialogueAct = { kind: "directions-pick", subjectId: "buy:cookie", glyph: "cookie" };
-    const memo: ConversationMemo = { list: { menu: "where-is", page: 0 } };
-    const res = selectAct(world, "npc", PLAYER, pick, "b", opts, memo);
+    const ui: DeviceBoardState = { list: { menu: "where-is", page: 0 } };
+    const res = selectAct(world, "npc", PLAYER, pick, "b", opts, { ui });
     expect(res.askedDirections).toBe("buy:cookie");
-    expect(res.memo.list).toBeUndefined();
+    expect(res.ui?.list).toBeUndefined();
     expect(res.close).toBeFalsy(); // the conversation continues after the answer
   });
 });

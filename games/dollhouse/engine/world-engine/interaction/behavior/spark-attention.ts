@@ -153,6 +153,161 @@ export function attentionBonus(
 }
 
 // ---------------------------------------------------------------------------
+// PER-AUTHOR ATTENTION — the end of the spark singleton
+// ---------------------------------------------------------------------------
+//
+// THERE IS MORE THAN ONE SPARK NOW (multi-entity-conversations.md §3f). Two
+// students on two devices share one sim, and each has their own gaze, their own
+// engaged creature and their own indicated thing. A single `sparkFocus` on the
+// session was the same singleton bug as `PLAYER_CREATURE_ID`: whichever device
+// hovered last owned everybody's attention, and the other child's engagement
+// vanished under it.
+//
+// ONE PAIRING LAW. A draw is only ever read together with the engagement OF THE
+// SAME AUTHOR. Crossing them is the failure this shape exists to make
+// unwritable: Ann engages Mara, Ben looks at the bread, and a crossed read sends
+// MARA to eat — an instruction neither child gave. So both halves are keyed by
+// author, and `attentionBonusOf` reaches into ONE author's row for both.
+//
+// THE ASYMMETRY, DELIBERATELY KEPT VISIBLE. Engagement is durable (it decays
+// over `engageDecayS` and survives looking away), so every author's row is
+// meaningful on every device. A DRAW is the live local gaze — hovers are not on
+// the wire, so in practice a device holds a draw for the LOCAL author only, and
+// the remote rows stay empty. That is a WIRING fact, not a shape fact: the map
+// is per-author because the pairing law demands it, and a future hover-sync
+// fills the other rows without touching a line of this file.
+
+/** Every author's ENGAGED creature, keyed by the author's creature id (the
+ *  `player[:<personId>]` cid — player-identity.ts). One row per author, one
+ *  engaged creature per row: the spark still engages exactly one body at a time,
+ *  it just is no longer the world's only spark. The host owns the map and
+ *  mutates it, so the alias is the mutable `Map`; every function here takes the
+ *  read-only view, which a `Map` satisfies. */
+export type AuthorAttention = Map<string, SparkFocus>;
+
+/** Every author's live DRAW, keyed the same way. Sparse by construction — see
+ *  THE ASYMMETRY above. */
+export type AuthorDraws = Map<string, SparkDraw>;
+
+/** How attentive `cid` is TO ONE AUTHOR's spark — that author's row and nobody
+ *  else's. Author A's engagement never answers for author B, which is the whole
+ *  point of the map. Pure. */
+export function attentivenessOf(
+  attention: ReadonlyMap<string, SparkFocus> | null | undefined,
+  authorCid: string,
+  cid: string,
+): number {
+  return attentiveness(attention?.get(authorCid) ?? null, cid);
+}
+
+/** How attentive `cid` is to ANY spark — the strongest author's hold on it.
+ *  For the questions that are about the creature rather than about an author
+ *  ("is anybody's attention on this body", the engagement ring): a creature two
+ *  children are both looking at is engaged, not half-engaged. Max, so the answer
+ *  cannot depend on map order. Pure. */
+export function attentivenessAny(
+  attention: ReadonlyMap<string, SparkFocus> | null | undefined,
+  cid: string,
+): number {
+  let best = 0;
+  if (!attention) return best;
+  for (const focus of attention.values()) {
+    const a = attentiveness(focus, cid);
+    if (a > best) best = a;
+  }
+  return best;
+}
+
+/** The effective-meter bonus ONE author's spark gives `cid`'s template — that
+ *  author's draw paired with that author's engagement, never a crossed pair (the
+ *  PAIRING LAW above). Pure. */
+export function attentionBonusOf(
+  draws: ReadonlyMap<string, SparkDraw> | null | undefined,
+  attention: ReadonlyMap<string, SparkFocus> | null | undefined,
+  authorCid: string,
+  cid: string,
+  tplKey: string,
+): number {
+  return attentionBonus(draws?.get(authorCid) ?? null, attention?.get(authorCid) ?? null, cid, tplKey);
+}
+
+/** The strongest bonus any author's spark gives `cid`'s template — the drop-in
+ *  for the need loop, which asks about a CREATURE and does not care whose gaze
+ *  moved it. Walks the ENGAGEMENT rows: no engagement ⇒ no bonus (attentiveness
+ *  gates it to zero), so an author holding only a draw can be skipped. Max, so
+ *  it is order-independent. Pure. */
+export function attentionBonusAny(
+  draws: ReadonlyMap<string, SparkDraw> | null | undefined,
+  attention: ReadonlyMap<string, SparkFocus> | null | undefined,
+  cid: string,
+  tplKey: string,
+): number {
+  let best = 0;
+  if (!attention) return best;
+  for (const authorCid of attention.keys()) {
+    const b = attentionBonusOf(draws, attention, authorCid, cid, tplKey);
+    if (b > best) best = b;
+  }
+  return best;
+}
+
+/** A conversation member as this module needs to read it — `ConvoMember`
+ *  (dialogue/conversation.ts) satisfies it structurally. Taken by shape rather
+ *  than by import because the import direction runs dialogue → behavior, and one
+ *  helper is not worth reversing it. */
+export interface EngagedMember {
+  id: string;
+  /** 0..1 — how much of this member's attention the conversation holds. */
+  engagement: number;
+}
+
+/**
+ * How much of `targetCid`'s attention `authorCid` holds right now, 0..1 — the
+ * ONE question the response gates ask, answered from whichever record actually
+ * knows.
+ *
+ * ROSTER-IS-ENGAGEMENT (§3f). Being in a conversation together IS mutual
+ * attention. Nobody stares at the person they are talking to, and a member who
+ * glanced at the floor mid-sentence has not stopped listening — so for two
+ * FELLOW MEMBERS the roster answers FIRST, with the target's own
+ * `ConvoMember.engagement` (`DEFAULT_ENGAGEMENT` = 1 on joining, decayed by the
+ * idle-lapse rule), never the spark's fading hover. Reading the hover there is
+ * exactly the bug this replaces: it made a listener less and less answerable the
+ * longer the conversation went on.
+ *
+ * The SPARK answers second, and only outside a shared roster — there the gaze is
+ * the only evidence of attention there is, and it is the author's OWN row that
+ * is read (the pairing law).
+ *
+ * And when neither record knows them, the answer is ZERO — THE NO-AMBIENT-
+ * RESPONSE LAW survives intact. A creature the author never engaged and never
+ * sat down with is not listening, is not nudged, and is never pulled into
+ * somebody else's business. That was the "way too strong" failure, and no
+ * amount of roster machinery is allowed to reintroduce it.
+ *
+ * Both branches are clamped to 0..1: a roster row carrying a wild value is a
+ * caller's bug, and `attend` already refuses to let one through. Pure.
+ */
+export function engagementToward(
+  members: readonly EngagedMember[] | null | undefined,
+  attention: ReadonlyMap<string, SparkFocus> | null | undefined,
+  authorCid: string,
+  targetCid: string,
+): number {
+  if (members && members.length) {
+    const target = members.find((m) => m.id === targetCid);
+    // BOTH must be in the circle: a roster says nothing about the hold an
+    // outsider has on one of its members, so that pair falls to the spark.
+    if (target && members.some((m) => m.id === authorCid)) return clamp01(target.engagement);
+  }
+  return clamp01(attentivenessOf(attention, authorCid, targetCid));
+}
+
+function clamp01(v: number): number {
+  return v < 0 || Number.isNaN(v) ? 0 : v > 1 ? 1 : v;
+}
+
+// ---------------------------------------------------------------------------
 // The ATTENTION-ACTION TABLE — what indicating a thing ASKS OF a creature
 // ---------------------------------------------------------------------------
 

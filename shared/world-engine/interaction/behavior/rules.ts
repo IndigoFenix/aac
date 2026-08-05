@@ -263,6 +263,36 @@ export type GoalSpec =
   // gate and the caravan are the host's, never a body errand.
   | { kind: "trade"; give: string; take: string | null; partner: string | null };
 
+/**
+ * ★ ⑫⑧ — STOP AND FACE SOMEBODY. ★
+ *
+ * `target` is a FELLOW MEMBER of the speaker's own conversation, and the goal
+ * is a turn IN PLACE: no walk, no reach, no station. (`converse` is the one
+ * that walks to a partner and exchanges; this buys the *channel*, which is the
+ * whole of conversation-in-motion law ②.) Its price is one turn of the circle
+ * — see the host's `ADDRESS_DWELL_S`.
+ *
+ * 🚨 IT IS DELIBERATELY NOT A `GoalSpec`, AND THAT IS ONE OF THE CHAPTER'S TWO
+ * FREE CONSEQUENCES MADE STRUCTURAL. `GoalSpec` is "the CLOSED set of goal
+ * primitives a RULE ACTION may compile to" — the vocabulary a player-authored
+ * rule and a spoken command are written in. **An order is not negotiable**:
+ * you cannot tell somebody to stop and face somebody, because stopping to face
+ * somebody is the thing a creature decides FOR ITSELF against its own work
+ * (the consolidation's north star read backwards — only a self-assigned
+ * command can be un-assigned). Keeping `address` out of the command vocabulary
+ * is that law expressed in the type system rather than in a guard somebody has
+ * to remember: a `source: "command"` pursuit can never carry one.
+ */
+export type AddressGoal = { kind: "address"; target: CreatureId };
+
+/**
+ * WHAT A PURSUIT MAY DRIVE — the command vocabulary plus the goals a creature
+ * can only ever assign itself. The unified `pursue` loop, the planner and the
+ * plan pricer all speak this; `GoalSpec` alone stays the AUTHORING vocabulary
+ * (rules, spoken orders, and the intent lines that read them back).
+ */
+export type PursuitGoal = GoalSpec | AddressGoal;
+
 export interface Rule {
   id: string;
   /** WHO issued it — a creature id (the player is one). Drives compliance: the

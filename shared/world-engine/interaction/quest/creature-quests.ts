@@ -47,8 +47,15 @@ import type { PoolDef, PoolMember } from "@shared/world-engine/interaction/types
 import { KIND_CATEGORY, POOLS } from "@shared/world-engine/interaction/content/pools.js";
 import { mulberry32, randomSeed } from "@shared/prng.js";
 import type { QuestComplexity, SyntaxLevel } from "@shared/world-engine/interaction/dialogue/dialogue-gen.js";
+import { LOCAL_PLAYER_CID, PLAYER_CID_PREFIX } from "./player-identity.js";
 
-export const PLAYER_CREATURE_ID = "player";
+// ⑪ — the deprecated singleton re-export that used to stand here is GONE
+// (multi-entity-conversations.md §4.11). It collapsed three different questions
+// into one constant — *author of this act* (a threaded `speakerCid`), *has no
+// body of its own* (`isPlayerCid`) and *is the local device's*
+// (`LOCAL_PLAYER_CID`) — and only the last is a constant comparison. Every site
+// below is the third question: these are the LOCAL-authored seed and fixed-game
+// paths, where "the player" really does mean this device's author.
 
 // ---------------------------------------------------------------------------
 // Generation
@@ -1006,7 +1013,7 @@ function toCausalFact(self: CreatureId, fact: FulfillCausalFact): CausalFact {
 
 /** Reconstruct the creature world from a game's fulfill nodes. Deterministic. */
 export function creatureWorldFromGame(game: GoalTreeGame): DerivedCreatures {
-  const creatures: CreatureSeed[] = [{ id: PLAYER_CREATURE_ID }];
+  const creatures: CreatureSeed[] = [{ id: LOCAL_PLAYER_CID }];
   const items = new Map<string, ItemSeed>();
   const creatureByNode = new Map<string, CreatureId>();
   const nodeByCreature = new Map<CreatureId, FulfillNode>();
@@ -1089,7 +1096,7 @@ export function creatureWorldFromGame(game: GoalTreeGame): DerivedCreatures {
             ]
           : []),
       ],
-      debts: node.playerDebt ? { [PLAYER_CREATURE_ID]: node.playerDebt } : {},
+      debts: node.playerDebt ? { [LOCAL_PLAYER_CID]: node.playerDebt } : {},
       ...(node.condition ? { condition: node.condition } : {}),
     });
     for (const id of node.stockEntityIds ?? []) {
@@ -1170,6 +1177,19 @@ export function certifyCreatureQuestWorld(game: GoalTreeGame): CreatureCertifica
   const cert = certifyGoalTreeGame(game);
   if (!cert.ok) return { ok: false, stage: "game", errors: cert.errors };
 
+  // RESERVED NAMESPACE (player-identity.ts): a fulfill node's id IS its creature
+  // id, and the player names — the local author's cid plus every
+  // `player:<personId>` a joined device mints — belong to the spark set. A node
+  // minted into that namespace would BE a player: it overwrites that author's
+  // creature in the derived world and inherits its relations, debts and
+  // knowledge. Caught here, before the world is built on the collision.
+  const reservedIds = [...walkGoalTree(game.root)]
+    .filter(({ node }) => node.type === "fulfill")
+    .map(({ node }) => node.id)
+    .filter((id) => id === LOCAL_PLAYER_CID || id.startsWith(PLAYER_CID_PREFIX))
+    .map((id) => `creature node "${id}" collides with the reserved player namespace`);
+  if (reservedIds.length > 0) return { ok: false, stage: "game", errors: reservedIds };
+
   const { world, nodeByCreature } = creatureWorldFromGame(game);
   const creatureIds = [...nodeByCreature.keys()].sort();
 
@@ -1220,13 +1240,13 @@ export function certifyCreatureQuestWorld(game: GoalTreeGame): CreatureCertifica
       // Visit the room: displayed stock + the creature's holdings are SEEN...
       for (const item of Object.values(world.items)) {
         if (item.ownerId === cid && item.displayed) {
-          seeItem(world, PLAYER_CREATURE_ID, item.id, { kind: "held", by: cid });
+          seeItem(world, LOCAL_PLAYER_CID, item.id, { kind: "held", by: cid });
         }
       }
       // ...and loose props get picked up on the way in (never a fixed DEVICE).
       for (const id of node.propEntityIds ?? []) {
         if (world.items[id]?.ownerId === null && !world.items[id]?.device) {
-          claimItem(world, PLAYER_CREATURE_ID, id, { takerAcceptsAnything: true });
+          claimItem(world, LOCAL_PLAYER_CID, id, { takerAcceptsAnything: true });
         }
       }
       // Converse purposefully: offer its want, then request only items some
@@ -1240,18 +1260,18 @@ export function certifyCreatureQuestWorld(game: GoalTreeGame): CreatureCertifica
         // (its zone reachability is proved by the static solver) — arrival
         // fulfills the need. No item involved.
         if (need?.atPlace) {
-          noteArrival(world, PLAYER_CREATURE_ID, need.atPlace);
+          noteArrival(world, LOCAL_PLAYER_CID, need.atPlace);
           continue;
         }
         // A device-state need: the sim powers up the chain behind the device
         // (switch on the generator first), then toggles it — the toggle fulfills
         // the need and clears any linked condition. No item to hold or carry.
         if (need?.deviceState) {
-          powerUp(world, PLAYER_CREATURE_ID, need.itemId);
-          toggleDevice(world, PLAYER_CREATURE_ID, need.itemId, need.deviceState);
+          powerUp(world, LOCAL_PLAYER_CID, need.itemId);
+          toggleDevice(world, LOCAL_PLAYER_CID, need.itemId, need.deviceState);
           continue;
         }
-        if (need && world.items[need.itemId]?.ownerId === PLAYER_CREATURE_ID) {
+        if (need && world.items[need.itemId]?.ownerId === LOCAL_PLAYER_CID) {
           if (need.requiresState && !world.items[need.itemId]!.states.includes(need.requiresState)) {
             // Detour to a station first (the pre-check guarantees one exists).
             const kind = (Object.keys(STATION_KINDS) as StationKind[]).find(
@@ -1261,8 +1281,8 @@ export function certifyCreatureQuestWorld(game: GoalTreeGame): CreatureCertifica
               // Power the station up first (P1) — useStation no-ops otherwise, so
               // skipping this step would leave the need unfulfilled (real gate).
               if (node.stationPowerDeviceId) {
-                powerUp(world, PLAYER_CREATURE_ID, node.stationPowerDeviceId);
-                toggleDevice(world, PLAYER_CREATURE_ID, node.stationPowerDeviceId, "on");
+                powerUp(world, LOCAL_PLAYER_CID, node.stationPowerDeviceId);
+                toggleDevice(world, LOCAL_PLAYER_CID, node.stationPowerDeviceId, "on");
               }
               useStation(
                 world,
@@ -1276,17 +1296,17 @@ export function certifyCreatureQuestWorld(game: GoalTreeGame): CreatureCertifica
           if (need.placedAt) {
             // A state need: the sim walks over and PLACES it (no physics here;
             // the player verifies the real drop via containedIn).
-            notePlacement(world, PLAYER_CREATURE_ID, need.itemId, need.placedAt);
+            notePlacement(world, LOCAL_PLAYER_CID, need.itemId, need.placedAt);
           } else if (need.forCreature) {
             // An on-behalf need: the delivery goes to the RECIPIENT (which
             // also settles this creature's need via settleOnBehalfNeeds).
-            giveItem(world, PLAYER_CREATURE_ID, need.forCreature, need.itemId);
+            giveItem(world, LOCAL_PLAYER_CID, need.forCreature, need.itemId);
           } else {
-            giveItem(world, PLAYER_CREATURE_ID, cid, need.itemId);
+            giveItem(world, LOCAL_PLAYER_CID, cid, need.itemId);
           }
           settleObligations(world, cid); // it may now owe a previously-asked item
           for (const p of pendingTransfers(world, cid)) {
-            if (p.pendingTransferTo === PLAYER_CREATURE_ID) concludeTransfer(world, PLAYER_CREATURE_ID, p.id);
+            if (p.pendingTransferTo === LOCAL_PLAYER_CID) concludeTransfer(world, LOCAL_PLAYER_CID, p.id);
           }
           continue;
         }
@@ -1298,23 +1318,23 @@ export function certifyCreatureQuestWorld(game: GoalTreeGame): CreatureCertifica
           .filter((i) => i.ownerId === cid && !i.bound && neededSomewhere.has(i.id))
           .map((i) => i.id)
           .sort()
-          .find((id) => world.creatures[PLAYER_CREATURE_ID]!.knowledge[id] !== undefined);
+          .find((id) => world.creatures[LOCAL_PLAYER_CID]!.knowledge[id] !== undefined);
         if (!wanted) break;
         // The sim's "take" happens immediately after any agreement (no physics).
         const takePending = () => {
           for (const p of pendingTransfers(world, cid)) {
-            if (p.pendingTransferTo === PLAYER_CREATURE_ID) {
-              concludeTransfer(world, PLAYER_CREATURE_ID, p.id);
+            if (p.pendingTransferTo === LOCAL_PLAYER_CID) {
+              concludeTransfer(world, LOCAL_PLAYER_CID, p.id);
             }
           }
         };
-        const out = requestItem(world, PLAYER_CREATURE_ID, cid, wanted);
+        const out = requestItem(world, LOCAL_PLAYER_CID, cid, wanted);
         takePending();
         if (out.kind === "accept") continue;
         if (out.kind === "price" && out.price.kind === "return") {
           const back = world.items[out.price.itemId];
-          if (back?.ownerId === PLAYER_CREATURE_ID && !neededSomewhere.has(out.price.itemId)) {
-            giveItem(world, PLAYER_CREATURE_ID, cid, out.price.itemId);
+          if (back?.ownerId === LOCAL_PLAYER_CID && !neededSomewhere.has(out.price.itemId)) {
+            giveItem(world, LOCAL_PLAYER_CID, cid, out.price.itemId);
             settleObligations(world, cid);
             takePending();
             continue;

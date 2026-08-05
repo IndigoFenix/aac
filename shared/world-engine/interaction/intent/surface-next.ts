@@ -381,6 +381,10 @@ const QUOTA: Partial<Record<SlotNeed, number>> = {
   connective: 3,
   quantity: 2,
   attribute: 5,
+  /** ⑫ — a circle caps at five, so four names could crowd out the sentence the
+   *  child is actually building. The reservation loop still guarantees ONE name
+   *  is always reachable; this only stops the rest from flooding the grid. */
+  addressee: 2,
 };
 
 const MAX_GROUPS = 5;
@@ -401,6 +405,13 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     ...(ctx.parse ?? {}),
   };
   const frame: IntentFrame | null = tokens.length ? parseSentence(sentence, parseCtx) : null;
+  // ⑫ — the speaker's own conversation, read off the SAME field the parser uses
+  // so the board and the frame can never disagree about who is standing there.
+  // Two or more fellow members = a 3+ conversation, which is the only shape with
+  // anything to disambiguate (law ④: a dyad needs no addressing at all).
+  const roster = parseCtx.addressees ?? [];
+  const inCircle = roster.length >= 2;
+  const rosterHas = (sym: string): boolean => roster.some((a) => a.toLowerCase() === sym.toLowerCase());
 
   const last = tokens[tokens.length - 1];
   const lastLex = last !== undefined ? lexOf(last) : undefined;
@@ -531,6 +542,13 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       add("more", "opener", seed ? 6 : 2);
       if (seed) addNouns("object", () => true);
     }
+    // ⑫ — IN A CROWD, THE NAME IS AN OPENER. "mara + give + i_me + apple" starts
+    // with the name, so a child asking one particular person for something needs
+    // it on the very first board. Only in a 3+ conversation: in a dyad there is
+    // nobody to disambiguate from (law ④) and the name would be clutter.
+    if (inCircle && (!seed || seed === "request" || seed === "command")) {
+      addNouns("addressee", (nn) => nn.kind === "creature" && rosterHas(nn.symbol), 4);
+    }
     if (!seed || seed === "state") {
       add("i_me", "opener", 3);
       if (seed) {
@@ -559,6 +577,17 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     addNouns("addressee", (nn) => nn.kind === "creature", 5);
     add("you", "addressee", 3);
     return finalize();
+  }
+
+  // ── ⑫ Stage: THE NAME CHANNEL, mid-sentence ───────────────────────────────
+  // A request or an order aimed at ONE person in a crowd needs that person's
+  // name — it is the channel that works with full hands and a body facing the
+  // wrong way (law ②). NON-RETURNING, unlike the greet stage above: the rest of
+  // the sentence still has to be sayable, so this only OPENS the role and lets
+  // `finalize`'s reservation loop guarantee one name is always a press away.
+  // Suppressed once a vocative is bound — the question has been answered.
+  if (inCircle && !frame.vocative && (frame.kind === "request" || frame.kind === "command")) {
+    addNouns("addressee", (nn) => nn.kind === "creature" && rosterHas(nn.symbol), 4);
   }
 
   // ── Stage: mid-sentence — derive open slots from the partial frame ────────

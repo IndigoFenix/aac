@@ -17,9 +17,6 @@
 // bundles its own icon assets; omit it to fall back to the compositor's emoji
 // rendering (which still composes head + modifiers/RTL correctly).
 
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { GlyphCompositor } from "../glyph-compositor.tsx";
 import type { ImageResolver } from "../glyph-compositor.js";
 import type { GlyphImage } from "./speech-bubble.js";
 import { buildCausalSvg, splitCausalGlyph, svgDims } from "./causal-glyph.js";
@@ -32,6 +29,47 @@ import {
   writeGlyphRaster,
   writeSlotAsset,
 } from "./glyph-raster-cache.js";
+
+/**
+ * REACT IS LOADED LAZILY — `react`, `react-dom/server` and the JSX compositor
+ * are reached through a dynamic import, never a top-level one.
+ *
+ * WHY: the quest-host imports this module, so a static JSX import here made the
+ * whole world-engine host un-importable anywhere without a JSX-capable loader —
+ * jest's ESM run and any headless (no-DOM) probe died at module evaluation, long
+ * before anything asked for a glyph. Deferring costs the browser nothing: React
+ * and `GlyphCompositor` are already in the games' entry chunk (board-island
+ * imports the compositor statically), so this resolves against an
+ * already-loaded module — no extra network round trip.
+ *
+ * Memoized: the promise is created once and every later glyph awaits the same
+ * one. Type-only imports below are erased at compile time, so they execute
+ * nothing.
+ */
+type ReactBits = {
+  createElement: typeof import("react").createElement;
+  renderToStaticMarkup: typeof import("react-dom/server").renderToStaticMarkup;
+  GlyphCompositor: typeof import("../glyph-compositor.tsx").GlyphCompositor;
+};
+let reactBits: Promise<ReactBits> | null = null;
+
+function loadReactBits(): Promise<ReactBits> {
+  if (!reactBits) {
+    reactBits = (async (): Promise<ReactBits> => {
+      const [react, server, compositor] = await Promise.all([
+        import("react"),
+        import("react-dom/server"),
+        import("../glyph-compositor.tsx"),
+      ]);
+      return {
+        createElement: react.createElement,
+        renderToStaticMarkup: server.renderToStaticMarkup,
+        GlyphCompositor: compositor.GlyphCompositor,
+      };
+    })();
+  }
+  return reactBits;
+}
 
 /** Supersample height (px) the SVG rasterizes at — the bubble downsamples it. */
 const RASTER_HEIGHT = 200;
@@ -203,6 +241,8 @@ async function singleGlyphToStandaloneSvg(
   rtl: boolean,
   noBackground: boolean,
 ): Promise<string | null> {
+  // React + the JSX compositor, on first use (see loadReactBits).
+  const { createElement, renderToStaticMarkup, GlyphCompositor } = await loadReactBits();
   // Pass 1 — collect the external (non-data) URLs this glyph needs.
   const needed = new Set<string>();
   const collect: ImageResolver = (input) => {

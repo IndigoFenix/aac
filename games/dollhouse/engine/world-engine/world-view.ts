@@ -42,25 +42,37 @@ export interface RenderIntent {
    *  player and the speaker stay framed instead of the overhead top-down. */
   shoulder?: boolean;
   /**
-   * WHO IS TALKING RIGHT NOW — the two AVATAR IDS holding a conversation, or
-   * null when nobody is. The DOLLHOUSE camera's conversation dolly reads this
-   * and nothing else.
+   * WHO IS TALKING RIGHT NOW — the conversation the camera should frame, or null
+   * when nobody is. The DOLLHOUSE camera's conversation dolly reads this and
+   * nothing else.
    *
-   * Ids, not points, because the camera must frame BOTH bodies (and turn them
-   * three-quarter toward itself), so it needs to look them up in the live
-   * `WorldState` every frame — a point pair captured once would lag a body that
-   * shifts its feet. Either id may be absent from `state.avatars` (a formless
-   * spirit "conversing" has no body, a partner may have streamed out); the
-   * camera frames whichever bodies it can actually see, so a one-sided pair is
-   * legal and means "frame this one person".
+   * `members` are AVATAR IDS, not points, because the camera must frame the
+   * bodies (and turn them three-quarter toward itself), so it looks them up in
+   * the live `WorldState` every frame — points captured once would lag a body
+   * that shifts its feet. Any id may be absent from `state.avatars` (a formless
+   * spirit "conversing" has no body, a member may have streamed out); the camera
+   * frames whichever bodies it can actually see, so a roster with ONE visible
+   * body is legal and means "frame this one person".
+   *
+   * `id` is the CAMERA LATCH KEY — the conversation's own identity, stable
+   * across membership churn. The dolly keys its hysteresis on this and never on
+   * the roster, so somebody joining or leaving mid-exchange re-frames smoothly
+   * (the tracked point simply widens) instead of being read as a DIFFERENT
+   * conversation that has to wait out the hold and then re-dolly from scratch.
+   * Two different conversations must therefore never share an id.
+   *
+   * `speaker` (optional) is who is talking this instant. RESERVED: the v1 camera
+   * IGNORES it — it frames the whole roster evenly. It is published now so a
+   * later framing bias (weight the centre toward the speaker, or hold a slightly
+   * tighter span on them) needs no new plumbing through the host.
    *
    * The GAME LAYER is the authority — a conversation is not a geometric fact
    * (two bodies standing close are not talking) and there is no way to infer it
    * from the state the renderer sees. Published by the world host from whatever
-   * the game knows: the player's open conversation, or an ambient NPC exchange
+   * the game knows: the player's own conversation, or an ambient NPC exchange
    * while its words are on screen.
    */
-  conversation?: { a: string; b: string } | null;
+  conversation?: { id: string; members: string[]; speaker?: string } | null;
   /**
    * The gaze-CURSOR payload for the flying-spark cursor (render3d). Deliberately
    * separate from `aim`/`interactId` — those get repurposed by the game (steering

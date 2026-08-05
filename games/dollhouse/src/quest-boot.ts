@@ -221,6 +221,10 @@ function bootQuestGame(
     },
     board(view: QuestBoardView) { board.set(view); },
     nouns(list: { symbol: string; label: string }[]) { board.setNouns(list); },
+    /** ⑫ — who is standing in the child's conversation, for the builder's
+     *  addressee slot. Captured by the bridge in main.ts; the local board has
+     *  no use for it on its own. */
+    addressees(list: string[]) { board.setAddressees?.(list); },
     pocket(items: Parameters<BoardIsland["setPocket"]>[0]) { board.setPocket(items); },
     family(members: Parameters<BoardIsland["setFamily"]>[0]) { board.setFamily(members); },
     city(chips: Parameters<BoardIsland["setCity"]>[0]) { board.setCity(chips); },

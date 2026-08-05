@@ -4,14 +4,23 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { createCreatureWorld, seeItem } from "@shared/world-engine/interaction/behavior/creatures.js";
-import { projectDialogue, selectAct, type ProjectionOpts } from "@shared/world-engine/interaction/dialogue/creature-dialogue.js";
 import {
-  askWhere,
+  projectDialogue,
+  selectAct,
+  type DialogueAct,
+  type ProjectionOpts,
+} from "@shared/world-engine/interaction/dialogue/creature-dialogue.js";
+import {
   chooseSpeakerAct,
-  converse,
+  chooseSpeakerMove,
   intentToAct,
-  pickSpeakerAct,
+  speakInConversation,
 } from "@shared/world-engine/interaction/dialogue/creature-converse.js";
+import {
+  createConversation,
+  joinConversation,
+  type ConversationState,
+} from "@shared/world-engine/interaction/dialogue/conversation.js";
 import { personalityFromPreset } from "@shared/world-engine/interaction/behavior/personality.js";
 import { tellFact } from "@shared/world-engine/interaction/behavior/facts.js";
 import { parseSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
@@ -20,6 +29,24 @@ import { parseSentence } from "@shared/world-engine/interaction/intent/parse-int
 const opts = (world: ReturnType<typeof createCreatureWorld>): ProjectionOpts => ({
   symbolOf: (id) => world.items[id]?.kind ?? id,
 });
+
+/** A frozen draw — every roulette in these tests takes its slot from a constant,
+ *  never from `Math.random`, so a frequency below is a fact about the code. */
+const constRng = (v: number) => () => v;
+
+/**
+ * THE DYAD AS A ROSTER. `converse`/`pickSpeakerAct`/`askWhere` took a listener
+ * POSITIONALLY; the modern surface takes a `ConversationState` and finds the
+ * listener in it. A two-member conversation is therefore the exact shape those
+ * wrappers used to be — which is why every migrated test below builds one
+ * instead of passing a second creature id.
+ */
+function pair(a: string, b: string, level: "a" | "b" | "c" = "c"): ConversationState {
+  const c = createConversation("convo", 0);
+  joinConversation(c, a, 0, level);
+  joinConversation(c, b, 0, level);
+  return c;
+}
 
 describe("intentToAct — a sentence → a dialogue act (speaker me, listener bear)", () => {
   // The player ("me") carries a sock; bear holds a cookie.
@@ -33,14 +60,14 @@ describe("intentToAct — a sentence → a dialogue act (speaker me, listener be
   const o = opts(world);
 
   it("i_me want cookie → request the LISTENER's cookie", () => {
-    expect(intentToAct(parseSentence("i_me + want + cookie"), world, "me", "bear", o)).toMatchObject({
+    expect(intentToAct(parseSentence("i_me + want + cookie"), world, { speakerId: "me", addresseeId: "bear" }, o)).toMatchObject({
       kind: "request",
       itemId: "cookie1",
     });
   });
 
   it("i_me give sock → offer the SPEAKER's own sock", () => {
-    expect(intentToAct(parseSentence("i_me + give + sock"), world, "me", "bear", o)).toMatchObject({
+    expect(intentToAct(parseSentence("i_me + give + sock"), world, { speakerId: "me", addresseeId: "bear" }, o)).toMatchObject({
       kind: "offer",
       itemId: "sock1",
     });
@@ -50,19 +77,19 @@ describe("intentToAct — a sentence → a dialogue act (speaker me, listener be
   // OFFER frame carrying negated:true — reading only the frame kind handed the
   // sock over, which is the one answer the speaker did not give.
   it("i_me give.not sock → REFUSE, never the offer the frame looks like", () => {
-    expect(intentToAct(parseSentence("i_me + give.not + sock"), world, "me", "bear", o)).toMatchObject({
+    expect(intentToAct(parseSentence("i_me + give.not + sock"), world, { speakerId: "me", addresseeId: "bear" }, o)).toMatchObject({
       kind: "refuse",
     });
   });
 
   it("i_me have.not cookie → CANT (denying possession, not willingness)", () => {
-    expect(intentToAct(parseSentence("i_me + have.not + cookie"), world, "me", "bear", o)).toMatchObject({
+    expect(intentToAct(parseSentence("i_me + have.not + cookie"), world, { speakerId: "me", addresseeId: "bear" }, o)).toMatchObject({
       kind: "cant",
     });
   });
 
   it("i_me help.not you → refuse", () => {
-    expect(intentToAct(parseSentence("i_me + help.not + you"), world, "me", "bear", o)).toMatchObject({
+    expect(intentToAct(parseSentence("i_me + help.not + you"), world, { speakerId: "me", addresseeId: "bear" }, o)).toMatchObject({
       kind: "refuse",
     });
   });
@@ -70,20 +97,20 @@ describe("intentToAct — a sentence → a dialogue act (speaker me, listener be
   // A SWAP names both sides: mine before `for`, theirs after. Reading only the
   // first half made an exchange land as a remark about a sock.
   it("sock for cookie → propose the TRADE, both items real", () => {
-    expect(intentToAct(parseSentence("sock + for + cookie"), world, "me", "bear", o)).toMatchObject({
+    expect(intentToAct(parseSentence("sock + for + cookie"), world, { speakerId: "me", addresseeId: "bear" }, o)).toMatchObject({
       kind: "trade",
       itemId: "cookie1",
     });
   });
 
   it("a swap naming something nobody holds is not a trade", () => {
-    expect(intentToAct(parseSentence("sock + for + boat"), world, "me", "bear", o)).not.toMatchObject({
+    expect(intentToAct(parseSentence("sock + for + boat"), world, { speakerId: "me", addresseeId: "bear" }, o)).not.toMatchObject({
       kind: "trade",
     });
   });
 
   it("where cookie → a where-is query about it", () => {
-    expect(intentToAct(parseSentence("where + cookie"), world, "me", "bear", o)).toMatchObject({
+    expect(intentToAct(parseSentence("where + cookie"), world, { speakerId: "me", addresseeId: "bear" }, o)).toMatchObject({
       kind: "where-is",
       itemId: "cookie1",
     });
@@ -91,18 +118,18 @@ describe("intentToAct — a sentence → a dialogue act (speaker me, listener be
 
   it("a bare statement is an ASSERT → tell (never a dead end)", () => {
     // "cookie here" is a mention/state — it maps to a `tell`, so it still gets a reply.
-    expect(intentToAct(parseSentence("cookie + here"), world, "me", "bear", o)?.kind).toBe("tell");
+    expect(intentToAct(parseSentence("cookie + here"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("tell");
   });
 
   it("social acts map to their dialogue moves", () => {
-    expect(intentToAct(parseSentence("hi"), world, "me", "bear", o)?.kind).toBe("how-are-you");
-    expect(intentToAct(parseSentence("yes"), world, "me", "bear", o)?.kind).toBe("agree");
-    expect(intentToAct(parseSentence("no"), world, "me", "bear", o)?.kind).toBe("refuse");
-    expect(intentToAct(parseSentence("bye"), world, "me", "bear", o)?.kind).toBe("bye");
+    expect(intentToAct(parseSentence("hi"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("how-are-you");
+    expect(intentToAct(parseSentence("yes"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("agree");
+    expect(intentToAct(parseSentence("no"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("refuse");
+    expect(intentToAct(parseSentence("bye"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("bye");
   });
 
   it("a command is NOT a dialogue move (handled by the party layer)", () => {
-    expect(intentToAct(parseSentence("you + go + home"), world, "me", "bear", o)).toBeNull();
+    expect(intentToAct(parseSentence("you + go + home"), world, { speakerId: "me", addresseeId: "bear" }, o)).toBeNull();
   });
 });
 
@@ -114,7 +141,7 @@ describe("tell — an ASSERT shares a fact into the listener's knowledge", () =>
     );
     seeItem(w, "me", "cookie1", { kind: "held", by: "fox" }); // I know fox has it
     expect(w.creatures.bear!.knowledge.cookie1).toBeUndefined(); // bear doesn't
-    const act = intentToAct(parseSentence("cookie"), w, "me", "bear", opts(w))!;
+    const act = intentToAct(parseSentence("cookie"), w, { speakerId: "me", addresseeId: "bear" }, opts(w))!;
     expect(act.kind).toBe("tell");
     const res = selectAct(w, "bear", "me", act, "c", opts(w));
     // Information received is THANKED — "ok" is reserved for accepted orders (①a §1).
@@ -123,7 +150,16 @@ describe("tell — an ASSERT shares a fact into the listener's knowledge", () =>
   });
 });
 
-describe("pickSpeakerAct + converse — NPCs use the SAME engine as the player", () => {
+// ⑪ — these two used to run through `pickSpeakerAct` (a FIXED need-first
+// priority list) and `converse` (one positional exchange). Both wrappers are
+// deleted (multi-entity-conversations.md §4.11) and neither mechanic survives
+// as such: the speaker side is now a WEIGHTED draw (`chooseSpeakerMove` → whom,
+// then what) and the reply side is arbitrated (`speakInConversation`). So the
+// pins move from "the policy picks the request first" to "a needy speaker's
+// weight lands on the request", and from "the listener replies" to "the roster
+// answers" — the same two claims about the world, made against the surface that
+// now decides them.
+describe("chooseSpeakerMove + speakInConversation — NPCs use the SAME engine as the player", () => {
   function world() {
     const w = createCreatureWorld(
       [{ id: "fox", needs: [{ itemId: "cookie1", value: 3 }] }, { id: "bear", debts: { fox: 3 } }],
@@ -133,17 +169,28 @@ describe("pickSpeakerAct + converse — NPCs use the SAME engine as the player",
     return w;
   }
 
-  it("a needy speaker requests the item the listener holds", () => {
+  it("a needy speaker asks the ONLY other member for the item they hold", () => {
     const w = world();
-    const act = pickSpeakerAct(w, "fox", "bear", "c", opts(w));
-    expect(act).toMatchObject({ kind: "request", itemId: "cookie1" });
+    // The need (value 3) dwarfs every other weight on the board, so the request
+    // owns the middle of the wheel — the weighted twin of the old fixed policy.
+    const move = chooseSpeakerMove(w, pair("fox", "bear"), "fox", opts(w), { rng: constRng(0.5) });
+    expect(move?.addresseeId).toBe("bear"); // WHOM comes first, and there is only one
+    expect(move?.act).toMatchObject({ kind: "request", itemId: "cookie1" });
   });
 
   it("one exchange: fox asks, bear (owing fox) hands it over", () => {
     const w = world();
-    const turn = converse(w, "fox", "bear", "c", opts(w));
-    expect(turn?.speakerAct.kind).toBe("request");
-    expect(turn?.result.responseGlyph).toBe("yes"); // bear accepts (covering debt)
+    const c = pair("fox", "bear");
+    const move = chooseSpeakerMove(w, c, "fox", opts(w), { rng: constRng(0.5) })!;
+    expect(move.act.kind).toBe("request");
+    // rng 0 = the first slot of the response wheel, i.e. bear answers (silence
+    // is the last slot and, with somebody directly addressed, near-zero anyway).
+    const turn = speakInConversation(w, c, "fox", move.act, move.addresseeId, opts(w), {
+      tick: 0,
+      rng: constRng(0),
+    });
+    expect(turn.response?.responderId).toBe("bear");
+    expect(turn.response?.result.responseGlyph).toBe("yes"); // bear accepts (covering debt)
   });
 });
 
@@ -183,7 +230,6 @@ describe("chooseSpeakerAct — an NPC picks from the SAME board, by personality 
     seeItem(w, "fox", "cookie1", { kind: "held", by: "bear" });
     return w;
   }
-  const constRng = (v: number) => () => v;
 
   it("a needy, assertive speaker leads with the request", () => {
     const w = world();
@@ -226,14 +272,22 @@ describe("chooseSpeakerAct — an NPC picks from the SAME board, by personality 
     expect(typeof act!.kind).toBe("string");
   });
 
-  it("mood-driven converse still completes an exchange", () => {
+  // ⑪ — was "mood-driven converse still completes an exchange". Same claim, now
+  // made end-to-end over the façade: a mood-chosen move goes INTO a conversation
+  // and something comes back out of it.
+  it("a mood-chosen move still completes an exchange through the façade", () => {
     const w = world();
-    const turn = converse(w, "fox", "bear", "c", opts(w), {}, {
+    const c = pair("fox", "bear");
+    const move = chooseSpeakerMove(w, c, "fox", opts(w), {
       personality: personalityFromPreset("person"),
       rng: constRng(0.5),
+    })!;
+    expect(move.act.kind).toBe("request");
+    const turn = speakInConversation(w, c, "fox", move.act, move.addresseeId, opts(w), {
+      tick: 0,
+      rng: constRng(0),
     });
-    expect(turn?.speakerAct.kind).toBe("request");
-    expect(turn?.result).toBeTruthy();
+    expect(turn.response?.result).toBeTruthy();
   });
 });
 
@@ -279,7 +333,7 @@ describe("where-going — ask a moving creature its destination (bug #4)", () =>
 
   it("'you go where' maps to a where-going act (not an item where-is)", () => {
     const w = goWorld();
-    expect(intentToAct(parseSentence("you + go + where"), w, "me", "res", opts(w))?.kind).toBe("where-going");
+    expect(intentToAct(parseSentence("you + go + where"), w, { speakerId: "me", addresseeId: "res" }, opts(w))?.kind).toBe("where-going");
   });
 
   it("answers 'going to get food' from a fetch errand", () => {
@@ -308,20 +362,37 @@ describe("where-going — ask a moving creature its destination (bug #4)", () =>
   });
 });
 
-describe("askWhere — asking SPREADS knowledge (new info enters knowledge)", () => {
-  it("fox learns where the cookie is by asking bear, who knows", () => {
+// ⑪ — was "askWhere — asking SPREADS knowledge". `askWhere` was the ONLY place
+// that spread an item's location to whoever asked for it: it ran the where-is
+// and then wrote the answering fact into the asker itself. The wrapper is
+// deleted (§4.11) and production never called it, so nothing in the live game
+// changed — but the law it embodied now has no implementation, and that is
+// exactly what the second half of each test below pins. Closing it means
+// lifting the spread into `selectAct`'s where-is arm (creature-dialogue.ts) or
+// returning the answering fact on `ActResult`; see `overhear`'s docblock.
+describe("asking WHERE through the façade — the answer comes back, the knowledge does not", () => {
+  const askCookie: DialogueAct = { kind: "where-is", itemId: "cookie1", glyph: "where + cookie" };
+
+  it("bear, who holds the cookie, answers fox's where-is — but fox does NOT learn it", () => {
     const w = createCreatureWorld([{ id: "fox" }, { id: "bear" }], [{ id: "cookie1", ownerId: "bear", kind: "cookie" }]);
     expect(w.creatures.fox!.knowledge.cookie1).toBeUndefined(); // fox is ignorant
-    const ans = askWhere(w, "fox", "bear", "cookie1", "c", opts(w));
-    expect(ans.responseGlyph).toBeTruthy(); // bear answers with a clue
-    expect(ans.learned).toBe(true);
-    expect(w.creatures.fox!.knowledge.cookie1).toEqual({ kind: "held", by: "bear" }); // fox now knows
+    const turn = speakInConversation(w, pair("fox", "bear"), "fox", askCookie, "bear", opts(w), {
+      tick: 0,
+      rng: constRng(0),
+    });
+    expect(turn.response?.responderId).toBe("bear");
+    expect(turn.response?.result.responseGlyph).toBeTruthy(); // bear answers with a clue
+    // 🚨 DOCUMENTED GAP — see the block comment above.
+    expect(w.creatures.fox!.knowledge.cookie1).toBeUndefined();
   });
 
-  it("asking someone who doesn't know teaches nothing", () => {
+  it("asking someone who doesn't know earns the honest don't-know, and teaches nothing", () => {
     const w = createCreatureWorld([{ id: "fox" }, { id: "cat" }], [{ id: "cookie1", ownerId: "bear", kind: "cookie" }]);
-    const ans = askWhere(w, "fox", "cat", "cookie1", "c", opts(w));
-    expect(ans.learned).toBe(false);
+    const turn = speakInConversation(w, pair("fox", "cat"), "fox", askCookie, "cat", opts(w), {
+      tick: 0,
+      rng: constRng(0),
+    });
+    expect(turn.response?.result.responseGlyph).toContain("think.not");
     expect(w.creatures.fox!.knowledge.cookie1).toBeUndefined();
   });
 });
@@ -349,7 +420,7 @@ describe("fact questions — where/how/what-want about a THIRD party", () => {
   it("where + mara → ask-fact presence; unknown answers the honest don't-know", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("where + mara"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("where + mara"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "ask-fact", query: { kind: "presence", creature: "mara" } });
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + think.not");
   });
@@ -358,7 +429,7 @@ describe("fact questions — where/how/what-want about a THIRD party", () => {
     const w = household();
     const o = factOpts(w);
     tellFact(w, "bob", { kind: "presence", creature: "mara", place: "kitchen" });
-    const act = intentToAct(parseSentence("where + mara"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("where + mara"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     const res = selectAct(w, "bob", "me", act, "c", o);
     expect(res.responseGlyph).toBe("mara + in + kitchen");
     expect(w.creatures.me!.facts?.["pres:mara"]).toEqual({ kind: "presence", creature: "mara", place: "kitchen" });
@@ -367,14 +438,14 @@ describe("fact questions — where/how/what-want about a THIRD party", () => {
   it("the ROSTER oracle (presenceOf) answers ahead of any stored belief", () => {
     const w = household();
     const o = { ...factOpts(w), presenceOf: (cid: string) => (cid === "mara" ? "work" : undefined) };
-    const act = intentToAct(parseSentence("where + mara"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("where + mara"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("mara + in + work");
   });
 
   it("where + you → the listener is right here", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("where + you"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("where + you"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "ask-fact", query: { kind: "presence", creature: "bob" } });
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + here");
   });
@@ -382,18 +453,18 @@ describe("fact questions — where/how/what-want about a THIRD party", () => {
   it("how + mara (asked of bob) → condition fact; how + you stays small talk", () => {
     const w = household();
     const o = factOpts(w);
-    const third = intentToAct(parseSentence("how + mara"), w, "me", "bob", o)!;
+    const third = intentToAct(parseSentence("how + mara"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(third).toMatchObject({ kind: "ask-fact", query: { kind: "condition", creature: "mara" } });
     expect(selectAct(w, "bob", "me", third, "c", o).responseGlyph).toBe("i_me + think.not");
     tellFact(w, "bob", { kind: "condition", creature: "mara", condition: "hungry" });
     expect(selectAct(w, "bob", "me", third, "c", o).responseGlyph).toBe("mara + hungry");
-    expect(intentToAct(parseSentence("how + you"), w, "me", "bob", o)?.kind).toBe("how-are-you");
+    expect(intentToAct(parseSentence("how + you"), w, { speakerId: "me", addresseeId: "bob" }, o)?.kind).toBe("how-are-you");
   });
 
   it("what + want + mara (asked of bob) → a want fact", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("what + want + mara"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + want + mara"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "ask-fact", query: { kind: "want", creature: "mara" } });
     w.creatures.bob!.knownWants["ball1"] = "mara";
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("mara + want + ball");
@@ -403,11 +474,11 @@ describe("fact questions — where/how/what-want about a THIRD party", () => {
     const w = household();
     const o = factOpts(w);
     // Mara HOLDS the hot apple — holding is seeing, she answers yes.
-    const askMara = intentToAct(parseSentence("apple + hot#question"), w, "me", "mara", o)!;
+    const askMara = intentToAct(parseSentence("apple + hot#question"), w, { speakerId: "me", addresseeId: "mara" }, o)!;
     expect(askMara).toMatchObject({ kind: "ask-fact", expect: "hot" });
     expect(selectAct(w, "mara", "me", askMara, "c", o).responseGlyph).toBe("yes");
     // Bob neither holds nor heard of it — the honest don't-know.
-    const askBob = intentToAct(parseSentence("apple + hot#question"), w, "me", "bob", o)!;
+    const askBob = intentToAct(parseSentence("apple + hot#question"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", askBob, "c", o).responseGlyph).toBe("i_me + think.not");
     // Told it's cold, bob answers no.
     tellFact(w, "bob", { kind: "itemState", item: "apple1", axis: "temperature", state: "cold" });
@@ -416,7 +487,7 @@ describe("fact questions — where/how/what-want about a THIRD party", () => {
 
   it("you + ok#question stays the how-are-you greeting", () => {
     const w = household();
-    expect(intentToAct(parseSentence("you + ok#question"), w, "me", "bob", factOpts(w))?.kind).toBe("how-are-you");
+    expect(intentToAct(parseSentence("you + ok#question"), w, { speakerId: "me", addresseeId: "bob" }, factOpts(w))?.kind).toBe("how-are-you");
   });
 });
 
@@ -436,7 +507,7 @@ describe("fact statements — attribute / presence assertions spread knowledge",
   it("mara + hungry (told to bob) writes the condition fact; bob thanks", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("mara + hungry"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("mara + hungry"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({
       kind: "tell-fact",
       fact: { kind: "condition", creature: "mara", condition: "hungry" },
@@ -449,7 +520,7 @@ describe("fact statements — attribute / presence assertions spread knowledge",
   it("apple + hot (told to bob) writes the item-state fact", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("apple + hot"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("apple + hot"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({
       kind: "tell-fact",
       fact: { kind: "itemState", item: "apple1", axis: "temperature", state: "hot" },
@@ -461,10 +532,10 @@ describe("fact statements — attribute / presence assertions spread knowledge",
   it("mara + in + kitchen then where + mara — the told fact answers", () => {
     const w = household();
     const o = factOpts(w);
-    const tell = intentToAct(parseSentence("mara + in + kitchen"), w, "me", "bob", o)!;
+    const tell = intentToAct(parseSentence("mara + in + kitchen"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(tell).toMatchObject({ kind: "tell-fact", fact: { kind: "presence", creature: "mara", place: "kitchen" } });
     selectAct(w, "bob", "me", tell, "c", o);
-    const ask = intentToAct(parseSentence("where + mara"), w, "me", "bob", o)!;
+    const ask = intentToAct(parseSentence("where + mara"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", ask, "c", o).responseGlyph).toBe("mara + in + kitchen");
   });
 
@@ -472,11 +543,11 @@ describe("fact statements — attribute / presence assertions spread knowledge",
     const w = household();
     const o = factOpts(w);
     // Mara IS hungry — she confirms.
-    const right = intentToAct(parseSentence("you + hungry"), w, "me", "mara", o)!;
+    const right = intentToAct(parseSentence("you + hungry"), w, { speakerId: "me", addresseeId: "mara" }, o)!;
     expect(right).toMatchObject({ kind: "tell-fact", fact: { kind: "condition", creature: "mara" } });
     expect(selectAct(w, "mara", "me", right, "c", o).responseGlyph).toBe("yes");
     // Bob is fine — he corrects.
-    const wrong = intentToAct(parseSentence("you + hungry"), w, "me", "bob", o)!;
+    const wrong = intentToAct(parseSentence("you + hungry"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", wrong, "c", o).responseGlyph).toBe("i_me + hungry.not");
   });
 });
@@ -507,7 +578,7 @@ describe("question fallbacks — no question is a dead end", () => {
     const w = household();
     const o = factOpts(w);
     for (const s of ["what + ball", "who + go"]) {
-      const act = intentToAct(parseSentence(s), w, "me", "bob", o)!;
+      const act = intentToAct(parseSentence(s), w, { speakerId: "me", addresseeId: "bob" }, o)!;
       expect(act.kind).toBe("dont-understand");
       expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + understand.not");
     }
@@ -518,7 +589,7 @@ describe("question fallbacks — no question is a dead end", () => {
     const o = factOpts(w);
     // "ball" names a real ITEM but no creature — the honest premise fix, not
     // a dead-end don't-understand (semantic-tests §Questions).
-    const act = intentToAct(parseSentence("what + eat + ball"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + eat + ball"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act.kind).toBe("what-doing");
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("ball + eat.not");
   });
@@ -527,7 +598,7 @@ describe("question fallbacks — no question is a dead end", () => {
     const w = household();
     // The host says bob is verifiably walking (doingOf) — a "why build" denies.
     const o = { ...factOpts(w), doingOf: () => ["go", "come", "walk", "run"] };
-    const deny = intentToAct(parseSentence("why + you + build"), w, "me", "bob", o)!;
+    const deny = intentToAct(parseSentence("why + you + build"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(deny).toMatchObject({ kind: "deny-doing", verb: "build" });
     expect(selectAct(w, "bob", "me", deny, "c", o).responseGlyph).toBe("i_me + build.not");
   });
@@ -536,18 +607,18 @@ describe("question fallbacks — no question is a dead end", () => {
     const w = household();
     const walking = { ...factOpts(w), doingOf: () => ["go", "come", "walk", "run"] };
     // Movement verbs skip the premise check — walking is need-driven.
-    expect(intentToAct(parseSentence("why + you + go"), w, "me", "bob", walking)?.kind).toBe("why");
+    expect(intentToAct(parseSentence("why + you + go"), w, { speakerId: "me", addresseeId: "bob" }, walking)?.kind).toBe("why");
     // No doingOf hook (or undefined) — the honest can't-interpret floor.
     const blind = factOpts(w);
-    expect(intentToAct(parseSentence("why + you + build"), w, "me", "bob", blind)?.kind).toBe("dont-understand");
+    expect(intentToAct(parseSentence("why + you + build"), w, { speakerId: "me", addresseeId: "bob" }, blind)?.kind).toBe("dont-understand");
     // Bare "why" stays the classic motive/cause reveal.
-    expect(intentToAct(parseSentence("why"), w, "me", "bob", blind)?.kind).toBe("why");
+    expect(intentToAct(parseSentence("why"), w, { speakerId: "me", addresseeId: "bob" }, blind)?.kind).toBe("why");
   });
 
   it("where + <nothing anyone has> answers 'I don't know', never silence", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("where + sock"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("where + sock"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act.kind).toBe("where-is");
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + think.not");
   });
@@ -557,7 +628,7 @@ describe("question fallbacks — no question is a dead end", () => {
     const o = factOpts(w);
     // bob HOLDS the ball — holding is knowing; me asks bob, bob names himself.
     seeItem(w, "bob", "ball1", { kind: "held", by: "bob" });
-    const act = intentToAct(parseSentence("who + have + ball"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("who + have + ball"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "where-is", itemId: "ball1" });
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toContain("have + ball");
   });
@@ -565,7 +636,7 @@ describe("question fallbacks — no question is a dead end", () => {
   it("what + hot → a state SEARCH over knowledge ('apple + hot')", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("what + hot"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + hot"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "ask-fact", query: { kind: "stateSearch", state: "hot" } });
     // Bob knows nothing hot — the honest don't-know.
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + think.not");
@@ -580,7 +651,7 @@ describe("question fallbacks — no question is a dead end", () => {
   it("who + hungry → a condition SEARCH ('mara + hungry'; own truth answers too)", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("who + hungry"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("who + hungry"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "ask-fact", query: { kind: "conditionSearch", condition: "hungry" } });
     // Bob doesn't know of anyone hungry.
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + think.not");
@@ -608,7 +679,7 @@ describe("activity questions — 'what is X doing / eating?' (semantic-tests §Q
   it("answers with the live activity and its object: 'the dog is eating the apple'", () => {
     const w = household();
     const o: ProjectionOpts = { ...factOpts(w), activityOf: () => ({ verb: "eat", object: "apple" }) };
-    const act = intentToAct(parseSentence("what + dog + eat"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + dog + eat"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "what-doing", verb: "eat", about: { symbol: "dog", id: "dog" } });
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("dog + eat + apple");
   });
@@ -616,14 +687,14 @@ describe("activity questions — 'what is X doing / eating?' (semantic-tests §Q
   it("corrects a wrong presumed activity: 'the dog is not eating'", () => {
     const w = household();
     const o: ProjectionOpts = { ...factOpts(w), activityOf: () => ({ verb: "play" }) };
-    const act = intentToAct(parseSentence("what + dog + eat"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + dog + eat"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("dog + eat.not");
   });
 
   it("a symbol naming NOTHING answers 'there is no {X}'", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("what + cat + eat"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + cat + eat"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "what-doing", about: { symbol: "cat" } });
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("no + cat");
   });
@@ -631,7 +702,7 @@ describe("activity questions — 'what is X doing / eating?' (semantic-tests §Q
   it("broad 'what + you + do' answers the listener's own activity in first person", () => {
     const w = household();
     const o: ProjectionOpts = { ...factOpts(w), activityOf: () => ({ verb: "wash", object: "clothing" }) };
-    const act = intentToAct(parseSentence("what + you + do"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + you + do"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act.kind).toBe("what-doing");
     expect(act.verb).toBeUndefined(); // broad — no presumed activity
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + wash + clothing");
@@ -640,23 +711,23 @@ describe("activity questions — 'what is X doing / eating?' (semantic-tests §Q
   it("verifiably idle: broad ask → 'I'm not doing'; specific ask → the denial", () => {
     const w = household();
     const o: ProjectionOpts = { ...factOpts(w), activityOf: () => null };
-    const broad = intentToAct(parseSentence("what + you + do"), w, "me", "bob", o)!;
+    const broad = intentToAct(parseSentence("what + you + do"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", broad, "c", o).responseGlyph).toBe("i_me + do.not");
-    const specific = intentToAct(parseSentence("what + bob + eat"), w, "me", "bob", o)!;
+    const specific = intentToAct(parseSentence("what + bob + eat"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", specific, "c", o).responseGlyph).toBe("i_me + eat.not");
   });
 
   it("no activity hook at all → the honest don't-know, never a fabricated answer", () => {
     const w = household();
     const o = factOpts(w);
-    const act = intentToAct(parseSentence("what + dog + eat"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + dog + eat"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + think.not");
   });
 
   it("falls back to doingOf (verb only) when activityOf is absent", () => {
     const w = household();
     const o: ProjectionOpts = { ...factOpts(w), doingOf: () => ["eat"] };
-    const act = intentToAct(parseSentence("what + dog + eat"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("what + dog + eat"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("dog + eat");
   });
 });
@@ -665,7 +736,7 @@ describe("the source ask — 'where do we get an apple?'", () => {
   it("where + get + {X} routes to the provider/source chain, not an instance clue", () => {
     const w = createCreatureWorld([{ id: "me" }, { id: "bob" }], [{ id: "apple1", kind: "apple" }]);
     const o: ProjectionOpts = { symbolOf: (id) => w.items[id]?.kind ?? id };
-    const act = intentToAct(parseSentence("where + get + apple"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("where + get + apple"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "where-is", source: true, target: { kind: "apple" } });
     // Bob knows no provider and no instance — the honest don't-know.
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("i_me + think.not");
@@ -676,7 +747,7 @@ describe("modal desires spoken at a creature", () => {
   it("'i_me want play' is a disclosure that gets acknowledged, never silence", () => {
     const w = createCreatureWorld([{ id: "me" }, { id: "bob" }], []);
     const o: ProjectionOpts = { symbolOf: (id) => id };
-    const act = intentToAct(parseSentence("i_me + want + play"), w, "me", "bob", o)!;
+    const act = intentToAct(parseSentence("i_me + want + play"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act.kind).toBe("tell");
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("thank_you");
   });

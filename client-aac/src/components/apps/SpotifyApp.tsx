@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { X, Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // Spotify Web Playback SDK types
 declare global {
@@ -48,6 +49,7 @@ interface SpotifyAppProps {
 }
 
 export default function SpotifyApp({ trackId, title, artist, studentId, onClose }: SpotifyAppProps) {
+  const { t } = useLanguage();
   const [mode, setMode] = useState<"loading" | "sdk" | "embed">("loading");
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -170,14 +172,14 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
       {/* Content — SDK player or iframe embed */}
       <div className="flex-1 flex items-center justify-center px-4">
         {mode === "loading" && (
-          <div className="text-white text-xl animate-pulse">Loading...</div>
+          <div className="text-white text-xl animate-pulse">{t("common.loading")}</div>
         )}
 
         {mode === "embed" && !trackId && (
           <div className="text-center">
             <span className="text-6xl block mb-4">🎧</span>
             <p className="text-white text-xl font-semibold">{title}</p>
-            <p className="text-gray-400 mt-2">Spotify is ready</p>
+            <p className="text-gray-400 mt-2">{t("apps.spotify.ready")}</p>
           </div>
         )}
 
@@ -190,7 +192,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
             allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
             loading="lazy"
             style={{ borderRadius: "12px", maxWidth: "600px" }}
-            title={`Spotify: ${title}`}
+            title={t("apps.spotify.playerTitle", { title })}
           />
         )}
 
@@ -216,7 +218,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
                 data-dwell
                 onClick={() => seekRelative(-15000)}
                 className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700 text-white`}
-                aria-label="Back 15 seconds"
+                aria-label={t("apps.spotify.back15")}
               >
                 <SkipBack size={32} />
               </button>
@@ -224,7 +226,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
                 data-dwell
                 onClick={togglePlay}
                 className={`${btnBase} w-24 h-24 bg-green-600 hover:bg-green-700 text-white`}
-                aria-label={isPlaying ? "Pause" : "Play"}
+                aria-label={isPlaying ? t("youtubeApp.pause") : t("youtubeApp.play")}
               >
                 {isPlaying ? <Pause size={42} /> : <Play size={42} />}
               </button>
@@ -232,7 +234,7 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
                 data-dwell
                 onClick={() => seekRelative(15000)}
                 className={`${btnBase} w-20 h-20 bg-blue-600 hover:bg-blue-700 text-white`}
-                aria-label="Forward 15 seconds"
+                aria-label={t("apps.spotify.forward15")}
               >
                 <SkipForward size={32} />
               </button>
@@ -247,10 +249,10 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
           data-dwell
           onClick={onClose}
           className={`${btnBase} w-full h-14 bg-red-500 text-white text-lg gap-2`}
-          aria-label="Close Spotify"
+          aria-label={t("apps.spotify.close")}
         >
           <X size={24} />
-          Close
+          {t("common.close")}
         </button>
       </div>
     </div>

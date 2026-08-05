@@ -6,6 +6,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   dwellInteraction,
+  type DwellContext,
   type DwellPhase,
   type HoverTarget,
 } from "@shared/world-engine/interaction/quest/dwell-interaction.js";
@@ -149,6 +150,213 @@ describe("the invariants that make the rules consistent", () => {
   it("is pure — the same hover answers the same way every time", () => {
     const t = object("chest_1");
     expect(dwellInteraction(t, "short", alone)).toEqual(dwellInteraction(t, "short", alone));
+  });
+});
+
+describe("player membership (§3f) — the roster reinterprets the gaze law", () => {
+  // A conversation is not a pair any more. The same long rest means three
+  // different things depending on which side of the roster the person stands on:
+  // JOIN theirs, ADDRESS a fellow member, or SWITCH to an outsider.
+
+  describe("JOIN — long-dwelling someone who is already talking", () => {
+    it("marks the talk act so the host opens THEIR conversation, not a rival one", () => {
+      expect(
+        dwellInteraction(creature("mara"), "long", { conversingWith: null, targetInConversation: true }),
+      ).toEqual([{ act: "talk", id: "mara", join: true }]);
+    });
+
+    it("omits the discriminant entirely when they are talking to nobody", () => {
+      // Not `join: false` — the KEY is absent, so an old caller's object is
+      // reproduced byte for byte (toStrictEqual would catch `join: undefined`).
+      const [act] = dwellInteraction(creature("mara"), "long", { conversingWith: null });
+      expect(act).toStrictEqual({ act: "talk", id: "mara" });
+      expect("join" in act!).toBe(false);
+    });
+
+    it("still needs a LONG rest — joining is as much a commitment as opening one", () => {
+      expect(
+        dwellInteraction(creature("mara"), "short", { conversingWith: null, targetInConversation: true }),
+      ).toEqual([]);
+    });
+
+    it("rides a SWITCH too — leaving my circle for someone standing in another", () => {
+      expect(
+        dwellInteraction(creature("bram"), "long", {
+          conversingWith: "mara",
+          members: ["player", "mara"],
+          targetInConversation: true,
+        }),
+      ).toEqual([{ act: "switch", id: "bram", join: true }]);
+    });
+  });
+
+  describe("ADDRESS — a look at a FELLOW member picks whom I am speaking to", () => {
+    const circle: DwellContext = {
+      conversingWith: "mara",
+      members: ["player", "mara", "bram", "ida"],
+    };
+
+    it("a SHORT settle on a fellow member addresses them", () => {
+      expect(dwellInteraction(creature("bram"), "short", circle)).toEqual([
+        { act: "address", id: "bram" },
+      ]);
+    });
+
+    it("NEVER hands the conversation over to someone already in it", () => {
+      // `switch` means "take them from their partner" — inside one circle there
+      // is nobody to take them from, and tearing a member out to re-seat them
+      // would dissolve the conversation the look was performed inside.
+      expect(dwellInteraction(creature("bram"), "long", circle)).toEqual([
+        { act: "address", id: "bram" },
+      ]);
+    });
+
+    it("NEVER commands anybody ABOUT a fellow member", () => {
+      // Out of a roster this same glance says "partner, go attend them". Inside
+      // one it would send my addressee across the circle to reach someone
+      // standing in it — the look already says everything it needs to.
+      const acts = [
+        ...dwellInteraction(creature("bram"), "short", circle),
+        ...dwellInteraction(creature("bram"), "long", circle),
+      ];
+      expect(acts.map((a) => a.act)).toEqual(["address", "address"]);
+    });
+
+    it("says NOTHING about the member I am already addressing", () => {
+      const ctx = { ...circle, currentAddressee: "bram" };
+      expect(dwellInteraction(creature("bram"), "short", ctx)).toEqual([]);
+      expect(dwellInteraction(creature("bram"), "long", ctx)).toEqual([]);
+      // …and the rest of the circle is still selectable.
+      expect(dwellInteraction(creature("ida"), "short", ctx)).toEqual([{ act: "address", id: "ida" }]);
+    });
+
+    it("says NOTHING about the creature whose board I face", () => {
+      expect(dwellInteraction(creature("mara"), "short", circle)).toEqual([]);
+      expect(dwellInteraction(creature("mara"), "long", circle)).toEqual([]);
+    });
+
+    it("addresses a member even with no board up — the ROSTER makes them a fellow", () => {
+      expect(
+        dwellInteraction(creature("bram"), "long", { conversingWith: null, members: ["player", "bram"] }),
+      ).toEqual([{ act: "address", id: "bram" }]);
+    });
+  });
+
+  describe("OUTSIDERS keep the dyadic cells", () => {
+    const circle: DwellContext = {
+      conversingWith: "mara",
+      members: ["player", "mara", "bram"],
+    };
+
+    it("a glance points my partner at them; a long rest hands the conversation over", () => {
+      expect(dwellInteraction(creature("stranger"), "short", circle)).toEqual([
+        { act: "attendCreature", cid: "mara", id: "stranger" },
+      ]);
+      expect(dwellInteraction(creature("stranger"), "long", circle)).toEqual([
+        { act: "switch", id: "stranger" },
+      ]);
+    });
+
+    it("a roster NEVER silences an outsider the addressee stack happens to name", () => {
+      // `currentAddressee` can come back from the host's addressee stack holding
+      // a nearest body or a family chip who is in no conversation at all. That
+      // must not delete the outsider cells.
+      const ctx = { ...circle, currentAddressee: "stranger" };
+      expect(dwellInteraction(creature("stranger"), "short", ctx)).toEqual([
+        { act: "attendCreature", cid: "mara", id: "stranger" },
+      ]);
+      expect(dwellInteraction(creature("stranger"), "long", ctx)).toEqual([
+        { act: "switch", id: "stranger" },
+      ]);
+    });
+
+    it("objects and ground read the same inside a roster as out of one", () => {
+      // Membership is about PEOPLE. Nothing about a roster changes what a chest
+      // or a patch of floor means.
+      expect(dwellInteraction(object("chest_1"), "short", circle)).toEqual(
+        dwellInteraction(object("chest_1"), "short", talkingTo("mara")),
+      );
+      expect(dwellInteraction(ground(), "long", circle)).toEqual(
+        dwellInteraction(ground(), "long", talkingTo("mara")),
+      );
+    });
+  });
+
+  describe("ABSENT FIELDS ARE THE OLD TABLE, byte for byte", () => {
+    // The whole backward-compatibility contract in one place: a caller that
+    // knows nothing about rosters gets exactly what it got before — same acts,
+    // same key sets (toStrictEqual, so a stray `join: undefined` fails).
+    const cells: [HoverTarget, DwellPhase, DwellContext, unknown[]][] = [
+      [object("chest_1"), "short", alone, [{ act: "menu", id: "chest_1" }]],
+      [object("chest_1"), "long", alone, []],
+      [creature("mara"), "long", alone, [{ act: "talk", id: "mara" }]],
+      [creature("mara"), "short", alone, []],
+      [ground(), "long", alone, [{ act: "room", x: 5, y: 6 }]],
+      [ground(), "short", alone, []],
+      [
+        object("well_1"),
+        "short",
+        talkingTo("mara"),
+        [
+          { act: "menu", id: "well_1" },
+          { act: "attendObject", cid: "mara", id: "well_1" },
+        ],
+      ],
+      [creature("bram"), "short", talkingTo("mara"), [{ act: "attendCreature", cid: "mara", id: "bram" }]],
+      [creature("bram"), "long", talkingTo("mara"), [{ act: "switch", id: "bram" }]],
+      [creature("mara"), "short", talkingTo("mara"), []],
+      [creature("mara"), "long", talkingTo("mara"), []],
+      [
+        ground(),
+        "long",
+        talkingTo("mara"),
+        [
+          { act: "room", x: 5, y: 6 },
+          { act: "sendTo", cid: "mara", x: 5, y: 6 },
+        ],
+      ],
+    ];
+
+    it.each(cells)("%s / %s answers exactly as it did before rosters", (t, phase, ctx, expected) => {
+      expect(dwellInteraction(t, phase, ctx)).toStrictEqual(expected);
+    });
+
+    it("never emits an ADDRESS act without a roster", () => {
+      const acts: string[] = [];
+      for (const p of ["short", "long"] as const) {
+        for (const ctx of [alone, talkingTo("mara"), { conversingWith: "mara", currentAddressee: "bram" }]) {
+          for (const t of [creature("bram"), creature("mara"), object("chest_1"), ground()]) {
+            for (const a of dwellInteraction(t, p, ctx)) acts.push(a.act);
+          }
+        }
+      }
+      expect(acts).not.toContain("address");
+      expect(acts.length).toBeGreaterThan(0);
+    });
+
+    it("an EMPTY roster is no roster — nobody is a fellow member of nothing", () => {
+      const ctx = { conversingWith: "mara", members: [] as string[] };
+      expect(dwellInteraction(creature("bram"), "short", ctx)).toStrictEqual([
+        { act: "attendCreature", cid: "mara", id: "bram" },
+      ]);
+      expect(dwellInteraction(creature("bram"), "long", ctx)).toStrictEqual([{ act: "switch", id: "bram" }]);
+    });
+  });
+
+  it("still acts ONLY on the hovered body, whatever the roster says", () => {
+    const circle: DwellContext = {
+      conversingWith: "mara",
+      members: ["player", "mara", "bram"],
+      targetInConversation: true,
+      currentAddressee: "ida",
+    };
+    for (const p of ["short", "long"] as const) {
+      for (const t of [creature("bram"), creature("stranger"), object("chest_1")]) {
+        for (const a of dwellInteraction(t, p, circle)) {
+          if ("id" in a) expect(a.id).toBe(t.id);
+        }
+      }
+    }
   });
 });
 

@@ -14,8 +14,9 @@ import {
 import { makeRelation } from "@shared/world-engine/interaction/behavior/relations.js";
 import { personalityFromPreset } from "@shared/world-engine/interaction/behavior/personality.js";
 import { selectAct, type ProjectionOpts } from "@shared/world-engine/interaction/dialogue/creature-dialogue.js";
-import { askWhereType, intentToAct } from "@shared/world-engine/interaction/dialogue/creature-converse.js";
+import { intentToAct, speakInConversation } from "@shared/world-engine/interaction/dialogue/creature-converse.js";
 import { parseSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
+import { createConversation, joinConversation, pairMemo } from "@shared/world-engine/interaction/dialogue/conversation.js";
 
 const opts = (world: ReturnType<typeof createCreatureWorld>): ProjectionOpts => ({
   symbolOf: (id) => world.items[id]?.kind ?? id,
@@ -66,8 +67,9 @@ describe("the request path runs the generosity gate (§4b wired)", () => {
       [{ id: "owner", needs: [{ itemId: "sock1", value: 3, target: { category: "clothes" } }] }, { id: "me" }],
       [{ id: "sock1", ownerId: "owner", kind: "sock", category: "clothes" }],
     );
-    const res = selectAct(w, "owner", "me", { kind: "request", itemId: "sock1", glyph: "" }, "b", opts(w));
-    expect(res.memo.statedPrice).toBeDefined();
+    const convo = createConversation("owner", 0);
+    selectAct(w, "owner", "me", { kind: "request", itemId: "sock1", glyph: "" }, "b", opts(w), { convo });
+    expect(pairMemo(convo, "owner", "me").statedPrice).toBeDefined();
     expect(w.items.sock1!.pendingTransferTo).toBeNull();
   });
 
@@ -82,8 +84,9 @@ describe("the request path runs the generosity gate (§4b wired)", () => {
         { id: "sock1", ownerId: "me", kind: "sock" },
       ],
     );
-    const res = selectAct(w, "owner", "me", { kind: "request", itemId: "apple1", glyph: "" }, "b", opts(w));
-    expect(res.memo.statedPrice).toEqual({ kind: "need", itemId: "sock1" });
+    const convo = createConversation("owner", 0);
+    selectAct(w, "owner", "me", { kind: "request", itemId: "apple1", glyph: "" }, "b", opts(w), { convo });
+    expect(pairMemo(convo, "owner", "me").statedPrice).toEqual({ kind: "need", itemId: "sock1" });
     expect(w.items.apple1!.pendingTransferTo).toBeNull();
   });
 
@@ -115,7 +118,7 @@ describe("requests by resource TYPE (§2b transfer(type) under WANT)", () => {
       [{ id: "me" }, { id: "owner" }],
       [{ id: "apple1", ownerId: "owner", kind: "apple", category: "food" }],
     );
-    const act = intentToAct(parseSentence("i_me + want + food"), w, "me", "owner", opts(w))!;
+    const act = intentToAct(parseSentence("i_me + want + food"), w, { speakerId: "me", addresseeId: "owner" }, opts(w))!;
     expect(act.kind).toBe("request");
     expect(act.itemId).toBeUndefined();
     expect(act.target).toEqual({ category: "food" });
@@ -137,7 +140,7 @@ describe("requests by resource TYPE (§2b transfer(type) under WANT)", () => {
   it("owner has NONE but knows a provider → redirect ('buy it at the market')", () => {
     const w = createCreatureWorld([{ id: "owner" }, { id: "me" }], []);
     learnProvides(w, "owner", "food", "buy:good:food");
-    const act = intentToAct(parseSentence("i_me + want + food"), w, "me", "owner", opts(w))!;
+    const act = intentToAct(parseSentence("i_me + want + food"), w, { speakerId: "me", addresseeId: "owner" }, opts(w))!;
     expect(act.target).toEqual({ category: "food" }); // the provider fact makes 'food' a known sort
     const res = selectAct(w, "owner", "me", act, "b", opts(w));
     expect(res.askedDirections).toBe("buy:good:food");
@@ -160,7 +163,7 @@ describe("where-is unification (§2b query(type): instance → provider → don'
       [{ id: "me" }, { id: "bear" }],
       [{ id: "apple1", ownerId: "fox", kind: "apple", category: "food" }],
     );
-    const act = intentToAct(parseSentence("where + food"), w, "me", "bear", opts(w))!;
+    const act = intentToAct(parseSentence("where + food"), w, { speakerId: "me", addresseeId: "bear" }, opts(w))!;
     expect(act.kind).toBe("where-is");
     expect(act.itemId).toBeUndefined();
     expect(act.target).toEqual({ category: "food" });
@@ -190,16 +193,37 @@ describe("where-is unification (§2b query(type): instance → provider → don'
     expect(res.responseGlyph).toContain("think.not");
   });
 
-  it("askWhereType SPREADS the provision fact — asking teaches the source (gossip)", () => {
+  // ⑪ — this used to run through the dyadic `askWhereType` wrapper, which asked
+  // the question AND re-derived which fact answered so it could spread it to the
+  // asker (`learned`). The wrapper is gone (multi-entity-conversations.md §4.11):
+  // the modern surface is the façade, and the façade only asks. So what the
+  // wrapper PROVED — the type-ask answers with the source — is pinned here
+  // through `speakInConversation`, and what the wrapper alone DID — teaching the
+  // asker — is pinned as the documented gap it now is.
+  it("a TYPE where-is answers with the SOURCE through the façade (gossip stays a gap)", () => {
     const w = createCreatureWorld([{ id: "fox" }, { id: "bear" }], []);
     learnProvides(w, "bear", "food", "buy:good:food");
     expect(knownProvider(w.creatures.fox!, ["food"])).toBeUndefined();
-    const ans = askWhereType(w, "fox", "bear", { category: "food" }, "b", opts(w));
-    expect(ans.askedDirections).toBe("buy:good:food");
-    expect(ans.learned).toBe(true);
-    expect(knownProvider(w.creatures.fox!, ["food"])).toBe("buy:good:food"); // fox can now redirect others
-    // Asking again teaches nothing new (monotone).
-    expect(askWhereType(w, "fox", "bear", { category: "food" }, "b", opts(w)).learned).toBe(false);
+    const c = createConversation("convo", 0);
+    joinConversation(c, "fox", 0, "b");
+    joinConversation(c, "bear", 0, "b");
+    const turn = speakInConversation(
+      w,
+      c,
+      "fox",
+      { kind: "where-is", target: { category: "food" }, glyph: "where + food" },
+      "bear",
+      opts(w),
+      { tick: 0, rng: () => 0 }, // the first slot of the wheel: bear answers
+    );
+    expect(turn.response?.responderId).toBe("bear");
+    expect(turn.response?.result.askedDirections).toBe("buy:good:food");
+    // 🚨 DOCUMENTED GAP (the ⑦ one, seen from the where-is side): the fact that
+    // ANSWERED never reaches the asker — the spread lives inside `selectAct`'s
+    // arms, and the where-is arm has none at all. Fox still cannot redirect
+    // anybody. This test exists to FAIL the day that changes, so the change is
+    // a choice. See `overhear`'s docblock in creature-converse.ts.
+    expect(knownProvider(w.creatures.fox!, ["food"])).toBeUndefined();
   });
 });
 

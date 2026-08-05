@@ -18,8 +18,10 @@ import { createWorldState } from "@shared/world-engine/engine.js";
 import {
   applyInbound,
   claimMessage,
+  convoMessage,
   parseWorldCommand,
   sayMessage,
+  type ConvoShared,
   type WorldNetMessage,
 } from "@shared/world-engine/net.js";
 import { parsePlayerAction, PLAYER_ACTION_KINDS } from "@shared/world-engine/player-action.js";
@@ -76,6 +78,7 @@ describe("claim messages — spark→body rides on the wire", () => {
     expect(() => applyInbound(state, alien)).not.toThrow();
     expect(JSON.stringify(state.avatars)).toBe(before);
     expect(state.peerClaims).toBeUndefined();
+    expect(state.convoSync).toBeUndefined();
   });
 
   it("say still lands as avatar speech beside claims (the follower's NPC bubbles)", () => {
@@ -83,6 +86,282 @@ describe("claim messages — spark→body rides on the wire", () => {
     state.avatars["npc_bear"] = { id: "npc_bear", x: 1, y: 1, fx: 1, fy: 0, vx: 0, vy: 0, floor: 0 };
     applyInbound(state, sayMessage("npc_bear", "hello", "hi"));
     expect(state.bubbles["speech:npc_bear"]?.text).toBe("hello");
+  });
+
+  // A player's OWN utterance rides the very same message (quest-host relays it
+  // over the speaker's avatar), so the builder's shape is load-bearing on both
+  // sides: a glyph-less line must not carry an empty `glyph` key.
+  it("sayMessage builds the exact wire shape, with and without a glyph", () => {
+    expect(sayMessage("p", "I want the apple.", "want + apple"))
+      .toEqual({ t: "say", id: "p", text: "I want the apple.", glyph: "want + apple" });
+    expect(sayMessage("p", "hello")).toEqual({ t: "say", id: "p", text: "hello" });
+  });
+});
+
+// The owner holds the conversation; a follower's board is a VIEW of it, and
+// without this message that view froze the moment it opened. Per member, not
+// per conversation: two students in one conversation keep their own syntax
+// tiers (the world holds every rung at once).
+describe("convo messages — owner→follower conversation sync", () => {
+  /** The SHARED half of a conversation — what crosses the wire. Board
+   *  navigation (`DeviceBoardState`) deliberately has no wire shape at all. */
+  const shared = (
+    revealed: Record<string, true> = {},
+    pairs: ConvoShared["pairs"] = {},
+  ): ConvoShared => ({ revealed, pairs });
+
+  it("convoMessage builds the exact wire shape", () => {
+    expect(convoMessage("resident_0_1", "peer-a", "b", shared({ npc_bear: true }))).toEqual({
+      t: "convo",
+      cid: "resident_0_1",
+      member: "peer-a",
+      level: "b",
+      shared: { revealed: { npc_bear: true }, pairs: {} },
+      seq: 0,
+    });
+  });
+
+  // BOARD NAVIGATION crosses only for the member whose OWN turn produced it —
+  // the owner ran that turn, so it is the only device that knows what the press
+  // did to the board. It is never copied to the other members.
+  it("carries an optional ui transition and the conversation's monotone seq", () => {
+    expect(
+      convoMessage("resident_0_1", "peer-a", "b", shared(), {
+        ui: { list: { menu: "where-is", page: 1 } },
+        seq: 7,
+      }),
+    ).toEqual({
+      t: "convo",
+      cid: "resident_0_1",
+      member: "peer-a",
+      level: "b",
+      shared: { revealed: {}, pairs: {} },
+      ui: { list: { menu: "where-is", page: 1 } },
+      seq: 7,
+    });
+    // No transition = the board stays where it is; the key is left off entirely
+    // rather than sent as an empty object nobody can tell from "reset it".
+    expect(convoMessage("c1", "peer-a", "b", shared(), { seq: 2 })).not.toHaveProperty("ui");
+  });
+
+  // ⑫④ — WHOM THAT MEMBER IS TALKING TO. The durable answer the LOOK channel
+  // buys (conversation-in-motion.md law ②) crossing the wire, so a follower's
+  // own `ConvoMember.addressing` stops being an optimistic guess about its own
+  // player and becomes the owner's answer.
+  it("carries the member's ADDRESSEE, and leaves the key off when there is none", () => {
+    expect(
+      convoMessage("resident_0_1", "peer-a", "b", shared(), { addressing: "resident_0_2", seq: 3 }),
+    ).toEqual({
+      t: "convo",
+      cid: "resident_0_1",
+      member: "peer-a",
+      level: "b",
+      shared: { revealed: {}, pairs: {} },
+      addressing: "resident_0_2",
+      seq: 3,
+    });
+    // 🚨 NO KEY *IS* THE FLOOR — not "unchanged". That is what lets the owner
+    // pass a live read (`addressingOf`, which answers undefined for a departed
+    // target) unconditionally: the next sync is the clearing, and no second
+    // "your address is over" message shape has to exist.
+    expect(convoMessage("c1", "peer-a", "b", shared(), { seq: 2 })).not.toHaveProperty("addressing");
+    expect(convoMessage("c1", "peer-a", "b", shared(), { addressing: "", seq: 2 })).not.toHaveProperty("addressing");
+  });
+
+  it("records the latest state per MEMBER; members coexist and don't overwrite", () => {
+    const state = createWorldState(spec, "me");
+    expect(state.convoSync).toBeUndefined(); // absent until the first sync
+
+    applyInbound(state, convoMessage("resident_0_1", "peer-a", "a", shared(), { seq: 1 }));
+    applyInbound(
+      state,
+      convoMessage("resident_0_1", "peer-b", "c", shared({ resident_0_1: true }), { seq: 1 }),
+    );
+    expect(state.convoSync).toEqual({
+      "peer-a": { cid: "resident_0_1", level: "a", shared: { revealed: {}, pairs: {} }, seq: 1 },
+      "peer-b": {
+        cid: "resident_0_1",
+        level: "c",
+        shared: { revealed: { resident_0_1: true }, pairs: {} },
+        seq: 1,
+      },
+    });
+
+    // Latest wins for that member only — a level bump, a fresh quote, a move to
+    // another creature's conversation (which resets to that conversation's own
+    // counter, so a LOWER seq under a different cid still wins).
+    const quoted = shared({}, { "resident_0_1>peer-a": { statedPrice: { kind: "need", itemId: "cookie1" } } });
+    applyInbound(state, convoMessage("resident_0_1", "peer-a", "b", quoted, { seq: 2 }));
+    applyInbound(state, convoMessage("npc_bear", "peer-b", "c", shared(), { seq: 0 }));
+    expect(state.convoSync).toEqual({
+      "peer-a": { cid: "resident_0_1", level: "b", shared: quoted, seq: 2 },
+      "peer-b": { cid: "npc_bear", level: "c", shared: { revealed: {}, pairs: {} }, seq: 0 },
+    });
+  });
+
+  // The mesh reorders. "Latest" has to mean the highest seq and not the last
+  // packet through the door, or a straggler rewinds a board the owner has
+  // already moved on from.
+  it("a STRAGGLER never rewinds a member's row; a repeat is harmless", () => {
+    const state = createWorldState(spec, "me");
+    applyInbound(state, convoMessage("c1", "peer-a", "b", shared(), { seq: 5 }));
+    applyInbound(state, convoMessage("c1", "peer-a", "a", shared({ c1: true }), { seq: 3 }));
+    expect(state.convoSync!["peer-a"]).toEqual({
+      cid: "c1",
+      level: "b",
+      shared: { revealed: {}, pairs: {} },
+      seq: 5,
+    });
+    // Same seq = the same state said twice (the send is fire-and-forget).
+    applyInbound(state, convoMessage("c1", "peer-a", "b", shared(), { seq: 5 }));
+    expect(state.convoSync!["peer-a"]!.seq).toBe(5);
+    // A NEW turn lands.
+    applyInbound(state, convoMessage("c1", "peer-a", "c", shared(), { seq: 6 }));
+    expect(state.convoSync!["peer-a"]!.level).toBe("c");
+  });
+
+  it("drops a malformed sync rather than half-applying it", () => {
+    const state = createWorldState(spec, "me");
+    applyInbound(state, convoMessage("resident_0_1", "peer-a", "b", shared()));
+    const good = {
+      "peer-a": { cid: "resident_0_1", level: "b", shared: { revealed: {}, pairs: {} }, seq: 0 },
+    };
+    const ok = { revealed: {}, pairs: {} };
+
+    for (const bad of [
+      { t: "convo", member: "peer-a", level: "b", shared: ok }, // no creature
+      { t: "convo", cid: "", member: "peer-a", level: "b", shared: ok },
+      { t: "convo", cid: "c1", level: "b", shared: ok }, // nobody it belongs to
+      { t: "convo", cid: "c1", member: "", level: "b", shared: ok },
+      { t: "convo", cid: "c1", member: "peer-b", level: "d", shared: ok }, // not a rung
+      { t: "convo", cid: "c1", member: "peer-b", level: 2, shared: ok },
+      { t: "convo", cid: "c1", member: "peer-b", level: "b" }, // no shared state
+      { t: "convo", cid: "c1", member: "peer-b", level: "b", shared: "{}" },
+      // HALF a shared record is the dangerous one: a missing `pairs` would land
+      // as a conversation whose first price lookup throws.
+      { t: "convo", cid: "c1", member: "peer-b", level: "b", shared: { revealed: {} } },
+      { t: "convo", cid: "c1", member: "peer-b", level: "b", shared: { pairs: {} } },
+    ]) {
+      expect(() => applyInbound(state, bad as unknown as WorldNetMessage)).not.toThrow();
+    }
+    expect(state.convoSync).toEqual(good); // nothing added, nothing corrupted
+  });
+
+  // `ui` and `seq` are both NEWER than the message itself, so an owner one
+  // version behind sends neither. Rejecting the sync over them would freeze
+  // exactly the board this message exists to un-freeze.
+  it("a missing seq reads as 0 rather than dropping the sync", () => {
+    const state = createWorldState(spec, "me");
+    const noSeq = { t: "convo", cid: "c1", member: "peer-a", level: "b", shared: { revealed: {}, pairs: {} } };
+    applyInbound(state, noSeq as unknown as WorldNetMessage);
+    expect(state.convoSync!["peer-a"]).toEqual({
+      cid: "c1",
+      level: "b",
+      shared: { revealed: {}, pairs: {} },
+      seq: 0,
+    });
+  });
+
+  it("a garbled ui costs the UI and nothing else — the level and the shared state still land", () => {
+    const state = createWorldState(spec, "me");
+    const send = (ui: unknown, seq: number) =>
+      applyInbound(
+        state,
+        { ...(convoMessage("c1", "peer-a", "c", shared({ c1: true }), { seq }) as object), ui } as WorldNetMessage,
+      );
+
+    let seq = 0;
+    for (const ui of [
+      7,
+      "list",
+      null,
+      {}, // nothing in it = no transition
+      { tradeMenu: "yes" }, // not the flag it claims to be
+      { list: { menu: "where-is" } }, // half a list: a menu nobody can page
+      { list: { page: 1 } },
+      { list: { menu: "", page: 1 } },
+      { list: { menu: "where-is", page: "1" } },
+      { list: { menu: "where-is", page: NaN } },
+    ]) {
+      send(ui, ++seq);
+      expect(state.convoSync!["peer-a"]).toEqual({
+        cid: "c1",
+        level: "c",
+        shared: { revealed: { c1: true }, pairs: {} },
+        seq,
+      });
+    }
+
+    // …and a well-formed one is kept, field for field.
+    send({ tradeMenu: true, list: { menu: "where-is", page: 2 } }, ++seq);
+    expect(state.convoSync!["peer-a"]!.ui).toEqual({ tradeMenu: true, list: { menu: "where-is", page: 2 } });
+  });
+
+  // ⑫④ — the same discipline `ui` gets, for the same reason: `addressing` is
+  // NEWER than the message, so an owner one version behind sends none, and
+  // rejecting the sync over it would freeze the board this message un-freezes.
+  it("stores the ADDRESSEE on the member's row, and a later sync without one CLEARS it", () => {
+    const state = createWorldState(spec, "me");
+    applyInbound(state, convoMessage("c1", "peer-a", "b", shared(), { addressing: "resident_0_2", seq: 1 }));
+    expect(state.convoSync!["peer-a"]).toEqual({
+      cid: "c1",
+      level: "b",
+      shared: { revealed: {}, pairs: {} },
+      addressing: "resident_0_2",
+      seq: 1,
+    });
+    // The address died on the owner (they looked elsewhere, or walked off, or
+    // the target left the circle). The row must not keep pointing at them.
+    applyInbound(state, convoMessage("c1", "peer-a", "b", shared(), { seq: 2 }));
+    expect(state.convoSync!["peer-a"]).not.toHaveProperty("addressing");
+  });
+
+  it("a garbled addressee costs the ADDRESS and nothing else — the rest still lands", () => {
+    const state = createWorldState(spec, "me");
+    const send = (addressing: unknown, seq: number) =>
+      applyInbound(
+        state,
+        { ...(convoMessage("c1", "peer-a", "b", shared(), { seq }) as object), addressing } as WorldNetMessage,
+      );
+
+    let seq = 0;
+    for (const addressing of [7, "", null, {}, ["resident_0_2"], true]) {
+      send(addressing, ++seq);
+      // The sync landed; only the address was dropped, and "no address" is a
+      // state a follower can honestly render (the line goes to the floor).
+      expect(state.convoSync!["peer-a"]).toEqual({
+        cid: "c1",
+        level: "b",
+        shared: { revealed: {}, pairs: {} },
+        seq,
+      });
+    }
+    send("resident_0_2", ++seq);
+    expect(state.convoSync!["peer-a"]!.addressing).toBe("resident_0_2");
+  });
+
+  it("a sync with NO addressing field is never rejected — validConvo does not ask", () => {
+    // An older owner sends `{cid, member, level, shared}` and nothing else. That
+    // message must still un-freeze the board.
+    const state = createWorldState(spec, "me");
+    const old = { t: "convo", cid: "c1", member: "peer-a", level: "c", shared: { revealed: {}, pairs: {} } };
+    applyInbound(state, old as unknown as WorldNetMessage);
+    expect(state.convoSync!["peer-a"]).toEqual({
+      cid: "c1",
+      level: "c",
+      shared: { revealed: {}, pairs: {} },
+      seq: 0,
+    });
+  });
+
+  it("an OLD snapshot ignores it entirely — the drop-safety both channels rely on", () => {
+    // What the previous engine version's applyInbound does with `convo`: its
+    // switch has no arm, so it falls through to `default: break`. Stand in for
+    // that with a kind THIS version doesn't know either — same code path.
+    const state = createWorldState(spec, "me");
+    const future = { t: "convo-roster", cid: "c1", members: ["a"] } as unknown as WorldNetMessage;
+    expect(() => applyInbound(state, future)).not.toThrow();
+    expect(state.convoSync).toBeUndefined();
   });
 });
 
@@ -173,6 +452,71 @@ describe("parseWorldCommand — the reliable relay envelope", () => {
     }
   });
 
+  // Opening a conversation BOARD is local; BELONGING to the conversation is
+  // not — the roster lives with the simulation, so the change is relayed.
+  it("parses a conversation membership change (join / leave)", () => {
+    expect(parseWorldCommand({ kind: "convo", from: "p2", cid: "resident_0_1", op: "join" }))
+      .toEqual({ kind: "convo", from: "p2", cid: "resident_0_1", op: "join" });
+    expect(parsePlayerAction({ kind: "convo", cid: "resident_0_1", op: "leave" }))
+      .toEqual({ kind: "convo", cid: "resident_0_1", op: "leave" });
+  });
+
+  // ★ ⑫④ — THE LOOK CROSSES THE GATE. ★ The dwell `address` cell was the one of
+  // its four that never produced a `PlayerAction` at all; its three neighbours
+  // (`sendTo` / `attendObject` / `attendCreature`) all did. `cid` is the FELLOW
+  // MEMBER being addressed — the owner resolves the conversation from the
+  // speaker's own membership, which it already holds.
+  it("parses the ⑫④ address — an op on `convo`, not a ninth kind", () => {
+    expect(parseWorldCommand({ kind: "convo", from: "p2", cid: "resident_0_2", op: "address" }))
+      .toEqual({ kind: "convo", from: "p2", cid: "resident_0_2", op: "address" });
+    expect(parsePlayerAction({ kind: "convo", cid: "resident_0_2", op: "address" }))
+      .toEqual({ kind: "convo", cid: "resident_0_2", op: "address" });
+    // It is deliberately NOT `attendCreature`: that commands a THIRD PARTY to go
+    // and attend somebody (a spark row, a body crossing the square). This
+    // changes nothing but who the next sentence is said to — so the two must
+    // stay distinguishable on the wire.
+    expect(parsePlayerAction({ kind: "attendCreature", cid: "resident_0_1", id: "resident_0_2" }))
+      .toEqual({ kind: "attendCreature", cid: "resident_0_1", id: "resident_0_2" });
+  });
+
+  it("⚠️ AN OLD OWNER DROPS THE ADDRESS WHOLE — the degradation, pinned", () => {
+    // This is the same guard `op: "listen"` hits below, read from the other
+    // side: an owner that predates ⑫④ has `op !== "join" && op !== "leave"` and
+    // returns null, so it drops the action rather than guessing at it. The cost
+    // is nil — the sentence that follows carries its own `Gesture.addressee`
+    // stamped from this device's gaze, which the owner honours as an explicit
+    // target. The address simply stops being DURABLE: it lasts the utterance
+    // instead of lasting until the child looks elsewhere.
+    const oldOwnerParse = (raw: unknown): unknown => {
+      const a = raw as { kind?: unknown; cid?: unknown; op?: unknown };
+      if (a.kind !== "convo") return null;
+      if (typeof a.cid !== "string" || !a.cid || (a.op !== "join" && a.op !== "leave")) return null;
+      return { kind: "convo", cid: a.cid, op: a.op };
+    };
+    expect(oldOwnerParse({ kind: "convo", cid: "resident_0_2", op: "address" })).toBeNull();
+    // …and the gesture that survives it is an ordinary `speak`, unchanged.
+    expect(
+      parsePlayerAction({ kind: "speak", sentence: "hi", gesture: { addressee: "resident_0_2" } }),
+    ).toEqual({ kind: "speak", sentence: "hi", gesture: { addressee: "resident_0_2" } });
+  });
+
+  it("drops a membership change it can't read rather than guessing the op", () => {
+    for (const bad of [
+      { kind: "convo", from: "p2", op: "join" }, // no conversation
+      { kind: "convo", from: "p2", cid: "", op: "join" },
+      { kind: "convo", from: "p2", cid: "c1" }, // nothing happened
+      { kind: "convo", from: "p2", cid: "c1", op: "listen" }, // an op from a newer peer
+      { kind: "convo", from: "p2", cid: "c1", op: true },
+      { kind: "convo", cid: "c1", op: "join" }, // nobody sent it
+    ]) {
+      expect(parseWorldCommand(bad)).toBeNull();
+    }
+    // Version skew stays version skew: an unknown KIND is still null, so an old
+    // owner drops a membership change instead of misreading it.
+    expect(parsePlayerAction({ kind: "convo-roster", cid: "c1" })).toBeNull();
+    expect(parsePlayerAction({ kind: "dance" })).toBeNull();
+  });
+
   it("parses each relayed gaze instruction", () => {
     expect(parseWorldCommand({ kind: "sendTo", from: "p2", cid: "resident_0_1", x: 3, y: -4.5 }))
       .toEqual({ kind: "sendTo", from: "p2", cid: "resident_0_1", x: 3, y: -4.5 });
@@ -206,6 +550,7 @@ describe("parseWorldCommand — the reliable relay envelope", () => {
       speak: { kind: "speak", sentence: "go + home" },
       board: { kind: "board", optionId: "build:farm" },
       converse: { kind: "converse", cid: "c1", act: { kind: "request", glyph: "want + apple" } },
+      convo: { kind: "convo", cid: "c1", op: "join" },
       sendTo: { kind: "sendTo", cid: "c1", x: 0, y: 0 },
       attendObject: { kind: "attendObject", cid: "c1", id: "o1", x: 0, y: 0 },
       attendCreature: { kind: "attendCreature", cid: "c1", id: "c2" },

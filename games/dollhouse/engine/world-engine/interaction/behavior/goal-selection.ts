@@ -34,6 +34,7 @@ import {
   type GoalSpec,
   type ItemRef,
   type PlaceRef,
+  type PursuitGoal,
   type Rule,
   type RuleContext,
 } from "@shared/world-engine/interaction/behavior/rules.js";
@@ -352,6 +353,12 @@ export type GoalStep =
   | { kind: "equip"; itemId: ItemId } // put a held garment ON (doff the old as .dirty)
   | { kind: "color"; itemId: ItemId; color: string } // recolor a held item at the tub (withVariation)
   | { kind: "converse"; target: CreatureId } // exchange with the partner (on arrival)
+  // ⑫⑧ — STOP AND FACE `target` where you stand: the LOOK channel as a step
+  // (conversation-in-motion law ②). Its own step kind rather than a `faceHold`
+  // because it is the one facing in the engine that is BOUGHT — the plan
+  // pricer charges it `ADDRESS_DWELL_S`, and a step that costs something must
+  // be distinguishable from one that does not.
+  | { kind: "address"; target: CreatureId }
   | { kind: "rest"; place: PlaceRef; dwellS?: number; pose?: "sleep" | "sit" | "play" } // occupy a station and dwell there
   // Stack-economy manipulation (S3): move `units` between the reached store and
   // WHAT THE BODY IS CARRYING. `fromId`/`intoId` are the resolved object ids (a
@@ -389,12 +396,12 @@ export interface GoalPlan {
  * compiler, so a caller choosing between candidates never has to know whether
  * the hand-written switch below or the action planner built the answer.
  */
-export function compileGoal(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalPlan | null {
+export function compileGoal(goal: PursuitGoal, self: CreatureId, r: WorldResolver): GoalPlan | null {
   const steps = compileSteps(goal, self, r);
   return steps ? { steps, cost: pricePlan(steps, self, r) } : null;
 }
 
-function compileSteps(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalStep[] | null {
+function compileSteps(goal: PursuitGoal, self: CreatureId, r: WorldResolver): GoalStep[] | null {
   const steps: GoalStep[] = [];
   const move = (pos: Vec2 | null): boolean => {
     if (!pos) return false;
@@ -500,6 +507,12 @@ function compileSteps(goal: GoalSpec, self: CreatureId, r: WorldResolver): GoalS
       return planSteps(goal, self, r);
     case "converse":
       // Planner-owned: `socialized` regresses walk-to-partner → exchange.
+      return planSteps(goal, self, r);
+    case "address":
+      // ⑫⑧ — planner-owned: `addressed` regresses to ONE step, the turn in
+      // place. Never a rule action and never a spoken order (see `AddressGoal`
+      // — an order is not negotiable), so it reaches this switch only through
+      // a creature's own need machinery.
       return planSteps(goal, self, r);
     case "takeUnits":
     case "putUnits":

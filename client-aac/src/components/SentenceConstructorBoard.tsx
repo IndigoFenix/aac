@@ -1693,7 +1693,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   <PickerToggleButton
                     active={amountPickerOpen}
                     emoji={activeAmountKey ? (getVocabularyItem(activeAmountKey)?.emoji ?? "🌗") : "🌗"}
-                    label="Amount"
+                    label={t("builder.amount")}
                     testId="amount-picker-toggle"
                     onPress={() => setAmountPickerOpen((o) => !o)}
                   />
@@ -1702,7 +1702,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   <PickerToggleButton
                     active={qualityPickerOpen}
                     emoji="👍"
-                    label="Quality"
+                    label={t("builder.quality")}
                     testId="quality-picker-toggle"
                     onPress={() => setQualityPickerOpen((o) => !o)}
                   />
@@ -1711,7 +1711,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   <PickerToggleButton
                     active={joinPickerOpen}
                     emoji={pendingJoin ? (getVocabularyItem(pendingJoin)?.emoji ?? "🔗") : "🔗"}
-                    label="Join"
+                    label={t("builder.join")}
                     testId="join-picker-toggle"
                     onPress={() => setJoinPickerOpen((o) => !o)}
                   />
@@ -2376,6 +2376,7 @@ function ColorPickerButton(props: {
   activeColorValue?: string;
   onPress: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <motion.button
       data-dwell
@@ -2389,8 +2390,8 @@ function ColorPickerButton(props: {
           ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
           : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
       ].join(" ")}
-      aria-label="Color"
-      title="Color"
+      aria-label={t("aac.glyph.color")}
+      title={t("aac.glyph.color")}
     >
       {props.activeColorValue ? (
         <span
@@ -2454,6 +2455,7 @@ function EmotionPickerButton(props: {
   activeEmoji?: string;
   onPress: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <motion.button
       data-dwell
@@ -2467,8 +2469,8 @@ function EmotionPickerButton(props: {
           ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
           : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
       ].join(" ")}
-      aria-label="Emotion"
-      title="Emotion"
+      aria-label={t("builder.emotion")}
+      title={t("builder.emotion")}
     >
       <span className="text-2xl" aria-hidden>{props.activeEmoji ?? "🙂"}</span>
     </motion.button>

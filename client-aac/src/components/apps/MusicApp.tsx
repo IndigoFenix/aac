@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronsDown, X } from "lucide-react";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface Note {
   name: string;
@@ -55,6 +56,7 @@ interface Ripple {
 }
 
 export default function MusicApp({ onClose }: MusicAppProps) {
+  const { t } = useLanguage();
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playRef = useRef<HTMLDivElement>(null);
 
@@ -192,7 +194,7 @@ export default function MusicApp({ onClose }: MusicAppProps) {
           type="button"
           data-dwell
           onClick={onClose}
-          aria-label="Close Music Maker"
+          aria-label={t("apps.music.close")}
           className="flex items-center justify-center rounded-2xl w-12 h-12 bg-red-500 text-white shadow-lg active:scale-95 transition-transform touch-none"
         >
           <X size={24} />
@@ -213,7 +215,7 @@ export default function MusicApp({ onClose }: MusicAppProps) {
               // Deliberately NOT data-dwell: a resting or sweeping gaze must not
               // play a bar — only a downward strike (the ball loop) or a tap.
               onPointerDown={() => strike(note)}
-              aria-label={`Play ${note.name}`}
+              aria-label={t("apps.music.playNote", { note: note.name })}
               className="relative flex-1 rounded-2xl shadow-xl flex items-end justify-center pb-4 text-lg font-bold text-white/85 overflow-hidden active:scale-[0.98] transition-transform touch-none"
               style={{ backgroundColor: note.color }}
             >

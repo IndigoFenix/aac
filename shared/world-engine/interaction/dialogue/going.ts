@@ -19,7 +19,7 @@
 
 import type { GoingDest } from "./creature-dialogue.js";
 import { needActivity } from "./intent-lines.js";
-import { headOf } from "../../variations.js";
+import { spokenWord } from "../content/makeable.js";
 
 export interface GoingRect {
   x: number;
@@ -84,7 +84,9 @@ export function tripDestination(trip: ScheduledTrip, walking: boolean | undefine
 export function stepActivity(step: Pick<GoingStep, "kind" | "tplKey" | "goodKey">):
   | { verb: string; object?: string }
   | undefined {
-  const head = step.goodKey ? headOf(step.goodKey) : undefined;
+  // The SPOKEN word, not the stack head: a haul of `furn.chair` is a body
+  // carrying a CHAIR ("I'll put the chair down"), never "the furn".
+  const head = step.goodKey ? spokenWord(step.goodKey) : undefined;
   if (step.kind === "take") return { verb: "get", ...(head ? { object: head } : {}) };
   if (step.kind === "deposit" || step.kind === "drop") return { verb: "put", ...(head ? { object: head } : {}) };
   return needActivity(step.tplKey);

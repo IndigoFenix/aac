@@ -25,7 +25,19 @@ Whenever the term "student" is used, we use ts() instead, which swaps "student" 
 If you add any strings to the client, add their translations.
 If you see any missing translations on the client while working, add them. (Except for debug-related features)
 All translation files should have identical keys on identical lines.
-Use the scripts/validate-i18n.ts to check for this after editing translation files.
+Use `npm run validate-i18n` to check for this after editing translation files.
+
+To find untranslated text, use `npm run scan:i18n` (scripts/scan-i18n-coverage.ts). It checks the
+translation files against the *code* rather than against each other: t()/ts() keys missing from
+en.ts, hardcoded JSX text and placeholder/title/aria-label attributes, toast copy, files that
+hand-roll localization with a `language === 'he' ? … : …` ternary, server `error:CODE` responses
+with no client `errors.CODE`, and locale values still byte-identical to English.
+`npm run scan:i18n:keys` runs only the two hard-error checks (exit 1 on failure — CI-friendly);
+`npm run scan:i18n:report` writes the full findings to planning-docs/i18n-coverage-report.md.
+Suppress a false positive with an `i18n-ignore` comment on the line or the line above it.
+
+Note: `t()` returns the key itself when a key is missing, which is truthy — so the
+`t('x') || 'Fallback'` idiom is dead code. The fallback never renders; the raw key does.
 
 ## Testing
 At the end of each minor task, check to see if we have a testing suite set up for that part of the system. If not, create one. If so, test it.

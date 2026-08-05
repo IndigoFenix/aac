@@ -21,9 +21,9 @@ import {
   valueTo,
   projectDialogue,
   selectAct,
-  type ConversationMemo,
   type CreatureWorld,
 } from "@shared/world-engine/interaction/index.js";
+import { createConversation, pairMemo } from "@shared/world-engine/interaction/dialogue/conversation.js";
 
 const PLAYER = "player";
 const sym = (id: string) => id.replace(/_\d+$/, ""); // "cookie_1" → "cookie"
@@ -199,25 +199,27 @@ describe("dialogue projection", () => {
     seeItem(world, PLAYER, "cookie_1", { kind: "held", by: "frog" });
     const opts = { ...OPTS, announce: "after" as const };
 
-    let memo: ConversationMemo = {};
-    expect(projectDialogue(world, "frog", PLAYER, "b", opts, memo).lineGlyph).toBe("want + thing#question");
-    const req = projectDialogue(world, "frog", PLAYER, "b", opts, memo).acts.find(
+    // The price is CONVERSATION state now (per-pair), so the shared record is
+    // what carries it from turn to turn — no memo passed hand to hand.
+    const convo = createConversation("frog", 0);
+    const ctx = { convo };
+    expect(projectDialogue(world, "frog", PLAYER, "b", opts, ctx).lineGlyph).toBe("want + thing#question");
+    const req = projectDialogue(world, "frog", PLAYER, "b", opts, ctx).acts.find(
       (a) => a.kind === "request",
     )!;
-    memo = selectAct(world, "frog", PLAYER, req, "b", opts, memo).memo;
-    expect(memo.statedPrice).toEqual({ kind: "need", itemId: "apple_1" });
-    expect(projectDialogue(world, "frog", PLAYER, "b", opts, memo).lineGlyph).toBe("want + apple");
+    selectAct(world, "frog", PLAYER, req, "b", opts, ctx);
+    expect(pairMemo(convo, "frog", PLAYER).statedPrice).toEqual({ kind: "need", itemId: "apple_1" });
+    expect(projectDialogue(world, "frog", PLAYER, "b", opts, ctx).lineGlyph).toBe("want + apple");
 
     // Pay → the trader settles its OBLIGATION unprompted: it knows the player
     // asked for the cookie, the debt now covers it, so it hands it over — no
     // second ask needed (the ask→price→pay→give loop).
-    const offer = projectDialogue(world, "frog", PLAYER, "b", opts, memo).acts.find(
+    const offer = projectDialogue(world, "frog", PLAYER, "b", opts, ctx).acts.find(
       (a) => a.kind === "offer" && a.itemId === "apple_1",
     )!;
-    const paid = selectAct(world, "frog", PLAYER, offer, "b", opts, memo);
+    const paid = selectAct(world, "frog", PLAYER, offer, "b", opts, ctx);
     expect(paid.responseGlyph).toBe("thank_you");
-    memo = paid.memo;
-    expect(memo.statedPrice).toBeUndefined();
+    expect(pairMemo(convo, "frog", PLAYER).statedPrice).toBeUndefined();
     expect(
       paid.events.some((e) => e.type === "transfer-pending" && e.itemId === "cookie_1" && e.to === PLAYER),
     ).toBe(true);

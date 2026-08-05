@@ -52,7 +52,7 @@ import {
 import { bodyCarryView, type BagRef, type BodyCarry } from "@shared/world-engine/kernel/town/scope-shape.js";
 import type { StockEndpoint } from "@shared/world-engine/kernel/town/transfer.js";
 
-const PLAYER = "player"; // PLAYER_CREATURE_ID
+const PLAYER = "player"; // LOCAL_PLAYER_CID (player-identity.ts)
 const LIVING = { x: 10, y: 20, w: 6, h: 5 };
 const MARKET = { x: 0, y: 0 };
 const YARD = { x: 40, y: 40 };

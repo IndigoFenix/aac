@@ -644,6 +644,12 @@ export interface BoardIsland {
   setFamily(members: FamilyHudEntry[]): void;
   /** Replace the CITY HUD strip (④ per-district cohort chips; empty = hidden). */
   setCity(chips: CityHudChip[]): void;
+  /** ⑫ — who is standing in the child's conversation, as spoken words. The
+   *  island itself renders nothing for it; the AAC bridge captures it so the
+   *  sentence builder can open an ADDRESSEE slot in a crowd
+   *  (conversation-in-motion.md law ②). Optional: a host that never pushes one
+   *  leaves the board exactly as it is. */
+  setAddressees?(list: string[]): void;
   dispose(): void;
 }
 

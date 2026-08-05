@@ -231,17 +231,30 @@ export interface WorldHost {
    *  slews to FACE it. Pass the partner's LIVE position each frame. Pass null to
    *  leave. Driven by the game layer (e.g. dwell-to-talk). */
   setConversation(target: Vec2 | null): void;
-  /** WHO IS TALKING — the two AVATAR IDS holding a conversation, passed straight
+  /** WHO IS TALKING — the conversation a camera should FRAME, passed straight
    *  through to the renderer as `RenderIntent.conversation` (the dollhouse
    *  camera's conversation dolly reads it). Null clears.
    *
+   *  `id` is the conversation's own identity and is the camera's LATCH KEY: the
+   *  dolly holds the frame while the id stands, so members joining and leaving
+   *  never restart the move. `members` are avatar ids (any may have no body —
+   *  the camera frames whichever it can see). `speaker` is reserved for a later
+   *  framing bias and is ignored by the v1 camera.
+   *
    *  DELIBERATELY SEPARATE from `setConversation`: that one is the LOCAL
    *  player's steering/facing target and is a POINT (it also carries a container
-   *  board's standpoint, which is not a conversation at all). This is the pair
-   *  of bodies a camera must FRAME, so it must be identities the renderer can
+   *  board's standpoint, which is not a conversation at all). This is the set of
+   *  bodies a camera must FRAME, so it must be identities the renderer can
    *  re-read each frame, and it covers the NPC↔NPC exchanges the local player
    *  isn't even part of. Pass it every frame the conversation stands; the
    *  renderer adds its own hysteresis so a one-frame gap never drops the frame. */
+  setConversationFocus(
+    conv: { id: string; members: string[]; speaker?: string } | null,
+  ): void;
+  /** @deprecated The dyadic form — use `setConversationFocus`. Kept as a thin
+   *  wrapper (a pair is the n = 2 case) so existing callers behave identically:
+   *  the synthesized latch key `pair:a|b` changes exactly when the pair does,
+   *  which is the old `{a,b}`-equality latch. */
   setConversationPair(pair: { a: string; b: string } | null): void;
   /** POINT: transiently override the camera to swivel and FACE a world point
    *  (over-the-shoulder, at max yaw speed), overriding any conversation target
@@ -836,12 +849,31 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // Conversation: when set, the avatar follows this point (to talking distance,
   // facing it) and the camera faces it. Updated to the partner's live position.
   let conversationTarget: Vec2 | null = null;
-  // WHO IS TALKING (dollhouse conversation dolly): the two body ids the game
-  // layer says are in a conversation, republished verbatim on the render intent.
-  // Ids survive a REBASE untouched — unlike `conversationTarget` below, which is
-  // a point and has to be re-mapped — which is half the reason the seam is
-  // identities rather than positions.
-  let conversationPair: { a: string; b: string } | null = null;
+  // WHO IS TALKING (dollhouse conversation dolly): the conversation the game
+  // layer says is running — its latch id plus the body ids in it — republished
+  // verbatim on the render intent. Ids survive a REBASE untouched — unlike
+  // `conversationTarget` above, which is a point and has to be re-mapped — which
+  // is half the reason the seam is identities rather than positions (see the
+  // `rebase` implementation: nothing to do here, deliberately).
+  let conversationFocus: { id: string; members: string[]; speaker?: string } | null = null;
+  // ONE writer for both the n-ary setter and the deprecated pair wrapper, as a
+  // free function rather than a method-calls-method delegation: the host is a
+  // plain object literal, so a `this.setConversationFocus(…)` hop would break
+  // for any caller that pulled the method off the host first.
+  const applyConversationFocus = (
+    conv: { id: string; members: string[]; speaker?: string } | null,
+  ): void => {
+    // Copy the roster: the game layer keeps mutating its own member array (a
+    // conversation record does exactly that as people join and leave) and the
+    // intent is read a frame later.
+    conversationFocus = conv
+      ? {
+          id: conv.id,
+          members: [...conv.members],
+          ...(conv.speaker ? { speaker: conv.speaker } : {}),
+        }
+      : null;
+  };
   // POINT override (NPC directions): while the hold counts down, the camera
   // faces this point instead of the conversation target, over-the-shoulder, at
   // max yaw. Counted down by dt each frame (no wall-clock dependency).
@@ -1186,7 +1218,7 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       interactId,
       faceTarget,
       shoulder: wantShoulder,
-      conversation: conversationPair,
+      conversation: conversationFocus,
       // The spark cursor tracks the genuine gaze fixation (`effFix`) + what it
       // rests on (`snap`), NOT `interactId`/`aim` — so it never sticks to the
       // carried item or the conversation partner. Its bloom is the dwell-select
@@ -1253,8 +1285,17 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     setConversation(target) {
       conversationTarget = target;
     },
+    setConversationFocus(conv) {
+      applyConversationFocus(conv);
+    },
     setConversationPair(pair) {
-      conversationPair = pair;
+      // n = 2 through the one path. The synthesized key changes exactly when the
+      // pair does, so the renderer's id latch reproduces the old
+      // `{a,b}`-equality latch exactly — including that swapping a and b is a
+      // DIFFERENT conversation, as it always was.
+      applyConversationFocus(
+        pair ? { id: `pair:${pair.a}|${pair.b}`, members: [pair.a, pair.b] } : null,
+      );
     },
     pointAt(target, holdMs = 2200) {
       pointTarget = { x: target.x, y: target.y };
@@ -1309,8 +1350,9 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       // speak for itself (its own dialogue, from its own needs); the player only
       // TELLS it what to do. So words the player puts through the board/chat are
       // the PLAYER's words, never the ridden body's — the quest path agrees
-      // (its speaker is hardcoded PLAYER_CREATURE_ID, and a ridden body is
-      // something you talk TO, not as).
+      // (its speaker is the AUTHOR's own cid — `LOCAL_PLAYER_CID` for this
+      // device, `player:<personId>` for a peer — and a ridden body is something
+      // you talk TO, not as).
       //
       // Anchoring to the spark's own body is exact today because nothing claims
       // in the social world. Once claiming reaches it, the spark's body must

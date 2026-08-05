@@ -8,7 +8,7 @@
 //
 //   1. WHAT the spark is over  — a creature, an object/fixture, or bare ground
 //   2. HOW LONG it has rested  — short or long
-//   3. WHETHER a conversation is running — and with whom
+//   3. WHETHER a conversation is running — and WHO IS IN IT
 //
 // Everything the player can express with their eyes is one cell of that table.
 // It is written here as a pure function so the rules are readable in one place
@@ -34,6 +34,36 @@
 // that). A conversation therefore ends only on its own inactivity timeout or
 // when a different one begins; there is deliberately no leave-by-looking-away
 // action in this table.
+//
+// ═══ THE GAZE PICKS THE PARTNER, INSIDE A ROSTER ═════════════════════════════
+// A conversation stopped being a pair (multi-entity-conversations.md §3f). The
+// table therefore reads TWO facts about the people it is shown instead of one:
+// who the player is facing (`conversingWith` — still exactly "the creature whose
+// board I face"), and WHO ELSE IS IN THE CIRCLE (`members`). The same gaze law
+// (talk-target.ts: whoever the player is LOOKING at wins) then splits into three
+// cells, because the same long rest means three different things depending on
+// which side of the roster the person is standing:
+//
+//   IN NO CONVERSATION, they are in one   → talk, marked `join` — the host opens
+//     THEIR conversation instead of a fresh one. Walking up to a circle is
+//     joining it; it was never a reason to pull somebody out of it.
+//   FELLOW MEMBER of MY conversation      → `address`: they become the person I
+//     am talking TO. Nothing is handed anywhere — we are already in the same
+//     conversation, so there is no partner to take them from, and commanding my
+//     current addressee to go attend somebody standing in the same circle would
+//     break the circle to say what a look already says.
+//   OUTSIDER, while I am conversing       → the old cells stand: a glance points
+//     my addressee at them, a long rest hands the conversation over (`switch`).
+//
+// A ROSTER NEVER SILENCES AN OUTSIDER. `currentAddressee` is a no-op only for a
+// FELLOW MEMBER: the host's addressee stack (addressee.ts) can name a nearest
+// body or a selected family chip who is in no conversation at all, and that must
+// not quietly delete the outsider cells.
+//
+// ALL THREE INPUTS ARE OPTIONAL AND ABSENCE IS THE OLD TABLE. A caller that
+// passes no roster gets byte-identical answers to the dyadic table, including
+// the absence of the `join` key itself (never `join: false`) — that is what lets
+// the host adopt the new cells one at a time.
 
 /** What the spark can be resting on. Exactly one per frame — never two. */
 export type HoverKind = "creature" | "object" | "ground";
@@ -53,11 +83,28 @@ export interface HoverTarget {
 export type DwellPhase = "short" | "long";
 
 /** The live context a hover is read against. `conversingWith` is the creature
- *  the player is talking to right now; `buildSpot` is the marked construction
- *  spot under this frame's hover, if the player has the build word up. Those
- *  two are the ONLY state that changes what a hover means. */
+ *  whose board the player is facing right now; `members` is the roster that
+ *  creature's conversation has; `buildSpot` is the marked construction spot
+ *  under this frame's hover, if the player has the build word up. Those are the
+ *  ONLY state that changes what a hover means. */
 export interface DwellContext {
   conversingWith: string | null;
+  /** THE ROSTER of the conversation the player is IN, when they are in one —
+   *  every member's id, including the player's own and `conversingWith`. Absent
+   *  (or empty) means "no roster known", and every cell below falls back to the
+   *  dyadic reading. The order is irrelevant here; this table only asks whether
+   *  a hovered body is inside the circle or outside it. */
+  members?: readonly string[];
+  /** Is the DWELLED creature in SOME conversation — anyone's, not necessarily
+   *  the player's? Purely a discriminant: it never changes WHICH act comes back,
+   *  only marks the one that does, so the host can open the conversation that
+   *  already exists rather than starting a rival one. */
+  targetInConversation?: boolean;
+  /** The member the player is currently ADDRESSING inside their conversation.
+   *  Dwelling them says nothing new (they are already being spoken to), exactly
+   *  as dwelling `conversingWith` does. Only consulted for fellow members — see
+   *  "A ROSTER NEVER SILENCES AN OUTSIDER" above. */
+  currentAddressee?: string;
   /** BUILD MODE (⑦): is the player holding the build word, with the ground
    *  lit? While they are, a settled look is ABOUT the ground. */
   building?: boolean;
@@ -75,10 +122,20 @@ export interface DwellContext {
 export type DwellAction =
   /** Put the fixture and whatever it holds on the board. */
   | { act: "menu"; id: string }
-  /** Open a conversation with this creature. */
-  | { act: "talk"; id: string }
-  /** Hand the conversation from the current partner to this one. */
-  | { act: "switch"; id: string }
+  /** Open a conversation with this creature. `join` = this creature is ALREADY
+   *  in one, so the host is being asked to seat the player in THAT conversation
+   *  rather than to start a second one around the same body. Absent means "no
+   *  conversation to join" — the key is never present-and-false, so an old
+   *  caller's answers are unchanged down to the shape. */
+  | { act: "talk"; id: string; join?: true }
+  /** Hand the conversation from the current partner to this one. Carries the
+   *  same `join` discriminant: leaving my circle for someone standing in another
+   *  is a hand-off at this end and a JOIN at the far end. */
+  | { act: "switch"; id: string; join?: true }
+  /** Make this FELLOW MEMBER the player's current addressee — whom the next
+   *  thing said is said TO. Never a hand-off: the roster does not change, and
+   *  nobody leaves anything (multi-entity-conversations.md §3f). */
+  | { act: "address"; id: string }
   /** Name the room under the point (no conversation running). */
   | { act: "room"; x: number; y: number }
   /** Send the partner to this spot. */
@@ -104,8 +161,9 @@ export type DwellAction =
  * could never be open.
  *
  * Empty means the cell is deliberately silent — a glance across bare ground
- * says nothing, and looking at the partner you are already talking to is
- * attention rather than an instruction about anybody.
+ * says nothing, and looking at the partner you are already talking to (or at the
+ * fellow member you are already addressing) is attention rather than an
+ * instruction about anybody.
  */
 export function dwellInteraction(
   target: HoverTarget | null,
@@ -153,17 +211,37 @@ export function dwellInteraction(
     return partner ? [menu, { act: "attendObject", cid: partner, id }] : [menu];
   }
 
-  // A CREATURE. With no conversation running, the only thing a person affords is
-  // being talked to, and that is a LONG rest — a conversation is a commitment,
-  // and a short glance at a passer-by must not open one.
-  if (!partner) return phase === "long" ? [{ act: "talk", id }] : [];
+  // A CREATURE. Which cell applies depends on which side of the roster this
+  // person is standing on — inside the player's conversation, or outside it.
+  // With no roster nobody is ever a fellow member, so the dyadic cells stand.
+  const fellow = !!ctx.members && id !== partner && ctx.members.includes(id);
+  // The `join` discriminant rides whichever of the two opening acts comes back;
+  // the key is OMITTED rather than set false, so an absent context reproduces
+  // the old objects exactly.
+  const opening = (act: "talk" | "switch"): DwellAction =>
+    ctx.targetInConversation ? { act, id, join: true } : { act, id };
 
-  // Already talking. Looking at the PARTNER is attention, not an instruction.
-  if (id === partner) return [];
-  // Someone else: a glance points the partner at them; a long rest is the
-  // player turning to that person instead, which ends the current conversation
-  // by starting another.
-  return phase === "short"
-    ? [{ act: "attendCreature", cid: partner, id }]
-    : [{ act: "switch", id }];
+  // Looking at the person whose board I face — or at the fellow member I am
+  // already addressing — is ATTENTION, not an instruction, in either phase.
+  // Otherwise listening to someone would keep re-commanding them.
+  if (id === partner || (fellow && id === ctx.currentAddressee)) return [];
+
+  // A FELLOW MEMBER IS NEVER SWITCHED TO, and never commanded ABOUT. We are in
+  // the same conversation already: there is no partner to take them from, so
+  // both phases mean the one thing a look inside a circle can mean — I am
+  // talking to YOU now. (The long rest repeats the short one; addressing is
+  // idempotent, and a player whose short rest was spent elsewhere still gets to
+  // choose whom they are speaking to.)
+  if (fellow) return [{ act: "address", id }];
+
+  // Nobody's board is up: the only thing a person affords is being talked to,
+  // and that is a LONG rest — a conversation is a commitment, and a short glance
+  // at a passer-by must not open one. If they are already talking to someone,
+  // the long rest asks to JOIN that conversation rather than to start a rival.
+  if (!partner) return phase === "long" ? [opening("talk")] : [];
+
+  // An OUTSIDER while I am conversing: a glance points my partner at them; a
+  // long rest is the player turning to that person instead, which ends the
+  // current conversation by starting (or joining) another.
+  return phase === "short" ? [{ act: "attendCreature", cid: partner, id }] : [opening("switch")];
 }

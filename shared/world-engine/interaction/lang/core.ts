@@ -332,8 +332,15 @@ export type DirCardinal = "north" | "south" | "east" | "west";
 export type Frame =
   /** Single glyph — interjections, bare adjectives (speaker-agreeing). */
   | { kind: "word"; token: Token }
-  /** Bare noun phrase ("apple", "ball.big", "more + apple", "cookie.my"). */
-  | { kind: "np"; np: NP }
+  /** Bare noun phrase ("apple", "ball.big", "more + apple", "cookie.my").
+   *
+   *  `label` = this phrase is a NAME ON A BUTTON, not an utterance: no article,
+   *  in every ruleset. English and Hebrew already render level-a naming bare
+   *  ("big ball", "ארון"), but the romance rulesets article it ("una caja") —
+   *  correct for something being SAID, wrong for a word being READ, and it is
+   *  the reading that a pocket strip and a container board do. Default false ⇒
+   *  today's rendering, byte for byte. */
+  | { kind: "np"; np: NP; label?: boolean }
   /** "{X} + here/there" and the there-subject clue — X is at a place. */
   | { kind: "here"; np: NP; where: "here" | "there" }
   /** "no + {X}.my" — refusing to part with a bound possession. */
@@ -646,6 +653,22 @@ export interface SpeakOpts {
    * lexicon's. The host supplies the map (names + genderFor).
    */
   names?: ReadonlyMap<string, Gender>;
+  /**
+   * ⑫ — THE LEADING NAME IN THIS SENTENCE IS AN ADDRESS, not a subject.
+   *
+   * 🚨 THE LANGUAGE LAYER MAY NOT GUESS THIS, and the reason is one sentence:
+   * "mara + go + to + market" is *Mara is going to the market*, while
+   * "mara + i_me + want + apple" is *Mara, I want an apple* — identical shapes,
+   * opposite readings, and nothing in the glyph tells them apart. Only the
+   * SPEAKER knows which they meant; upstream, the parser knows because it has
+   * the conversation roster (law ②'s name channel), and it passes the answer
+   * down here. Inferring it from "the first token is a name" silently rewrote
+   * every third-person sentence about a named creature — caught by the existing
+   * going-frame test, which is exactly what that test is for.
+   *
+   * Default false ⇒ today's rendering, byte for byte.
+   */
+  vocative?: boolean;
 }
 
 /** The empty name book (default — no proper nouns in play). */
@@ -708,6 +731,36 @@ export function baseWord(lang: GlyphLanguage, head: string): string {
   return lang.lexicon[head]?.w ?? head.replace(/^color_/, "").replace(/_/g, " ");
 }
 
+/**
+ * 🏷️ THE NAME ONE THING WEARS — a single glyph as a button's worth of text in
+ * the ruleset's own grammar: agreement and adjective order intact, no article,
+ * no full stop ("red chair", "silla roja", "כיסא אדום").
+ *
+ * Separate from `translateWith` because a LABEL IS NOT AN UTTERANCE. The same
+ * glyph spoken is a sentence and gets sentence dress; read off a strip it is a
+ * word, and "Una caja." on a button is not a word. Every path that shows a
+ * thing's name — the pocket strip, an open container's contents, the word a
+ * fixture answers to — comes here, so those names are the player's language
+ * rather than the (English) glyph keys they are stored under.
+ *
+ * More than one token means it isn't a name: the whole string is translated as
+ * the sentence it is, so a caller can pass either without checking.
+ */
+export function labelWith(lang: GlyphLanguage, glyph: string, opts?: SpeakOpts): string {
+  const tokens = parseSentence(glyph);
+  const noun = tokens[0];
+  if (!noun || tokens.length !== 1 || posOf(noun.head) !== "noun") {
+    return translateWith(lang, glyph, opts);
+  }
+  return lang.render({ kind: "np", np: { noun }, label: true }, {
+    speaker: opts?.speaker ?? "m",
+    addressee: opts?.addressee ?? "m",
+    firstPerson: opts?.firstPerson ?? false,
+    names: opts?.names ?? NO_NAMES,
+    vocative: false, // a name on a button addresses nobody
+  });
+}
+
 /** The shared fallback: lexicon words in glyph order (negations lead; the
  *  grammar markers `.will`/`.this` are dropped — a gloss is telegraphic, and
  *  "ball this"/"eat will" would be worse than saying nothing extra). */
@@ -759,6 +812,40 @@ function appendManner(lang: GlyphLanguage, text: string, manner: Token): string 
   return `${m[1]} ${word}${m[2]}`;
 }
 
+/**
+ * ⑫ — DIRECT ADDRESS ("Mara, I want an apple").
+ *
+ * A vocative is not a sentence SHAPE, it is a name set in front of one — which
+ * is why it is peeled here, in the one place every ruleset passes through,
+ * instead of becoming a `Frame` variant that all four would have to learn. Every
+ * language in the set punctuates it the same way (a comma after the name), so
+ * one rule serves them all; a ruleset that ever needs its own can override by
+ * reading the token itself.
+ *
+ * WHY THIS EXISTS AT ALL: it is the NAME channel of law ② — the only way to say
+ * whom you mean when your hands are full and your body faces the wrong way. If
+ * this did not render properly the channel would emit glyph soup ("Mara I want
+ * apple"), which `host-lines.ts` rightly calls worse than the thing it replaces.
+ *
+ * A leading name is only a vocative when something FOLLOWS it — a bare "mara"
+ * is a greeting (naming somebody is already addressing them, ⑥) and renders as
+ * the name, unchanged.
+ */
+function peelVocative(
+  lang: GlyphLanguage,
+  tokens: Token[],
+  names: ReadonlyMap<string, Gender>,
+  marked: boolean,
+): string | undefined {
+  if (!marked) return undefined; // 🚨 never inferred — see SpeakOpts.vocative
+  if (tokens.length < 2) return undefined; // a bare name is a greeting, not an address
+  const head = tokens[0]!.head;
+  if (!names.has(head)) return undefined; // only a PROPER NAME addresses
+  tokens.shift();
+  const w = lang.lexicon[head]?.w ?? head;
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 export function translateWith(lang: GlyphLanguage, glyph: string, opts?: SpeakOpts): string {
   if (!GLYPH_SENTENCE.test(glyph.trim())) return glyph;
   const tokens = parseSentence(glyph);
@@ -770,12 +857,30 @@ export function translateWith(lang: GlyphLanguage, glyph: string, opts?: SpeakOp
     addressee: opts?.addressee ?? "m",
     firstPerson: opts?.firstPerson ?? false,
     names: opts?.names ?? NO_NAMES,
+    vocative: opts?.vocative ?? false,
   };
+  // ⑫ — peel a LEADING vocative before the frame is classified, so the clause
+  // behind it is the ordinary sentence it would have been on its own.
+  const vocative = peelVocative(lang, tokens, full.names, full.vocative);
   const hit = lang.fixed[normalize(tokens)];
   const clause = hit !== undefined
     ? (typeof hit === "function" ? hit(full) : hit)
     : lang.render(classify(tokens), full);
-  return manner ? appendManner(lang, clause, manner) : clause;
+  const spoken = manner ? appendManner(lang, clause, manner) : clause;
+  return vocative ? `${vocative}, ${lowerFirstWord(spoken, full.names)}` : spoken;
+}
+
+/** After "Mara, " the clause continues mid-sentence, so its opening capital is
+ *  wrong. Needs no per-language flag: lowercasing is a no-op in a script without
+ *  case, so Hebrew passes through untouched by the same line that fixes English.
+ *  Left alone for "I" and for a proper noun, which keep their capitals wherever
+ *  they stand ("Mara, Papa is hungry"). */
+function lowerFirstWord(text: string, names: ReadonlyMap<string, Gender>): string {
+  const first = /^([^\s,.!?]+)/.exec(text)?.[1] ?? "";
+  if (!first) return text;
+  if (first === "I" || first.startsWith("I'")) return text;
+  if (names.has(first.toLowerCase())) return text;
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /** Grammatical gender a language assigns to a creature symbol (for `speaker`). */

@@ -723,6 +723,25 @@ export function faceToward(a: AvatarState, target: { x: number; y: number }): vo
 }
 
 /**
+ * THE LEGS OWN THE HEADING (conversation-in-motion.md law ①).
+ *
+ * Is this body's heading already spoken for by its own movement? `advanceAvatar`
+ * re-aims the facing from VELOCITY every frame a body is genuinely moving, so a
+ * heading written under a walking body is gone before it is drawn — and worse,
+ * the renderer takes yaw from `fx`/`fy` and the walk cycle from `|v|` and never
+ * compares them, with no strafe gait anywhere. A facing forced against the
+ * velocity is therefore not a stance, it is a MOONWALK.
+ *
+ * So the circle borrows a heading that is otherwise free, and never takes one.
+ * The threshold is `advanceAvatar`'s own, deliberately: this predicate is exactly
+ * the complement of the test that hands the heading to velocity, so the two rules
+ * are complementary by construction rather than by tuning.
+ */
+export function headingHeldByLegs(a: AvatarState): boolean {
+  return Math.hypot(a.vx, a.vy) > FACE_SPEED_MIN;
+}
+
+/**
  * Turn two idle bodies to FACE EACH OTHER — a conversation stance. Each looks
  * straight at the other (via `faceToward`, so both headings are set as facing
  * vectors, not angles). Use at the start of an idle creature-to-creature
@@ -732,6 +751,72 @@ export function faceToward(a: AvatarState, target: { x: number; y: number }): vo
 export function faceEachOther(a: AvatarState, b: AvatarState): void {
   faceToward(a, b);
   faceToward(b, a);
+}
+
+/**
+ * Turn a whole CONVERSATION ROSTER to the stance its current utterance implies —
+ * the n-way generalization of `faceEachOther` (which is exactly this at n = 2).
+ *
+ *   • Every LISTENER (each member that is not the speaker) looks at the speaker.
+ *     Nothing else is a legible group stance: a listener facing anywhere but the
+ *     talker reads as ignoring them.
+ *   • The SPEAKER looks at its `addressee` when it has one — THE ADDRESSEE CUE IS
+ *     THE FACING (a group reply says "you", and who "you" is is answered by who
+ *     the speaker turned to; third parties are named instead). With no addressee
+ *     the line is spoken to the FLOOR, so the speaker faces the CENTROID of the
+ *     others — the one heading that is not a snub of anybody present, and which
+ *     degenerates to "straight at the other one" for a pair.
+ *
+ * PURE and INSTANT, like `faceToward`: it writes the facing UNIT VECTOR (`fx`,
+ * `fy`) in GAME space and never an angle — the renderer owns the game-angle→yaw
+ * mirror, and (as in `render3d`'s face-camera lean) any turn-toward-the-lens is
+ * a render-only offset composed on top of what this wrote. Nothing here knows
+ * about a camera.
+ *
+ * REASSERTED PER TICK, same contract as `faceEachOther`: bodies drift and the
+ * roster changes, so the caller calls this every tick a conversation stands
+ * rather than once at the start. It is idempotent and order-independent (facing
+ * never moves a body, so no member's heading depends on another's being written
+ * first), which is what makes re-running it free.
+ *
+ * THE LEGS OWN THE HEADING (law ①): a member whose own movement is already
+ * driving its facing is NOT turned — `headingHeldByLegs` is checked here rather
+ * than at the call sites so the law cannot be forgotten by one of them. A held
+ * body still COUNTS as present (it stays in the broadcast centroid): it is in the
+ * conversation, it just isn't turning for it. That is also what makes the stance
+ * legible while somebody walks off — the rest of the circle keeps facing the
+ * talker, and only the walker's own heading belongs to its legs.
+ *
+ * Tolerant by design: the speaker need not appear in `members` (a bodiless
+ * spirit's roster), the addressee need not either (somebody addressed across the
+ * room), and a member sitting exactly on the speaker keeps its heading
+ * (`faceToward` no-ops with no defined direction).
+ */
+export function faceGroup(
+  members: AvatarState[],
+  speaker: AvatarState,
+  addressee?: AvatarState,
+): void {
+  const isSpeaker = (m: AvatarState): boolean => m === speaker || m.id === speaker.id;
+  let sumX = 0;
+  let sumY = 0;
+  let others = 0;
+  for (const m of members) {
+    if (!m || isSpeaker(m)) continue;
+    // Present either way — only the TURN is withheld from a body on the move.
+    if (!headingHeldByLegs(m)) faceToward(m, speaker);
+    sumX += m.x;
+    sumY += m.y;
+    others++;
+  }
+  if (headingHeldByLegs(speaker)) return; // the talker is walking: its legs aim it
+  if (addressee && !isSpeaker(addressee)) {
+    faceToward(speaker, addressee);
+  } else if (others > 0) {
+    // Broadcasting: the centroid of everyone being talked to.
+    faceToward(speaker, { x: sumX / others, y: sumY / others });
+  }
+  // Nobody else present (or the speaker addressed itself): its heading stands.
 }
 
 // ---------------------------------------------------------------------------
@@ -783,8 +868,13 @@ export function tickWorld(
 
 /** Minimum speed (world units/sec) at which the avatar re-aims its FACING from
  *  velocity. Below it, facing is held — so brake/gaze jitter near a stop can't flip
- *  the heading (and a carried item's placement) back and forth. */
-const FACE_SPEED_MIN = 0.15;
+ *  the heading (and a carried item's placement) back and forth.
+ *
+ *  EXPORTED because it is also the threshold `headingHeldByLegs` reads: the ONE
+ *  number that decides whether velocity owns a body's heading must be the same
+ *  number that stops anything else from writing one, or a speed band exists in
+ *  which two systems both think they own it. */
+export const FACE_SPEED_MIN = 0.15;
 /** Max facing turn rate (rad/sec). Caps how fast the heading can rotate toward its
  *  desired direction, so no single frame can produce a 180° flip (≈0.5s for a full
  *  reversal at 12 rad/s — still snappy for real turns). */

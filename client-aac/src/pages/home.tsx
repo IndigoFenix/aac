@@ -64,14 +64,14 @@ import {
 /** Build a one-page response board from a game's locked options, laid out 2×4 so
  *  2–4 choices read large. Each option's id is preserved as the button id so a
  *  press maps straight back to `board_option_selected`. */
-function lockedBoardFrom(options: BoardOption[]): ParsedBoardData {
+function lockedBoardFrom(options: BoardOption[], boardName: string): ParsedBoardData {
   return {
-    name: "Choose",
+    name: boardName,
     grid: { rows: 4, cols: 2 },
     pages: [
       {
         id: "game-locked",
-        name: "Choose",
+        name: boardName,
         buttons: options.slice(0, 8).map((o, i) => ({
           id: o.id,
           row: Math.floor(i / 2),
@@ -475,13 +475,14 @@ function renderAppContent(
   gameRef?: React.Ref<GameEmbedHandle>,
   onBoardOptions?: (options: BoardOption[] | null, prompt?: string) => void,
   onGameMessage?: (msg: GameMessage) => void,
+  t: (key: string, params?: Record<string, string | number>) => string = (key) => key,
 ): React.ReactNode {
   if (!activeApp) return null;
   if (activeApp.appId === "youtube") {
     return (
       <YouTubeApp
         videoId={activeApp.appData?.videoId}
-        title={activeApp.appData?.title || "Video"}
+        title={activeApp.appData?.title || t("conversation.video")}
         channels={activeApp.appData?.channels}
         videos={activeApp.appData?.videos}
         playlists={activeApp.appData?.playlists}
@@ -499,7 +500,7 @@ function renderAppContent(
     return <MusicApp onClose={dismissApp} />;
   }
   if (activeApp.appId === "spotify") {
-    return <SpotifyApp trackId={activeApp.appData?.trackId || ""} title={activeApp.appData?.title || activeApp.appData?.query || "Music"} artist={activeApp.appData?.artist || ""} studentId={studentId} onClose={dismissApp} />;
+    return <SpotifyApp trackId={activeApp.appData?.trackId || ""} title={activeApp.appData?.title || activeApp.appData?.query || t("conversation.music")} artist={activeApp.appData?.artist || ""} studentId={studentId} onClose={dismissApp} />;
   }
   if (activeApp.appId === "sandbox_game") {
     return (
@@ -867,10 +868,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [gameLockedBoard, setGameLockedBoard] = useState<ParsedBoardData | null>(null);
   const gameLockedBoardRef = useRef<ParsedBoardData | null>(null);
   const handleBoardOptions = useCallback((options: BoardOption[] | null) => {
-    const board = options && options.length ? lockedBoardFrom(options) : null;
+    const board = options && options.length ? lockedBoardFrom(options, t('conversation.chooseBoardName')) : null;
     gameLockedBoardRef.current = board;
     setGameLockedBoard(board);
-  }, []);
+  }, [t]);
   // ONE sidebar, two boards: while a world-engine game owns it, gaze decides
   // whether the engine options ("game") or the LLM board ("social") shows.
   const [sidebarBoardFocus, setSidebarBoardFocus] = useState<"game" | "social">("game");
@@ -1176,13 +1177,13 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [eyegazeNotification, setEyegazeNotification] = useState<{ name: string; type: "connected" | "failed" } | null>(null);
   const prevProviderRef = useRef<string | null>(null);
   const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-    tobii: "Tobii Eye Tracker",
-    eyetech: "EyeTech",
-    lctech: "LC Technologies",
-    gazepoint: "Gazepoint Eye Tracker",
-    webhid: "WebHID Device",
-    camera: "Camera Eye Tracking",
-    mouse: "Cursor Control (External Device)",
+    tobii: t("settings.inputSourceTobii"),
+    eyetech: t("settings.inputSourceEyetech"),
+    lctech: t("settings.inputSourceLctech"),
+    gazepoint: t("settings.inputSourceGazepoint"),
+    webhid: t("settings.inputSourceWebhid"),
+    camera: t("conversation.cameraEyeTracking"),
+    mouse: t("settings.inputSourceCursor"),
   };
   // Announce every change of provider, not just the first one detected. A
   // tracker that needs a few seconds to wake now gets picked up whenever it
@@ -2236,25 +2237,25 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
         <div className="text-center space-y-8 max-w-md mx-auto p-8">
           <div className="text-6xl mb-4">😴</div>
-          <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-300">System Standby</h1>
-          
+          <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-300">{t('conversation.systemStandby')}</h1>
+
           <div className="space-y-4 text-gray-600 dark:text-gray-400">
             {isCameraBlocked && (
               <div className="flex items-center justify-center gap-2 text-red-600 dark:text-red-400">
                 <UserX className="w-5 h-5" />
-                <span>Camera is blocked</span>
+                <span>{t('conversation.cameraIsBlocked')}</span>
               </div>
             )}
             {!anyPersonPresent && !isCameraBlocked && (
               <div className="flex items-center justify-center gap-2 text-orange-600 dark:text-orange-400">
                 <UserX className="w-5 h-5" />
-                <span>No one is present</span>
+                <span>{t('conversation.noOneIsPresent')}</span>
               </div>
             )}
             {!isMainUserPresent && anyPersonPresent && !isCameraBlocked && (
               <div className="flex items-center justify-center gap-2 text-yellow-600 dark:text-yellow-400">
                 <UserX className="w-5 h-5" />
-                <span>Main user not detected</span>
+                <span>{t('conversation.mainUserNotDetected')}</span>
               </div>
             )}
           </div>
@@ -2264,11 +2265,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             size="lg"
             className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-xl rounded-xl shadow-lg"
           >
-            Resume System
+            {t('conversation.resumeSystem')}
           </Button>
-          
+
           <p className="text-sm text-gray-500 dark:text-gray-500">
-            System paused to save resources. Click Resume to continue.
+            {t('conversation.systemPausedResume')}
           </p>
         </div>
       </div>
@@ -2400,7 +2401,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               <span className="truncate">
                 {gazeSidecarStatus.needsDll
                   ? t("eyegaze.driverNotFound")
-                  : (gazeSidecarStatus.lastError || gazeSidecarStatus.sidecarMessage || "Connecting to eye tracker…")}
+                  : (gazeSidecarStatus.lastError || gazeSidecarStatus.sidecarMessage || t("conversation.connectingToEyeTracker"))}
               </span>
               {gazeSidecarStatus.needsDll && (
                 <button
@@ -2776,11 +2777,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           {(() => {
             const sidebarBoard: ParsedBoardData | null = contextButtons.length > 0
               ? {
-                  name: "Context",
+                  name: t('conversation.contextBoardName'),
                   grid: { rows: 4, cols: 1 },
                   pages: [{
                     id: "ctx",
-                    name: "Context",
+                    name: t('conversation.contextBoardName'),
                     buttons: contextButtons.map((b, i) => ({
                       id: `ctx-${i}`,
                       row: i,
@@ -2876,6 +2877,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 gameEmbedRef,
                 handleBoardOptions,
                 handleWorldGameMessage,
+                t,
               )}
             </div>
           ) : boardMode === 'ai' ? (
@@ -3448,7 +3450,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <p>💡 Swipe left for settings</p>
+              <p>💡 {t('conversation.swipeLeftForSettings')}</p>
             </motion.div>
 
             <motion.div
@@ -3457,7 +3459,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <p>🗣️ Swipe right for conversation</p>
+              <p>🗣️ {t('conversation.swipeRightForConversation')}</p>
             </motion.div>
           </>
         )}

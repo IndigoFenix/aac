@@ -92,6 +92,7 @@ function CalibrationDot({ x, y, progress, phase, transitionMs }: CalibrationDotP
 
 // ─── ProgressDots ─────────────────────────────────────────────────
 function ProgressDots({ total, current, stage }: { total: number; current: number; stage: string }) {
+  const { t } = useLanguage();
   return (
     <div style={{
       position: "absolute",
@@ -125,7 +126,7 @@ function ProgressDots({ total, current, stage }: { total: number; current: numbe
         marginLeft: 8,
         alignSelf: "center",
       }}>
-        {stage === "verifying" ? "verify" : "collect"}
+        {stage === "verifying" ? t("builder.calibrationStageVerify") : t("builder.calibrationStageCollect")}
       </span>
     </div>
   );
@@ -232,7 +233,7 @@ export default function GazeCalibrationOverlay() {
       <button type="button"
         data-cancel-calibration
         onClick={handleCancel}
-        aria-label="Cancel calibration"
+        aria-label={t("builder.cancelCalibration")}
         style={{
           position: "absolute",
           top: 16,

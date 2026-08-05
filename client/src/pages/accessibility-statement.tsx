@@ -26,13 +26,12 @@ const STANDARD_LABELS: Record<AccessibilityStandard, { en: string; he: string }>
 };
 
 export default function AccessibilityStatement() {
-  const { language } = useLanguage();
-  const he = language === 'he';
+  const { language, t, isRTL } = useLanguage();
   const { accessibilityStandard, bundles, regimes } = useRegimes();
 
-  const standardLabel = STANDARD_LABELS[accessibilityStandard][he ? 'he' : 'en'];
-  const lastUpdated = he ? LAST_UPDATED_HE : LAST_UPDATED_EN;
-  const coordinatorAddress = he ? COORDINATOR_ADDRESS_HE : COORDINATOR_ADDRESS_EN;
+  const standardLabel = STANDARD_LABELS[accessibilityStandard][language === 'he' ? 'he' : 'en'];
+  const lastUpdated = language === 'he' ? LAST_UPDATED_HE : LAST_UPDATED_EN;
+  const coordinatorAddress = language === 'he' ? COORDINATOR_ADDRESS_HE : COORDINATOR_ADDRESS_EN;
 
   return (
     <div className="min-h-screen w-full bg-background py-8 print:bg-white print:py-0">
@@ -50,199 +49,121 @@ export default function AccessibilityStatement() {
       `}</style>
       <div className="max-w-4xl mx-auto px-4">
         <Card className="accessibility-statement-card">
-          <CardHeader className={he ? 'text-right' : 'text-left'}>
-            <div className={`flex items-start justify-between gap-4 ${he ? 'flex-row-reverse' : ''}`}>
-              <CardTitle className={`flex items-center gap-3 ${he ? 'justify-end flex-row-reverse' : 'justify-start'}`}>
+          <CardHeader className={isRTL ? 'text-right' : 'text-left'}>
+            <div className={`flex items-start justify-between gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <CardTitle className={`flex items-center gap-3 ${isRTL ? 'justify-end flex-row-reverse' : 'justify-start'}`}>
                 <Accessibility className="w-6 h-6" />
-                {he ? 'הצהרת נגישות' : 'Accessibility Statement'}
+                {t('legal.accessibility.title')}
               </CardTitle>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => window.print()}
                 className="accessibility-statement-actions"
-                aria-label={he ? 'הדפס או שמור כ-PDF' : 'Print or save as PDF'}
+                aria-label={t('legal.accessibility.printAriaLabel')}
               >
                 <Printer className="w-4 h-4 me-2" />
-                {he ? 'הדפס / שמור כ-PDF' : 'Print / Save as PDF'}
+                {t('legal.accessibility.printButton')}
               </Button>
             </div>
           </CardHeader>
 
           <CardContent>
-            <div className={`space-y-6 ${he ? 'text-right' : 'text-left'}`} dir={he ? 'rtl' : 'ltr'}>
+            <div className={`space-y-6 ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
               <div className="space-y-4 text-sm leading-relaxed">
                 <div className="text-sm text-muted-foreground">
-                  {he ? 'עודכן לאחרונה: ' : 'Last updated: '}{lastUpdated}
+                  {t('legal.accessibility.lastUpdatedLabel')}{lastUpdated}
                 </div>
 
                 {/* Compliance summary — populated from the active institute's regime */}
                 <div className="rounded-md border bg-muted/30 p-4">
                   <div className="font-semibold mb-2">
-                    {he ? 'סיכום עמידה בתקן' : 'Compliance Summary'}
+                    {t('legal.accessibility.complianceSummaryHeading')}
                   </div>
                   <dl className="grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-[max-content_1fr] sm:gap-x-4">
-                    <dt className="font-medium">{he ? 'תקן נגישות:' : 'Accessibility standard:'}</dt>
+                    <dt className="font-medium">{t('legal.accessibility.accessibilityStandardLabel')}</dt>
                     <dd>{standardLabel}</dd>
                     {bundles.length > 0 && (
                       <>
-                        <dt className="font-medium">{he ? 'משטרי ציות:' : 'Compliance regimes:'}</dt>
+                        <dt className="font-medium">{t('legal.accessibility.complianceRegimesLabel')}</dt>
                         <dd>{bundles.map(b => b.label).join(' · ')}</dd>
                       </>
                     )}
                     {regimes.length === 0 && (
                       <>
-                        <dt className="font-medium">{he ? 'משטרי ציות:' : 'Compliance regimes:'}</dt>
-                        <dd className="text-muted-foreground">{he ? '(ברירת מחדל גלובלית)' : '(global default)'}</dd>
+                        <dt className="font-medium">{t('legal.accessibility.complianceRegimesLabel')}</dt>
+                        <dd className="text-muted-foreground">{t('legal.accessibility.globalDefault')}</dd>
                       </>
                     )}
                   </dl>
                 </div>
 
                 <div>
-                  <h3 className="font-semibold text-lg mb-3">1. {he ? 'המחויבות שלנו לנגישות' : 'Our Commitment to Accessibility'}</h3>
-                  {he ? (
-                    <p>
-                      ב-<strong>Aivota</strong>, אנו מאמינים שתקשורת היא זכות אנושית בסיסית. אנו מחויבים להבטיח שהאתר ופלטפורמת ה-AAC שלנו נגישים לכולם, ללא קשר ליכולותיהם הפיזיות או הקוגניטיביות. אנו משקיעים משאבים משמעותיים כדי להפוך את הממשק הדיגיטלי שלנו לאינטואיטיבי ותואם למגוון הרחב ביותר של טכנולוגיות מסייעות.
-                    </p>
-                  ) : (
-                    <p>
-                      At <strong>Aivota</strong>, we believe that communication is a fundamental human right. We are dedicated to ensuring that our website and AAC platform are accessible to everyone, regardless of their physical or cognitive abilities. We invest significant resources into making our digital interface intuitive and compatible with the widest possible range of assistive technologies.
-                    </p>
-                  )}
+                  <h3 className="font-semibold text-lg mb-3">1. {t('legal.accessibility.commitmentHeading')}</h3>
+                  <p>
+                    {t('legal.accessibility.commitmentPrefix')}<strong>Aivota</strong>{t('legal.accessibility.commitmentSuffix')}
+                  </p>
                 </div>
 
                 <div>
-                  <h3 className="font-semibold text-lg mb-3">2. {he ? 'סטטוס תאימות' : 'Compliance Status'}</h3>
-                  {he ? (
-                    <p>
-                      האתר והפלטפורמה מבוססת האינטרנט שלנו מתוכננים לעמוד ב<strong>{standardLabel}</strong>.
-                    </p>
-                  ) : (
-                    <p>
-                      Our website and web-based platform are designed to conform to <strong>{standardLabel}</strong>.
-                    </p>
-                  )}
+                  <h3 className="font-semibold text-lg mb-3">2. {t('legal.accessibility.complianceStatusHeading')}</h3>
+                  <p>
+                    {t('legal.accessibility.conformancePrefix')}<strong>{standardLabel}</strong>.
+                  </p>
                 </div>
 
                 <div>
-                  <h3 className="font-semibold text-lg mb-3">3. {he ? 'תכונות נגישות ב-Aivota' : 'Accessibility Features on Aivota'}</h3>
-                  {he ? (
-                    <>
-                      <p>יישמנו את התכונות הבאות לתמיכה בצרכי משתמשים מגוונים:</p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li>
-                          <strong>שילוב AAC וסמלים:</strong> הפלטפורמה שלנו משתמשת בסמלים קנייניים בניגודיות גבוהה שתוכננו במיוחד עבור משתמשים עם לקויות ראייה.
-                        </li>
-                        <li>
-                          <strong>אופטימיזציית מעקב עיניים:</strong> הממשק מכויל לשימוש חלק עם חומרה ותוכנה מובילות למעקב מבט (למשל, Tobii Dynavox, Smartbox).
-                        </li>
-                        <li>
-                          <strong>ניווט מקלדת:</strong> ניתן לבצע את כל הפונקציות החיוניות באמצעות מקלדת או מכשיר גישת מתג.
-                        </li>
-                        <li>
-                          <strong>תמיכה בקוראי מסך:</strong> אנו משתמשים בתכונות ARIA (Accessible Rich Internet Applications) כדי להבטיח תאימות עם קוראי מסך כגון NVDA ו-VoiceOver.
-                        </li>
-                        <li>
-                          <strong>טקסט חלופי:</strong> כל התמונות המשמעותיות כוללות טקסט חלופי תיאורי (alt-text).
-                        </li>
-                      </ul>
-                    </>
-                  ) : (
-                    <>
-                      <p>We have implemented the following features to support diverse user needs:</p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li>
-                          <strong>AAC & Symbol Integration:</strong> Our platform uses high-contrast proprietary symbols specifically designed for users with visual impairments.
-                        </li>
-                        <li>
-                          <strong>Eye-Tracking Optimization:</strong> The interface is calibrated for seamless use with major eye-gaze hardware and software (e.g., Tobii Dynavox, Smartbox).
-                        </li>
-                        <li>
-                          <strong>Keyboard Navigation:</strong> All essential functions can be performed using a keyboard or switch-access device.
-                        </li>
-                        <li>
-                          <strong>Screen Reader Support:</strong> We utilize ARIA (Accessible Rich Internet Applications) attributes to ensure compatibility with screen readers like NVDA and VoiceOver.
-                        </li>
-                        <li>
-                          <strong>Alternative Text:</strong> All meaningful images include descriptive alternative text (alt-text).
-                        </li>
-                      </ul>
-                    </>
-                  )}
+                  <h3 className="font-semibold text-lg mb-3">3. {t('legal.accessibility.featuresHeading')}</h3>
+                  <p>{t('legal.accessibility.featuresIntro')}</p>
+                  <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
+                    <li>
+                      <strong>{t('legal.accessibility.featureAacLabel')}</strong> {t('legal.accessibility.featureAacBody')}
+                    </li>
+                    <li>
+                      <strong>{t('legal.accessibility.featureEyeTrackingLabel')}</strong> {t('legal.accessibility.featureEyeTrackingBody')}
+                    </li>
+                    <li>
+                      <strong>{t('legal.accessibility.featureKeyboardLabel')}</strong> {t('legal.accessibility.featureKeyboardBody')}
+                    </li>
+                    <li>
+                      <strong>{t('legal.accessibility.featureScreenReaderLabel')}</strong> {t('legal.accessibility.featureScreenReaderBody')}
+                    </li>
+                    <li>
+                      <strong>{t('legal.accessibility.featureAltTextLabel')}</strong> {t('legal.accessibility.featureAltTextBody')}
+                    </li>
+                  </ul>
                 </div>
 
                 <div>
-                  <h3 className="font-semibold text-lg mb-3">4. {he ? 'מגבלות ידועות' : 'Known Limitations'}</h3>
-                  {he ? (
-                    <>
-                      <p>למרות שאנו שואפים לנגישות של 100%, ייתכן שחלק מהאזורים עדיין בתהליך אופטימיזציה:</p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li>שילובי צד שלישי (למשל, פידים מוטמעים של רשתות חברתיות) עשויים להכיל מגבלות מעבר לשליטתנו הישירה.</li>
-                        <li>מסמכים ישנים שהועלו לפני מרץ 2026 עשויים שלא להיות מתויגים במלואם עבור קוראי מסך.</li>
-                      </ul>
-                    </>
-                  ) : (
-                    <>
-                      <p>While we strive for 100% accessibility, some areas may still be in the process of optimization:</p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li>Third-party integrations (e.g., embedded social media feeds) may have limitations beyond our direct control.</li>
-                        <li>Legacy documents uploaded before March 2026 may not be fully tagged for screen readers.</li>
-                      </ul>
-                    </>
-                  )}
+                  <h3 className="font-semibold text-lg mb-3">4. {t('legal.accessibility.limitationsHeading')}</h3>
+                  <p>{t('legal.accessibility.limitationsIntro')}</p>
+                  <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
+                    <li>{t('legal.accessibility.limitationThirdParty')}</li>
+                    <li>{t('legal.accessibility.limitationLegacyDocs')}</li>
+                  </ul>
                 </div>
 
                 <div>
-                  <h3 className="font-semibold text-lg mb-3">5. {he ? 'צור קשר לסיוע' : 'Contact Us for Assistance'}</h3>
-                  {he ? (
-                    <>
-                      <p>
-                        אם נתקלת במחסומי נגישות או זקוק/ה למידע בפורמט חלופי, אנא פנה/י ל<strong>רכז/ת הנגישות</strong> שלנו. אנו מחויבים לטיפול בכל הבעיות במסגרת זמן סבירה.
-                      </p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li><strong>רכז נגישות:</strong> {COORDINATOR_NAME}</li>
-                        <li><strong>דוא"ל:</strong> <a href={`mailto:${COORDINATOR_EMAIL}`} className="text-primary underline underline-offset-2">{COORDINATOR_EMAIL}</a></li>
-                        <li><strong>טלפון:</strong> {COORDINATOR_PHONE}</li>
-                        <li><strong>כתובת דואר:</strong> {coordinatorAddress}</li>
-                      </ul>
-                    </>
-                  ) : (
-                    <>
-                      <p>
-                        If you encounter any accessibility barriers or require information in an alternative format, please contact our <strong>Accessibility Coordinator</strong>. We are committed to addressing all issues within a reasonable timeframe.
-                      </p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li><strong>Accessibility Coordinator:</strong> {COORDINATOR_NAME}</li>
-                        <li><strong>Email:</strong> <a href={`mailto:${COORDINATOR_EMAIL}`} className="text-primary underline underline-offset-2">{COORDINATOR_EMAIL}</a></li>
-                        <li><strong>Phone:</strong> {COORDINATOR_PHONE}</li>
-                        <li><strong>Mailing Address:</strong> {coordinatorAddress}</li>
-                      </ul>
-                    </>
-                  )}
+                  <h3 className="font-semibold text-lg mb-3">5. {t('legal.accessibility.contactHeading')}</h3>
+                  <p>
+                    {t('legal.accessibility.contactIntroPrefix')}<strong>{t('legal.accessibility.contactIntroRole')}</strong>{t('legal.accessibility.contactIntroSuffix')}
+                  </p>
+                  <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
+                    <li><strong>{t('legal.accessibility.coordinatorNameLabel')}</strong> {COORDINATOR_NAME}</li>
+                    <li><strong>{t('legal.accessibility.coordinatorEmailLabel')}</strong> <a href={`mailto:${COORDINATOR_EMAIL}`} className="text-primary underline underline-offset-2">{COORDINATOR_EMAIL}</a></li>
+                    <li><strong>{t('legal.accessibility.coordinatorPhoneLabel')}</strong> {COORDINATOR_PHONE}</li>
+                    <li><strong>{t('legal.accessibility.coordinatorAddressLabel')}</strong> {coordinatorAddress}</li>
+                  </ul>
                 </div>
 
                 <div>
-                  <h3 className="font-semibold text-lg mb-3">6. {he ? 'משוב ודיווח' : 'Feedback and Reporting'}</h3>
-                  {he ? (
-                    <>
-                      <p>אנו מקבלים בברכה את המשוב שלך על אופן השיפור. בעת דיווח על מחסום, אנא כלול/י:</p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li>כתובת URL של דף האינטרנט או מסך האפליקציה.</li>
-                        <li>תיאור הבעיה.</li>
-                        <li>הטכנולוגיה המסייעת שבה השתמשת (אם רלוונטי).</li>
-                      </ul>
-                    </>
-                  ) : (
-                    <>
-                      <p>We welcome your feedback on how to improve. When reporting a barrier, please include:</p>
-                      <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
-                        <li>The web page URL or app screen.</li>
-                        <li>A description of the problem.</li>
-                        <li>The assistive technology you were using (if any).</li>
-                      </ul>
-                    </>
-                  )}
+                  <h3 className="font-semibold text-lg mb-3">6. {t('legal.accessibility.feedbackHeading')}</h3>
+                  <p>{t('legal.accessibility.feedbackIntro')}</p>
+                  <ul className="list-disc mt-2 space-y-1" style={{ paddingInlineStart: '1.5rem' }}>
+                    <li>{t('legal.accessibility.feedbackUrl')}</li>
+                    <li>{t('legal.accessibility.feedbackDescription')}</li>
+                    <li>{t('legal.accessibility.feedbackAssistiveTech')}</li>
+                  </ul>
                 </div>
               </div>
             </div>

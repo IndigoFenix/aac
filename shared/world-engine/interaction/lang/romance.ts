@@ -201,6 +201,17 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
     return art ? `${art} ${core}` : core;
   }
 
+  /** THE NAME, ARTICLELESS — a button's label. Determiners that carry MEANING
+   *  (my, this, more) stay: "mi silla" and "silla" are different things to
+   *  press. Only the bare article, which says nothing a label needs, goes. */
+  function npBare(np: NP): string {
+    const text = npText(np, false);
+    if (np.more || np.noun.mods.includes("my") || isDeicticNoun(np.noun)) return text;
+    if (isPronoun(np.noun.head) || NAMES.has(np.noun.head) || isQuality(np.noun.head)) return text;
+    const art = cfg.art(false, g(np.noun), pl(np.noun), mass(np.noun));
+    return art && text.startsWith(`${art} `) ? text.slice(art.length + 1) : text;
+  }
+
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   const lc = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
@@ -361,7 +372,9 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
           return lex(t.head).w;
         }
         case "np":
-          return npText(frame.np, false);
+          // A LABEL is a word, not an utterance: no article ("caja", not "una
+          // caja") — a button says what the thing IS called.
+          return frame.label ? npBare(frame.np) : npText(frame.np, false);
         case "here": {
           const at = frame.where === "here" ? lex("here").w : lex("there").w;
           // Pronoun subject: "Estoy aquí." / "Você está aqui."

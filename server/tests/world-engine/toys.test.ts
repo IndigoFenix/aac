@@ -36,10 +36,10 @@ import {
 import {
   craftRecipeOf,
   depictableHeads,
-  drawnMakeable,
+  drawnGlyph,
   isMakeable,
   makeableGlyph,
-  spokenMakeable,
+  spokenWord,
 } from "@shared/world-engine/interaction/content/makeable.js";
 import { FURNITURE_ITEMS } from "@shared/world-engine/kernel/town/stations.js";
 import { POOLS } from "@shared/world-engine/interaction/content/pools.js";
@@ -191,33 +191,33 @@ describe("the makeable join — what `make <word>` produces", () => {
   });
 
   it("speaks a made glyph as its bare word — never the bookkeeping prefix", () => {
-    expect(spokenMakeable("furn.chair")).toBe("chair"); // NOT "furn"
-    expect(spokenMakeable("rabbit.toy.material_cloth")).toBe("rabbit");
-    expect(spokenMakeable("ball.material_cloth")).toBe("ball");
+    expect(spokenWord("furn.chair")).toBe("chair"); // NOT "furn"
+    expect(spokenWord("rabbit.toy.material_cloth")).toBe("rabbit");
+    expect(spokenWord("ball.material_cloth")).toBe("ball");
   });
 
   it("a stored piece speaks the VOCABULARY's word for its kind, like a standing one", () => {
     // types.ts FIXTURE_WORD — the sim keeps chest/box and cupboard/cabinet
     // apart, the board does not.
-    expect(spokenMakeable("furn.chest")).toBe("box");
-    expect(spokenMakeable("furn.cupboard")).toBe("cabinet");
+    expect(spokenWord("furn.chest")).toBe("box");
+    expect(spokenWord("furn.cupboard")).toBe("cabinet");
   });
 
   it("draws a furniture stack as its own word, and everything else as ITSELF", () => {
     // The container/inventory icon: `furn.` has no artwork behind it, so a
     // stored piece draws as the piece; a coloured garment keeps its colour.
-    expect(drawnMakeable("furn.chair")).toBe("chair");
-    expect(drawnMakeable("furn.chest")).toBe("box");
-    expect(drawnMakeable("shirt.color_red")).toBe("shirt.color_red");
-    expect(drawnMakeable("apple.hot")).toBe("apple.hot");
-    expect(drawnMakeable("rabbit.toy.material_cloth")).toBe("rabbit.toy.material_cloth");
+    expect(drawnGlyph("furn.chair")).toBe("chair");
+    expect(drawnGlyph("furn.chest")).toBe("box");
+    expect(drawnGlyph("shirt.color_red")).toBe("shirt.color_red");
+    expect(drawnGlyph("apple.hot")).toBe("apple.hot");
+    expect(drawnGlyph("rabbit.toy.material_cloth")).toBe("rabbit.toy.material_cloth");
   });
 
   it("every craftable piece draws a glyph the registry has artwork for", () => {
     // The `chest`/`cupboard` bug: a label with no icon is a kind speaking a
     // word the vocabulary never heard of.
     const iconless = FURNITURE_ITEMS.filter((f) => f.craft)
-      .map((f) => drawnMakeable(`furn.${f.kind}`))
+      .map((f) => drawnGlyph(`furn.${f.kind}`))
       .filter((drawn) => !getVocabularyItem(drawn));
     expect(iconless).toEqual([]);
   });

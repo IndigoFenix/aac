@@ -58,8 +58,10 @@ import {
   craftLaborDaysFor,
   FURNITURE_ITEMS,
   furnitureItemOf,
+  isCraftStation,
   nextCraftKind,
   STATION_PROPERTIES,
+  stationRoomKind,
   furnitureGlyph,
   furnitureKindOfGlyph,
   workProgram,
@@ -375,9 +377,9 @@ import { buildConcepts } from "@shared/world-engine/interaction/content/concepts
 import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
 import {
   craftRecipeOf,
-  drawnMakeable,
+  drawnGlyph,
   makeableGlyph,
-  spokenMakeable,
+  spokenWord,
 } from "@shared/world-engine/interaction/content/makeable.js";
 import { genderFor } from "@shared/world-engine/interaction/behavior/gender.js";
 import { createGlyphImageSource } from "../../glyph-images.js";
@@ -438,7 +440,6 @@ import {
   notePlacement,
   openNeeds,
   pendingTransfers,
-  PLAYER_CREATURE_ID,
   planVillageBuildings,
   projectDialogue,
   seeItem,
@@ -484,7 +485,6 @@ import {
   type GoalStep,
   type WorldResolver,
   type VillagePlan,
-  type ConversationMemo,
   type CreatureNeed,
   type CreatureWorld,
   type DerivedCreatures,
@@ -537,6 +537,14 @@ import {
   type GoalSpec,
   type PlaceRef,
 } from "@shared/world-engine/interaction/index.js";
+// WHO AUTHORED THE ORDER (player-identity.ts). Construction is authored work:
+// every haul, pooled task and zoning row here carries an ISSUER, and every
+// willingness question below is asked *toward that issuer*. The old singleton
+// answered all three of "who ordered this", "is this thing a player" and "is
+// this the local device" with one string; the two survivors are `issuer` (a
+// threaded author, defaulting to this device's) and `isPlayerCid` (the
+// spark-set membership test — an author has no body to put to work).
+import { isPlayerCid, LOCAL_PLAYER_CID } from "./player-identity.js";
 import { planGoal, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
 import { needPursuitGoals } from "@shared/world-engine/interaction/behavior/need-goals.js";
 import { probesOn } from "@shared/world-engine/perf-probes.js";
@@ -720,6 +728,16 @@ export interface ConstructionDirectorCtx {
   npcChatBubble(session: QuestSession, cid: string, glyph: string, preText?: string): void;
   containerAnchor(session: QuestSession, id: string): { x: number; y: number } | null;
   houseContainerKeys(session: QuestSession, houseIndex: number): readonly string[];
+  /** ═══ WHAT A BUILDING OWNS ═══ — the scope law as a call (scope.ts
+   *  `scopeUnits`). `"stored"` is what is put away in its containers;
+   *  `"anywhere"` is the whole scope, floors and hands and delivery pile
+   *  included. A gate that means "have we got one" MUST ask `"anywhere"`. */
+  buildingUnits(
+    session: QuestSession,
+    buildingKey: string,
+    glyph: string,
+    where: "stored" | "anywhere",
+  ): number;
   stockEndpointOf(session: QuestSession, id: string): StockEndpoint | null;
   postPooledTask(session: QuestSession, goal: GoalSpec, issuer: string, focus: TaskFocus, sourceGlyph: string): void;
   playerWorldPos(session: QuestSession): { x: number; y: number } | null;
@@ -830,7 +848,7 @@ export interface BuildContext {
 export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   const {
     presenter, deps, possession,
-    avatarIdOf, npcChatBubble, containerAnchor, houseContainerKeys,
+    avatarIdOf, npcChatBubble, containerAnchor, houseContainerKeys, buildingUnits,
     stockEndpointOf, postPooledTask, playerWorldPos, familyOf,
     playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
@@ -1002,13 +1020,27 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     npcChatBubble(session, cid, line[session.game.meta.syntax ?? "b"]);
   }
 
-  /** Units of `glyph` stored across a house's containers. */
+  /** Units of `glyph` PUT AWAY in a house's containers — the narrow reading, and
+   *  the one `reconcileFurnishing`'s budget wants (it is handed the loose pieces
+   *  separately, as `standing`). Ask `houseHolds` when the question is "have we
+   *  got one at all". */
   function houseStored(session: QuestSession, hi: number, glyph: string): number {
-    let n = 0;
-    for (const objId of houseContainerKeys(session, hi)) {
-      n += session.containerStock.get(objId)?.[glyph] ?? 0;
-    }
-    return n;
+    return buildingUnits(session, `h_${hi}`, glyph, "stored");
+  }
+
+  /**
+   * ═══ HAS THIS HOUSEHOLD GOT ONE ═══ — the whole scope, which is the question
+   * every "do we need to make one" gate has always meant and never asked.
+   *
+   * A piece lying on the floor of the room, riding in a resident's hands or
+   * sitting in the building's delivery pile is a piece the household OWNS. The
+   * old reading (`furn_<hi>_*` container stacks only) said no to all three, so a
+   * family with three workbenches on its kitchen floor kept making a fourth —
+   * bench-first is a bootstrap, and a bootstrap that cannot see its own output
+   * never terminates (observed live 2026-08-05).
+   */
+  function houseHolds(session: QuestSession, hi: number, glyph: string): number {
+    return buildingUnits(session, `h_${hi}`, glyph, "anywhere");
   }
 
   /** Where a house crafts — THE SPOT FOLLOWS THE BENCH (phase 4 step 3).
@@ -1098,6 +1130,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * before the wanted piece. Non-craftable stations (oven, toilet) arrive with
    * their room's own generation, so they are skipped rather than stopping the
    * scan — the next want may well be makeable.
+   *
+   * 🚨 BENCH-FIRST ASKS THE SCOPE, NOT THE BOXES (`houseHolds`). A bootstrap
+   * that cannot see its own output is a loop: the finished bench lands as a
+   * PROP on the floor (a shown house's craft arrival), which left no unit in any
+   * container, so the next sweep found the house benchless and made another one
+   * — four on the kitchen floor and a fifth under way, 4 blocks apiece
+   * (2026-08-05). Owning a bench and having stood it up are different facts, and
+   * only the second one is `houseBench`.
    */
   function startProgramCraft(session: QuestSession, hi: number) {
     if (!session.town) return;
@@ -1107,7 +1147,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     if (!want) return;
     const fdef = furnitureItemOf(want.kind)!;
     const target =
-      houseBench(session, hi) || houseStored(session, hi, furnitureGlyph("workbench")) > 0
+      houseBench(session, hi) || houseHolds(session, hi, furnitureGlyph("workbench")) > 0
         ? fdef
         : furnitureItemOf("workbench")!;
     craftJobsOf(session).set(hi, {
@@ -1146,40 +1186,30 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const delta = t.deltas.get(key);
     const house = t.plan.houses.find((h) => h.index === hi);
     if (!house) return;
-    if (!delta?.programs?.length && !hasDrift(delta)) return; // nothing ordered, nothing adrift
+    // Nothing ordered, nothing adrift and no tool waiting for its place.
+    if (!delta?.programs?.length && !hasDrift(delta) && !ownedStationKinds(session, key).length) {
+      return;
+    }
     // Needs a body home to do the placing (the auto-place guard).
     const cid = `resident_${hi}_0`;
     if (!world.state.avatars[avatarIdOf(cid)]) return;
     const hp = houseRoomPlan(t.stage.center, house, delta);
-    // THE BENCH STANDS ITSELF UP FIRST (craft infrastructure, not décor): a
-    // bench the automation crafted bench-FIRST used to sit stored forever —
-    // only program-required kinds installed — pinning the house at the hand
-    // rate. Standing it completes that same automated act (the bench-first
-    // law), never blanket auto-place.
-    if (!houseBench(session, hi) && houseStored(session, hi, furnitureGlyph("workbench")) > 0) {
-      programFurnishAt.set(hi, session.townClock + 45);
-      // A SENSIBLE room for the bench — workshop, else store, else the
-      // living room, tried in order. The unrestricted search stood one
-      // against the kitchen stove (legal ground, terrible bench): work
-      // furniture belongs where work happens, never crowding a service
-      // room's stations.
-      for (const rk of ["workshop", "store", "living"] as const) {
-        const room = hp.rooms.find((r) => r.kind === rk);
-        if (!room) continue;
-        const res = handlePlaceOrder(
-          session,
-          cid,
-          { kind: "place", item: { match: { kind: "workbench" } }, at: { relation: "in", anchor: { kind: "home" } } },
-          { quiet: true, roomId: room.id },
-        );
-        if (res === "placed") {
-          presenter.toast(`🪑 the workbench is set up`, "feedback");
-          return;
-        }
-        if (res === false) break; // this creature can't serve placement at all
-      }
-      return; // nowhere sensible this pass — the backoff retries (never the stove)
-    }
+    // ⚰️ THE HARD-CODED BENCH BRANCH IS GONE (2026-08-05). It used to stand a
+    // stored workbench up here by name, searching workshop → store → living for
+    // a spot of its own — and it was the only kind that got that service, it
+    // could only see a unit sitting in a BOX (never the far commoner case, the
+    // one the craft had just dropped on the floor), and the spot it chose was on
+    // no blueprint slot, so `stepStrayBumps` was entitled to take the bench
+    // apart again the moment somebody pressed against it. Observed live: stood
+    // up at t=761, deconstructed at t=771, benchless again at t=772.
+    //
+    // The drawing now has a PLACE for a tool the household owns (layer 3), so
+    // the bench arrives here as an ordinary `install` — same sweep, same
+    // outline, same pinned spot as a bed, and safe from the bump rule because it
+    // is standing where the drawing says it belongs. The room preference did not
+    // die with it: it moved into the layer that draws the place, which is where
+    // a fact about where benches belong should have lived all along.
+    //
     // THE DRAWING NAMES THE SPOT. An install is not "find somewhere this fits
     // in the right room" any more — the blueprint already chose the spot, an
     // outline has been standing on it, and the piece lands exactly there. That
@@ -1691,7 +1721,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             day,
             salt: hi,
             hasBench: !!houseBench(session, hi),
-            stored: (glyph) => houseStored(session, hi, glyph),
+            // THE SCOPE, not the boxes: the rotation's two gates are "do we
+            // already own a bench" and "are there two of this kind about", and
+            // a unit lying on the workshop floor answers yes to both. Reading
+            // containers alone had the carpenter restocking what was already
+            // in front of him.
+            stored: (glyph) => houseHolds(session, hi, glyph),
           });
           if (def) {
             craftJobsOf(session).set(hi, {
@@ -2340,17 +2375,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return Math.min(BUILDERS_CAP, Math.max(0, crew)) / session.scale.dayLengthS;
   }
 
-  /** Would this hand volunteer for civic work? The pool's willingness
-   *  gate: residents and bonded creatures always; anyone else by real
-   *  compliance. Shared by the abstract crew count and the stream-in
-   *  placement so the clock arm and the reveal agree on who works. */
-  function willingHand(session: QuestSession, cid: string): boolean {
-    if (cid === PLAYER_CREATURE_ID || cid === possession.creatureId) return false;
+  /** Would this hand volunteer for `issuer`'s civic work? The pool's
+   *  willingness gate: residents and bonded creatures always; anyone else by
+   *  real compliance TOWARD THE ORDERING AUTHOR — willingness is a relation,
+   *  so it is answered against whoever gave the order, never against a fixed
+   *  name. Shared by the abstract crew count and the stream-in placement so
+   *  the clock arm and the reveal agree on who works.
+   *  No AUTHOR is a hand (a player is a spark, not a puppet — and that holds
+   *  for every author in the spark set, not just this device's), and neither
+   *  is the body the player is currently riding. */
+  function willingHand(session: QuestSession, cid: string, issuer: string = LOCAL_PLAYER_CID): boolean {
+    if (isPlayerCid(cid) || cid === possession.creatureId) return false;
     if (session.party.has(cid) || session.escorting.has(cid)) return false;
     return (
       cid.startsWith("resident_") ||
       session.bondedCreatures.has(cid) ||
-      compliance(relationToward(session, cid, PLAYER_CREATURE_ID), creatureMood(cid)) >=
+      compliance(relationToward(session, cid, issuer), creatureMood(cid)) >=
         VOLUNTEER_COMPLIANCE
     );
   }
@@ -2361,11 +2401,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  matter for); off a town it is the hands ambient recruitment would
    *  enlist — registered residents/bonded creatures, WILLING volunteers
    *  (the pool's compliance gate), and ambient resident bodies. */
-  function availableCrew(session: QuestSession): number {
+  function availableCrew(session: QuestSession, issuer: string = LOCAL_PLAYER_CID): number {
     if (session.town) return BUILDERS_CAP;
     const crew = new Set<string>();
     for (const cid of session.creatures?.nodeByCreature.keys() ?? []) {
-      if (willingHand(session, cid)) crew.add(cid);
+      if (willingHand(session, cid, issuer)) crew.add(cid);
     }
     for (const bodyId of Object.keys(world?.state.avatars ?? {})) {
       if (!bodyId.startsWith("resident_")) continue;
@@ -2391,14 +2431,15 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     session: QuestSession,
     at: { x: number; y: number },
     cap: number = BUILDERS_CAP,
+    issuer: string = LOCAL_PLAYER_CID,
   ): void {
     if (!world) return;
     const me = playerWorldPos(session) ?? session.spiritPos;
-    const want = Math.min(cap, availableCrew(session));
+    const want = Math.min(cap, availableCrew(session, issuer));
     let standing = 0;
     const place = (cid: string): void => {
       if (!world || standing >= want) return;
-      if (!willingHand(session, cid)) return;
+      if (!willingHand(session, cid, issuer)) return;
       const npcId = avatarIdOf(cid);
       const body = world.state.avatars[npcId];
       if (!body) return;
@@ -2563,17 +2604,21 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  wild features, our own boxes — ownership-gated exactly like a spoken
    *  transfer order. Distance-ranked to the work spot BY STREET
    *  (`sourceDistanceM`). Site piles are not containers, so a plot never raids
-   *  another plot's heap. */
+   *  another plot's heap.
+   *  Reach is the ISSUER'S reach: propriety is a question about the author of
+   *  the order, so the same yard can be another author's to draw from and not
+   *  this one's. */
   function siteMaterialSources(
     session: QuestSession,
     destAt: { x: number; y: number },
+    issuer: string = LOCAL_PLAYER_CID,
   ): TransferSource[] {
     const issuerHouse = familyOf(session)?.house ?? null;
     const sources: TransferSource[] = [];
     for (const [boxId, stack] of session.containerStock) {
       if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
       const owner = session.containerOwner.get(boxId);
-      if (!mayUse(PLAYER_CREATURE_ID, issuerHouse, owner)) continue;
+      if (!mayUse(issuer, issuerHouse, owner)) continue;
       const at = containerAnchor(session, boxId);
       if (!at) continue;
       sources.push({ id: boxId, stack, d: sourceDistanceM(session, destAt, at) });
@@ -2588,8 +2633,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     session: QuestSession,
     spec: Pick<StructureSpec, "costs">,
     destAt: { x: number; y: number },
+    issuer: string = LOCAL_PLAYER_CID,
   ): Record<string, number> {
-    const sources = siteMaterialSources(session, destAt);
+    const sources = siteMaterialSources(session, destAt, issuer);
     const need = new Map<string, number>();
     for (const [g, n] of Object.entries(spec.costs)) {
       const head = stackHead(g);
@@ -2795,12 +2841,17 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  UNLOADED one fails named ("no-executor") so its source units free up
    *  for the twin's own draw. A carrier whose body is itself inside the
    *  observation reach is really walking — left alone to arrive. */
-  function twinResolveHauls(session: QuestSession, pileId: string, legacyPileId?: string): void {
+  function twinResolveHauls(
+    session: QuestSession,
+    pileId: string,
+    legacyPileId?: string,
+    issuer: string = LOCAL_PLAYER_CID,
+  ): void {
     const me = playerWorldPos(session) ?? session.spiritPos;
     for (const a of session.transfers.all()) {
       if (a.status !== "pending" && a.status !== "moving") continue;
       if (a.to !== pileId && (!legacyPileId || a.to !== legacyPileId)) continue;
-      if (a.executor === PLAYER_CREATURE_ID) continue; // the player IS the observer
+      if (a.executor === issuer) continue; // the ordering author IS its own observer
       const body = a.executor ? world?.state.avatars[avatarIdOf(a.executor)] : undefined;
       if (body && me && Math.hypot(body.x - me.x, body.y - me.y) <= OBSERVED_SITE_R) continue;
       const loaded = a.status === "moving" && a.carried && Object.values(a.carried).some((n) => n > 0);
@@ -2875,6 +2926,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       /** The order's LIVE pile map (drawn units land here). */
       pile: Record<string, number>;
     },
+    issuer: string = LOCAL_PLAYER_CID,
   ): void {
     const want = pileShortfall(session, opts);
     if (!Object.keys(want).length) return;
@@ -2886,7 +2938,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const { draws } = resolveMaterials({
       holder: tmp,
       costs: want,
-      sources: siteMaterialSources(session, opts.at),
+      sources: siteMaterialSources(session, opts.at, issuer),
       ledger: led,
     });
     if (!draws.length) {
@@ -2894,7 +2946,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // THE CHAIN (phase 3): a refinable shortfall posts a refine order
       // instead of starving — blocks get milled, the next resolve finds
       // them. Only what no chain can reach toasts the honest bill.
-      const { milling, rest } = ensureRefineOrders(session, want);
+      const { milling, rest } = ensureRefineOrders(session, want, issuer);
       if (Object.keys(rest).length) {
         const bill = Object.entries(rest)
           .map(([g, n]) => `${n} ${g}`)
@@ -2931,6 +2983,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       /** The spoken destination word for the haul's intent line. */
       glyph: string;
     },
+    issuer: string = LOCAL_PLAYER_CID,
   ) {
     const want = pileShortfall(session, opts);
     if (!Object.keys(want).length) return;
@@ -2942,7 +2995,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const { draws } = resolveMaterials({
       holder: tmp,
       costs: want,
-      sources: siteMaterialSources(session, opts.at),
+      sources: siteMaterialSources(session, opts.at, issuer),
       ledger: led,
     });
     if (!draws.length) {
@@ -2954,7 +3007,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // THE CHAIN (phase 3): a refinable shortfall posts a refine order
       // first — only what no chain can reach toasts the honest bill.
       led.release(tmp);
-      const { milling, rest } = ensureRefineOrders(session, want);
+      const { milling, rest } = ensureRefineOrders(session, want, issuer);
       if (Object.keys(rest).length) {
         const bill = Object.entries(rest)
           .map(([g, n]) => `${n} ${g}`)
@@ -2970,7 +3023,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         from: d.endpoint,
         to: opts.pileId,
         goods: { [d.glyph]: d.take },
-        issuer: PLAYER_CREATURE_ID,
+        issuer,
         mode: "haul",
         now,
         sourceGlyph: `bring ${d.take} ${d.glyph}`,
@@ -2981,7 +3034,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       postPooledTask(
         session,
         { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: opts.glyph } },
-        PLAYER_CREATURE_ID,
+        issuer,
         { x: opts.at.x, y: opts.at.y, radius: civicRecruitRadius(session) },
         `bring ${d.take} ${d.glyph}`,
       );
@@ -2989,16 +3042,20 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     led.release(tmp);
   }
 
-  function postSiteHauls(session: QuestSession, b: FoundedBuilding) {
+  function postSiteHauls(session: QuestSession, b: FoundedBuilding, issuer: string = LOCAL_PLAYER_CID) {
     const at = foundedLotAt(session, b);
     if (!at || !b.costs) return;
-    postPileHauls(session, {
-      pileId: orderPileId(b.ord),
-      legacyPileId: sitePileId(b.ord), // founding ords are immortal — same number
-      at,
-      missing: stagingMissing(b),
-      glyph: resolveStructure(structureCatalogOf(session), b.type)?.glyph ?? "yard",
-    });
+    postPileHauls(
+      session,
+      {
+        pileId: orderPileId(b.ord),
+        legacyPileId: sitePileId(b.ord), // founding ords are immortal — same number
+        at,
+        missing: stagingMissing(b),
+        glyph: resolveStructure(structureCatalogOf(session), b.type)?.glyph ?? "yard",
+      },
+      issuer,
+    );
   }
 
   // ── THE BLOCK CHAIN (phase 3 — construction-phase3-plan.md) ─────────────
@@ -3126,6 +3183,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   function ensureRefineOrders(
     session: QuestSession,
     want: Record<string, number>,
+    /** The author the starved bill belongs to — the ranking below measures
+     *  reachable raws through that author's own reach, so a chained refine
+     *  order can never be ranked on stock the order itself may not draw. */
+    issuer: string = LOCAL_PLAYER_CID,
   ): { milling: number; rest: Record<string, number> } {
     const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
     const rest: Record<string, number> = {};
@@ -3163,7 +3224,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         .map((p, i) => {
           const spot = refineSpotOf(session, p.refinesTo?.at);
           const free = spot
-            ? siteMaterialSources(session, spot).reduce(
+            ? siteMaterialSources(session, spot, issuer).reduce(
                 (s, src) => s + freeUnits(src.stack, session.reservations, src.id, p.glyph),
                 0,
               )
@@ -3244,7 +3305,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  ambient stocking (unobserved construction twins draw straight from
    *  the wild), so the walkers this posts are always a rendered cause. */
   let storehouseStockAt = 0;
-  function stepStorehouseStock(session: QuestSession): void {
+  function stepStorehouseStock(session: QuestSession, issuer: string = LOCAL_PLAYER_CID): void {
     const t = session.town;
     if (!t || !world) return;
     if (session.taskClock < storehouseStockAt) return;
@@ -3270,7 +3331,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const wildIds = new Set(
       (session.wilderness?.features ?? []).map((f) => wildFeatureContainerId(f)),
     );
-    const sources = siteMaterialSources(session, store);
+    const sources = siteMaterialSources(session, store, issuer);
     const led = session.reservations;
     // ACKNOWLEDGE finished stocking hauls (the staging sweep's done-release,
     // applied to the yard): a FAILED haul's spoken-for source units must
@@ -3310,7 +3371,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           from: d.endpoint,
           to: destId,
           goods: { [d.glyph]: d.take },
-          issuer: PLAYER_CREATURE_ID,
+          issuer,
           mode: "haul",
           now: session.taskClock,
           sourceGlyph: `bring ${d.take} ${d.glyph}`,
@@ -3319,7 +3380,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         postPooledTask(
           session,
           { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: "storehouse" } },
-          PLAYER_CREATURE_ID,
+          issuer,
           { x: store.x, y: store.y, radius: civicRecruitRadius(session) },
           `bring ${d.take} ${d.glyph}`,
         );
@@ -3333,6 +3394,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     spec: StructureSpec,
     candidate: FoundingCandidate,
     builder: string | null,
+    issuer: string = LOCAL_PLAYER_CID,
   ): FoundedBuilding | null {
     const ctx = buildContext(session);
     if (!ctx) return null;
@@ -3371,7 +3433,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     if (!Object.keys(stagingMissing(b)).length) {
       ctx.deltas.stageFounded(b.ord, b.startedDay);
     } else {
-      postSiteHauls(session, b);
+      postSiteHauls(session, b, issuer);
     }
     if (builder) {
       const target = workDoorstep(ctx.center, {
@@ -3493,7 +3555,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * bed recurses into wood, which recurses into the felled tree. One action
    * per sweep; per-building rate limit.
    */
-  function stepShellPrograms(session: QuestSession) {
+  function stepShellPrograms(session: QuestSession, issuer: string = LOCAL_PLAYER_CID) {
     const t = session.town;
     if (!t || !world) return;
     const day = buildDayNow(session);
@@ -3531,7 +3593,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // hands→pile through the seam's law (the pile drains next sweep), an
       // unloaded one fails named so this sweep re-posts.
       const bRect = { x: center.x + wk.dx, y: center.y + wk.dy, w: wk.w, h: wk.h };
-      if (!observedRect(session, bRect)) twinResolveHauls(session, `${BFURN_EP}${key}`);
+      if (!observedRect(session, bRect)) twinResolveHauls(session, `${BFURN_EP}${key}`, undefined, issuer);
       const pile = shellFurnPilesOf(session).get(key) ?? {};
       const inbound = new Set<string>();
       for (const a of session.transfers.active()) {
@@ -3559,7 +3621,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // nearest-first sort that used to live here is now the ONE priced walk,
         // with this call's own "does it hold one" test passed in.
         const src = rankPricedSources(
-          siteMaterialSources(session, at),
+          siteMaterialSources(session, at, issuer),
           (s) => s.stack[glyph] ?? 0,
         )[0];
         if (src) {
@@ -3567,7 +3629,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             from: src.id,
             to: `${BFURN_EP}${key}`,
             goods: { [glyph]: 1 },
-            issuer: PLAYER_CREATURE_ID,
+            issuer,
             mode: "haul",
             now: session.taskClock,
             sourceGlyph: `bring ${k}`,
@@ -3575,7 +3637,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           postPooledTask(
             session,
             { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: k } },
-            PLAYER_CREATURE_ID,
+            issuer,
             { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
             `bring ${k}`,
           );
@@ -3597,7 +3659,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         const hi = familyOf(session)?.house ?? t.plan.houses[0]?.index;
         if (hi === undefined || craftJobsOf(session).get(hi)) return "done";
         const target =
-          houseBench(session, hi) || houseStored(session, hi, furnitureGlyph("workbench")) > 0
+          houseBench(session, hi) || houseHolds(session, hi, furnitureGlyph("workbench")) > 0
             ? fdef
             : furnitureItemOf("workbench")!;
         craftJobsOf(session).set(hi, {
@@ -3955,8 +4017,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     recoverDroppedCarries(session);
     const delta = t.deltas.get(key);
     // Cheap gate: only a building that has been re-drawn (or has an ordered
-    // room) can owe anything. An untouched house's drawing IS its furniture.
-    if (!hasDrift(delta) && !delta?.programs?.length) return;
+    // room) can owe anything — or one that owns a tool with nowhere to stand
+    // (blueprint layer 3), which is the same "the drawing and the furniture
+    // disagree" in its third form. An untouched house's drawing IS its
+    // furniture.
+    if (!hasDrift(delta) && !delta?.programs?.length && !ownedStationKinds(session, key).length) {
+      return;
+    }
     // NOBODY WAITS BEHIND A CHEST. Checked ahead of the carry rate limit — a
     // body already stopped by something is not a thing to schedule.
     stepStrayBumps(session, key);
@@ -4176,7 +4243,15 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  keyed to it complete off this REAL construction state, and the world
    *  visibly swaps scaffold → doored building. */
   let foundedSweepT = 0;
-  function stepFoundedConstruction(session: QuestSession, dt: number) {
+  function stepFoundedConstruction(
+    session: QuestSession,
+    dt: number,
+    /** WHOSE ORDERS this sweep works off. Every row it drives was authored by
+     *  someone; until a row carries its own author, the sweep speaks for the
+     *  device that runs it — which is exactly what the singleton meant, said
+     *  out loud and now overridable. */
+    issuer: string = LOCAL_PLAYER_CID,
+  ) {
     const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
     if (!deltas) return;
     foundedSweepT += dt;
@@ -4281,7 +4356,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         postPooledTask(
           session,
           { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: glyph } },
-          PLAYER_CREATURE_ID,
+          issuer,
           { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
           a.sourceGlyph ?? "bring materials",
         );
@@ -4307,7 +4382,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const banked =
         elapsedS *
         CLOCK_SCHEDULE_RATE *
-        laborRatePerS(session, Math.min(cap, availableCrew(session)));
+        laborRatePerS(session, Math.min(cap, availableCrew(session, issuer)));
       bankLabor(row, banked);
       if (banked > 0) deltas.version++;
     };
@@ -4324,7 +4399,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       for (let n = tasks.length; n < cap; n++) {
         session.taskPool.post({
           goal: { kind: "buildwork", site: siteId },
-          issuer: PLAYER_CREATURE_ID,
+          issuer,
           focus: { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
           now: session.taskClock,
           sourceGlyph: "build",
@@ -4415,18 +4490,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
               "feedback",
             );
           } else if (obs) {
-            postSiteHauls(session, b);
+            postSiteHauls(session, b, issuer);
           } else {
             const at = foundedLotAt(session, b);
             if (at) {
-              twinResolveHauls(session, orderPileId(b.ord), sitePileId(b.ord));
-              twinStagePile(session, {
-                pileId: orderPileId(b.ord),
-                legacyPileId: sitePileId(b.ord),
-                at,
-                missing: stagingMissing(b),
-                pile: (b.pile ??= {}),
-              });
+              twinResolveHauls(session, orderPileId(b.ord), sitePileId(b.ord), issuer);
+              twinStagePile(
+                session,
+                {
+                  pileId: orderPileId(b.ord),
+                  legacyPileId: sitePileId(b.ord),
+                  at,
+                  missing: stagingMissing(b),
+                  pile: (b.pile ??= {}),
+                },
+                issuer,
+              );
             }
           }
         }
@@ -4436,7 +4515,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           const at = foundedLotAt(session, b);
           if (at && rect) {
             if (obs) {
-              if (!wasObs) materializeCrew(session, at);
+              if (!wasObs) materializeCrew(session, at, undefined, issuer);
               workSite(orderSiteId(b.ord), at, b, rect);
             } else {
               clockArm(b);
@@ -4464,26 +4543,34 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
               "feedback",
             );
           } else if (obs) {
-            postPileHauls(session, {
-              pileId: orderPileId(r.ord),
-              at: r.at,
-              missing: stagingMissing(r),
-              glyph: stackHead(r.produces),
-            });
+            postPileHauls(
+              session,
+              {
+                pileId: orderPileId(r.ord),
+                at: r.at,
+                missing: stagingMissing(r),
+                glyph: stackHead(r.produces),
+              },
+              issuer,
+            );
           } else {
-            twinResolveHauls(session, orderPileId(r.ord));
-            twinStagePile(session, {
-              pileId: orderPileId(r.ord),
-              at: r.at,
-              missing: stagingMissing(r),
-              pile: r.pile,
-            });
+            twinResolveHauls(session, orderPileId(r.ord), undefined, issuer);
+            twinStagePile(
+              session,
+              {
+                pileId: orderPileId(r.ord),
+                at: r.at,
+                missing: stagingMissing(r),
+                pile: r.pile,
+              },
+              issuer,
+            );
           }
           continue;
         }
         if (!((r.labor ?? 0) >= r.buildDays - 1e-9)) {
           if (obs) {
-            if (!wasObs) materializeCrew(session, r.at, REFINE_CREW_CAP);
+            if (!wasObs) materializeCrew(session, r.at, REFINE_CREW_CAP, issuer);
             workSite(orderSiteId(r.ord), r.at, r, rect ?? undefined, REFINE_CREW_CAP);
           } else {
             clockArm(r, REFINE_CREW_CAP);
@@ -4507,7 +4594,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             continue;
           }
           if (obs) {
-            if (!wasObs) materializeCrew(session, at);
+            if (!wasObs) materializeCrew(session, at, undefined, issuer);
             workSite(orderSiteId(o.ord), at, o, rect ?? undefined);
           } else {
             clockArm(o);
@@ -4530,28 +4617,37 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         } else {
           const at = pendingAnnexAt(session, p);
           if (at && obs) {
-            postPileHauls(session, {
-              pileId: orderPileId(p.ord),
-              // An adapted pre-phase-2 row's in-flight hauls still target
-              // its old per-kind ordinal.
-              ...(p.legacyOrd !== undefined ? { legacyPileId: annexPileId(p.legacyOrd) } : {}),
-              at,
-              missing: stagingMissing(p),
-              glyph: ROOM_GLYPH[roomKind as HouseRoom["kind"]] ?? "room",
-            });
+            postPileHauls(
+              session,
+              {
+                pileId: orderPileId(p.ord),
+                // An adapted pre-phase-2 row's in-flight hauls still target
+                // its old per-kind ordinal.
+                ...(p.legacyOrd !== undefined ? { legacyPileId: annexPileId(p.legacyOrd) } : {}),
+                at,
+                missing: stagingMissing(p),
+                glyph: ROOM_GLYPH[roomKind as HouseRoom["kind"]] ?? "room",
+              },
+              issuer,
+            );
           } else if (at) {
             twinResolveHauls(
               session,
               orderPileId(p.ord),
               p.legacyOrd !== undefined ? annexPileId(p.legacyOrd) : undefined,
+              issuer,
             );
-            twinStagePile(session, {
-              pileId: orderPileId(p.ord),
-              ...(p.legacyOrd !== undefined ? { legacyPileId: annexPileId(p.legacyOrd) } : {}),
-              at,
-              missing: stagingMissing(p),
-              pile: p.pile,
-            });
+            twinStagePile(
+              session,
+              {
+                pileId: orderPileId(p.ord),
+                ...(p.legacyOrd !== undefined ? { legacyPileId: annexPileId(p.legacyOrd) } : {}),
+                at,
+                missing: stagingMissing(p),
+                pile: p.pile,
+              },
+              issuer,
+            );
           }
         }
         continue;
@@ -4562,7 +4658,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         const host = pendingBuildingOf(session, p.buildingKey);
         if (at && host) {
           if (obs) {
-            if (!wasObs) materializeCrew(session, at);
+            if (!wasObs) materializeCrew(session, at, undefined, issuer);
             workSite(
               orderSiteId(p.ord),
               at,
@@ -4601,10 +4697,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // ⑥ RECURSION: standing work-building programs pull their furniture
       // (craft where none stored, haul where stored), and delivered pieces
       // stand up in their program rooms.
-      stepShellPrograms(session);
+      stepShellPrograms(session, issuer);
       stepShellFurnPlacement(session);
       // Phase 3: the storehouse's par-stock logging (its own retry gate).
-      stepStorehouseStock(session);
+      stepStorehouseStock(session, issuer);
     }
   }
 
@@ -4769,7 +4865,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    */
   function orderCraft(session: QuestSession, glyph: string, speaker?: string | null): boolean {
     if (!session.town) return false;
-    const word = spokenMakeable(glyph);
+    const word = spokenWord(glyph);
     const recipe = craftRecipeOf(glyph);
     if (!recipe) {
       if (speaker) npcChatBubble(session, speaker, "no");
@@ -4837,6 +4933,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
      *  settled on. The order lands THERE or is refused — a highlight that
      *  builds somewhere else would be a lie about the ground. */
     spot?: { slot: number; at: { x: number; y: number } },
+    /** WHO GAVE THE ORDER. The order's author owns the task it posts and is
+     *  the one a named builder's willingness is measured toward — a peer's
+     *  build order is that peer's to be refused, not this device's. */
+    issuer: string = LOCAL_PLAYER_CID,
   ): boolean {
     const ctx = buildContext(session);
     if (!ctx) return false;
@@ -4902,7 +5002,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // felled tree, a caravan, a demolition bank) unsticks it through the
     // staging re-resolve. The shortfall is still NAMED aloud below.
     const lotAt = foundedLotAt(session, candidates[0]!) ?? ctx.center;
-    const missing = buildMissingMaterials(session, spec, lotAt);
+    const missing = buildMissingMaterials(session, spec, lotAt, issuer);
     const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
     if (!explicitBuilder) {
       // UNTARGETED → the ①a TASK POOL: any appropriate creature in the
@@ -4910,7 +5010,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // The task records the SAME focus that steered the lot ranking, so
       // the claimant's lot choice lands where the order was aimed.
       const posted = steerAt
-        ? postPooledTask(session, { kind: "build", structure: spec.type, cap: 1 }, PLAYER_CREATURE_ID, steerAt, sentence)
+        ? postPooledTask(session, { kind: "build", structure: spec.type, cap: 1 }, issuer, steerAt, sentence)
         : null;
       presenter.toast(
         posted ? `🪧 ${sentence} — anyone nearby may take it` : `💬 "${sentence}" — can't do that here`,
@@ -4926,14 +5026,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       explicitBuilder === possession.creatureId ||
       explicitBuilder.startsWith("resident_") ||
       session.bondedCreatures.has(explicitBuilder) ||
-      compliance(relationToward(session, explicitBuilder, PLAYER_CREATURE_ID), creatureMood(explicitBuilder)) >=
+      compliance(relationToward(session, explicitBuilder, issuer), creatureMood(explicitBuilder)) >=
         VOLUNTEER_COMPLIANCE;
     if (!willing) {
       npcChatBubble(session, explicitBuilder, placementWontLine()[syntax]);
       return true;
     }
     const walker = explicitBuilder === possession.creatureId ? null : explicitBuilder;
-    const b = executeBuildOrder(session, spec, candidates[0]!, walker);
+    const b = executeBuildOrder(session, spec, candidates[0]!, walker, issuer);
     if (!b) {
       presenter.toast(`💬 "${sentence}" — can't do that here`, "feedback");
       return true;
@@ -4985,7 +5085,15 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * phrases "can't do that here"); true when HANDLED — designated with
    * the reserved-ok confirmation, or refused aloud with the word NAMED.
    */
-  function orderZone(session: QuestSession, categoryWord: string | null, sentence: string): boolean {
+  function orderZone(
+    session: QuestSession,
+    categoryWord: string | null,
+    sentence: string,
+    /** WHO DECREED IT. A zoning row is a persisted decree and names its
+     *  author on the row — the one field of this order that outlives the
+     *  session, so it must be the author who spoke, not the device. */
+    issuer: string = LOCAL_PLAYER_CID,
+  ): boolean {
     const ctx = buildContext(session);
     if (!ctx) return false;
     const focus = playerFocusArea(session);
@@ -5000,8 +5108,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // The UNIT under the gaze: an existing governed district, else the town.
     const governed = charterZoneAt(ctx.zones, focus.x - ctx.center.x, focus.y - ctx.center.y);
     const rowBase = governed
-      ? { shape: "over" as const, of: governed.ord, x: 0, y: 0, r: 0, issuer: PLAYER_CREATURE_ID }
-      : { shape: "town" as const, x: 0, y: 0, r: 0, issuer: PLAYER_CREATURE_ID };
+      ? { shape: "over" as const, of: governed.ord, x: 0, y: 0, r: 0, issuer }
+      : { shape: "town" as const, x: 0, y: 0, r: 0, issuer };
     if (categoryWord === null) {
       // CLEAR the unit — the district's ground reads unzoned again, or the
       // town's preferences wipe (later-wins; nothing deleted, replay holds).
@@ -5456,6 +5564,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
      *  highlight is a promise about a place, so the empty-room shortcut
      *  below must not answer it somewhere else. */
     opts?: { pinned?: boolean },
+    /** WHO ORDERED THE ROOM — the author whose reach the bill is measured
+     *  against and whose name the staking hauls carry. */
+    issuer: string = LOCAL_PLAYER_CID,
   ): boolean {
     const t = session.town;
     const house = t?.plan.houses.find((h) => h.index === houseIndex);
@@ -5483,7 +5594,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // brings a floor, a roof and its three unshared walls; an inward cut is a
     // partition and nothing else, and this path stakes either.
     const costs = roomOrderCosts(candidate);
-    const missing = buildMissingMaterials(session, { costs }, at);
+    const missing = buildMissingMaterials(session, { costs }, at, issuer);
     const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
     const p = t.deltas.postAnnexSite({
       buildingKey: `h_${houseIndex}`,
@@ -5501,12 +5612,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // demolished room's want, so a torn-down bedroom no longer re-raises
     // itself (the never-self-healing law).
     pushProgramWant(session, `h_${houseIndex}`, roomKind);
-    postPileHauls(session, {
-      pileId: orderPileId(p.ord),
-      at,
-      missing: stagingMissing(p),
-      glyph: ROOM_GLYPH[roomKind] ?? "room",
-    });
+    postPileHauls(
+      session,
+      {
+        pileId: orderPileId(p.ord),
+        at,
+        missing: stagingMissing(p),
+        glyph: ROOM_GLYPH[roomKind] ?? "room",
+      },
+      issuer,
+    );
     presenter.toast(
       missingNames
         ? `🏗️ a ${roomKind} is staked out — we still need ${missingNames}`
@@ -5559,10 +5674,56 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   // house-wide and therefore blind to a second bedroom. One drawing now, read
   // by all of them.
 
-  /** A blueprint, memoized per building revision. The drawing costs a room
-   *  plan, a furnish pass and a placement search per unsatisfied program row,
-   *  and the outline overlay pulls it several times a second. */
-  const blueprintMemo = new Map<string, { rev: number; bp: BuildingBlueprint }>();
+  /** A blueprint, memoized per building revision AND per the set of tools the
+   *  building owns (layer 3 — a drawing that gains a place when the household
+   *  acquires a bench must not be served from a cache keyed only on the shape).
+   *  The drawing costs a room plan, a furnish pass and a placement search per
+   *  unsatisfied program row, and the outline overlay pulls it several times a
+   *  second. */
+  const blueprintMemo = new Map<string, { sig: string; bp: BuildingBlueprint }>();
+
+  /**
+   * THE WORKING STATIONS THIS BUILDING HAS — layer 3's input, and the enabler
+   * set asked from the spec side (`isCraftStation`: a piece other things are
+   * made AT), never a hard-coded list. One row today (the workbench); a forge
+   * recipe would add itself.
+   *
+   * BOTH HALVES OF "HAS": the scope's inventory (`"anywhere"` — a bench in a
+   * box, on the floor, in somebody's hands) AND one already STANDING.
+   *
+   * 🚨 The standing half is not redundant, it is what makes the layer stable. A
+   * placed row is neither a stack nor a prop, so an inventory-only reading drops
+   * to zero the instant the bench is stood up — the slot would vanish from the
+   * drawing, the bench would become a piece "the drawing does not account for",
+   * `stepStrayBumps` would take it apart, and the whole thing would oscillate at
+   * bump speed. A household that owns a bench has a place for one, whichever
+   * situation the bench is currently in.
+   */
+  function ownedStationKinds(
+    session: QuestSession,
+    buildingKey: string,
+    opts?: {
+      /** Also count one already STANDING. Off for the cheap gates — a standing
+       *  piece is an unpinned placed row, which is `hasDrift` already, so the
+       *  gates short-circuit before this and never pay for the furniture
+       *  derivation on the 199 untouched houses of a town. */
+      standing?: boolean;
+    },
+  ): StationKind[] {
+    const out: StationKind[] = [];
+    let standing: FurniturePiece[] | null = null;
+    for (const f of FURNITURE_ITEMS) {
+      if (!isCraftStation(f.kind)) continue;
+      if (buildingUnits(session, buildingKey, furnitureGlyph(f.kind), "anywhere") > 0) {
+        out.push(f.kind);
+        continue;
+      }
+      if (!opts?.standing) continue;
+      standing ??= buildingFurnitureOf(session, buildingKey);
+      if (standing.some((p) => p.kind === f.kind)) out.push(f.kind);
+    }
+    return out;
+  }
 
   interface BuildingBlueprint {
     slots: BlueprintSlot[];
@@ -5604,9 +5765,20 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const t = session.town;
     if (!t) return EMPTY_BLUEPRINT;
     const live = t.deltas.get(buildingKey);
-    const rev = live?.rev ?? 0;
+    // ⚠️ THE SIGNATURE MUST BE CHEAP — this runs on EVERY call, memo hit or
+    // miss, and the outline overlay pulls the drawing several times a second
+    // per building. So the key asks only the inventory (map lookups); a change
+    // to what is STANDING already bumps the delta's `rev`, because standing IS
+    // the delta. (Putting the standing scan in the key cost 140ms/frame — the
+    // expensive half ran ahead of the cache it was meant to guard.)
+    const sig = `${live?.rev ?? 0}|${ownedStationKinds(session, buildingKey).join(",")}`;
     const memo = blueprintMemo.get(buildingKey);
-    if (memo && memo.rev === rev) return memo.bp;
+    if (memo && memo.sig === sig) return memo.bp;
+    // Past the cache: NOW the fuller question. `standing: true` HERE and
+    // nowhere else — the drawing must keep a tool's place while the tool is
+    // standing in it, or the slot would blink out the moment the bench went up
+    // and the bump rule would take it apart again.
+    const owned = ownedStationKinds(session, buildingKey, { standing: true });
 
     const bd = blueprintDelta(live);
     const goodDefs = t.stage.goods.map((g) => ({ key: g.good.key, slot: g.good.slot }));
@@ -5682,8 +5854,71 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       }
     }
 
+    // ── LAYER 3: A PLACE FOR THE TOOLS THIS HOUSEHOLD OWNS.
+    //
+    // The drawing is a list of PLACES, and until now it only had places for
+    // what a room PROGRAM called for. A workbench the family made for itself
+    // therefore had nowhere to belong in a house with no workshop — and the
+    // consequences were not cosmetic:
+    //
+    //   • `reconcileFurnishing` saw it as pure surplus, so it never emitted the
+    //     `move` that would have carried it anywhere;
+    //   • `stepStrayBumps` DID see it — "every piece the drawing does not
+    //     account for" — so the one that did get stood up was taken apart again
+    //     ten seconds later by the first resident who pressed against it;
+    //   • which put it back on the floor, benchless, and the bootstrap made
+    //     another. All four symptoms, one missing place.
+    //
+    // ONLY ENABLERS (`isCraftStation` — a piece other things are made AT), and
+    // only ones the scope really owns. Drawing a place for every spare chair
+    // would be the blanket auto-place the user removed in 2026-07-28 ("placing
+    // furniture is a separate action, performed by a creature"); drawing one for
+    // the tool the household's own automation just built is the 2026-07-29
+    // refinement ("newly constructed furniture should be set up in its correct
+    // spot if one is missing") with the spot finally derived rather than
+    // hard-coded. ONE place per kind: the second bench is spare, not a second
+    // workshop.
+    for (const kind of owned) {
+      if (slots.some((s) => s.kind === kind)) continue; // the drawing has a place already
+      if (pending.includes(kind)) continue; // a room going up has first claim on it
+      const fdef = furnitureItemOf(kind);
+      if (!fdef) continue;
+      // ITS OWN ROOM FIRST, then the general-purpose rooms — a bench belongs
+      // where work happens, and a house with no workshop keeps it out of the
+      // kitchen (whose stations it would crowd) by preferring the store and
+      // then the living room, which is the order the old hard-coded bench
+      // branch used and the only part of it worth keeping.
+      const want = stationRoomKind(kind);
+      const order = [...(want ? [want] : []), "workshop", "store", "living"] as const;
+      let placed = false;
+      for (const rk of order) {
+        const room = plan.rooms.find((r) => r.kind === rk);
+        if (!room) continue;
+        const pctx = makePlacementContext(center, shape, plan, goods, [...claimed]);
+        const spot = placementCandidates(pctx, { kind, radius: fdef.radius, roomId: room.id })[0];
+        if (!spot) continue;
+        const piece: FurniturePiece = {
+          id: `bp_${buildingKey}_${room.id}_${kind}`,
+          kind,
+          x: spot.x,
+          y: spot.y,
+          radius: fdef.radius,
+          facing: spot.facing,
+          openable: fdef.openable,
+        };
+        claimed.push(piece);
+        slots.push({ ...piece, roomId: room.id });
+        placed = true;
+        break;
+      }
+      // Nowhere it fits: the piece stays an item on the floor and the tidy
+      // chore owns it. Not `blocked` — nothing ORDERED this, so there is no
+      // want to report as obstructed.
+      if (!placed) continue;
+    }
+
     const bp: BuildingBlueprint = { slots, blocked, pending };
-    blueprintMemo.set(buildingKey, { rev, bp });
+    blueprintMemo.set(buildingKey, { sig, bp });
     return bp;
   }
 
@@ -5746,8 +5981,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // derivation, so the difference is empty by construction. Worth saying in
     // one line rather than discovering with a room plan, a furnish pass and a
     // placement search per building, several times a second, for a whole town.
+    //
+    // …UNLESS IT OWNS A TOOL IT HAS NOT STOOD UP (blueprint layer 3). Then the
+    // two derivations differ by exactly that piece, which is the whole point of
+    // drawing it a place — leaving this gate at "untouched ⇒ nothing" would
+    // make the new layer unreachable for the building that most needs it: the
+    // ordinary house whose only event was finishing a workbench.
     const d = session.town?.deltas.get(buildingKey);
-    if (!d?.programs?.length && !hasDrift(d)) return [];
+    if (!d?.programs?.length && !hasDrift(d) && !ownedStationKinds(session, buildingKey).length) {
+      return [];
+    }
     const bp = buildingBlueprintOf(session, buildingKey);
     if (!bp.slots.length && !bp.pending.length) return [];
     const tasks = reconcileFurnishing({
@@ -6237,6 +6480,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     /** The exact cut the player LIT (⑦ growth area). Absent = the order
      *  picks the best one itself, the spoken/board path's behaviour. */
     pinned?: InteriorCandidate,
+    /** WHO ORDERED THE CUT — as `stakeAnnex`, the same author on the same
+     *  two questions (what can be reached, whose hauls these are). */
+    issuer: string = LOCAL_PLAYER_CID,
   ): boolean {
     const t = session.town;
     const wk = t?.plan.works[workIndex];
@@ -6297,7 +6543,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // wall, so it costs a fraction of the annex above. Subdividing a standing
     // shell is genuinely the cheap way to get a room, and now says so.
     const costs = interiorCosts(candidate);
-    const missing = buildMissingMaterials(session, { costs }, at);
+    const missing = buildMissingMaterials(session, { costs }, at, issuer);
     const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
     const p = t.deltas.postAnnexSite({
       buildingKey: key,
@@ -6310,12 +6556,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // THE PERSISTENT WANT (④) rides the work's own delta — the standing
     // program outlives the room it raises (and comes off with it, phase 4).
     pushProgramWant(session, key, roomKind);
-    postPileHauls(session, {
-      pileId: orderPileId(p.ord),
-      at,
-      missing: stagingMissing(p),
-      glyph: ROOM_GLYPH[roomKind] ?? "room",
-    });
+    postPileHauls(
+      session,
+      {
+        pileId: orderPileId(p.ord),
+        at,
+        missing: stagingMissing(p),
+        glyph: ROOM_GLYPH[roomKind] ?? "room",
+      },
+      issuer,
+    );
     presenter.toast(
       missingNames
         ? `🏗️ a ${roomKind} is staked out — we still need ${missingNames}`

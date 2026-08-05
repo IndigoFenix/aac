@@ -12,6 +12,7 @@
     "build:games": "tsx scripts/build-games.ts",
     "build:world-lab": "npm run build:games -- world-lab",
     "sync:game-engine": "tsx scripts/sync-game-engine.ts",
+    "world:text": "tsx scripts/world-text.ts",
     "build": "vite build && npm run build:client-aac && esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && npm run build:games",
     "build:client": "vite build",
     "prerender:landing": "tsx scripts/prerender-landing.ts",
@@ -76,7 +77,11 @@
     "audit:a11y": "node scripts/audit-a11y-icon-buttons.mjs",
     "lint": "eslint .",
     "lint:a11y": "eslint client/src client-aac/src",
-    "audit:a11y:axe": "node scripts/audit-a11y-axe.mjs"
+    "audit:a11y:axe": "node scripts/audit-a11y-axe.mjs",
+    "validate-i18n": "tsx scripts/validate-i18n.ts",
+    "scan:i18n": "tsx scripts/scan-i18n-coverage.ts",
+    "scan:i18n:keys": "tsx scripts/scan-i18n-coverage.ts --only=keys,errors",
+    "scan:i18n:report": "tsx scripts/scan-i18n-coverage.ts --unused --report --no-fail"
   },
   "overrides": {
     "shell-quote": "^1.8.4"

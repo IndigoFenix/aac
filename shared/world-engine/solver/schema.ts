@@ -310,6 +310,15 @@ const metaSchema = z.object({
   syntax: z.enum(["a", "b", "c"]).optional(),
   layout: z.enum(["village", "house"]).optional(),
   seed: z.number().int().nonnegative().max(0xffffffff).optional(),
+  // The authored player standing (multi-entity-conversations.md §2.2) — bounded
+  // to the relation axes' own ranges, so a knob can seed a strong bond but never
+  // an out-of-model one. Optional and additive: existing game JSON validates
+  // unchanged under `.strict()`.
+  playerRelation: z.object({
+    affinity: z.number().min(-1).max(1).optional(),
+    trust: z.number().min(0).max(1).optional(),
+    authority: z.number().min(0).max(1).optional(),
+  }).strict().optional(),
 }).strict();
 
 const goalTreeGameSchemaBase = z.object({

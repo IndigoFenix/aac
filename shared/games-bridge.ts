@@ -17,10 +17,16 @@ export interface BridgeMessageBase {
  */
 export interface BoardOption {
   id: string;
+  /** THE TEXT ON THE BUTTON — display, and therefore in the student's language
+   *  wherever the game can name the thing (the world engine renders it through
+   *  its own lexicons). The platform shows this verbatim: a game that leaves an
+   *  English glyph key here puts an English word on a Hebrew board. `id` is the
+   *  invariant handle — it is what comes back on press — and `glyph` is the
+   *  picture; neither is ever read as text. */
   label: string;
   glyph?: string;
   /** Proper per-locale text the board SPEAKS on press (the student's own
-   *  statement, translated). `label`/`glyph` stay language-invariant. */
+   *  statement, translated). `glyph` stays language-invariant. */
   spokenText?: string;
 }
 

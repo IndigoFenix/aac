@@ -27,6 +27,7 @@ import type { BuildingSpec, Rect, RoadPath, StructureSpec, Vec2, WorldSpec } fro
 import {
   accessibleBuildings,
   buildingAt,
+  headingHeldByLegs,
   visibleBuildings,
   type AvatarState,
   type GroundSampler,
@@ -262,6 +263,63 @@ export function inFocusFrame(
   );
 }
 
+/**
+ * WHICH BUILDING INTERIORS ARE ON SHOW for `localId` — the ONE owner of the
+ * reveal rule, shared by the 3D view (World3DRenderer.render, below) and the
+ * headless text view the quest-host can be built with instead. This is NOT
+ * merely render chrome: the town streamer keys interior EMBODIMENT on the
+ * view's `revealedBuildings()`, so a second view computing this its own way
+ * would populate a different world. Pure — no GL, no DOM.
+ *
+ * INTERIOR REVEAL OFF = ordinary sealed buildings. The spirit GROUND rung
+ * needs this: its local avatar is a parked stand-in, not an occupant, so
+ * gliding past a house must not strip its walls — you are outside, in the
+ * street. (A frameless spirit with reveal ON is still the whole-world
+ * stationary dollhouse, which is why this is a flag and not a rule about
+ * `spiritFrame`.)
+ *
+ * AVATAR mode uses visibleBuildings (the room you're in + every room an open
+ * door joins to it). SPIRIT mode is the "dollhouse": a formless overhead viewer
+ * sees every ACCESSIBLE room (reachable through unlocked doors) unconditionally,
+ * while a puzzle that LOCKS an area keeps its roof — so it reveals
+ * accessibleBuildings.
+ *
+ * FOCUSED dollhouse (a spirit focus WITH a frame — the ladder's structure rung,
+ * the Sims dollhouse): only the focused footprint's interior is on show.
+ * Accessible rooms OUTSIDE the frame stay ordinary sealed buildings — roofs on,
+ * no cutaway, no blackout cube — so a town around the focused house never strips
+ * its walls at a distance. A frameless spirit focus (the whole-world stationary
+ * spirit) keeps the full reveal.
+ */
+export function revealedInteriors(
+  state: WorldState,
+  localId: string,
+  opts: {
+    interiorReveal: boolean;
+    spirit: boolean;
+    spiritFrame?: { x: number; y: number; w: number; h: number } | null;
+  },
+): Set<string> {
+  const me = state.avatars[localId];
+  const visible = !opts.interiorReveal
+    ? new Set<string>()
+    : opts.spirit
+      ? accessibleBuildings(state, me ? { x: me.x, y: me.y } : undefined)
+      : me
+        ? visibleBuildings(state, { x: me.x, y: me.y })
+        : new Set<string>();
+  if (opts.spirit && opts.spiritFrame) {
+    const sf = opts.spiritFrame;
+    for (const b of state.spec.buildings ?? []) {
+      if (!visible.has(b.id)) continue;
+      // A flush ANNEX lies wholly outside the base frame — inFocusFrame's
+      // margin keeps it in the focus so it reveals + cuts away like the house.
+      if (!inFocusFrame(b.footprint, sf)) visible.delete(b.id);
+    }
+  }
+  return visible;
+}
+
 /** The dollhouse pose in MANIFOLD-LOCAL coordinates: a fixed low 3/4 angle
  *  framing the bounds at azimuth `PI/2 + spiritAz`, look-point at the
  *  framed centre riding the ground (`gy`). */
@@ -289,8 +347,8 @@ export function dollhousePoseMath(
 //    "TALKING → person faces camera + camera dollies in." The slice-2 dolly was
 //    cut for being TOO FAST (a gaze that brushed a room yanked the camera into
 //    it), so everything here is deliberately slow, and nothing here is driven by
-//    the gaze at all — the ONLY trigger is the game layer saying two bodies are
-//    talking (`RenderIntent.conversation`).
+//    the gaze at all — the ONLY trigger is the game layer naming a conversation
+//    and who is in it (`RenderIntent.conversation`), of any size.
 
 /** Ease rate (1/s) the conversation frame blends IN at. The rejected slice-2
  *  dolly ran at 4/s (a ~0.25 s time constant — a lurch). This is 0.55/s: a
@@ -314,9 +372,9 @@ export const CONV_TRACK_RATE = 0.55;
  *  every line. Also holds the frame steady across a one-frame gap, and makes a
  *  DIFFERENT pair wait its turn (the camera never hops mid-move). */
 export const CONV_HOLD_S = 2.5;
-/** Extra span (world units) beyond the two conversants' separation, so neither
- *  body is jammed against the frame edge — roughly a body's width of air on each
- *  side plus their own girth. */
+/** Extra span (world units) beyond the conversants' own extent, so no body is
+ *  jammed against the frame edge — roughly a body's width of air on each side
+ *  plus their own girth. */
 export const CONV_PAIR_MARGIN = 4.5;
 /** Floor on the conversation span: how wide a frame two people standing nose to
  *  nose still get. Stops the dolly from becoming a face close-up on a pair that
@@ -343,30 +401,78 @@ export function easeApproach(cur: number, target: number, rate: number, dt: numb
   return cur + (target - cur) * (1 - Math.exp(-rate * dt));
 }
 
-/** The dollhouse frame that holds a CONVERSATION: centred on the midpoint of the
- *  two conversants, spanning their separation plus margin.
+/** The dollhouse frame that holds a CONVERSATION of ANY size: centred on the
+ *  bounding box of the visible members, spanning that box's DIAGONAL plus
+ *  margin.
  *
- *  `b` may be the same body as `a` (or the caller may pass `a` twice) — a
- *  conversation with only one visible body, which is what a formless spirit
- *  talking to somebody looks like. That degenerates to a body-scale window on
- *  the one person, which is the right picture.
+ *  WHY THE DIAGONAL and not the wider side: for two people the diagonal IS their
+ *  separation, so this is the pair formula generalized rather than a second
+ *  rule (`conversationBounds` below is literally this function) — and a group
+ *  spread on a slant is framed by how far apart its extremes really are, never
+ *  cropped by taking only one axis. It is the conservative measure: a frame that
+ *  fits the diagonal fits both sides.
+ *
+ *  ONE POINT is a legal conversation — a formless spirit talking to somebody
+ *  leaves exactly one visible body — and degenerates to a body-scale window on
+ *  that person, which is the right picture. NO points (everybody bodiless or
+ *  streamed out) yields the minimum window at the origin; callers frame nothing
+ *  in that case and never ask.
  *
  *  NEVER WIDER THAN THE BASE FRAME: `baseSpan` (the whole-building frame) is a
- *  hard ceiling, because this is a DOLLY IN. Two people who wander far apart
- *  must not pull the camera back past the house and turn a conversation into a
+ *  hard ceiling, because this is a DOLLY IN. People who wander far apart must
+ *  not pull the camera back past the house and turn a conversation into a
  *  retreat. */
+export function conversationBoundsN(
+  points: readonly { x: number; y: number }[],
+  baseSpan: number,
+): DollhouseBounds {
+  if (points.length === 0) {
+    return { cx: 0, cz: 0, span: Math.min(CONV_MIN_SPAN, baseSpan) };
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const sep = Math.hypot(maxX - minX, maxY - minY);
+  const want = Math.max(sep + CONV_PAIR_MARGIN, CONV_MIN_SPAN);
+  return {
+    cx: (minX + maxX) / 2,
+    cz: (minY + maxY) / 2,
+    span: Math.min(want, baseSpan),
+  };
+}
+
+/** Are two conversation rosters the same list? Cheap enough to run every frame,
+ *  which is the point: the game republishes the same roster on every frame a
+ *  conversation stands, and the camera must copy it only when it moved. */
+function rosterEquals(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** The two-body case, kept as a delegating wrapper for the callers (and the
+ *  pinned tests) that hold a pair.
+ *
+ *  IDENTICAL, not merely equivalent: for two points the bounding box's centre is
+ *  their midpoint and its diagonal is their separation, so this returns the same
+ *  numbers the hand-rolled pair formula did — `Math.hypot` is sign-blind, and
+ *  addition commutes, so even the floating-point result is unchanged.
+ *
+ *  `b` may be the same body as `a` (or the caller may pass `a` twice) — the
+ *  one-visible-body conversation. */
 export function conversationBounds(
   a: { x: number; y: number },
   b: { x: number; y: number },
   baseSpan: number,
 ): DollhouseBounds {
-  const sep = Math.hypot(b.x - a.x, b.y - a.y);
-  const want = Math.max(sep + CONV_PAIR_MARGIN, CONV_MIN_SPAN);
-  return {
-    cx: (a.x + b.x) / 2,
-    cz: (a.y + b.y) / 2,
-    span: Math.min(want, baseSpan),
-  };
+  return conversationBoundsN([a, b], baseSpan);
 }
 
 /**
@@ -404,6 +510,53 @@ export function faceCameraYawOffset(
   const facing = Math.atan2(body.fy, body.fx);
   const turn = maxTurn * Math.sin(toCamera - facing); // GAME angle
   return -turn; // …into THREE yaw. See THE NEGATION above.
+}
+
+/** Signed shortest angular difference, wrapped to (−π, π]. */
+function angDelta(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
+
+/**
+ * ⑫ — THE COURTESY TURN. A render-only lean toward whoever is TALKING, for a body
+ * whose own legs own its heading (conversation-in-motion.md law ①): the sim will
+ * not turn a walking listener, but a listener who reads as facing away reads as
+ * ignoring the talker, and that is a lie about a creature that is listening.
+ *
+ * ⚠️ IT IS A COURTESY, NEVER A CUE. Thirty degrees on a walking body cannot tell
+ * anyone WHICH of four people is being addressed — the NAME does that (law ②).
+ * This exists so a moving listener does not look rude, and for nothing else. Do
+ * not grow it into an addressee signal; grow the head bone instead, which can
+ * turn properly without fighting the legs.
+ *
+ * ONE BUDGET, SHARED. The social lean and the face-camera lean spend from the
+ * SAME `maxTurn`, social first: a body that had to turn 30° toward the speaker
+ * gets no camera lean at all, and one already looking at the speaker gets the
+ * full lean. Their sum is bounded by `maxTurn` by construction, so the pair can
+ * never stack into a 60° twist and the three-quarter read survives. `look = null`
+ * is exactly `faceCameraYawOffset`, which is why that stays the primitive.
+ */
+export function socialYawOffset(
+  body: { x: number; y: number; fx: number; fy: number },
+  look: { x: number; y: number } | null,
+  camX: number,
+  camZ: number,
+  maxTurn: number = CONV_FACE_MAX_TURN,
+): number {
+  const facing = Math.atan2(body.fy, body.fx);
+  let social = 0;
+  if (look) {
+    const dx = look.x - body.x;
+    const dy = look.y - body.y;
+    if (Math.hypot(dx, dy) > 1e-6) {
+      social = Math.max(-maxTurn, Math.min(maxTurn, angDelta(Math.atan2(dy, dx) - facing)));
+    }
+  }
+  // Whatever the social turn did not spend, the lens may still have.
+  const left = maxTurn - Math.abs(social);
+  const toCamera = Math.atan2(camZ - body.y, camX - body.x);
+  const cam = left * Math.sin(toCamera - (facing + social));
+  return -(social + cam); // …into THREE yaw. THE NEGATION, once, as above.
 }
 
 /** Ray-depth (world units) within which a picked OBJECT counts as COINCIDENT with
@@ -2075,18 +2228,20 @@ export class World3DRenderer {
   // gaze fixation to screen space for the edge (orbit) trigger.
   private spiritAz = 0;
   private readonly _camScratch = new THREE.Vector3();
-  // SPIRIT conversation dolly (slice 4). `convPair` is the LATCHED pair — not
-  // whatever the intent published this frame — because the latch is what gives
-  // the camera its hysteresis (`convHold` seconds of grace before it lets go,
-  // during which a competing pair cannot steal the frame). `convBlend` is the
-  // 0..1 weight of the pair frame against the whole-building frame; `convC*` is
-  // the pair frame itself, tracked slowly so a body shifting its feet doesn't
-  // shake the camera. `convSeeded` says the tracker holds a real point: it is
-  // seeded ONLY from a fully-released blend, so re-aiming at a new pair mid-move
-  // glides instead of jumping. `convYaw` is each conversant's eased face-camera
-  // yaw offset, kept per body id so a body that leaves the pair unwinds rather
-  // than snapping straight.
-  private convPair: { a: string; b: string } | null = null;
+  // SPIRIT conversation dolly (slice 4). `convFocus` is the LATCHED conversation
+  // — not whatever the intent published this frame — because the latch is what
+  // gives the camera its hysteresis (`convHold` seconds of grace before it lets
+  // go, during which a competing conversation cannot steal the frame). It is
+  // keyed by the conversation's `id`, so a member joining or leaving updates the
+  // roster in place and the dolly keeps going; only a DIFFERENT id is a
+  // hand-off. `convBlend` is the 0..1 weight of the conversation frame against
+  // the whole-building frame; `convC*` is that frame itself, tracked slowly so a
+  // body shifting its feet doesn't shake the camera. `convSeeded` says the
+  // tracker holds a real point: it is seeded ONLY from a fully-released blend,
+  // so re-aiming at a new conversation mid-move glides instead of jumping.
+  // `convYaw` is each conversant's eased face-camera yaw offset, kept per body
+  // id so a body that leaves the roster unwinds rather than snapping straight.
+  private convFocus: { id: string; members: string[]; speaker?: string } | null = null;
   private convHold = 0;
   private convBlend = 0;
   private convCx = 0;
@@ -2931,34 +3086,15 @@ export class World3DRenderer {
     // plane (v1): exact where the player stands, approximate for far aims on a
     // slope. Flat worlds keep the y=0 plane.
     this.groundPlane.constant = -(me ? standHeightAt(state, me.x, me.y) : 0);
-    // INTERIOR REVEAL OFF = ordinary sealed buildings. The spirit GROUND rung
-    // needs this: its local avatar is a parked stand-in, not an occupant, so
-    // gliding past a house must not strip its walls — you are outside, in the
-    // street. (A frameless spirit with reveal ON is still the whole-world
-    // stationary dollhouse, which is why this is a flag and not a rule about
-    // `spiritFrame`.)
-    const visible = !this.interiorReveal
-      ? new Set<string>()
-      : this.spiritCamera
-        ? accessibleBuildings(state, me ? { x: me.x, y: me.y } : undefined)
-        : me
-          ? visibleBuildings(state, { x: me.x, y: me.y })
-          : new Set<string>();
-    // FOCUSED dollhouse (a spirit focus WITH a frame — the ladder's structure
-    // rung, the Sims dollhouse): only the focused footprint's interior is on
-    // show. Accessible rooms OUTSIDE the frame render as ordinary sealed
-    // buildings — roofs on, no cutaway, no blackout cube — so a town around
-    // the focused house never strips its walls at a distance. A frameless
-    // spirit focus (the whole-world stationary spirit) keeps the full reveal.
-    if (this.spiritCamera && this.spiritFrame) {
-      const sf = this.spiritFrame;
-      for (const b of state.spec.buildings ?? []) {
-        if (!visible.has(b.id)) continue;
-        // A flush ANNEX lies wholly outside the base frame — inFocusFrame's
-        // margin keeps it in the focus so it reveals + cuts away like the house.
-        if (!inFocusFrame(b.footprint, sf)) visible.delete(b.id);
-      }
-    }
+    // THE REVEAL RULE lives in `revealedInteriors` (module scope, above) — one
+    // owner, so the headless text view reveals EXACTLY what this view does (the
+    // town streamer keys interior embodiment on it). See there for the reveal-
+    // off / avatar / spirit / focused-frame reasoning.
+    const visible = revealedInteriors(state, this.localId, {
+      interiorReveal: this.interiorReveal,
+      spirit: this.spiritCamera,
+      spiritFrame: this.spiritFrame,
+    });
     // camY is RELATIVE to the occupant's ground level, so the storey-plane fade
     // math (floor × FLOOR_HEIGHT, ground-free) still holds on a sloped site.
     const fade: FadeContext = {
@@ -4041,20 +4177,29 @@ export class World3DRenderer {
     }
   }
 
-  /** The two bodies a published conversation actually SHOWS: the ids the game
-   *  layer named, minus any with no body in this world, minus the LOCAL one.
+  /** The bodies a published conversation actually SHOWS: the ids the game layer
+   *  named, minus any with no body in this world, minus the LOCAL one — so the
+   *  result may be shorter than the roster, and may be EMPTY (nothing to frame).
    *
-   *  Dropping the local one is the whole reason this is a pair of ids rather
-   *  than a pair of points. In the dollhouse the local avatar is the formless
-   *  SPARK — parked, bodiless, drawn as a light — so a spirit talking to Ada
-   *  must frame ADA, not the midpoint between Ada and a parked spark across the
-   *  room. An EMBODIED player (the same seam, walking scope) keeps both. */
-  private convBodies(state: WorldState): { a: AvatarState | null; b: AvatarState | null } {
-    const p = this.convPair;
-    if (!p) return { a: null, b: null };
-    const pick = (id: string): AvatarState | null =>
-      id === this.localId ? null : (state.avatars[id] ?? null);
-    return { a: pick(p.a), b: pick(p.b) };
+   *  Dropping the local one is the whole reason this is a list of ids rather
+   *  than of points. In the dollhouse the local avatar is the formless SPARK —
+   *  parked, bodiless, drawn as a light — so a spirit talking to Ada must frame
+   *  ADA, not the midpoint between Ada and a parked spark across the room. An
+   *  EMBODIED player (the same seam, walking scope) keeps both. Duplicates in a
+   *  roster are dropped too: a repeated id would weight one body twice in the
+   *  bounding box for no reason and would be turned toward the camera twice. */
+  private convBodies(state: WorldState): AvatarState[] {
+    const f = this.convFocus;
+    if (!f) return [];
+    const out: AvatarState[] = [];
+    const seen = new Set<string>();
+    for (const id of f.members) {
+      if (id === this.localId || seen.has(id)) continue;
+      seen.add(id);
+      const body = state.avatars[id];
+      if (body) out.push(body);
+    }
+    return out;
   }
 
   /**
@@ -4066,7 +4211,7 @@ export class World3DRenderer {
    *
    * Everything here is slow on purpose. The slice-2 dolly was cut for being too
    * fast, and it was ALSO gaze-driven, so a glance could yank the camera; this
-   * one moves only when the game layer says two people are talking, and takes
+   * one moves only when the game layer says a conversation is running, and takes
    * seconds to do it.
    */
   private spiritConversationFrame(
@@ -4075,34 +4220,49 @@ export class World3DRenderer {
     intent: RenderIntent | undefined,
     step: number,
   ): DollhouseBounds {
-    // ── THE LATCH (hysteresis) ────────────────────────────────────────────────
-    // A pair the game re-publishes keeps its grace period topped up. A pair it
-    // stops publishing is held for CONV_HOLD_S more — which is what stops a
+    // ── THE LATCH (hysteresis), keyed on the conversation ID ──────────────────
+    // A conversation the game re-publishes keeps its grace period topped up. One
+    // it stops publishing is held for CONV_HOLD_S more — which is what stops a
     // back-and-forth exchange (publish, lapse, publish again) from making the
-    // camera breathe in and out — and only THEN may a different pair take the
-    // frame. So the camera never hops between two conversations mid-move.
+    // camera breathe in and out — and only THEN may a DIFFERENT conversation
+    // take the frame. So the camera never hops between two of them mid-move.
+    //
+    // The comparison is the `id` alone, never the roster: people join and leave
+    // mid-exchange, and that must widen the frame the camera is already easing
+    // toward, not read as a hand-off that has to wait out the hold and re-dolly
+    // from a fresh seed. So a matching id just adopts the new member list.
     const pub = intent?.conversation ?? null;
-    const held = this.convPair;
-    const same = !!(pub && held && pub.a === held.a && pub.b === held.b);
-    if (pub && (same || !held || this.convHold <= 0)) {
-      if (!same) {
-        // Seed the tracker afresh only from a FULLY RELEASED frame. Taking over
-        // while the camera is still part-way in must glide from where it is.
-        if (this.convBlend < 0.01) this.convSeeded = false;
-        this.convPair = { a: pub.a, b: pub.b };
-      }
+    const held = this.convFocus;
+    if (pub && held && pub.id === held.id) {
+      // Membership churn inside the SAME conversation: adopt the roster, keep the
+      // tracker (blend, centre, span) exactly where it is. Copied only when it
+      // genuinely changed — the steady state is a roster republished verbatim
+      // every frame, which must not cost an allocation.
+      if (!rosterEquals(held.members, pub.members)) held.members = [...pub.members];
+      // ⑫ — the SPEAKER changes every turn inside one conversation; the courtesy
+      // turn needs the live one, and it must not re-seed the dolly.
+      if (held.speaker !== pub.speaker) held.speaker = pub.speaker;
+      this.convHold = CONV_HOLD_S;
+    } else if (pub && (!held || this.convHold <= 0)) {
+      // A DIFFERENT conversation takes the frame (or the first one does). Seed
+      // the tracker afresh only from a FULLY RELEASED frame: taking over while
+      // the camera is still part-way in must glide from where it is.
+      if (this.convBlend < 0.01) this.convSeeded = false;
+      this.convFocus = { id: pub.id, members: [...pub.members], ...(pub.speaker ? { speaker: pub.speaker } : {}) };
       this.convHold = CONV_HOLD_S;
     } else if (held) {
       this.convHold -= step;
-      if (this.convHold <= 0) this.convPair = null;
+      if (this.convHold <= 0) this.convFocus = null;
     }
 
-    const { a, b } = this.convBodies(state);
+    // NB: the FRAME still treats every member alike — `speaker` biases nothing
+    // about where the camera sits. It is latched above only so the ⑫ courtesy
+    // turn knows whom a walking listener should lean toward.
+    const bodies = this.convBodies(state);
     // One visible body is a legal conversation (the bodiless spirit's partner);
-    // `conversationBounds` degenerates to a window on that one person.
-    const lead = a ?? b;
-    const pairEnd = b ?? a;
-    const talking = !!lead;
+    // `conversationBoundsN` degenerates to a window on that one person. None
+    // visible is not a conversation this camera can show at all.
+    const talking = bodies.length > 0;
 
     this.convBlend = easeApproach(
       this.convBlend,
@@ -4111,7 +4271,7 @@ export class World3DRenderer {
       step,
     );
     if (talking) {
-      const want = conversationBounds(lead!, pairEnd!, base.span);
+      const want = conversationBoundsN(bodies, base.span);
       if (!this.convSeeded) {
         // Safe to place instantly: the blend is ~0 here by construction, so this
         // point carries no weight yet and the move still starts from the house.
@@ -4158,13 +4318,13 @@ export class World3DRenderer {
    * stops being true, the offset wants to move into the model frame.
    */
   private spiritFaceCamera(state: WorldState, step: number, active: boolean): void {
-    if (!this.convPair && this.convYaw.size === 0) return;
+    if (!this.convFocus && this.convYaw.size === 0) return;
     // NOT SPIRIT ANY MORE (the dollhouse focus cleared, the spark walked into a
     // body): drop the latch and let every turn unwind. A stranded offset would
     // otherwise leave somebody permanently askew in avatar mode, where nothing
     // here runs again to fix it.
     if (!active) {
-      this.convPair = null;
+      this.convFocus = null;
       this.convBlend = 0;
       this.convSeeded = false;
     }
@@ -4172,20 +4332,39 @@ export class World3DRenderer {
     // (owner mode: it IS this.camera). One frame stale, like the orbit's own
     // NDC projection — invisible at these rates.
     const cam = this.camLocalFrame.position;
-    const { a, b } = this.convBodies(state);
-    for (const body of [a, b]) {
-      if (!body) continue;
+    const bodies = this.convBodies(state);
+    // Every framed body leans toward the lens INDEPENDENTLY — `faceCameraYawOffset`
+    // is a function of that one body's own facing, so it needs no notion of a
+    // pair and generalizes to a ring for free: members standing round a circle
+    // face inward in every direction, and the sine law turns each of them toward
+    // the camera by up to the same bound, in whichever direction is short for
+    // it. (The pair's exact anti-symmetry — two headings π apart give exactly
+    // opposite sines — is the n = 2 instance of that, not a special case the
+    // function encodes.) A group therefore still reads as squared up with each
+    // other for the same reason a pair does: the turn is bounded by ±30° per
+    // body, so any two members' headings shift by at most 60° RELATIVE to one
+    // another, which is the same tolerance that already reads as "facing each
+    // other" for the pair. Nothing here needs the roster size, and at the design
+    // cap of five a ring member still keeps its inward lean.
+    // ⑫ — whom a moving listener leans toward. Null for a standing circle: the
+    // SIM already turned those bodies (`faceGroup`), so a social lean on top
+    // would double the turn and eat the camera's whole budget.
+    const speakerId = this.convFocus?.speaker;
+    const talker = speakerId ? (state.avatars[speakerId] ?? null) : null;
+    for (const body of bodies) {
       // A body ON a fixture (asleep, seated at the table) has its axis owned by
       // the furniture — twisting its root would slide it off the chair. It keeps
       // exactly the pose the anchor gave it.
+      const look = talker && talker.id !== body.id && headingHeldByLegs(body) ? talker : null;
       const want = body.activity
         ? 0
-        : faceCameraYawOffset(body, cam.x, cam.z) * this.convBlend;
+        : socialYawOffset(body, look, cam.x, cam.z) * this.convBlend;
       this.convYaw.set(body.id, easeApproach(this.convYaw.get(body.id) ?? 0, want, CONV_FACE_RATE, step));
     }
+    const framedIds = new Set(bodies.map((b) => b.id));
     for (const [id, cur] of this.convYaw) {
-      const framed = a?.id === id || b?.id === id;
-      // A body that left the pair UNWINDS at the same rate it turned — never a
+      const framed = framedIds.has(id);
+      // A body that left the roster UNWINDS at the same rate it turned — never a
       // snap back to its sim heading.
       const next = framed ? cur : easeApproach(cur, 0, CONV_FACE_RATE, step);
       const model = this.avatars.get(id);

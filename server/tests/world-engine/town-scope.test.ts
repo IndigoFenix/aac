@@ -12,12 +12,16 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   auditScopeTree,
+  descendantScopeIds,
   isTownYard,
   itemLocationOf,
   ownerScopeOf,
   parseScopeId,
   scopeIdOf,
   scopeParentOf,
+  scopeStock,
+  scopeStockIndex,
+  scopeUnits,
   walkScopeTree,
   SITE_STOCK_ID,
   TOWN_YARD_ID,
@@ -224,6 +228,122 @@ describe("the tree walk", () => {
       townId: () => null,
     };
     expect(walkScopeTree(cyclic).map((n) => n.id).sort()).toEqual(["a", "b"]);
+  });
+});
+
+describe("a scope's inventory IS the sum of its containers", () => {
+  // The law's own sentence, and the question every "have we got one" gate in
+  // the engine had been asking a narrower version of. The shape below is the
+  // live 2026-08-05 bug in miniature: a house whose workbench is NOT in a box.
+  const ep = (id: string, stack: Record<string, number>): StockEndpoint => ({
+    id, kind: "container", stack, owner: null,
+  });
+  const stacks: Record<string, Record<string, number>> = {
+    "furn_9_cupboard": { block: 4 },
+    "furn_9_chest_food": { apple: 2 },
+    "small:basket_1": { apple: 1 }, // a basket on the floor, with an apple IN it
+    "furn_2_chest_food": { apple: 7 }, // …another household entirely
+  };
+  /** The census: the workbench prop lying in h_9, and one in Mara's hands. */
+  const loose: Record<string, Record<string, number>> = {
+    "h_9": { "furn.workbench": 1 },
+    "pocket:resident_9_0": { "furn.chair": 1 },
+  };
+  const input = {
+    ids: () => [
+      TOWN_SCOPE, "h_9", "h_2",
+      "pocket:resident_9_0", ...Object.keys(stacks),
+    ],
+    endpointOf: (id: string) => (stacks[id] ? ep(id, stacks[id]!) : null),
+    looseIn: (id: string) => loose[id] ?? null,
+    houseOfCreature: (cid: string) => Number(cid.split("_")[1]),
+    buildingOfContainer: (objectId: string) => (objectId === "small:basket_1" ? "h_9" : null),
+    townId: () => TOWN_SCOPE,
+  };
+
+  it("counts a piece LYING ON THE FLOOR as owned — the whole bug in one line", () => {
+    // `furn_9_*` container stacks hold no bench. The household still has one,
+    // and every gate that reads only the boxes made another (four on the
+    // kitchen floor and a fifth under way, observed live 2026-08-05).
+    expect(scopeUnits("h_9", "furn.workbench", input)).toBe(1);
+  });
+
+  it("counts what the people in it are holding", () => {
+    // A body hangs off its household, so a chair in Mara's hands is a chair the
+    // house owns — and the house is not asked to make a second one.
+    expect(scopeUnits("h_9", "furn.chair", input)).toBe(1);
+    expect(scopeUnits("pocket:resident_9_0", "furn.chair", input)).toBe(1);
+  });
+
+  it("sums its containers, INCLUDING a basket standing on its floor", () => {
+    expect(scopeUnits("h_9", "apple", input)).toBe(3); // 2 in the pantry + 1 in the basket
+    expect(scopeUnits("h_9", "block", input)).toBe(4);
+  });
+
+  it("does NOT count the neighbours — containment, not proximity", () => {
+    expect(scopeUnits("h_2", "apple", input)).toBe(7);
+    expect(scopeUnits("h_2", "furn.workbench", input)).toBe(0);
+  });
+
+  it("rolls all the way up: the town holds everything in it", () => {
+    expect(scopeUnits(TOWN_SCOPE, "apple", input)).toBe(10);
+    expect(scopeUnits(TOWN_SCOPE, "furn.workbench", input)).toBe(1);
+  });
+
+  it("🚨 counts a unit ONCE — the basket's apple is the basket's, not also the floor's", () => {
+    // The census and the stacks must not overlap, or a scope's inventory
+    // inflates every time somebody sets a bag down. `looseIn` reports the
+    // PROP as a unit of itself; the apple inside it is the prop's stack.
+    const stock = scopeStock("h_9", input);
+    expect(stock["apple"]).toBe(3);
+    expect(stock["furn.workbench"]).toBe(1);
+  });
+
+  it("head-matches, so a facet is still the thing it is", () => {
+    const facted = {
+      ...input,
+      endpointOf: (id: string) =>
+        id === "furn_9_cupboard" ? ep(id, { "block.material_stone": 2 }) : input.endpointOf(id),
+    };
+    expect(scopeUnits("h_9", "block", facted)).toBe(2);
+  });
+
+  it("the index answers every scope in ONE pass — parents included", () => {
+    // 200 households asking one at a time is a walk of the whole town per
+    // question per tick, which is exactly why these gates were written as id
+    // regexes in the first place.
+    const idx = scopeStockIndex(input);
+    expect(idx.get("h_9")?.["furn.workbench"]).toBe(1);
+    expect(idx.get(TOWN_SCOPE)?.["apple"]).toBe(10);
+    expect(idx.get("furn_9_cupboard")?.["block"]).toBe(4);
+  });
+
+  it("descendantScopeIds is the containment closure, and excludes the root", () => {
+    const kids = descendantScopeIds("h_9", input.ids(), input);
+    expect(kids).toContain("furn_9_cupboard");
+    expect(kids).toContain("small:basket_1");
+    expect(kids).toContain("pocket:resident_9_0"); // the body is IN the household
+    expect(kids).not.toContain("h_9");
+    expect(kids).not.toContain("furn_2_chest_food");
+  });
+
+  it("without a census it is the STORED reading — which the reconciler needs", () => {
+    // `reconcileFurnishing` is handed the loose pieces separately, as
+    // `standing`; counting them in its budget too would have the household
+    // install and carry the same chair.
+    const boxesOnly = { ...input, looseIn: undefined };
+    expect(scopeUnits("h_9", "furn.workbench", boxesOnly)).toBe(0);
+    expect(scopeUnits("h_9", "apple", boxesOnly)).toBe(3);
+  });
+
+  it("terminates on a cyclic context rather than hanging", () => {
+    const cyclic = {
+      ids: () => ["a", "b"],
+      endpointOf: () => null,
+      buildingOfContainer: (id: string) => (id === "a" ? "b" : "a"),
+      townId: () => null,
+    };
+    expect(scopeStock("a", cyclic)).toEqual({});
   });
 });
 

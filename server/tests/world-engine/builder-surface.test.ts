@@ -64,6 +64,30 @@ describe("builderSurfaceFor — the bridge surface", () => {
     expect(s.complete).toBe(false); // "i_me want" has no object yet
   });
 
+  // ⑫ (conversation-in-motion.md law ②) — the roster reaches the BOARD through
+  // the same bridge the nouns take, so a request built in a crowd can name whom
+  // it is for. The bridge's whole job here is to pass it through unchanged.
+  it("⑫ a 3+ roster puts the NAMES first — asking in a crowd starts with whom", () => {
+    // The names were always on the board (a creature is wantable — "i_me + want
+    // + mara" is wanting her company). What the roster changes is RANK: as
+    // addressees they outrank the objects, so the first thing offered to a child
+    // asking for something in a crowd is the person to ask.
+    const crowd = builderSurfaceFor("i_me + want", { nouns: NOUNS, addressees: ["mara", "papa"] });
+    const alone = builderSurfaceFor("i_me + want", { nouns: NOUNS });
+    expect(keys(crowd).slice(0, 2).sort()).toEqual(["mara", "papa"]);
+    expect(keys(alone).slice(0, 2).sort()).toEqual(["apple", "ball"]);
+  });
+
+  it("⑫ a DYAD changes nothing — nobody to disambiguate from (law ④)", () => {
+    expect(builderSurfaceFor("i_me + want", { nouns: NOUNS, addressees: ["mara"] }))
+      .toEqual(builderSurfaceFor("i_me + want", { nouns: NOUNS }));
+  });
+
+  it("⑫ no roster ⇒ the board is byte-identical to today", () => {
+    expect(builderSurfaceFor("i_me + want", { nouns: NOUNS, addressees: [] }))
+      .toEqual(builderSurfaceFor("i_me + want", { nouns: NOUNS }));
+  });
+
   it("noun buttons carry kind + the scene-presence flag from the passed nouns", () => {
     const s = builderSurfaceFor("hi", { nouns: NOUNS }); // greeting → addressees
     const mara = s.buttons.find((b) => b.key === "mara");

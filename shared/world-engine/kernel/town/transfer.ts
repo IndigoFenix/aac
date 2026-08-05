@@ -67,8 +67,18 @@ export interface StockEndpoint {
 
 /** The material HEAD of a stack glyph ("wood.wet" → "wood") — the
  *  structures.ts / founding.ts convention: facted variants pay toward and
- *  count toward their head. */
+ *  count toward their head.
+ *
+ *  🚨 A STORED PIECE IS HEADED BY ITS KIND. Furniture stacks under the prefix
+ *  `furn.<kind>`, so the plain head made every piece the same material: a bill
+ *  for a bed counted the chairs, and `takeStock` for a bed could take one and
+ *  install it as the bed. The kind is the first modifier; anything after it
+ *  (a colour) is an ordinary facet and still pays toward its kind. */
 export function stackHead(glyph: string): string {
+  if (glyph.startsWith("furn.")) {
+    const kind = glyph.split(".")[1];
+    return kind ? `furn.${kind}` : glyph;
+  }
   return headOf(glyph);
 }
 

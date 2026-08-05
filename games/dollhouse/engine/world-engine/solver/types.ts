@@ -568,6 +568,32 @@ export interface GoalTreeGameMeta {
    * so one seed reproduces the whole world end to end.
    */
   seed?: number;
+  /**
+   * THE AUTHORITY KNOB — the standing every AUTHOR (player) starts with toward a
+   * creature that has no warmed relation row yet (quest-host `relationToward`).
+   *
+   * This is decision 2's mechanism (multi-entity-conversations.md §2.2), and it
+   * is the reason the willingness gates could be made probabilistic at all. The
+   * gate curves are monotone and SATURATING, so a game that seeds high
+   * `authority`/`affinity` pushes every verdict far up the curve and gets back
+   * effectively deterministic outcomes: ask, and it happens. A FIXED game — a
+   * lesson with a right answer, where cause and effect must be learnable —
+   * declares it. FREE PLAY omits it and keeps the fuzz, which is where a
+   * creature's own disposition is supposed to be legible.
+   *
+   * Omitted (the default) ⇒ nothing changes: the family/stranger fallbacks stand,
+   * so every existing game JSON is unaffected. Partial: unset axes keep
+   * `DEFAULT_RELATION`'s values. Never overrides a relation actually EARNED in
+   * play — a warmed row always wins, because it is what happened.
+   */
+  playerRelation?: {
+    /** −1 hostile … 0 neutral … +1 devoted. */
+    affinity?: number;
+    /** 0..1 — do I believe your guidance is sound. */
+    trust?: number;
+    /** 0..1 — do I recognize your right to direct me. The command driver. */
+    authority?: number;
+  };
 }
 
 export interface GoalTreeGame {

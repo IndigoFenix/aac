@@ -536,8 +536,9 @@ export const providesKey = (type: string): string => `provides:${type}`;
 
 /** Learn that `place` (a PLACE-FACT subject id, e.g. "buy:good:food") PROVIDES the
  *  resource type — the §2b provision fact (semantic-behavior.md). Rides the one
- *  monotone knowledge channel, so gossip (tellAbout/askWhere) spreads it like any
- *  sighting. The host seeds these for market stalls; NPCs pass them on. */
+ *  monotone knowledge channel, so gossip (`tellAbout`, and the conversation-wide
+ *  `overhear`) spreads it like any sighting. The host seeds these for market
+ *  stalls; NPCs pass them on. */
 export function learnProvides(
   world: CreatureWorld,
   creatureId: CreatureId,

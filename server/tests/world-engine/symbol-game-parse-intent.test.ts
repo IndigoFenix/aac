@@ -17,6 +17,183 @@ describe("social acts — self-contained moves", () => {
   });
 });
 
+// A vocative names WHOM the utterance is addressed to. It is not a subject and
+// not an object: in "hi + mara" Mara neither greets nor is greeted-at like a
+// thing — she is the one being spoken to. Binding the addressee is the world's
+// job (multi-entity-conversations.md §3b); the parser only has to record it.
+describe("vocatives — a social act that NAMES someone addresses them", () => {
+  // The classifier a world host supplies (names → creatures, toys → items).
+  const classifyEntity = (sym: string): "place" | "item" | "creature" | "unknown" =>
+    ["mara", "pip"].includes(sym) ? "creature" : ["ball", "apple"].includes(sym) ? "item" : "unknown";
+  const p = (s: string) => parseSentence(s, { classifyEntity });
+
+  it("hi + mara → greet addressed TO mara", () => {
+    const f = p("hi + mara");
+    expect(f.kind).toBe("greet");
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+
+  it("order-free: mara + hi parses identically", () => {
+    const f = p("mara + hi");
+    expect(f.kind).toBe("greet");
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+
+  it("bye + mara → FAREWELL (not a greeting) addressed to mara", () => {
+    const f = p("bye + mara");
+    expect(f.kind).toBe("farewell");
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+
+  it("naming a creature and nothing else already addresses it", () => {
+    const f = p("mara");
+    expect(f.kind).toBe("greet");
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+
+  it("hi + you → the listener, a well-formed no-op referent", () => {
+    const f = p("hi + you");
+    expect(f.kind).toBe("greet");
+    expect(f.vocative).toEqual({ kind: "listener" });
+  });
+
+  it("a bare hi addresses nobody in particular", () => {
+    const f = p("hi");
+    expect(f.kind).toBe("greet");
+    expect(f.vocative).toBeUndefined();
+  });
+
+  it("an ITEM is never an addressee — hi + ball keeps its old shape", () => {
+    const f = p("hi + ball");
+    expect(f.vocative).toBeUndefined();
+    expect(f.kind).toBe("request"); // unchanged: the verbless item reads as a want
+    expect(f.object).toEqual({ kind: "entity", symbol: "ball", modifiers: [] });
+  });
+
+  it("without a classifier a name is opaque — no animacy is guessed", () => {
+    const f = parseSentence("hi + mara"); // no ctx: the host always passes one, tests need not
+    expect(f.vocative).toBeUndefined();
+    expect(f.kind).toBe("state"); // unchanged: a bare mention, the world decides
+    expect(f.object).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+
+  it("a non-social frame is untouched: mara + eat keeps mara as the SUBJECT", () => {
+    const f = p("mara + eat");
+    expect(f.kind).toBe("command");
+    expect(f.verb).toBe("eat");
+    expect(f.subject).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+    expect(f.vocative).toBeUndefined();
+    expect(p("mara + hug + pip").vocative).toBeUndefined();
+  });
+
+  // Only greet/farewell may LABEL the move; every other social act beside a
+  // name keeps the naming's own reading (a greeting), which then addresses.
+  it("a non-addressing social never re-labels the naming: yes + mara stays a greet", () => {
+    const f = p("yes + mara");
+    expect(f.kind).toBe("greet");
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+    expect(p("thanks").vocative).toBeUndefined(); // no name, nobody addressed
+  });
+
+  it("the slot is ADDITIVE — raw and every other field keep today's values", () => {
+    const f = p("hi + mara");
+    expect(f.raw).toEqual(["hi", "mara"]);
+    expect(f.verb).toBeUndefined();
+    expect(f.object).toBeUndefined();
+    expect(f.target).toBeUndefined();
+    expect(f.modifiers).toEqual([]);
+    // The noun still fills whatever role it filled before the vocative existed
+    // (the addressee stack, not the parser, is what reads it).
+    expect(f.subject).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+});
+
+// ⑫ (conversation-in-motion.md law ②) — THE NAME CHANNEL. Naming somebody who is
+// standing in your conversation is ADDRESSING them; naming somebody who is not is
+// talking ABOUT them. Only the roster can tell those apart, which is why it is a
+// parse CONTEXT and not a syntax rule.
+describe("⑫ the name channel — a roster turns a name into an addressee", () => {
+  const classifyEntity = (sym: string): "place" | "item" | "creature" | "unknown" =>
+    ["mara", "pip"].includes(sym) ? "creature" : ["ball", "apple"].includes(sym) ? "item" : "unknown";
+  /** In a conversation with Mara (and nobody else). */
+  const inConvo = (s: string) => parseSentence(s, { classifyEntity, addressees: ["mara"] });
+  /** No conversation at all — today's reading, which must not move. */
+  const alone = (s: string) => parseSentence(s, { classifyEntity });
+
+  it("a FELLOW MEMBER named on a command is the addressee", () => {
+    const f = inConvo("mara + give + apple");
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+
+  it("…and it is ADDITIVE — the subject reading is untouched", () => {
+    // The whole reason this is safe: for a directive the imperative's subject and
+    // the utterance's addressee are already the same creature.
+    const f = inConvo("mara + give + apple");
+    expect(f.subject).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+    expect(f.object).toEqual({ kind: "entity", symbol: "apple", modifiers: [] });
+    expect(alone("mara + give + apple").subject).toEqual(f.subject);
+    expect(alone("mara + give + apple").object).toEqual(f.object);
+  });
+
+  it("a name OUTSIDE the roster is somebody spoken ABOUT, never addressed", () => {
+    expect(alone("mara + give + apple").vocative).toBeUndefined();
+    // Pip is not in this conversation, so naming Pip is not addressing Pip.
+    expect(inConvo("pip + give + apple").vocative).toBeUndefined();
+  });
+
+  it("a RECIPIENT behind the verb is never the addressee", () => {
+    const f = parseSentence("pip + give + apple + to + mara", {
+      classifyEntity,
+      addressees: ["mara", "pip"],
+    });
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "pip", modifiers: [] });
+  });
+
+  it("no roster ⇒ every frame is byte-identical to today", () => {
+    for (const s of ["mara + give + apple", "mara + eat", "mara + sad", "give + apple + to + mara"]) {
+      expect(alone(s).vocative).toBeUndefined();
+    }
+  });
+
+  it("an ITEM is never an addressee, roster or no roster", () => {
+    expect(parseSentence("ball + give", { classifyEntity, addressees: ["ball"] }).vocative)
+      .toBeUndefined();
+  });
+});
+
+// The defect this chapter had to fix before the name channel could ship: with a
+// STATE verb the animacy rule deliberately declines to promote a noun to subject,
+// which left a named creature unclaimed — and the object rule took the FIRST
+// unclaimed noun. "Mara, I want an apple" came out as wanting MARA, with the
+// apple silently dropped. A named person is never the thing wanted.
+describe("⑫ a named person is never the THING WANTED (state-verb object drop)", () => {
+  const classifyEntity = (sym: string): "place" | "item" | "creature" | "unknown" =>
+    ["mara", "pip"].includes(sym) ? "creature" : ["ball", "apple"].includes(sym) ? "item" : "unknown";
+
+  it("mara + want + apple keeps the APPLE as the object", () => {
+    const f = parseSentence("mara + want + apple", { classifyEntity });
+    expect(f.object).toEqual({ kind: "entity", symbol: "apple", modifiers: [] });
+  });
+
+  it("…and in a conversation with Mara, it is addressed to her", () => {
+    const f = parseSentence("mara + want + apple", { classifyEntity, addressees: ["mara"] });
+    expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+    expect(f.object).toEqual({ kind: "entity", symbol: "apple", modifiers: [] });
+  });
+
+  it("a LONE named creature after a state verb is still the object (nothing to displace)", () => {
+    // "i_me + want + mara" is wanting Mara's company — there is no other noun, so
+    // the consumption rule must not fire and leave the frame empty.
+    const f = parseSentence("i_me + want + mara", { classifyEntity });
+    expect(f.object).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
+  });
+
+  it("two ITEMS after a state verb are untouched by the rule", () => {
+    const f = parseSentence("ball + want + apple", { classifyEntity });
+    expect(f.object).toEqual({ kind: "entity", symbol: "ball", modifiers: [] });
+  });
+});
+
 describe("questions — querying the world / the listener", () => {
   it("where + ball → ask, object ball", () => {
     const f = p("where + ball");

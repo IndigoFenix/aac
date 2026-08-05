@@ -495,7 +495,7 @@ export default function DynamicBoard({
     setCurrentPageId(targetPageId);
 
     // Notify parent about navigation
-    onNavigate?.(targetPageId, targetPage.name || "Page", targetPage.buttons || []);
+    onNavigate?.(targetPageId, targetPage.name || t("builder.untitledPage"), targetPage.buttons || []);
   }, [board, currentPageId, onNavigate]);
 
   // Go back to previous page
@@ -507,7 +507,7 @@ export default function DynamicBoard({
 
     const prevPage = board?.pages?.find(p => p.id === prevPageId);
     if (prevPage) {
-      onNavigate?.(prevPageId, prevPage.name || "Page", prevPage.buttons || []);
+      onNavigate?.(prevPageId, prevPage.name || t("builder.untitledPage"), prevPage.buttons || []);
     }
   }, [pageHistory, board, onNavigate]);
 
@@ -517,7 +517,7 @@ export default function DynamicBoard({
     if (!firstPage) return;
     setPageHistory([]);
     setCurrentPageId(firstPage.id);
-    onNavigate?.(firstPage.id, firstPage.name || "Home", firstPage.buttons || []);
+    onNavigate?.(firstPage.id, firstPage.name || t("quickActions.home"), firstPage.buttons || []);
   }, [board, onNavigate]);
 
   // Handle AI button press — navigate to the target page
@@ -621,7 +621,7 @@ export default function DynamicBoard({
   if (!hasAnyContent) {
     return (
       <div className="flex items-center justify-center h-full text-gray-400">
-        <p className="text-sm">AI suggestions will appear here</p>
+        <p className="text-sm">{t("builder.aiSuggestionsPlaceholder")}</p>
       </div>
     );
   }

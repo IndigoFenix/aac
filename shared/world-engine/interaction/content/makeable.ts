@@ -103,7 +103,7 @@ export function makeableGlyph(symbol: string, material?: string): string | null 
     const m = material && toy.materials.includes(material) ? material : toy.materials[0];
     return m ? composeGlyph(symbol, [materialFacetOf(m)]) : symbol;
   }
-  // The order arrives as the board's WORD, and `spokenMakeable` below speaks
+  // The order arrives as the board's WORD, and `spokenWord` below speaks
   // the vocabulary's word for a made piece — so "make + cabinet" has to reach
   // the `cupboard` recipe, or the board offers a word it can't act on.
   const furnKind = fixtureKindForWord(symbol);
@@ -121,30 +121,46 @@ export function makeableGlyph(symbol: string, material?: string): string | null 
 export const isMakeable = (symbol: string): boolean => makeableGlyph(symbol) !== null;
 
 /**
- * The WORD a made glyph is SPOKEN as — the inverse of `makeableGlyph` for
- * dialogue. `furn.chair` → "chair" (a furniture stack's head is the bookkeeping
- * prefix `furn`, not the piece, so `headOf` alone would say "furn");
- * `rabbit.toy.material_cloth` → "rabbit"; `ball.material_cloth` → "ball".
+ * 🗣️ THE WORD A GLYPH IS SPOKEN AS — the head, with storage bookkeeping folded
+ * away. `furn.chair` → "chair"; `rabbit.toy.material_cloth` → "rabbit";
+ * `ball.material_cloth` → "ball".
+ *
+ * ⚠️ USE THIS, NEVER `headOf`, WHENEVER THE RESULT WILL BE SAID OR SHOWN. A
+ * stored piece of furniture stacks as `furn.<kind>`, so its head is the
+ * bookkeeping prefix and `headOf` answers "furn" — a non-word with no artwork
+ * behind it. It leaked into a spoken locative ("the furn is in the door"), a
+ * refusal ("I don't want the furn"), the pocket strip and the concept lookups
+ * that decide what a loose piece even affords, because each of those reached for
+ * the head directly. `headOf` remains right for STORAGE and MATCHING — a stack
+ * key really is `furn.chair`, and a need matching against one has to say so.
  *
  * A piece speaks the VOCABULARY's word for its kind (`fixtureWord`), exactly as
  * a standing one does: the sim keeps `chest` and `box` apart, the board does not
  * — and a word the glyph registry never heard of is a button with a label and no
  * icon (the `chest`/`cupboard` bug, types.ts FIXTURE_WORD).
  */
-export const spokenMakeable = (glyph: string): string => {
+export const spokenWord = (glyph: string): string => {
   const kind = furnitureKindOfGlyph(glyph);
   return kind ? fixtureWord(kind) : headOf(glyph);
 };
 
 /**
- * The GLYPH a stored stack is DRAWN as — what `spokenMakeable` is for words.
- * A furniture stack's `furn.` head is storage bookkeeping with no artwork behind
- * it, so the piece draws as its own vocabulary word (`furn.chest` → `box`);
- * every other stack draws as ITSELF, facets and all, so a red shirt keeps its
- * colour and a hot apple its steam.
+ * THE GLYPH A STACK IS DRAWN AND SAID AS — what `spokenWord` is for the head,
+ * with the FACETS kept. A furniture stack's `furn.` head is storage bookkeeping
+ * with no artwork behind it, so the piece draws as its own vocabulary word
+ * (`furn.chest` → `box`, `furn.chair.color_red` → `chair.color_red`); every
+ * other stack draws as ITSELF, so a red shirt keeps its colour and a hot apple
+ * its steam.
+ *
+ * This is the form to hand the language layer: one glyph in, one glyph out, so
+ * "the red chair" survives the fold instead of flattening to "the chair".
  */
-export const drawnMakeable = (glyph: string): string =>
-  furnitureKindOfGlyph(glyph) ? spokenMakeable(glyph) : glyph;
+export const drawnGlyph = (glyph: string): string => {
+  const kind = furnitureKindOfGlyph(glyph);
+  if (!kind) return glyph;
+  // Drop the `furn` head AND the kind slot; whatever follows is ordinary facets.
+  return [fixtureWord(kind), ...glyph.split(".").slice(2)].join(".");
+};
 
 /**
  * The RECIPE that makes a given glyph — the shape the construction pipeline's
@@ -180,7 +196,7 @@ export function craftRecipeOf(
     produces: glyph,
     consumes: recipe.consumes,
     ...(recipe.at ? { at: recipe.at as StationKind } : {}),
-    label: spokenMakeable(glyph),
+    label: spokenWord(glyph),
   };
 }
 

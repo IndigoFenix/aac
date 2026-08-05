@@ -13,10 +13,10 @@ import { createTownWorld } from "@shared/world-engine/kernel/town/town-world.js"
 import { townPlan } from "@shared/world-engine/kernel/town/plan.js";
 import { certifyGoalTreeGame } from "@shared/world-engine/solver/index.js";
 import {
-  PLAYER_CREATURE_ID,
   certifyCreatureQuestWorld,
   creatureWorldFromGame,
 } from "@shared/world-engine/interaction/quest/creature-quests.js";
+import { LOCAL_PLAYER_CID } from "@shared/world-engine/interaction/quest/player-identity.js";
 import { concludeTransfer, giveItem, openNeeds, requestItem } from "@shared/world-engine/interaction/behavior/creatures.js";
 import {
   applyTownOutcome,
@@ -162,10 +162,10 @@ describe("town-quests: a session's deliveries credit the books", () => {
     // The GENEROSITY contract in motion: the town vendor grants on ask
     // (playerDebt covers the baseline value) — no barter chain needed.
     for (const q of ["t0", "t1"]) {
-      const ask = requestItem(world, PLAYER_CREATURE_ID, `${q}_vendor`, `${q}_item`);
+      const ask = requestItem(world, LOCAL_PLAYER_CID, `${q}_vendor`, `${q}_item`);
       expect(ask.kind).toBe("accept");
-      concludeTransfer(world, PLAYER_CREATURE_ID, `${q}_item`);
-      const give = giveItem(world, PLAYER_CREATURE_ID, `${q}_wanter`, `${q}_item`);
+      concludeTransfer(world, LOCAL_PLAYER_CID, `${q}_item`);
+      const give = giveItem(world, LOCAL_PLAYER_CID, `${q}_wanter`, `${q}_item`);
       expect(give.events.some(e => e.type === "need-fulfilled")).toBe(true);
       expect(openNeeds(world.creatures[`${q}_wanter`]!)).toHaveLength(0);
     }

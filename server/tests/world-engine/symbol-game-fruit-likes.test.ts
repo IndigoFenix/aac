@@ -189,7 +189,7 @@ describe("requests/where-is for a specific KIND (the §2b machinery, kind-flavor
       [{ id: "me" }, { id: "owner" }],
       [{ id: "apple1", ownerId: "fox", kind: "apple", category: "food" }],
     );
-    const act = intentToAct(parseSentence("i_me + want + apple"), w, "me", "owner", opts(w))!;
+    const act = intentToAct(parseSentence("i_me + want + apple"), w, { speakerId: "me", addresseeId: "owner" }, opts(w))!;
     expect(act.kind).toBe("request");
     expect(act.itemId).toBeUndefined();
     expect(act.target).toEqual({ kind: "apple" });

@@ -668,6 +668,67 @@ describe("going — where-going asks, answers, and travel commands", () => {
   });
 });
 
+// ⑫ (conversation-in-motion.md law ②) — DIRECT ADDRESS. The NAME channel is the
+// only way to say whom you mean with full hands and a body facing the wrong way,
+// and it is worthless if it renders as glyph soup ("Mara I want apple"). A
+// vocative is not a sentence shape — it is a name set in front of one — so it is
+// peeled in `translateWith`, the one place every ruleset passes through.
+describe("⑫ direct address — a name in front of a sentence", () => {
+  const NAMES = new Map<string, "f" | "m">([["mara", "f"], ["papa", "m"]]);
+  /** The speaker marked this as an ADDRESS — the parser knew, from the roster. */
+  const o = { names: NAMES, vocative: true };
+
+  it("renders as a vocative in every ruleset, and the clause is unchanged behind it", () => {
+    expect(en("mara + i_me + want + apple", o)).toBe("Mara, I want an apple.");
+    expect(es("mara + i_me + want + apple", o)).toBe("Mara, quiero una manzana.");
+    expect(pt("mara + i_me + want + apple", o)).toBe("Mara, eu quero uma maçã.");
+    expect(he("mara + i_me + want + apple", o)).toBe("Mara, אני רוצה תפוח.");
+  });
+
+  it("the clause behind it is EXACTLY the sentence it would have been alone", () => {
+    for (const t of [en, es, pt, he]) {
+      const alone = t("i_me + want + apple", o);
+      const addressed = t("mara + i_me + want + apple", o);
+      // Same words, lower-cased at the join where the language has case at all.
+      expect(addressed.toLowerCase()).toBe(`mara, ${alone.toLowerCase()}`);
+    }
+  });
+
+  it("a BARE name is a greeting, not an address — nothing follows it to address", () => {
+    expect(en("mara", o)).toBe("Mara");
+    expect(he("mara", o)).toBe("Mara");
+  });
+
+  it("only a PROPER NAME addresses — an ordinary noun is left where it stands", () => {
+    // "apple + hot" is a claim about the apple, not a word to the apple.
+    expect(en("apple + hot", o)).not.toContain(",");
+  });
+
+  it("a name that is not in the book is not a vocative", () => {
+    expect(en("mara + i_me + want + apple", { vocative: true })).not.toBe("Mara, I want an apple.");
+  });
+
+  it("🚨 UNMARKED, IT IS NEVER GUESSED — the third-person reading is preserved", () => {
+    // The regression this marker exists to prevent: identical shape, opposite
+    // meaning. Only the speaker (via the parser's roster) knows which was meant.
+    const names = { names: NAMES };
+    expect(en("mara + go + to + market", names)).toBe("Mara is going to the market.");
+    expect(en("mara + i_me + want + apple", names)).not.toContain(",");
+  });
+
+  it("a proper noun right after the comma keeps its capital", () => {
+    expect(en("mara + papa + hungry", o)).toBe("Mara, Papa is hungry.");
+  });
+
+  it("English 'I' keeps its capital after the comma", () => {
+    expect(en("mara + i_me + want + apple", o)).toContain(", I want");
+  });
+
+  it("still composes with a trailing manner word", () => {
+    expect(en("mara + i_me + want + play + together", o)).toBe("Mara, I want to play together.");
+  });
+});
+
 describe("where-is — the single-glyph thing-focus ask", () => {
   it("a bare questioned noun asks where it is", () => {
     expect(en("cookie#question")).toBe("Where is the cookie?");

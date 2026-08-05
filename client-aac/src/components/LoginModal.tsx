@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Loader2, LogIn } from "lucide-react";
 import aivotaLogo from "@assets/aivota_logo.png";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ interface LoginModalProps {
 }
 
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
+  const { t } = useLanguage();
   const [isLogin, setIsLogin] = useState(true);
   const [impersonateEmail, setImpersonateEmail] = useState('');
   const [isImpersonating, setIsImpersonating] = useState(false);
@@ -42,8 +44,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     onSuccess: (data) => {
       localStorage.removeItem('aac_signed_out');
       toast({
-        title: "Welcome back!",
-        description: "You have successfully logged in.",
+        title: t("login.welcomeBackToastTitle"),
+        description: t("login.loginSuccessDescription"),
       });
       // Set query data directly to avoid race condition between invalidateQueries and refetch
       queryClient.setQueryData(["/auth/user"], { success: true, user: data.user });
@@ -51,8 +53,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     },
     onError: (error: any) => {
       toast({
-        title: "Login Failed",
-        description: error.message || "Invalid email or password",
+        title: t("login.loginFailedTitle"),
+        description: error.message || t("login.invalidCredentials"),
         variant: "destructive",
       });
     },
@@ -67,8 +69,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     onSuccess: (data) => {
       localStorage.removeItem('aac_signed_out');
       toast({
-        title: "Welcome to Aivota!",
-        description: "Your account has been created successfully.",
+        title: t("login.welcomeToAivotaTitle"),
+        description: t("login.accountCreatedDescription"),
       });
       // Set query data directly to avoid race condition between invalidateQueries and refetch
       queryClient.setQueryData(["/auth/user"], { success: true, user: data.user });
@@ -76,8 +78,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     },
     onError: (error: any) => {
       toast({
-        title: "Registration Failed",
-        description: error.message || "Failed to create account",
+        title: t("login.registrationFailedTitle"),
+        description: error.message || t("login.failedToCreateAccount"),
         variant: "destructive",
       });
     },
@@ -134,23 +136,23 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         <DialogHeader className="space-y-1 text-center sm:text-center">
           <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
           <DialogTitle className="text-2xl font-bold text-center">
-            {isLogin ? "Welcome Back" : "Create Your Account"}
+            {isLogin ? t("login.welcomeBackHeading") : t("login.createAccountHeading")}
           </DialogTitle>
           <DialogDescription className="text-center">
             {isLogin
-              ? "Sign in to access your communication profile and continue your journey."
-              : "Join Aivota and create your personalized communication experience."
+              ? t("login.loginDescription")
+              : t("login.registerDescription")
             }
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email Address *</Label>
+            <Label htmlFor="email">{t("login.emailAddressRequired")}</Label>
             <Input
               id="email"
               type="email"
-              placeholder="your.email@example.com"
+              placeholder={t("login.emailPlaceholderExample")}
               value={formData.email}
               onChange={(e) => handleInputChange("email", e.target.value)}
               required
@@ -160,11 +162,11 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password *</Label>
+            <Label htmlFor="password">{t("login.passwordRequired")}</Label>
             <Input
               id="password"
               type="password"
-              placeholder="Enter your password"
+              placeholder={t("auth.passwordPlaceholder")}
               value={formData.password}
               onChange={(e) => handleInputChange("password", e.target.value)}
               required
@@ -178,10 +180,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
             <>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Full Name *</Label>
+                  <Label htmlFor="name">{t("login.fullNameRequired")}</Label>
                   <Input
                     id="name"
-                    placeholder="Your full name"
+                    placeholder={t("login.fullNamePlaceholder")}
                     value={formData.name}
                     onChange={(e) => handleInputChange("name", e.target.value)}
                     required
@@ -189,7 +191,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="age">Age</Label>
+                  <Label htmlFor="age">{t("settings.age")}</Label>
                   <Input
                     id="age"
                     type="number"
@@ -203,21 +205,21 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="gender">Gender</Label>
+                  <Label htmlFor="gender">{t("settings.gender")}</Label>
                   <Select value={formData.gender} onValueChange={(value) => handleInputChange("gender", value)} disabled={isLoading}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select gender" />
+                      <SelectValue placeholder={t("settings.selectGender")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                      <SelectItem value="prefer-not-to-say">Prefer not to say</SelectItem>
+                      <SelectItem value="male">{t("settings.male")}</SelectItem>
+                      <SelectItem value="female">{t("settings.female")}</SelectItem>
+                      <SelectItem value="other">{t("settings.other")}</SelectItem>
+                      <SelectItem value="prefer-not-to-say">{t("settings.preferNotToSay")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="language">Preferred Language</Label>
+                  <Label htmlFor="language">{t("login.preferredLanguage")}</Label>
                   <Select value={formData.language} onValueChange={(value) => handleInputChange("language", value)} disabled={isLoading}>
                     <SelectTrigger>
                       <SelectValue />
@@ -240,10 +242,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="preferences">Communication Preferences</Label>
+                <Label htmlFor="preferences">{t("login.communicationPreferences")}</Label>
                 <Textarea
                   id="preferences"
-                  placeholder="Tell us about your communication needs, interests, or preferences..."
+                  placeholder={t("login.communicationPreferencesPlaceholder")}
                   value={formData.preferences}
                   onChange={(e) => handleInputChange("preferences", e.target.value)}
                   rows={3}
@@ -252,10 +254,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="clinicalInfo">Clinical Information (Optional)</Label>
+                <Label htmlFor="clinicalInfo">{t("login.clinicalInformation")}</Label>
                 <Textarea
                   id="clinicalInfo"
-                  placeholder="Any relevant clinical information or support needs..."
+                  placeholder={t("login.clinicalInformationPlaceholder")}
                   value={formData.clinicalInfo}
                   onChange={(e) => handleInputChange("clinicalInfo", e.target.value)}
                   rows={2}
@@ -273,10 +275,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin me-2" />
-                {isLogin ? "Signing in..." : "Creating Account..."}
+                {isLogin ? t("login.signingIn") : t("login.creatingAccount")}
               </>
             ) : (
-              isLogin ? "Sign In" : "Create Account"
+              isLogin ? t("login.signIn") : t("login.createAccount")
             )}
           </Button>
         </form>

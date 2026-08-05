@@ -67,7 +67,7 @@ export function LanguageSelector({
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Sign Language</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">{t('profile.signLanguage')}</DropdownMenuLabel>
         {supportedSignLanguages.map((sl) => (
           <DropdownMenuItem
             key={sl.code}

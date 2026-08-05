@@ -450,7 +450,7 @@ export function DualAgentConversationBox({
                 data-dwell
                 onClick={handleCaveClick}
                 className="relative shrink-0 w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
-                title={isAsleep ? "Unmute (tap cave to wake)" : "Mute (tap cave to silence)"}
+                title={isAsleep ? t('conversation.unmuteCave') : t('conversation.muteCave')}
               >
                 <AacCave
                   avatar={sprite.avatar}
@@ -467,9 +467,9 @@ export function DualAgentConversationBox({
                   <div
                     key={lastModeChange.at}
                     className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-semibold shadow animate-pulse"
-                    title={lastModeChange.reason || `AI switched to ${lastModeChange.mode}`}
+                    title={lastModeChange.reason || t('conversation.aiSwitchedToMode', { mode: lastModeChange.mode })}
                   >
-                    AI: {lastModeChange.mode}
+                    {t('conversation.aiModeLabel', { mode: lastModeChange.mode })}
                   </div>
                 )}
               </button>
@@ -491,7 +491,7 @@ export function DualAgentConversationBox({
                  ahead of both the idle AI avatar and the social-trainer peer. */
               <div
                 className="relative shrink-0 w-20 flex items-center justify-center select-none"
-                title={call?.activeContact?.name ?? "Call"}
+                title={call?.activeContact?.name ?? t('conversation.call')}
               >
                 <CallFace />
               </div>
@@ -499,8 +499,10 @@ export function DualAgentConversationBox({
               <div
                 className="relative shrink-0 w-20 flex items-center justify-center select-none"
                 title={socialBot.characterName
-                  ? `${socialBot.characterName}${socialBot.voiceName ? ` (voice: ${socialBot.voiceName})` : ""}`
-                  : "Social peer"}
+                  ? (socialBot.voiceName
+                      ? t('conversation.characterVoiceLabel', { name: socialBot.characterName, voice: socialBot.voiceName })
+                      : socialBot.characterName)
+                  : t('conversation.socialPeer')}
               >
                 {socialBot.connected && socialBot.appearance ? (
                   <ProceduralFace
@@ -517,7 +519,7 @@ export function DualAgentConversationBox({
                   <div
                     className="rounded-full border-4 border-white/30 border-t-white/90 animate-spin"
                     style={{ width: 48, height: 48 }}
-                    aria-label="Connecting"
+                    aria-label={t('conversation.connecting')}
                   />
                 )}
               </div>
@@ -526,7 +528,7 @@ export function DualAgentConversationBox({
                   {...(avatarDwellSuppressed ? {} : { "data-dwell": "" })}
                   onClick={handleAvatarClick}
                   className="relative shrink-0 w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
-                  title="Tap to get attention"
+                  title={t('conversation.tapToGetAttention')}
                 >
                   <AacAvatar
                     avatar={sprite.avatar}
@@ -554,7 +556,7 @@ export function DualAgentConversationBox({
                           y: { duration: 1.4, repeat: Infinity, ease: "easeInOut" },
                         }}
                         className="pointer-events-none absolute -top-2 -right-2 flex items-center justify-center w-7 h-7 rounded-full bg-yellow-300 text-gray-800 font-bold text-base shadow-md select-none"
-                        aria-label="Thinking"
+                        aria-label={t('conversation.thinking')}
                       >
                         ?
                       </motion.div>
@@ -580,7 +582,7 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={() => onBoardModeChange(boardMode === 'ai' ? 'db' : 'ai')}
                     className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${boardMode === 'db' ? 'bg-white/20' : ''}`}
-                    title={boardMode === 'ai' ? "Switch to database boards" : "Switch to AI board"}
+                    title={boardMode === 'ai' ? t('conversation.switchToDatabaseBoards') : t('conversation.switchToAiBoard')}
                   >
                     {boardMode === 'ai' ? <Grid3X3 className="w-4 h-4" /> : <Brain className="w-4 h-4" />}
                   </Button>
@@ -590,7 +592,7 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={() => setVideoCaptureEnabled(!videoCaptureEnabled)}
                     className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${videoCaptureEnabled ? 'bg-white/20' : ''}`}
-                    title={videoCaptureEnabled ? "Disable video capture" : "Enable video capture"}
+                    title={videoCaptureEnabled ? t('conversation.disableVideoCapture') : t('conversation.enableVideoCapture')}
                   >
                     {videoCaptureEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                   </Button>
@@ -610,7 +612,7 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={() => setAudioEnabled(!audioEnabled)}
                     className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                    title={audioEnabled ? "Mute audio" : "Unmute audio"}
+                    title={audioEnabled ? t('conversation.muteAudio') : t('conversation.unmuteAudio')}
                   >
                     {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                   </Button>
@@ -620,7 +622,7 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={() => setResponseMode(responseMode === 'fast' ? 'analyze' : 'fast')}
                     className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${responseMode === 'fast' ? 'bg-white/20' : ''}`}
-                    title={responseMode === 'fast' ? "Fast mode (respond first)" : "Analyze mode (observe first)"}
+                    title={responseMode === 'fast' ? t('conversation.fastModeTitle') : t('conversation.analyzeModeTitle')}
                   >
                     {responseMode === 'fast' ? <Zap className="w-4 h-4" /> : <ScanSearch className="w-4 h-4" />}
                   </Button>
@@ -630,7 +632,7 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={toggleTheme}
                     className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                    title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                    title={theme === 'dark' ? t('conversation.switchToLightMode') : t('conversation.switchToDarkMode')}
                   >
                     {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                   </Button>
@@ -668,7 +670,7 @@ export function DualAgentConversationBox({
                         size="sm"
                         onClick={() => onTestAlarm("alert")}
                         className="text-white hover:text-amber-300 hover:bg-white/10 h-7 w-7 p-0"
-                        title="Test alert chime"
+                        title={t('conversation.testAlertChime')}
                       >
                         <Bell className="w-4 h-4" />
                       </Button>
@@ -677,7 +679,7 @@ export function DualAgentConversationBox({
                         size="sm"
                         onClick={() => onTestAlarm("emergency")}
                         className="text-white hover:text-red-300 hover:bg-white/10 h-7 w-7 p-0"
-                        title="Test emergency alarm"
+                        title={t('conversation.testEmergencyAlarm')}
                       >
                         <Siren className="w-4 h-4" />
                       </Button>
@@ -690,7 +692,7 @@ export function DualAgentConversationBox({
                       size="sm"
                       onClick={onFullScreen}
                       className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                      title="Toggle Full Screen"
+                      title={t('conversation.toggleFullScreen')}
                     >
                       <Maximize className="w-4 h-4" />
                     </Button>
@@ -714,7 +716,7 @@ export function DualAgentConversationBox({
                       size="sm"
                       onClick={onExitStudent}
                       className="text-white hover:text-orange-300 hover:bg-white/10 h-7 w-7 p-0"
-                      title="Switch Student"
+                      title={t('conversation.switchStudent')}
                     >
                       {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
                     </Button>
@@ -726,7 +728,7 @@ export function DualAgentConversationBox({
                       size="sm"
                       onClick={onLogout}
                       className="text-white hover:text-red-300 hover:bg-white/10 h-7 w-7 p-0"
-                      title="Log Out"
+                      title={t('common.logout')}
                     >
                       <LogOut className="w-4 h-4" />
                     </Button>
@@ -735,10 +737,10 @@ export function DualAgentConversationBox({
                   {monitorError && monitorConsecutiveFailures > 0 && (
                     <span
                       className="flex items-center gap-1 text-xs bg-red-500/80 px-2 py-0.5 rounded cursor-help"
-                      title={`Monitor agent error (${monitorConsecutiveFailures} failures): ${monitorError}`}
+                      title={t('conversation.monitorAgentError', { count: monitorConsecutiveFailures, error: monitorError })}
                     >
                       <AlertTriangle className="w-3 h-3" />
-                      Monitor
+                      {t('conversation.monitor')}
                     </span>
                   )}
 
@@ -862,7 +864,7 @@ export function DualAgentConversationBox({
                               utteranceConfidence === 'medium' ? 'bg-amber-400' :
                               'bg-red-400'
                             }`}
-                            title={`Confidence: ${utteranceConfidence}`}
+                            title={t('conversation.confidenceLabel', { level: utteranceConfidence })}
                           />
                         )}
                         {audioEnabled && isPlaying && (
@@ -898,7 +900,7 @@ export function DualAgentConversationBox({
                       size="sm"
                       onClick={onVoice}
                       className="bg-purple-500 hover:bg-purple-600 text-white border-0 px-3 py-2 shrink-0"
-                      title="Voice selected buttons as speech"
+                      title={t('conversation.voiceSelectedButtons')}
                     >
                       <Speech className="w-4 h-4 mr-1" />
                       {t("quickActions.speak")}

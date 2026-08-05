@@ -326,9 +326,197 @@ export function liveScopes(input: ScopeTreeInput): ScopeNode[] {
  * places an apple could be. Two totals that differ across a `condense`/`expand`
  * are the bug that model is most likely to introduce, so the probe lands with
  * the tree rather than after it.
+ *
+ * Counts LOOSE units too when the host supplies the census (`looseIn`) — a
+ * chair on the floor is a chair the session owns, and a probe blind to it
+ * reports a craft that produced one as an item destroyed.
  */
-export function auditScopeTree(input: ScopeTreeInput): Record<string, number> {
-  return auditStacks(walkScopeTree(input).map((n) => n.endpoint));
+export function auditScopeTree(input: ScopeTreeInput | ScopeStockInput): Record<string, number> {
+  const nodes = walkScopeTree(input);
+  const totals = auditStacks(nodes.map((n) => n.endpoint));
+  const looseIn = (input as ScopeStockInput).looseIn;
+  if (!looseIn) return totals;
+  for (const n of nodes) addStack(totals, looseIn(n.id), true);
+  return totals;
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────────
+//
+// THE LAW, MADE ANSWERABLE (scope-unification.md): "A scope's inventory is not
+// a field on the scope. It is the sum of its containers."
+//
+// Everything above this line is structure — what contains what. This is the one
+// question the structure exists to answer, and until it existed every caller
+// asked a NARROWER one of its own devising. The house asked "is there a
+// `furn.workbench` unit in a stack whose id starts `furn_<hi>_`", which sees the
+// bolted-down boxes and nothing else: not the bench lying on the floor of the
+// very room, not the one in a resident's hands, not the one in the building's
+// delivery pile. So a household that owned three workbenches went on making a
+// fourth, because none of them was in a box. (Observed live 2026-08-05.)
+
+/**
+ * The tree, plus the units that are LYING IN a scope rather than stacked in one
+ * of its containers.
+ *
+ * A loose prop IS one unit of its own glyph — that is the whole of item-prop.ts
+ * ("a chair taken apart, a chair being carried and a chair delivered but not yet
+ * assembled are ONE THING IN THREE SITUATIONS"). What it has never been is
+ * COUNTABLE, because the ledger's unit of account is the stack and a prop has
+ * no stack; its `containerStock` row is what it CONTAINS (a barrel's water),
+ * never what it IS.
+ *
+ * 🚨 A CENSUS, NEVER AN ENDPOINT. You set a thing down onto a floor; you do not
+ * ship into one. Giving the floor a `StockEndpoint` would hand callers a stack
+ * that is not aliased to any real map, and `transferStock` would move units into
+ * a temporary object — the exact shape of the vanishing-cargo bug item-move.ts
+ * was written to end. So this stays a read-only view and the ONE way onto a
+ * floor is still `setDownFromHands`.
+ */
+export interface ScopeStockInput extends ScopeTreeInput {
+  /** Units lying loose in this scope, by glyph — a building's floor props, a
+   *  body's hands. Absent/empty for a scope that cannot hold anything loosely
+   *  (a chest's inside is its stack, not its floor). */
+  looseIn?(id: ScopeId): Readonly<Record<string, number>> | null | undefined;
+}
+
+/** Merge a stack into an accumulator. `positiveOnly` drops the zero rows a
+ *  drained stack leaves behind, so an empty box never reads as a holding. */
+function addStack(
+  into: Record<string, number>,
+  from: Readonly<Record<string, number>> | null | undefined,
+  positiveOnly = true,
+): void {
+  if (!from) return;
+  for (const [glyph, n] of Object.entries(from)) {
+    if (positiveOnly && !(n > 0)) continue;
+    into[glyph] = (into[glyph] ?? 0) + n;
+  }
+}
+
+/**
+ * EVERY SCOPE CONTAINED BY `root`, at any depth — the containment closure, and
+ * therefore the exact set a scope's inventory sums over. `root` itself is NOT
+ * included: a caller that also wants the root's own stack adds it, and being
+ * explicit about that is what keeps a container from counting itself twice when
+ * it is both the root and a descendant of an enclosing walk.
+ *
+ * Pure and endpoint-free on purpose — the closure is a fact about the tree, so
+ * a caller can compute it once and cache it while stacks churn underneath.
+ * Input order is preserved (deterministic), and a cycle in a malformed context
+ * terminates rather than hanging, exactly as `walkScopeTree` does.
+ */
+export function descendantScopeIds(
+  root: ScopeId,
+  ids: Iterable<ScopeId>,
+  ctx: ScopeContext = {},
+): ScopeId[] {
+  const all = [...new Set(ids)];
+  const parent = new Map<ScopeId, ScopeId | null>();
+  for (const id of all) parent.set(id, scopeParentOf(parseScopeId(id), ctx));
+  const out: ScopeId[] = [];
+  for (const id of all) {
+    if (id === root) continue;
+    let cur = parent.get(id) ?? null;
+    // Depth-bounded rather than visited-set: the ladder is five rungs deep
+    // (hand → container → building → district → town) and a bound is cheaper
+    // than a set per id, while still making a cyclic context terminate.
+    for (let depth = 0; cur !== null && depth < 16; depth++) {
+      if (cur === root) {
+        out.push(id);
+        break;
+      }
+      cur = parent.get(cur) ?? null;
+    }
+  }
+  return out;
+}
+
+/**
+ * WHAT EVERY SCOPE HOLDS, in one pass — each id mapped to its own stack plus
+ * everything beneath it.
+ *
+ * THE FOLD the walk order was built for ("a parent must be visited knowing its
+ * children"). Rolling up once and reading many is not an optimisation detail: a
+ * town of 200 households asking "have we got a bench" one at a time is 200 walks
+ * of the same few thousand ids every tick, and a gate that expensive gets
+ * written as a regex over id strings instead — which is exactly the shortcut
+ * that made a building's inventory unaskable in the first place.
+ *
+ * Cost is O(ids × depth); the ladder is five rungs.
+ */
+export function scopeStockIndex(input: ScopeStockInput): Map<ScopeId, Record<string, number>> {
+  const ids = [...new Set(input.ids())];
+  const parent = new Map<ScopeId, ScopeId | null>();
+  for (const id of ids) parent.set(id, scopeParentOf(parseScopeId(id), input));
+  const out = new Map<ScopeId, Record<string, number>>();
+  const bucket = (id: ScopeId): Record<string, number> => {
+    let b = out.get(id);
+    if (!b) {
+      b = {};
+      out.set(id, b);
+    }
+    return b;
+  };
+  for (const id of ids) {
+    const own: Record<string, number> = {};
+    addStack(own, input.endpointOf(id)?.stack);
+    addStack(own, input.looseIn?.(id));
+    // Credit the scope itself and every ancestor — the roll-up. Depth-bounded
+    // so a malformed (cyclic) context terminates instead of hanging, the same
+    // guarantee `walkScopeTree` gives.
+    let at: ScopeId | null = id;
+    for (let depth = 0; at !== null && depth < 16; depth++) {
+      addStack(bucket(at), own);
+      at = parent.get(at) ?? null;
+    }
+  }
+  return out;
+}
+
+/**
+ * WHAT THIS SCOPE HOLDS, by glyph — its own stack (a chest has one; a building
+ * and a body do not), plus every scope it contains, plus what lies loose in any
+ * of them.
+ *
+ * This is the answer to "does this house have a bed", "is there wood in this
+ * town", "is this body carrying an apple" — one question at every rung, which is
+ * the point of the ladder. Glyphs are kept whole (facets and all); ask
+ * `scopeUnits` when you want a head-matched count.
+ */
+export function scopeStock(root: ScopeId, input: ScopeStockInput): Record<string, number> {
+  return scopeStockIndex(input).get(root) ?? {};
+}
+
+/**
+ * Units of `glyph` this scope holds, anywhere inside it. The one call a gate
+ * should make when it means "do we have one of these".
+ *
+ * MATCHING: a row counts when it IS the asked-for glyph or EXTENDS it with a
+ * further facet — `apple` counts `apple.hot`, `block` counts
+ * `block.material_stone`, and `furn.workbench` counts a red one but never a
+ * chair.
+ *
+ * 🚨 Deliberately not `stackUnits` (head-matching). Furniture is spelled
+ * `furn.<kind>` with the SAME dot the facet grammar uses, so every piece of
+ * furniture in the game shares the head `furn` — head-matching a bench query
+ * would answer yes for a stored chair, and the bench-first bootstrap would stop
+ * on the first chair the household owned. The prefix rule degrades to exactly
+ * head-matching for an ordinary undotted glyph, so nothing else changes.
+ */
+export function scopeUnits(root: ScopeId, glyph: string, input: ScopeStockInput): number {
+  return unitsOf(scopeStock(root, input), glyph);
+}
+
+/** `scopeUnits`' matching rule over one stack — exported because a caller that
+ *  already holds a rolled-up stack (the host's per-tick index) must count it the
+ *  same way, and two spellings of "have we got one" is how this class of bug
+ *  started. */
+export function unitsOf(stack: Readonly<Record<string, number>>, glyph: string): number {
+  let n = 0;
+  for (const [g, c] of Object.entries(stack)) {
+    if (g === glyph || g.startsWith(`${glyph}.`)) n += Math.max(0, c);
+  }
+  return n;
 }
 
 /**
