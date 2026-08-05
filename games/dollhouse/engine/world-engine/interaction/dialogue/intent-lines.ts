@@ -22,6 +22,7 @@ import { phrase, type LeveledGlyphs } from "./dialogue-gen.js";
 import { classify, INTENT_MOD, parseSentence, posOf, type Gender } from "../lang/core.js";
 import type { CreatureId } from "../behavior/creatures.js";
 import type { GoalSpec, ItemRef, PlaceRef } from "../behavior/rules.js";
+import type { GoingDest } from "./creature-dialogue.js";
 import { headOf } from "../../variations.js";
 import { spokenWord } from "../content/makeable.js";
 
@@ -527,6 +528,73 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
       return { verb: "trade", object: goal.give };
     case "area":
       return null; // host-instant policy — never a body's ongoing activity
+  }
+}
+
+/**
+ * WHERE a goal is bound — `goalActivity`'s twin, and the reason a walking
+ * creature can answer "where are you going?" with a NAME.
+ *
+ * A creature walks because a goal sent it, and a goal that names a destination
+ * has therefore already named the walk's destination: the announcement says
+ * "I'll carry the block to the kitchen" off exactly these fields. Reading the
+ * destination back off the goal is what keeps the two channels from disagreeing
+ * — the bug this exists to kill was a hauler announcing "…to the kitchen" and
+ * then answering "there" when asked, one second apart.
+ *
+ * Undefined = this goal genuinely names no place (an in-place act, a policy
+ * order), and the caller falls back to geometry, then to what the walk is FOR.
+ * Deictic answers are never produced here — "there" is the caller's last word,
+ * not a goal's reading.
+ */
+export function goalDestination(goal: GoalSpec, syms: IntentLineSyms): GoingDest | undefined {
+  const place = (p: PlaceRef): GoingDest | undefined => {
+    const word = syms.place(p);
+    // The place resolver's own deictic last resort is not a destination NAME —
+    // let the caller keep looking rather than launder "there" as an answer.
+    return word && word !== "there" && word !== "here" ? { kind: "place", place: word } : undefined;
+  };
+  const toCreature = (cid: CreatureId): GoingDest => ({ kind: "place", place: syms.creature(cid) });
+  switch (goal.kind) {
+    case "goTo":
+      return place(goal.place);
+    case "goHome":
+      return { kind: "home" };
+    case "rest":
+      return place(goal.place);
+    case "setOpen":
+      return place(goal.place);
+    case "stay":
+      return undefined; // staying put is not going
+    case "follow":
+    case "converse":
+    case "socialAct":
+    case "help":
+      return toCreature(goal.target);
+    case "give":
+      return toCreature(goal.to);
+    // ACQUISITION reads as the thing sought, wherever it stands ("going to get
+    // food") — the same reading `stepDestination` gives a shopping leg.
+    case "fetch":
+      return { kind: "fetch", good: spokenWord(headOf(syms.item(goal.item))) };
+    case "takeUnits":
+      return { kind: "fetch", good: spokenWord(goal.category || goal.affords || "thing") };
+    case "putIn":
+      return place(goal.container);
+    case "putUnits":
+      return place(goal.into);
+    case "processUnits":
+      return place(goal.at);
+    case "transfer":
+      return goal.to.kind === "creature" ? toCreature(goal.to.id) : place(goal.to);
+    case "place":
+      // A placement is a RELATION to an anchor ("in the house", "by the
+      // table") — the anchor is the place the body walks to.
+      return place(goal.at.anchor);
+    default:
+      // Everything else acts where the body already is (or is a host-policy
+      // order with no body): no destination to name.
+      return undefined;
   }
 }
 

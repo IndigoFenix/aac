@@ -1116,6 +1116,64 @@ function advanceAvatar(
  *  ends up OVER the point rather than on top of the avatar. */
 export const CARRY_HOLD = 1.0;
 
+/** World height of a held object's CENTRE while its carrier stands — about where
+ *  the carry pose's arms grip (a grounded held object reads as pushed along
+ *  rather than carried). */
+const CARRY_UP = 0.75;
+
+/** Where a held thing rides on its carrier: the reach ahead of the body's centre
+ *  along its facing, and the world height of the object's centre above the
+ *  carrier's ground. */
+export interface CarryHold {
+  forward: number;
+  up: number;
+}
+
+const CARRY_HOLD_STANDING: CarryHold = { forward: CARRY_HOLD, up: CARRY_UP };
+
+/** THE POSES THAT MOVE THE HANDS. A crouch folds the legs and brings the grip in
+ *  and DOWN (creatures/animation.ts SIT_CROUCH / PLAY_CROUCH), and a sleeper is
+ *  lying on its fixture — so the standing reach is wrong for all three by most of
+ *  a metre. `eat` is absent on purpose: it is a standing hand-to-mouth, which the
+ *  standing hold already serves.
+ *
+ *  🚨 WHY THIS EXISTS: a dining chair is placed against its table and FACES it
+ *  (kernel/town/furniture.ts `faceAnchor`), and the furniture anchor pins a
+ *  seated body on the seat centre pointing that way. Composed with the standing
+ *  reach, a diner who sat down still holding its meal threw the food a metre out
+ *  — over the middle of the tabletop, at a height with nothing under it, hands
+ *  nowhere near it: the reported "food hovers in the air by the table". */
+const CARRY_HOLD_POSED: Readonly<Partial<Record<AvatarActivityKind, CarryHold>>> = {
+  // HANDS IN THE LAP. Close enough in that the hold POINT stays outside the
+  // footprint of the table the chair is pulled up to (the seat centre sits
+  // 1.12 m out from a 0.8 m table), and between the seat it rests on (a chair's
+  // top face is ~0.48) and the top it is drawn up to (TABLE_TOP_Y 0.8).
+  // A prop's own BULK (LOOSE_ITEM_R 0.3) still overlaps the table from there —
+  // no seated hold can clear both the chair and the tabletop — which is the
+  // other half of why a diner sets its meal DOWN before it sits (quest-host
+  // `setMealOnSurface`) rather than eating it out of its hands.
+  sit: { forward: 0.25, up: 0.62 },
+  // Down over the spot in front the play pose works at.
+  play: { forward: 0.45, up: 0.4 },
+  // Beside the lying body, on its bed.
+  sleep: { forward: 0.3, up: 0.5 },
+};
+
+/**
+ * The carry point for a body in the pose it is actually in.
+ *
+ * ⚠️ THIS IS THE DRAWN PLACE, NOT THE SIM ONE. `activity` is the display channel
+ * — `tickWorld` never reads it and it does not cross the wire — so the SIM keeps
+ * one logical hold (`CARRY_HOLD`, a standing arm's reach ahead), which is what a
+ * drop aim and a source-reach test mean by "in your hands" and what every peer
+ * can agree on without it. The renderer, which owns `activity` already, draws the
+ * held thing where the pose really holds it.
+ */
+export function carryHoldFor(carrier: { activity?: AvatarActivity } | undefined): CarryHold {
+  const kind = carrier?.activity?.kind;
+  return (kind ? CARRY_HOLD_POSED[kind] : undefined) ?? CARRY_HOLD_STANDING;
+}
+
 function simulateObject(
   obj: ObjectState,
   state: WorldState,
@@ -1306,6 +1364,23 @@ export function dropObject(state: WorldState, objectId: string, x: number, y: nu
   obj.vy = 0;
 }
 
+/** Free slots left on/in a container for `relation` — 0 when it offers no such
+ *  slot at all. The test `placeInContainer` refuses on, exposed so a caller can
+ *  ASK FIRST when a failed put is one it could not undo (a body setting a thing
+ *  down on a full table would otherwise have already let go of it). */
+export function containerRoom(
+  state: WorldState,
+  containerId: string,
+  relation: ContainRelation,
+): number {
+  const slot = objectSpecFor(state.spec, containerId).contains?.find((s) => s.relation === relation);
+  if (!slot) return 0;
+  const used = Object.values(state.objects).filter(
+    (o) => o.containedIn?.objectId === containerId && o.containedIn.relation === relation,
+  ).length;
+  return Math.max(0, (slot.capacity ?? 1) - used);
+}
+
 /** Place an object on/in/under a container, if it offers that relation and has
  *  spare capacity there. False otherwise (caller can fall back to dropObject). */
 export function placeInContainer(
@@ -1318,12 +1393,7 @@ export function placeInContainer(
   const obj = state.objects[objectId];
   const container = state.objects[containerId];
   if (!obj || !container) return false;
-  const slot = objectSpecFor(state.spec, containerId).contains?.find((s) => s.relation === relation);
-  if (!slot) return false;
-  const used = Object.values(state.objects).filter(
-    (o) => o.containedIn?.objectId === containerId && o.containedIn.relation === relation,
-  ).length;
-  if (used >= (slot.capacity ?? 1)) return false;
+  if (containerRoom(state, containerId, relation) <= 0) return false;
   obj.possessedBy = null;
   obj.freeRollOwner = null;
   obj.carriedBy = null;

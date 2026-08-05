@@ -437,6 +437,7 @@ export const zh: Translations = {
       sister: "姐姐",
       brother: "哥哥",
       friend: "朋友",
+      family: "家庭",
       teacher: "老师",
       doctor: "医生",
       want: "要",

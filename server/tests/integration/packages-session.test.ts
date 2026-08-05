@@ -80,10 +80,7 @@ describe('Packages — AAC session wiring (P4)', () => {
       await db.insert(packageBoards).values({ packageId: pkg.id, boardId: packaged.id });
       await attachPackageToStudent({ packageId: pkg.id, studentId: student.id });
 
-      const available = await boardRepository.getAutoSelectableBoardsWithPackages(
-        user.id,
-        student.id,
-      );
+      const available = await boardRepository.getAutoSelectableBoardsWithPackages(student.id);
       const names = available.map((b) => b.name).sort();
       expect(names).toEqual(['Morning Routine', 'Snack']);
 
@@ -111,10 +108,10 @@ describe('Packages — AAC session wiring (P4)', () => {
       ]);
       await attachPackageToStudent({ packageId: pkg.id, studentId: student.id });
 
-      const forAI = await boardRepository.getAutoSelectableBoardsWithPackages(user.id, student.id);
+      const forAI = await boardRepository.getAutoSelectableBoardsWithPackages(student.id);
       expect(forAI.map((b) => b.name)).toEqual(['Offered']);
 
-      const forPicker = await boardRepository.getStudentPickerBoards(user.id, student.id);
+      const forPicker = await boardRepository.getStudentPickerBoards(student.id);
       expect(forPicker.map((b) => b.name).sort()).toEqual(['Browse Only', 'Offered']);
     });
 
@@ -133,8 +130,8 @@ describe('Packages — AAC session wiring (P4)', () => {
       await db.insert(packageBoards).values({ packageId: pkg.id, boardId: board.id, autoLoad: true });
       await attachPackageToStudent({ packageId: pkg.id, studentId: student.id });
 
-      expect(await boardRepository.getAutoSelectableBoardsWithPackages(user.id, student.id)).toEqual([]);
-      const forPicker = await boardRepository.getStudentPickerBoards(user.id, student.id);
+      expect(await boardRepository.getAutoSelectableBoardsWithPackages(student.id)).toEqual([]);
+      const forPicker = await boardRepository.getStudentPickerBoards(student.id);
       expect(forPicker.map((b) => b.name)).toEqual(['Manual']);
     });
 
@@ -150,8 +147,8 @@ describe('Packages — AAC session wiring (P4)', () => {
       const board = await makePackageBoard(institute.id, user.id, 'Unattached');
       await db.insert(packageBoards).values({ packageId: pkg.id, boardId: board.id });
 
-      expect(await boardRepository.getAutoSelectableBoardsWithPackages(user.id, student.id)).toEqual([]);
-      expect(await boardRepository.getStudentPickerBoards(user.id, student.id)).toEqual([]);
+      expect(await boardRepository.getAutoSelectableBoardsWithPackages(student.id)).toEqual([]);
+      expect(await boardRepository.getStudentPickerBoards(student.id)).toEqual([]);
     });
 
     it('lists a board once even when two attached packages both contain it', async () => {
@@ -169,7 +166,7 @@ describe('Packages — AAC session wiring (P4)', () => {
         await attachPackageToStudent({ packageId: pkg.id, studentId: student.id });
       }
 
-      const forAI = await boardRepository.getAutoSelectableBoardsWithPackages(user.id, student.id);
+      const forAI = await boardRepository.getAutoSelectableBoardsWithPackages(student.id);
       expect(forAI).toHaveLength(1);
       // Attributed to the first package alphabetically, deterministically.
       expect(forAI[0].packageName).toBe('Alpha');

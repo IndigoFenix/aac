@@ -19,6 +19,7 @@ import { useStudent } from '@/hooks/useStudent';
 import { useAuth } from '@/hooks/useAuth';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { AACSettingsPackages } from '@/components/AACSettingsPackages';
+import { CollapsibleSection, CollapsibleSubSection } from '@/components/ui/collapsible-section';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
@@ -116,111 +117,6 @@ function toRuleArray(value: unknown): string[] {
   if (typeof value === 'string' && value.trim()) return [value];
   return [];
 }
-
-/**
- * A settings Card whose header doubles as a collapse toggle. The header (icon +
- * title + optional description) stays visible at all times; clicking it shows or
- * hides the body. Pass the existing `<CardContent>` as children so each section
- * keeps its own padding/spacing. Defaults to collapsed so the long panel reads
- * as a scannable list of section titles.
- */
-function CollapsibleSection({
-  icon,
-  title,
-  description,
-  defaultOpen = false,
-  children,
-}: {
-  icon?: ReactNode;
-  title: ReactNode;
-  description?: ReactNode;
-  defaultOpen?: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <Card>
-      <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger asChild>
-          <button type="button" className="w-full text-start">
-            <CardHeader
-              className={cn(
-                'cursor-pointer transition-colors hover:bg-muted/40',
-                open ? 'rounded-t-lg' : 'rounded-lg',
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <CardTitle className="flex items-center gap-2">
-                  {icon}
-                  {title}
-                </CardTitle>
-                <ChevronDown
-                  className={cn(
-                    'w-5 h-5 shrink-0 text-muted-foreground transition-transform',
-                    open && 'rotate-180',
-                  )}
-                />
-              </div>
-              {description && <CardDescription>{description}</CardDescription>}
-            </CardHeader>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>{children}</CollapsibleContent>
-      </Collapsible>
-    </Card>
-  );
-}
-
-/**
- * A nested collapsible group used INSIDE a CollapsibleSection's content (e.g. the
- * "Visibility" group under Accessibility, or "YouTube" / "Websites" under Apps).
- * Visually a bordered box with a clickable header; pass the existing
- * `<CardContent>` as children so the body keeps its own padding/spacing.
- */
-function CollapsibleSubSection({
-  icon,
-  title,
-  description,
-  defaultOpen = false,
-  children,
-}: {
-  icon?: ReactNode;
-  title: ReactNode;
-  description?: ReactNode;
-  defaultOpen?: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="rounded-lg border bg-card">
-      <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger asChild>
-          <button type="button" className="w-full text-start">
-            <div className="flex items-center justify-between gap-2 px-6 py-4 transition-colors hover:bg-muted/40">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 font-semibold leading-none">
-                  {icon}
-                  {title}
-                </div>
-                {description && (
-                  <p className="text-sm text-muted-foreground">{description}</p>
-                )}
-              </div>
-              <ChevronDown
-                className={cn(
-                  'w-4 h-4 shrink-0 text-muted-foreground transition-transform',
-                  open && 'rotate-180',
-                )}
-              />
-            </div>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>{children}</CollapsibleContent>
-      </Collapsible>
-    </div>
-  );
-}
-
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
@@ -2545,8 +2441,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               {/* Custom Apps (Games) subsection */}
               {student?.id && <AACSettingsCustomApps studentId={student.id} />}
 
-              {/* Content packages subsection */}
-              {student?.id && <AACSettingsPackages studentId={student.id} />}
+              {/* Content Packages used to sit here, buried under Apps. It is now
+                  a top-level section of its own — see below. */}
 
               {/* Other Apps subsection */}
               <CollapsibleSubSection
@@ -2814,6 +2710,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CollapsibleSubSection>
             </CardContent>
           </CollapsibleSection>
+
+          {/* Content Packages — its own section. Packages are shared CONTENT
+              with their own lifecycle (an organization publishes them, other
+              organizations attach them), not a kind of app, so burying them
+              under Apps made them hard to find. Renders nothing without the
+              packages license. */}
+          {student?.id && <AACSettingsPackages studentId={student.id} />}
 
           {/* Privacy */}
           <CollapsibleSection

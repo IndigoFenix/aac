@@ -398,6 +398,11 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { who: ["all", "people"] }, tone: "social", emoji: "👦" },
   { key: "friend", tKey: "aac.glyph.friend", pos: "person", categories: ["who"],
     modeChips: { who: ["all", "people"] }, tone: "social", emoji: "🧑‍🤝‍🧑" },
+  // FAMILY — the whole household as one word, beside the members it is made of.
+  // Also the inner symbol of a DWELLING (`home` / `house` → `building(family)`,
+  // place art): what makes a building a home is who lives in it.
+  { key: "family", tKey: "aac.glyph.family", pos: "person", categories: ["who"],
+    modeChips: { who: ["all", "people"] }, tone: "social", emoji: "👪" },
   { key: "teacher", tKey: "aac.glyph.teacher", pos: "person", categories: ["who"],
     modeChips: { who: ["all", "people"] }, tone: "social", emoji: "🧑‍🏫" },
   { key: "doctor", tKey: "aac.glyph.doctor", pos: "person", categories: ["who"],
@@ -1222,18 +1227,33 @@ const VOCAB: VocabularyItem[] = [
 
   // ── WHERE ────────────────────────────────────────────────────────────────
   // `home`, `school`, `park` cross-listed in WHAT (places mode-chip).
+  // HOME draws as `building(family)` (place art) — the people inside are what
+  // make a building a dwelling, where a plate around 🏠 said the word twice and
+  // the thing once. Exposed by key so the AI names it instead of emitting 🏠.
+  // (Interim: a dedicated living/dwelling symbol is coming.)
   { key: "home", tKey: "aac.glyph.home", pos: "place", categories: ["where", "what"],
-    modeChips: { where: ["places"], what: ["places"] }, tone: "comment", emoji: "🏠" },
+    modeChips: { where: ["places"], what: ["places"] }, tone: "comment", emoji: "🏠",
+    exposeToAi: true },
   { key: "school", tKey: "aac.glyph.school", pos: "place", categories: ["where", "what"],
     modeChips: { where: ["places"], what: ["places"] }, tone: "comment", emoji: "🏫" },
   { key: "outside", tKey: "aac.glyph.outside", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment", emoji: "🌳" },
+  // THE ROOMS draw as their SHELL plus the fixture that names them (place art,
+  // below) — `room(bed)`, `room(oven)`, `room(toilet)`. The emoji stays as the
+  // text-only stand-in, but it is NOT what the button shows: a bare 🛌 is a bed,
+  // and a bed is not a bedroom.
+  //
+  // `exposeToAi` for the same reason. The AI is normally steered to emojis for
+  // places (prompts/shared.ts), which is right when the emoji IS the concept —
+  // 🏫 is a school. It isn't here: the emoji is the FIXTURE, so an AI-minted
+  // board button came back as a frying pan for "kitchen". Given the key, the AI
+  // writes the word and the board draws the composed room.
   { key: "bedroom", tKey: "aac.glyph.bedroom", pos: "place", categories: ["where"],
-    modeChips: { where: ["rooms"] }, tone: "comment", emoji: "🛌" },
+    modeChips: { where: ["rooms"] }, tone: "comment", emoji: "🛌", exposeToAi: true },
   { key: "kitchen", tKey: "aac.glyph.kitchen", pos: "place", categories: ["where"],
-    modeChips: { where: ["rooms"] }, tone: "comment", emoji: "🍳" },
+    modeChips: { where: ["rooms"] }, tone: "comment", emoji: "🍳", exposeToAi: true },
   { key: "bathroom", tKey: "aac.glyph.bathroom", pos: "place", categories: ["where"],
-    modeChips: { where: ["rooms"] }, tone: "comment", emoji: "🚽" },
+    modeChips: { where: ["rooms"] }, tone: "comment", emoji: "🚽", exposeToAi: true },
   { key: "park", tKey: "aac.glyph.park", pos: "place", categories: ["where", "what"],
     modeChips: { where: ["places"], what: ["places"] }, tone: "comment", emoji: "🛝" },
   { key: "here", tKey: "aac.glyph.here", pos: "place", categories: ["where"],
@@ -1252,10 +1272,17 @@ const VOCAB: VocabularyItem[] = [
   { key: "place", tKey: "aac.glyph.place", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment",
     imagePath: "places/place", emoji: "🗺️", exposeToAi: true },
+  // STORE is the SHOP — a place you go to buy something ("Store" / "חנות"), not
+  // a cupboard. It draws `building(trade)` (place art); the STORAGE sense is
+  // `storeroom` and draws `room(box)`. Exposed by key like the other places whose
+  // picture is composed.
   { key: "store", tKey: "aac.glyph.store", pos: "place", categories: ["where"],
-    modeChips: { where: ["places"] }, tone: "comment", emoji: "🏬" },
+    modeChips: { where: ["places"] }, tone: "comment", emoji: "🏬", exposeToAi: true },
+  // THE LIBRARY is a BUILDING of books (place art → `building(book)`), so like
+  // the rooms above it is exposed by key: 📚 alone is books, not the place you go
+  // to for them.
   { key: "library", tKey: "aac.glyph.library", pos: "place", categories: ["where"],
-    modeChips: { where: ["places"] }, tone: "comment", emoji: "📚" },
+    modeChips: { where: ["places"] }, tone: "comment", emoji: "📚", exposeToAi: true },
   { key: "hospital", tKey: "aac.glyph.hospital", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment", emoji: "🏥" },
   { key: "beach", tKey: "aac.glyph.beach", pos: "place", categories: ["where"],
@@ -1283,7 +1310,13 @@ const VOCAB: VocabularyItem[] = [
   // BUILDING and ROOM are also CONTAINER FRAMES: the compositor can nest any
   // symbol inside one (`building(farm)`, `room(bed)`) using the `-bg` plates,
   // so a structure's icon is its shell plus whatever the spec declares. Used
-  // bare they're the generic nouns. See buildContainerGlyph in the compositor.
+  // bare they're the generic nouns.
+  //
+  // A PLACE WORD never has to spell that composition out: `shared/glyph-place-art.ts`
+  // maps the word to it (`bedroom` → `room(bed)`, `smithy` → `building(anvil)`)
+  // and `drawnSlot` applies it at draw time, so one word is one symbol on every
+  // surface while the sentence keeps the plain word. `home` / `store` are
+  // deliberately NOT in that table — see the note there.
   { key: "building", tKey: "aac.glyph.building", pos: "place", categories: ["where"],
     modeChips: { where: ["places"] }, tone: "comment", emoji: "🏢",
     imagePath: "places/building", exposeToAi: true,

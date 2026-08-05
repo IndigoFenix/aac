@@ -38,6 +38,7 @@ import {
   type ObserverStartConfig,
 } from "./observer-agent";
 import { buildObserverToolDeclarations } from "./prompts/observer";
+import { isHeardSpeechTurn } from "./speech-text";
 import type { IObserverAgent } from "./observer-interface";
 import { flowInput, flowTool, flowNote, type FlowAgent } from "./agent-flow-logger";
 import { runInSessionContext } from "./dual-agent-logger";
@@ -93,8 +94,13 @@ export class HttpObserverAgent implements IObserverAgent {
    *  rest of the session. Chunked trims keep the prefix byte-stable between
    *  trims. Even → preserves user/assistant turn pairing. */
   private static readonly TRIM_CHUNK = 12;
-  /** Observer tool calls are tiny; this is plenty and guards against a runaway. */
-  private static readonly MAX_TOKENS = 1000;
+  /** Observer tool calls are tiny; this is plenty and guards against a runaway.
+   *  Headroom matters more since speech turns force a call: thinking bills
+   *  against this cap too, and a call truncated mid-argument comes back as
+   *  MALFORMED_FUNCTION_CALL with zero tool calls — which on a forced speech
+   *  turn means a lost utterance rather than a skipped observation. 256 of
+   *  this is the thinking budget; the rest is the call. */
+  private static readonly MAX_TOKENS = 1500;
   /** Max buffered context lines awaiting the next turn (calm-room backstop). */
   private static readonly PENDING_CONTEXT_CAP = 12;
 
@@ -179,7 +185,9 @@ export class HttpObserverAgent implements IObserverAgent {
     flowInput(this.agentLabel, "user_turn", text);
     const ctx = this.drainContext();
     const combined = [ctx, text].filter(Boolean).join("\n");
-    this.enqueueTurn([{ type: "text", text: combined }], combined);
+    // Heard speech is the one input that must never end in silence — see
+    // `forceToolCall` in runTurn.
+    this.enqueueTurn([{ type: "text", text: combined }], combined, isHeardSpeechTurn(text));
   }
 
   /** A frame the Observer should look at and react to. The image is sent THIS
@@ -248,15 +256,15 @@ export class HttpObserverAgent implements IObserverAgent {
   /** Serialize a completion turn. `liveContent` is what's sent to the model
    *  this turn (may include image/audio parts); `historyText` is the text-only
    *  record appended to history afterwards (no raw media). */
-  private enqueueTurn(liveContent: ContentPart[], historyText: string): void {
+  private enqueueTurn(liveContent: ContentPart[], historyText: string, forceToolCall = false): void {
     this.turnQueue = this.turnQueue
-      .then(() => this.runTurn(liveContent, historyText))
+      .then(() => this.runTurn(liveContent, historyText, forceToolCall))
       .catch((err) => {
         try { this.callbacks.onError(err as Error); } catch { /* ignore */ }
       });
   }
 
-  private async runTurn(liveContent: ContentPart[], historyText: string): Promise<void> {
+  private async runTurn(liveContent: ContentPart[], historyText: string, forceToolCall: boolean): Promise<void> {
     if (!this.connected || !this.config) return;
     const config = this.config;
     const abort = new AbortController();
@@ -278,10 +286,19 @@ export class HttpObserverAgent implements IObserverAgent {
         model: config.model,
         messages,
         tools: this.tools,
-        // AUTO: the Observer may legitimately do nothing this turn (routine
-        // scene with nothing to report) — unlike the Board Manager it has no
-        // universal "no_change" sink, so forcing a call would invent actions.
-        toolChoice: "auto",
+        // AUTO on scene/context turns: the Observer may legitimately do
+        // nothing (routine frame with nothing to report), and forcing a call
+        // there would invent actions.
+        //
+        // REQUIRED on [HEARD SPEECH]: an utterance that ends the turn with no
+        // tool call is silently lost — the Speaker and Board Manager never
+        // learn anyone spoke, and the log looks identical to "nothing was
+        // heard". Session bccf9576 dropped six high-confidence utterances that
+        // way. `ignore_speech(reason)` is the universal sink that keeps
+        // "required" from trapping the model (the role `no_change` plays for
+        // the Board Manager), so the turn always ends in either a relayed
+        // transcript or a stated reason for withholding it.
+        toolChoice: forceToolCall ? "required" : "auto",
         temperature: 0.7,
         maxTokens: HttpObserverAgent.MAX_TOKENS,
         // Gemini 2.5 thinking tokens count against maxTokens; unbounded
@@ -326,7 +343,21 @@ export class HttpObserverAgent implements IObserverAgent {
           }
         }
         if (result.toolCalls.length === 0) {
-          flowNote(this.agentLabel, `economy turn — no action (finish: ${result.finishReason ?? "?"})`);
+          // Always carry the model's prose into the log. A turn that ends
+          // without a tool call used to record only "no action", which said
+          // nothing about WHY — the text it answered with instead is the only
+          // evidence of its reasoning, and it was being thrown away.
+          const said = result.content?.trim().replace(/\s+/g, " ").slice(0, 400);
+          const saidNote = said ? ` — said instead: "${said}"` : " — and returned no text either";
+          flowNote(
+            this.agentLabel,
+            forceToolCall
+              // Forced turn: "required" was set and the model STILL produced
+              // nothing. Not a judgement call — a malformed/blocked call or a
+              // truncated response. Speech was lost; name it as a fault.
+              ? `SPEECH DROPPED — forced tool call produced none (finish: ${result.finishReason ?? "?"})${saidNote}`
+              : `economy turn — no action (finish: ${result.finishReason ?? "?"})${saidNote}`,
+          );
         }
       });
     } catch (err) {

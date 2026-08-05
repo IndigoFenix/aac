@@ -437,6 +437,7 @@ export const en = {
       sister: "Sister",
       brother: "Brother",
       friend: "Friend",
+      family: "Family",
       teacher: "Teacher",
       doctor: "Doctor",
       want: "Want",

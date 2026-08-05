@@ -7,7 +7,7 @@ import {
   type InsertBoard,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, or, isNull, asc, inArray } from "drizzle-orm";
+import { eq, and, isNull, asc, inArray } from "drizzle-orm";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -68,27 +68,23 @@ export class BoardRepository {
     }).from(boards).where(eq(boards.userId, userId));
   }
 
-  async getStudentBoards(userId: string, studentId: string): Promise<Board[]> {
-    const rows = await db.select()
-      .from(boards)
-      .where(
-        and(
-          eq(boards.userId, userId),
-          // scope='student' ONLY. A package board also has studentId IS NULL,
-          // so without this it would match the clause below and reach every
-          // student of its author — attached or not. Package boards get to a
-          // student exclusively through packageAssignments.
-          eq(boards.scope, "student"),
-          or(
-            eq(boards.studentId, studentId),
-            isNull(boards.studentId)
-          )
-        )
-      );
-    return hydrateRecords("boards", rows, { type: "student", id: studentId });
-  }
-
-  async getStudentBoardsMetadata(userId: string, studentId: string): Promise<BoardWithOptionalIrData[]> {
+  /**
+   * A student's own boards, WHOEVER authored them.
+   *
+   * Scoping is by student, not by author: two clinicians treating the same
+   * child, an institute admin, and a customer-support agent must all see the
+   * same board list, exactly as they do for AAC settings and sessions. The
+   * caller proves it may act for this student before calling — see the
+   * `verifyStudentAccess` gate in BoardController.getStudentBoards.
+   *
+   * `scope='student'` ONLY, and `studentId` must MATCH. A package board also
+   * has `studentId IS NULL`, so a null-matching arm here would hand every
+   * package board to every student; package boards reach a student
+   * exclusively through packageAssignments. An ordinary board with a null
+   * studentId is its author's personal draft and belongs to no student at
+   * all — see getUnassignedBoards.
+   */
+  async getStudentBoardsMetadata(studentId: string): Promise<BoardWithOptionalIrData[]> {
     // Metadata queries skip irData (the sensitive field) — no hydration needed
     return await db.select({
       id: boards.id,
@@ -109,14 +105,45 @@ export class BoardRepository {
       loadedAt: boards.loadedAt,
     }).from(boards).where(
       and(
-        eq(boards.userId, userId),
-        // See getStudentBoards — package boards reach a student only through
-        // an attachment, never through their author's null studentId.
         eq(boards.scope, "student"),
-        or(
-          eq(boards.studentId, studentId),
-          isNull(boards.studentId)
-        )
+        eq(boards.studentId, studentId),
+      )
+    );
+  }
+
+  /**
+   * The caller's own boards that are attached to NO student — drafts saved
+   * with no student loaded in the panel.
+   *
+   * These are author-scoped on purpose: an unattached board has no student
+   * whose access could authorise anyone else to read it, so its author is the
+   * only principal there is. They are listed separately from a student's
+   * boards so the picker can offer to attach one, instead of quietly showing
+   * them under every student the author opens.
+   */
+  async getUnassignedBoards(userId: string): Promise<BoardWithOptionalIrData[]> {
+    return await db.select({
+      id: boards.id,
+      userId: boards.userId,
+      studentId: boards.studentId,
+      name: boards.name,
+      description: boards.description,
+      imageUrl: boards.imageUrl,
+      language: boards.language,
+      automaticSelection: boards.automaticSelection,
+      automaticSelectionHint: boards.automaticSelectionHint,
+      restSpace: boards.restSpace,
+      isGenerated: boards.isGenerated,
+      scope: boards.scope,
+      instituteId: boards.instituteId,
+      createdAt: boards.createdAt,
+      updatedAt: boards.updatedAt,
+      loadedAt: boards.loadedAt,
+    }).from(boards).where(
+      and(
+        eq(boards.userId, userId),
+        eq(boards.scope, "student"),
+        isNull(boards.studentId),
       )
     );
   }
@@ -130,11 +157,10 @@ export class BoardRepository {
    * because browsing is the student's own business.
    */
   async getStudentPickerBoards(
-    userId: string,
     studentId: string,
   ): Promise<Array<BoardWithOptionalIrData & { packageName?: string }>> {
     const [own, fromPackages] = await Promise.all([
-      this.getStudentBoardsMetadata(userId, studentId),
+      this.getStudentBoardsMetadata(studentId),
       this.getPackageBoardsForStudent(studentId),
     ]);
     const ownIds = new Set(own.map((b) => b.id));
@@ -163,21 +189,24 @@ export class BoardRepository {
     return Boolean(row);
   }
 
-  async getAutoSelectableBoards(userId: string, studentId: string): Promise<Board[]> {
+  /**
+   * Student-scoped like getStudentBoardsMetadata, for the same reason: the AAC
+   * device runs under whichever caretaker account happens to be signed in, and
+   * that account is rarely the clinician who authored the boards. Author
+   * scoping here meant a board simply never auto-loaded for anyone but its
+   * maker.
+   *
+   * See getStudentBoardsMetadata for why the scope filter and the exact
+   * studentId match both matter.
+   */
+  async getAutoSelectableBoards(studentId: string): Promise<Board[]> {
     const rows = await db.select()
       .from(boards)
       .where(
         and(
-          eq(boards.userId, userId),
           eq(boards.automaticSelection, true),
-          // See getStudentBoards — without the scope filter an author's package
-          // boards would be offered to the AI for every one of their students,
-          // whether or not the package is attached.
           eq(boards.scope, "student"),
-          or(
-            eq(boards.studentId, studentId),
-            isNull(boards.studentId)
-          )
+          eq(boards.studentId, studentId),
         )
       );
     return hydrateRecords("boards", rows, { type: "student", id: studentId });
@@ -237,11 +266,10 @@ export class BoardRepository {
    * off keeps the board in the student's picker while hiding it from the AI.
    */
   async getAutoSelectableBoardsWithPackages(
-    userId: string | undefined,
     studentId: string,
   ): Promise<Array<Board & { packageName?: string }>> {
     const [own, fromPackages] = await Promise.all([
-      userId ? this.getAutoSelectableBoards(userId, studentId) : Promise.resolve([]),
+      this.getAutoSelectableBoards(studentId),
       this.getPackageBoardsForStudent(studentId),
     ]);
 

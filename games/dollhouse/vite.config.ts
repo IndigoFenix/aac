@@ -36,6 +36,10 @@ export default defineConfig({
       },
       ...snapshotRootDep("glyph-compositor"),
       ...snapshotRootDep("glyph-registry"),
+      // Place art must be the SNAPSHOT's copy: the vendored compositor reads it
+      // through a relative import, so a live copy here would give the engine's
+      // session registrations a different module instance than the renderer.
+      ...snapshotRootDep("glyph-place-art"),
       ...snapshotRootDep("emoji-registry"),
       ...snapshotRootDep("numeral-glyph"),
       ...snapshotRootDep("prng"),

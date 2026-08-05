@@ -34,6 +34,7 @@ import {
 } from "../services/packages/packageContent";
 import type { AccessCtx } from "../services/sharing/visibility";
 import { instituteService } from "../services/instituteService";
+import { instituteRepository } from "../repositories/instituteRepository";
 
 const createSchema = z.object({
   instituteId: z.string().min(1),
@@ -157,7 +158,12 @@ export class PackageController {
       const body = createSchema.parse(req.body);
       const userId = req.user!.id;
 
-      const { isMember } = await instituteService.verifyMembership(body.instituteId, userId);
+      // The support-aware membership predicate, NOT instituteService.
+      // verifyMembership — that one reports the raw institute_users row, which
+      // a customer-support agent never has for the institute they are
+      // supporting. (The grantee check in addGrant deliberately keeps using the
+      // raw one: a grant must land on a real member.)
+      const isMember = await instituteRepository.isUserMemberOfInstitute(body.instituteId, userId);
       if (!isMember) {
         res.status(403).json({ error: "error:NOT_INSTITUTE_MEMBER" });
         return;
@@ -732,6 +738,14 @@ export class PackageController {
       const ctx = await buildClinicianCtx(req, studentId);
       if (!ctx) {
         res.status(400).json({ error: "error:INSTITUTE_NOT_SELECTED" });
+        return;
+      }
+      // The response carries `assignedIds` — which packages this student
+      // actually uses. `packageAssignments` is PHI-adjacent for exactly that
+      // reason (see the table comment in schema-private), so this read needs
+      // the same student gate its assign/unassign siblings already have.
+      if (!(await canAccessStudent(ctx, studentId))) {
+        res.status(403).json({ error: "error:STUDENT_FORBIDDEN" });
         return;
       }
       res.json(await packageRepository.getAvailablePackagesForStudent(studentId, ctx));

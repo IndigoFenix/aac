@@ -48,6 +48,13 @@ export interface BoardData {
   irData?: BoardIR;
   /** Set when the board comes from an attached package; groups the picker. */
   packageName?: string;
+  /**
+   * The board author's corner-rest preference. Present in BOTH the list
+   * metadata and the full board, and carried through `loadBoard` — dropping it
+   * silently normalizes to `"small"` in `minRestSpace`, biting a corner out of
+   * every button on a board whose clinician asked for none.
+   */
+  restSpace?: string;
 }
 
 interface BoardsContextType {
@@ -142,12 +149,18 @@ export function BoardsProvider({ children, studentId }: BoardsProviderProps) {
           { credentials: "include" },
         );
         if (!res.ok) return null;
-        const full = (await res.json()) as { id: string; name: string; irData: BoardIR };
+        const full = (await res.json()) as {
+          id: string;
+          name: string;
+          irData: BoardIR;
+          restSpace?: string | null;
+        };
         const merged: BoardData = {
           id: full.id,
           name: full.name ?? meta?.name ?? "",
           irData: full.irData,
           packageName: meta?.packageName,
+          restSpace: full.restSpace ?? meta?.restSpace,
         };
         irCacheRef.current.set(boardId, merged);
         return merged;

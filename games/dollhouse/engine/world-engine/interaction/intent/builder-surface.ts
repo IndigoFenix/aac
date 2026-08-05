@@ -123,6 +123,13 @@ export interface BuilderNounEntry {
    * would put parentheses in the sentence, which the builder deliberately
    * never emits (ENABLE_GLYPH_ARGUMENTS is off) and `tokenizeSentence` cannot
    * parse anyway.
+   *
+   * NOT the only floor under a place word any more. This field is the SESSION's
+   * answer (it knows the live culture and catalogue), but a bare place word now
+   * draws its shell wherever it travels alone — a bubble line, a caption, a
+   * staged slot — through `shared/glyph-place-art.ts`. Surfaces that have this
+   * field should still pass it; surfaces that only have the word are no longer
+   * showing a fixture with no room around it.
    */
   glyph?: string;
 }

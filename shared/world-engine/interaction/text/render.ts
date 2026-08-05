@@ -186,6 +186,46 @@ export function renderEvent(ev: TextEvent): string[] {
       for (const f of ev.facts) lines.push(cont(f));
       return lines;
     }
+    case "SPOT": {
+      // The lit ground, one line each — a wash a text driver can aim at. The
+      // focused one is marked because in GL it is the BRIGHT one, and which
+      // spot is settled on is what the build board is about.
+      if (!ev.entries.length) return [head("SPOT", "no ground is lit — the build word is not up.")];
+      const lines = [head("SPOT", `${ev.entries.length} place(s) lit.`)];
+      for (const e of ev.entries) {
+        const offers = e.offers?.length ? ` — could take: ${e.offers.join(", ")}` : "";
+        lines.push(
+          cont(
+            `${e.textId} (${e.what}), ${e.band} ${e.cardinal}, ${Math.round(e.distance)} m` +
+              `${offers}${e.focused ? " ← your gaze rests here" : ""}`,
+          ),
+        );
+      }
+      return lines;
+    }
+    case "FAMILY": {
+      if (!ev.entries.length) return [head("FAMILY", "no household here.")];
+      const lines = [head("FAMILY", `${ev.entries.length} in the household.`)];
+      for (const e of ev.entries) {
+        const marks = [e.present ? "" : "away", e.addressed ? "ADDRESSED" : ""].filter(Boolean);
+        lines.push(cont(`${e.textId} (${e.label}) — ${e.state}${marks.length ? ` [${marks.join(", ")}]` : ""}`));
+      }
+      return lines;
+    }
+    case "SITE": {
+      if (!ev.entries.length) return [head("SITE", "nothing is being built.")];
+      const STAGE = ["marked ground", "floor laid", "pillars up"] as const;
+      const lines = [head("SITE", `${ev.entries.length} thing(s) being built.`)];
+      for (const e of ev.entries) {
+        const pct = e.progress !== undefined ? `, ${Math.round(e.progress * 100)}% worked` : "";
+        lines.push(
+          cont(
+            `${e.textId}: a ${e.word} — ${STAGE[e.stage]}${pct}, ${e.band} ${e.cardinal}, ${Math.round(e.distance)} m`,
+          ),
+        );
+      }
+      return lines;
+    }
     case "SELF": {
       const lines = [head("SELF", ev.where)];
       for (const f of ev.facts) lines.push(cont(f));

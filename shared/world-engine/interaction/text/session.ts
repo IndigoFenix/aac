@@ -30,6 +30,8 @@
 import type { WorldState } from "../../engine.js";
 import { approachAim, type InteractKind } from "../../interact.js";
 import type { QuestBoardView } from "../quest/quest-host.js";
+import type { BuildOverlayView } from "../quest/build-overlay-3d.js";
+import type { Cardinal, Proximity } from "../dialogue/directions.js";
 import { baseWord } from "../lang/core.js";
 import { languageFor } from "../lang/index.js";
 import { boardEvents, findBoardOption, findChrome, textBoardOptions } from "./board.js";
@@ -41,9 +43,19 @@ import { createSceneIndex } from "./scene-index.js";
 import { diffBubbles, EMPTY_BUBBLES, type BubbleSnapshot } from "./speech.js";
 import { summarizePlaces, summarizeScene } from "./summarize.js";
 import { createWatchBook } from "./watch.js";
-import { indefiniteArticle, inViewSet, spaceOf, visibleSubjects, wordFor } from "./visibility.js";
+import {
+  bandOf,
+  cardinalFrom,
+  indefiniteArticle,
+  inViewSet,
+  singularWord,
+  spaceOf,
+  visibleSubjects,
+  wordFor,
+} from "./visibility.js";
 import {
   ARRIVE_R,
+  LOOK_SETTLE_QUIET_S,
   SETTLE_CAP_S,
   SETTLE_QUIET_S,
   TRAVEL_CAP_S,
@@ -58,6 +70,8 @@ import {
   type TextModeSession,
   type TextSessionDeps,
   type TextSessionStats,
+  type TextSiteEntry,
+  type TextSpotEntry,
   type VisibleScene,
   type VisibleSubject,
 } from "./types.js";
@@ -99,7 +113,12 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
   const travelCapS = deps.travel?.capS ?? TRAVEL_CAP_S;
   const arriveR = deps.travel?.arriveR ?? ARRIVE_R;
   const watchCap = deps.watchCap ?? WATCH_CAP;
-  const index = createSceneIndex({ ...(deps.nameOf ? { nameOf: deps.nameOf } : {}) });
+  const index = createSceneIndex({
+    ...(deps.nameOf ? { nameOf: deps.nameOf } : {}),
+    // A crowd line prints the ruleset's plural, so the ruleset is what turns it
+    // back into the stem the ids are latched under.
+    singularOf: (word) => singularWord(lang, word),
+  });
 
   /** Events the presenter tap recorded since the last drain. */
   const pending: TextEvent[] = [];
@@ -118,6 +137,14 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
 
   /** The CITY HUD, once it has shown (law ⑤'s mirror line). */
   let cityChips: CityChipLike[] = [];
+  /** THE DOLLHOUSE FAMILY HUD, as last pushed (see the `family` tap). */
+  let familyChips: {
+    cid: string;
+    label: string;
+    state: string;
+    present: boolean;
+    selected: boolean;
+  }[] = [];
 
   // ── step ⑧ ────────────────────────────────────────────────────────────────
   const builder: TextBuilder = createTextBuilder({
@@ -139,6 +166,10 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
   let aim: { simId: string; approach: boolean } | null = null;
   /** §4's coupling note — printed ONCE, the first time it could bite. */
   let steeringNoted = false;
+
+  // ── ⑦ the build overlay's own diff (see `buildDeltas`) ───────────────────
+  let lastSpotSig = "";
+  let lastSiteSig = "";
 
   // ── step ⑩ ────────────────────────────────────────────────────────────────
   const watchBook = createWatchBook({
@@ -182,6 +213,19 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
           selected: i.selected,
         })),
       });
+    },
+    family(members) {
+      // RECORDED, NOT STREAMED. The chips re-push whenever any member's state
+      // changes, which is constantly; a line per push would drown the
+      // transcript. `family` prints them, and the SCENE mirrors nothing —
+      // exactly how a HUD behaves for a sighted player.
+      familyChips = members.map((m) => ({
+        cid: m.id,
+        label: m.label,
+        state: m.state,
+        present: m.present,
+        selected: m.selected,
+      }));
     },
     city(chips) {
       // RECORDED, NEVER ENUMERATED (law ⑤). The cohorts behind these numbers are
@@ -288,7 +332,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
       transitOf,
     });
 
-    return [...events, ...deltas, ...pending.splice(0)];
+    return [...events, ...deltas, ...buildDeltas(probe.build), ...pending.splice(0)];
   }
 
   // ── movement (§4/D3, law ⑥ — the pointer path and nothing else) ───────────
@@ -301,23 +345,11 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
     const me = state.avatars[state.drivenId] ?? state.avatars[viewerIdOf(state)];
     if (!me) return null;
 
-    const body = state.avatars[standing.simId];
-    const obj = state.objects[standing.simId];
-    let to: { x: number; y: number } | null = null;
-    let kind: InteractKind = "object";
-    if (body) {
-      to = { x: body.x, y: body.y };
-      kind = "avatar";
-    } else if (obj) {
-      to = { x: obj.x, y: obj.y };
-    } else {
-      const b = (state.spec.buildings ?? []).find((q) => q.id === standing.simId);
-      if (b) to = { x: b.footprint.x + b.footprint.w / 2, y: b.footprint.y + b.footprint.h / 2 };
-    }
+    const to = subjectPoint(standing.simId);
     if (!to) return null;
     // `approach` runs the SAME `approachAim` the GL gaze does, so the body stops
     // at conversation distance and the host's own dwell opens the conversation.
-    return standing.approach ? approachAim({ x: me.x, y: me.y }, to, kind) : to;
+    return standing.approach ? approachAim({ x: me.x, y: me.y }, to, to.kind) : { x: to.x, y: to.y };
   }
 
   /** Metres from the driven body to the aim POINT (not to the target: for
@@ -345,7 +377,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
   /** §5 — step until quiet, capped; exactly one TICK closes it. A standing aim
    *  that has not arrived is NOT quiet, so a walk started elsewhere keeps being
    *  driven by whatever command follows it. */
-  function settle(): TextEvent[] {
+  function settle(quietFor: number = quietS): TextEvent[] {
     const out: TextEvent[] = [];
     let elapsed = 0;
     let quiet = 0;
@@ -361,7 +393,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
         quiet += deps.frameDt;
       }
       if (aim && aimDistance() <= arriveR) aim = null;
-      if (quiet >= quietS && !aim) break;
+      if (quiet >= quietFor && !aim) break;
     }
     out.push({ tag: "TICK", reason: quiet >= quietS && !aim ? "quiet" : "capped", seconds: elapsed });
     return out;
@@ -473,7 +505,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
     return [
       {
         tag: "NOTE",
-        text: `about ${city.population} more people live in this city (${districts} districts).`,
+        text: `about ${city.population} more people live in this city (${districts} district${districts === 1 ? "" : "s"}).`,
       },
     ];
   }
@@ -548,7 +580,203 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
         entries,
       },
       ...cityMirror(),
+      // ⑦ — WORK UNDER WAY IS PART OF THE SCENE. A GL player sees a staked
+      // floor and a hauler feeding it; a text player used to see an unchanged
+      // room and a toast that scrolled away. Sites ride the scene rather than
+      // waiting for a command, because construction is something you notice.
+      ...siteEvents(),
     ];
+  }
+
+  // ── ⑦ the lit ground and the live sites ──────────────────────────────────
+  /**
+   * TEXT IDS FOR GROUND. A spot is not a body — it has no record in `state`, so
+   * the scene index (which latches subjects off the frame) cannot hold one.
+   * Same law though: an id, once given, is that patch of ground's for the
+   * session, so `look plot-2` means the same place on turn 40 as on turn 3.
+   */
+  const spotIndex = (() => {
+    const byRaw = new Map<string, string>();
+    const byText = new Map<string, string>();
+    const counts = new Map<string, number>();
+    return {
+      idFor(rawId: string, stem: string): string {
+        const had = byRaw.get(rawId);
+        if (had) return had;
+        const n = (counts.get(stem) ?? 0) + 1;
+        counts.set(stem, n);
+        const textId = `${stem}-${n}`;
+        byRaw.set(rawId, textId);
+        byText.set(textId, rawId);
+        return textId;
+      },
+      rawOf: (textId: string): string | undefined => byText.get(textId),
+    };
+  })();
+
+  /** Bearings from the viewer to a world rect's centre — the same band/cardinal
+   *  vocabulary every other line uses, so a spot reads like a place does. */
+  function bearingTo(r: { x: number; y: number; w: number; h: number }):
+    | { band: Proximity; cardinal: Cardinal; distance: number }
+    | null {
+    const state = lastState ?? deps.view.probe().state;
+    if (!state) return null;
+    const body = state.avatars[viewerIdOf(state)];
+    if (!body) return null;
+    const to = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+    const distance = Math.hypot(to.x - body.x, to.y - body.y);
+    return { band: bandOf(distance), cardinal: cardinalFrom(body, to), distance };
+  }
+
+  /** WHAT A SPOT IS, in words — the tone the wash is drawn in, said out loud. */
+  function spotWhat(sp: { kind?: string; word?: string }): string {
+    switch (sp.kind) {
+      case "lot":
+        return "free ground";
+      case "grow":
+        return "room-shaped gap";
+      case "room":
+        return sp.word ? `the ${sp.word}` : "a room";
+      case "site":
+        return "work under way";
+      case "building":
+        return "the building";
+      default:
+        return "ground";
+    }
+  }
+
+  /**
+   * ⑦ — THE GROUND LIGHTING UP IS AN EVENT. In GL, pressing the build word
+   * washes the ground and the player sees the offer without asking; a
+   * projection that waited to be asked would hide the surface entirely (the
+   * board deliberately says almost nothing — the lit ground IS the menu).
+   *
+   * Diffed, so a steady frame is silent: the SPOT set by id + which one the
+   * spark holds, and each site by its visible STAGE (a floor going down is
+   * news; the progress fraction creeping is not).
+   */
+  function buildDeltas(build: BuildOverlayView | null | undefined): TextEvent[] {
+    const spotSig =
+      (build?.spots ?? []).map((s) => s.id).join("|") +
+      "/" +
+      ((build?.spots ?? []).find((s) => s.focused)?.id ?? "");
+    const siteSig = (build?.sites ?? []).map((s) => `${s.id}:${s.stage}`).join("|");
+    const out: TextEvent[] = [];
+    if (spotSig !== lastSpotSig) {
+      const hadSpots = lastSpotSig !== "" && !lastSpotSig.startsWith("/");
+      lastSpotSig = spotSig;
+      // Ground going DARK is worth one line — but only when it was LIT, never
+      // as a greeting on the first frame of a world that has no build word up.
+      if (build?.spots.length) out.push(...spotEvents());
+      else if (hadSpots) out.push({ tag: "NOTE", text: "the lit ground goes out." });
+    }
+    if (siteSig !== lastSiteSig) {
+      const had = lastSiteSig;
+      lastSiteSig = siteSig;
+      if (had) out.push(...siteEvents());
+    }
+    return out;
+  }
+
+  /**
+   * THE FAMILY HUD, and the ADDRESS it carries. Two things a dollhouse session
+   * is entirely about and text mode could not see: what each member's state is
+   * ("Mara is hungry" — the sentence the whole household loop exists to
+   * produce), and WHOM a spoken order will reach. The chip is a real host
+   * input (`selectFamilyMember`, law ⑥), so addressing here is the same act a
+   * player performs by dwelling on the chip.
+   */
+  function familyEvents(who?: string): TextEvent[] {
+    if (!familyChips.length) {
+      return [{ tag: "NOTE", text: "there is no household here." }];
+    }
+    if (who) {
+      const q = who.trim().toLowerCase();
+      const hit =
+        familyChips.find((c) => c.label.toLowerCase() === q) ??
+        familyChips.find((c) => (index.textIdOf(c.cid) ?? "").toLowerCase() === q) ??
+        familyChips.find((c) => c.label.toLowerCase().startsWith(q));
+      if (!hit) {
+        return [
+          {
+            tag: "ERR",
+            text: `nobody in the household called "${who}". Try: ${familyChips.map((c) => c.label).join(", ")}.`,
+          },
+        ];
+      }
+      if (!deps.host.selectFamilyMember) {
+        return [{ tag: "ERR", text: "this build has no family chip wired." }];
+      }
+      deps.host.selectFamilyMember(hit.cid);
+      return [
+        {
+          tag: "OK",
+          text: hit.selected ? `stopped addressing ${hit.label}.` : `addressing ${hit.label}.`,
+        },
+      ];
+    }
+    return [
+      {
+        tag: "FAMILY",
+        entries: familyChips.map((c) => ({
+          cid: c.cid,
+          textId: index.textIdOf(c.cid) ?? c.label.toLowerCase(),
+          label: c.label,
+          state: c.state,
+          present: c.present,
+          addressed: c.selected,
+        })),
+      },
+    ];
+  }
+
+  function spotEvents(): TextEvent[] {
+    const build = deps.view.probe().build;
+    const spots = build?.spots ?? [];
+    const entries: TextSpotEntry[] = [];
+    for (const sp of spots) {
+      const b = bearingTo(sp);
+      if (!b) continue;
+      entries.push({
+        textId: spotIndex.idFor(sp.id, sp.kind === "grow" || sp.kind === "lot" ? "plot" : "spot"),
+        what: spotWhat(sp),
+        ...(sp.offers?.length ? { offers: sp.offers.map((o) => baseWord(lang, o)) } : {}),
+        band: b.band,
+        cardinal: b.cardinal,
+        distance: b.distance,
+        ...(sp.focused ? { focused: true } : {}),
+      });
+    }
+    const focused = spots.find((s) => s.focused);
+    return [
+      {
+        tag: "SPOT",
+        entries,
+        ...(focused ? { focused: spotIndex.idFor(focused.id, "spot") } : {}),
+      },
+    ];
+  }
+
+  function siteEvents(): TextEvent[] {
+    const sites = deps.view.probe().build?.sites ?? [];
+    const entries: TextSiteEntry[] = [];
+    for (const c of sites) {
+      const b = bearingTo(c);
+      // `word`, never `glyph`: the glyph is the drawn composition and speaking
+      // it would put a picture in a sentence.
+      if (!b || !c.word) continue;
+      entries.push({
+        textId: spotIndex.idFor(c.id, "site"),
+        word: baseWord(lang, c.word),
+        stage: c.stage,
+        ...(c.progress !== undefined ? { progress: c.progress } : {}),
+        band: b.band,
+        cardinal: b.cardinal,
+        distance: b.distance,
+      });
+    }
+    return entries.length ? [{ tag: "SITE", entries }] : [];
   }
 
   function selfEvents(): TextEvent[] {
@@ -640,7 +868,37 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
     return { ok: true, subject: s };
   }
 
+  /**
+   * ⑦ — LOOKING AT GROUND. A lit spot has no body to resolve against, so it
+   * gets its own arm: the spark goes to the rect's centre, which is the exact
+   * point `spotAt` tests, and the ordinary settle then lets the host's own long
+   * dwell settle on it. This is the whole of "aim at a plot to build" — no new
+   * sim path, just the pointer a GL player's eyes already feed (law ⑥).
+   */
+  function lookGroundEvents(query: string): TextEvent[] | null {
+    const raw = spotIndex.rawOf(query);
+    if (!raw || !deps.look) return null;
+    const build = deps.view.probe().build;
+    const rect =
+      build?.spots.find((s) => s.id === raw) ?? build?.sites.find((s) => s.id === raw) ?? null;
+    if (!rect) return [{ tag: "ERR", text: `${query} is not lit any more.` }];
+    deps.look(rect.x + rect.w / 2, rect.y + rect.h / 2);
+    const b = bearingTo(rect);
+    return [
+      {
+        tag: "LOOK",
+        textId: query,
+        word: "ground",
+        facts: b
+          ? [`${b.band} ${b.cardinal}, ${Math.round(b.distance)} m away.`, "your gaze rests on it."]
+          : ["your gaze rests on it."],
+      },
+    ];
+  }
+
   function lookEvents(query: string): TextEvent[] {
+    const ground = lookGroundEvents(query);
+    if (ground) return ground;
     const r = resolveTarget(query);
     if (!r.ok) return r.events;
     const s = r.subject;
@@ -664,18 +922,58 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
     }
 
     const out: TextEvent[] = [{ tag: "LOOK", textId: s.textId, word: s.name ?? s.word, facts }];
-    // §4: IN A WALKER SCOPE, LOOKING ALSO STEERS. That is the engine's real
-    // coupling, and hiding it would hide the gap class this harness exists to
-    // find. Text mode's `look` is a QUERY and does not feed the pointer — so the
-    // note says exactly that, once, rather than pretending either way.
-    if (!steeringNoted && !deps.spirit && deps.look) {
+    // §4 — LOOKING IS RESTING THE SPARK ON IT. The pointer is not a sibling of
+    // the spark: `setPointer` IS the spark's input, and everything downstream
+    // (the dwell, the highlight, `hoverTargetOf`, what a build spot answers)
+    // reads the intent the gaze pipeline makes of it. A `look` that only
+    // reported would be a SECOND attention channel the engine does not have —
+    // the driver would be told it is looking at something the world does not
+    // believe it is looking at, which is the one thing this harness must never
+    // do. So the query feeds the gaze, exactly as a GL player's eyes do.
+    lookAt(s);
+    // …and in a walker scope that resting gaze also STEERS, so a standing walk
+    // to somewhere ELSE is genuinely over — said once, rather than silently
+    // fighting the aim on the next frame.
+    if (aim && aim.simId !== s.id && !deps.spirit) {
+      const was = index.textIdOf(aim.simId) ?? aim.simId;
+      aim = null;
+      out.push({
+        tag: "NOTE",
+        text: `a resting gaze STEERS in a walker scope, so looking at ${s.textId} called off the walk to ${was}.`,
+      });
+    } else if (!steeringNoted && !deps.spirit && deps.look) {
       steeringNoted = true;
       out.push({
         tag: "NOTE",
-        text: "in a walker scope a resting gaze also STEERS you toward what it rests on — this `look` only reports, so use go/approach to move.",
+        text: "in a walker scope a resting gaze also STEERS you toward what it rests on — `look` feeds it, so looking is aiming.",
       });
     }
     return out;
+  }
+
+  /** Rest the spark on a subject/place — the ONE aiming primitive (law ⑥: the
+   *  host's own pointer input, never a side door). A place is aimed at through
+   *  its own centre, which is what a GL player's gaze lands on. */
+  function lookAt(s: VisibleSubject): void {
+    if (!deps.look) return;
+    const at = subjectPoint(s.id);
+    if (at) deps.look(at.x, at.y);
+  }
+
+  /** WHERE A THING IS, from the same records the renderer draws it from — a
+   *  body, a loose object, else the building footprint's centre. ONE owner:
+   *  both the spark (`lookAt`) and the walk (`aimPoint`) ask this. */
+  function subjectPoint(simId: string): { x: number; y: number; kind: InteractKind } | null {
+    const state = lastState ?? deps.view.probe().state;
+    if (!state) return null;
+    const body = state.avatars[simId];
+    if (body) return { x: body.x, y: body.y, kind: "avatar" };
+    const obj = state.objects[simId];
+    if (obj) return { x: obj.x, y: obj.y, kind: "object" };
+    const b = (state.spec.buildings ?? []).find((q) => q.id === simId);
+    return b
+      ? { x: b.footprint.x + b.footprint.w / 2, y: b.footprint.y + b.footprint.h / 2, kind: "object" }
+      : null;
   }
 
   function whereEvents(query: string): TextEvent[] {
@@ -709,6 +1007,8 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
           "where <thing>    — its band, direction and distance",
           "who              — who is in the conversation",
           "board            — reprint the buttons on screen",
+          "spots            — the lit ground + what is being built (look <plot-n> aims at it)",
+          "family [who]     — the household's states; with a name, address them",
           "say <words>      — compose and speak (words join with +)",
           "press <n|label>  — press a button by number or caption",
           "more / back      — page the board, or the builder listing",
@@ -719,6 +1019,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
           "go <thing>       — walk to it",
           "approach <who>   — walk to conversation distance and stop",
           "stop             — stop walking",
+          "send <who> to <thing> — tell somebody to go to it",
           "watch <thing> / unwatch <thing|all> / watching",
           `wait [n]         — let ${WAIT_DEFAULT_S}s (or n) of world time pass`,
           "help             — this list",
@@ -850,22 +1151,72 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
   }
 
   /**
-   * `send <creature> to <id>` — PARSED, DELIBERATELY NOT WIRED.
+   * `send <creature> to <id>` — THE SPIRIT'S ONE ACT (§4, law ⑥).
    *
-   * The action exists in the sim (`PlayerAction` `sendTo` / `attendObject`,
-   * dispatched by `performPlayerAction`), but no PUBLIC host method reaches it
-   * from a single-player headless boot: `applyRemoteCommand` is the only entry
-   * that takes a `PlayerAction`, and it returns immediately unless the host was
-   * built with multiplayer and this peer is the OWNER. Law ⑥ forbids inventing a
-   * path, so this answers honestly instead of pretending to act.
+   * A pointer player performs this by resting the gaze on somebody and then on
+   * a place: the aim arbitration reads an ORDER out of the pair and the host
+   * puts a `PlayerAction` through its gate (`parse-intent`'s `sendTo` /
+   * `attendObject` / `attendCreature`). Text mode has no pointer to pair, so it
+   * issues the very same three actions through the host's LOCAL COMMAND CHANNEL
+   * (`QuestHost3D.perform`) — the same gate, the same executor, no text-only sim
+   * path. What resolves to which:
+   *
+   *   creature → `attendCreature`  (go and attend that person)
+   *   object   → `attendObject`    (at the object's own point)
+   *   place    → `sendTo`          (at the building's FOOTPRINT CENTRE)
+   *
+   * The centre, not a doorstep, because it is what `subjectPoint` already gives
+   * the spark and the walk — ONE owner for "where a thing is" — and because the
+   * engine's routing is door-aware: a point inside a house is reached through
+   * its door, which is exactly what "go to the blue house" means.
+   *
+   * SPIRIT SCOPES ARE THE POINT — a bodiless dollhouse spirit has nothing to
+   * walk but everything to direct, so `send` is never gated on embodiment. And
+   * it is never gated on the creature's WILLINGNESS either: refusing is the
+   * willingness system's job, and its refusal (a line, or a pointed silence)
+   * is the feedback the driver reads off the bubbles after the settle.
    */
-  function sendEvents(creature: string, to: string): TextEvent[] {
-    return [
-      {
-        tag: "ERR",
-        text: `not wired yet (needs a host command channel — step ⑨ TODO): send ${creature} to ${to}.`,
-      },
-    ];
+  function sendEvents(creature: string, to: string): { events: TextEvent[]; sent: boolean } {
+    const no = (text: string): { events: TextEvent[]; sent: boolean } => ({
+      events: [{ tag: "ERR", text }],
+      sent: false,
+    });
+    // FEATURE-DETECTED, NEVER THROWN AT: an older boot (a vendored snapshot
+    // predating the channel) still runs the whole harness — it simply cannot
+    // command, and says so.
+    const issue = deps.host.perform?.bind(deps.host);
+    if (!issue) {
+      return no(`not wired yet (needs a host command channel — step ⑨ TODO): send ${creature} to ${to}.`);
+    }
+    const who = resolveTarget(creature);
+    if (!who.ok) return { events: who.events, sent: false };
+    const actor = who.subject;
+    // ONLY A CREATURE CAN BE SENT. A chair has no legs and a house does not go
+    // anywhere — and the action names the walker in `cid`, so this is what the
+    // sim would reject anyway, answered here where the driver can read it.
+    if (actor.kind !== "creature") {
+      return no(`${actor.textId} is a ${actor.word} — only somebody with legs can be sent.`);
+    }
+    const target = resolveTarget(to);
+    if (!target.ok) return { events: target.events, sent: false };
+    const dest = target.subject;
+    if (dest.id === actor.id) return no(`${actor.textId} is already there.`);
+    const at = dest.kind === "creature" ? null : subjectPoint(dest.id);
+    if (dest.kind !== "creature" && !at) return no(`nothing here can tell where ${dest.textId} is.`);
+    // The driver named both, so neither folds back into the scenery (§4).
+    index.markReferenced(actor.id);
+    index.markReferenced(dest.id);
+    issue(
+      dest.kind === "creature"
+        ? { kind: "attendCreature", cid: actor.id, id: dest.id }
+        : dest.kind === "object"
+          ? { kind: "attendObject", cid: actor.id, id: dest.id, x: at!.x, y: at!.y }
+          : { kind: "sendTo", cid: actor.id, x: at!.x, y: at!.y },
+    );
+    return {
+      events: [{ tag: "OK", text: `told ${actor.textId} to go to ${dest.textId}.` }],
+      sent: true,
+    };
   }
 
   // ── step ⑩: watching ─────────────────────────────────────────────────────
@@ -946,8 +1297,37 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
         return frame([...selfEvents(), ...settle()]);
       case "board":
         return frame([...boardAnswer(), ...settle()]);
-      case "look":
-        return frame([...(cmd.target ? lookEvents(cmd.target) : sceneEvents()), ...settle()]);
+      case "spots":
+        // Reprinting the ground costs nothing and moves nothing — but the
+        // settle keeps the one-TICK-per-command rule intact.
+        return frame([...spotEvents(), ...siteEvents(), ...settle()]);
+      case "family":
+        return frame([...familyEvents(cmd.who), ...settle()]);
+      case "look": {
+        if (!cmd.target) return frame([...sceneEvents(), ...settle()]);
+        const evs = lookEvents(cmd.target);
+        // A FED GAZE IS NOT QUIET UNTIL ITS DWELL HAS ANSWERED (§5's rule for a
+        // standing aim, applied to the other thing the pointer does). The host
+        // opens a board only after the gaze SETTLES and then rests — the smoother
+        // has to converge and the long dwell has to run — which is longer than
+        // the ordinary quiet window. Ending the command first made `look plot-3`
+        // followed by `press` a race the driver lost, silently: the press landed
+        // on the previous board.
+        const settled = settle(LOOK_SETTLE_QUIET_S);
+        // WHERE THE SPARK ACTUALLY LANDED. The gaze snaps to what is DRAWN at
+        // the point (the body standing in the room, the bubble over its head),
+        // so aiming at a place can rest the spark on somebody in it — and what
+        // the world thinks you are looking at is what a dwell will act on.
+        // Reported, never hidden: this coupling is the harness's whole job.
+        const looked = evs.find((e) => e.tag === "LOOK");
+        const landed = deps.view.probe().intent?.cursor?.hoverId;
+        const landedText = landed ? (index.textIdOf(landed) ?? landed) : null;
+        const note: TextEvent[] =
+          looked?.tag === "LOOK" && landedText && landedText !== looked.textId
+            ? [{ tag: "NOTE", text: `your gaze rests on ${landedText}, which is what is drawn there.` }]
+            : [];
+        return frame([...evs, ...note, ...settled]);
+      }
       case "where":
         return frame([...whereEvents(cmd.target), ...settle()]);
       case "who":
@@ -1004,8 +1384,13 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
       }
       case "stop":
         return frame([...stopEvents(), ...settle()]);
-      case "send":
-        return frame(sendEvents(cmd.creature, cmd.target));
+      case "send": {
+        // Issued, then SETTLED like any other act: the creature's answer — a
+        // line, or the law-③ silence — is what tells the driver whether it was
+        // taken. A refusal moved no time, so it closes with no TICK.
+        const s = sendEvents(cmd.creature, cmd.target);
+        return frame([...s.events, ...(s.sent ? settle() : [])]);
+      }
       case "watch":
         return frame([...watchEvents(cmd.target), ...settle()]);
       case "unwatch":

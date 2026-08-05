@@ -278,7 +278,8 @@ const L: Record<string, Lexeme> = {
   room: { w: "room" },
   door: { w: "door" },
   bedroom: { w: "bedroom" },
-  store: { w: "storeroom" },
+  store: { w: "store" },
+  storeroom: { w: "storeroom" },
   workshop: { w: "workshop" },
   // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
   // Every word a building site can SAY. These shipped as live glyphs long
@@ -521,9 +522,19 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
   return `${s.charAt(0).toUpperCase()}${s.slice(1)}${f.question ? "?" : "."}`;
 }
 
+/** ENGLISH'S REGULAR PLURAL — the -s/-es/-ies rule, for nouns the lexicon gave
+ *  no explicit `plw`. Irregulars stay authored (`plw`), which is what that field
+ *  is for; this only stops a generated count from printing "2 bed". */
+function enPlural(word: string): string {
+  if (/(?:s|x|z|ch|sh)$/i.test(word)) return `${word}es`;
+  if (/[^aeiou]y$/i.test(word)) return `${word.slice(0, -1)}ies`;
+  return `${word}s`;
+}
+
 export const en: GlyphLanguage = {
   id: "en",
   lexicon: L,
+  pluralize: enPlural,
   fixed: {
     "i_me + help + you": "I'll help you.",
     "i_me + help.not + you": "I won't help you.",

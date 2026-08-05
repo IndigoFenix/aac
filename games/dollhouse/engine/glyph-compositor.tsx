@@ -28,6 +28,8 @@ import { isAppearanceOnlyFacet } from "./world-engine/variations.js";
 import {
   parseGlyph,
   computeLayout,
+  drawnSlot,
+  hasPlaceArt,
   dominantToneFamily,
   TONE_COLORS,
   SLOT_UNIT,
@@ -121,7 +123,16 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     showEmptyHostSlot = false,
   } = props;
 
-  const parsed: ParsedGlyph = typeof glyph === "string" ? parseGlyph(glyph) : glyph;
+  const word: ParsedGlyph = typeof glyph === "string" ? parseGlyph(glyph) : glyph;
+  // The DRAWN form: a PLACE WORD whose symbol is a shell plus a fixture draws
+  // as that composition (`bedroom` → `room(bed)`, `smithy` → `building(anvil)`)
+  // — one symbol made of two PNGs, see glyph-place-art.ts. Slot order and count
+  // are untouched, so `activeSlot` / `onSlotPress` indices still line up, and
+  // `word` stays the source for the accessible label (a student's board says
+  // "bedroom", not "room bed").
+  const parsed: ParsedGlyph = hasPlaceArt(word)
+    ? { ...word, slots: word.slots.map(drawnSlot) }
+    : word;
   const layout = computeLayout(parsed, rtl);
 
   // A single, unmodified SYMBOL can be rendered nearly full-bleed — there are
@@ -145,7 +156,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
   const bg = TONE_COLORS[tone];
 
   const fallbackLabel =
-    parsed.slots.map((s) => s.key).filter(Boolean).join(" ") || "empty glyph";
+    word.slots.map((s) => s.key).filter(Boolean).join(" ") || "empty glyph";
 
   // Wrap the SVG in a positioned container so it can't claim intrinsic
   // viewBox-derived dimensions and push the parent taller. With absolute

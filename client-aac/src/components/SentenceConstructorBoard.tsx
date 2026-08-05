@@ -45,6 +45,7 @@ import {
   type ToneTag,
 } from "@shared/glyph-compositor";
 import { applyExclusiveModifier, cycleQualityPole, pushSlotWithJoin } from "@shared/glyph-builder-ops";
+import { placeArt } from "@shared/glyph-place-art";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveEmoji, isNonReversibleEmoji } from "@shared/emoji-registry";
@@ -92,6 +93,12 @@ function computeTargetSlot(glyph: ParsedGlyph, activeSlot: number | null): numbe
  */
 function slotKeyForSelection(item: VocabularyItem): string {
   if (item.exposeToAi) return item.key;
+  // A PLACE WORD keeps its key even when the AI's vocabulary for it is an
+  // emoji: its picture is a shell plus a fixture (glyph-place-art.ts) and only
+  // the WORD resolves to that. Storing 🛌 for `bedroom` put a bare bed in the
+  // sentence — the very "furniture with no room around it" this exists to fix —
+  // and the word reads more clearly to the interpreter than the emoji anyway.
+  if (placeArt(item.key)) return item.key;
   if (item.emoji) return item.emoji;
   return item.key;
 }
@@ -2200,6 +2207,11 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
           // Alias (today/tomorrow/yesterday) — preview the composed glyph it
           // inserts (day + arrow) so the button matches the result.
           <Glyph glyph={item.expandsTo} noBackground ariaLabel={label} />
+        ) : placeArt(item.key) ? (
+          // A ROOM or BUILDING is one symbol drawn from two PNGs (shell +
+          // fixture) — it has to go through the compositor, or the palette
+          // shows a bare 🛌 for the button that draws `room(bed)`.
+          <Glyph glyph={item.key} noBackground ariaLabel={label} />
         ) : url ? (
           <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, item.emoji ?? resolveEmoji(item.key))} />
         ) : (
@@ -2251,8 +2263,10 @@ function EngineWordButton(props: { word: BuilderWord; onPress: () => void }) {
       title={label}
     >
       <div className="icon-fill-area">
-        {word.glyph ? (
-          <Glyph glyph={word.glyph} noBackground ariaLabel={label} />
+        {word.glyph || placeArt(word.key) ? (
+          // No engine glyph for a place word still draws its shell — the
+          // compositor resolves the composition from the key itself.
+          <Glyph glyph={word.glyph ?? word.key} noBackground ariaLabel={label} />
         ) : url ? (
           <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, emoji)} />
         ) : (
@@ -2301,8 +2315,8 @@ function EngineModifierButton(props: {
       title={label}
     >
       <div className="icon-fill-area">
-        {word.glyph ? (
-          <Glyph glyph={word.glyph} noBackground ariaLabel={label} />
+        {word.glyph || placeArt(word.key) ? (
+          <Glyph glyph={word.glyph ?? word.key} noBackground ariaLabel={label} />
         ) : url ? (
           <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, emoji)} />
         ) : (
@@ -2618,11 +2632,14 @@ function MoreButton(props: { onPress: () => void; testId?: string; disabled?: bo
  * board buttons render identically.
  *
  *   1. `symbol:ID`        → /api/custom-symbols/ID/image
- *   2. registry imagePath → bundled icon URL
- *   3. server-resolved symbolPath (only for the primary key — fallbacks
+ *   2. PLACE ART          → the composed shell+fixture glyph, drawn by the
+ *                           compositor (a room/building is one symbol made of
+ *                           two PNGs, so no single URL can carry it)
+ *   3. registry imagePath → bundled icon URL
+ *   4. server-resolved symbolPath (only for the primary key — fallbacks
  *      never carry one)
- *   4. emoji (registry item.emoji → resolveEmoji)
- *   5. null → caller falls through to the next link in the chain
+ *   5. emoji (registry item.emoji → resolveEmoji)
+ *   6. null → caller falls through to the next link in the chain
  *
  * `face:<id>` keys resolve through `getFaceImage` (the shared camera +
  * stored-photo resolver). When no image is available they degrade to the
@@ -2633,7 +2650,7 @@ function resolveCandidateRender(
   key: string,
   serverSymbolPath: string | undefined,
   getFaceImage?: (contactId: string) => string | null,
-): { url: string | null; emoji: string | null } {
+): { url: string | null; emoji: string | null; glyph?: string } {
   if (!key) return { url: null, emoji: null };
   if (key.startsWith("symbol:")) {
     const id = key.substring(7).trim();
@@ -2645,6 +2662,7 @@ function resolveCandidateRender(
     // No cached/stored face → 👤 silhouette (resolveEmoji handles "face:").
     return { url, emoji: url ? null : resolveEmoji(key) ?? null };
   }
+  if (placeArt(key)) return { url: null, emoji: null, glyph: key };
   const item = getVocabularyItem(key);
   if (item?.imagePath) {
     const u = resolveIconPath(item.imagePath);
@@ -2681,6 +2699,9 @@ function AiCandidateButton(props: {
     setPrimaryFailed(false);
   }, [primary.url]);
 
+  // A composed PLACE symbol can't be one URL, so it short-circuits the
+  // url/emoji chain and draws through the compositor like the board does.
+  const renderGlyph = (!primaryFailed && primary.glyph) || fb.glyph || null;
   let renderUrl: string | null = null;
   let renderEmoji: string | null = null;
   if (primary.url && !primaryFailed) {
@@ -2720,7 +2741,9 @@ function AiCandidateButton(props: {
       style={{ padding: 5 }}
     >
       <div className="icon-fill-area">
-        {renderUrl ? (
+        {renderGlyph ? (
+          <Glyph glyph={renderGlyph} noBackground ariaLabel={label} />
+        ) : renderUrl ? (
           // onError demotes the primary image — the resolver above then
           // tries the fallback key (which may itself be an emoji).
           <img

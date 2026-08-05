@@ -437,6 +437,7 @@ export const yue: Translations = {
       sister: "家姐",
       brother: "哥哥",
       friend: "朋友",
+      family: "家人",
       teacher: "老師",
       doctor: "醫生",
       want: "想要",

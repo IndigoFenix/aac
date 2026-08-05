@@ -609,14 +609,12 @@ export class DualAgentService {
       return undefined;
     })();
 
-    // Auto-selectable boards (needs a userId).
+    // Auto-selectable boards. Keyed on the STUDENT, not the signed-in account:
+    // the device runs under whichever caretaker is logged in, who is usually
+    // not the clinician who authored the boards.
     const boardsPromise = (async (): Promise<NonNullable<DualAgentSessionState['availableBoards']>> => {
-      if (!userId) {
-        logLiveSession("AVAILABLE_BOARDS", `no userId — skipping auto-selectable board load (createNewSession, student=${studentId})`);
-        return [];
-      }
       try {
-        const boards = await boardRepository.getAutoSelectableBoardsWithPackages(userId, studentId);
+        const boards = await boardRepository.getAutoSelectableBoardsWithPackages(studentId);
         const keys = buildBoardKeys(boards.map(b => ({ id: b.id, name: b.name, packageName: b.packageName })), [HOME_BOARD_KEY]);
         const mapped = boards.map(b => {
           const irData = b.irData as any;
@@ -976,23 +974,19 @@ export class DualAgentService {
           state.cachedDiagnosis = record?.primaryDiagnosis || null;
         } catch { state.cachedDiagnosis = null; }
 
-        // Load auto-selectable boards
-        if (state.userId) {
-          try {
-            const boards = await boardRepository.getAutoSelectableBoardsWithPackages(state.userId, state.studentId);
-            const keys = buildBoardKeys(boards.map(b => ({ id: b.id, name: b.name, packageName: b.packageName })), [HOME_BOARD_KEY]);
-            state.availableBoards = boards.map(b => {
-              const irData = b.irData as any;
-              const grid = irData?.grid || { rows: 3, cols: 4 };
-              return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid };
-            });
-            logLiveSession("AVAILABLE_BOARDS", `loaded ${state.availableBoards.length} auto-selectable board(s) (loadSessionFromDB, user=${state.userId} student=${state.studentId}) — [${state.availableBoards.map(b => b.key).join(", ")}]`);
-          } catch (err) {
-            state.availableBoards = [];
-            logLiveSession("AVAILABLE_BOARDS", `getAutoSelectableBoards THREW (loadSessionFromDB, user=${state.userId} student=${state.studentId}): ${(err as Error)?.message ?? err}`);
-          }
-        } else {
-          logLiveSession("AVAILABLE_BOARDS", `no userId — skipping auto-selectable board load (loadSessionFromDB, student=${state.studentId})`);
+        // Load auto-selectable boards (student-scoped — see createNewSession)
+        try {
+          const boards = await boardRepository.getAutoSelectableBoardsWithPackages(state.studentId);
+          const keys = buildBoardKeys(boards.map(b => ({ id: b.id, name: b.name, packageName: b.packageName })), [HOME_BOARD_KEY]);
+          state.availableBoards = boards.map(b => {
+            const irData = b.irData as any;
+            const grid = irData?.grid || { rows: 3, cols: 4 };
+            return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid };
+          });
+          logLiveSession("AVAILABLE_BOARDS", `loaded ${state.availableBoards.length} auto-selectable board(s) (loadSessionFromDB, user=${state.userId} student=${state.studentId}) — [${state.availableBoards.map(b => b.key).join(", ")}]`);
+        } catch (err) {
+          state.availableBoards = [];
+          logLiveSession("AVAILABLE_BOARDS", `getAutoSelectableBoards THREW (loadSessionFromDB, user=${state.userId} student=${state.studentId}): ${(err as Error)?.message ?? err}`);
         }
 
         state.interactivePrompt = buildInteractiveAgentPrompt({

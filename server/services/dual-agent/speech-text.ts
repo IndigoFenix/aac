@@ -124,6 +124,23 @@ export function describeSttConfidence(confidence?: number): string {
  * target, route via transcript() — but it works from authoritative on-device
  * text rather than re-transcribing audio. Returns null for empty text.
  */
+/** Tag that opens every turn built by `buildHeardSpeechTurn`. Exported so
+ *  backends can recognize a speech turn without re-hardcoding the literal. */
+export const HEARD_SPEECH_TAG = "[HEARD SPEECH]";
+
+/**
+ * Is this Observer turn a heard-speech turn (vs. a startup prompt, scene
+ * frame, or requested audio clip)? Speech turns are the ones that MUST end in
+ * a tool call — transcript() or ignore_speech() — because a speech turn that
+ * ends in silence is indistinguishable from one that never arrived.
+ *
+ * Matches anywhere in the string: `sendUserTurn` prepends buffered [SCENE] /
+ * [ENERGY] context lines ahead of the tag.
+ */
+export function isHeardSpeechTurn(text: string): boolean {
+  return text.includes(HEARD_SPEECH_TAG);
+}
+
 export function buildHeardSpeechTurn(text: string, confidence?: number): string | null {
   const clean = (text || "").trim();
   if (!clean) return null;
@@ -137,7 +154,7 @@ export function buildHeardSpeechTurn(text: string, confidence?: number): string 
     ? `The recogniser was confident of the words — relay them as heard unless the scene plainly contradicts them.`
     : `The recogniser was ${label === "unknown" ? "unable to score" : `only ${label}-confidence on`} the words. It never returns silence, so weak or distant audio comes back as a confident-looking sentence that was never said. Weigh it against the scene: if it fits nothing happening, drop it rather than passing it on; request_audio to hear the clip when it matters.`;
   return (
-    `[HEARD SPEECH] (speech-to-text, confidence: ${label}) "${clean}"\n` +
+    `${HEARD_SPEECH_TAG} (speech-to-text, confidence: ${label}) "${clean}"\n` +
     `${trust} Attribute the speaker (use [VOICES HEARD] / [PEOPLE PRESENT] and what you can see) and judge who it is addressed to, ` +
     `then route it via transcript() — set its \`confidence\` to how sure YOU are of the WORDS, not of the speaker.`
   );

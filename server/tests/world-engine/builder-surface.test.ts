@@ -254,7 +254,7 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
       .find((g) => g.id === "places")!;
     // home leads (a place is home outward), and every face is the composed
     // shell+symbol icon — the bare word would render nothing.
-    expect(places.glyphs![0]).toBe("building(home)");
+    expect(places.glyphs![0]).toBe("building(family)");
     for (const g of places.glyphs!) expect(canResolveGlyph(g)).toBe(true);
   });
 
@@ -353,7 +353,7 @@ describe("placeBuilderNouns — every room and building the spec knows", () => {
     for (const t of ["home", "workshop", "shop", "smithy", "temple", "weaver", "library"]) {
       expect(syms).toContain(t);
     }
-    for (const k of ["bedroom", "kitchen", "bath", "living", "store", "forge", "shrine", "weaving", "study"]) {
+    for (const k of ["bedroom", "kitchen", "bathroom", "living", "storeroom", "forge", "shrine", "weaving", "study"]) {
       expect(syms).toContain(k);
     }
     expect(new Set(syms).size).toBe(syms.length);

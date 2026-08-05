@@ -26,8 +26,15 @@ import {
 import {
   resolveStructure,
   structureCosts,
+  structureDisplayGlyph,
   type StructureSpec,
 } from "@shared/world-engine/kernel/town/structures.js";
+import {
+  programOverridesOf,
+  roomDisplayGlyph,
+  structureProgramDisplayGlyph,
+} from "@shared/world-engine/kernel/town/programs.js";
+import { registerPlaceArt } from "@shared/glyph-place-art.js";
 import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import { serviceRadiusM, type WorldScale } from "@shared/world-engine/scale.js";
 
@@ -274,10 +281,14 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
   {
     // `symbol` on the next three rows: "house" / "farm" / "market" are WORDS
     // the glyph lexicon has no picture for, so each names the symbol that
-    // stands for it — the dwelling, the crop, the coin. Without them the plate
+    // stands for it — the family, the crop, the coin. Without them the plate
     // framed a ❓.
+    //
+    // `family` and not `home`: a plate around a house icon says the word twice
+    // and the thing once — what makes a building a dwelling is who lives in it.
+    // Mirrors DEFAULT_STRUCTURE_PROGRAMS' house row.
     type: "house", glyph: "house", label: "house", role: "house",
-    frame: "building", symbol: "home",
+    frame: "building", symbol: "family",
     footprint: { w: 9, d: 8 },
     program: { sleepCells: 2, wet: true, kitchen: true },
     jobs: 0, costs: {}, buildDays: 1, color: "#a8875f", default: true,
@@ -369,8 +380,10 @@ export const TOWN_PLAY_STRUCTURES: StructureSpec[] = [
     jobs: 2, costs: {}, buildDays: 1.5, color: "#a97fa2", default: true,
   },
   {
+    // `book`, not the `shelf` station: the shelf derives the STUDY room inside,
+    // but the building is one of books. Mirrors the library structure program.
     type: "library", glyph: "library", label: "library", role: "work",
-    frame: "building", symbol: "shelf",
+    frame: "building", symbol: "book",
     footprint: { w: 12, d: 10 },
     program: {}, stations: ["shelf"], // an open reading hall
     jobs: 1, costs: {}, buildDays: 2, color: "#7f93ae", default: false,
@@ -599,6 +612,26 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   const key = config.key ?? TOWN_KEY;
   const startPop = config.startPop ?? START_POP;
   const structures = config.structures ?? TOWN_PLAY_STRUCTURES;
+  // THE PLACE ART THIS SESSION DRAWS WITH (shared/glyph-place-art.ts). A room or
+  // a building is ONE symbol — the shell plate plus the fixture that names it —
+  // and the word is what travels: `structureDoneLine(spec.glyph)` speaks
+  // "smithy", a board button carries "bedroom". The static table covers the
+  // DEFAULT culture; these two lists are what it cannot know, so they register
+  // themselves from their own specs (never re-authored here):
+  //   - a swapped catalogue (`TownPlayConfig.structures`) — its `farm`;
+  //   - culture-authored programs — the same bath program is a bathROOM in a
+  //     house and a bathHOUSE in a town that bathes together, which is the
+  //     `frame` and nothing else.
+  // Rooms register before buildings so a word that names both (`workshop`,
+  // `masonry`) draws the BUILDING — `placeBuilderNouns`' buildings-first rule.
+  const authoredPrograms = programOverridesOf(config.architecture);
+  for (const r of authoredPrograms.rooms ?? []) {
+    registerPlaceArt(r.word ?? r.kind, roomDisplayGlyph(r));
+  }
+  for (const b of authoredPrograms.buildings ?? []) {
+    registerPlaceArt(b.word ?? b.type, structureProgramDisplayGlyph(b));
+  }
+  for (const s of structures) registerPlaceArt(s.glyph, structureDisplayGlyph(s));
   // Age 0 is legal (city-founding): a `days: 0` town is founded TODAY — the
   // fast-forward loop simply never runs and the clock starts at day 0.
   const days = Math.max(0, Math.min(5000, Math.floor(config.days ?? 220)));

@@ -101,6 +101,12 @@ export interface DiffBubblesOpts {
 export interface BubbleDiff {
   events: TextEvent[];
   next: BubbleSnapshot;
+  /** THE BODIES THAT ACTUALLY SPOKE this frame, as sim ids, in event order and
+   *  without repeats. Only the ones that passed the §3 gate — a line the viewer
+   *  could not hear is not an introduction. The session records them as
+   *  "previously met" (law ⑤ rank ②): text mode narrates a line only when its
+   *  speaker is in view, so hearing one IS meeting them. */
+  speakers: string[];
 }
 
 /**
@@ -124,10 +130,12 @@ export function diffBubbles(
   }
 
   const events: TextEvent[] = [];
+  const heard = new Set<string>();
   for (const { key, bubble, mark } of fresh) {
     const speaker = speakerOf(state, key, bubble);
     if (speaker) {
       if (!opts.inView.has(speaker)) continue; // §3 gate — sealed room, no line
+      heard.add(speaker);
     } else if (!opts.includeUnattributed) {
       continue;
     }
@@ -149,5 +157,5 @@ export function diffBubbles(
     }
   }
 
-  return { events, next };
+  return { events, next, speakers: [...heard] };
 }

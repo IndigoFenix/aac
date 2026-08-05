@@ -2922,27 +2922,35 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               />
             </div>
           ) : (
-            <PrebuiltBoardSection
-              studentId={studentId}
-              onSpeakAction={(text) => {
-                if (voiceFnRef.current) {
-                  // Route through AI — voice the text and send as button press
-                  voiceFnRef.current([text], { [text]: text });
-                } else {
-                  setSelectedSymbols([text]);
-                }
-              }}
-              language={currentLanguage}
-              voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
-              suppressLocalSpeech={aiSessionActive}
-              iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
-              eyegazeEnabled={eyegazeSettings.enabled}
-              studentRestSpace={eyegazeSettings.restSpace}
-              getFaceImage={resolveFaceImage}
-              onBack={() => {
-                // Handle back at root level - could show board selector
-              }}
-            />
+            // Same width contract as the sibling branches above. WITHOUT
+            // `flex-1 min-w-0` this is a `flex: 0 1 auto` item sized by its
+            // max-content — and a board has none: the tracks are
+            // `minmax(0, 1fr)` and every button's icon/label sits in a
+            // `container-type: size` box, which contributes zero intrinsic
+            // width. The whole board then collapses to 0-wide columns.
+            <div className="flex-1 min-w-0 h-full">
+              <PrebuiltBoardSection
+                studentId={studentId}
+                onSpeakAction={(text) => {
+                  if (voiceFnRef.current) {
+                    // Route through AI — voice the text and send as button press
+                    voiceFnRef.current([text], { [text]: text });
+                  } else {
+                    setSelectedSymbols([text]);
+                  }
+                }}
+                language={currentLanguage}
+                voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+                suppressLocalSpeech={aiSessionActive}
+                iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
+                eyegazeEnabled={eyegazeSettings.enabled}
+                studentRestSpace={eyegazeSettings.restSpace}
+                getFaceImage={resolveFaceImage}
+                onBack={() => {
+                  // Handle back at root level - could show board selector
+                }}
+              />
+            </div>
           )}
             </>
           )}

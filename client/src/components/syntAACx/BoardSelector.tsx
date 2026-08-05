@@ -1,13 +1,15 @@
 // src/components/syntAACx/BoardSelector.tsx
 // This component appears as a bar below the chat when in SyntAACx mode
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { 
+import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -28,6 +30,8 @@ import {
   Zap,
   Info,
   Trash2,
+  Package,
+  UserPlus,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -95,21 +99,103 @@ export function BoardSelector() {
   // LOAD BOARDS LIST FROM SERVER (metadata only, no irData)
   // ============================================================================
   
+  // With a student loaded we fetch TWO lists and show them as separate groups:
+  //   1. the student's boards — whoever authored them, plus anything reaching
+  //      them through an attached package
+  //   2. our own drafts that are attached to no student at all
+  // They used to arrive as one undifferentiated list, which is what made the
+  // picker impossible to read: a colleague's board for this child was missing
+  // while every stray draft of our own showed up under every child.
   useQuery({
-    queryKey: ['/api/boards', student?.id],
+    queryKey: ['/api/boards', student?.id ?? 'all'],
     queryFn: async () => {
-      const endpoint = student?.id
-        ? `/api/boards/student/${student.id}`
-        : '/api/boards';
-      const res = await apiRequest('GET', endpoint);
-      if (!res.ok) {
+      if (!student?.id) {
+        const res = await apiRequest('GET', '/api/boards');
+        if (!res.ok) throw new Error('Failed to load boards');
+        const rows = await res.json();
+        hydrateBoardsFromServer(rows);
+        return rows;
+      }
+
+      const [studentRes, draftsRes] = await Promise.all([
+        apiRequest('GET', `/api/boards/student/${student.id}`),
+        apiRequest('GET', '/api/boards?unassigned=1'),
+      ]);
+      if (!studentRes.ok) {
         throw new Error('Failed to load boards');
       }
-      const rows = await res.json();
+      // Drafts are a convenience, not the point of the panel — if that call
+      // fails, still show the student's boards rather than an empty picker.
+      const rows = [
+        ...(await studentRes.json()),
+        ...(draftsRes.ok ? await draftsRes.json() : []),
+      ];
       hydrateBoardsFromServer(rows);
       return rows;
     },
     staleTime: 30000, // Consider data fresh for 30 seconds
+  });
+
+  // A board is in exactly one of three states, and the three are disjoint:
+  // attached to the loaded student, reached through a package (never attached
+  // to anyone), or an unattached draft of our own.
+  const boardGroups = useMemo(() => {
+    const studentBoards: typeof boards = [];
+    const packageBoards: typeof boards = [];
+    const drafts: typeof boards = [];
+    for (const b of boards) {
+      if ((b as any).packageName) packageBoards.push(b);
+      else if ((b as any).studentId) studentBoards.push(b);
+      else drafts.push(b);
+    }
+    return { studentBoards, packageBoards, drafts };
+  }, [boards]);
+
+  /** The open board is a draft we could attach to the loaded student. */
+  const canAttachToStudent =
+    !!board?.dbId && !(board as any).studentId && !(board as any).packageName && !!student?.id;
+
+  const attachToStudentMutation = useMutation({
+    mutationFn: async () => {
+      if (!board?.dbId || !student?.id) throw new Error('');
+      const res = await apiRequest('PATCH', `/api/boards/${board.dbId}`, { studentId: student.id });
+      if (!res.ok) {
+        // The server's refusals here are specific and worth showing — no
+        // access to this student, already attached to a different one. Same
+        // "error:CODE" → errors.CODE convention the chat surfaces use.
+        const code = await res
+          .json()
+          .then((b: any) => (typeof b?.error === 'string' && b.error.startsWith('error:') ? b.error.slice(6) : ''))
+          .catch(() => '');
+        throw new Error(code ? t(`errors.${code}`) : '');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      // NOT patchBoardMeta — attaching is already persisted, and that helper
+      // forces isDirty, which would make a just-saved board look unsaved.
+      useBoardStore.setState((state) => {
+        const current = state.board;
+        if (!current) return state;
+        const updated = { ...current, studentId: student?.id } as any;
+        return {
+          board: updated,
+          boards: state.boards.map((b: any) => (b._id === updated._id ? updated : b)),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/boards'] });
+      toast({
+        title: t('board.attached'),
+        description: t('board.attachedDesc', { name: student?.firstName || student?.name || '' }),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('board.attachFailed'),
+        description: error?.message || t('board.attachFailedDesc'),
+        variant: 'destructive',
+      });
+    },
   });
 
   // ============================================================================
@@ -146,7 +232,7 @@ export function BoardSelector() {
   // LOAD FULL BOARD DATA (with irData)
   // ============================================================================
 
-  const loadFullBoardData = useCallback(async (boardMeta: { _id: string; dbId?: string; loadedFromServer?: boolean }) => {
+  const loadFullBoardData = useCallback(async (boardMeta: { _id: string; dbId?: string; loadedFromServer?: boolean; packageName?: string }) => {
     // If already loaded from server, just select it
     if (boardMeta.loadedFromServer) {
       selectBoardById(boardMeta._id);
@@ -180,6 +266,10 @@ export function BoardSelector() {
         automaticSelectionHint: fullBoard.automaticSelectionHint,
         restSpace: fullBoard.restSpace,
         isGenerated: fullBoard.isGenerated,
+        studentId: fullBoard.studentId,
+        // The board row knows nothing about packages; the store falls back to
+        // what the picker list already recorded for this board.
+        packageName: boardMeta.packageName,
       });
 
       toast({
@@ -242,7 +332,7 @@ export function BoardSelector() {
         if (!res.ok) {
           throw new Error('Failed to update board');
         }
-        return res.json() as Promise<{ id: string; name: string }>;
+        return res.json() as Promise<{ id: string; name: string; studentId?: string | null }>;
       } else {
         // Associate new boards with the currently selected student
         if (student?.id) {
@@ -252,13 +342,25 @@ export function BoardSelector() {
         if (!res.ok) {
           throw new Error('Failed to save board');
         }
-        return res.json() as Promise<{ id: string; name: string }>;
+        return res.json() as Promise<{ id: string; name: string; studentId?: string | null }>;
       }
     },
     onSuccess: (saved) => {
       markBoardSaved(saved.id, saved.name);
+      // Both POST and PATCH echo the stored row, so take the attachment from
+      // the server rather than assuming the loaded student won — otherwise a
+      // board saved for a student sits in the "not attached" group until the
+      // next refetch.
+      useBoardStore.setState((state) => {
+        const current = state.board;
+        if (!current) return state;
+        const updated = { ...current, studentId: saved.studentId ?? undefined } as any;
+        return {
+          board: updated,
+          boards: state.boards.map((b: any) => (b._id === updated._id ? updated : b)),
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/boards'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/boards', student?.id] });
       toast({
         title: t('board.saved'),
         description: t('board.savedDesc'),
@@ -383,6 +485,61 @@ export function BoardSelector() {
   // RENDER
   // ============================================================================
 
+  const studentName = (student as any)?.firstName || (student as any)?.name || '';
+
+  /** One labelled section of the picker. Renders nothing when empty, so a
+   *  clinician with no drafts never sees an empty "not attached" heading. */
+  const renderBoardGroup = (label: string, group: typeof boards) => {
+    if (!group.length) return null;
+    return (
+      <SelectGroup>
+        <SelectLabel className={cn(
+          'text-[10px] uppercase tracking-wide',
+          isDark ? 'text-slate-500' : 'text-gray-400'
+        )}>
+          {label}
+        </SelectLabel>
+        {group.map((b) => (
+          <SelectItem key={b._id} value={b._id}>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="truncate">{b.name}</span>
+              {b.automaticSelection && (
+                <span
+                  className="text-[9px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-500 flex items-center gap-1 max-w-[140px] shrink-0"
+                  title={b.automaticSelectionHint || undefined}
+                >
+                  <Zap className="w-2.5 h-2.5 shrink-0" />
+                  {b.automaticSelectionHint && (
+                    <span className="truncate">{b.automaticSelectionHint}</span>
+                  )}
+                </span>
+              )}
+              {(b as any).packageName && (
+                <span
+                  className="text-[9px] px-1 py-0.5 rounded bg-teal-500/20 text-teal-600 flex items-center gap-1 max-w-[140px] shrink-0"
+                  title={(b as any).packageName}
+                >
+                  <Package className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{(b as any).packageName}</span>
+                </span>
+              )}
+              {(b as any).isGenerated && (
+                <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-500 shrink-0">
+                  AI
+                </span>
+              )}
+              {b.isDirty && (
+                <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500 shrink-0">
+                  •
+                </span>
+              )}
+            </div>
+          </SelectItem>
+        ))}
+      </SelectGroup>
+    );
+  };
+
   return (
     <>
       {/* The document is dir="rtl" in RTL mode, so flex rows already reverse —
@@ -414,34 +571,16 @@ export function BoardSelector() {
             </SelectTrigger>
             <SelectContent>
               {boards && boards.length > 0 ? (
-                boards.map((b) => (
-                  <SelectItem key={b._id} value={b._id}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="truncate">{b.name}</span>
-                      {b.automaticSelection && (
-                        <span
-                          className="text-[9px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-500 flex items-center gap-1 max-w-[140px] shrink-0"
-                          title={b.automaticSelectionHint || undefined}
-                        >
-                          <Zap className="w-2.5 h-2.5 shrink-0" />
-                          {b.automaticSelectionHint && (
-                            <span className="truncate">{b.automaticSelectionHint}</span>
-                          )}
-                        </span>
-                      )}
-                      {(b as any).isGenerated && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-500 shrink-0">
-                          AI
-                        </span>
-                      )}
-                      {b.isDirty && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500 shrink-0">
-                          •
-                        </span>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))
+                <>
+                  {renderBoardGroup(
+                    student
+                      ? t('board.groupStudentBoards', { name: studentName })
+                      : t('board.groupYourBoards'),
+                    boardGroups.studentBoards,
+                  )}
+                  {renderBoardGroup(t('board.groupFromPackages'), boardGroups.packageBoards)}
+                  {renderBoardGroup(t('board.groupUnattached'), boardGroups.drafts)}
+                </>
               ) : (
                 <div className="px-2 py-4 text-center text-xs text-muted-foreground">
                   {t('board.noBoards')}
@@ -495,12 +634,68 @@ export function BoardSelector() {
                   {t('board.saved')}
                 </span>
               )}
+              {/* Who this board is for. Only the surprising states get a badge:
+                  saying "this belongs to the student you have open" on every
+                  board would be noise, but a board that belongs to NOBODY (so
+                  the student's device will never see it) or to a shared package
+                  (so editing it here is not the way) has to say so. */}
+              {(board as any).packageName ? (
+                <span
+                  className={cn(
+                    'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 max-w-[180px]',
+                    isDark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-100 text-teal-700'
+                  )}
+                  title={t('board.fromPackageTooltip')}
+                >
+                  <Package className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{(board as any).packageName}</span>
+                </span>
+              ) : board.dbId && !(board as any).studentId ? (
+                <span
+                  className={cn(
+                    'text-[9px] px-1.5 py-0.5 rounded',
+                    isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-200 text-gray-600'
+                  )}
+                  title={t('board.notAttachedTooltip')}
+                >
+                  {t('board.notAttached')}
+                </span>
+              ) : null}
               {/* Package membership + "add to package". Renders nothing without
                   the packages license or on an unsaved board. */}
               <BoardPackageControl boardId={board.dbId} isDark={isDark} />
             </div>
           )}
           
+          {/* Attach an unattached draft to the loaded student. This is the only
+              way a board that was saved with no student open ever reaches a
+              student's device — and it is one-way, so it cannot be used to
+              move a board off a child it already belongs to. */}
+          {canAttachToStudent && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                'h-7 text-xs gap-1.5',
+                isDark
+                  ? 'border-blue-800 text-blue-300 hover:bg-blue-950'
+                  : 'border-blue-300 text-blue-600 hover:bg-blue-50'
+              )}
+              onClick={() => attachToStudentMutation.mutate()}
+              disabled={attachToStudentMutation.isPending || isLoadingBoard}
+              title={t('board.attachToStudentTooltip')}
+            >
+              {attachToStudentMutation.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <UserPlus className="w-3 h-3" />
+              )}
+              <span className="hidden sm:inline">
+                {t('board.attachToStudent', { name: studentName })}
+              </span>
+            </Button>
+          )}
+
           {/* Save Button */}
           <Button
             variant="outline"

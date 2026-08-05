@@ -52,12 +52,16 @@ function attributed(who: string | null, body: string): string {
   return who ? `${who}: ${body}` : body;
 }
 
-/** One board button, numbered including chrome (law ④). */
+/** One board / builder button, numbered including chrome (law ④). */
 function optionLine(o: TextBoardOption): string {
   const parts = [`${o.n}. ${o.label}`];
   if (o.glyph) parts.push(`[${o.glyph}]`);
   // §7: the spoken text is quoted ONLY when it differs from the caption.
   if (o.spokenText && o.spokenText !== o.label) parts.push(`"${o.spokenText}"`);
+  // A MODIFIER IS NOT A WORD: it composes onto the head with a "." instead of
+  // taking a slot of its own, and a driver counting presses needs to see which
+  // rows are which.
+  if (o.modifier) parts.push("(modifier)");
   return parts.join("  ");
 }
 
@@ -113,6 +117,10 @@ export function renderEvent(ev: TextEvent): string[] {
     case "ENTER":
       return [head("ENTER", ev.where ? `${ev.who} came into view ${ev.where}.` : `${ev.who} came into view.`)];
     case "EXIT":
+      // THE VISIBLE TRANSIT wins when there is one: "Mara went into the blue
+      // house" is what a sighted player saw; "left view south" is what is left
+      // to say when they simply walked out of range.
+      if (ev.via) return [head("EXIT", `${ev.who} went ${ev.via}.`)];
       return [head("EXIT", ev.where ? `${ev.who} left view ${ev.where}.` : `${ev.who} left view.`)];
     case "DOING":
       return [head("DOING", `${ev.who} is ${ev.activity}.`)];
@@ -124,6 +132,10 @@ export function renderEvent(ev: TextEvent): string[] {
       return [head("WEAR", `${ev.who} is wearing ${ev.what}.`)];
     case "OPEN":
       return [head("OPEN", `${ev.what} is ${ev.open ? "open" : "shut"}.`)];
+    case "STOCK":
+      return [
+        head("STOCK", ev.items.length ? `${ev.what} holds ${ev.items.join(", ")}.` : `${ev.what} is empty.`),
+      ];
     case "TOAST":
       return [head("TOAST", ev.kind ? `${ev.text} (${ev.kind})` : ev.text)];
     case "GOAL":
@@ -147,16 +159,18 @@ export function renderEvent(ev: TextEvent): string[] {
     case "CLOSE":
       return [head("CLOSE", "the board closed.")];
     case "TICK":
-      return [
-        head(
-          "TICK",
-          ev.reason === "waited"
-            ? `waited ${secs(ev.seconds)}s.`
-            : ev.reason === "capped"
-              ? `still busy after ${secs(ev.seconds)}s.`
-              : `quiet after ${secs(ev.seconds)}s.`,
-        ),
-      ];
+      switch (ev.reason) {
+        case "waited":
+          return [head("TICK", `waited ${secs(ev.seconds)}s.`)];
+        case "capped":
+          return [head("TICK", `still busy after ${secs(ev.seconds)}s.`)];
+        case "arrived":
+          return [head("TICK", `arrived after ${secs(ev.seconds)}s.`)];
+        case "walking":
+          return [head("TICK", `still walking — ${Math.round(ev.metres ?? 0)} m to go.`)];
+        default:
+          return [head("TICK", `quiet after ${secs(ev.seconds)}s.`)];
+      }
     case "SCENE": {
       // Two counts, never one. The header must not claim "95 in view" over eight
       // printed lines — things and places are summarized by different rules, so
@@ -172,6 +186,37 @@ export function renderEvent(ev: TextEvent): string[] {
       for (const f of ev.facts) lines.push(cont(f));
       return lines;
     }
+    case "SPOT": {
+      // The lit ground, one line each — a wash a text driver can aim at. The
+      // focused one is marked because in GL it is the BRIGHT one, and which
+      // spot is settled on is what the build board is about.
+      if (!ev.entries.length) return [head("SPOT", "no ground is lit — the build word is not up.")];
+      const lines = [head("SPOT", `${ev.entries.length} place(s) lit.`)];
+      for (const e of ev.entries) {
+        const offers = e.offers?.length ? ` — could take: ${e.offers.join(", ")}` : "";
+        lines.push(
+          cont(
+            `${e.textId} (${e.what}), ${e.band} ${e.cardinal}, ${Math.round(e.distance)} m` +
+              `${offers}${e.focused ? " ← your gaze rests here" : ""}`,
+          ),
+        );
+      }
+      return lines;
+    }
+    case "SITE": {
+      if (!ev.entries.length) return [head("SITE", "nothing is being built.")];
+      const STAGE = ["marked ground", "floor laid", "pillars up"] as const;
+      const lines = [head("SITE", `${ev.entries.length} thing(s) being built.`)];
+      for (const e of ev.entries) {
+        const pct = e.progress !== undefined ? `, ${Math.round(e.progress * 100)}% worked` : "";
+        lines.push(
+          cont(
+            `${e.textId}: a ${e.word} — ${STAGE[e.stage]}${pct}, ${e.band} ${e.cardinal}, ${Math.round(e.distance)} m`,
+          ),
+        );
+      }
+      return lines;
+    }
     case "SELF": {
       const lines = [head("SELF", ev.where)];
       for (const f of ev.facts) lines.push(cont(f));
@@ -182,10 +227,28 @@ export function renderEvent(ev: TextEvent): string[] {
     case "WHO":
       return [head("WHO", ev.members.length ? ev.members.join(", ") + "." : "nobody is talking.")];
     case "WATCH":
+      if ("list" in ev) {
+        return [head("WATCH", ev.list.length ? `watching ${ev.list.join(", ")}.` : "watching nobody.")];
+      }
       return [head("WATCH", `${ev.on ? "watching" : "no longer watching"} ${ev.textId}.`)];
     case "BUILDER": {
-      const lines = [head("BUILDER", ev.partial ? `so far: ${ev.partial}` : "so far: (nothing)")];
+      // THE HEADER IS THE COMPOSITION AND ITS PREVIEW: what has been pressed,
+      // what it would SAY (translated, never re-composed), and whether the
+      // surfacer already considers it sayable.
+      const so = ev.partial ? `so far: ${ev.partial}` : "so far: (nothing)";
+      const said = ev.preview ? `  "${ev.preview}"` : "";
+      const done = ev.complete ? "  (complete)" : "";
+      const lines = [head("BUILDER", `${so}${said}${done}`)];
       for (const o of ev.options) lines.push(cont(optionLine(o)));
+      if (ev.groups?.length) {
+        lines.push(cont(`groups: ${ev.groups.map((g) => `${g.id} (${g.count})`).join(", ")}`));
+      }
+      if (ev.tabs?.length) lines.push(cont(`tabs: ${ev.tabs.join(", ")}`));
+      // Law ④: WHERE IN THE LIST YOU ARE is part of the cost. A word on page 3
+      // of a tab is three screens away, and the block has to say so.
+      if (ev.pages !== undefined && ev.pages > 1) {
+        lines.push(cont(`page ${ev.page ?? 1}/${ev.pages} — more / back`));
+      }
       return lines;
     }
     case "HELP": {

@@ -18,6 +18,7 @@ import {
   type PackagePermission,
 } from "@shared/schema";
 import { db } from "../../db";
+import { getActiveSupportInstituteId } from "../customerSupportService";
 import type { AccessCtx } from "../sharing/visibility";
 
 const RANK: Record<PackagePermission, number> = { none: 0, use: 1, edit: 2 };
@@ -85,6 +86,17 @@ export async function resolvePackagePermission(
   // reads content already attached to it, which the assignment row governs.
   if (ctx.kind === "student") {
     return isPubliclyUsable(pkg) || pkg.instituteId !== null ? "use" : "none";
+  }
+
+  // A customer-support agent holds admin over the institute they are
+  // supporting. Everything else in the codebase gets this from
+  // `instituteRepository.isUserAdminOfInstitute`, which short-circuits on the
+  // support institute — but membership below is resolved by querying
+  // `institute_users` directly, and the agent has no row there. Without this
+  // branch support mode can LIST a customer's packages (that query is
+  // institute-keyed) and then 404 on opening any of them.
+  if (pkg.instituteId && getActiveSupportInstituteId() === pkg.instituteId) {
+    return "edit";
   }
 
   let permission: PackagePermission = isPubliclyUsable(pkg) ? "use" : "none";
@@ -164,15 +176,24 @@ export function listUsablePackages(ctx: AccessCtx): SQL {
     .from(packageGrants)
     .where(eq(packageGrants.granteeUserId, ctx.userId));
 
-  return and(
-    live,
-    or(
-      approvedPublic,
-      and(
-        inArray(packages.instituteId, memberInstitutes),
-        sql`${packages.defaultMemberPermission} <> 'none'`,
-      ),
-      inArray(packages.id, granted),
-    ),
-  )!;
+  const branches: SQL[] = [
+    approvedPublic,
+    and(
+      inArray(packages.instituteId, memberInstitutes),
+      sql`${packages.defaultMemberPermission} <> 'none'`,
+    )!,
+    inArray(packages.id, granted),
+  ];
+
+  // The support institute, whole. No defaultMemberPermission filter: that
+  // setting governs what ORDINARY members may reach, and an admin — which is
+  // what a support agent is here — sees the institute's packages regardless.
+  // This is why "Content Packages" in AAC Settings came back empty in support
+  // mode: the list is built from the agent's own `institute_users` rows.
+  const supportInstituteId = getActiveSupportInstituteId();
+  if (supportInstituteId) {
+    branches.push(eq(packages.instituteId, supportInstituteId));
+  }
+
+  return and(live, or(...branches))!;
 }

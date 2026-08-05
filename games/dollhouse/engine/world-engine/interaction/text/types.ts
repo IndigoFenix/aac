@@ -14,14 +14,22 @@
 import type { WorldState } from "../../engine.js";
 import type { RenderIntent } from "../../world-view.js";
 import type { QuestPresenter } from "../quest/quest-host.js";
+import type { PlayerAction } from "../../player-action.js";
 import type { Cardinal, Proximity } from "../dialogue/directions.js";
+import type { BuildOverlayView } from "../quest/build-overlay-3d.js";
+import type { BuilderNounEntry } from "../intent/builder-surface.js";
 
 // ---------------------------------------------------------------------------
 // §2 — the tag set. TAGS ARE PROTOCOL: uppercase ASCII English in every locale;
 // only PAYLOADS go through the lang layer.
 // ---------------------------------------------------------------------------
 
-/** Stream tags — things that HAPPENED in the world while time ran. */
+/** Stream tags — things that HAPPENED in the world while time ran.
+ *
+ *  `STOCK` is §6's sixth watch delta ("`WEAR`, `OPEN`, gated `STOCK`"), which
+ *  §2's tag list — written before the delta table existed — does not carry. The
+ *  set is closed, so this is the one place it can be reconciled: the producer
+ *  lands with its step (⑩), and the tag lands with the producer. */
 export type TextStreamTag =
   | "SAY"
   | "SILENT"
@@ -33,6 +41,7 @@ export type TextStreamTag =
   | "HOLD"
   | "WEAR"
   | "OPEN"
+  | "STOCK"
   | "TOAST"
   | "GOAL"
   | "WON"
@@ -83,6 +92,12 @@ export interface VisibleSubject {
   /** §3 proximity band, from directions.ts' vocabulary. */
   band: Proximity;
   cardinal: Cardinal;
+  /** THE RAW BEARING from the viewer, degrees (atan2, y-down like the cardinal
+   *  vocabulary). Carried because §6's `MOVED` hysteresis is stated in DEGREES
+   *  ("cardinal swing ≥90°") and a four-word vocabulary cannot express it: a
+   *  body drifting 2° across the north/east boundary changes its cardinal WORD
+   *  without moving. Optional so a hand-built fixture need not compute one. */
+  bearing?: number;
   /** Straight-line metres from the viewer. */
   distance: number;
   /** Building id the subject stands in, or null outdoors. */
@@ -92,6 +107,10 @@ export interface VisibleSubject {
   /** APPEARANCE SIGNATURE (§6) — only fields the renderer actually dresses the
    *  body from, so "visibly distinct" means *drawn* differently. */
   appearance: string[];
+  /** THE DRESS, worded (§6 "two women in red draw water") — the garment colour
+   *  the body is actually drawn in, when it wears an outfit override. Absent =
+   *  the factory default, which distinguishes nothing and so is never said. */
+  dress?: string;
   /** What it is doing, when the host supplied an `activityOf`. */
   activity?: { verb: string; object?: string };
   /** Sim ids of objects this body carries (`carriedBy`) — never `carryOf()`,
@@ -104,6 +123,13 @@ export interface VisibleSubject {
   /** Places only: does a door of this building stand physically open? One of
    *  the four things that make a place NOTABLE enough for its own line. */
   doorOpen?: boolean;
+  /** Objects only: the eased LID swing, 0 (shut) → 1 (open). Renderer-visible
+   *  (the lid is drawn), and the gate on a container's `contains` (§6: STOCK is
+   *  narrated only while the box is open AND in view). */
+  open?: number;
+  /** Objects only, and only while the lid is open: the sim ids the container
+   *  visibly holds. A shut box has no `contains` — the eye reads the lid. */
+  contains?: string[];
 }
 
 /** Everything §3's filter admits this frame, plus who is looking. */
@@ -135,12 +161,52 @@ export interface TextBoardOption {
   spokenText?: string;
   /** Set for the two chrome buttons so `more`/`back` can find them. */
   chrome?: "more" | "back";
+  /** BUILDER only: this row is a MODIFIER — pressing it composes onto the head
+   *  with a "." instead of adding a word (the SpeakMenu's own rail rule). */
+  modifier?: boolean;
+}
+
+/** One sub-category chip on a BUILDER screen, as text mode prints it. `count`
+ *  is how many EXEMPLAR faces the chip carries — the surface's own measure of
+ *  how much lives behind it, and therefore of what a tap on it costs. */
+export interface TextBuilderGroup {
+  id: string;
+  label: string;
+  count: number;
 }
 
 /** One line of a SCENE block. `subject` = a NAMED individual, `group` = a crowd
  *  bucket (§6), `place` = a NOTABLE landmark's own line (§3), `place-group` =
  *  the rest of the skyline, counted rather than enumerated (law ⑤ applies to
  *  places too — see summarize.ts). */
+/** ⑦ — ONE OFFERED SPOT, in words. `textId` is what `look`/`press` take; the
+ *  rest is what the wash and its tone say to a sighted player. */
+export interface TextSpotEntry {
+  textId: string;
+  /** What this ground IS ("free lot", "bedroom", "room-shaped gap"). */
+  what: string;
+  /** What it would TAKE, if anything — speakable words, already localized. */
+  offers?: string[];
+  band: Proximity;
+  cardinal: Cardinal;
+  distance: number;
+  /** The spark is resting on this one — a dwell here settles on it. */
+  focused?: boolean;
+}
+
+/** ⑦ — ONE CONSTRUCTION SITE. `stage` is the visible ladder (0 marked ground,
+ *  1 floor laid, 2 pillars up); `progress` the banked-labor fraction. */
+export interface TextSiteEntry {
+  textId: string;
+  /** What will stand here, spoken ("bedroom", "market") — never the glyph. */
+  word: string;
+  stage: 0 | 1 | 2;
+  progress?: number;
+  band: Proximity;
+  cardinal: Cardinal;
+  distance: number;
+}
+
 export interface SceneEntry {
   kind: "subject" | "group" | "place" | "place-group";
   /** Named entries only. */
@@ -177,22 +243,27 @@ export type TextEvent =
   | { tag: "SAY"; who: string | null; text: string; glyph?: string }
   /** A `style:"thought"` bubble — visible silence is an EVENT (law ③). */
   | { tag: "SILENT"; who: string | null; text?: string; glyph?: string }
-  /** TODO step ⑩ (watch deltas): a body turned away from the viewer. */
+  /** A body turned away from the viewer. */
   | { tag: "TURN"; who: string; away: boolean }
-  /** TODO step ⑩: a watched body came back into view. */
+  /** A TRACKED subject came into view (§6: a watch never grants visibility, but
+   *  it re-fires this on return). `where` is the band + cardinal it appeared at. */
   | { tag: "ENTER"; who: string; where?: string }
-  /** TODO step ⑩: a watched body left view (with the visible transit). */
-  | { tag: "EXIT"; who: string; where?: string }
-  /** TODO step ⑩: a watched body's activity changed. */
+  /** A tracked subject left view. `via` is the VISIBLE TRANSIT when the exit was
+   *  a doorway ("into the blue house") — the whole trailing phrase, because
+   *  "into" and "out of" are grammar and this layer's formatter knows none. */
+  | { tag: "EXIT"; who: string; where?: string; via?: string }
+  /** A watched body's (verb, object) changed. */
   | { tag: "DOING"; who: string; activity: string }
-  /** TODO step ⑩: hysteretic band/cardinal/space delta. */
+  /** Hysteretic band / space / cardinal-swing delta (§6). */
   | { tag: "MOVED"; who: string; band: Proximity; cardinal: Cardinal }
-  /** TODO step ⑩: hands changed (`carriedBy`, never `carryOf`). */
+  /** Hands changed — from `carriedBy`, never `carryOf` (§6). */
   | { tag: "HOLD"; who: string; what: string | null }
-  /** TODO step ⑩: outfit changed. */
+  /** The renderer-visible dress changed (the live change of clothes). */
   | { tag: "WEAR"; who: string; what: string }
-  /** TODO step ⑩: a fixture's lid/door state changed. */
+  /** A fixture's lid flipped. */
   | { tag: "OPEN"; what: string; open: boolean }
+  /** §6's gated delta: what an OPEN, in-view container holds changed. */
+  | { tag: "STOCK"; what: string; items: string[] }
   | { tag: "TOAST"; text: string; kind?: string }
   | { tag: "GOAL"; text: string; locked?: boolean }
   | { tag: "WON" }
@@ -209,8 +280,14 @@ export type TextEvent =
       options: TextBoardOption[];
     }
   | { tag: "CLOSE" }
-  /** Exactly ONE per command (§5). */
-  | { tag: "TICK"; reason: "quiet" | "waited" | "capped"; seconds: number }
+  /** Exactly ONE per command (§5). `arrived`/`walking` close a TRAVEL settle
+   *  (step ⑨); `metres` is how far the standing aim still has to go. */
+  | {
+      tag: "TICK";
+      reason: "quiet" | "waited" | "capped" | "arrived" | "walking";
+      seconds: number;
+      metres?: number;
+    }
   // ── answers ──────────────────────────────────────────────────────────────
   /** `count` = THINGS in view (bodies + objects); `places` = landmarks around
    *  you. Two counts, not one: a town is 13 things standing in a ring of 82
@@ -219,15 +296,48 @@ export type TextEvent =
   | { tag: "SCENE"; place: string; count: number; places: number; entries: SceneEntry[] }
   | { tag: "LOOK"; textId: string; word: string; facts: string[] }
   | { tag: "SELF"; where: string; facts: string[] }
-  /** TODO step ⑨ (movement): where a subject is, as directions. */
+  /** Where a subject is, as directions. */
   | { tag: "WHERE"; textId: string; band: Proximity; cardinal: Cardinal; distance: number }
-  /** TODO step ⑦ (full crowd pass): the roster of a conversation. */
+  /** The roster of the conversation the view publishes. */
   | { tag: "WHO"; members: string[] }
-  /** TODO step ⑩ (watching). */
+  /** One watch toggled, or (the `list` arm) the whole roster of watches. */
   | { tag: "WATCH"; textId: string; on: boolean }
-  /** TODO step ⑧ (builder driving). */
-  | { tag: "BUILDER"; partial: string; options: TextBoardOption[] }
+  | { tag: "WATCH"; list: string[] }
+  /**
+   * ONE SENTENCE-BUILDER SCREEN, exactly as `builderSurfaceFor` served it at the
+   * real grid budget (law ④). `partial` is the composition so far, `preview` its
+   * TRANSLATION (never a re-composition), `complete` the surfacer's own verdict.
+   * Numbered words carry `[glyph]` only where the drawn face differs from the
+   * pressed key — a place is one word that draws as a composed icon.
+   */
+  | {
+      tag: "BUILDER";
+      partial: string;
+      preview: string;
+      complete: boolean;
+      options: TextBoardOption[];
+      groups?: TextBuilderGroup[];
+      tabs?: string[];
+      /** The tab / group chip currently open, when the view is filtered. */
+      tab?: string;
+      group?: string;
+      /** 1-based page of the active listing, and how many it pages into. */
+      page?: number;
+      pages?: number;
+    }
   | { tag: "HELP"; commands: string[] }
+  /**
+   * ⑦ THE GROUND, ANSWERING. While the build word is up the surface is the LIT
+   * GROUND rather than a list, so a view that cannot show a wash has to say
+   * what the wash says: every offered spot, what it is, what it would take,
+   * and which one the spark is resting on. `look <id>` aims at one.
+   *
+   * Rows come from the host's own overlay payload — the same one GL draws — so
+   * a text driver can never be offered ground a sighted player is not.
+   */
+  | { tag: "SPOT"; entries: TextSpotEntry[]; focused?: string }
+  /** ⑦ — construction under way, as the site marks the renderer draws. */
+  | { tag: "SITE"; entries: TextSiteEntry[] }
   // ── control ──────────────────────────────────────────────────────────────
   | { tag: "OK"; text: string }
   | { tag: "ERR"; text: string }
@@ -236,15 +346,26 @@ export type TextEvent =
   /** TODO step ⑪ (cheat channel) — every use MUST leave this marker (law ⑦). */
   | { tag: "CHEAT"; text: string };
 
-/** Events plus the lines they render to — what `command()` hands back. */
+/**
+ * Events plus the lines they render to — what `command()` hands back.
+ *
+ * `cheatLines` IS A DIFFERENT CHANNEL (law ⑦): the cheat channel's output never
+ * joins `lines`, so a transcript keeps its shape and a reviewer can still see —
+ * from the one `CHEAT` marker that DOES land in the stream — that the tester
+ * peeked. A driver that concatenates the two has chosen to; nothing here does.
+ */
 export interface TextFrame {
   events: TextEvent[];
   lines: string[];
+  cheatLines?: string[];
 }
 
 // ---------------------------------------------------------------------------
-// Commands (phase 1 / step ④ set)
+// Commands
 // ---------------------------------------------------------------------------
+
+/** The `build …` sub-grammar (step ⑧). One verb, six operations. */
+export type BuildOp = "show" | "word" | "tab" | "group" | "undo" | "clear" | "play";
 
 export type TextCommand =
   /** No target = the whole scene. `look chair 2` is accepted shorthand (§4). */
@@ -252,6 +373,8 @@ export type TextCommand =
   | { kind: "scene" }
   | { kind: "self" }
   | { kind: "board" }
+  /** ⑦ — reprint the lit ground (the build word's real surface). */
+  | { kind: "spots" }
   /** Words are joined with " + " into one composed glyph sentence. */
   | { kind: "say"; words: string[] }
   /** By 1-based number OR by label; chrome is pressable either way. */
@@ -260,7 +383,25 @@ export type TextCommand =
   | { kind: "back" }
   /** Steps EXACTLY this many sim-seconds (§5). */
   | { kind: "wait"; seconds: number }
-  | { kind: "help" };
+  | { kind: "help" }
+  // ── step ⑧: the sentence builder ────────────────────────────────────────
+  | { kind: "builder" }
+  | { kind: "build"; op: BuildOp; arg?: string }
+  // ── step ⑨: movement (the pointer path, and nothing else) ───────────────
+  /** `approach` aims at `approachAim`'s stop-short point; `go` at the thing. */
+  | { kind: "go"; target: string; approach?: boolean }
+  | { kind: "stop" }
+  /** Parsed, deliberately unwired — see session.ts `sendEvents`. */
+  | { kind: "send"; creature: string; target: string }
+  | { kind: "where"; target: string }
+  | { kind: "who" }
+  // ── step ⑩: watching ───────────────────────────────────────────────────
+  | { kind: "watch"; target: string }
+  /** `unwatch all` arrives as `target: "all"`. */
+  | { kind: "unwatch"; target: string }
+  | { kind: "watching" }
+  // ── step ⑪: the cheat channel (a DIFFERENT prefix, law ⑦) ───────────────
+  | { kind: "cheat"; name: string; arg?: string };
 
 /** What `parseCommand` returns when the input isn't a command. */
 export interface TextParseError {
@@ -283,6 +424,10 @@ export interface TextViewProbe {
   state: WorldState | null;
   intent: RenderIntent | null;
   dt: number;
+  /** ⑦ — the build overlay the host handed this view (the lit ground, the live
+   *  sites, the builder's ghosts). A GL frame draws the identical payload, so
+   *  narrating it is law ①. Null/absent = the host is showing none. */
+  build?: BuildOverlayView | null;
   worldToScreen(p: { x: number; y: number }): { x: number; y: number };
 }
 
@@ -292,15 +437,38 @@ export interface TextViewLike {
 }
 
 /**
+ * THE CHEAT HOST (law ⑦) — a DIFFERENT OBJECT from `host`, wired separately and
+ * gated separately, so the ordinary command path structurally cannot reach it.
+ * Every method optional: a boot that hands over none still runs the harness,
+ * which is the point of building this last.
+ */
+export interface TextCheatHost {
+  conversationAudit?(): unknown;
+  scopeTree?(): unknown;
+  stockAudit?(): unknown;
+  carryOf?(cid: string): unknown;
+  debugProbe?(): string;
+}
+
+/**
  * Everything `createTextModeSession` needs from the boot. STRUCTURAL on purpose:
- * `host` is the two quest-host entry points the phase-1 command set reaches
- * (law ⑥ — no new sim path), typed by shape so this module never value-imports
- * quest-host.
+ * `host` is the quest-host entry points the command set reaches (law ⑥ — no new
+ * sim path), typed by shape so this module never value-imports quest-host.
  */
 export interface TextSessionDeps {
   host: {
     speak(sentence: string, opts?: { targetId?: string }): void;
     select(id: string): void;
+    /** THE LOCAL COMMAND CHANNEL (quest-host `perform`) — one `PlayerAction`
+     *  run as the local player, through the very gate a pointer gesture uses.
+     *  `send` is the one command with no string input to reach through, and law
+     *  ⑥ forbids inventing a sim path for it, so this is how it acts.
+     *
+     *  OPTIONAL because a boot may predate the channel: the session
+     *  feature-detects and answers honestly rather than throwing. The parameter
+     *  is a type-only reference — `player-action.ts` is pure and
+     *  dependency-free, so naming its union costs this module nothing. */
+    perform?(action: PlayerAction): void;
   };
   view: TextViewLike;
   /** Advance EXACTLY one fixed frame. The boot owns the clock (§5). */
@@ -310,13 +478,50 @@ export interface TextSessionDeps {
   /** Register a presenter that FANS OUT beside the real one — never replaces it. */
   addPresenterTap(p: Partial<QuestPresenter>): void;
   locale?: string;
-  /** Builder grid budget (step ⑧ consumes it; carried now so the boot is stable). */
+  /** Builder grid budget — the REAL capacity `builderSurfaceFor` ranks into, and
+   *  the page size a tab listing pages at (law ④). */
   grid?: number;
   settle?: { quietS?: number; capS?: number };
   /** "What is X doing" — host-side `creatureActivity`, injected structurally. */
   activityOf?: (cid: string) => { verb: string; object?: string } | undefined;
   /** A body's known proper name, when the session knows one (§4 text ids). */
   nameOf?: (cid: string) => string | undefined;
+  /** WHOM THE PLAYER IS ADDRESSING — the host's own resolved addressee (rank ⓪
+   *  of law ⑤ alongside a conversation member). The host is the authority; this
+   *  layer never re-derives it. */
+  addresseeOf?: () => string | null | undefined;
+  // ── step ⑨: movement. THE POINTER PATH AND NOTHING ELSE (law ⑥) ─────────
+  /** Feed the gaze/pointer at a WORLD point. The text view's `screenToWorld` is
+   *  the identity, so a world point IS the client pixel — same smoother, same
+   *  dwell, same aim arbitration as GL. */
+  look?: (worldX: number, worldY: number) => void;
+  clearLook?: () => void;
+  /** SPIRIT SCOPE: the player is a bodiless observer, so `go`/`approach` have
+   *  nothing to walk. Declared here rather than sniffed, because "am I embodied"
+   *  is a fact about the SESSION, not about the frame. */
+  spirit?: boolean;
+  travel?: { arriveR?: number; capS?: number };
+  // ── step ⑧: the builder's noun library ─────────────────────────────────
+  /** The host's speakable nouns (the presenter's `nouns` push). Absent ⇒
+   *  `builderSurfaceFor`'s own curated fallback, which is what an out-of-game
+   *  builder offers. */
+  nouns?: BuilderNounEntry[];
+  // ── step ⑩ ─────────────────────────────────────────────────────────────
+  watchCap?: number;
+  // ── step ⑪: the cheat channel ──────────────────────────────────────────
+  cheatHost?: TextCheatHost;
+  /** OFF by default. `--cheats` on the CLI is the only thing that turns it on. */
+  cheats?: boolean;
+}
+
+/** The law-④ measurement: what reaching an utterance actually COST. */
+export interface TextSessionStats {
+  /** Driver lines that parsed and executed. */
+  commands: number;
+  /** Taps on a word — every `build …` and every `press …`. */
+  presses: number;
+  /** Screens shown — every BOARD and every BUILDER block. */
+  screens: number;
 }
 
 /** The live text session. */
@@ -332,11 +537,22 @@ export interface TextModeSession {
   /** Sim id ⇄ text id, for a driver that wants to address bodies directly. */
   textIdOf(simId: string): string | undefined;
   simIdOf(textId: string): string | undefined;
+  /** The running cost of this session (the CLI's footer). */
+  sessionStats(): TextSessionStats;
+  /** Text ids currently watched (§6), in the order they were added. */
+  watching(): string[];
 }
 
 /** Default settle policy (§5). */
 export const SETTLE_QUIET_S = 0.75;
 export const SETTLE_CAP_S = 8;
+/** The quiet window a `look` settles for. Longer than the ordinary one because
+ *  FEEDING THE GAZE STARTS A CLOCK the driver cannot see: the smoother has to
+ *  converge on the point and the host's LONG dwell (700 ms) then has to run
+ *  before a build spot is settled on or a container's board opens. At 0.75 s
+ *  the command returned first and the next `press` hit the previous board — a
+ *  race the driver always lost and could not diagnose. */
+export const LOOK_SETTLE_QUIET_S = 1.5;
 /** `wait` with no argument. */
 export const WAIT_DEFAULT_S = 5;
 /** Named individuals per scene before the rest become crowd buckets (law ⑤). */
@@ -348,3 +564,17 @@ export const GROUP_CAP = 8;
  *  A skyline is context, not a roll-call: 82 houses must never out-shout the 13
  *  things actually standing in front of you. */
 export const PLACE_LINE_CAP = 8;
+/** Law ⑤'s cap, under the name the build order uses. */
+export const NAME_CAP = NAMED_CAP;
+/** A travel settle runs to ARRIVAL, capped here (§5). */
+export const TRAVEL_CAP_S = 60;
+/** "Arrived" — how near the standing aim's own point the driven body must get
+ *  before the walk is over. One body's length, not a stopping DISTANCE: for
+ *  `approach` the aim point is already `approachAim`'s stop-short spot, so the
+ *  same number means "reached conversation distance" there. */
+export const ARRIVE_R = 1.5;
+/** Watches held at once (§6). The 9th is refused, by name. */
+export const WATCH_CAP = 8;
+/** A cardinal SWING this wide is a `MOVED` (§6's hysteresis): the vocabulary has
+ *  four words, so one step around the compass is exactly 90°. */
+export const MOVED_SWING_DEG = 90;

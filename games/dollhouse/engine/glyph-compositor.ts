@@ -19,6 +19,7 @@
 
 import { resolveEmoji } from "./emoji-registry.js";
 import { isNumeralKey } from "./numeral-glyph.js";
+import { placeArt } from "./glyph-place-art.js";
 import {
   getVocabularyItem,
   type ToneFamily,
@@ -263,6 +264,44 @@ export function serializeGlyph(parsed: ParsedGlyph): string {
     result += "#" + parsed.toneTags.join(".");
   }
   return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drawn form (place art)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The slot as it is DRAWN. Identical to the input for everything except a PLACE
+ * WORD whose symbol is a container frame with a fixture in it (glyph-place-art.ts):
+ * `bedroom` draws as `room(bed)`, `smithy` as `building(anvil)`.
+ *
+ * This is the ONE place place-art is applied, so no surface can disagree about
+ * what a room or a building looks like — and it is applied at DRAW time, never
+ * at parse time, so the slot's `key` (and therefore the sentence, the spoken
+ * word and every rule keyed on it) stays the single word it always was.
+ *
+ * A slot that already carries its own payload keeps it: an explicit composition
+ * is the author saying what to draw, and place art must not overrule it.
+ */
+export function drawnSlot(slot: ParsedSlot): ParsedSlot {
+  if (!slot || slot.payload) return slot;
+  const art = placeArt(slot.key);
+  if (!art) return slot;
+  const drawn: ParsedSlot = {
+    ...slot,
+    key: art.key,
+    unknown: !getVocabularyItem(art.key),
+  };
+  if (art.payload) {
+    drawn.payload = art.payload;
+    drawn.payloadUnknown = !getVocabularyItem(art.payload);
+  }
+  return drawn;
+}
+
+/** True when any slot draws as something other than its own key. */
+export function hasPlaceArt(parsed: ParsedGlyph): boolean {
+  return parsed.slots.some((s) => !s.payload && !!placeArt(s.key));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -653,7 +692,11 @@ export function canResolveGlyph(
 ): boolean {
   const parsed = typeof input === "string" ? parseGlyph(input) : input;
   if (parsed.slots.length === 0) return false;
-  for (const slot of parsed.slots) {
+  for (const raw of parsed.slots) {
+    // Judge the slot as it will be DRAWN: a place word resolves through its
+    // container-frame art (`smithy` → `building(anvil)`), so a room or building
+    // is never mistaken for an unrenderable key and pushed onto a fallback.
+    const slot = drawnSlot(raw);
     if (!canResolveKey(slot.key, hasSymbol)) return false;
     if (slot.payload && !canResolveKey(slot.payload, hasSymbol)) return false;
     // Modifier badges that aren't registry-known need their image either as

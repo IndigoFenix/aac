@@ -366,6 +366,63 @@ describe('Packages — publishing and person imagery (P5)', () => {
       ).toEqual(['Kindergarten Core']);
       expect(await packageRepository.searchPublicPackages({ q: 'pending' })).toEqual([]);
     });
+
+    // The AAC settings panel's search box is the only caller of this endpoint —
+    // it is how a clinician finds a package published by another organization
+    // at all, so the controller wrapper needs its own cover.
+    it('serves the public library over GET /api/packages/search', async () => {
+      const user = await makeUser();
+      const { institute } = await makeInstitute(user.id);
+      await packageRepository.createPackage({
+        instituteId: institute.id,
+        name: 'Mealtime Core',
+        description: 'snack and play',
+        createdByUserId: user.id,
+        visibility: 'public',
+        approvalStatus: 'approved',
+      });
+      await packageRepository.createPackage({
+        instituteId: institute.id,
+        name: 'Private Pack',
+        createdByUserId: user.id,
+      });
+
+      const hit = makeRes();
+      await packageController.search(
+        makeReq({ user: { id: user.id }, query: { q: 'snack' } }),
+        hit.res,
+      );
+      expect(hit.capture.statusCode).toBe(200);
+      expect((hit.capture.jsonBody as any[]).map((p) => p.name)).toEqual(['Mealtime Core']);
+
+      // An institute-only package must never surface here, even by exact name.
+      const miss = makeRes();
+      await packageController.search(
+        makeReq({ user: { id: user.id }, query: { q: 'Private Pack' } }),
+        miss.res,
+      );
+      expect(miss.capture.jsonBody).toEqual([]);
+    });
+
+    it('clamps an oversized limit rather than trusting the query string', async () => {
+      const user = await makeUser();
+      const { institute } = await makeInstitute(user.id);
+      await packageRepository.createPackage({
+        instituteId: institute.id,
+        name: 'Public One',
+        createdByUserId: user.id,
+        visibility: 'public',
+        approvalStatus: 'approved',
+      });
+
+      const { res, capture } = makeRes();
+      await packageController.search(
+        makeReq({ user: { id: user.id }, query: { limit: '99999' } }),
+        res,
+      );
+      expect(capture.statusCode).toBe(200);
+      expect((capture.jsonBody as any[]).map((p) => p.name)).toEqual(['Public One']);
+    });
   });
 
   // ============================================================

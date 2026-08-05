@@ -437,6 +437,7 @@ export const pt: Translations = {
       sister: "Irmã",
       brother: "Irmão",
       friend: "Amigo",
+      family: "Família",
       teacher: "Professor",
       doctor: "Médico",
       want: "Querer",

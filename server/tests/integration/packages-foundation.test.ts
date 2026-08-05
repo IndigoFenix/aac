@@ -38,6 +38,7 @@ import {
 } from '../../services/packages/packageLinks.js';
 import { studentErasureService } from '../../services/studentErasureService.js';
 import { runPackageLinkReconcile } from '../../services/packages/packageLinkCron.js';
+import { runWithSupportContext } from '../../services/customerSupportService.js';
 
 /** Insert a package directly — P1 has no controller yet. */
 async function makePackage(
@@ -350,6 +351,102 @@ describe('Packages — foundation (P1)', () => {
       expect(rows.map((r) => r.id)).not.toContain(orphan.id);
       expect(ownPkg.id).toBeTruthy();
       expect(publicPkg.id).toBeTruthy();
+    });
+  });
+
+  // ============================================================
+  // Customer support mode
+  //
+  // Both resolvers below read `institute_users` DIRECTLY rather than going
+  // through instituteRepository, whose admin/member predicates short-circuit
+  // on the active support institute. A support agent has no membership row in
+  // the institute they are supporting, so without an explicit branch they saw
+  // an empty package list ("Content Packages" in AAC Settings) and 404s when
+  // opening a package the institute-keyed list had just shown them.
+  // ============================================================
+  describe('customer support mode', () => {
+    it("resolves EDIT on the supported institute's packages", async () => {
+      const customer = await makeUser();
+      const support = await makeUser({ isSystemAdmin: true });
+      const { institute } = await makeInstitute(customer.id);
+      const pkg = await makePackage(institute.id, customer.id, { name: 'Theirs' });
+
+      const ctx = { kind: 'institute' as const, instituteId: institute.id, userId: support.id };
+
+      // Outside a support session the agent is just another stranger.
+      expect(await resolvePackagePermission(ctx, pkg.id)).toBe('none');
+
+      const inSupport = await runWithSupportContext(institute.id, () =>
+        resolvePackagePermission(ctx, pkg.id),
+      );
+      expect(inSupport).toBe('edit');
+    });
+
+    it('does NOT reach an institute other than the one being supported', async () => {
+      const customer = await makeUser();
+      const other = await makeUser();
+      const support = await makeUser({ isSystemAdmin: true });
+      const { institute: supported } = await makeInstitute(customer.id);
+      const { institute: unrelated } = await makeInstitute(other.id);
+      const pkg = await makePackage(unrelated.id, other.id, { name: 'Unrelated' });
+
+      const permission = await runWithSupportContext(supported.id, () =>
+        resolvePackagePermission(
+          { kind: 'institute', instituteId: supported.id, userId: support.id },
+          pkg.id,
+        ),
+      );
+      expect(permission).toBe('none');
+    });
+
+    it("lists the supported institute's packages, including defaultMemberPermission='none'", async () => {
+      const customer = await makeUser();
+      const support = await makeUser({ isSystemAdmin: true });
+      const { institute } = await makeInstitute(customer.id);
+      const { institute: unrelated } = await makeInstitute(customer.id);
+      await makePackage(institute.id, customer.id, { name: 'Shared' });
+      // An admin sees this one; defaultMemberPermission gates ORDINARY members.
+      await makePackage(institute.id, customer.id, {
+        name: 'Members Excluded',
+        defaultMemberPermission: 'none',
+      });
+      await makePackage(unrelated.id, customer.id, { name: 'Elsewhere' });
+
+      const ctx = { kind: 'institute' as const, instituteId: institute.id, userId: support.id };
+
+      const before = await db
+        .select({ name: packages.name })
+        .from(packages)
+        .where(listUsablePackages(ctx));
+      expect(before).toEqual([]);
+
+      const rows = await runWithSupportContext(institute.id, () =>
+        db.select({ name: packages.name }).from(packages).where(listUsablePackages(ctx)),
+      );
+      expect(rows.map((r) => r.name).sort()).toEqual(['Members Excluded', 'Shared']);
+    });
+
+    it('still excludes orphaned packages from the support listing', async () => {
+      const customer = await makeUser();
+      const support = await makeUser({ isSystemAdmin: true });
+      const { institute } = await makeInstitute(customer.id);
+      const orphan = await makePackage(institute.id, customer.id, { name: 'Orphan' });
+      await addPackageGrant({ packageId: orphan.id, granteeUserId: customer.id, permission: 'use' });
+      await deletePackage(orphan.id);
+
+      const rows = await runWithSupportContext(institute.id, () =>
+        db
+          .select({ name: packages.name })
+          .from(packages)
+          .where(
+            listUsablePackages({
+              kind: 'institute',
+              instituteId: institute.id,
+              userId: support.id,
+            }),
+          ),
+      );
+      expect(rows).toEqual([]);
     });
   });
 

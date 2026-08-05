@@ -152,6 +152,11 @@ export interface ConstructionSite {
    *  as an icon hovering over the plot so a site is never an anonymous
    *  rectangle. Absent = no icon. */
   glyph?: string;
+  /** The SPOKEN word for the same thing ("bedroom", "market") — what a body
+   *  bound for this site calls it, and what a narrator names it by. Separate
+   *  from `glyph` on purpose: `glyph` is the composed DISPLAY form
+   *  (`room(bed)`), which is drawable and unsayable. Absent = unnameable. */
+  word?: string;
   /** The finished building's wall tint, for the floor + pillars. */
   color?: string;
 }
@@ -525,6 +530,7 @@ export function* createTownStageSteps(
         stage: siteStage(pendingAnnexStage(p)),
         progress: laborFraction(p),
         glyph: roomKindDisplayGlyph(pendingRoomKindOf(p)),
+        word: pendingRoomKindOf(p),
         ...(h.color ? { color: h.color } : {}),
       });
     }
@@ -576,6 +582,7 @@ export function* createTownStageSteps(
         // `break + <room>` — a site coming down must not read the same as one
         // going up, and both wear their kind.
         glyph: `break + ${roomKindDisplayGlyph(g.kind)}`,
+        word: g.kind,
         ...(g.color ? { color: g.color } : {}),
       });
     }
@@ -722,6 +729,7 @@ export function* createTownStageSteps(
         type: wk.type,
         // What will stand here, hovering over the plot (⑦).
         glyph: structureGlyphOf(wk.type),
+        word: wk.type,
         ...(wk.color ? { color: wk.color } : {}),
       });
     } else {

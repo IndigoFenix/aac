@@ -33,6 +33,7 @@ import { pickEntity } from "../interact.js";
 import type { RenderIntent, ScreenPick, WorldView } from "../world-view.js";
 import { revealedInteriors } from "../render3d.js";
 import type { Vec2 } from "../types.js";
+import type { BuildOverlayView } from "../interaction/quest/build-overlay-3d.js";
 
 /** A rectangle in world coords — the dollhouse focus footprint. */
 export interface TextFocusFrame {
@@ -70,12 +71,20 @@ export interface TextViewProbe {
   intent: RenderIntent | null;
   /** That frame's dt, seconds. */
   dt: number;
+  /** ⑦ THE BUILD OVERLAY the host handed this view — the lit ground, the live
+   *  sites, the builder's ghosts. Null = the host is showing none. This is a
+   *  RENDER input like any other (GL draws the identical payload), so
+   *  narrating it is law ①, not a peek. */
+  build: BuildOverlayView | null;
   /** The inverse of `screenToWorld` — identity today (see the camera note). */
   worldToScreen(p: Vec2): { x: number; y: number };
 }
 
 /** A `WorldView` that renders to nothing and remembers everything. */
 export interface TextWorldView extends WorldView {
+  /** ⑦ — the host's per-frame build overlay push (`QuestViewSeam.buildOverlay`).
+   *  Stored for the probe; nothing is drawn. */
+  setBuildOverlay(v: BuildOverlayView | null): void;
   /** Buildings whose interior is on show, as of the LAST render (see the
    *  one-frame-lag note in `render`). Required here — the streamer needs it. */
   revealedBuildings(): Set<string>;
@@ -97,6 +106,8 @@ export function createTextWorldView(opts: TextWorldViewOpts): TextWorldView {
   let lastState: WorldState | null = null;
   let lastIntent: RenderIntent | null = null;
   let lastDt = 0;
+  /** ⑦ — the last build overlay the host pushed (see `setBuildOverlay`). */
+  let build: BuildOverlayView | null = null;
   // THE ONE-FRAME LAG, ON PURPOSE (text-mode.md law ⑥ / sim parity). The world
   // host runs its sim — including the town streamer, which asks the view what
   // is revealed — BEFORE it calls `view.render`. So in GL, `revealedBuildings()`
@@ -172,11 +183,16 @@ export function createTextWorldView(opts: TextWorldViewOpts): TextWorldView {
       spiritFrame = frame;
     },
 
+    setBuildOverlay(v: BuildOverlayView | null): void {
+      build = v;
+    },
+
     probe(): TextViewProbe {
       return {
         state: lastState,
         intent: lastIntent,
         dt: lastDt,
+        build,
         worldToScreen: worldToScreenIdentity,
       };
     },
@@ -184,6 +200,7 @@ export function createTextWorldView(opts: TextWorldViewOpts): TextWorldView {
     dispose(): void {
       lastState = null;
       lastIntent = null;
+      build = null;
       revealed = new Set();
     },
   };

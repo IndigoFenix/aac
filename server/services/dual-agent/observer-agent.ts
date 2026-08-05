@@ -328,6 +328,13 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
       return event;
     }
 
+    case "ignore_speech":
+      // Terminal, deliberately unrouted: the Observer is declining to relay an
+      // utterance. Nothing downstream should react — the whole value is that
+      // the decision (and its `reason`) lands in the flow log instead of the
+      // turn ending in silence. See buildIgnoreSpeechTool in prompts/observer.
+      return null;
+
     case "debug_message":
       // Debug-introspection only; not a routed event.
       return null;

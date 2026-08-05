@@ -88,13 +88,17 @@ export const ANNEX_ORDER: ReadonlyArray<AnnexCluster> = [
 ];
 
 /** The board GLYPH word a room kind reads as ("build + bedroom",
- *  "break + kitchen") — every word exists in the game languages. */
+ *  "break + kitchen") — every word exists in the game languages.
+ *
+ *  `store` reads as `storeroom`, matching its room program's own `word`: the
+ *  bare word `store` is the AAC's word for a SHOP, and a cupboard-lined floor
+ *  drawn as a shopfront is the wrong picture on the button. */
 export const ROOM_GLYPH: Readonly<Record<HouseRoom["kind"], string>> = {
   living: "home",
   bedroom: "bedroom",
   bath: "bathroom",
   hall: "room",
-  store: "store",
+  store: "storeroom",
   kitchen: "kitchen",
   workshop: "workshop",
 };

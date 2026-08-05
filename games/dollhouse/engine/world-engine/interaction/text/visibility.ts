@@ -46,6 +46,7 @@ import {
   type DirectionsTuning,
   type Proximity,
 } from "../dialogue/directions.js";
+import { garmentOfIndex } from "../../creatures/clothing.js";
 import { baseWord } from "../lang/core.js";
 import { languageFor } from "../lang/index.js";
 import type { GlyphLanguage } from "../lang/core.js";
@@ -172,6 +173,38 @@ export function objectHead(glyph: string | undefined, fixture: string | undefine
   return "thing";
 }
 
+/**
+ * THE APPEARANCE SIGNATURE (§6), and the DRESS WORD that labels it.
+ *
+ * "Visibly distinct" must mean DRAWN differently, so the signature may name only
+ * fields the renderer actually dresses a body from. In this engine that is
+ * exactly two: the species body plan (the creature registry picks the mesh) and
+ * `AvatarState.wearing` — the outfit-preset index the creature model factory
+ * watches and re-dresses live. `garmentOfIndex` is the ONE bijection behind that
+ * index (creatures/clothing.ts), so the signature carries its two real halves,
+ * the garment head and the colour, rather than an opaque integer: two bodies in
+ * different-coloured shirts differ, and the WORD for the difference ("red") is
+ * available to label their group.
+ *
+ * The design's fourth field, `size`, is deliberately absent: nothing in
+ * `AvatarState` or `NpcSpec` carries a per-body scale today, so claiming to read
+ * one would be inventing a distinction the renderer cannot draw.
+ */
+export function dressSignature(
+  lang: GlyphLanguage,
+  species: string | undefined,
+  wearing: number | undefined,
+): { appearance: string[]; dress?: string } {
+  if (wearing === undefined) {
+    return { appearance: [`species:${species ?? "?"}`, "garment:default", "color:default"] };
+  }
+  const { head, color } = garmentOfIndex(wearing);
+  return {
+    appearance: [`species:${species ?? "?"}`, `garment:${head}`, `color:${color}`],
+    dress: baseWord(lang, color),
+  };
+}
+
 /** Sim ids of the objects a body is carrying — `carriedBy` and nothing else.
  *  (§6: never `carryOf()`, which merges bag contents the eye cannot see.) */
 export function carriedBy(state: WorldState, avatarId: string): string[] {
@@ -237,6 +270,9 @@ export function visibleSubjects(
     const spec = npcById.get(a.id);
     const species = spec?.species;
     const known = opts.nameOf?.(a.id) ?? spec?.name;
+    // §6 APPEARANCE SIGNATURE — the fields the renderer actually dresses the
+    // body from and no others (see `dressSignature`).
+    const dressed = dressSignature(lang, species, a.wearing);
     subjects.push({
       id: a.id,
       kind: "creature",
@@ -247,18 +283,30 @@ export function visibleSubjects(
       word: speciesWord(lang, species),
       band: bandOf(dist, tuning),
       cardinal: cardinalOf(from, { x: a.x, y: a.y }),
+      bearing: bearingFrom(from, { x: a.x, y: a.y }),
       distance: dist,
       space,
       floor: Math.round(a.floor),
-      // §6 APPEARANCE SIGNATURE — the fields the renderer actually dresses the
-      // body from and no others: its species body plan and its outfit index.
-      appearance: [`species:${species ?? "?"}`, `outfit:${a.wearing ?? "default"}`],
+      appearance: dressed.appearance,
+      ...(dressed.dress ? { dress: dressed.dress } : {}),
       ...(opts.activityOf?.(a.id) ? { activity: opts.activityOf(a.id) } : {}),
       holding: carriedBy(state, a.id),
     });
   }
 
   // ── objects ───────────────────────────────────────────────────────────────
+  // What each container holds, indexed once: `contains` is renderer-visible
+  // only through the LID (§6's gated STOCK), so it is filled in below only for
+  // the boxes that are actually standing open.
+  const inside = new Map<string, string[]>();
+  for (const o of Object.values(state.objects)) {
+    const held = o.containedIn;
+    if (!held || held.relation !== "in") continue;
+    const list = inside.get(held.objectId);
+    if (list) list.push(o.id);
+    else inside.set(held.objectId, [o.id]);
+  }
+
   for (const o of Object.values(state.objects)) {
     if (o.carriedBy) continue; // carried things report through their holder
     if (containerHides(state, o)) continue;
@@ -266,6 +314,8 @@ export function visibleSubjects(
     if (!ok) continue;
     const spec = objSpecById.get(o.id);
     const head = objectHead(spec?.glyph, spec?.fixture);
+    const lidOpen = o.heldOpen === true || o.open >= 0.5;
+    const contents = lidOpen ? inside.get(o.id) : undefined;
     subjects.push({
       id: o.id,
       kind: "object",
@@ -275,11 +325,14 @@ export function visibleSubjects(
       word: baseWord(lang, head),
       band: bandOf(dist, tuning),
       cardinal: cardinalOf(from, { x: o.x, y: o.y }),
+      bearing: bearingFrom(from, { x: o.x, y: o.y }),
       distance: dist,
       space,
       floor: Math.round(o.floor),
       appearance: [`glyph:${spec?.glyph ?? head}`],
       holding: [],
+      open: o.open,
+      ...(contents ? { contains: [...contents].sort() } : {}),
     });
   }
 
@@ -302,6 +355,7 @@ export function visibleSubjects(
       word: baseWord(lang, PLACE_HEAD),
       band: bandOf(dist, tuning),
       cardinal: cardinalOf(from, { x: cx, y: cy }),
+      bearing: bearingFrom(from, { x: cx, y: cy }),
       distance: dist,
       space: b.id,
       floor: myFloor,
@@ -332,6 +386,16 @@ export function inViewSet(scene: VisibleScene): Set<string> {
   for (const s of scene.subjects) set.add(s.id);
   if (scene.me) set.add(scene.me.id);
   return set;
+}
+
+/** THE RAW BEARING, degrees in the cardinal vocabulary's own y-down frame.
+ *  §6's `MOVED` hysteresis is stated in degrees, and the four-word cardinal
+ *  vocabulary cannot carry it (a 2° drift across a boundary changes the word). */
+export function bearingFrom(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): number {
+  return (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
 }
 
 /** The cardinal of a point from the viewer — exported so callers describing a

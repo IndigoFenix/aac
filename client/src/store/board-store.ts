@@ -32,6 +32,20 @@ type InternalBoard = BoardIR & {
   /** How much corner rest space this board's buttons give an eyegaze student:
    *  'none' | 'small' (default) | 'large'. See shared/button-shape.ts. */
   restSpace?: string;
+
+  /** Whether the AAC session AI may rewrite this board as it learns
+   *  ("Update Automatically"). Round-trips to boards.isGenerated. */
+  isGenerated?: boolean;
+
+  /** The student this board is attached to, or undefined for a draft that is
+   *  attached to nobody yet. Drives the picker's grouping and the
+   *  "attach to this {{STUDENT}}" action — a draft is invisible to the
+   *  student's AAC device until it has one. */
+  studentId?: string;
+
+  /** Set only on boards reached through an attached content package. Such a
+   *  board is shared content: read-only here, and edited from the package. */
+  packageName?: string;
 };
 
 const createId = () =>
@@ -155,7 +169,15 @@ export interface BoardState {
   applyButtonAction: (buttonId: string) => void;
   /** Hydrate the boards list from the backend /api/boards (no irData included). */
   hydrateBoardsFromServer: (
-    rows: { id: string; name: string; automaticSelection?: boolean; automaticSelectionHint?: string }[]
+    rows: {
+      id: string;
+      name: string;
+      automaticSelection?: boolean;
+      automaticSelectionHint?: string;
+      isGenerated?: boolean;
+      studentId?: string | null;
+      packageName?: string;
+    }[]
   ) => void;
 
   /** Open a board fetched from /api/board/:id (with irData). */
@@ -167,6 +189,8 @@ export interface BoardState {
     automaticSelectionHint?: string;
     restSpace?: string;
     isGenerated?: boolean;
+    studentId?: string | null;
+    packageName?: string;
   }) => void;
 
   /** Mark a board as saved, clear dirty flag, and store db id. */
@@ -951,12 +975,18 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const hydrated: InternalBoard[] = rows.map((row: any) => {
         const existing = existingByDbId.get(row.id);
         if (existing) {
-          // Keep IR and flags, just refresh name + auto-selection fields
+          // Keep IR and flags, just refresh name + the server-owned metadata
           return {
             ...existing,
             name: row.name,
             automaticSelection: row.automaticSelection ?? existing.automaticSelection,
             automaticSelectionHint: row.automaticSelectionHint ?? existing.automaticSelectionHint,
+            isGenerated: row.isGenerated ?? existing.isGenerated,
+            // Attachment and package membership are the server's to state; a
+            // stale local value here is what made the picker unable to say who
+            // a board belonged to.
+            studentId: row.studentId ?? undefined,
+            packageName: row.packageName ?? undefined,
           };
         }
 
@@ -977,6 +1007,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           isDirty: false,
           automaticSelection: row.automaticSelection ?? false,
           automaticSelectionHint: row.automaticSelectionHint ?? undefined,
+          isGenerated: row.isGenerated ?? false,
+          studentId: row.studentId ?? undefined,
+          packageName: row.packageName ?? undefined,
         };
       });
   
@@ -992,7 +1025,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   openBoardFromServer: (row: any) => {
     set((state) => {
-      const { id, name, irData, automaticSelection, automaticSelectionHint, restSpace } = row;
+      const { id, name, irData, automaticSelection, automaticSelectionHint, restSpace, isGenerated, studentId, packageName } = row;
   
       const existing = state.boards.find((b) => b.dbId === id);
   
@@ -1022,6 +1055,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       internal.automaticSelection = automaticSelection ?? false;
       internal.automaticSelectionHint = automaticSelectionHint ?? undefined;
       internal.restSpace = restSpace ?? undefined;
+      // Dropping these three used to leave "Update Automatically" reading
+      // unchecked on a board the DB says is generated, and left the editor
+      // unable to say which student (or package) the open board belongs to.
+      internal.isGenerated = isGenerated ?? false;
+      internal.studentId = studentId ?? undefined;
+      // GET /api/boards/:id returns the board row, which knows nothing about
+      // packages — keep what the picker list already told us.
+      internal.packageName = packageName ?? existing?.packageName ?? undefined;
   
       const boards = existing
         ? state.boards.map((b) =>

@@ -122,21 +122,37 @@ export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
   { kind: "weaving", requires: ["loom"], signature: ["loom"], symbol: "loom" },
   { kind: "study", requires: ["shelf"], signature: ["shelf"], symbol: "shelf" },
   { kind: "kitchen", requires: ["oven"], signature: ["oven"], symbol: "oven" },
-  { kind: "bath", requires: ["toilet"], signature: ["bath", "toilet"], symbol: "bath" },
+  // THE BATHROOM (user law): the room reads by its TOILET, not its tub — `bath`
+  // is the FIXTURE ("I want a bath" is the tub), and the AAC's word for the
+  // floor is `bathroom`, which is also what `ROOM_GLYPH` already speaks and what
+  // the lang layer carries in all four rulesets. `requires` said as much long
+  // before the icon did.
+  { kind: "bath", requires: ["toilet"], signature: ["bath", "toilet"], symbol: "toilet", word: "bathroom" },
   { kind: "bedroom", requires: ["bed"], signature: ["bed"], symbol: "bed" },
   // Living BEFORE store: a hearth room holds goods chests beside its table,
   // and the table claims it; a chest standing alone is storage.
   { kind: "living", requires: ["table", "chair"], signature: ["table", "chair"], symbol: "table" },
   // `box` for the store room, not `chest`: the station kind is a chest, but the
   // lexicon's word for a lidded container is `box` (things/furniture/box).
-  { kind: "store", requires: ["chest"], signature: ["chest", "barrel", "bin"], symbol: "box" },
+  //
+  // `word: "storeroom"` — STORAGE, said out loud. The kind is `store` and every
+  // rule keys on that, but the bare English word is the AAC's word for a SHOP
+  // (`store` → "Store" / "חנות"), and one word cannot draw both a shop and a
+  // cupboard. The lang layer always meant storage here (en "storeroom", he
+  // "מחסן", es "almacén", pt "despensa"); this gives that sense its own key so
+  // the picture can follow it — storage draws `room(box)`, a shop draws trade.
+  { kind: "store", requires: ["chest"], signature: ["chest", "barrel", "bin"], symbol: "box", word: "storeroom" },
 ];
 
 export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
   // `word: "home"` — the lang layer's key for a dwelling is `home` (its English
   // word is literally "house"); the program type stays `house` because that is
   // what `buildingKindOf` reports and every rule keys on.
-  { type: "house", rooms: ["living", "bedroom", "kitchen", "bath"], symbol: "home", word: "home" },
+  // `symbol: "family"` — a dwelling is drawn by WHO LIVES IN IT. `building(home)`
+  // framed a plate around a house icon, which says the word twice and the thing
+  // once; the people inside are what makes a building a home. (Interim: a
+  // dedicated living/dwelling symbol is coming, and this row is where it lands.)
+  { type: "house", rooms: ["living", "bedroom", "kitchen", "bath"], symbol: "family", word: "home" },
   { type: "workshop", rooms: ["workshop"], symbol: "workbench" },
   { type: "shop", rooms: ["store"], symbol: "trade" },
   // The place-making buildings — each derives from its ONE defining room, the
@@ -154,7 +170,10 @@ export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
   { type: "masonry", rooms: ["masonry"], symbol: "stonecutter" },
   { type: "temple", rooms: ["shrine"], symbol: "altar" },
   { type: "weaver", rooms: ["weaving"], symbol: "loom" },
-  { type: "library", rooms: ["study"], symbol: "shelf" },
+  // `book`, where the STUDY room keeps `shelf`: the shelf is what derives the
+  // room (a floor with a shelf on it is a study), but a library is a building
+  // OF BOOKS — the shelf is furniture, the book is the point.
+  { type: "library", rooms: ["study"], symbol: "book" },
 ];
 
 /** Culture-authored program blocks (culture.ts gates their shape; station

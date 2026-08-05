@@ -98,8 +98,9 @@ describe("text builder — the screen is the engine's own surface (law ④)", ()
     b.setTab("things");
     b.setGroup("places");
     const lines = screen(b);
-    // A place is ONE word that draws as a composed shell+symbol icon.
-    expect(lines).toContain("  1. house  [building(home)]");
+    // A place is ONE word that draws as a composed shell+symbol icon — and a
+    // DWELLING is drawn by who lives in it, not by a plate around a house icon.
+    expect(lines).toContain("  1. house  [building(family)]");
     // …while a plain lexicon word draws as itself and prints no bracket.
     const b2 = builder();
     expect(screen(b2)).toContain("  1. want");

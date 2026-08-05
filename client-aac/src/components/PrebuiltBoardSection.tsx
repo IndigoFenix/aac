@@ -173,7 +173,7 @@ export default function PrebuiltBoardSection({
         // the student setting is an accessibility need, not a default.
         restSpace={
           eyegazeEnabled
-            ? minRestSpace(studentRestSpace, (selectedBoard as { restSpace?: string }).restSpace)
+            ? minRestSpace(studentRestSpace, selectedBoard.restSpace)
             : "none"
         }
         // Board-to-board links: the target's IR may not be loaded yet, so go

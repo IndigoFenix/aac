@@ -237,6 +237,9 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
     // A fixed viewport. Nothing measures a headless view, and with the identity
     // screen map the numbers only bound the host's screen-space picking.
     size: () => ({ w: 1280, h: 720, dpr: 1 }),
+    // ⑦ — the build overlay is a render input, so it lands on the view like
+    // any other and the projection reads it off the probe.
+    buildOverlay: (v) => view?.setBuildOverlay(v),
   };
 
   // ④ THE HOST. `voice: null` is LOAD-BEARING — omitting it constructs the

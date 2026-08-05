@@ -243,7 +243,10 @@ describe("text move — the scope answers, never a silent no-op", () => {
     expect(r.session.command("go mara").events[0]).toMatchObject({ tag: "ERR" });
   });
 
-  it("`send` is parsed but NOT wired — no host command channel reaches sendTo", () => {
+  it("`send` answers honestly on a host with NO command channel (this rig's)", () => {
+    // The wired command lives in text-send.test.ts, over a host that HAS
+    // `perform`. This rig's fake host does not, which is an older boot — and an
+    // older boot must say so rather than pretend to have given the order.
     const r = rig();
     const out = r.session.command("send mara to bram");
     expect(out.events[0]).toEqual({

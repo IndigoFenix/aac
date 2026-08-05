@@ -278,7 +278,8 @@ const L: Record<string, Lexeme> = {
   room: { w: "room" },
   door: { w: "door" },
   bedroom: { w: "bedroom" },
-  store: { w: "storeroom" },
+  store: { w: "store" },
+  storeroom: { w: "storeroom" },
   workshop: { w: "workshop" },
   // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
   // Every word a building site can SAY. These shipped as live glyphs long

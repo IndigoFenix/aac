@@ -3478,6 +3478,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           stage: Math.min(foundedStage(b, day), 2) as 0 | 1 | 2,
           progress: foundedProgress(b, day),
           ...(spec ? { glyph: structureDisplayGlyph(spec) } : {}),
+          word: b.type, // the SPOKEN word beside the drawn glyph
           ...(spec?.color ? { color: spec.color } : {}),
         });
         continue;

@@ -280,7 +280,8 @@ const L: Record<string, Lexeme> = {
   room: { w: "חדר", g: "m" },
   door: { w: "דלת", g: "f" },
   bedroom: { w: "חדר שינה", g: "m", defw: "חדר השינה" },
-  store: { w: "מחסן", g: "m" },
+  store: { w: "חנות", g: "f" },
+  storeroom: { w: "מחסן", g: "m" },
   workshop: { w: "סדנה", g: "f", plw: "סדנאות" },
   // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
   // The building trade's words. They shipped as live glyphs with no lexemes,

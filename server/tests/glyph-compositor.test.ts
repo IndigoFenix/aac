@@ -29,7 +29,14 @@ import {
   mostRecentSlot,
   resolveActiveSlot,
   canResolveGlyph,
+  drawnSlot,
+  hasPlaceArt,
 } from "../../shared/glyph-compositor.js";
+import {
+  placeArtGlyph,
+  registerPlaceArt,
+  clearRegisteredPlaceArt,
+} from "../../shared/glyph-place-art.js";
 
 describe("parseGlyph", () => {
   it("parses a single bare key as a 1-slot glyph", () => {
@@ -640,5 +647,106 @@ describe("parseGlyph — tone tags on any token", () => {
     ]);
     expect(parseGlyph("help#past#question").toneTags).toEqual(["past", "question"]);
     expect(parseGlyph("help#past.question").toneTags).toEqual(["past", "question"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLACE ART — a room/building word is ONE symbol drawn from two PNGs
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The bug: the shell+fixture composition used to ride a side channel (the
+// engine's display glyph beside the word), so wherever the WORD travelled alone
+// the shell was lost — a bare 🛌 for `bedroom` on the board, a ❓ for `smithy` in
+// a bubble. `drawnSlot` is the one place the word resolves to its picture; the
+// word itself must survive untouched, because it is what gets spoken and parsed.
+
+describe("place art (drawnSlot)", () => {
+  it("draws a room word as its shell plus its fixture", () => {
+    const slot = drawnSlot(parseGlyph("bedroom").slots[0]);
+    expect(slot.key).toBe("room");
+    expect(slot.payload).toBe("bed");
+    expect(slot.unknown).toBe(false);
+    expect(slot.payloadUnknown).toBe(false);
+  });
+
+  it("draws a building word as its shell plus its fixture", () => {
+    const slot = drawnSlot(parseGlyph("smithy").slots[0]);
+    expect(slot).toMatchObject({ key: "building", payload: "anvil" });
+  });
+
+  it("draws a shell-only word (the derived hall) as the bare room plate", () => {
+    const slot = drawnSlot(parseGlyph("hall").slots[0]);
+    expect(slot.key).toBe("room");
+    expect(slot.payload).toBeUndefined();
+  });
+
+  it("leaves a non-place word exactly as it is", () => {
+    const slot = parseGlyph("water").slots[0];
+    expect(drawnSlot(slot)).toBe(slot);
+  });
+
+  it("never overrules an explicit composition", () => {
+    // `room(bed)` written out is the author saying what to draw; and a place
+    // word given its own payload keeps that payload.
+    expect(drawnSlot(parseGlyph("room(bed)").slots[0])).toMatchObject({
+      key: "room",
+      payload: "bed",
+    });
+    expect(drawnSlot(parseGlyph("building(grain)").slots[0]).payload).toBe("grain");
+  });
+
+  it("keeps the WORD in the glyph string — art never enters the key", () => {
+    // The law: the composition must not reach the sentence. Parentheses in a
+    // key would be spoken by TTS and `tokenizeSentence` cannot parse them.
+    expect(serializeGlyph(parseGlyph("bedroom"))).toBe("bedroom");
+    expect(serializeGlyph(parseGlyph("i_me+go+smithy"))).toBe("i_me+go+smithy");
+    expect(parseGlyph("i_me+go+smithy").slots[2].key).toBe("smithy");
+  });
+
+  it("modifiers and joins survive the substitution", () => {
+    const g = parseGlyph("go+to+bedroom.big");
+    const slot = drawnSlot(g.slots[1]);
+    expect(slot).toMatchObject({ key: "room", payload: "bed", modifiers: ["big"], join: "to" });
+  });
+
+  it("makes a place word RESOLVABLE, so no surface swaps it for a fallback", () => {
+    // Before: canResolveGlyph("smithy") was false, so every surface with a
+    // fallback dropped the word — the "renders nothing at all" report.
+    expect(canResolveGlyph("smithy")).toBe(true);
+    expect(canResolveGlyph("bedroom")).toBe(true);
+    expect(canResolveGlyph("hall")).toBe(true);
+    expect(canResolveGlyph("i_me+go+farm")).toBe(true);
+    // A genuinely unrenderable key is still unrenderable.
+    expect(canResolveGlyph("pikachu")).toBe(false);
+  });
+
+  it("hasPlaceArt only fires for the words that actually compose", () => {
+    expect(hasPlaceArt(parseGlyph("i_me+want+water"))).toBe(false);
+    expect(hasPlaceArt(parseGlyph("i_me+go+kitchen"))).toBe(true);
+    // A FIXTURE is not a place: `bath` is the tub ("I want a bath"), `bed` the
+    // bed. Only the floor words compose (`bathroom` → `room(toilet)`).
+    expect(hasPlaceArt(parseGlyph("i_me+want+bath"))).toBe(false);
+    expect(hasPlaceArt(parseGlyph("bed+box"))).toBe(false);
+    expect(hasPlaceArt(parseGlyph("i_me+go+bathroom"))).toBe(true);
+  });
+
+  it("a session registration overrides the default culture, then clears", () => {
+    // The communal cookhouse: one unchanged program, a different shell.
+    expect(drawnSlot(parseGlyph("kitchen").slots[0]).key).toBe("room");
+    registerPlaceArt("kitchen", "building(oven)");
+    expect(drawnSlot(parseGlyph("kitchen").slots[0])).toMatchObject({
+      key: "building",
+      payload: "oven",
+    });
+    clearRegisteredPlaceArt();
+    expect(drawnSlot(parseGlyph("kitchen").slots[0]).key).toBe("room");
+  });
+
+  it("ignores a registration that points a word at itself or at nonsense", () => {
+    registerPlaceArt("building", "building"); // the bare shell spec
+    registerPlaceArt("water", "not a glyph(");
+    expect(placeArtGlyph("building")).toBeUndefined();
+    expect(placeArtGlyph("water")).toBeUndefined();
+    clearRegisteredPlaceArt();
   });
 });

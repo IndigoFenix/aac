@@ -28,6 +28,7 @@ const SHARED_ROOT_DEPS = [
   "glyph-compositor.ts",
   "glyph-compositor.tsx",
   "glyph-registry.ts",
+  "glyph-place-art.ts",
   "emoji-registry.ts",
   "numeral-glyph.ts",
 ];

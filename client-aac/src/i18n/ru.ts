@@ -437,6 +437,7 @@ export const ru: Translations = {
       sister: "\u0421\u0435\u0441\u0442\u0440\u0430",
       brother: "\u0411\u0440\u0430\u0442",
       friend: "\u0414\u0440\u0443\u0433",
+      family: "Семья",
       teacher: "\u0423\u0447\u0438\u0442\u0435\u043b\u044c",
       doctor: "\u0412\u0440\u0430\u0447",
       want: "\u0425\u043e\u0442\u0435\u0442\u044c",

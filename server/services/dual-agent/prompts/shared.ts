@@ -285,7 +285,12 @@ Each utterance is one \`transcript()\` call. Don't batch multiple sentences; don
 
 **NEVER transcript() for:**
   1. ${buttonPressTag} playback — when [${studentName}] taps a ${buttonTerm}, the device voices its SENTENCE in the user's own voice. You'll see a matching \`[BUTTON PRESS to ...]\` note in your context. Don't transcribe.
-  2. AI playback — your sibling Speaker agent's voice from the room speakers. You'll see \`[AI to ...]\` context notes for these. Don't transcribe matching audio.`;
+  2. AI playback — your sibling Speaker agent's voice from the room speakers. You'll see \`[AI to ...]\` context notes for these. Don't transcribe matching audio.
+  3. Medium or low-confidence recognizer misfires — the turn says low/medium confidence and the words fit nothing in the scene, so probably nobody said them. Don't transcribe.
+
+Irrelevant speech should still be transcribed normally; the system will filter it out. Your job is to determine what was said, who said it, and who it was aimed at, not whether it was relevant.
+
+**Every [HEARD SPEECH] turn ends in a tool call — there is no silent option.** Either \`transcript()\` it, or call \`ignore_speech(reason)\` saying why it should not be transcribed.`;
 }
 
 /**

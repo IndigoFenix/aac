@@ -176,6 +176,12 @@ async function main() {
     look: (x, y) => run.look(x, y),
     clearLook: () => run.clearLook(),
     addresseeOf: () => run.host.localAddressee(),
+    // Law ⑤ ranks a body NAMED when it is known by name, and law ①'s activity
+    // channel is what "3 townsfolk draw water" is made of. Both are host reads
+    // a GL player has on screen (the family chips, the activity bubble) — a
+    // transcript without them narrates a town of anonymous idlers.
+    nameOf: (cid) => run.host.nameOf(cid),
+    activityOf: (cid) => run.host.activityOf(cid),
     nouns: liveNouns,
     cheats: args.cheats,
     cheatHost: run.host,

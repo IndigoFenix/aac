@@ -20,8 +20,16 @@ import type {
 
 const SLOT_RE = /\{(\w+)\}/g;
 
-/** A strategy for choosing which pool member fills a slot. */
-export type MemberPicker = (pool: PoolDef) => PoolMember;
+/**
+ * A strategy for choosing which pool member fills a slot.
+ *
+ * RANDOMNESS ARRIVES AS AN ARGUMENT (text-mode.md §5 hole 2): the binder is
+ * handed an `rng` rather than reaching for `Math.random`, so a session that
+ * owns a seeded stream can make its bindings reproducible. The parameter is
+ * optional and defaults to `Math.random`, so a picker written as `(pool) =>
+ * …` still satisfies the type and every existing call site is unchanged.
+ */
+export type MemberPicker = (pool: PoolDef, rng?: () => number) => PoolMember;
 
 /** Deterministic picker (always the first member) — used by tests and previews. */
 export const firstMemberPicker: MemberPicker = (pool) => {
@@ -30,10 +38,11 @@ export const firstMemberPicker: MemberPicker = (pool) => {
   return m;
 };
 
-/** Default random picker for live instances (variety across instances). */
-export const randomMemberPicker: MemberPicker = (pool) => {
+/** Default random picker for live instances (variety across instances). Pass a
+ *  seeded `rng` to make the variety reproducible. */
+export const randomMemberPicker: MemberPicker = (pool, rng = Math.random) => {
   if (!pool.members.length) throw new Error(`pool "${pool.id}" has no members`);
-  const i = Math.floor(Math.random() * pool.members.length);
+  const i = Math.floor(rng() * pool.members.length);
   return pool.members[i]!;
 };
 
@@ -48,18 +57,21 @@ export function templateSlots(glyph: string): string[] {
 
 /**
  * Freeze one binding for a set of slot names by drawing from the pools. Constant
- * across the whole option set for the instance (§6.2).
+ * across the whole option set for the instance (§6.2). `rng` is forwarded to the
+ * picker — omit it for `Math.random` (today's behaviour), pass a seeded stream
+ * to make the instance reproducible.
  */
 export function bindSlots(
   slots: string[],
   pools: Record<string, PoolDef>,
   pick: MemberPicker = randomMemberPicker,
+  rng: () => number = Math.random,
 ): SlotBinding {
   const binding: SlotBinding = {};
   for (const slot of slots) {
     const pool = pools[slot];
     if (!pool) throw new Error(`no pool for slot "{${slot}}"`);
-    binding[slot] = pick(pool);
+    binding[slot] = pick(pool, rng);
   }
   return binding;
 }
@@ -95,12 +107,13 @@ export function bindExchange(
   exchange: QuoteExchange,
   pools: Record<string, PoolDef>,
   pick: MemberPicker = randomMemberPicker,
+  rng: () => number = Math.random,
 ): BoundExchange {
   const allSlots: string[] = [];
   for (const q of [exchange.prompt, ...exchange.responses.map((r) => r.quote)]) {
     for (const s of templateSlots(q.glyph)) if (!allSlots.includes(s)) allSlots.push(s);
   }
-  const binding = bindSlots(allSlots, pools, pick);
+  const binding = bindSlots(allSlots, pools, pick, rng);
   return {
     exchange,
     binding,

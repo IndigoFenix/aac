@@ -8,6 +8,7 @@
 import { getVocabularyItem } from "@shared/glyph-registry";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
 import { parseGlyph, stripBrackets } from "@shared/glyph-compositor.js";
+import { placeArt } from "@shared/glyph-place-art.js";
 import { T } from "../memory-schema/canonical-terms";
 
 /**
@@ -28,6 +29,11 @@ export function collectGlyphImageKeys(glyph: string, into: Set<string>): void {
     if (!key) return;
     if (isEmoji(key)) return;
     if (key.startsWith("symbol:") || key.startsWith("face:")) return;
+    // A PLACE WORD already draws — its symbol is the shell plate plus the
+    // fixture that names it (glyph-place-art.ts). Generating art for "smithy"
+    // would spend a symbol on a key that never renders as ❓ and would hand the
+    // board a second, competing picture for the same word.
+    if (placeArt(key)) return;
     const item = getVocabularyItem(key);
     if (item?.imagePath || item?.emoji) return;
     if (resolveEmoji(key)) return;

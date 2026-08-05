@@ -14,7 +14,9 @@
 import type { WorldState } from "../../engine.js";
 import type { RenderIntent } from "../../world-view.js";
 import type { QuestPresenter } from "../quest/quest-host.js";
+import type { PlayerAction } from "../../player-action.js";
 import type { Cardinal, Proximity } from "../dialogue/directions.js";
+import type { BuildOverlayView } from "../quest/build-overlay-3d.js";
 import type { BuilderNounEntry } from "../intent/builder-surface.js";
 
 // ---------------------------------------------------------------------------
@@ -177,6 +179,51 @@ export interface TextBuilderGroup {
  *  bucket (§6), `place` = a NOTABLE landmark's own line (§3), `place-group` =
  *  the rest of the skyline, counted rather than enumerated (law ⑤ applies to
  *  places too — see summarize.ts). */
+/** ⑦ — ONE OFFERED SPOT, in words. `textId` is what `look`/`press` take; the
+ *  rest is what the wash and its tone say to a sighted player. */
+export interface TextSpotEntry {
+  textId: string;
+  /** What this ground IS ("free lot", "bedroom", "room-shaped gap"). */
+  what: string;
+  /** What it would TAKE, if anything — speakable words, already localized. */
+  offers?: string[];
+  band: Proximity;
+  cardinal: Cardinal;
+  distance: number;
+  /** The spark is resting on this one — a dwell here settles on it. */
+  focused?: boolean;
+}
+
+/** ⑦ — ONE CONSTRUCTION SITE. `stage` is the visible ladder (0 marked ground,
+ *  1 floor laid, 2 pillars up); `progress` the banked-labor fraction. */
+export interface TextSiteEntry {
+  textId: string;
+  /** What will stand here, spoken ("bedroom", "market") — never the glyph. */
+  word: string;
+  stage: 0 | 1 | 2;
+  progress?: number;
+  band: Proximity;
+  cardinal: Cardinal;
+  distance: number;
+}
+
+/** One family chip, in words. `state` is the HUD's own stable key (`hungry`,
+ *  `playing`, `commanded`) — narrated, never re-derived. */
+export interface TextFamilyEntry {
+  /** The creature id the chip addresses (`resident_<house>_<n>`). */
+  cid: string;
+  /** The latched text id, so the driver can `look`/`watch` them by the same
+   *  name the scene uses. */
+  textId: string;
+  label: string;
+  state: string;
+  /** Embodied right now? False = out of the streamed world (working, shopping)
+   *  — the HUD dims the chip rather than letting the member silently vanish. */
+  present: boolean;
+  /** This member is the one spoken orders go to. */
+  addressed: boolean;
+}
+
 export interface SceneEntry {
   kind: "subject" | "group" | "place" | "place-group";
   /** Named entries only. */
@@ -296,6 +343,24 @@ export type TextEvent =
       pages?: number;
     }
   | { tag: "HELP"; commands: string[] }
+  /**
+   * ⑦ THE GROUND, ANSWERING. While the build word is up the surface is the LIT
+   * GROUND rather than a list, so a view that cannot show a wash has to say
+   * what the wash says: every offered spot, what it is, what it would take,
+   * and which one the spark is resting on. `look <id>` aims at one.
+   *
+   * Rows come from the host's own overlay payload — the same one GL draws — so
+   * a text driver can never be offered ground a sighted player is not.
+   */
+  | { tag: "SPOT"; entries: TextSpotEntry[]; focused?: string }
+  /** ⑦ — construction under way, as the site marks the renderer draws. */
+  | { tag: "SITE"; entries: TextSiteEntry[] }
+  /** THE DOLLHOUSE FAMILY HUD, as the presenter pushed it — one chip per
+   *  household member: the state emoji a player reads at a glance, whether the
+   *  body is present, and which member is ADDRESSED (spoken orders go there).
+   *  The state is the whole point: "Mara is hungry" is the sentence a dollhouse
+   *  session is about, and it is on screen for a sighted player at all times. */
+  | { tag: "FAMILY"; entries: TextFamilyEntry[] }
   // ── control ──────────────────────────────────────────────────────────────
   | { tag: "OK"; text: string }
   | { tag: "ERR"; text: string }
@@ -331,6 +396,11 @@ export type TextCommand =
   | { kind: "scene" }
   | { kind: "self" }
   | { kind: "board" }
+  /** ⑦ — reprint the lit ground (the build word's real surface). */
+  | { kind: "spots" }
+  /** The dollhouse family HUD. Bare = print it; with a name = ADDRESS that
+   *  member (the chip tap), which is what spoken orders then go to. */
+  | { kind: "family"; who?: string }
   /** Words are joined with " + " into one composed glyph sentence. */
   | { kind: "say"; words: string[] }
   /** By 1-based number OR by label; chrome is pressable either way. */
@@ -380,6 +450,10 @@ export interface TextViewProbe {
   state: WorldState | null;
   intent: RenderIntent | null;
   dt: number;
+  /** ⑦ — the build overlay the host handed this view (the lit ground, the live
+   *  sites, the builder's ghosts). A GL frame draws the identical payload, so
+   *  narrating it is law ①. Null/absent = the host is showing none. */
+  build?: BuildOverlayView | null;
   worldToScreen(p: { x: number; y: number }): { x: number; y: number };
 }
 
@@ -411,6 +485,21 @@ export interface TextSessionDeps {
   host: {
     speak(sentence: string, opts?: { targetId?: string }): void;
     select(id: string): void;
+    /** THE LOCAL COMMAND CHANNEL (quest-host `perform`) — one `PlayerAction`
+     *  run as the local player, through the very gate a pointer gesture uses.
+     *  `send` is the one command with no string input to reach through, and law
+     *  ⑥ forbids inventing a sim path for it, so this is how it acts.
+     *
+     *  OPTIONAL because a boot may predate the channel: the session
+     *  feature-detects and answers honestly rather than throwing. The parameter
+     *  is a type-only reference — `player-action.ts` is pure and
+     *  dependency-free, so naming its union costs this module nothing. */
+    perform?(action: PlayerAction): void;
+    /** THE FAMILY CHIP, TAPPED (quest-host `selectFamilyMember`) — the
+     *  dollhouse's own way to say WHOM a spoken order is for, and a stable
+     *  target because a moving body is hard to dwell on. Optional: a world
+     *  with no household never pushes chips and never needs it. */
+    selectFamilyMember?(cid: string): void;
   };
   view: TextViewLike;
   /** Advance EXACTLY one fixed frame. The boot owns the clock (§5). */
@@ -488,6 +577,13 @@ export interface TextModeSession {
 /** Default settle policy (§5). */
 export const SETTLE_QUIET_S = 0.75;
 export const SETTLE_CAP_S = 8;
+/** The quiet window a `look` settles for. Longer than the ordinary one because
+ *  FEEDING THE GAZE STARTS A CLOCK the driver cannot see: the smoother has to
+ *  converge on the point and the host's LONG dwell (700 ms) then has to run
+ *  before a build spot is settled on or a container's board opens. At 0.75 s
+ *  the command returned first and the next `press` hit the previous board — a
+ *  race the driver always lost and could not diagnose. */
+export const LOOK_SETTLE_QUIET_S = 1.5;
 /** `wait` with no argument. */
 export const WAIT_DEFAULT_S = 5;
 /** Named individuals per scene before the rest become crowd buckets (law ⑤). */

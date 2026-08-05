@@ -41,6 +41,7 @@ export {
   bearingFrom,
   dressSignature,
   wordFor,
+  singularWord,
   indefiniteArticle,
   buildingsWithOpenDoor,
   PLACE_HEAD,

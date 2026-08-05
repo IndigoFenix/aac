@@ -77,6 +77,28 @@ async function setupAgedOutStudent(opts: {
   return { owner, student, contact, consent };
 }
 
+/**
+ * `activityLogService.log()` is fire-and-forget, so the row may not have
+ * committed by the time the cron call returns — querying immediately sees zero
+ * rows and the assertion fails intermittently. Poll instead.
+ *
+ * The GDPR case below carried this inline; the COPPA and idempotency cases did
+ * not, and failed at random. See the `feedback_activity_log_fire_and_forget`
+ * note: any test asserting on activity-log rows must poll.
+ */
+async function waitForThresholdLogs(consentId: string) {
+  const where = and(
+    eq(activityLogs.eventType, 'minor_threshold_crossed'),
+    eq(activityLogs.subjectId1, consentId),
+  );
+  let logs: any[] = [];
+  for (let i = 0; i < 40 && logs.length === 0; i++) {
+    logs = await db.select().from(activityLogs).where(where);
+    if (logs.length === 0) await new Promise((r) => setTimeout(r, 50));
+  }
+  return logs;
+}
+
 describe('minor-threshold cron', () => {
   afterEach(truncateAll);
 
@@ -91,15 +113,7 @@ describe('minor-threshold cron', () => {
     const result = await runMinorThresholdCheck();
     expect(result.flagged).toBe(1);
 
-    const logs = await db
-      .select()
-      .from(activityLogs)
-      .where(
-        and(
-          eq(activityLogs.eventType, 'minor_threshold_crossed'),
-          eq(activityLogs.subjectId1, consent.id),
-        ),
-      );
+    const logs = await waitForThresholdLogs(consent.id);
     expect(logs.length).toBe(1);
     expect((logs[0].details as any).priorRegime).toBe('us_coppa');
     expect((logs[0].details as any).threshold).toBe(13);
@@ -129,15 +143,7 @@ describe('minor-threshold cron', () => {
     const r2 = await runMinorThresholdCheck();
     expect(r2.flagged).toBe(0);
 
-    const logs = await db
-      .select()
-      .from(activityLogs)
-      .where(
-        and(
-          eq(activityLogs.eventType, 'minor_threshold_crossed'),
-          eq(activityLogs.subjectId1, consent.id),
-        ),
-      );
+    const logs = await waitForThresholdLogs(consent.id);
     expect(logs.length).toBe(1);
   });
 
@@ -162,16 +168,7 @@ describe('minor-threshold cron', () => {
     });
     const result = await runMinorThresholdCheck();
     expect(result.flagged).toBe(1);
-    // activityLogService.log() is fire-and-forget — poll until the row commits.
-    const where = and(
-      eq(activityLogs.eventType, 'minor_threshold_crossed'),
-      eq(activityLogs.subjectId1, consent.id),
-    );
-    let logs: any[] = [];
-    for (let i = 0; i < 40 && logs.length === 0; i++) {
-      logs = await db.select().from(activityLogs).where(where);
-      if (logs.length === 0) await new Promise((r) => setTimeout(r, 50));
-    }
+    const logs = await waitForThresholdLogs(consent.id);
     expect((logs[0].details as any).priorRegime).toBe('eu_gdpr_minor');
     expect((logs[0].details as any).threshold).toBe(16);
   });

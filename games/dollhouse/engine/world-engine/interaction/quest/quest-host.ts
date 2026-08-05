@@ -391,13 +391,14 @@ import {
   type WorldCommand,
   type WorldNetMessage,
 } from "../../net.js";
-import type { Gesture, PlayerAction } from "../../player-action.js";
+import { parsePlayerAction, type Gesture, type PlayerAction } from "../../player-action.js";
 import { resolveAddressee } from "./addressee.js";
 import type { WorldView } from "../../world-view.js";
 import type { NpcErrand, NpcErrandPoint } from "../../npc-controller.js";
 import {
   carryObject,
   clearWorldBubble,
+  containerRoom,
   dropObject,
   expandWorldBuildings,
   faceGroup,
@@ -466,6 +467,7 @@ import {
   VOLUNTEER_COMPLIANCE,
   goalIntentLine,
   goalActivity,
+  goalDestination,
   asIntent,
   commandEcho,
   ACTIVITY_REFUSAL,
@@ -664,6 +666,7 @@ import {
 import { GoalTreeOverlay3D } from "@shared/world-engine/interaction/quest/quest-overlay-3d.js";
 import { ZoneOverlay3D } from "@shared/world-engine/interaction/quest/zone-overlay-3d.js";
 import { BuildOverlay3D } from "@shared/world-engine/interaction/quest/build-overlay-3d.js";
+import type { BuildOverlayView } from "@shared/world-engine/interaction/quest/build-overlay-3d.js";
 import {
   BOARD_BACK_GLYPH,
   BOARD_BACK_ID,
@@ -1809,6 +1812,12 @@ export interface QuestViewSeam {
    *  finite viewport (it feeds screen-space picking, which nothing drives
    *  without a pointer). */
   size?(): { w: number; h: number; dpr: number };
+  /** ⑦ THE BUILD OVERLAY, once per frame: the lit ground while the build word
+   *  is up, the live construction sites, the builder's ghosts. The SAME
+   *  payload `BuildOverlay3D` draws — a headless view narrates it instead, so
+   *  "where may I build" and "what is being built" are answerable without a
+   *  screen. Null = nothing to show. Omit the method to ignore it. */
+  buildOverlay?(v: BuildOverlayView | null): void;
 }
 
 export interface QuestHostDeps {
@@ -2268,6 +2277,18 @@ export interface QuestHost3D {
   applyRemoteCommand(cmd: WorldCommand): void;
   /** This peer's multiplayer role, or null when single-player. */
   multiplayerRole(): "owner" | "follower" | null;
+  /** THE LOCAL COMMAND CHANNEL: run one `PlayerAction` as the LOCAL player —
+   *  the same single gate every input path uses (`performPlayerAction`), with
+   *  local provenance. This is what `applyRemoteCommand` is for a REMOTE
+   *  owner-relayed action; it exists so a narrating surface (text mode, an
+   *  aria-live driver) can issue the actions a pointer gesture would, without a
+   *  pointer. Never a bypass: unknown/malformed actions are rejected by
+   *  `parsePlayerAction`, and an utterance still leaves through the gate with
+   *  this device's gesture stamped on it. `speak`/`select` stay the preferred
+   *  path for the two kinds that have their own public method (they voice the
+   *  sentence and page the board first — local work that lives above the gate).
+   *  No-op before the session starts. */
+  perform(action: PlayerAction): void;
   /** The creature the LOCAL player is currently addressing — resolved exactly
    *  as a subject-less `speak()` would (the same addressee stack: family chip,
    *  gaze, open conversation, possessed body, nearest). A FOLLOWER stamps this
@@ -2275,6 +2296,16 @@ export interface QuestHost3D {
    *  the SENDER's addressee rather than its own. Null before the session
    *  starts, or when nothing is addressable. */
   localAddressee(): string | null;
+  /** THE WORD A CREATURE IS ADDRESSED BY, or undefined when nobody can name it
+   *  — the same resolution the family HUD's chips and a vocative are built on.
+   *  A surface that narrates instead of drawing (text mode, an aria-live
+   *  driver) needs it for exactly the reason the HUD does: an unnamed body is
+   *  unaddressable. */
+  nameOf(cid: string): string | undefined;
+  /** WHAT A CREATURE IS DOING right now, verb + object — the reading behind the
+   *  activity bubble a GL player reads over its head. Undefined = can't verify
+   *  (never a false denial). */
+  activityOf(cid: string): { verb: string; object?: string } | undefined;
   /** The possessed creature id, or null (pure spirit / plain walker). */
   readonly possessed: string | null;
   readonly session: QuestSession;
@@ -3045,6 +3076,16 @@ interface DescendProbeRec {
 }
 const DESCEND_PROBE_FRAMES = 300;
 let descendProbe: DescendProbeRec | null = null;
+/** THE DIAGNOSTIC WALL CLOCK — probe phase timings and log stamps ONLY.
+ *
+ *  SIM WORK MAY ONLY BE TIME-SLICED BY THE HOST'S CLOCK (`simNow`, built from
+ *  `deps.now` inside createQuestHost3D). Under an injected clock a frame is
+ *  ATOMIC — `now()` is constant until the driver advances it between frames —
+ *  so an `elapsed > ms` break can never fire and only the deterministic count
+ *  budgets apply (text-mode.md §5). Reading `performance.now` to decide how
+ *  much SIMULATION to do makes the world a function of machine speed: the
+ *  streamer's errand drain did exactly that, and one of 54 bodies landed ~4 cm
+ *  off between two same-seed headless runs by frame 8. */
 const descendNow = (): number =>
   typeof performance !== "undefined" ? performance.now() : 0;
 
@@ -3148,6 +3189,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // ONE gate for intent announcements (phase ①a §3) — hosts may tune it later;
   // the default announces on pooled-task claims only.
   const announceCriteria = deps.announceCriteria ?? defaultAnnounceCriteria;
+
+  // ── THE HOST'S CLOCK ──────────────────────────────────────────────────────
+  // The single `now` this session runs on: handed to the world-host's frame
+  // loop below, and the ONLY clock any sim-side time slice may read. Absent
+  // from deps it IS `performance.now`, so a GL session reads exactly what it
+  // always did.
+  //
+  // SIM WORK MAY ONLY BE TIME-SLICED BY THE HOST'S CLOCK — under an injected
+  // clock (the headless text driver hands one in) a frame is ATOMIC: `now()`
+  // is constant until the driver advances it between frames, so an
+  // `elapsed > ms` break can never fire and only the deterministic count
+  // budgets apply (text-mode.md §5). `descendNow` above stays for DIAGNOSTICS
+  // — probe phase timings, log stamps — and must never gate simulation.
+  const simNow: () => number = deps.now ?? descendNow;
 
   // ── MULTIPLAYER (owner-authoritative — see QuestHostDeps.multiplayer) ────
   const mp = deps.multiplayer ?? null;
@@ -4271,15 +4326,121 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
+  /**
+   * WHAT BUILDING LOOKS LIKE (⑦), as one payload: the lit ground while the
+   * build word is up, every live site's stage geometry, and the builder's
+   * ghosts. ONE OWNER, TWO VIEWS — `BuildOverlay3D` draws it and a headless
+   * view narrates it, so what a text driver can see and aim at is exactly what
+   * a GL player can see and aim at (law ①: the view is the fidelity line).
+   * Null = nothing to show.
+   */
+  function buildOverlayView(): BuildOverlayView | null {
+    const s = sess;
+    if (!s) return null;
+    const spots = buildMode ? buildSpotsNow(s) : [];
+    const sites = directorSites().filter((c) => (c.stage ?? 0) > 0 || c.glyph);
+    // THE BUILDER'S PLAN (phase 6): every unbuilt bay and wanted piece, drawn
+    // where it will stand. Always on — a site's legibility is not a build-mode
+    // feature, it is what makes construction watchable.
+    const ghosts = buildGhostsNow(s);
+    if (!spots.length && !sites.length && !ghosts.length) return null;
+    return {
+      spots: spots.map((sp) => ({
+        id: sp.id,
+        x: sp.x, y: sp.y, w: sp.w, h: sp.h,
+        focused: sp.id === buildSpotId || sp.id === hoverSpotId,
+        // Ground that could TAKE a room reads differently from ground a room
+        // already stands on — the player can see where they may build without
+        // opening a menu to find out.
+        tone: sp.kind === "lot" || sp.kind === "grow" ? ("offer" as const) : ("thing" as const),
+        // The WORDS behind the wash — what this ground is, and what it would
+        // take. A narrator has nothing to say without them; the GL overlay
+        // simply doesn't read them (it draws the rect and the icon).
+        kind: sp.kind,
+        ...(sp.kind === "grow" && sp.offers ? { offers: sp.offers.map((o) => o.kind) } : {}),
+        ...(sp.kind === "lot" && sp.types ? { offers: [...sp.types] } : {}),
+        ...(sp.kind === "room" && sp.roomKind ? { word: sp.roomKind } : {}),
+      })),
+      sites: sites.map((c) => ({
+        id: c.id,
+        x: c.x, y: c.y, w: c.w, h: c.h,
+        stage: c.stage ?? 0,
+        ...(c.glyph ? { glyph: c.glyph } : {}),
+        // `word` is the SAYABLE half of the same fact (`glyph` is the drawn
+        // composition `room(bed)`) — a narrator may only ever speak this one.
+        ...(c.word ? { word: c.word } : {}),
+        ...(c.progress !== undefined ? { progress: c.progress } : {}),
+        ...(c.color ? { color: c.color } : {}),
+      })),
+      ghosts,
+    };
+  }
+
+  /** A destination that names nothing — the deictic last word, and the thing
+   *  every branch below tries to avoid having to say. */
+  const GOING_THERE: GoingDest = { kind: "place", place: "there" };
+  const isDeicticDest = (d: GoingDest | undefined): boolean =>
+    !!d && d.kind === "place" && (d.place === "there" || d.place === "here");
+
+  /**
+   * WHY, THEN WHERE, THEN WHAT FOR — the ordered ways to NAME a walk, tried
+   * before anybody is allowed to say "there".
+   *
+   * A creature walks because something sent it, so a nameless destination is
+   * almost always a naming failure rather than an unnameable place:
+   *   ① THE REASON — the live goal's own destination, read through the SAME
+   *      resolver the intent announcement speaks with (`goalDestination`), so
+   *      "I'll carry the block to the kitchen" and "where are you going?" can
+   *      never disagree. This is the branch that fixes the common case.
+   *   ② THE GROUND — what is actually AT the walk's end point (`pointWord`:
+   *      the fixture standing there, else the room containing it).
+   *   ③ THE PURPOSE — what the walk is FOR ("I will build"), the `activity`
+   *      reading `stepDestination` already gives a room that cannot name
+   *      itself. A body that knows why it walks is never speechless.
+   * Undefined = none of the three had a word, and the caller says "there".
+   */
+  function namedGoing(
+    session: QuestSession,
+    cid: string,
+    end?: { x: number; y: number },
+  ): GoingDest | undefined {
+    const goal = session.pursuits.get(cid)?.goal;
+    if (goal && goal.kind !== "address") {
+      const d = goalDestination(goal, intentLineSyms(session, { speaker: cid }));
+      if (d && !isDeicticDest(d)) return RESCUED("reason", d);
+    }
+    if (end) {
+      const word = pointWord(session, cid, end);
+      if (word) return RESCUED("ground", { kind: "place", place: word });
+    }
+    const act = ownActivity(session, cid);
+    return act ? RESCUED("purpose", { kind: "activity", ...act }) : undefined;
+  }
+
+  /** TEMP (remove with the drive log's sign-off): tally which rung of
+   *  `namedGoing` saved an answer that would have been a bare "there" before. */
+  const THERE_TALLY = new Map<string, number>();
+  function RESCUED(rung: string, d: GoingDest): GoingDest {
+    THERE_TALLY.set(rung, (THERE_TALLY.get(rung) ?? 0) + 1);
+    return d;
+  }
+
   /** ANY traveling creature's destination — a resident's clock/live errand first, else
    *  a goal-driven creature with queued body errands ("anyone traveling" answers, not
-   *  just shoppers). The label was recorded when its plan was issued (`npcGoing`);
-   *  a plan without one is still honestly "going there". Stationary → undefined. */
+   *  just shoppers). The plan's recorded label (`npcGoing`) is used when it says
+   *  something; a deictic or missing one falls through to `namedGoing`, which is
+   *  where the ANSWER comes from in practice. Stationary → undefined. */
   function creatureGoing(session: QuestSession, cid: string): GoingDest | undefined {
     const res = residentGoing(session, cid);
     if (res) return res;
+    const errandEnd = (): { x: number; y: number } | undefined => {
+      const p = world?.npcErrandPath(avatarIdOf(cid));
+      return p && !p.dwelling ? p.points[p.points.length - 1] : undefined;
+    };
     if ((session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0) {
-      return session.npcGoing.get(cid) ?? { kind: "place", place: "there" };
+      const rec = session.npcGoing.get(cid);
+      if (rec && !isDeicticDest(rec)) return rec;
+      return namedGoing(session, cid, errandEnd()) ?? rec ?? GOING_THERE;
     }
     // The BODY's truth beats the pure schedule: a shopper's real walk (door transits,
     // detours) lags the clock, so the phase can already read "home" while the body is
@@ -4290,18 +4451,38 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // are you going?" has no business being asked, let alone answered "home".
     const path = world?.npcErrandPath(avatarIdOf(cid));
     if (!path || path.dwelling) return undefined;
-    if (!cid.startsWith("resident_")) return { kind: "place", place: "there" };
+    const end = path.points[path.points.length - 1];
+    if (!cid.startsWith("resident_")) return namedGoing(session, cid, end) ?? GOING_THERE;
     // A resident's UNLABELED walk (no step, no queued task — a stray host errand):
     // "home" only when the walk actually ends inside its house and the body is not
     // in there already; inside, name the room it is crossing to.
     const rooms = houseRoomDestsOf(session, Number(cid.split("_")[1]));
-    const end = path.points[path.points.length - 1];
     const destRoom = end ? roomAt(rooms, end) : undefined;
     const body = world?.state.avatars[avatarIdOf(cid)];
     const inside = !!body && !!roomAt(rooms, body);
-    if (!destRoom) return inside ? undefined : { kind: "place", place: "there" };
+    if (!destRoom) {
+      // Not bound for a room of its OWN home — but the walk still has a reason
+      // and an end point, and either can name it.
+      return inside ? undefined : (namedGoing(session, cid, end) ?? GOING_THERE);
+    }
     if (!inside) return { kind: "home" };
     return destRoom.word ? { kind: "room", room: destRoom.word } : undefined;
+  }
+
+  /** What a creature is doing OF ITS OWN — the live goal's activity, else the
+   *  need step's. Deliberately WITHOUT the travel tail `creatureActivity` adds:
+   *  the going answer falls back to this, and reading travel back out of it
+   *  would be a cycle. */
+  function ownActivity(
+    session: QuestSession,
+    cid: string,
+  ): { verb: string; object?: string } | undefined {
+    const pursuit = session.pursuits.get(cid);
+    if (pursuit && pursuit.goal.kind !== "address") {
+      return goalActivity(pursuit.goal, intentLineSyms(session)) ?? undefined;
+    }
+    const step = session.needStep.get(cid);
+    return step ? stepActivity(step) : undefined;
   }
 
   /** The activity VERBS a creature is verifiably doing right now — the honest
@@ -4335,19 +4516,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session: QuestSession,
     cid: string,
   ): { verb: string; object?: string } | undefined {
-    const pursuit = session.pursuits.get(cid);
     // ⑫⑧ — an `address` has no activity reading and must not claim one: a body
     // that stopped to face somebody is not DOING a thing, it is listening, and
     // "what are you doing?" should fall through to whatever it was doing before
-    // (the need step below) rather than answer with the turn.
-    if (pursuit && pursuit.goal.kind !== "address") {
-      return goalActivity(pursuit.goal, intentLineSyms(session)) ?? undefined;
-    }
-    const step = session.needStep.get(cid);
-    if (step) {
-      const act = stepActivity(step);
-      if (act) return act;
-    }
+    // (the need step) rather than answer with the turn. `ownActivity` owns both
+    // readings; the TRAVEL tail below is this function's own addition.
+    const own = ownActivity(session, cid);
+    if (own) return own;
     const going = creatureGoing(session, cid);
     if (going) {
       if (going.kind === "fetch") return { verb: "get", object: spokenWord(going.good) };
@@ -7488,6 +7663,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const dineSeat = step.kind === "consume" && step.seatId ? state.objects[step.seatId] : undefined;
         if (step.kind === "consume" && step.seatId && dineSeat &&
             Math.hypot(body.x - dineSeat.x, body.y - dineSeat.y) <= 1.6) {
+          // THE PLATE GOES DOWN FIRST (once, on the frame the settle begins).
+          // A seated meal's station IS the table — a seat is only ever claimed
+          // for a `table` — so the unit banked here is the one the bite draws
+          // back off a moment later.
+          if (step.dwell === undefined) {
+            setMealOnSurface(session, cid, step.objId, mealInHands(session, cid, step.goodKey));
+          }
           step.dwell = (step.dwell ?? SIT_BEFORE_EAT_S) - dt;
           if (step.dwell > 0) continue; // settling onto the chair
           clearNeedStep(session, cid);
@@ -12081,6 +12263,69 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return { objId, glyph };
   }
 
+  /** THE MEAL ITSELF IN THIS BODY'S HANDS, or null.
+   *
+   *  A BAG is never it: its contents were never on show, so there is nothing
+   *  hanging in the air to set down and taking the basket out of the diner's
+   *  hands would only lose it the rest of its shopping. Neither is anything
+   *  unrelated to this meal (a tool, a jug being carried home). The membership
+   *  test is the CARRY projection the consume effect eats by (`carryKindsOf`,
+   *  with a FOOD want also reaching for the cook's meal), so the set-down and
+   *  the bite can never disagree about what counts as the meal. */
+  function mealInHands(session: QuestSession, cid: string, goodKey: string): string | null {
+    const hand = bodyCarryOf(session, cid).inHand;
+    if (!hand || hand.bag) return null;
+    const kinds =
+      goodKey === "food"
+        ? [...carryKindsOf("meal"), ...carryKindsOf(goodKey)]
+        : [...carryKindsOf(goodKey)];
+    return kinds.includes(hand.glyph) ? hand.objId : null;
+  }
+
+  /**
+   * THE PLATE GOES ON THE TABLE BEFORE THE DINER SITS DOWN.
+   *
+   * A body carrying its meal holds it an arm's reach in FRONT of itself, and a
+   * dining chair FACES its table — so sitting down aimed that reach straight
+   * across the tabletop and the food hung in the air over the table for the
+   * whole settle-onto-the-chair beat. Setting it down is also simply what a
+   * person does: the plate goes on the table, then you sit, then you eat from
+   * there. (`carryHoldFor` fixes how a held thing is DRAWN in every pose; this
+   * fixes what the diner is holding at all.)
+   *
+   * The unit stays perfectly accounted for: `stowCarriedIn` banks it into the
+   * surface's own stack and leaves the prop visible ON the top, and the consume
+   * effect — which prefers the hands and falls back to the STEP'S OWN STATION —
+   * draws that same unit back off a moment later, clearing the prop with it.
+   *
+   * Returns false (and changes nothing) unless every part holds.
+   */
+  function setMealOnSurface(
+    session: QuestSession,
+    cid: string,
+    surfaceId: string | undefined,
+    objId: string | null,
+  ): boolean {
+    if (!world || !surfaceId || !objId) return false;
+    // A SURFACE, not a box: only an "on" container shows what it holds, and only
+    // a shown unit reads as a meal waiting in front of the diner.
+    if (session.containers.get(surfaceId) !== "on") return false;
+    const surface = world.state.objects[surfaceId];
+    const bodyId = avatarIdOf(cid);
+    if (!surface || world.state.objects[objId]?.carriedBy !== bodyId) return false;
+    // ASK BEFORE LETTING GO. `stowCarriedIn` credits the stack and then places,
+    // so a put onto a FULL top would bank a unit whose prop has already left the
+    // hands — one thing counted twice. A table with no room keeps the old
+    // behaviour instead: the meal stays in hand and is eaten from there.
+    if (containerRoom(world.state, surfaceId, "on") <= 0) return false;
+    return !!setDownFromHands(
+      session,
+      bodyId,
+      { kind: "container", id: surfaceId },
+      { objId, reachAt: { x: surface.x, y: surface.y } },
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // A BODY IS THE SAME SHAPE AS A STRUCTURE (scope-unification.md §2.1)
   //
@@ -12620,6 +12865,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // and the legacy walker keep) — a free chair in reach seats the diner
       // before the bite lands; no chair keeps the standing eat.
       if (seated) {
+        // The plate goes on the table before the settle — the delegated consume
+        // above names the same station, so it draws the unit back off it.
+        setMealOnSurface(session, cid, stId, mealInHands(session, cid, step.goodKey));
         beginAction(session, cid, "eat:seated", doEat, {
           hold: SIT_BEFORE_EAT_S + 1.2,
           effectAt: SIT_BEFORE_EAT_S,
@@ -12705,6 +12953,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       };
       if (seatId) {
+        // Set it on the table before settling onto the chair — `doEat` reads the
+        // prop's own `containedIn` for the surface draw-down, so a meal that
+        // went from the hand to the tabletop is still eaten exactly once.
+        setMealOnSurface(session, cid, tableId, objIdOfEntity(session, step.itemId));
         beginAction(session, cid, "eat:seated", doEat, {
           hold: SIT_BEFORE_EAT_S + 1.2,
           effectAt: SIT_BEFORE_EAT_S,
@@ -13760,6 +14012,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // words exist nowhere a speaker can reach them.
     "home", "bed", "table", "chair", "box", "cabinet",
     "bath", "bathroom", "toilet", "barrel", "bin", "bowl", "oven", "well", "market", "store",
+    // `storeroom` is the STORAGE room's own word (programs.ts) — `store` beside
+    // it is the shop. Both stay speakable; the resolver finds whichever is near.
+    "storeroom",
     "yard", "house", // transfer endpoints (②): the builder's yard, a house
   ]);
 
@@ -18996,36 +19251,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // come off the SAME composer the boards and bubbles use ([[icons via the
     // symbol system]]), never a bare emoji.
     const buildOverlay = new BuildOverlay3D({
-      getView: () => {
-        const s = sess;
-        if (!s) return null;
-        const spots = buildMode ? buildSpotsNow(s) : [];
-        const sites = directorSites().filter((c) => (c.stage ?? 0) > 0 || c.glyph);
-        // THE BUILDER'S PLAN (phase 6): every unbuilt bay and wanted piece,
-        // drawn where it will stand. Always on — a site's legibility is not a
-        // build-mode feature, it is what makes construction watchable.
-        const ghosts = buildGhostsNow(s);
-        if (!spots.length && !sites.length && !ghosts.length) return null;
-        return {
-          spots: spots.map((sp) => ({
-            id: sp.id,
-            x: sp.x, y: sp.y, w: sp.w, h: sp.h,
-            focused: sp.id === buildSpotId || sp.id === hoverSpotId,
-            // Ground that could TAKE a room reads differently from ground a
-            // room already stands on — the player can see where they may
-            // build without opening a menu to find out.
-            tone: sp.kind === "lot" || sp.kind === "grow" ? ("offer" as const) : ("thing" as const),
-          })),
-          sites: sites.map((c) => ({
-            id: c.id,
-            x: c.x, y: c.y, w: c.w, h: c.h,
-            stage: c.stage ?? 0,
-            ...(c.glyph ? { glyph: c.glyph } : {}),
-            ...(c.color ? { color: c.color } : {}),
-          })),
-          ghosts,
-        };
-      },
+      getView: buildOverlayView,
       glyphIconFor: glyphSource.glyphIconFor,
       ...(deps.groundAt ? { groundAt: deps.groundAt } : {}),
     });
@@ -19270,6 +19496,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // gating this with the mutating steps above left every follower staring
         // at an empty board with nothing it could press.
         pushCivicBuildBoard(session);
+        // …and the ground that board is ABOUT (⑦). A GL run draws this through
+        // `BuildOverlay3D`, which polls the same function on its own update; a
+        // headless view is handed it here, so both see one payload from one
+        // owner. Costs a call only when the seam wants it.
+        deps.view?.buildOverlay?.(buildOverlayView());
         simMark("s.founded", descendNow() - _bm); _bm = descendNow(); // TEMP
         // LIVING TOWN: stream the stage around the player — walls of the
         // nearby houses, residents embodying mid-errand, fresh shopping
@@ -19459,13 +19690,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               console.log(`[errand-sample] ${f.errands.slice(0, 5).map((e) => e.npcId).join(", ")}${f.errands.length > 5 ? ` (+${f.errands.length - 5})` : ""}`);
             }
             let _routed = 0;
-            const _rt0 = descendNow();
+            const _rt0 = simNow();
             for (const [npcId, pts] of clockErrandQueue) {
               // TIME-budgeted as well as count-budgeted: one cross-town door
               // route can cost ~20 ms alone (the readout's 14 k-probe frames),
               // so four of them in a frame is a visible hitch — stop routing
               // once this frame has spent its slice; the rest wait their turn.
-              if (_routed >= ERRAND_ROUTE_BUDGET || descendNow() - _rt0 > 5) break;
+              //
+              // The slice reads the HOST'S clock (`simNow`), never
+              // `performance.now`: this is the one place a wall-clock read
+              // decided how much SIM ran, and it made the cast's positions a
+              // function of machine speed (text-mode.md §5 hole 1). Under the
+              // default clock `simNow` IS `performance.now` — GL behaviour is
+              // unchanged. Under an injected clock the frame is atomic
+              // (`simNow() - _rt0 === 0`), so only ERRAND_ROUTE_BUDGET applies
+              // and a same-seed run routes the same trips in the same order.
+              if (_routed >= ERRAND_ROUTE_BUDGET || simNow() - _rt0 > 5) break;
               clockErrandQueue.delete(npcId);
               // A LIVE-driven body ignores the clock's feed until demote (§13 — the
               // need loop owns it; no double-drive); a RECRUITED one follows the
@@ -20168,6 +20408,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                     ` h=${meter("hunger:food")} e=${meter("energy")} s=${meter("social")} f=${meter("fun")}${why}`,
                 );
               }
+              // TEMP "there" CENSUS (remove with the fix): what every EMBODIED
+              // creature would answer "where are you going?" with right now —
+              // the population, not just the ones somebody happened to ask.
+              // Bodies only: an abstracted resident has no walk to name.
+              {
+                const tally = new Map<string, number>();
+                for (const cid2 of Object.keys(session.creatures?.world.creatures ?? {})) {
+                  if (!state.avatars[avatarIdOf(cid2)]) continue;
+                  const g = creatureGoing(session, cid2);
+                  const k = !g
+                    ? "(not going)"
+                    : g.kind === "place"
+                      ? `place:${g.place}`
+                      : g.kind === "room"
+                        ? `room:${g.room}`
+                        : g.kind === "fetch"
+                          ? "fetch"
+                          : g.kind;
+                  tally.set(k, (tally.get(k) ?? 0) + 1);
+                }
+                console.log(
+                  `[there-census] ${[...tally.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}=${n}`).join(" ")}` +
+                    ` | rescued ${[...THERE_TALLY.entries()].map(([k, n]) => `${k}=${n}`).join(" ") || "none"}`,
+                );
+              }
             }
           }
         }
@@ -20501,7 +20766,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const id = requestAnimationFrame(cb);
           return () => cancelAnimationFrame(id);
         }),
-      now: deps.now ?? (() => performance.now()),
+      now: simNow,
       // NPC randomness: forwarded ONLY when given, so single-player keeps the
       // world-host's own `Math.random` default (spreading `undefined` would
       // read the same, but the absent key says it plainly).
@@ -21111,8 +21376,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * The fixture standing there wins ("I will go to the bed") — it is the most
    * specific true thing, and it is almost always why the point was chosen. Else
    * the ROOM containing it ("I will go to the bedroom"), read off the speaker's
-   * own house plan. Undefined when neither applies, leaving the caller its
-   * deictic fallback — honest for open ground, which really has no name.
+   * own house plan. Then, because a walk that leaves home still ends SOMEWHERE:
+   * a live construction SITE covering the point (a hauler is going "to the
+   * kitchen" while the kitchen is still a stake in the ground), and finally any
+   * BUILDING containing it — its room word where the plan gives one, else the
+   * building itself. Undefined only for open ground, which really has no name.
    */
   function pointWord(
     session: QuestSession,
@@ -21144,13 +21412,51 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const word = objectWord(session, bestId);
       if (word && word !== "thing") return word;
     }
-    // No thing there — name the room, from the SPEAKER's own house (rooms are
-    // only nameable relative to whose home they are).
+    // No thing there — name the room, from the SPEAKER's own house first: its
+    // own rooms are the ones it has a word for without qualification.
     // `houseIndexOfCid` reads the `_<house>_<n>` shape and yields NaN for anyone
     // who has no household (a wilderness local, the player) — no rooms to name.
     const houseIndex = speaker ? houseIndexOfCid(speaker) : NaN;
-    if (!Number.isFinite(houseIndex)) return undefined;
-    return roomAt(houseRoomDestsOf(session, houseIndex), p)?.word;
+    if (Number.isFinite(houseIndex)) {
+      const own = roomAt(houseRoomDestsOf(session, houseIndex), p)?.word;
+      if (own) return own;
+    }
+    return sitePlaceWord(session, p) ?? buildingPlaceWord(session, p);
+  }
+
+  /** A LIVE CONSTRUCTION SITE covering the point, in the word the site is being
+   *  built AS ("the kitchen", "the market"). A staked room is not furniture and
+   *  not yet a room, so nothing else in the naming chain can see it — which is
+   *  exactly why every hauler feeding one used to answer "there". */
+  function sitePlaceWord(_session: QuestSession, p: { x: number; y: number }): string | undefined {
+    for (const c of directorSites()) {
+      if (p.x < c.x || p.y < c.y || p.x > c.x + c.w || p.y > c.y + c.h) continue;
+      // `word`, never `glyph`: the glyph is the composed DISPLAY form
+      // (`room(bed)`) and speaking it would put a drawing in a sentence.
+      if (c.word) return c.word;
+    }
+    return undefined;
+  }
+
+  /** ANY building containing the point — the room its own plan gives, else the
+   *  building. A body bound for somebody else's kitchen is still bound for a
+   *  kitchen; the alternative on offer is "there". */
+  function buildingPlaceWord(session: QuestSession, p: { x: number; y: number }): string | undefined {
+    const t = session.town;
+    if (!t) return undefined;
+    const c = t.stage.center;
+    const covers = (r: { dx: number; dy: number; w: number; h: number }): boolean =>
+      p.x >= c.x + r.dx && p.x <= c.x + r.dx + r.w && p.y >= c.y + r.dy && p.y <= c.y + r.dy + r.h;
+    for (const h of t.plan.houses) {
+      if (!covers(h)) continue;
+      return roomAt(houseRoomDestsOf(session, h.index), p)?.word ?? "house";
+    }
+    for (const w of t.plan.works) {
+      // The structure TYPE is the spoken word ("market", "farm") — the catalog
+      // LABEL is display chrome and may not be a glyph the creature can draw.
+      if (!w.vacated && covers(w)) return w.type;
+    }
+    return undefined;
   }
 
   function intentLineSyms(
@@ -25153,6 +25459,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     multiplayerRole() {
       return mp?.role ?? null;
     },
+    perform(action) {
+      // Nothing to act on before `start()` — a surface that boots ahead of the
+      // world must not throw for having asked early.
+      if (!sess || !world) return;
+      // THE SAME VALIDATION THE WIRE GETS (net.ts parses every inbound command
+      // through this before `applyRemoteCommand` ever sees it): a half-read or
+      // unknown action is DROPPED, never guessed at. So this channel cannot
+      // widen the action vocabulary — only the union in player-action.ts can.
+      const parsed = parsePlayerAction(action);
+      if (!parsed) return;
+      // …and then THE GATE, exactly as a press or a settled dwell reaches it —
+      // which ends in the same `applyPlayerAction` executor a relayed command
+      // does, so one action means one thing however it was issued. The remote
+      // channel enters BELOW the gate because the sender's device already
+      // crossed it (and carries the sender's gesture/provenance with it); this
+      // one is local, so it takes the gate and gets this device's own.
+      performPlayerAction(parsed);
+    },
     localAddressee() {
       // The SAME stack a subject-less speak() resolves through (see speak):
       // family chip → gaze → open conversation → possessed body → nearest.
@@ -25168,6 +25492,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         possessed: possession.creatureId,
         nearest: nearestCreature(s),
       });
+    },
+    nameOf(cid) {
+      return nameGlyphOf(cid);
+    },
+    activityOf(cid) {
+      return sess ? creatureActivity(sess, cid) : undefined;
     },
     get session() {
       return sess!;

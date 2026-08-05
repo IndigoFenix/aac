@@ -4,27 +4,44 @@
 // about SHAPE while strict about VOCABULARY: an AI driver mistyping a command
 // must get an `ERR` naming the closed command set, never a silent no-op.
 //
-// Phase 1 (design §8 step ④) covers: look / scene / self / board / say / press /
-// more / back / wait / help.
-// TODO step ⑧: `build …` (builder driving, press/screen accounting).
-// TODO step ⑨: `go` / `approach` / `stop`.
-// TODO step ⑩: `watch` / `unwatch`.
-// TODO step ⑪: the `/`-prefixed cheat channel (a DIFFERENT prefix, law ⑦) —
-//   this parser must keep rejecting `/…` until that step lands.
+// The full set (design §8, steps ④–⑪):
+//   look scene self board say press more back wait help          (④)
+//   builder build …                                              (⑧)
+//   go approach stop send where who                              (⑨)
+//   watch unwatch watching                                       (⑩)
+//   /convos /scope /stock /carry /probe /truth                   (⑪)
+//
+// THE CHEAT PREFIX IS PARSED HERE BUT GATED ELSEWHERE (law ⑦). This layer only
+// recognizes the shape; whether the channel is open at all is the session's
+// question, and the answer defaults to no.
 
 import type { TextParseResult } from "./types.js";
 import { WAIT_DEFAULT_S } from "./types.js";
 
-/** The phase-1 command words, in the order `help` lists them. */
+/** The command words, in the order `help` lists them. The cheat channel is NOT
+ *  here, and must never be: `help` is what an AI driver reads to learn the
+ *  harness, and a tester who never hears of the channel cannot lean on it. */
 export const TEXT_COMMANDS: readonly string[] = [
   "look",
   "scene",
   "self",
   "board",
+  "spots",
   "say",
   "press",
   "more",
   "back",
+  "builder",
+  "build",
+  "go",
+  "approach",
+  "stop",
+  "send",
+  "where",
+  "who",
+  "watch",
+  "unwatch",
+  "watching",
   "wait",
   "help",
 ];
@@ -39,6 +56,33 @@ export function joinTarget(words: readonly string[]): string {
   return parts.join("-");
 }
 
+const target = (rest: readonly string[]): string => joinTarget(rest.map((w) => w.toLowerCase()));
+
+/** `build …` — one verb, six operations (builder.ts holds the state). */
+function parseBuild(rest: readonly string[]): TextParseResult {
+  if (!rest.length) return { kind: "build", op: "show" };
+  const head = rest[0]!.toLowerCase();
+  const tail = rest.slice(1).join(" ").trim();
+  switch (head) {
+    case "tab":
+      if (!tail) return { error: "build tab what? e.g. build tab things" };
+      return { kind: "build", op: "tab", arg: tail };
+    case "group":
+      if (!tail) return { error: "build group what? e.g. build group food" };
+      return { kind: "build", op: "group", arg: tail };
+    case "undo":
+      return { kind: "build", op: "undo" };
+    case "clear":
+      return { kind: "build", op: "clear" };
+    case "play":
+      return { kind: "build", op: "play" };
+    default:
+      // Everything else is a WORD TAP: a caption, a key, a number, or — with a
+      // leading "." — the modifier rail composing onto the current head.
+      return { kind: "build", op: "word", arg: rest.join(" ").trim() };
+  }
+}
+
 /**
  * Parse one line of driver input. Returns a `TextCommand`, or `{ error }` when
  * the line is not one — the caller renders that as `ERR`.
@@ -46,10 +90,15 @@ export function joinTarget(words: readonly string[]): string {
 export function parseCommand(input: string): TextParseResult {
   const trimmed = input.trim();
   if (!trimmed) return { error: "empty command. Type help for the command list." };
+
+  // Law ⑦: the cheat channel is a DIFFERENT PREFIX. Recognized here, gated in
+  // the session — a build without `--cheats` answers with the closed door.
   if (trimmed.startsWith("/")) {
-    // Law ⑦: the cheat channel is a different prefix AND a different file, and
-    // it is deliberately the LAST thing built (step ⑪).
-    return { error: "cheat commands are not available in this build." };
+    const parts = trimmed.slice(1).split(/\s+/).filter((w) => w.length > 0);
+    const name = (parts[0] ?? "").toLowerCase();
+    if (!name) return { error: "cheat commands look like /convos or /truth <id>." };
+    const rest = parts.slice(1).join(" ");
+    return { kind: "cheat", name, ...(rest ? { arg: rest } : {}) };
   }
 
   const parts = trimmed.split(/\s+/);
@@ -59,7 +108,7 @@ export function parseCommand(input: string): TextParseResult {
   switch (verb) {
     case "look": {
       if (!rest.length) return { kind: "look" };
-      return { kind: "look", target: joinTarget(rest.map((w) => w.toLowerCase())) };
+      return { kind: "look", target: target(rest) };
     }
     case "scene":
       return { kind: "scene" };
@@ -67,6 +116,8 @@ export function parseCommand(input: string): TextParseResult {
       return { kind: "self" };
     case "board":
       return { kind: "board" };
+    case "spots":
+      return { kind: "spots" };
     case "say": {
       // The words are the driver's own composition; `+` is optional sugar so a
       // pasted glyph sentence ("want + apple") parses identically to "want apple".
@@ -88,6 +139,46 @@ export function parseCommand(input: string): TextParseResult {
       return { kind: "more" };
     case "back":
       return { kind: "back" };
+    case "builder":
+      return { kind: "builder" };
+    case "build":
+      return parseBuild(rest);
+    case "go": {
+      if (!rest.length) return { error: "go where? name something in view." };
+      return { kind: "go", target: target(rest) };
+    }
+    case "approach": {
+      if (!rest.length) return { error: "approach whom? name somebody in view." };
+      return { kind: "go", target: target(rest), approach: true };
+    }
+    case "stop":
+      return { kind: "stop" };
+    case "send": {
+      // `send <creature> to <id>` — the "to" is required, because "send mara
+      // bram" is genuinely ambiguous about which of them goes.
+      const at = rest.findIndex((w) => w.toLowerCase() === "to");
+      if (at <= 0 || at === rest.length - 1) {
+        return { error: "send whom where? e.g. send mara to chair-2" };
+      }
+      return { kind: "send", creature: target(rest.slice(0, at)), target: target(rest.slice(at + 1)) };
+    }
+    case "where": {
+      if (!rest.length) return { error: "where is what? name something you have seen." };
+      return { kind: "where", target: target(rest) };
+    }
+    case "who":
+      return { kind: "who" };
+    case "watch": {
+      if (!rest.length) return { error: "watch what? name something in view." };
+      return { kind: "watch", target: target(rest) };
+    }
+    case "unwatch": {
+      if (!rest.length) return { error: "unwatch what? name one, or all." };
+      if (rest.length === 1 && rest[0]!.toLowerCase() === "all") return { kind: "unwatch", target: "all" };
+      return { kind: "unwatch", target: target(rest) };
+    }
+    case "watching":
+      return { kind: "watching" };
     case "wait": {
       if (!rest.length) return { kind: "wait", seconds: WAIT_DEFAULT_S };
       const n = Number(rest[0]);

@@ -115,8 +115,29 @@ export const PLACE_HEAD = "house";
  */
 export function wordFor(lang: GlyphLanguage, head: string, count: number): string {
   const lex = lang.lexicon[head];
-  if (count === 1 || !lex) return baseWord(lang, head);
-  return lex.plw ?? lex.w;
+  if (count === 1) return baseWord(lang, head);
+  const singular = lex?.w ?? baseWord(lang, head);
+  // The authored plural is the IRREGULAR list and wins; the ruleset's regular
+  // rule (`pluralize`, English only today) catches every noun nobody marked —
+  // which is most of them, and exactly the ones a generated count reaches.
+  return lex?.plw ?? lang.pluralize?.(singular) ?? singular;
+}
+
+/**
+ * THE LEXICON HEAD BEHIND A PRINTED PLURAL ("people" → "person", "houses" →
+ * "house"), or undefined when no word in this ruleset pluralizes to it.
+ *
+ * Searched rather than un-suffixed: the plural came from the ruleset (an
+ * authored `plw` or its regular rule), so the ruleset is the only thing that
+ * can honestly invert it — stripping an "s" would be English grammar guessing
+ * in every locale, and would still miss "people".
+ */
+export function singularWord(lang: GlyphLanguage, plural: string): string | undefined {
+  const q = plural.toLowerCase();
+  for (const head of Object.keys(lang.lexicon)) {
+    if (wordFor(lang, head, 2).toLowerCase() === q) return baseWord(lang, head).toLowerCase();
+  }
+  return undefined;
 }
 
 /** The INDEFINITE article for a singleton bucket ("a chair"), or "" where the

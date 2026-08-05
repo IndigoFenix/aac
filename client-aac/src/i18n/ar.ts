@@ -437,6 +437,7 @@ export const ar: Translations = {
       sister: "\u0623\u062e\u062a",
       brother: "\u0623\u062e",
       friend: "\u0635\u062f\u064a\u0642",
+      family: "عائلة",
       teacher: "\u0645\u0639\u0644\u0645",
       doctor: "\u0637\u0628\u064a\u0628",
       want: "\u0623\u0631\u064a\u062f",

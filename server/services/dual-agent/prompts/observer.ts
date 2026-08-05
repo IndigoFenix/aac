@@ -478,6 +478,45 @@ You'll be played the clip behind the most recent [HEARD SPEECH] so you can liste
   };
 }
 
+/**
+ * The universal sink that makes `toolChoice: "required"` safe on a
+ * [HEARD SPEECH] turn — the same role `no_change` plays for the Board Manager.
+ * Without it, forcing a call would trap the model whenever the correct answer
+ * genuinely is "this must not be relayed" (button/AI playback, recogniser
+ * misfire on noise).
+ *
+ * It exists because the alternative — letting a speech turn end with NO tool
+ * call — is indistinguishable in the logs from the system never having heard
+ * the utterance. Session bccf9576 lost an entire bank-teller roleplay that way:
+ * six high-confidence utterances reached the Observer and every one came back
+ * as plain text, so no transcript ever reached Speaker or Board Manager and the
+ * matching pre-built board was never offered. A logged reason turns that class
+ * of failure from invisible into diagnosable.
+ */
+function buildIgnoreSpeechTool(): FunctionDeclaration {
+  return {
+    name: "ignore_speech",
+    description: `Deliberately NOT relay a [HEARD SPEECH] utterance, with the reason why. TERMINAL — it ends the turn; do not pair it with transcript() for the same words.
+
+Speech should be ignored in the following cases:
+  - Device playback of a ${T.button} the user pressed (a matching [BUTTON PRESS to ...] note is in your context).
+  - Your sibling Speaker's voice from the room speakers (a matching [AI to ...] note is in your context).
+  - A recogniser misfire — the turn says low/medium confidence and the words fit nothing in the scene, so probably nobody said them.
+  - Words you already transcribed this turn (a duplicate finalization of the same utterance).`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: "Why this utterance must not be relayed (e.g. 'device playing back the button Opher just pressed', 'low-confidence misfire — nobody is speaking').",
+        },
+      },
+      required: ["reason"],
+    },
+  };
+}
+
 function buildSetVisualAttentionTool(): FunctionDeclaration {
   return {
     name: "set_visual_attention",
@@ -738,6 +777,9 @@ export function buildObserverToolDeclarations(config: ObserverToolConfig = {}): 
   // suppresses actual transcript/update_context tool calls.
   const declarations: FunctionDeclaration[] = [];
   declarations.push(buildTranscriptTool());
+  // Declared right after transcript(): the two are the only valid endings for
+  // a [HEARD SPEECH] turn, and the economy backend forces one of them.
+  declarations.push(buildIgnoreSpeechTool());
   declarations.push(buildUpdateContextTool());
   declarations.push(buildRequestFocusTool());
   declarations.push(buildRequestAudioTool());

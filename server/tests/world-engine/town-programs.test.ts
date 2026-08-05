@@ -173,7 +173,7 @@ describe("roomDisplayGlyph — the icon marks", () => {
   it("nests each default kind's symbol in the room shell", () => {
     expect(roomKindDisplayGlyph("bedroom")).toBe("room(bed)");
     expect(roomKindDisplayGlyph("kitchen")).toBe("room(oven)");
-    expect(roomKindDisplayGlyph("bath")).toBe("room(bath)");
+    expect(roomKindDisplayGlyph("bath")).toBe("room(toilet)"); // the FLOOR, not the tub
     expect(roomKindDisplayGlyph("workshop")).toBe("room(workbench)");
     expect(roomKindDisplayGlyph("living")).toBe("room(table)");
     expect(roomKindDisplayGlyph("store")).toBe("room(box)");
@@ -253,7 +253,11 @@ describe("the place-making stations make places", () => {
     const spec = TOWN_PLAY_STRUCTURES.find((s) => s.type === p.building)!;
     expect(spec.stations).toContain(p.station);
     // And the row's icon frames that same station — picture and mechanic agree.
-    expect(structureDisplayGlyph(spec)).toBe(`building(${p.station})`);
+    // The LIBRARY is the one exception (user call): its shelf derives the STUDY
+    // room, but the BUILDING is one of books — the shelf is the furniture, the
+    // book is the point. The room keeps the station: `study` → `room(shelf)`.
+    const icon = p.building === "library" ? "book" : p.station;
+    expect(structureDisplayGlyph(spec)).toBe(`building(${icon})`);
   });
 
   it("the new kinds never steal a household room", () => {

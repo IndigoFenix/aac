@@ -38,6 +38,8 @@ export {
   objectHead,
   carriedBy,
   cardinalFrom,
+  bearingFrom,
+  dressSignature,
   wordFor,
   indefiniteArticle,
   buildingsWithOpenDoor,
@@ -57,6 +59,7 @@ export {
   summarizePlaces,
   isNotablePlace,
   rankOf,
+  activityKey,
   RANK_CONVERSATION,
   RANK_WATCHED,
   RANK_KNOWN,
@@ -71,4 +74,30 @@ export {
   type PlaceSummary,
   type SummarizePlacesOpts,
 } from "./summarize.js";
+export {
+  createTextBuilder,
+  BUILDER_DEFAULT_GRID,
+  type TextBuilder,
+  type TextBuilderDeps,
+  type BuilderTap,
+} from "./builder.js";
+export {
+  createWatchBook,
+  watchDeltas,
+  sampleOf,
+  swing,
+  type WatchBook,
+  type WatchDeps,
+  type WatchSample,
+  type WatchStepCtx,
+  type WatchAdd,
+} from "./watch.js";
+export {
+  runCheat,
+  dump,
+  CHEAT_COMMANDS,
+  CHEATS_DISABLED,
+  type CheatCtx,
+  type CheatResult,
+} from "./cheats.js";
 export { createTextModeSession } from "./session.js";

@@ -38,6 +38,7 @@ import {
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
+import { placeArt } from "@shared/glyph-place-art";
 import { applyExclusiveModifier, cycleQualityPole, pushSlotWithJoin } from "@shared/glyph-builder-ops";
 import {
   listByCategory,
@@ -163,9 +164,18 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
     [tab, modeChip],
   );
 
-  // Match the AAC sentence builder: prefer the bundled artwork (imagePath),
-  // fall back to the emoji. This is what the selected slot will actually show.
+  // Match the AAC sentence builder: a PLACE WORD goes through the compositor
+  // (its symbol is a shell plus a fixture — two PNGs, one symbol), otherwise
+  // prefer the bundled artwork (imagePath) and fall back to the emoji. This is
+  // what the selected slot will actually show.
   const renderItemVisual = (item: VocabularyItem) => {
+    if (placeArt(item.key)) {
+      return (
+        <div className="w-11 h-11">
+          <Glyph glyph={item.key} noBackground />
+        </div>
+      );
+    }
     const url = item.imagePath ? resolveIconPath(item.imagePath) : null;
     if (url) return <img src={url} alt="" className="w-11 h-11 object-contain" />;
     const emoji = item.emoji ?? resolveEmoji(item.key);

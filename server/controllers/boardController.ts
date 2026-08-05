@@ -14,6 +14,7 @@ const saveBoardSchema = z.object({
   automaticSelection: z.boolean().optional(),
   automaticSelectionHint: z.string().nullable().optional(),
   restSpace: z.enum(["none", "small", "large"]).optional(),
+  isGenerated: z.boolean().optional(),
 });
 
 /**
@@ -47,6 +48,33 @@ async function canReadPackageBoard(req: Request, board: { id: string; scope: str
   return false;
 }
 
+/**
+ * May this caller act for this student? Wraps `verifyStudentAccess`, which
+ * already grants a customer-support agent access to their support institute's
+ * students (via the AsyncLocalStorage short-circuit in
+ * `instituteRepository.isUserAdminOfInstitute`) — so support mode needs no
+ * special case anywhere in this controller.
+ */
+async function hasStudentAccess(req: Request, studentId: string | null | undefined): Promise<boolean> {
+  if (!studentId) return false;
+  const { hasAccess } = await studentService.verifyStudentAccess(studentId, req.user!.id);
+  return hasAccess;
+}
+
+/**
+ * Can this caller WRITE this board?
+ *
+ * Authorship, or access to the student the board is attached to. A board made
+ * for a child belongs to that child's care team, not to whoever happened to
+ * click Save — a co-clinician, an institute admin, or a support agent may all
+ * edit it. Package boards are deliberately NOT included: being able to USE a
+ * package must not let you rewrite content other institutes have attached.
+ */
+async function canWriteBoard(req: Request, board: { userId: string; studentId: string | null }): Promise<boolean> {
+  if (board.userId === req.user!.id) return true;
+  return hasStudentAccess(req, board.studentId);
+}
+
 export class BoardController {
 
   /**
@@ -55,8 +83,15 @@ export class BoardController {
    */
   async saveBoard(req: Request, res: Response): Promise<void> {
     try {
-      const { name, irData, studentId, automaticSelection, automaticSelectionHint, restSpace } =
+      const { name, irData, studentId, automaticSelection, automaticSelectionHint, restSpace, isGenerated } =
         saveBoardSchema.parse(req.body);
+
+      // Attaching a board to a student is a PHI write — prove access to that
+      // student first, or the studentId is just an unchecked id from the body.
+      if (studentId && !(await hasStudentAccess(req, studentId))) {
+        res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
+        return;
+      }
 
       const board = await boardRepository.createBoard({
         userId: req.user!.id,
@@ -66,6 +101,7 @@ export class BoardController {
         ...(automaticSelection !== undefined ? { automaticSelection } : {}),
         ...(automaticSelectionHint !== undefined ? { automaticSelectionHint } : {}),
         ...(restSpace !== undefined ? { restSpace } : {}),
+        ...(isGenerated !== undefined ? { isGenerated } : {}),
       });
 
       res.status(201).json(board);
@@ -83,10 +119,18 @@ export class BoardController {
 
   /**
    * GET /api/boards
-   * Get user's boards
+   * Get user's boards. `?unassigned=1` narrows this to the caller's boards that
+   * are attached to no student — the drafts the board picker offers to attach
+   * to whichever student is loaded.
    */
   async getUserBoards(req: Request, res: Response): Promise<void> {
     try {
+      if (req.query.unassigned === "1") {
+        const drafts = await boardRepository.getUnassignedBoards(req.user!.id);
+        res.json(drafts.sort((a, b) => b.loadedAt.getTime() - a.loadedAt.getTime()));
+        return;
+      }
+
       const boards = await boardRepository.getUserBoards(req.user!.id);
       // Get most recent board data
       const sortedBoards = boards.sort((a, b) => b.loadedAt.getTime() - a.loadedAt.getTime());
@@ -111,9 +155,18 @@ export class BoardController {
   async getStudentBoards(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
+
+      // The list is scoped by STUDENT, not by author, so access to the student
+      // is what authorises the read. Without this gate the route would hand a
+      // child's boards to anyone who could guess their id.
+      if (!(await hasStudentAccess(req, studentId))) {
+        res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
+        return;
+      }
+
       // Includes boards from packages attached to this student, auto-loading or
       // not — the picker shows everything, the AI only sees auto-load boards.
-      const boards = await boardRepository.getStudentPickerBoards(req.user!.id, studentId);
+      const boards = await boardRepository.getStudentPickerBoards(studentId);
       const sortedBoards = boards.sort((a, b) => b.loadedAt.getTime() - a.loadedAt.getTime());
       res.json(sortedBoards);
     } catch (error: any) {
@@ -133,11 +186,16 @@ export class BoardController {
         return;
       }
 
-      // A package board is readable by anyone who can reach it: the author, a
-      // user who can use one of its packages, or (the AAC case) a caller acting
-      // for a student it is attached to. Without this the device could list a
-      // package board in the picker but never load its IR.
-      if (board.userId !== req.user!.id && !(await canReadPackageBoard(req, board))) {
+      // Readable by anyone who can reach it: the author, someone with access to
+      // the student it is attached to (which is what the picker lists it for),
+      // a user who can use one of its packages, or (the AAC case) a caller
+      // acting for a student a package is attached to. Without the last two the
+      // device could list a package board in the picker but never load its IR.
+      const mayRead =
+        board.userId === req.user!.id ||
+        (await hasStudentAccess(req, board.studentId)) ||
+        (await canReadPackageBoard(req, board));
+      if (!mayRead) {
         res.status(404).json({ error: "error:BOARD_NOT_FOUND" });
         return;
       }
@@ -156,7 +214,7 @@ export class BoardController {
   async updateBoard(req: Request, res: Response): Promise<void> {
     try {
       const board = await boardRepository.getBoard(req.params.id);
-      if (!board || board.userId !== req.user!.id) {
+      if (!board || !(await canWriteBoard(req, board))) {
         res.status(404).json({ error: "error:BOARD_NOT_FOUND" });
         return;
       }
@@ -167,11 +225,28 @@ export class BoardController {
         automaticSelection: z.boolean().optional(),
         automaticSelectionHint: z.string().nullable().optional(),
         restSpace: z.enum(["none", "small", "large"]).optional(),
+        isGenerated: z.boolean().optional(),
+        // Attaching an unassigned draft to the loaded student. One-way on
+        // purpose: a board can be given to a student, never taken from one or
+        // handed to a different one, so a child's board list cannot change
+        // under them from another screen.
+        studentId: z.string().optional(),
       }).strict();
       const parsed = updateSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: "error:INVALID_BODY", details: parsed.error.errors });
         return;
+      }
+
+      if (parsed.data.studentId !== undefined) {
+        if (board.studentId && board.studentId !== parsed.data.studentId) {
+          res.status(409).json({ error: "error:BOARD_ALREADY_ASSIGNED" });
+          return;
+        }
+        if (!(await hasStudentAccess(req, parsed.data.studentId))) {
+          res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
+          return;
+        }
       }
 
       // Drop undefined keys so we don't overwrite columns with null on partial updates.

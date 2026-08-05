@@ -130,6 +130,23 @@ describe("bootTextQuest — the dollhouse, headless", () => {
       const open = run.presenterLog().board;
       expect(() => run.select(open?.options[0]?.id ?? "nothing-here")).not.toThrow();
       run.advance(5);
+
+      // ── ⑧ THE LOCAL COMMAND CHANNEL EXISTS, AND IS NOT A BYPASS ──────────
+      // `perform` is the ONE public single-player entry for a `PlayerAction`
+      // (text mode's `send` rides it). Piggy-backed on this boot on purpose —
+      // a second world costs minutes (see the header) — and asserted at the
+      // level this file owns: the method is on the host, malformed input is
+      // dropped by `parsePlayerAction` rather than thrown at or acted on, and a
+      // well-formed order reaches the gate without incident.
+      expect(typeof run.host.perform).toBe("function");
+      for (const junk of [null, undefined, {}, { kind: "dance" }, { kind: "sendTo", cid: "x" }]) {
+        expect(() => run.host.perform(junk as never)).not.toThrow();
+      }
+      const someone = Object.keys(run.state.avatars).find((id) => id !== PLAYER_ID);
+      expect(someone).toBeDefined();
+      const spark = run.state.avatars[PLAYER_ID]!;
+      expect(() => run.host.perform({ kind: "sendTo", cid: someone!, x: spark.x + 3, y: spark.y })).not.toThrow();
+      run.advance(5);
     } finally {
       run.dispose();
     }

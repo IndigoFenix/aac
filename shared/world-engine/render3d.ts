@@ -27,6 +27,7 @@ import type { BuildingSpec, Rect, RoadPath, StructureSpec, Vec2, WorldSpec } fro
 import {
   accessibleBuildings,
   buildingAt,
+  carryHoldFor,
   headingHeldByLegs,
   visibleBuildings,
   type AvatarState,
@@ -4097,10 +4098,24 @@ export class World3DRenderer {
       }
       // Containment lifts/lowers the object so on/in/under read as relations.
       let y = radius;
+      // WHERE IT IS DRAWN. Almost always its sim spot — but a HELD thing is drawn
+      // where its carrier's POSE holds it (`carryHoldFor`), which the sim cannot
+      // answer: the sim keeps one logical hold (a standing arm's reach ahead, the
+      // thing a drop aim means), while a body that has sat down is half a metre
+      // lower with its hands in its lap. Composed with the standing reach, a
+      // diner settling onto a chair flung its meal out over the tabletop to hang
+      // in the air. The shadow follows the drawn spot, so a thing genuinely held
+      // over open floor still casts one where it hangs.
+      let px = obj.x;
+      let pz = obj.y;
       if (obj.carriedBy) {
-        // HELD: ride at hand height — the carry-pose arms grip about here
-        // (a grounded "carried" object read as pushed along, not held).
-        y = 0.75;
+        const carrier = state.avatars[obj.carriedBy];
+        const hold = carryHoldFor(carrier);
+        y = hold.up;
+        if (carrier) {
+          px = carrier.x + carrier.fx * hold.forward;
+          pz = carrier.y + carrier.fy * hold.forward;
+        }
       } else if (obj.containedIn) {
         const container = state.spec.objects.find((o) => o.id === obj.containedIn!.objectId);
         const cr = container?.radius ?? 0.5;
@@ -4111,14 +4126,14 @@ export class World3DRenderer {
         else if (obj.containedIn.relation === "in") y = cr;
         // "under" stays on the ground (beneath the container's top).
       }
-      const floorY = obj.floor * FLOOR_HEIGHT + standHeightAt(state, obj.x, obj.y);
-      entry.mesh.position.set(obj.x, y + floorY, obj.y);
-      entry.shadow.position.set(obj.x, 0.02 + floorY, obj.y);
+      const floorY = obj.floor * FLOOR_HEIGHT + standHeightAt(state, px, pz);
+      entry.mesh.position.set(px, y + floorY, pz);
+      entry.shadow.position.set(px, 0.02 + floorY, pz);
       // Possession tint marks the owner; an INTERACT highlight (gaze on a free
       // object) pulses cyan. Applied across every material of the model.
       // Objects fade with the storey they stand on (same plane rule as slabs),
       // only inside a REVEALED building.
-      const objBuilding = fade ? buildingAt(state, obj.x, obj.y) : null;
+      const objBuilding = fade ? buildingAt(state, px, pz) : null;
       const faded =
         !!fade &&
         obj.floor > fade.floor &&

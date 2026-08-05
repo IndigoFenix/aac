@@ -53,6 +53,21 @@ Tests split by DB dependency — a DB-backed test needs jest's `globalSetup` (Po
 - `npm test` — the whole suite (both). Use before major merges.
 A test that needs the DB belongs in `integration/` (so `test:unit` can stay DB-free) — move it there rather than restoring globalSetup.
 
+### Headless play verification — world-engine TEXT MODE (the AI's testing method)
+To verify world-engine behavior at PLAY level without a browser, drive text mode:
+`npm run world:text -- --seed <n> [--dt 1/20] [--script cmds.txt] [--cheats]`.
+It boots the REAL quest-host headless (no GL/DOM; sim behavior untouched) and speaks a
+tagged-line protocol — `scene look self board say press build go approach watch wait help`
+— presenting only what a sighted player would see, so use it to find UX gaps (unreachable
+buttons, garbled creature lines), not just crashes. Transcripts land in `transcripts/`
+and are byte-identical below the `# ───` fence for the same build+seed+commands — diff
+them for behavioral regressions; a transcript's `> ` lines replay via `--script`.
+`--cheats` unlocks `/probe /convos /scope /stock /carry /truth` (output goes to the
+`.cheats.log` sidecar and marks the transcript — don't use it for UX-gap findings).
+Long play arcs belong HERE, not in jest: any suite that value-imports quest-host pays a
+heavy per-worker transform tax. Laws and command grammar:
+`planning-docs/games/world-engine/text-mode.md`.
+
 ## Databases
 DO NOT, UNDER ANY CIRCUMSTANCE, AUTHOR DATABASE MIGRATION FILES YOURSELF.
 Edit the schema, then use db:generate to create the files. Otherwise you will mess up the system.

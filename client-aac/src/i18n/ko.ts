@@ -437,6 +437,7 @@ export const ko: Translations = {
       sister: "누나",
       brother: "형",
       friend: "친구",
+      family: "가족",
       teacher: "선생님",
       doctor: "의사",
       want: "원하다",

@@ -41,6 +41,18 @@ export interface BuildSpotMark {
    *  player can tell "you may build there" from "you may change that"
    *  without reading a menu first. Default `offer`. */
   tone?: "offer" | "thing";
+  // ── the SAYABLE half (headless views) ────────────────────────────────────
+  // A 3D overlay draws a wash and an icon and needs no words for it; a view
+  // that NARRATES has nothing without them. Same payload, one owner — so the
+  // ground a text driver can name is exactly the ground a GL player can see.
+  /** What this spot IS: a free lot, a standing room, a room-shaped gap, a
+   *  whole building, work already under way. */
+  kind?: "lot" | "building" | "room" | "grow" | "site";
+  /** What it would TAKE, in speakable words — room kinds for a growth area,
+   *  structure types for a lot. */
+  offers?: readonly string[];
+  /** What already stands here, in speakable words (a room's kind). */
+  word?: string;
 }
 
 /** An ACTIVE construction site and how far along it is. */
@@ -54,6 +66,13 @@ export interface BuildSiteMark {
   stage: 0 | 1 | 2;
   /** Composed glyph of what will stand here — the hovering icon. */
   glyph?: string;
+  /** The SPOKEN word for the same thing ("bedroom", "market"). `glyph` is the
+   *  drawn composition (`room(bed)`) and is never speakable; a narrator reads
+   *  this one. */
+  word?: string;
+  /** Banked-labor fraction 0..1 — how far along the work is. The 3D overlay
+   *  reads it as wall courses; a narrator reads it as a number. */
+  progress?: number;
   /** The finished building's wall tint. */
   color?: string;
 }

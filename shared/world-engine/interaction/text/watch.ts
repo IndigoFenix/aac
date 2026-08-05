@@ -223,7 +223,12 @@ export function createWatchBook(deps: WatchDeps): WatchBook {
     },
 
     step(scene, ctx) {
-      const inView = new Map(scene.subjects.map((s) => [s.id, s]));
+      // PLACES ARE WATCHABLE TOO. `watch house-2` resolves against the whole
+      // scene (subjects AND places), so building the in-view map from subjects
+      // alone made a watched building permanently absent: never present, so
+      // never an ENTER, never an EXIT, never a delta — the watch was accepted
+      // and then silently inert, which is the one thing a watch may not be.
+      const inView = new Map([...scene.subjects, ...scene.places].map((s) => [s.id, s]));
       const out: TextEvent[] = [];
 
       for (const id of ctx.tracked) {
