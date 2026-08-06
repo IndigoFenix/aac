@@ -194,6 +194,17 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
           }
         }
 
+        // The game is speaking through the device's speaker (its own in-app
+        // voice). Hold the mic gate for the utterance — that audio reaches our
+        // microphone, and an ungated NPC line comes back as a transcript
+        // attributed to the student, which the assistant then answers.
+        if (msg.type === "game_speech") {
+          dualAgent?.noteAppSpeech?.(
+            msg.speaking === true,
+            typeof msg.ms === "number" ? msg.ms : undefined,
+          );
+        }
+
         // Board lock: the game pins (or releases) the AAC response board options.
         if (msg.type === "set_board_options") onBoardOptions?.(msg.options, msg.prompt);
         else if (msg.type === "clear_board_options") onBoardOptions?.(null);

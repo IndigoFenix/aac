@@ -203,6 +203,15 @@ export function renderEvent(ev: TextEvent): string[] {
       }
       return lines;
     }
+    case "FAMILY": {
+      if (!ev.entries.length) return [head("FAMILY", "no household here.")];
+      const lines = [head("FAMILY", `${ev.entries.length} in the household.`)];
+      for (const e of ev.entries) {
+        const marks = [e.present ? "" : "away", e.addressed ? "ADDRESSED" : ""].filter(Boolean);
+        lines.push(cont(`${e.textId} (${e.label}) — ${e.state}${marks.length ? ` [${marks.join(", ")}]` : ""}`));
+      }
+      return lines;
+    }
     case "SITE": {
       if (!ev.entries.length) return [head("SITE", "nothing is being built.")];
       const STAGE = ["marked ground", "floor laid", "pillars up"] as const;

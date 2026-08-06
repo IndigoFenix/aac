@@ -35,6 +35,7 @@ import {
   onPlatformMessage, sendToParent,
   type BoardOption, type GameMessageInput, type PlatformMessage,
 } from "@shared/games-bridge";
+import { createNpcVoice } from "@shared/world-engine/npc-voice";
 import { GazeSmoother } from "@shared/gaze-kit";
 import { mountBoardIsland, type BoardIsland, type NounEntry } from "./board-island";
 import { bootLivingTown, type QuestBoot, type SharedBoard, type BoardHandlers } from "./quest-boot";
@@ -478,6 +479,18 @@ onPlatformMessage((msg: PlatformMessage) => {
 });
 sendToParent({ type: "ready", gameId: GAME_ID, version: VERSION });
 
+// ── THE TOWN'S VOICE, ANNOUNCED ─────────────────────────────────────────────
+// One voice for every boot (a reboot disposes the host, not the speaker), built
+// here rather than inside the host because THIS file owns the bridge: each
+// utterance edge goes out as `game_speech` so the AAC can gate its microphone
+// while the town talks. Without it the mic hears an NPC line, the recogniser
+// hands it over as the student's own words, and the assistant answers a
+// sentence nobody said ("I'm going home." → "You're going home? Nice.").
+// Standalone play sends into the void — `sendToParent` no-ops with no parent.
+const townVoice = createNpcVoice({
+  onSpeaking: (speaking, ms) => sendToParent({ type: "game_speech", speaking, ms }),
+});
+
 /** Embedded: give the platform a beat to deliver `init` (locale) before the
  *  world builds — the town's lang layer is chosen at build time. Standalone
  *  boots immediately. */
@@ -553,6 +566,7 @@ function buildWorld(): void {
             sendCommand: (cmd) => sendToParent({ type: "world_cmd", cmd }),
           }
         : undefined,
+      townVoice,
     );
     bootedMp = snapshot;
   } catch (e) {

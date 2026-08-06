@@ -3,7 +3,7 @@
 // the default `npm test`. (The speechSynthesis playback itself is browser-only
 // and not unit-tested here.)
 
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import {
   lineText,
   pickLine,
@@ -12,6 +12,7 @@ import {
   type NpcDialogue,
 } from "@shared/world-engine/npc-dialogue.js";
 import {
+  createNpcVoice,
   createSpeechQueue,
   pickVoice,
   pickVoiceVariant,
@@ -171,5 +172,142 @@ describe("npc-voice speech queue (wait-your-turn sequencing)", () => {
     expect(speechEstimateMs("")).toBe(800); // floor
     expect(speechEstimateMs("Give me the apple.")).toBeGreaterThan(1500);
     expect(speechEstimateMs("x".repeat(500))).toBe(6000); // ceiling
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ANNOUNCING SPEECH TO THE HOST (createNpcVoice's onSpeaking hook).
+//
+// The town talks through the device's speaker, which the AAC's microphone is
+// listening to. In session 7f5fccb5 the recogniser transcribed the Dollhouse's
+// own NPC lines as the student speaking, and the assistant answered them over a
+// child who was playing. The AAC can only gate its mic if the game says when it
+// is making sound — that is what these edges are for; the platform side is
+// client-aac/src/lib/app-speech-gate.ts.
+//
+// createNpcVoice is DOM-bound, so this stands up the two browser objects it
+// touches. Everything else about the voice is unchanged and covered above.
+// ---------------------------------------------------------------------------
+describe("npc-voice announces its speech to the host", () => {
+  // The engine arms a watchdog per utterance (engines occasionally drop onend).
+  // Fake timers keep those out of the suite: a case that deliberately never
+  // ends its utterance would otherwise leave a ~10s timer running.
+  beforeEach(() => { jest.useFakeTimers(); });
+  afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+
+  interface FakeUtterance {
+    text: string;
+    onend?: () => void;
+    onerror?: () => void;
+    lang?: string;
+    voice?: unknown;
+    pitch?: number;
+    rate?: number;
+  }
+
+  /** Stand up window.speechSynthesis + SpeechSynthesisUtterance, run `body`,
+   *  then put the globals back exactly as they were. */
+  function withBrowserSpeech(
+    body: (ctl: { live: FakeUtterance[]; cancelSynth: () => void }) => void,
+  ): void {
+    const g = globalThis as Record<string, unknown>;
+    const hadWindow = "window" in g;
+    const prevWindow = g.window;
+    const prevUtterance = g.SpeechSynthesisUtterance;
+    const live: FakeUtterance[] = [];
+    const synth = {
+      getVoices: () => [{ lang: "he-IL", default: true }],
+      addEventListener: () => {},
+      speak: (u: FakeUtterance) => live.push(u),
+      cancel: () => { live.length = 0; },
+    };
+    g.window = { speechSynthesis: synth };
+    g.SpeechSynthesisUtterance = class {
+      text: string;
+      constructor(text: string) { this.text = text; }
+    };
+    try {
+      body({ live, cancelSynth: () => synth.cancel() });
+    } finally {
+      if (hadWindow) g.window = prevWindow;
+      else delete g.window;
+      if (prevUtterance === undefined) delete g.SpeechSynthesisUtterance;
+      else g.SpeechSynthesisUtterance = prevUtterance;
+    }
+  }
+
+  it("reports the start of an utterance with a length estimate, then its end", () => {
+    withBrowserSpeech(({ live }) => {
+      const edges: Array<{ speaking: boolean; ms: number }> = [];
+      const voice = createNpcVoice({ onSpeaking: (speaking, ms) => edges.push({ speaking, ms }) });
+
+      voice.speak("אני הולכת לבית.", { lang: "he" });
+      expect(edges).toEqual([{ speaking: true, ms: speechEstimateMs("אני הולכת לבית.") }]);
+
+      live[0].onend?.();
+      expect(edges[1]).toEqual({ speaking: false, ms: 0 });
+    });
+  });
+
+  // The gate closes on this edge, so it has to be raised BEFORE the engine can
+  // make a sound — a gate that closes after the first syllable has leaked it.
+  it("announces before handing the utterance to the engine", () => {
+    withBrowserSpeech(({ live }) => {
+      const order: string[] = [];
+      const voice = createNpcVoice({
+        onSpeaking: (speaking) => order.push(speaking ? "announce" : "release"),
+      });
+      const realSpeak = (globalThis as any).window.speechSynthesis.speak;
+      (globalThis as any).window.speechSynthesis.speak = (u: FakeUtterance) => {
+        order.push("speak");
+        realSpeak(u);
+      };
+      voice.speak("hello");
+      expect(order).toEqual(["announce", "speak"]);
+      expect(live.length).toBe(1);
+    });
+  });
+
+  // A queued line doesn't play yet — announcing it early would gate the mic
+  // through a silence the child might be talking into.
+  it("stays silent about a line that is only queued", () => {
+    withBrowserSpeech(() => {
+      const edges: boolean[] = [];
+      const voice = createNpcVoice({ onSpeaking: (speaking) => edges.push(speaking) });
+      voice.speak("first");
+      voice.speak("second");
+      expect(edges).toEqual([true]); // only the one actually speaking
+    });
+  });
+
+  // speechSynthesis.cancel() usually swallows onend, which would leave the mic
+  // held shut for the rest of the estimate.
+  it("releases the host when speech is cancelled", () => {
+    withBrowserSpeech(() => {
+      const edges: boolean[] = [];
+      const voice = createNpcVoice({ onSpeaking: (speaking) => edges.push(speaking) });
+      voice.speak("a line");
+      voice.cancel();
+      expect(edges[edges.length - 1]).toBe(false);
+    });
+  });
+
+  it("an engine error releases the host too", () => {
+    withBrowserSpeech(({ live }) => {
+      const edges: boolean[] = [];
+      const voice = createNpcVoice({ onSpeaking: (speaking) => edges.push(speaking) });
+      voice.speak("a line");
+      live[0].onerror?.();
+      expect(edges).toEqual([true, false]);
+    });
+  });
+
+  it("works with no hook at all (standalone play is unchanged)", () => {
+    withBrowserSpeech(({ live }) => {
+      const voice = createNpcVoice();
+      expect(voice.speak("a line")).toBe(true);
+      expect(live.length).toBe(1);
+      expect(() => live[0].onend?.()).not.toThrow();
+    });
   });
 });

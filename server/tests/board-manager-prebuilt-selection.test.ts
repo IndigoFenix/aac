@@ -146,3 +146,49 @@ describe("board manager prompt — offering a board as a button", () => {
     expect(promptOf(base)).not.toContain("<board_buttons>");
   });
 });
+
+// Session 7f5fccb5 (2026-08-06): the student ASKED, out loud, for "a board for
+// building". Two things stood between the ask and the board — the request never
+// reached this agent as a trigger (fixed in speech-board-trigger.ts), and the
+// prompt gave the model reasons to hedge once it did: the OFFER-when-unsure
+// rule, and the uncertain-words rule that tells it to ignore specifics carried
+// by a shaky transcript. This student's speech scores 0.55–0.75 on nearly every
+// turn, so "uncertain" is his normal, not an edge case.
+describe("board manager prompt — a spoken request for a surface", () => {
+  it("treats the user's own speech as a turn that builds FOLLOW-UPS", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toMatch(/their own SPEECH/);
+    expect(prompt).toMatch(/Their SPEECH is a turn exactly like a press/);
+  });
+
+  // The reply is the newer beat and should shape the buttons — but the model
+  // must not read "answer the AI" as "the ask is handled".
+  it("keeps the ask live when the AI's reply arrives in the same invocation", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toMatch(/anything they ASKED for is still yours to act on/);
+  });
+
+  it("makes an explicit ask a load, not an offer", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toMatch(/\*\*ASKED FOR = LOAD IT\.\*\*/);
+    expect(prompt).toMatch(/is an instruction, not a topic/);
+    expect(prompt).toMatch(/Do not answer an ask with a .+ that offers what was already requested/);
+  });
+
+  // The carve-out has to name the boards, or it reads as a licence to act on
+  // any uncertain specific — which is the failure the base rule prevents.
+  it("carves the request out of the uncertain-words rule without weakening it", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toMatch(/EXCEPTION — a REQUEST you can act on/);
+    expect(prompt).toMatch(/a <prebuilt_boards> .+, an app, a website/);
+    // The rule it excepts is still there in full.
+    expect(prompt).toMatch(/Do NOT anchor the board to specifics that appear ONLY in those words/);
+  });
+
+  it("names only the surfaces a boardless user actually has", () => {
+    const prompt = promptOf(base);
+    expect(prompt).toMatch(/EXCEPTION — a REQUEST you can act on/);
+    expect(prompt).not.toMatch(/<prebuilt_boards> .+, an app/);
+    expect(prompt).not.toMatch(/ASKED FOR = LOAD IT/);
+  });
+});

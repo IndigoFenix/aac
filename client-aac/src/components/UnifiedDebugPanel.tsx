@@ -795,6 +795,9 @@ export default function UnifiedDebugPanel({
                       const label = gs === 'open' ? 'OPEN'
                         : gs === 'continuous' ? 'STREAMING'
                         : gs === 'vad-blocked' ? 'BLOCKED'
+                        // An embedded app is speaking through the speaker — the
+                        // mic is held shut for the utterance (app-speech-gate).
+                        : gs === 'app-speech' ? 'APP AUDIO'
                         : 'OFF';
                       return (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${

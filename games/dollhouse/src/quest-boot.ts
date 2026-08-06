@@ -30,6 +30,7 @@ import {
   type QuestSession,
 } from "@shared/world-engine/interaction/quest/quest-host";
 import { PLAYER_ID } from "@shared/world-engine/solver/space3d";
+import type { NpcVoice } from "@shared/world-engine/npc-voice";
 import {
   createSpiritLadder, type SpiritLadder, type SpiritLadderOpts,
 } from "@shared/world-engine/spirit/ladder";
@@ -154,6 +155,9 @@ interface QuestStartOpts {
   culture?: import("@shared/world-engine/culture").WorldCultureSpec | null;
   /** MULTIPLAYER identity + transport (QuestHostDeps.multiplayer). */
   multiplayer?: QuestMultiplayer;
+  /** In-game character voice (QuestHostDeps.voice). Omitted ⇒ the host's own
+   *  default speechSynthesis voice; null ⇒ silent. */
+  voice?: NpcVoice | null;
   /** Status-line detail (build stats). */
   detail: string;
   /** THE SPIRIT LADDER over this standalone world (the unified spirit —
@@ -275,6 +279,8 @@ function bootQuestGame(
     canvas, presenter, resolveImage: gameImageResolver,
     // OWNER-AUTHORITATIVE MULTIPLAYER (absent ⇒ single-player, byte-identical).
     ...(opts.multiplayer ? { multiplayer: opts.multiplayer } : {}),
+    // Absent ⇒ the host builds its own voice (standalone play, unchanged).
+    ...(opts.voice !== undefined ? { voice: opts.voice } : {}),
     // The spirit ladder is a GUEST of the host's own frame: sim ticks, then
     // the ladder poses the camera (setExternalCamera), then the view draws.
     onFrame: (dt) => {
@@ -571,6 +577,10 @@ export function bootLivingTown(
   setStatus: (text: string) => void,
   board: SharedBoard,
   multiplayer?: QuestMultiplayer,
+  /** In-game character voice. Omitted ⇒ the host builds the default
+   *  speechSynthesis voice. main.ts passes one that ANNOUNCES its speech to
+   *  the platform (games-bridge `game_speech`) so the AAC can gate its mic. */
+  voice?: NpcVoice | null,
 ): QuestBoot {
   const t0 = performance.now();
   const built = buildTownScope(loaded.game!);
@@ -596,6 +606,7 @@ export function bootLivingTown(
     spirit: isSpirit,
     ...(built.focus ? { dollhouse: built.focus.house } : {}),
     ...(multiplayer ? { multiplayer } : {}),
+    ...(voice !== undefined ? { voice } : {}),
     detail,
     ...(isSpirit ? {
       ladder: {

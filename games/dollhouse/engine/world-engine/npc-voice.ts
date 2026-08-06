@@ -205,11 +205,26 @@ const SILENT_VOICE: NpcVoice = {
   available: () => false,
 };
 
+export interface NpcVoiceOpts {
+  /**
+   * Fires on the edges of ACTUAL SOUND: `true` as an utterance starts (with its
+   * estimated length), `false` when it ends or is cancelled.
+   *
+   * The embedding host uses this to gate its MICROPHONE. This voice comes out
+   * of the same speaker the AAC's mic listens to, so without a gate an NPC line
+   * ("I'm going home.") is transcribed as the student saying it, and the
+   * assistant answers a sentence nobody spoke. The `ms` estimate lets the host
+   * hold the gate on a timer, so a lost `false` edge (frame torn down
+   * mid-utterance) reopens the mic instead of deafening it.
+   */
+  onSpeaking?(speaking: boolean, ms: number): void;
+}
+
 /**
  * Build an NpcVoice over the browser's speechSynthesis. Returns a silent no-op
  * when the API is absent, so callers never need to feature-detect.
  */
-export function createNpcVoice(): NpcVoice {
+export function createNpcVoice(voiceOpts?: NpcVoiceOpts): NpcVoice {
   const synth: SpeechSynthesis | undefined =
     typeof window !== "undefined" ? window.speechSynthesis : undefined;
   if (!synth || typeof SpeechSynthesisUtterance === "undefined") return SILENT_VOICE;
@@ -244,6 +259,7 @@ export function createNpcVoice(): NpcVoice {
         finished = true;
         if (u) live.delete(u);
         if (watchdog) clearTimeout(watchdog);
+        voiceOpts?.onSpeaking?.(false, 0);
         done();
       };
       try {
@@ -260,6 +276,10 @@ export function createNpcVoice(): NpcVoice {
         u.onend = () => finish(u);
         u.onerror = () => finish(u);
         live.add(u);
+        // Announce BEFORE handing the utterance over: the engine can start
+        // making sound synchronously, and a mic gate that closes after the
+        // first syllable has already leaked it.
+        voiceOpts?.onSpeaking?.(true, speechEstimateMs(text));
         synth.speak(u);
         // Engines occasionally drop onend — never let the queue wedge.
         watchdog = setTimeout(() => finish(u), speechEstimateMs(text) * 3 + 4000);
@@ -274,6 +294,9 @@ export function createNpcVoice(): NpcVoice {
         /* ignore */
       }
       live.clear();
+      // A cancelled utterance may never fire onend — release the host's gate
+      // explicitly. Extra `false` edges are harmless (the host only holds).
+      voiceOpts?.onSpeaking?.(false, 0);
     },
   };
 

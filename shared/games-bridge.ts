@@ -244,6 +244,21 @@ export type GameMessage = BridgeMessageBase & (
   | { type: "set_board_options"; options: BoardOption[]; prompt?: string }
   | { type: "clear_board_options" }
   /**
+   * THE GAME IS MAKING SPEECH SOUND right now (its own in-app voice — an NPC
+   * line, a narrator). Send `speaking:true` as the utterance starts and
+   * `speaking:false` when it ends or is cancelled.
+   *
+   * The platform GATES ITS MICROPHONE while this is true: game audio leaves the
+   * same speaker the AAC listens through, so an ungated NPC line is transcribed
+   * as the student speaking and the assistant answers a sentence nobody said.
+   * `ms` (estimated utterance length) bounds the hold, so a lost `false` edge —
+   * the iframe closing mid-line — reopens the mic on its own.
+   *
+   * This is about AUDIO ONLY. It says nothing about what was said; the AI is
+   * not told the line, and no turn is driven either way.
+   */
+  | { type: "game_speech"; speaking: boolean; ms?: number }
+  /**
    * Parse verdict for a `glyph_input`, correlated by `requestId` when one was
    * given. `parsed:false` = the game's engine couldn't make a sentence of it
    * (no in-game effect happened). The platform uses this to decide whether an

@@ -185,8 +185,9 @@ Choosing which tool:
 <when_to_act>
 The TARGET label on the incoming tagged event decides whether to build a board and what kind.
 
-**Build FOLLOW-UPS** when the USER just acted (${T.tagPress}, ${T.tagComposed}):
+**Build FOLLOW-UPS** when the USER just acted (${T.tagPress}, ${T.tagComposed}, or their own SPEECH — \`[${studentName} to AI]\`):
   - Options that continue or clarify what they said.
+  - Their SPEECH is a turn exactly like a press. When the AI's reply to it arrives in the SAME invocation, the reply is the newer beat — but anything they ASKED for is still yours to act on.
   - E.g. they pressed "I want to talk about my day" → "the morning", "something good", "something hard", "more details", plus a \`button_type: "more"\` (see <meta_buttons>).
   - Especially valuable when they're talking to a non-AI person — the buttons let them elaborate further.
 
@@ -206,6 +207,7 @@ The TARGET label on the incoming tagged event decides whether to build a board a
 **"words uncertain" / "words very uncertain" in the tag** — the speech-to-text wasn't sure it heard those words. It never returns silence, so weak audio comes back as a fluent sentence nobody said.
   - Still build reply ${T.button}s (someone probably DID speak), but keep them GENERAL — "what?", "say it again", "yes", "no", "I don't understand" — plus whatever the ongoing topic already supports.
   - Do NOT anchor the board to specifics that appear ONLY in those words. A name, place, or topic that arrives once, uncertain, and fits nothing else in <recent_events> is the likeliest thing to have been misheard — a ${T.button} naming it invites a press that CONFIRMS something that was never said.
+  - EXCEPTION — a REQUEST you can act on. Uncertain words that name a surface you already carry (${availableBoards && availableBoards.length > 0 ? `a <prebuilt_boards> ${T.board}, ` : ""}an app, a website) are not a phantom: a misheard sentence rarely lands on a name that was already on your list. Honor it. An ignored ask costs the user the thing they asked for; a wrong surface costs one press to leave.
 
 **FOLLOW-UPS and REPLIES are different boards.** Don't mix them. If you just produced one and now you're invoked for the other, the new board should answer the new beat — overlap is fine, but the FRAMING is different.
 
@@ -216,7 +218,8 @@ The TARGET label on the incoming tagged event decides whether to build a board a
 
 ${availableBoards && availableBoards.length > 0 ? `**A pre-built ${T.board} that fits beats one you write.** When <prebuilt_boards> holds one for what is happening now, \`set_board(key)\` — it was made for this activity and carries vocabulary you would not invent.
   - Judge fit by the SUBJECT of the conversation, not by phrasing.
-  - Open it once the topic is established — not on a single passing mention (unless that mention specifically requests it), and never when it is already loaded.
+  - **ASKED FOR = LOAD IT.** The user (or anyone in the room) naming a ${T.board} — by key, by name, or by what it is for ("the building board") — is an instruction, not a topic. \`set_board\` on that turn. Do not answer an ask with a ${T.button} that offers what was already requested.
+  - Otherwise open it once the topic is established — not on a single passing mention — and never when it is already loaded.
   - Stay on it while the activity continues. Leave only when the activity is over (rebuild_board unloads it).
   - A \`[CONTEXT]\` update naming a pre-built ${T.board} or its topic is the Observer flagging that the surface is due — it does not load them, you do. Act on it.
 
@@ -573,7 +576,17 @@ export function invocationActionHint(events: AgentEvent[]): string {
   let hasAiSpoke = false;
   let hasContextUpdate = false;
   let hasInterpret = false;
+  // Transcribed speech, split by WHO it was aimed at: the AI (the user's own
+  // spoken turn — the Coordinator only forwards the student's) versus the user
+  // (someone in the room addressing them).
+  let userSpokeToAi = false;
+  let spokenToUser = false;
   for (const e of events) {
+    if (e.type === "transcribed") {
+      const toDevice = (e.target ?? "AI") === "AI" || e.target === "DEVICE";
+      if (toDevice) userSpokeToAi = true;
+      else spokenToUser = true;
+    }
     // A composed SENTENCE is NOT a normal user input — it must be voiced
     // via interpret(), not answered with a follow-up board. Keep it out of
     // hasUserInput so the rebuild_board hint below never wins on this turn.
@@ -603,8 +616,23 @@ export function invocationActionHint(events: AgentEvent[]): string {
   if (hasInterpret) {
     return `Action: rebuild_board. The USER played a composed SENTENCE — build FOLLOW-UPS that continue or clarify the thought they just voiced.${NO_CHANGE_ESCAPE}`;
   }
+  // The user SPOKE and the AI has already answered (both events ride this one
+  // invocation). The AI's line is the newer beat, so the board answers that —
+  // but an ASK inside the user's own words outranks a plain rebuild: it is the
+  // only place a spoken request exists, and nothing else will act on it.
+  if (userSpokeToAi && hasAiSpoke) {
+    return `Action: rebuild_board. The USER spoke to the AI and the AI has just answered — build REPLIES to that answer.
+  - The user's OWN words are in the trigger list above. If they ASKED for a surface you control, honor the ask INSTEAD: \`set_board(key)\` for a ${T.board} in <prebuilt_boards>, or a ${T.button} whose \`open\` launches the app / website.${NO_CHANGE_ESCAPE}`;
+  }
+  if (userSpokeToAi) {
+    return `Action: rebuild_board. The USER just spoke to the AI — build FOLLOW-UPS that continue or clarify what they said.
+  - If they ASKED for a surface you control, honor the ask INSTEAD: \`set_board(key)\` for a ${T.board} in <prebuilt_boards>, or a ${T.button} whose \`open\` launches the app / website.${NO_CHANGE_ESCAPE}`;
+  }
   if (hasAiSpoke) {
     return `Action: rebuild_board. The AI just spoke TO the user — build REPLIES the user might say back. If the AI asked a question, the buttons are the user's plausible answers.${NO_CHANGE_ESCAPE}`;
+  }
+  if (spokenToUser) {
+    return `Action: rebuild_board. Someone in the room spoke TO the user — build REPLIES they might say back.${NO_CHANGE_ESCAPE}`;
   }
   if (hasContextUpdate) {
     return `Action: no_change. Observations don't change what the USER wants to say next — the ${T.board} stays. If the observation is genuinely worth surfacing, use add_context_button to add ONE sidebar item.`;

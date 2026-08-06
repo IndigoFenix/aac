@@ -48,6 +48,7 @@ import {
   cardinalFrom,
   indefiniteArticle,
   inViewSet,
+  singularWord,
   spaceOf,
   visibleSubjects,
   wordFor,
@@ -112,7 +113,12 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
   const travelCapS = deps.travel?.capS ?? TRAVEL_CAP_S;
   const arriveR = deps.travel?.arriveR ?? ARRIVE_R;
   const watchCap = deps.watchCap ?? WATCH_CAP;
-  const index = createSceneIndex({ ...(deps.nameOf ? { nameOf: deps.nameOf } : {}) });
+  const index = createSceneIndex({
+    ...(deps.nameOf ? { nameOf: deps.nameOf } : {}),
+    // A crowd line prints the ruleset's plural, so the ruleset is what turns it
+    // back into the stem the ids are latched under.
+    singularOf: (word) => singularWord(lang, word),
+  });
 
   /** Events the presenter tap recorded since the last drain. */
   const pending: TextEvent[] = [];
@@ -131,6 +137,14 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
 
   /** The CITY HUD, once it has shown (law ⑤'s mirror line). */
   let cityChips: CityChipLike[] = [];
+  /** THE DOLLHOUSE FAMILY HUD, as last pushed (see the `family` tap). */
+  let familyChips: {
+    cid: string;
+    label: string;
+    state: string;
+    present: boolean;
+    selected: boolean;
+  }[] = [];
 
   // ── step ⑧ ────────────────────────────────────────────────────────────────
   const builder: TextBuilder = createTextBuilder({
@@ -199,6 +213,19 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
           selected: i.selected,
         })),
       });
+    },
+    family(members) {
+      // RECORDED, NOT STREAMED. The chips re-push whenever any member's state
+      // changes, which is constantly; a line per push would drown the
+      // transcript. `family` prints them, and the SCENE mirrors nothing —
+      // exactly how a HUD behaves for a sighted player.
+      familyChips = members.map((m) => ({
+        cid: m.id,
+        label: m.label,
+        state: m.state,
+        present: m.present,
+        selected: m.selected,
+      }));
     },
     city(chips) {
       // RECORDED, NEVER ENUMERATED (law ⑤). The cohorts behind these numbers are
@@ -478,7 +505,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
     return [
       {
         tag: "NOTE",
-        text: `about ${city.population} more people live in this city (${districts} districts).`,
+        text: `about ${city.population} more people live in this city (${districts} district${districts === 1 ? "" : "s"}).`,
       },
     ];
   }
@@ -637,10 +664,12 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
     const siteSig = (build?.sites ?? []).map((s) => `${s.id}:${s.stage}`).join("|");
     const out: TextEvent[] = [];
     if (spotSig !== lastSpotSig) {
+      const hadSpots = lastSpotSig !== "" && !lastSpotSig.startsWith("/");
       lastSpotSig = spotSig;
-      // Ground going DARK is worth one line, not an empty block every frame.
+      // Ground going DARK is worth one line — but only when it was LIT, never
+      // as a greeting on the first frame of a world that has no build word up.
       if (build?.spots.length) out.push(...spotEvents());
-      else if (spotSig.startsWith("/")) out.push({ tag: "NOTE", text: "the lit ground goes out." });
+      else if (hadSpots) out.push({ tag: "NOTE", text: "the lit ground goes out." });
     }
     if (siteSig !== lastSiteSig) {
       const had = lastSiteSig;
@@ -648,6 +677,58 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
       if (had) out.push(...siteEvents());
     }
     return out;
+  }
+
+  /**
+   * THE FAMILY HUD, and the ADDRESS it carries. Two things a dollhouse session
+   * is entirely about and text mode could not see: what each member's state is
+   * ("Mara is hungry" — the sentence the whole household loop exists to
+   * produce), and WHOM a spoken order will reach. The chip is a real host
+   * input (`selectFamilyMember`, law ⑥), so addressing here is the same act a
+   * player performs by dwelling on the chip.
+   */
+  function familyEvents(who?: string): TextEvent[] {
+    if (!familyChips.length) {
+      return [{ tag: "NOTE", text: "there is no household here." }];
+    }
+    if (who) {
+      const q = who.trim().toLowerCase();
+      const hit =
+        familyChips.find((c) => c.label.toLowerCase() === q) ??
+        familyChips.find((c) => (index.textIdOf(c.cid) ?? "").toLowerCase() === q) ??
+        familyChips.find((c) => c.label.toLowerCase().startsWith(q));
+      if (!hit) {
+        return [
+          {
+            tag: "ERR",
+            text: `nobody in the household called "${who}". Try: ${familyChips.map((c) => c.label).join(", ")}.`,
+          },
+        ];
+      }
+      if (!deps.host.selectFamilyMember) {
+        return [{ tag: "ERR", text: "this build has no family chip wired." }];
+      }
+      deps.host.selectFamilyMember(hit.cid);
+      return [
+        {
+          tag: "OK",
+          text: hit.selected ? `stopped addressing ${hit.label}.` : `addressing ${hit.label}.`,
+        },
+      ];
+    }
+    return [
+      {
+        tag: "FAMILY",
+        entries: familyChips.map((c) => ({
+          cid: c.cid,
+          textId: index.textIdOf(c.cid) ?? c.label.toLowerCase(),
+          label: c.label,
+          state: c.state,
+          present: c.present,
+          addressed: c.selected,
+        })),
+      },
+    ];
   }
 
   function spotEvents(): TextEvent[] {
@@ -927,6 +1008,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
           "who              — who is in the conversation",
           "board            — reprint the buttons on screen",
           "spots            — the lit ground + what is being built (look <plot-n> aims at it)",
+          "family [who]     — the household's states; with a name, address them",
           "say <words>      — compose and speak (words join with +)",
           "press <n|label>  — press a button by number or caption",
           "more / back      — page the board, or the builder listing",
@@ -1219,6 +1301,8 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
         // Reprinting the ground costs nothing and moves nothing — but the
         // settle keeps the one-TICK-per-command rule intact.
         return frame([...spotEvents(), ...siteEvents(), ...settle()]);
+      case "family":
+        return frame([...familyEvents(cmd.who), ...settle()]);
       case "look": {
         if (!cmd.target) return frame([...sceneEvents(), ...settle()]);
         const evs = lookEvents(cmd.target);

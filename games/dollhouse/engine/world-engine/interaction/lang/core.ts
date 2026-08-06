@@ -721,6 +721,19 @@ export interface GlyphLanguage {
   /** BCP-47 primary subtag ("en", "he"). */
   id: string;
   lexicon: Record<string, Lexeme>;
+  /**
+   * THE RULESET'S REGULAR PLURAL, when it has one — applied to a word the
+   * lexicon gave no explicit `plw`. Authoring `plw` on every noun is the only
+   * alternative, and the words that get missed are exactly the ones a crowd
+   * line counts ("2 bed", "2 box"): a count is generated, so it reaches nouns
+   * nobody thought to mark. `plw` still wins — it is the irregular list.
+   *
+   * Optional on purpose: a ruleset whose plural is not a suffix rule (Hebrew's
+   * gendered pairs, languages with none) leaves it out and keeps the singular,
+   * which is what happens today. English grammar therefore never leaks into
+   * another locale — it lives in the English ruleset, where it belongs.
+   */
+  pluralize?(word: string): string;
   /** Whole-sentence overrides, keyed by normalize(tokens). Wins over frames. */
   fixed: Record<string, string | ((opts: Required<SpeakOpts>) => string)>;
   render(frame: Frame, opts: Required<SpeakOpts>): string;

@@ -4407,22 +4407,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const goal = session.pursuits.get(cid)?.goal;
     if (goal && goal.kind !== "address") {
       const d = goalDestination(goal, intentLineSyms(session, { speaker: cid }));
-      if (d && !isDeicticDest(d)) return RESCUED("reason", d);
+      if (d && !isDeicticDest(d)) return d;
     }
     if (end) {
       const word = pointWord(session, cid, end);
-      if (word) return RESCUED("ground", { kind: "place", place: word });
+      if (word) return { kind: "place", place: word };
     }
     const act = ownActivity(session, cid);
-    return act ? RESCUED("purpose", { kind: "activity", ...act }) : undefined;
-  }
-
-  /** TEMP (remove with the drive log's sign-off): tally which rung of
-   *  `namedGoing` saved an answer that would have been a bare "there" before. */
-  const THERE_TALLY = new Map<string, number>();
-  function RESCUED(rung: string, d: GoingDest): GoingDest {
-    THERE_TALLY.set(rung, (THERE_TALLY.get(rung) ?? 0) + 1);
-    return d;
+    return act ? { kind: "activity", ...act } : undefined;
   }
 
   /** ANY traveling creature's destination — a resident's clock/live errand first, else
@@ -20406,31 +20398,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                     ` tasks=${session.npcTasks.get(avatarIdOf(cid))?.length ?? 0}` +
                     ` drive=${session.lastDrive.get(avatarIdOf(cid)) ?? session.lastDrive.get(cid) ?? "—"}` +
                     ` h=${meter("hunger:food")} e=${meter("energy")} s=${meter("social")} f=${meter("fun")}${why}`,
-                );
-              }
-              // TEMP "there" CENSUS (remove with the fix): what every EMBODIED
-              // creature would answer "where are you going?" with right now —
-              // the population, not just the ones somebody happened to ask.
-              // Bodies only: an abstracted resident has no walk to name.
-              {
-                const tally = new Map<string, number>();
-                for (const cid2 of Object.keys(session.creatures?.world.creatures ?? {})) {
-                  if (!state.avatars[avatarIdOf(cid2)]) continue;
-                  const g = creatureGoing(session, cid2);
-                  const k = !g
-                    ? "(not going)"
-                    : g.kind === "place"
-                      ? `place:${g.place}`
-                      : g.kind === "room"
-                        ? `room:${g.room}`
-                        : g.kind === "fetch"
-                          ? "fetch"
-                          : g.kind;
-                  tally.set(k, (tally.get(k) ?? 0) + 1);
-                }
-                console.log(
-                  `[there-census] ${[...tally.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}=${n}`).join(" ")}` +
-                    ` | rescued ${[...THERE_TALLY.entries()].map(([k, n]) => `${k}=${n}`).join(" ") || "none"}`,
                 );
               }
             }

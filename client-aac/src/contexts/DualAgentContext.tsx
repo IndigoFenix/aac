@@ -1,7 +1,7 @@
 // client-aac/src/contexts/DualAgentContext.tsx
 // Context for the dual-agent AAC system
 
-import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, BinaryChoiceOption, ProcessingState, UseDualAgentReturn } from "@/hooks/dual-agent-types";
 import { STT_ENGINE, STT_MODE } from "@/hooks/dual-agent-types";
 import { analyzeVoicePitch } from "@/lib/voiceFeatures";
@@ -12,6 +12,7 @@ import { useActivityMonitor } from "@/hooks/useActivityMonitor";
 import { useVoiceEngagementSignal } from "@/hooks/useVoiceEngagementSignal";
 import { useBoardAudio } from "@/contexts/BoardAudioContext";
 import { dataFlowForState, type DataFlowConfig } from "@/lib/sleepSystemLogic";
+import { appSpeechHoldUntil } from "@/lib/app-speech-gate";
 import { sustainedVocalization, DEFAULT_VOCAL_CUE, type AudioEnergySample } from "@shared/aac/audio-cue";
 import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
@@ -44,7 +45,7 @@ const SILERO_GATE_THRESHOLD = 0.35;
 const SILERO_PROB_STALE_MS = 500;
 
 /** Current VAD gate state, surfaced to the debug panel. */
-export type PcmGateState = "open" | "vad-blocked" | "off" | "continuous";
+export type PcmGateState = "open" | "vad-blocked" | "off" | "continuous" | "app-speech";
 
 /** Read a Blob as base64 (no data-URL prefix). Returns "" on failure. */
 function blobToBase64(blob: Blob): Promise<string> {
@@ -340,6 +341,17 @@ interface DualAgentContextType {
     import("@/hooks/dual-agent-types").ConstructionStateClient["category"],
     import("@/hooks/dual-agent-types").ConstructionMemoryChipsClient
   >>;
+
+  /**
+   * An EMBEDDED APP is making speech sound through the device's speaker (a
+   * game's own NPC voice — games-bridge `game_speech`). The mic is gated for
+   * the duration exactly as it is for the AAC's own TTS: that audio reaches the
+   * mic, and a transcript of it is attributed to the student.
+   *
+   * `speaking: false` releases the hold; `ms` (estimated utterance length)
+   * bounds it, so a game that dies mid-line can't leave the mic deaf.
+   */
+  noteAppSpeech: (speaking: boolean, ms?: number) => void;
 
   // PCM gating debug (Live API only)
   pcmDebug: {
@@ -674,7 +686,32 @@ function DualAgentProviderInner({
   const languageRef = useRef(language);
   languageRef.current = language;
   // Synchronous "is AI talking" gate — don't embed the AI's own TTS as a voice.
-  const aiBusyRef = liveAgent.isBusyRef;
+  const aiTtsBusyRef = liveAgent.isBusyRef;
+  // An embedded app's OWN voice (a game's NPC lines) plays through the same
+  // speaker but not through our audio player, so isBusyRef never sees it. The
+  // app announces its utterances (games-bridge `game_speech` → noteAppSpeech)
+  // and we hold the mic gate until this deadline. Always a deadline, never a
+  // flag: an app that closes mid-utterance can't strand the mic shut.
+  const appSpeechUntilRef = useRef(0);
+  const noteAppSpeech = useCallback((speaking: boolean, ms?: number) => {
+    appSpeechUntilRef.current = appSpeechHoldUntil(
+      Date.now(),
+      appSpeechUntilRef.current,
+      { speaking, ms },
+    );
+  }, []);
+  const appSpeechActive = useCallback(() => Date.now() < appSpeechUntilRef.current, []);
+  // THE question every gate below actually asks: "is this device making sound
+  // right now?" — our own TTS or an embedded app's. One ref, so a new source of
+  // device audio only has to reach `noteAppSpeech` to be covered everywhere.
+  const deviceAudioBusyRef = useMemo(
+    () => ({
+      get current(): boolean {
+        return !!aiTtsBusyRef?.current || Date.now() < appSpeechUntilRef.current;
+      },
+    }),
+    [aiTtsBusyRef],
+  );
   // Server-resolved: when true, transcribe speech on-device and send text in
   // place of streaming raw audio (cost saving, Phase 1).
   const sttActive = liveAgent.clientConfig?.sttActive ?? false;
@@ -725,9 +762,14 @@ function DualAgentProviderInner({
     const unknownDescriptors = getUnmatchedFaceDescriptorsRef.current?.() || undefined;
     await runDetectionWithGridRef.current(grid, audioClip, unknownDescriptors, triggerReason);
 
-    // Skip clips captured while the AI was talking — that audio is TTS, not a
-    // person, and would poison voice galleries / produce echo transcripts.
-    if (!audioClip || aiBusyRef?.current) return;
+    // Skip clips captured while the DEVICE was talking (our TTS or an embedded
+    // app's voice) — that audio is not a person, and would poison voice
+    // galleries / produce echo transcripts.
+    if (!audioClip || deviceAudioBusyRef.current) return;
+    // This path fires on the SETTLE after speech ended, by which time an app's
+    // utterance hold may already have lapsed — so judge the clip by WHEN it was
+    // captured, not by whether the app is still speaking now.
+    if (meta?.speechStartMs != null && meta.speechStartMs < appSpeechUntilRef.current) return;
 
     // Voice embedding (wavlm) runs OFF the main thread and is INDEPENDENT of
     // transcription. Fire it in parallel and tag the result with `clipId` so the
@@ -738,7 +780,7 @@ function DualAgentProviderInner({
       void (async () => {
         try {
           const desc = await embedVoiceClipRef.current!(audioClip);
-          if (desc && !aiBusyRef?.current) sendVoiceDescriptorsRef.current!([desc], clipId);
+          if (desc && !deviceAudioBusyRef.current) sendVoiceDescriptorsRef.current!([desc], clipId);
         } catch { /* voice ID is non-critical */ }
       })();
     };
@@ -761,7 +803,7 @@ function DualAgentProviderInner({
             blobToBase64(audioClip),
             analyzeVoicePitch(audioClip).catch(() => null),
           ]);
-          if (base64 && !aiBusyRef?.current) {
+          if (base64 && !deviceAudioBusyRef.current) {
             const lipActivity = (meta?.speechStartMs && meta?.speechEndMs)
               ? getLipActivityRef.current?.(meta.speechStartMs, meta.speechEndMs)
               : undefined;
@@ -781,7 +823,7 @@ function DualAgentProviderInner({
         // Whisper path (plumbing kept): transcribe on-device, send the text.
         try {
           const result = await transcribeSpeechRef.current(audioClip);
-          if (result?.text && !aiBusyRef?.current) {
+          if (result?.text && !deviceAudioBusyRef.current) {
             setLastSttTranscript({ text: result.text, confidence: result.confidence, at: Date.now() });
             sendSpeechTextRef.current({ text: result.text, confidence: result.confidence, clipId });
           }
@@ -791,16 +833,34 @@ function DualAgentProviderInner({
       // Not in STT mode — voice ID only (ambient [VOICES HEARD]), no clip sync.
       runVoiceId();
     }
-  }, [aiBusyRef, rememberAudioClip]);
+  }, [deviceAudioBusyRef, rememberAudioClip]);
 
   // Streaming STT (Web-Speech-like). The PCM is streamed during speech by
   // useActivityMonitor; these just forward start/chunk to the server.
+  //
+  // GATED ON DEVICE AUDIO. A stream that opens while an embedded app is
+  // speaking exists BECAUSE of that audio — the VAD heard the game, not a
+  // person — so it is never opened, and its whole episode is suppressed
+  // (streamId remembered, so the trailing chunks and the end/clip that follow
+  // don't resurrect it server-side as a transcript attributed to the student).
+  const suppressedSttStreamsRef = useRef<Set<string>>(new Set());
   const handleSttStreamStart = useCallback((streamId: string) => {
+    if (appSpeechActive()) {
+      const suppressed = suppressedSttStreamsRef.current;
+      suppressed.add(streamId);
+      // The set only ever holds live episodes; keep it from growing if an end
+      // event is ever missed.
+      if (suppressed.size > 8) suppressed.delete(suppressed.values().next().value!);
+      return;
+    }
     sendSttStreamStartRef.current?.(streamId, languageRef.current);
-  }, []);
+  }, [appSpeechActive]);
   const handleSttStreamChunk = useCallback((streamId: string, data: string) => {
+    // Mid-episode app speech: hold the rest back rather than letting the game's
+    // words tail onto a person's sentence.
+    if (suppressedSttStreamsRef.current.has(streamId) || appSpeechActive()) return;
     sendSttStreamChunkRef.current?.(streamId, data);
-  }, []);
+  }, [appSpeechActive]);
 
   // Speech ended (streaming mode): compute the speaker evidence from the clip
   // and finalize the stream. acoustic + lip ride WITH stt_stream_end so they
@@ -808,14 +868,17 @@ function DualAgentProviderInner({
   // parallel (tagged streamId) for [VOICES HEARD] + the slow read. Always closes
   // the stream (even while the AI is talking) so the server session can't leak.
   const handleSpeechEndClip = useCallback(async (streamId: string, clip: Blob | null, startMs: number, endMs: number) => {
-    if (aiBusyRef?.current) { sendSttStreamEndRef.current?.(streamId); return; }
+    // A suppressed episode was never opened server-side — close nothing, send
+    // nothing (an end for an unknown stream is what would create it).
+    if (suppressedSttStreamsRef.current.delete(streamId)) return;
+    if (deviceAudioBusyRef.current) { sendSttStreamEndRef.current?.(streamId); return; }
     if (clip) {
       rememberAudioClip(streamId, clip);
       if (embedVoiceClipRef.current && sendVoiceDescriptorsRef.current) {
         void (async () => {
           try {
             const desc = await embedVoiceClipRef.current!(clip);
-            if (desc && !aiBusyRef?.current) sendVoiceDescriptorsRef.current!([desc], streamId);
+            if (desc && !deviceAudioBusyRef.current) sendVoiceDescriptorsRef.current!([desc], streamId);
           } catch { /* voice ID non-critical */ }
         })();
       }
@@ -827,7 +890,7 @@ function DualAgentProviderInner({
       acoustic: acoustic ?? undefined,
       lipActivity: lipActivity && lipActivity.length ? lipActivity : undefined,
     });
-  }, [aiBusyRef, rememberAudioClip]);
+  }, [deviceAudioBusyRef, rememberAudioClip]);
 
   // Mic stream lifecycle. Each activate/deactivate transition is reported to the
   // server (sendMicState) purely for diagnostics — the server logs it to the
@@ -919,13 +982,14 @@ function DualAgentProviderInner({
   // Latest Silero speech probability from the activity monitor's neural VAD.
   // Preferred over the decayed engagement contributions for the PCM gate (an
   // instantaneous "is someone speaking now" reading) and fed to the sleep
-  // system's voice signal. Not updated while the AI is talking, so TTS echo
-  // can't register as voice — the ref goes stale and consumers fall back.
+  // system's voice signal. Not updated while the DEVICE is talking (our TTS or
+  // an embedded app's voice), so that audio can't register as a person — the
+  // ref goes stale and consumers fall back.
   const sileroProbRef = useRef({ prob: 0, at: 0 });
   const handleSpeechProb = useCallback((prob: number) => {
-    if (liveAgent.isBusyRef?.current) return;
+    if (deviceAudioBusyRef.current) return;
     sileroProbRef.current = { prob, at: Date.now() };
-  }, [liveAgent.isBusyRef]);
+  }, [deviceAudioBusyRef]);
 
   // Sleep system data-flow gating for PCM (and downstream consumers).
   // Refs are updated on every state/score change; handlePcmChunk reads them
@@ -946,6 +1010,16 @@ function DualAgentProviderInner({
   const handlePcmChunk = useCallback((int16Base64: string) => {
     if (liveAgent.paused) return;
     const now = Date.now();
+
+    // An embedded app is speaking through the device's own speaker. Unlike our
+    // TTS (which Gemini's echo handling knows about), this audio arrives as if
+    // a person in the room said it — so it is DROPPED, not merely counted.
+    if (appSpeechActive()) {
+      pcmGatedCountRef.current++;
+      gateStateRef.current = "app-speech";
+      vadGateOpenRef.current = false;
+      return;
+    }
 
     // VAD gate decision. A fresh Silero probability wins — an instantaneous
     // "is someone speaking now" reading, where the engagement contributions
@@ -1000,9 +1074,10 @@ function DualAgentProviderInner({
     }
 
     // Send one chunk, applying the count-only echo gate (mic is still streamed
-    // while TTS plays — this only tallies the overlap for diagnostics).
+    // while OUR TTS plays — this only tallies the overlap for diagnostics; an
+    // embedded app's speech is dropped outright at the top of this callback).
     const emit = (data: string) => {
-      if (liveAgent.isBusyRef?.current) pcmGatedCountRef.current++;
+      if (aiTtsBusyRef?.current) pcmGatedCountRef.current++;
       else pcmSentCountRef.current++;
       sendPcmAudioRef.current?.(data);
     };
@@ -1081,7 +1156,7 @@ function DualAgentProviderInner({
     }
     buffered.length = 0;
     gateStateRef.current = "open";
-  }, [liveAgent.isBusyRef, liveAgent.paused]);
+  }, [aiTtsBusyRef, appSpeechActive, liveAgent.paused]);
 
   // Cancel any pending paced PCM sends on unmount.
   useEffect(() => {
@@ -1093,7 +1168,7 @@ function DualAgentProviderInner({
   useEffect(() => {
     const id = setInterval(() => {
       setPcmDebug({
-        audioBusy: !!liveAgent.isBusyRef?.current,
+        audioBusy: deviceAudioBusyRef.current,
         isPlaying: liveAgent.isPlaying,
         sentCount: pcmSentCountRef.current,
         gatedCount: pcmGatedCountRef.current,
@@ -1104,7 +1179,7 @@ function DualAgentProviderInner({
       });
     }, 200);
     return () => clearInterval(id);
-  }, [liveAgent.isBusyRef, liveAgent.isPlaying]);
+  }, [deviceAudioBusyRef, liveAgent.isPlaying]);
 
   const activityMonitor = useActivityMonitor({
     enabled: (liveAgent.videoCaptureEnabled || liveAgent.voiceEnabled) && liveAgent.isInitialized && !!liveAgent.sessionId && !liveAgent.paused,
@@ -1158,7 +1233,9 @@ function DualAgentProviderInner({
   const pushNoiseSignal = useCallback((intensity: number) => {
     attentiveness?.pushSignal("noise", intensity);
   }, [attentiveness]);
-  const aiPlayingRef = liveAgent.isBusyRef ?? { current: false };
+  // Device audio (our TTS or an embedded app's voice) is not a person in the
+  // room — it must never read as voice engagement.
+  const aiPlayingRef = deviceAudioBusyRef;
   useVoiceEngagementSignal({
     enabled: !!attentiveness && liveAgent.voiceEnabled && liveAgent.isInitialized && !!liveAgent.sessionId && !liveAgent.paused,
     micStream,
@@ -1410,6 +1487,7 @@ function DualAgentProviderInner({
       getFaceImage={getFaceImageProp ?? (() => null)}
       activityMonitor={activityMonitor}
       pcmDebug={pcmDebug}
+      noteAppSpeech={noteAppSpeech}
       micActive={micStream !== null}
       lastSttTranscript={lastSttTranscript}
       sessionAsleep={sessionAsleep}
@@ -1465,6 +1543,9 @@ interface ProviderShellProps {
     noiseLevel: number;
     recoveredCount: number;
   };
+  /** Mic hold for an embedded app's own speech — see the context type. Absent
+   *  in shells that host no apps (the call ferry), where it no-ops. */
+  noteAppSpeech?: (speaking: boolean, ms?: number) => void;
   micActive: boolean;
   lastSttTranscript?: { text: string; confidence: number; at: number } | null;
   /** SLP MODE header control — current state + toggle. Computed in the outer
@@ -1500,6 +1581,7 @@ function ProviderShell({
   getFaceImage,
   activityMonitor,
   pcmDebug: pcmDebugProp,
+  noteAppSpeech: noteAppSpeechProp,
   micActive,
   lastSttTranscript,
   sessionAsleep,
@@ -1680,6 +1762,8 @@ function ProviderShell({
     sendConstructionState: agent.sendConstructionState ?? (() => { /* live API not available */ }),
     constructionSuggestions: agent.constructionSuggestions ?? null,
     constructionMemoryChips: agent.constructionMemoryChips ?? {},
+
+    noteAppSpeech: noteAppSpeechProp ?? (() => { /* no mic to gate in this shell */ }),
 
     pcmDebug: pcmDebugProp ?? {
       audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0,

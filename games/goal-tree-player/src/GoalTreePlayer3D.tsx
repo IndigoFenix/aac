@@ -22,6 +22,7 @@ import {
   type QuestHost3D,
   type QuestSession,
 } from "@shared/world-engine/interaction/quest/quest-host";
+import { createNpcVoice } from "@shared/world-engine/npc-voice";
 import { buildTownPlay, isTownPlayPayload } from "@shared/world-engine/interaction/town/town-play";
 import { playerImageResolver } from "./glyph-resolver";
 import {
@@ -253,6 +254,15 @@ export default function GoalTreePlayer3D() {
       canvas,
       presenter: makePresenter(),
       resolveImage: playerImageResolver,
+      // The same voice the host would build on its own, plus an ANNOUNCEMENT of
+      // every utterance: this speech leaves the device's speaker, which the
+      // AAC's microphone is listening through, and an ungated creature line
+      // comes back as a transcript attributed to the student. The platform
+      // gates its mic on these edges (games-bridge `game_speech`); standalone
+      // play sends into the void.
+      voice: createNpcVoice({
+        onSpeaking: (speaking, ms) => sendToParent({ type: "game_speech", speaking, ms }),
+      }),
       // Keep the dwell-driven HUD buttons live on a still pointer.
       onFrame: () => {
         const p = lastClientRef.current;

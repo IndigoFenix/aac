@@ -207,6 +207,23 @@ export interface TextSiteEntry {
   distance: number;
 }
 
+/** One family chip, in words. `state` is the HUD's own stable key (`hungry`,
+ *  `playing`, `commanded`) — narrated, never re-derived. */
+export interface TextFamilyEntry {
+  /** The creature id the chip addresses (`resident_<house>_<n>`). */
+  cid: string;
+  /** The latched text id, so the driver can `look`/`watch` them by the same
+   *  name the scene uses. */
+  textId: string;
+  label: string;
+  state: string;
+  /** Embodied right now? False = out of the streamed world (working, shopping)
+   *  — the HUD dims the chip rather than letting the member silently vanish. */
+  present: boolean;
+  /** This member is the one spoken orders go to. */
+  addressed: boolean;
+}
+
 export interface SceneEntry {
   kind: "subject" | "group" | "place" | "place-group";
   /** Named entries only. */
@@ -338,6 +355,12 @@ export type TextEvent =
   | { tag: "SPOT"; entries: TextSpotEntry[]; focused?: string }
   /** ⑦ — construction under way, as the site marks the renderer draws. */
   | { tag: "SITE"; entries: TextSiteEntry[] }
+  /** THE DOLLHOUSE FAMILY HUD, as the presenter pushed it — one chip per
+   *  household member: the state emoji a player reads at a glance, whether the
+   *  body is present, and which member is ADDRESSED (spoken orders go there).
+   *  The state is the whole point: "Mara is hungry" is the sentence a dollhouse
+   *  session is about, and it is on screen for a sighted player at all times. */
+  | { tag: "FAMILY"; entries: TextFamilyEntry[] }
   // ── control ──────────────────────────────────────────────────────────────
   | { tag: "OK"; text: string }
   | { tag: "ERR"; text: string }
@@ -375,6 +398,9 @@ export type TextCommand =
   | { kind: "board" }
   /** ⑦ — reprint the lit ground (the build word's real surface). */
   | { kind: "spots" }
+  /** The dollhouse family HUD. Bare = print it; with a name = ADDRESS that
+   *  member (the chip tap), which is what spoken orders then go to. */
+  | { kind: "family"; who?: string }
   /** Words are joined with " + " into one composed glyph sentence. */
   | { kind: "say"; words: string[] }
   /** By 1-based number OR by label; chrome is pressable either way. */
@@ -469,6 +495,11 @@ export interface TextSessionDeps {
      *  is a type-only reference — `player-action.ts` is pure and
      *  dependency-free, so naming its union costs this module nothing. */
     perform?(action: PlayerAction): void;
+    /** THE FAMILY CHIP, TAPPED (quest-host `selectFamilyMember`) — the
+     *  dollhouse's own way to say WHOM a spoken order is for, and a stable
+     *  target because a moving body is hard to dwell on. Optional: a world
+     *  with no household never pushes chips and never needs it. */
+    selectFamilyMember?(cid: string): void;
   };
   view: TextViewLike;
   /** Advance EXACTLY one fixed frame. The boot owns the clock (§5). */

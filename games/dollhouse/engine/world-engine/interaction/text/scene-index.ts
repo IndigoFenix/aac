@@ -32,6 +32,10 @@ export type SceneResolution =
 export interface SceneIndexDeps {
   /** A body's known proper name, when the session knows one. */
   nameOf?: (simId: string) => string | undefined;
+  /** The SINGULAR behind a printed plural ("people" → "person"), from the
+   *  ruleset that printed it. Lets a driver type back the word the crowd line
+   *  used; absent = only the singular stem resolves. */
+  singularOf?: (word: string) => string | undefined;
 }
 
 export interface SceneIndex {
@@ -123,6 +127,20 @@ export function createSceneIndex(deps: SceneIndexDeps = {}): SceneIndex {
       const hits: string[] = [];
       for (const [textId, simId] of bySlug) {
         if (textId === q || textId.startsWith(`${q}-`)) hits.push(simId);
+      }
+      // THE WORD A CROWD LINE PRINTED IS A HANDLE. The scene says "3 people,
+      // here west" and a driver naturally types `look people` — which matched
+      // nothing, because the ids are latched under the SINGULAR stem. The
+      // printed word must resolve, or the scene is naming things the driver
+      // cannot ask about. (Consulted only after the exact/stem passes miss, so
+      // an id always wins over a plural that happens to look like one.)
+      if (!hits.length) {
+        const singular = deps.singularOf?.(q);
+        if (singular && singular !== q) {
+          for (const [textId, simId] of bySlug) {
+            if (textId === singular || textId.startsWith(`${singular}-`)) hits.push(simId);
+          }
+        }
       }
       if (hits.length === 1) return { kind: "one", id: hits[0]!, textId: bySim.get(hits[0]!)! };
       if (hits.length > 1) return { kind: "many", ids: hits };

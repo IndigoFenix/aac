@@ -239,6 +239,7 @@ import {
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import { smartMergeButtons, sameBoard, type MergeButton } from "./board-merge";
 import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER, PARTY_UNKNOWN } from "./speech-party";
+import { userSpeechDrivesBoard, speakerReplyTriggers } from "./speech-board-trigger";
 import { assessStudentTranscript, isVerbalAbility, type VerbalAbility } from "@shared/aac/verbal-ability";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
@@ -5397,6 +5398,19 @@ export class AgentCoordinator {
         this.socialPeer ? `[USER to YOU] "${event.text}"` : rendered,
       );
       this.appendToConversationLog("user", rendered);
+      // The user just spoke TO the AI — the spoken twin of a DEVICE-targeted
+      // press, so BoardManager gets the same DEFERRED invocation a press gets
+      // (Speaker's reply supersedes it and carries this turn along; the timer
+      // covers a Speaker that stays silent). Without this the one agent that
+      // owns the surface never hears a spoken request ("open my building
+      // board") — it only ever saw the Speaker's paraphrase, tagged
+      // [AI to USER], which reads as "build replies" and not as an ask.
+      //
+      // Only the STUDENT's own speech moves their board — see
+      // speech-board-trigger.ts for who qualifies and why.
+      if (userSpeechDrivesBoard(event, this.currentStudentFullName, this.currentStudentName)) {
+        this.scheduleDeferredBoardMgr(event, "user speech");
+      }
     } else {
       // Either USER-targeted or 3rd-party / UNKNOWN. Speaker sees it as
       // context only — it doesn't respond unless directly addressed.
@@ -6737,7 +6751,18 @@ export class AgentCoordinator {
     // Speaker replied — supersede any deferred press-triggered BM
     // invocation. REPLIES (built from this event) is more current than
     // FOLLOW-UPS (built from the press) for an AI-targeted press.
-    this.clearDeferredBoardMgr("speech_text_finalized supersedes press");
+    //
+    // A deferred USER-SPEECH trigger rides ALONG instead of being dropped.
+    // What the user actually said is the only place a spoken request lives,
+    // and the Speaker's paraphrase is not a reliable carrier of it ("board for
+    // building" came back as "A building board! Great, what shall we add?" and
+    // the board never loaded). Both events reach BM in ONE invocation, so
+    // nothing extra is spent. A press needs no such carry — it is the board's
+    // own last action and BM already sees it in <recent_events>.
+    const triggers = speakerReplyTriggers(
+      this.takeDeferredBoardMgrTrigger("speech_text_finalized supersedes it"),
+      event,
+    );
     // If a BM call is already running, its in-flight context is older
     // than the speech that just landed. Abort it: the queued invocation
     // we're about to fire will run with this new speech as trigger, so
@@ -6746,7 +6771,7 @@ export class AgentCoordinator {
       flowNote("BOARD_MGR", "Aborting in-flight invocation — newer speech_text_finalized supersedes.");
       this.boardMgrAbortController.abort();
     }
-    this.invokeBoardManager([event]);
+    this.invokeBoardManager(triggers);
   }
 
   private onSpeakerSpeechEnd(event: SpeechEndEvent): void {
@@ -8557,14 +8582,25 @@ export class AgentCoordinator {
     }, AgentCoordinator.DEFERRED_BM_PRESS_MS);
   }
 
-  /** Cancel a scheduled deferred BM invocation. Called when something
-   *  supersedes it (Speaker replies, profile transition, new press, etc.). */
-  private clearDeferredBoardMgr(reason: string): void {
-    if (!this.deferredBoardMgrTimer) return;
+  /** Cancel a scheduled deferred BM invocation and HAND BACK its trigger, so a
+   *  caller that is about to invoke BM anyway can carry the superseded beat
+   *  into that invocation instead of losing it. Returns null when nothing was
+   *  scheduled. */
+  private takeDeferredBoardMgrTrigger(reason: string): AgentEvent | null {
+    if (!this.deferredBoardMgrTimer) return null;
     clearTimeout(this.deferredBoardMgrTimer);
     this.deferredBoardMgrTimer = null;
+    const trigger = this.deferredBoardMgrTrigger;
     this.deferredBoardMgrTrigger = null;
     flowNote("BOARD_MGR", `Deferred press cleared: ${reason}`);
+    return trigger;
+  }
+
+  /** Cancel a scheduled deferred BM invocation. Called when something
+   *  supersedes it (profile transition, new press, etc.) and the trigger has
+   *  nowhere to go. */
+  private clearDeferredBoardMgr(reason: string): void {
+    this.takeDeferredBoardMgrTrigger(reason);
   }
 
   /** The register the BoardManager should shape its palette for. A live social-

@@ -27,6 +27,7 @@ export const TEXT_COMMANDS: readonly string[] = [
   "self",
   "board",
   "spots",
+  "family",
   "say",
   "press",
   "more",
@@ -118,6 +119,10 @@ export function parseCommand(input: string): TextParseResult {
       return { kind: "board" };
     case "spots":
       return { kind: "spots" };
+    case "family": {
+      const who = rest.join(" ").trim();
+      return { kind: "family", ...(who ? { who } : {}) };
+    }
     case "say": {
       // The words are the driver's own composition; `+` is optional sugar so a
       // pasted glyph sentence ("want + apple") parses identically to "want apple".
