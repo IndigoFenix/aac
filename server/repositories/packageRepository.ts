@@ -50,7 +50,6 @@ const BOARD_METADATA = {
   language: boards.language,
   automaticSelection: boards.automaticSelection,
   automaticSelectionHint: boards.automaticSelectionHint,
-  restSpace: boards.restSpace,
   isGenerated: boards.isGenerated,
   scope: boards.scope,
   instituteId: boards.instituteId,
@@ -168,6 +167,36 @@ export class PackageRepository {
       .where(eq(packageBoards.packageId, packageId))
       .orderBy(asc(packageBoards.sortOrder), asc(boards.name));
     return rows as PackageBoardEntry[];
+  }
+
+  /**
+   * The boards of MANY packages in one query, keyed by package id — the board
+   * picker renders a section per package and would otherwise fire one query per
+   * section. Packages with no boards are absent from the map.
+   */
+  async listBoardsForPackages(packageIds: string[]): Promise<Map<string, PackageBoardEntry[]>> {
+    const out = new Map<string, PackageBoardEntry[]>();
+    if (packageIds.length === 0) return out;
+
+    const rows = await db
+      .select({
+        ...BOARD_METADATA,
+        packageId: packageBoards.packageId,
+        membershipId: packageBoards.id,
+        autoLoad: packageBoards.autoLoad,
+        sortOrder: packageBoards.sortOrder,
+      })
+      .from(packageBoards)
+      .innerJoin(boards, eq(packageBoards.boardId, boards.id))
+      .where(inArray(packageBoards.packageId, packageIds))
+      .orderBy(asc(packageBoards.sortOrder), asc(boards.name));
+
+    for (const { packageId, ...entry } of rows) {
+      const list = out.get(packageId) ?? [];
+      list.push(entry as PackageBoardEntry);
+      out.set(packageId, list);
+    }
+    return out;
   }
 
   /** Just the board ids, for validation (sibling links) and key building. */
@@ -379,6 +408,29 @@ export class PackageRepository {
     return row;
   }
 
+  /**
+   * Take a board OFF its student and hand it to the institute as package
+   * content, in place.
+   *
+   * The counterpart to {@link promoteBoardToPackageScope} for a board that does
+   * belong to a child. It is a real loss for that child — the board leaves
+   * their device — so the caller must have been told exactly that and have
+   * chosen it over the copy; see `detachFromStudent` in PackageController.
+   * `studentId` is nulled in the same statement that sets the scope, because
+   * the CHECK constraint refuses a package board that still has a student.
+   */
+  async moveStudentBoardToPackageScope(
+    boardId: string,
+    instituteId: string,
+  ): Promise<Board | undefined> {
+    const [row] = await db
+      .update(boards)
+      .set({ studentId: null, scope: "package", instituteId, updatedAt: new Date() })
+      .where(eq(boards.id, boardId))
+      .returning();
+    return row;
+  }
+
   /** Copy a board's content into a new package-scoped board owned by `instituteId`. */
   async copyBoardIntoPackageScope(
     source: Board,
@@ -400,7 +452,6 @@ export class PackageRepository {
         language: source.language,
         automaticSelection: source.automaticSelection,
         automaticSelectionHint: source.automaticSelectionHint,
-        restSpace: source.restSpace,
         isGenerated: false,
       })
       .returning();

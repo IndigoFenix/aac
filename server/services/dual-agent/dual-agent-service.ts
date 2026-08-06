@@ -108,6 +108,21 @@ function computeAge(birthDate: string | Date | null | undefined): string | undef
 }
 
 /**
+ * A board's cover art, in the two forms the AAC device can render: an emoji
+ * `iconRef` or an image `symbolPath`. Mirrored onto `availableBoards` so a
+ * board-launch button (`open.board`) can wear the board's own icon instead of
+ * an invented one. The cover lives inside the IR blob, not as a column.
+ */
+function boardCoverFromIr(irData: unknown): { iconRef?: string; symbolPath?: string } | undefined {
+  const cover = (irData as { coverImage?: { iconRef?: unknown; symbolPath?: unknown } } | null)?.coverImage;
+  if (!cover) return undefined;
+  const iconRef = typeof cover.iconRef === "string" && cover.iconRef.trim() ? cover.iconRef : undefined;
+  const symbolPath = typeof cover.symbolPath === "string" && cover.symbolPath.trim() ? cover.symbolPath : undefined;
+  if (!iconRef && !symbolPath) return undefined;
+  return { ...(iconRef ? { iconRef } : {}), ...(symbolPath ? { symbolPath } : {}) };
+}
+
+/**
  * Cache for active dual-agent sessions
  * Key: sessionId, Value: session state and agents
  */
@@ -619,7 +634,7 @@ export class DualAgentService {
         const mapped = boards.map(b => {
           const irData = b.irData as any;
           const grid = irData?.grid || { rows: 3, cols: 4 };
-          return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid };
+          return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid, coverImage: boardCoverFromIr(irData) };
         });
         logLiveSession("AVAILABLE_BOARDS", `loaded ${mapped.length} auto-selectable board(s) (createNewSession, user=${userId} student=${studentId}) — [${mapped.map(b => b.key).join(", ")}]`);
         return mapped;
@@ -981,7 +996,7 @@ export class DualAgentService {
           state.availableBoards = boards.map(b => {
             const irData = b.irData as any;
             const grid = irData?.grid || { rows: 3, cols: 4 };
-            return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid };
+            return { id: b.id, key: keys.get(b.id)!, name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, packageName: b.packageName, grid, coverImage: boardCoverFromIr(irData) };
           });
           logLiveSession("AVAILABLE_BOARDS", `loaded ${state.availableBoards.length} auto-selectable board(s) (loadSessionFromDB, user=${state.userId} student=${state.studentId}) — [${state.availableBoards.map(b => b.key).join(", ")}]`);
         } catch (err) {
@@ -1552,6 +1567,7 @@ export class DualAgentService {
             hint: hint || undefined,
             isGenerated: true,
             grid: boardGrid,
+            coverImage: boardCoverFromIr(irData),
           };
 
           if (!state.availableBoards) state.availableBoards = [];

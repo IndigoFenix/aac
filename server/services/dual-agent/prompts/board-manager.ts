@@ -335,6 +335,8 @@ Pre-built ${T.board}s available via set_board(board_key). Always pass the KEY (t
 The text after each name is the author's note on WHEN to open it — written by a parent or clinician, not by a prompt author, so read it GENEROUSLY:
   - If the note is a bare TOPIC or activity ("buying ice cream", "mealtimes", "the balloon story") rather than a condition. Read it as "open this when THAT is what's going on".
   - If the note is simply a description of the board's contents, open it when that subject is relevant to the conversation or scene.
+  - Always display the board if the user or an authority explicitly requests it, even if the note doesn't match the current context.
+  - **If you are UNSURE, OFFER the board instead of loading it: give a normal ${T.button} \`open\` = \`{ board: "<key>" }\`.** Pressing it loads that ${T.board}, so the user decides. See <board_buttons>.
 
 ${lines.join("\n")}`;
     if (dropped > 0) {
@@ -347,7 +349,23 @@ ${lines.join("\n")}`;
   - Navigate sub-pages via press_button(label).
   - Calling rebuild_board() unloads the custom ${T.board} entirely.`;
     }
-    prompt += `\n</prebuilt_boards>`;
+    prompt += `\n</prebuilt_boards>
+
+<board_buttons>
+You have TWO ways to put a pre-built ${T.board} on screen. Both take the same KEY.
+
+  - \`set_board(key)\` — LOAD it now. Use when the activity is clearly underway, or someone asked for it.
+  - A ${T.button} with \`open: { board: "<key>" }\` — OFFER it. Pressing it loads that ${T.board}; nothing is voiced.
+
+**Offer when you're not sure the moment has arrived.** A ${T.button} costs the user one press and can be ignored; loading the wrong ${T.board} takes their words away mid-conversation.
+  - Topic mentioned once, in passing → OFFER.
+  - Topic is now what the conversation is about → \`set_board\`.
+  - The user might want to move on to that activity → OFFER, alongside your normal reply ${T.button}s.
+
+Write it like any other ${T.button}: first-person \`speech\` for the intent ("I want to talk about my day"), a \`label\`, and a \`glyph\` that depicts the TOPIC — or omit the glyph to use the ${T.board}'s own icon.
+  - Keep it to ONE or TWO board ${T.button}s — the rest of the ${T.board} is still the user's words.
+  - Never offer the ${T.board} that is already loaded.
+</board_buttons>`;
   }
 
   const appList = [
@@ -748,8 +766,11 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     case "board_load_requested":
       // BoardManager's own past set_board call. Render in the same
       // `[YOU] tool(args)` shape as the other own-action lines so it
-      // can see what surface it just loaded.
-      return `[YOU] set_board("${event.boardKey}")`;
+      // can see what surface it just loaded. A `client` source is the USER
+      // pressing a board-launch button — attribute it to them, not to you.
+      return event.source === "client"
+        ? `[USER] opened the pre-built ${T.board} "${event.boardKey}" (pressed a ${T.button} you offered)`
+        : `[YOU] set_board("${event.boardKey}")`;
     default: {
       const exhaustive: never = event;
       void exhaustive;
@@ -940,24 +961,30 @@ interface ButtonSchemaOpts {
   includeGuessingFields?: boolean;
   includeMetaButtonField?: boolean;
   /** When present + non-empty, exposes an `open` field so the button LAUNCHES
-   *  an app/website on press instead of voicing speech. Lists constrain the AI
-   *  to the permitted targets; the coordinator re-gates server-side. */
+   *  an app/website/pre-built board on press instead of voicing speech. Lists
+   *  constrain the AI to the permitted targets; the coordinator re-gates
+   *  server-side. */
   openTargets?: {
     websites: Array<{ url: string; label: string }>;
     apps: Array<{ id: string; name: string }>;
+    /** Pre-built board KEYS. Not enumerated in the description — they are
+     *  already listed with their names + author hints in <prebuilt_boards>,
+     *  and this schema is inlined on every button of every rebuild. */
+    boards: string[];
   };
 }
 
 /** Build the `openTargets` for buttonObjectSchema from a tool config — flattens
- *  permitted websites (incl. subpages) and the enabled-app list. Returns
- *  undefined when there's nothing launchable, so the `open` field stays off the
- *  schema entirely. */
+ *  permitted websites (incl. subpages), the enabled-app list, and the pre-built
+ *  board keys. Returns undefined when there's nothing launchable, so the `open`
+ *  field stays off the schema entirely. */
 function openTargetsFromConfig(config: BoardManagerToolConfig): ButtonSchemaOpts["openTargets"] | undefined {
   const websites = (config.permittedWebsites ? flattenPermittedWebsites(config.permittedWebsites) : [])
     .map(w => ({ url: w.url, label: w.label }));
   const apps = config.enabledApps ?? [];
-  if (websites.length === 0 && apps.length === 0) return undefined;
-  return { websites, apps };
+  const boards = config.availableBoards.map(b => b.key);
+  if (websites.length === 0 && apps.length === 0 && boards.length === 0) return undefined;
+  return { websites, apps, boards };
 }
 
 function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown> {
@@ -999,8 +1026,8 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
     },
   };
 
-  if (opts.openTargets && (opts.openTargets.websites.length > 0 || opts.openTargets.apps.length > 0)) {
-    const { websites, apps } = opts.openTargets;
+  if (opts.openTargets && (opts.openTargets.websites.length > 0 || opts.openTargets.apps.length > 0 || opts.openTargets.boards.length > 0)) {
+    const { websites, apps, boards } = opts.openTargets;
     const allowed: string[] = [];
     if (websites.length > 0) {
       allowed.push(`WEBSITES — ${websites.map(w => `"${w.url}"${w.label ? ` (${w.label})` : ""}`).join(", ")}`);
@@ -1008,12 +1035,21 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
     if (apps.length > 0) {
       allowed.push(`APPS — ${apps.map(a => `"${a.id}"${a.name ? ` (${a.name})` : ""}`).join(", ")}`);
     }
+    if (boards.length > 0) {
+      allowed.push(`PRE-BUILT ${T.board}S — the keys listed in <prebuilt_boards>`);
+    }
+    const oneOf = [
+      ...(websites.length > 0 ? ["`website`"] : []),
+      ...(apps.length > 0 ? ["`app`"] : []),
+      ...(boards.length > 0 ? ["`board`"] : []),
+    ].join(" / ");
     properties.open = {
       type: "object",
-      description: `OPTIONAL. Makes this ${T.button} LAUNCH an app or website when pressed, instead of voicing \`speech\`. Set EXACTLY ONE of \`website\` / \`app\`. Still fill \`speech\`/\`label\`/\`glyph\` normally — write \`speech\` as the user's first-person intent for the action (e.g. "I want to read my book"). Only these targets are permitted: ${allowed.join("; ")}. Any other value is dropped.`,
+      description: `OPTIONAL. Makes this ${T.button} OPEN something when pressed, instead of voicing \`speech\`. Set EXACTLY ONE of ${oneOf}. Still fill \`speech\`/\`label\`/\`glyph\` normally — write \`speech\` as the user's first-person intent for the action (e.g. "I want to read my book"). Only these targets are permitted: ${allowed.join("; ")}. Any other value is dropped.`,
       properties: {
-        website: { type: "string", description: `A permitted website URL to open in the browser (one of the listed WEBSITES, or a subpage of one).` },
-        app: { type: "string", description: `An app id to launch (one of the listed APPS).` },
+        ...(websites.length > 0 ? { website: { type: "string", description: `A permitted website URL to open in the browser (one of the listed WEBSITES, or a subpage of one).` } } : {}),
+        ...(apps.length > 0 ? { app: { type: "string", description: `An app id to launch (one of the listed APPS).` } } : {}),
+        ...(boards.length > 0 ? { board: { type: "string", description: `A pre-built ${T.board} KEY from <prebuilt_boards> (snake_case, NOT the display name). Pressing loads that ${T.board} — the OFFER alternative to set_board. See <board_buttons>.` } } : {}),
       },
     };
   }

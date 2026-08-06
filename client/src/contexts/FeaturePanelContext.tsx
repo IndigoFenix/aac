@@ -325,11 +325,20 @@ interface SharedState {
 // Metadata builder function type
 type MetadataBuilder = () => Record<string, any> | undefined;
 
+/**
+ * A panel's veto on leaving it. Returns true to BLOCK the navigation — the
+ * guard then owns the decision (typically by showing a "you have unsaved
+ * changes" dialog) and calls setActiveFeature again once the user resolves it.
+ * Returning false lets the navigation through.
+ */
+type NavigationGuard = (target: FeatureType) => boolean;
+
 // Context type
 interface FeaturePanelContextType {
-  // Active feature
+  // Active feature. `force` skips the current panel's navigation guard — the
+  // guard itself uses it to complete the navigation it interrupted.
   activeFeature: FeatureType | null;
-  setActiveFeature: (feature: FeatureType) => void;
+  setActiveFeature: (feature: FeatureType, options?: { force?: boolean }) => void;
   
   // Panel states
   panels: Record<FeatureType, PanelState>;
@@ -358,7 +367,11 @@ interface FeaturePanelContextType {
   registerMetadataBuilder: (feature: FeatureType, builder: MetadataBuilder) => void;
   unregisterMetadataBuilder: (feature: FeatureType) => void;
   getFeatureMetadata: (feature: FeatureType) => Record<string, any> | undefined;
-  
+
+  // Leaving-this-panel guards (e.g. unsaved work). See NavigationGuard.
+  registerNavigationGuard: (feature: FeatureType, guard: NavigationGuard) => void;
+  unregisterNavigationGuard: (feature: FeatureType) => void;
+
   // Mobile chat mode
   mobileChatMode: MobileChatMode;
   setMobileChatMode: (mode: MobileChatMode) => void;
@@ -386,6 +399,9 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
   // when builders are registered/unregistered. The builders are only accessed when
   // getFeatureMetadata is called, not on every render.
   const metadataBuildersRef = useRef<Partial<Record<FeatureType, MetadataBuilder>>>({});
+  // Same ref-not-state reasoning as the metadata builders: registering a guard
+  // must not re-render every consumer of this context.
+  const navigationGuardsRef = useRef<Partial<Record<FeatureType, NavigationGuard>>>({});
   const [chatMode, setChatModeState] = useState<ChatDisplayMode>('expanded');
   const [chatSize, setChatSizeState] = useState<number>(50); // Default 50% width for chat
   const [mobileChatMode, setMobileChatMode] = useState<MobileChatMode>('hidden');
@@ -485,18 +501,30 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     setChatSizeState(clampedSize);
   }, []);
 
+  /**
+   * Ask the CURRENT panel whether it will let go. True means it has taken over
+   * (it is showing a dialog) and this navigation must not happen yet.
+   */
+  const isBlockedByGuard = useCallback((target: FeatureType) => {
+    if (!activeFeature || activeFeature === target) return false;
+    const guard = navigationGuardsRef.current[activeFeature];
+    return guard ? guard(target) : false;
+  }, [activeFeature]);
+
   // Navigate to a feature (updates both state and URL)
   const navigateToFeature = useCallback((feature: FeatureType) => {
+    if (isBlockedByGuard(feature)) return;
     const path = FEATURE_TO_PATH[feature];
     if (path) {
       setLocation(path);
     }
-  }, [setLocation]);
+  }, [setLocation, isBlockedByGuard]);
 
   // Set active feature (also updates URL)
-  const setActiveFeature = useCallback((feature: FeatureType) => {
+  const setActiveFeature = useCallback((feature: FeatureType, options?: { force?: boolean }) => {
     if (isSyncingRef.current) return;
-    
+    if (!options?.force && isBlockedByGuard(feature)) return;
+
     isSyncingRef.current = true;
     setActiveFeatureState(feature);
     
@@ -528,7 +556,7 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     setTimeout(() => {
       isSyncingRef.current = false;
     }, 0);
-  }, [location, setLocation]);
+  }, [location, setLocation, isBlockedByGuard]);
 
   // When active feature changes, check if we need to adjust chat mode
   useEffect(() => {
@@ -592,6 +620,16 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     return builder ? builder() : undefined;
   }, []);
 
+  const registerNavigationGuard = useCallback((feature: FeatureType, guard: NavigationGuard) => {
+    navigationGuardsRef.current = { ...navigationGuardsRef.current, [feature]: guard };
+  }, []);
+
+  const unregisterNavigationGuard = useCallback((feature: FeatureType) => {
+    const next = { ...navigationGuardsRef.current };
+    delete next[feature];
+    navigationGuardsRef.current = next;
+  }, []);
+
   const contextValue = useMemo(() => ({
     activeFeature,
     setActiveFeature,
@@ -611,6 +649,8 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     registerMetadataBuilder,
     unregisterMetadataBuilder,
     getFeatureMetadata,
+    registerNavigationGuard,
+    unregisterNavigationGuard,
     mobileChatMode,
     setMobileChatMode,
     transitionDuration,
@@ -634,6 +674,8 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     registerMetadataBuilder,
     unregisterMetadataBuilder,
     getFeatureMetadata,
+    registerNavigationGuard,
+    unregisterNavigationGuard,
     mobileChatMode,
     setMobileChatMode,
     navigateToFeature,

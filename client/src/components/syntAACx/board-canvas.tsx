@@ -40,14 +40,21 @@ import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useSound } from "@/contexts/SoundContext";
+import { useToast } from "@/hooks/use-toast";
+import { pageGrid, fitGrid } from "@shared/board-grid";
 import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
 import { resolveBorderClass } from "@shared/button-color";
 import { useClinicianBoardDeps, irToButtonInput } from "./use-clinician-board-deps";
+
+/** Rows/columns a page's grid may be set to. 1 is legal: a single big button
+ *  is a real board for an early communicator. */
+const GRID_AXIS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export function BoardCanvas() {
   const { t, isRTL, language } = useLanguage();
   const { theme } = useTheme();
   const { speakText, isSpeaking } = useSound();
+  const { toast } = useToast();
   const isDark = theme === "dark";
 
   const {
@@ -120,31 +127,41 @@ export function BoardCanvas() {
     (p: any) => p.id === currentPageId
   );
 
+  // The grid belongs to the PAGE — `board.grid` is only the default a page
+  // falls back to, and it stays in step with the home page so a new page
+  // starts out the shape the board mostly is.
+  const grid = pageGrid(board, currentPage);
+
   const handleGridSizeChange = (size: string) => {
+    if (!board || !currentPage) return;
     const [rows, cols] = size.split("x").map(Number);
 
-    if (board) {
-      const updatedBoard = {
-        ...board,
-        grid: { rows, cols },
-      };
-
-      const updatedPages = (board as BoardIR).pages.map((page) => {
-        const validButtons = page.buttons.filter(
-          (button: any) => button.row < rows && button.col < cols
-        );
-
-        return {
-          ...page,
-          buttons: validButtons,
-        };
+    // Shrinking used to DELETE every button that no longer fit — silently, and
+    // on every page at once. Refuse instead: the clinician moves or deletes
+    // them, and nothing disappears behind their back.
+    // `{1,1}` as the floor, not fitGrid's default — an EMPTY page needs no
+    // cells at all, and the 3x3 default would refuse to let it shrink.
+    const needed = fitGrid(currentPage.buttons ?? [], { rows: 1, cols: 1 });
+    if (rows < needed.rows || cols < needed.cols) {
+      toast({
+        title: t("board.gridTooSmall"),
+        description: t("board.gridTooSmallDesc", {
+          rows: String(needed.rows),
+          cols: String(needed.cols),
+        }),
+        variant: "destructive",
       });
-
-      updateBoard({
-        ...updatedBoard,
-        pages: updatedPages,
-      });
+      return;
     }
+
+    const isHomePage = (board as BoardIR).pages[0]?.id === currentPage.id;
+    updateBoard({
+      ...(board as BoardIR),
+      grid: isHomePage ? { rows, cols } : board.grid,
+      pages: (board as BoardIR).pages.map((page) =>
+        page.id === currentPage.id ? { ...page, layout: { rows, cols } } : page
+      ),
+    });
   };
 
   const handlePreviousPage = () => {
@@ -282,33 +299,49 @@ export function BoardCanvas() {
           isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"
         )}>
           <div className={cn("flex items-center flex-wrap gap-3", isRTL && "flex-row-reverse")}>
-            {/* Grid Size */}
+            {/* Grid size — of THIS PAGE. Rows and columns are chosen
+                separately because a page should be the shape of its buttons:
+                7 buttons want 2×4, and a square-only picker could never say so. */}
             <div className={cn("flex items-center gap-2", isRTL && "flex-row-reverse")}>
               <span className={cn(
                 "text-xs font-medium",
                 isDark ? "text-slate-400" : "text-gray-600"
               )}>
-                {t("board.grid")}
+                {t("board.pageGrid")}
               </span>
-              <Select
-                onValueChange={handleGridSizeChange}
-                value={`${board.grid.rows}x${board.grid.cols}`}
-              >
-                <SelectTrigger className={cn(
-                  "w-[70px] h-8 text-xs",
-                  isDark 
-                    ? "bg-slate-800 border-slate-700 text-slate-200" 
-                    : "bg-white border-gray-300 text-gray-800"
-                )}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className={isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}>
-                  <SelectItem value="3x3" className={isDark ? "text-slate-200" : "text-gray-800"}>3×3</SelectItem>
-                  <SelectItem value="4x4" className={isDark ? "text-slate-200" : "text-gray-800"}>4×4</SelectItem>
-                  <SelectItem value="5x5" className={isDark ? "text-slate-200" : "text-gray-800"}>5×5</SelectItem>
-                  <SelectItem value="6x6" className={isDark ? "text-slate-200" : "text-gray-800"}>6×6</SelectItem>
-                </SelectContent>
-              </Select>
+              {([
+                ["rows", grid.rows, (n: number) => `${n}x${grid.cols}`],
+                ["cols", grid.cols, (n: number) => `${grid.rows}x${n}`],
+              ] as const).map(([axis, value, toSize], axisIndex) => (
+                <div key={axis} className={cn("flex items-center gap-1", isRTL && "flex-row-reverse")}>
+                  {axisIndex === 1 && (
+                    <span className={cn("text-xs", isDark ? "text-slate-500" : "text-gray-400")}>×</span>
+                  )}
+                  <Select
+                    onValueChange={(n) => handleGridSizeChange(toSize(Number(n)))}
+                    value={String(value)}
+                  >
+                    <SelectTrigger
+                      aria-label={t(axis === "rows" ? "board.rows" : "board.columns")}
+                      className={cn(
+                        "w-[58px] h-8 text-xs",
+                        isDark
+                          ? "bg-slate-800 border-slate-700 text-slate-200"
+                          : "bg-white border-gray-300 text-gray-800"
+                      )}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className={isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}>
+                      {GRID_AXIS_OPTIONS.map((n) => (
+                        <SelectItem key={n} value={String(n)} className={isDark ? "text-slate-200" : "text-gray-800"}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
             </div>
 
             {/* Page Navigation */}
@@ -498,7 +531,7 @@ export function BoardCanvas() {
                   "text-xs",
                   isDark ? "text-slate-500" : "text-gray-500"
                 )}>
-                  {board.grid.rows}×{board.grid.cols} {t("board.grid")} • {t("board.page")} {currentPageIndex + 1} {t("board.of")} {board.pages.length}
+                  {grid.rows}×{grid.cols} {t("board.grid")} • {t("board.page")} {currentPageIndex + 1} {t("board.of")} {board.pages.length}
                 </p>
               </div>
             )}
@@ -509,17 +542,17 @@ export function BoardCanvas() {
             <div
               className="grid gap-2 w-full flex-1 min-h-0"
               style={{
-                gridTemplateColumns: `repeat(${board.grid.cols}, minmax(0, 1fr))`,
-                gridTemplateRows: `repeat(${board.grid.rows}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`,
+                gridTemplateRows: `repeat(${grid.rows}, minmax(0, 1fr))`,
                 transform: `scale(${zoom / 100})`,
                 transformOrigin: "center center",
               }}
             >
               {Array.from(
-                { length: board.grid.rows * board.grid.cols },
+                { length: grid.rows * grid.cols },
                 (_, index) => {
-                  const row = Math.floor(index / board.grid.cols);
-                  const col = index % board.grid.cols;
+                  const row = Math.floor(index / grid.cols);
+                  const col = index % grid.cols;
 
                   // Check for video player
                   const videoPlayer = currentPage.videoPlayers?.find(

@@ -16,6 +16,7 @@ import { SelectionAreaMark } from "@/components/SelectionAreaMark";
 import { IntentCoreMark } from "@/components/IntentCoreMark";
 import { ratioLevel } from "@shared/button-sizing";
 import { restSpaceRatio, type RestSpace } from "@shared/button-shape";
+import { pageGrid } from "@shared/board-grid";
 import { ShapedButton } from "@client-shared/board/ShapedButton";
 import type { SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 import { ProceduralFace, NEUTRAL_FACE } from "@shared/social-bot/ProceduralFace";
@@ -68,13 +69,15 @@ interface DynamicBoardProps {
    *  optional context here is null. */
   socialPeerPreview?: import("@/hooks/dual-agent-types").SocialPeerPreview | null;
   socialSession?: import("@/hooks/dual-agent-types").SocialSessionInfo | null;
-  /** Launch an app/website from a button whose action opens one. Passed as
-   *  props (not read from context) because on the AAC the board renders OUTSIDE
-   *  the DualAgentProvider — the optional context here is null. `onLaunchApp`
-   *  drives the browser (open_website); `onRequestAppOpen` round-trips built-in
-   *  apps so their startup params resolve (open_app). */
+  /** Launch an app/website/pre-built board from a button whose action opens
+   *  one. Passed as props (not read from context) because on the AAC the board
+   *  renders OUTSIDE the DualAgentProvider — the optional context here is null.
+   *  `onLaunchApp` drives the browser (open_website); `onRequestAppOpen`
+   *  round-trips built-in apps so their startup params resolve (open_app);
+   *  `onRequestBoardOpen` asks the server to load a pre-built board (open_board). */
   onLaunchApp?: (appId: string, appData?: any) => void;
   onRequestAppOpen?: (appId: string) => void;
+  onRequestBoardOpen?: (boardKey: string) => void;
   /**
    * How a gaze selects a button (`aacSettings.selectionMethod`). Both non-default
    * modes exist to solve the same problem — a student can't read a label without
@@ -89,10 +92,11 @@ interface DynamicBoardProps {
   /**
    * How much REST SPACE to bite out of each button's corners, so the gap where
    * four of them meet forms a circle a student can park their gaze in without
-   * selecting anything. Board-configurable because boards differ: dynamic
-   * boards are read rather than memorised and want `large`, while static
-   * boards have smaller buttons and a learned layout, where a big bite costs
-   * more area than the resting space is worth.
+   * selecting anything.
+   *
+   * Comes from the STUDENT (`aacSettings.restSpace`) and nowhere else — it is
+   * an accessibility need, so no board gets to narrow or widen it. Callers pass
+   * `"none"` when eyegaze is off, where the bite is just lost area.
    */
   restSpace?: RestSpace;
 }
@@ -251,6 +255,7 @@ export default function DynamicBoard({
   socialSession: socialSessionProp = null,
   onLaunchApp,
   onRequestAppOpen,
+  onRequestBoardOpen,
   selectionMethod = "whole_button",
   restSpace = "none",
 }: DynamicBoardProps) {
@@ -275,12 +280,16 @@ export default function DynamicBoard({
   const [pageHistory, setPageHistory] = useState<string[]>([]);
   const isMultiPage = (board?.pages?.length || 0) > 1;
 
-  // Grid dimensions: prefer the current page's per-page `layout` (constructed
-  // boards may size pages independently), then the board grid, then defaults.
+  // Grid dimensions: the page's own `layout`, else the board grid, else our
+  // defaults. Resolved through the shared `pageGrid` so the clinician editor,
+  // the call mirror and the AI's edit guard cannot disagree about which cells
+  // this page has — a disagreement means buttons the student never sees.
   const activePageForGrid =
     (currentPageId ? board?.pages?.find((p) => p.id === currentPageId) : undefined) || board?.pages?.[0];
-  const gridRows = activePageForGrid?.layout?.rows || board?.grid?.rows || DEFAULT_ROWS;
-  const gridCols = activePageForGrid?.layout?.cols || board?.grid?.cols || DEFAULT_COLS;
+  const { rows: gridRows, cols: gridCols } = pageGrid(board, activePageForGrid, {
+    rows: DEFAULT_ROWS,
+    cols: DEFAULT_COLS,
+  });
   const totalSlots = gridRows * gridCols;
 
   // Compute icon/text font sizes dynamically based on available height and row count.
@@ -589,6 +598,17 @@ export default function DynamicBoard({
         return;
       }
 
+      // Handle open_board action — load a pre-built board the AI offered. The
+      // server owns the key→board lookup and the "which board is loaded"
+      // session state, so this always round-trips; the board arrives back as a
+      // normal set_board message.
+      if (action?.type === "open_board" && action.boardKey) {
+        const open = onRequestBoardOpen ?? dualAgent?.requestBoardOpen;
+        console.log("[DynamicBoard] open_board press:", action.boardKey, "| via", onRequestBoardOpen ? "prop" : dualAgent?.requestBoardOpen ? "context" : "NONE (no handler!)");
+        open?.(action.boardKey);
+        return;
+      }
+
       // Guessing-mode SUGGESTION buttons fall through to the default path
       // below: speak() for local feedback, then onButtonClick → home's
       // handleBoardButtonClick, which routes them to pressSuggestion (rather
@@ -612,7 +632,7 @@ export default function DynamicBoard({
       }
       onButtonClick(button, textToSpeak);
     },
-    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen]
+    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen, onRequestBoardOpen]
   );
 
   // Render nothing if completely empty
@@ -692,9 +712,10 @@ export default function DynamicBoard({
     const actionType = button.action?.type;
     const isLinkButton = actionType === "link";
     const isBackButton = actionType === "back" || actionType === "home";
-    // Launch buttons (open an app / website on press) get a distinct border so
-    // the child learns "this one opens something" rather than speaks.
-    const isLaunchButton = actionType === "open_website" || actionType === "open_app";
+    // Launch buttons (open an app / website / pre-built board on press) get a
+    // distinct border so the child learns "this one opens something" rather
+    // than speaks.
+    const isLaunchButton = actionType === "open_website" || actionType === "open_app" || actionType === "open_board";
 
     const isGuessButton = (button as any).buttonType === "guess";
     const isSuggestionButton = (button as any).buttonType === "suggestion";

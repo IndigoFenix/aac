@@ -285,17 +285,22 @@ const GameEmbed = forwardRef<GameEmbedHandle, GameEmbedProps>(function GameEmbed
   // Forward AI text back to the game as it streams. We track the last forwarded
   // value so we don't replay the same message; the live session accumulates
   // text within a turn and clears it between turns.
+  // Only `assistant` captions qualify: the same slot also carries the student's
+  // own words, and echoing those back as an "ai_comment" would have the game
+  // react to the student as if the AI had spoken.
+  const aiCaption = dualAgent?.currentMessage?.role === "assistant"
+    ? dualAgent.currentMessage.content
+    : "";
   const lastAiTextRef = useRef<string>("");
   useEffect(() => {
     if (!forwardAiTextToGame) return;
     if (!iframeReady) return;
     const iframe = iframeRef.current;
     if (!iframe) return;
-    const text = dualAgent?.currentMessage?.content ?? "";
-    if (!text || text === lastAiTextRef.current) return;
-    lastAiTextRef.current = text;
-    sendToGame(iframe, { type: "ai_comment", text });
-  }, [dualAgent?.currentMessage?.content, forwardAiTextToGame, iframeReady]);
+    if (!aiCaption || aiCaption === lastAiTextRef.current) return;
+    lastAiTextRef.current = aiCaption;
+    sendToGame(iframe, { type: "ai_comment", text: aiCaption });
+  }, [aiCaption, forwardAiTextToGame, iframeReady]);
 
   // Push the AI's live activity (speaking / thinking) down to the game whenever
   // it changes — so a cooperative app can duck its audio or show a cue. Coarse

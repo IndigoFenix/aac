@@ -697,8 +697,9 @@ export const aacSettings = pgTable("aac_settings", {
   // How much space is cut from the corners of board buttons, so the gap where
   // four of them meet forms a circle the student can rest their gaze in.
   //   'large' (default) | 'small' | 'none'
-  // The STUDENT's preference. A board may ask for less via boards.rest_space,
-  // but never for more — see minRestSpace() in shared/button-shape.ts.
+  // The STUDENT's setting, and the only one there is: it applies to every board
+  // they open, AI-built or clinician-built. Resting space is an accessibility
+  // need, not a per-board style choice.
   restSpace: text("rest_space").default("large"),
 
   // AI identity
@@ -2288,12 +2289,9 @@ export const boards = pgTable("boards", {
   language: text("language").default("en"),
   automaticSelection: boolean("automatic_selection").default(false).notNull(),
   automaticSelectionHint: text("automatic_selection_hint"),
-  // How much REST SPACE to cut from each button's corners, so the gap where
-  // four of them meet forms a circle an eyegaze student can park their gaze in.
-  //   'none' | 'small' (default) | 'large'
-  // Board-level rather than student-level: a board's own button size and
-  // whether its layout is learned decide how much space is worth the area.
-  restSpace: text("rest_space").default("small"),
+  // NOTE: rest space is deliberately NOT a board column. How much space a
+  // student needs to park their gaze in is a property of the STUDENT, so it
+  // lives in aac_settings.rest_space and applies to every board they open.
   isGenerated: boolean("is_generated").default(false).notNull(), // AI-generated during AAC session
   // What this board IS, and therefore who may read it.
   //   'student' (default) — clinician-authored for a student, or for the author's

@@ -264,7 +264,9 @@ ${alwaysConservative ? `This device is set to observe conservatively at ALL ener
   // surface. The hint per row is the caretaker's "when to use" note.
   if (availableBoards && availableBoards.length > 0) {
     prompt += `\n\n<available_boards>
-Pre-built boards configured for this user. You do NOT load them — that's BOARD MANAGER's job. When you observe a situation that matches one of these, flag it via update_context (key naming the board's topic, description summarizing what you see) so the right surface can come up.
+Pre-built boards configured for this user. You do NOT load them — that's BOARD MANAGER's job — but you can flag when a situation matches one of these boards so the right surface can come up.
+When you observe a situation that matches one of these, OR the user or an authority figure requests that a board be shown, flag it via update_context (key naming the board's topic, description summarizing what you see) so the right surface can come up.
+
 ${availableBoards.map(b => `  - "${b.name}"${b.hint ? ` — ${b.hint}` : ""}`).join("\n")}
 </available_boards>`;
   }

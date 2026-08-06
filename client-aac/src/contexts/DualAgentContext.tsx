@@ -125,7 +125,10 @@ interface DualAgentContextType {
 
   // Actions
   initialize: () => Promise<void>;
-  sendMessage: (message: string) => Promise<void>;
+  /** Send text to the AI. Silent by default — it reaches the AAC text box only
+   *  with `caption: "student"`, i.e. when the text IS the student's own words.
+   *  Machine context (navigation, game narration, taps) must stay unseen. */
+  sendMessage: (message: string, opts?: { caption?: "student" }) => Promise<void>;
   sendContextOnly: (text: string) => void;
   debugSetBudget: (percent: number) => void;
   sendBoardExit: (label: string, instruction: string) => void;
@@ -174,6 +177,9 @@ interface DualAgentContextType {
   /** Ask the server to resolve startup params then open the app (for apps with
    *  needsStartupResolution). Replies via the normal app_open message. */
   requestAppOpen: (appId: string, appData?: any) => void;
+  /** Ask the server to load a pre-built board by key (the press half of a
+   *  board-launch button the Board Manager authored). Replies via set_board. */
+  requestBoardOpen: (boardKey: string) => void;
   /** appId currently awaiting a request_app_open round-trip, or null. */
   appOpenPending: string | null;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
@@ -1303,8 +1309,8 @@ function DualAgentProviderInner({
   currentBoardRef.current = currentBoard;
 
   const sendMessage = useCallback(
-    async (message: string) => {
-      await liveAgentSendRef.current(message, currentBoardRef.current || undefined);
+    async (message: string, opts?: { caption?: "student" }) => {
+      await liveAgentSendRef.current(message, currentBoardRef.current || undefined, opts);
     },
     []
   );
@@ -1433,7 +1439,7 @@ interface ProviderShellProps {
   setOnBoardUpdate: (callback: ((board: ParsedBoardData) => void) | null) => void;
   setOnSetBoard: (callback: ((data: { board: ParsedBoardData; name: string; boardId: string }) => void) | null) => void;
   setOnUnloadBoard: (callback: (() => void) | null) => void;
-  sendMessage: (message: string) => Promise<void>;
+  sendMessage: (message: string, opts?: { caption?: "student" }) => Promise<void>;
   sendContextOnly: (text: string) => void;
   debugSetBudget: (percent: number) => void;
   sendBoardExit: (label: string, instruction: string) => void;
@@ -1579,6 +1585,7 @@ function ProviderShell({
     dismissApp: agent.dismissApp,
     launchApp: agent.launchApp,
     requestAppOpen: agent.requestAppOpen,
+    requestBoardOpen: agent.requestBoardOpen,
     appOpenPending: agent.appOpenPending,
     registerAppCanvasCapture,
     enabledApps: agent.enabledApps,

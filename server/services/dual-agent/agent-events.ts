@@ -468,15 +468,20 @@ export type SpeakerEvent =
  * version exists because the parsed input goes through this typed bus
  * before getting wrapped in the IR.
  */
-/** A launch target for a board button that opens an app/website on press
- *  instead of voicing speech. Set by the Board Manager; the coordinator gates
- *  `website` against the permitted-sites list and `app` against enabled apps
- *  before it reaches the client. Exactly one field is populated. */
+/** A launch target for a board button that opens an app/website/pre-built board
+ *  on press instead of voicing speech. Set by the Board Manager; the coordinator
+ *  gates `website` against the permitted-sites list, `app` against enabled apps,
+ *  and `board` against the session's available boards before it reaches the
+ *  client. Exactly one field is populated. */
 export interface BoardButtonOpen {
   /** A permitted website URL to open in the in-frame browser app. */
   website?: string;
   /** An enabled app id (built-in or custom game) to launch. */
   app?: string;
+  /** A pre-built board KEY (as passed to set_board) to load. Lets the Board
+   *  Manager OFFER a board instead of loading it outright — the user decides by
+   *  pressing. Normalized to the canonical key by the coordinator's gate. */
+  board?: string;
 }
 
 export interface BoardButton {
@@ -505,10 +510,11 @@ export interface BoardButton {
   /** Group-chat addressee — the peer this button is aimed at (a peer name),
    *  or "ROOM"/omitted for everyone. Set by the Board Manager. */
   addressee?: string;
-  /** When set, pressing this button LAUNCHES an app or website instead of
-   *  voicing `speech`. Authored by the Board Manager and gated server-side
-   *  against the permitted lists (invalid targets are stripped in the
-   *  coordinator). Exactly one of `website` / `app` is populated. */
+  /** When set, pressing this button LAUNCHES an app / website / pre-built board
+   *  instead of voicing `speech`. Authored by the Board Manager and gated
+   *  server-side against the permitted lists (invalid targets are stripped in
+   *  the coordinator). Exactly one of `website` / `app` / `board` is
+   *  populated. */
   open?: BoardButtonOpen;
   buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   suggestionKey?: string;
@@ -583,7 +589,7 @@ export interface BoardNoChangeEvent extends BaseEvent {
 }
 
 /**
- * BoardManager asked to load a pre-built custom board by key.
+ * A pre-built custom board was asked for by key.
  * The Coordinator looks up the board in `state.availableBoards`,
  * fetches its IR data, pushes a `set_board` WS message to the client,
  * and updates `loadedBoardId` + related state mirrors. Distinct from
@@ -591,7 +597,10 @@ export interface BoardNoChangeEvent extends BaseEvent {
  */
 export interface BoardLoadRequestedEvent extends BaseEvent {
   type: "board_load_requested";
-  source: "board-manager";
+  /** "board-manager" when the AI calls set_board; "client" when the USER
+   *  presses a board-launch button the Board Manager authored (`open.board`)
+   *  and the client asks the server to load it (request_board_open). */
+  source: "board-manager" | "client";
   /** Normalized board key (lowercased, spaces → underscores) — matches
    *  the `key` field on entries in `state.availableBoards`. */
   boardKey: string;

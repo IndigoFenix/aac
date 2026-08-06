@@ -13,13 +13,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Cloud, CloudDownload, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Cloud, CloudDownload, Check, AlertCircle, Loader2, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { registerStudentFace } from '@/lib/glyph-images';
 import { BoardCanvas } from '@/components/syntAACx/board-canvas';
 import { ButtonInspector } from '@/components/syntAACx/button-inspector';
 import { BoardSelector } from '@/components/syntAACx/BoardSelector';
+import { useBoardSave } from '@/components/syntAACx/use-board-save';
 import { useBoardStore } from '@/store/board-store';
 import { useSymbolStore, useSymbolCounts } from '@/store/symbol-store';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
@@ -46,6 +47,13 @@ interface SyntAACxPanelProps {
   isOpen: boolean;
   onClose?: () => void;
 }
+
+/**
+ * Gridset export is off: it does not produce a working file today, so offering
+ * it only wastes a click. The button, its handler and the Dropbox upload beside
+ * it are left in place — flip this back to `true` when export works again.
+ */
+const EXPORT_ENABLED = false;
 
 export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   const { t, isRTL, language } = useLanguage();
@@ -74,6 +82,9 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   }, [student?.id]);
 
   const { board, currentPageId, validation, isEditMode, setBoard } = useBoardStore();
+  // Saving lives in the footer now; the header's unsaved-changes dialogs share
+  // the same hook so both obey one set of rules. See use-board-save.ts.
+  const boardSave = useBoardSave();
   const { toast } = useToast();
   const { sharedState, setSharedState } = useSharedState();
   const { registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
@@ -102,6 +113,10 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       featureContext.board = {
         data: board,
         currentPageId: currentPageId || board.pages?.[0]?.id,
+        // Shared package content this user may not save. The server refuses the
+        // write either way; telling the AI keeps it from spending a turn on an
+        // edit the Save button will never accept.
+        readOnly: board.canEdit === false,
       };
       console.log('[SyntAACxPanel] Building metadata with board:', {
         name: board.name,
@@ -545,8 +560,42 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             </Button>
           )}
 
-          {/* Export as .gridset */}
-          <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
+          {/* Whether this board is saved, and the button that saves it. This
+              is the one action the footer is for now that export is off. */}
+          {board && (
+            <span
+              className={cn(
+                'text-[10px] px-1.5 py-0.5 rounded',
+                board.isDirty
+                  ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600')
+                  : board.dbId
+                    ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-600')
+                    : 'hidden'
+              )}
+            >
+              {board.isDirty ? t('board.unsaved') : t('board.saved')}
+            </span>
+          )}
+
+          <Button
+            onClick={boardSave.save}
+            disabled={!boardSave.canSave || boardSave.isPending || isBoardLoading}
+            title={boardSave.blockedReason}
+            size="sm"
+            className="h-7 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700"
+            data-testid="board-save"
+          >
+            {boardSave.isPending ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Save size={12} />
+            )}
+            {t('board.save')}
+          </Button>
+
+          {/* Export as .gridset — hidden until it works again. Kept wired so
+              turning EXPORT_ENABLED back on is the whole change. */}
+          <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse', !EXPORT_ENABLED && 'hidden')}>
             <Button
               onClick={handleExportGridset}
               disabled={!board || !validation.isValid || isBoardLoading}

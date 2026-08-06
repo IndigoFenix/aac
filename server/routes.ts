@@ -1287,6 +1287,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     boardController.getUserBoards(req, res)
   );
 
+  // Everything the board picker shows, grouped and permission-resolved server
+  // side. MUST stay above "/api/boards/:id" or "library" is read as a board id.
+  app.get("/api/boards/library", requireAuth, (req, res) =>
+    boardController.getLibrary(req, res)
+  );
+
   app.get("/api/boards/student/:studentId", requireAuth, (req, res) =>
     boardController.getStudentBoards(req, res)
   );

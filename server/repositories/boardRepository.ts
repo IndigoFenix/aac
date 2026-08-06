@@ -7,7 +7,7 @@ import {
   type InsertBoard,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, isNull, asc, inArray } from "drizzle-orm";
+import { eq, and, isNull, asc, inArray, notExists, or, sql } from "drizzle-orm";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -25,6 +25,31 @@ export type PackageSourcedBoard = Board & {
   /** Membership-level auto-load. Effective auto-load also needs board.automaticSelection. */
   packageAutoLoad: boolean;
 };
+
+/**
+ * Every board column EXCEPT `irData`.
+ *
+ * irData is the sensitive field (external storage extracts it), so a list query
+ * that never selects it needs no hydration round-trip. Same set the package
+ * repository selects — keep them in step.
+ */
+const BOARD_METADATA = {
+  id: boards.id,
+  userId: boards.userId,
+  studentId: boards.studentId,
+  name: boards.name,
+  description: boards.description,
+  imageUrl: boards.imageUrl,
+  language: boards.language,
+  automaticSelection: boards.automaticSelection,
+  automaticSelectionHint: boards.automaticSelectionHint,
+  isGenerated: boards.isGenerated,
+  scope: boards.scope,
+  instituteId: boards.instituteId,
+  createdAt: boards.createdAt,
+  updatedAt: boards.updatedAt,
+  loadedAt: boards.loadedAt,
+} as const;
 
 export class BoardRepository {
   // Board CRUD operations
@@ -58,7 +83,6 @@ export class BoardRepository {
       language: boards.language,
       automaticSelection: boards.automaticSelection,
       automaticSelectionHint: boards.automaticSelectionHint,
-      restSpace: boards.restSpace,
       isGenerated: boards.isGenerated,
       scope: boards.scope,
       instituteId: boards.instituteId,
@@ -96,7 +120,6 @@ export class BoardRepository {
       language: boards.language,
       automaticSelection: boards.automaticSelection,
       automaticSelectionHint: boards.automaticSelectionHint,
-      restSpace: boards.restSpace,
       isGenerated: boards.isGenerated,
       scope: boards.scope,
       instituteId: boards.instituteId,
@@ -132,7 +155,6 @@ export class BoardRepository {
       language: boards.language,
       automaticSelection: boards.automaticSelection,
       automaticSelectionHint: boards.automaticSelectionHint,
-      restSpace: boards.restSpace,
       isGenerated: boards.isGenerated,
       scope: boards.scope,
       instituteId: boards.instituteId,
@@ -146,6 +168,71 @@ export class BoardRepository {
         isNull(boards.studentId),
       )
     );
+  }
+
+  /**
+   * The direct boards of SEVERAL students at once, for the picker's
+   * "one section per {{student}}" view. Same rule as
+   * {@link getStudentBoardsMetadata}, batched: `scope='student'` and an exact
+   * studentId match, so package boards (which have a null studentId) cannot
+   * leak into anyone's section.
+   *
+   * The caller proves access to every id it passes — this is a bulk read for a
+   * list the caller already resolved, not an access gate of its own.
+   */
+  async getBoardsForStudents(studentIds: string[]): Promise<BoardWithOptionalIrData[]> {
+    if (studentIds.length === 0) return [];
+    return await db.select(BOARD_METADATA).from(boards).where(
+      and(
+        eq(boards.scope, "student"),
+        inArray(boards.studentId, studentIds),
+      ),
+    ).orderBy(asc(boards.name));
+  }
+
+  /**
+   * Boards owned by an institute that belong to NO student and NO package —
+   * the picker's "Not assigned" section.
+   *
+   * Three shapes land here, and all three are genuinely unattached:
+   *   - a student-scoped draft stamped with this institute: what every board
+   *     saved with no {{student}} open now becomes
+   *   - a package-scoped board of this institute that no package contains any
+   *     more (removing a board from its last package must not make it
+   *     unreachable — it is still the institute's content)
+   *   - a legacy draft from before boards carried an institute (null
+   *     instituteId), listed for its AUTHOR only: there is no institute on the
+   *     row to authorise anyone else. The next save stamps it.
+   */
+  async getInstituteUnassignedBoards(
+    instituteId: string,
+    userId: string,
+  ): Promise<BoardWithOptionalIrData[]> {
+    const inNoPackage = notExists(
+      db.select({ one: sql`1` })
+        .from(packageBoards)
+        .where(eq(packageBoards.boardId, boards.id)),
+    );
+
+    return await db.select(BOARD_METADATA).from(boards).where(
+      and(
+        isNull(boards.studentId),
+        or(
+          and(
+            eq(boards.scope, "student"),
+            or(
+              eq(boards.instituteId, instituteId),
+              and(isNull(boards.instituteId), eq(boards.userId, userId)),
+            ),
+          ),
+          and(
+            eq(boards.scope, "package"),
+            eq(boards.instituteId, instituteId),
+            inNoPackage,
+          ),
+        ),
+      ),
+    ).orderBy(asc(boards.name));
   }
 
   /**

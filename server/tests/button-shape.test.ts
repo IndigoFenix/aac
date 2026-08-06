@@ -12,7 +12,6 @@ import {
   pointInCornerCut,
   roundedRectPath,
   restSpaceRatio,
-  minRestSpace,
   REST_SPACE,
 } from "@shared/button-shape.js";
 
@@ -115,25 +114,9 @@ describe("shared-circle property", () => {
 });
 
 describe("rest space levels", () => {
-  it("gives dynamic boards more room than static ones", () => {
+  it("offers a bigger and a smaller bite", () => {
     expect(REST_SPACE.large).toBeGreaterThan(REST_SPACE.small);
     expect(REST_SPACE.none).toBe(0);
-  });
-
-  it("lets a board ask for LESS space than the student, but never more", () => {
-    // The student setting is an accessibility need, so a board must not be
-    // able to shrink someone's resting space below what they asked for — but
-    // a board with small buttons can still opt down from it.
-    expect(minRestSpace("large", "small")).toBe("small");
-    expect(minRestSpace("small", "large")).toBe("small");
-    expect(minRestSpace("none", "large")).toBe("none");
-    expect(minRestSpace("large", "large")).toBe("large");
-  });
-
-  it("treats a missing board or student value as its own default", () => {
-    expect(minRestSpace("large", undefined)).toBe("small"); // board default
-    expect(minRestSpace(undefined, "large")).toBe("large"); // student default
-    expect(minRestSpace("nonsense", "nonsense")).toBe("small");
   });
 
   it("falls back to the default for unknown or missing values", () => {

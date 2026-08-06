@@ -230,7 +230,9 @@ export interface DualAgentSessionState {
   // `key` is built by shared/board-keys.ts — `slug(name)` for the student's own
   // boards, `slug(package).slug(board)` for boards reached through a package.
   // `packageName` is set only for the latter, and groups the prompt listing.
-  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; isGenerated?: boolean; packageName?: string; grid: { rows: number; cols: number } }>;
+  // `coverImage` is the board's own cover art (from its IR) — used as the
+  // visual for a board-launch button when the AI supplies none.
+  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; isGenerated?: boolean; packageName?: string; grid: { rows: number; cols: number }; coverImage?: { iconRef?: string; symbolPath?: string } }>;
   loadedBoardId?: string | null;
   loadedBoardData?: ParsedBoardData;
   currentPageId?: string | null;

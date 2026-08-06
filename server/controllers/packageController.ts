@@ -67,6 +67,19 @@ const addBoardSchema = z.object({
    * board" — see §3 class C.
    */
   copyStudentBoard: z.boolean().optional(),
+  /**
+   * The other way to resolve a student-owned board: MOVE it. The board leaves
+   * the child (their device stops showing it) and becomes institute content.
+   * Mutually exclusive with copyStudentBoard, and just as explicit, because it
+   * takes something away from a child rather than duplicating it.
+   */
+  detachFromStudent: z.boolean().optional(),
+  /**
+   * With `detachFromStudent`: also attach this package to the student the
+   * board is leaving, so the board still reaches them — now as shared content.
+   * The "move it, but don't take it away from them" option.
+   */
+  assignPackageToStudent: z.boolean().optional(),
 });
 
 const updateMembershipSchema = z
@@ -349,6 +362,8 @@ export class PackageController {
 
       let boardId = source.id;
       let copied = false;
+      let movedFromStudent = false;
+      let assignedToStudent = false;
 
       if (source.scope === "package") {
         if (source.instituteId !== instituteId) {
@@ -366,18 +381,59 @@ export class PackageController {
           return;
         }
       } else {
-        // Student-linked: never share the original — copy, and only on request.
-        if (!body.copyStudentBoard) {
+        // Student-linked. Never share the original silently: the caller has to
+        // say which of the three resolutions they mean, because they differ in
+        // what the CHILD ends up with.
+        //
+        //   copy   — the child keeps their board, the package gets a snapshot
+        //   move   — the board leaves the child and becomes institute content
+        //   move + assignPackageToStudent — as move, but the package is
+        //            attached to the child so the board still reaches them
+        const studentId = source.studentId;
+        const mayActForStudent = await canAccessStudent(loaded.ctx, studentId);
+
+        if (body.detachFromStudent) {
+          // Taking a board off a child changes what their device shows, so
+          // authorship is not enough here — access to the child is.
+          if (!mayActForStudent) {
+            res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
+            return;
+          }
+          const moved = await packageRepository.moveStudentBoardToPackageScope(
+            source.id,
+            instituteId,
+          );
+          if (!moved) {
+            res.status(409).json({ error: "error:BOARD_NOT_PROMOTABLE" });
+            return;
+          }
+          movedFromStudent = true;
+
+          if (body.assignPackageToStudent) {
+            await attachPackageToStudent({
+              packageId: loaded.pkg.id,
+              studentId,
+              instituteId: loaded.pkg.instituteId,
+              assignedByUserId: userId,
+            });
+            assignedToStudent = true;
+          }
+        } else if (body.copyStudentBoard) {
+          if (source.userId !== userId && !mayActForStudent) {
+            res.status(403).json({ error: "error:BOARD_NOT_YOURS" });
+            return;
+          }
+          const copy = await packageRepository.copyBoardIntoPackageScope(
+            source,
+            instituteId,
+            userId,
+          );
+          boardId = copy.id;
+          copied = true;
+        } else {
           res.status(409).json({ error: "error:BOARD_BELONGS_TO_STUDENT" });
           return;
         }
-        if (source.userId !== userId) {
-          res.status(403).json({ error: "error:BOARD_NOT_YOURS" });
-          return;
-        }
-        const copy = await packageRepository.copyBoardIntoPackageScope(source, instituteId, userId);
-        boardId = copy.id;
-        copied = true;
       }
 
       const membership = await packageRepository.addBoard({
@@ -388,7 +444,7 @@ export class PackageController {
         addedByUserId: userId,
       });
 
-      res.status(201).json({ membership, boardId, copied });
+      res.status(201).json({ membership, boardId, copied, movedFromStudent, assignedToStudent });
       activityLogService.log({
         userId,
         instituteId,
@@ -397,7 +453,7 @@ export class PackageController {
         subjectId1: loaded.pkg.id,
         subjectType2: "board",
         subjectId2: boardId,
-        details: { action: "add_board", copied },
+        details: { action: "add_board", copied, movedFromStudent, assignedToStudent },
       });
     } catch (error: any) {
       res.status(400).json({ error: error.message });

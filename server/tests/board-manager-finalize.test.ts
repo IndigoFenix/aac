@@ -107,6 +107,38 @@ describe("finalizeBoardManagerToolCalls", () => {
     expect(ev.button.open).toEqual({ app: "drawing" });
   });
 
+  test("rebuild_board button with open.board → board-launch action, key normalized", () => {
+    const buttons = [
+      { label: "Ice cream", speech: "I want to talk about ice cream", glyphFallback: "🍦", open: { board: "Ice Cream Vendor" } },
+      { label: "Later", speech: "not now", glyphFallback: "⏰" },
+    ];
+    const result = finalizeBoardManagerToolCalls(
+      [{ name: "rebuild_board", arguments: JSON.stringify({ buttons }) }],
+      fusionMap,
+      undefined,
+      "STOP",
+    );
+    const ev = result.events[0] as any;
+    expect(ev.type).toBe("board_rebuilt");
+    // Same normalization set_board applies, so the coordinator resolves one shape.
+    expect(ev.buttons[0].open).toEqual({ board: "ice_cream_vendor" });
+    expect(ev.buttons[1].open).toBeUndefined();
+  });
+
+  test("add_board_button with open.board → board_button_added carries the board launch", () => {
+    const result = finalizeBoardManagerToolCalls(
+      [{ name: "add_board_button", arguments: JSON.stringify({
+        button: { label: "Snack time", speech: "I'm hungry", glyphFallback: "🍎", open: { board: "snack_time" } },
+      }) }],
+      fusionMap,
+      undefined,
+      "STOP",
+    );
+    const ev = result.events[0] as any;
+    expect(ev.type).toBe("board_button_added");
+    expect(ev.button.open).toEqual({ board: "snack_time" });
+  });
+
   test("website wins when a button sets both open.website and open.app", () => {
     const result = finalizeBoardManagerToolCalls(
       [{ name: "add_board_button", arguments: JSON.stringify({

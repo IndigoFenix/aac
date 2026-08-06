@@ -1374,7 +1374,7 @@ export interface BoardGrid {
  * Board button action type
  */
 export interface BoardButtonAction {
-  type: "speak" | "link" | "back" | "home" | "exit" | "open_website" | "open_app";
+  type: "speak" | "link" | "back" | "home" | "exit" | "open_website" | "open_app" | "open_board";
   text?: string;
   toPageId?: string;
   /**
@@ -1388,6 +1388,15 @@ export interface BoardButtonAction {
   url?: string;
   /** For "open_app" actions: the app id (built-in or custom game) to launch. Must be an enabled app. */
   appId?: string;
+  /**
+   * For "open_board" actions: the KEY of a pre-built board to load on press
+   * (the same snake_case key the Board Manager passes to set_board). Distinct
+   * from `toBoardId`, which is a stored board ID used for board-to-board links
+   * inside the prebuilt browser: the AAC dynamic path asks the SERVER to load
+   * the board by key, so the session state (loaded board, prompt context)
+   * follows the switch. Gated against the session's available boards.
+   */
+  boardKey?: string;
 }
 
 /**

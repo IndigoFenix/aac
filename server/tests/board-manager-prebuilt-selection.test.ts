@@ -52,17 +52,16 @@ describe("board manager prompt — reading a hand-authored auto-select hint", ()
     expect(prompt).toMatch(/rather than a condition/);
   });
 
-  it("falls back to the board name when the author wrote no hint at all", () => {
+  it("reads a note that merely describes the contents as a trigger too", () => {
     const prompt = promptOf(withBoards());
-    expect(prompt).toMatch(/No note at all/);
+    expect(prompt).toMatch(/description of the board's contents/);
   });
 
   // Asking by name is the least ambiguous possible request, not the expected
   // one. Selection has to be driven by what the conversation is ABOUT.
   it("directs matching on subject rather than on wording", () => {
     const prompt = promptOf(withBoards());
-    expect(prompt).toMatch(/Match on the SUBJECT/);
-    expect(prompt).toMatch(/nobody has to ask for it/);
+    expect(prompt).toMatch(/Judge fit by the SUBJECT of the conversation, not by phrasing/);
   });
 
   it("still renders the board list with keys and hints", () => {
@@ -110,5 +109,40 @@ describe("board manager prompt — when to reach for set_board", () => {
     expect(prompt).not.toMatch(/EXCEPTION: an observation/);
     // …while the baseline rule it carves out of stays put.
     expect(prompt).toContain("**DO NOT rebuild on ambient observations.**");
+  });
+});
+
+// The other half of the ice-cream failure: set_board is all-or-nothing. When
+// the model isn't sure the moment has arrived it has to choose between taking
+// the user's words away and doing nothing. A board-launch button is the middle
+// option — the AI offers, the user decides.
+describe("board manager prompt — offering a board as a button", () => {
+  it("teaches the OFFER alternative and what pressing it does", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toContain("<board_buttons>");
+    expect(prompt).toMatch(/open: \{ board: "<key>" \}/);
+    expect(prompt).toMatch(/Pressing it loads that/);
+  });
+
+  it("routes the UNSURE case to an offer instead of a load", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toMatch(/If you are UNSURE, OFFER the board instead of loading it/);
+    expect(prompt).toMatch(/Topic mentioned once, in passing → OFFER/);
+    expect(prompt).toMatch(/Topic is now what the conversation is about → `set_board`/);
+  });
+
+  it("keeps board buttons from crowding out the user's own words", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toMatch(/ONE or TWO board/);
+    expect(prompt).toMatch(/Never offer the .+ that is already loaded/);
+  });
+
+  it("offers the board's own icon as the visual when no glyph is given", () => {
+    const prompt = promptOf(withBoards());
+    expect(prompt).toMatch(/omit the glyph to use the .+'s own icon/);
+  });
+
+  it("is absent entirely for a user with no pre-built boards", () => {
+    expect(promptOf(base)).not.toContain("<board_buttons>");
   });
 });

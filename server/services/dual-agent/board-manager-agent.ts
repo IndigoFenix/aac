@@ -157,10 +157,11 @@ function extractButtonAddressee(input: unknown): string | undefined {
   return typeof a === "string" && a.trim() ? a.trim() : undefined;
 }
 
-/** Read the AI's launch action for a button: `{ website }` or `{ app }` (a URL
- *  or an app id). Undefined when neither is a usable string. The URL/app is
- *  re-gated against the permitted lists in the coordinator before it reaches
- *  the client — this only extracts the shape. `website` wins if both are set. */
+/** Read the AI's launch action for a button: `{ website }`, `{ app }` or
+ *  `{ board }` (a URL, an app id, or a pre-built board key). Undefined when
+ *  none is a usable string. Each target is re-gated against the permitted
+ *  lists in the coordinator before it reaches the client — this only extracts
+ *  the shape. Precedence when several are set: website → app → board. */
 function extractButtonOpen(input: unknown): BoardButtonOpen | undefined {
   const o = (input as { open?: unknown } | null)?.open;
   if (!o || typeof o !== "object") return undefined;
@@ -168,6 +169,10 @@ function extractButtonOpen(input: unknown): BoardButtonOpen | undefined {
   if (typeof website === "string" && website.trim()) return { website: website.trim() };
   const app = (o as { app?: unknown }).app;
   if (typeof app === "string" && app.trim()) return { app: app.trim() };
+  const board = (o as { board?: unknown }).board;
+  // Same normalization set_board applies, so the coordinator's key resolution
+  // sees one shape whether the board was loaded by the AI or offered as a button.
+  if (typeof board === "string" && board.trim()) return { board: board.trim().toLowerCase().replace(/ /g, "_") };
   return undefined;
 }
 

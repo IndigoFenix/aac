@@ -503,7 +503,8 @@ const BOARD_MEMORY_FIELD: AgentMemoryField = {
     grid: {
       id: "grid",
       type: "object",
-      title: "Grid Size",
+      title: "Default Grid Size",
+      description: "Fallback grid for any page with no layout of its own. Each page should set its own layout.",
       properties: {
         rows: { id: "rows", type: "integer", title: "Rows" },
         cols: { id: "cols", type: "integer", title: "Columns" },
@@ -532,6 +533,17 @@ const BOARD_MEMORY_FIELD: AgentMemoryField = {
         properties: {
           id: { id: "id", type: "string", title: "Page ID" },
           name: { id: "name", type: "string", title: "Page Name" },
+          layout: {
+            id: "layout",
+            type: "object",
+            title: "Page Grid Size",
+            description: "This page's OWN grid. Size it to this page's buttons — no empty rows or columns. Falls back to the board's grid if omitted.",
+            properties: {
+              rows: { id: "rows", type: "integer", title: "Rows" },
+              cols: { id: "cols", type: "integer", title: "Columns" },
+            },
+            required: ["rows", "cols"],
+          },
           buttons: {
             id: "buttons",
             type: "array",
@@ -1466,6 +1478,18 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
           } catch (err) {
             console.warn('[getMessageManager] Failed to load board syntax palette:', err);
           }
+        }
+
+        // Shared package content the clinician may open but not save. The hard
+        // guard is the server refusing PATCH /api/boards/:id, but an AI happily
+        // rewriting a board whose Save button is greyed out just wastes the
+        // clinician's turn — so say so up front.
+        if ((featureContext.board as any).readOnly) {
+          boardPrompt +=
+            `\n\nTHIS BOARD IS READ-ONLY. It belongs to a content package this user may use but not edit,` +
+            ` and any change would be refused when they try to save.` +
+            ` Do not modify Context_Board. If asked to change it, say the board must be edited from the package that owns it,` +
+            ` or offer to add a copy to a package the user can edit.`;
         }
 
         template.corePrompt = `${template.corePrompt}\n${boardPrompt}`;

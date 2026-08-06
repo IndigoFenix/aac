@@ -212,7 +212,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onAutoAudioScanChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onAutoAudioScanChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onRequestBoardOpenReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -221,7 +221,9 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   onBoardPatchChange?: (patch: import("@/hooks/dual-agent-types").BoardPatch | null) => void;
   onSymbolUpdateChange?: (data: { buttonLabel: string; symbolPath: string } | null) => void;
   onAiButtonPressChange?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null) => void;
-  onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
+  /** Silent by default — see DualAgentContext.sendMessage. Only pass
+   *  `{ caption: "student" }` for the student's own recognized words. */
+  onSendMessageReady?: (fn: ((msg: string, opts?: { caption?: "student" }) => Promise<void>) | null) => void;
   onSendContextOnlyReady?: (fn: ((text: string) => void) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
   onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, inputGlyphs: Array<{ glyph: string; fallback?: string }> | null, dismiss: () => void) => void;
@@ -239,6 +241,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   onPermittedWebsitesChange?: (sites: PermittedWebsite[]) => void;
   onLaunchAppReady?: (fn: ((appId: string, appData?: any) => void) | null) => void;
   onRequestAppOpenReady?: (fn: ((appId: string, appData?: any) => void) | null) => void;
+  onRequestBoardOpenReady?: (fn: ((boardKey: string) => void) | null) => void;
   onAppOpenPendingChange?: (pendingAppId: string | null) => void;
   onBoardExitReady?: (fn: ((label: string, instruction: string) => void) | null) => void;
   onGuessingModeChange?: (active: boolean) => void;
@@ -264,7 +267,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
    *  close exactly when the interpreted sentence starts. */
   onVoicingStudentChange?: (voicing: boolean) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, sendGamePress, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, autoAudioScan, processing, voicingStudent } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, sendGamePress, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, requestBoardOpen, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, autoAudioScan, processing, voicingStudent } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -332,7 +335,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   }, [aiButtonPress, onAiButtonPressChange]);
 
   useEffect(() => {
-    onSendMessageReady?.((msg: string) => sendMessage(msg));
+    onSendMessageReady?.((msg: string, opts?: { caption?: "student" }) => sendMessage(msg, opts));
     return () => onSendMessageReady?.(null);
   }, [sendMessage, onSendMessageReady]);
 
@@ -438,6 +441,11 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
     onRequestAppOpenReady?.(requestAppOpen);
     return () => onRequestAppOpenReady?.(null);
   }, [requestAppOpen, onRequestAppOpenReady]);
+
+  useEffect(() => {
+    onRequestBoardOpenReady?.(requestBoardOpen);
+    return () => onRequestBoardOpenReady?.(null);
+  }, [requestBoardOpen, onRequestBoardOpenReady]);
 
   useEffect(() => {
     onAppOpenPendingChange?.(appOpenPending);
@@ -987,6 +995,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // request_app_open round-trip (apps with server-resolved startup params),
   // bridged from DualAgentContext (the Apps overlay renders outside the provider).
   const requestAppOpenFnRef = useRef<((appId: string, appData?: any) => void) | null>(null);
+  // request_board_open round-trip (a board-launch button the AI put on the
+  // board), bridged the same way — the board renders outside the provider.
+  const requestBoardOpenFnRef = useRef<((boardKey: string) => void) | null>(null);
   const [appOpenPending, setAppOpenPending] = useState<string | null>(null);
   // When a server-resolved app finishes opening (app_open arrives → activeApp
   // set), dismiss the Apps overlay + its loading state.
@@ -1032,7 +1043,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // board_exit kludge.
   const exitGuessingRef = useRef<((reason?: string) => void) | null>(null);
   const setBuilderVisibleRef = useRef<((open: boolean) => void) | null>(null);
-  const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
+  const sendMessageFnRef = useRef<((msg: string, opts?: { caption?: "student" }) => Promise<void>) | null>(null);
   const sendContextOnlyFnRef = useRef<((text: string) => void) | null>(null);
 
   // Pause state (bridged from DualAgentContext)
@@ -1330,7 +1341,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     enabled: !!activeSignLanguage && aiSessionActive,
     onPhraseComplete: (phrase) => {
       console.log(`[SignLanguage] Phrase complete: "${phrase}"`);
-      sendMessageFnRef.current?.(phrase);
+      // The student's own words, recognized from their signing — the signing
+      // equivalent of speech-to-text, so it belongs in the text box.
+      sendMessageFnRef.current?.(phrase, { caption: "student" });
     },
   });
 
@@ -2006,7 +2019,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     setBoardHistory((h) => receiveBoard(h, b, { paused: false }));
   }, []);
 
-  // Handle multi-page board navigation — inform AI of page change
+  // Handle multi-page board navigation — inform AI of page change. Context for
+  // the agents only: no caption, so the student never reads their own page
+  // turn narrated back at them as if the device had said it.
   const handleBoardNavigate = useCallback((pageId: string, pageName: string, buttons: BoardButton[]) => {
     const buttonLabels = buttons.map(b => b.label).join(", ");
     const msg = `User navigated to page "${pageName}". Current buttons: ${buttonLabels}`;
@@ -2912,6 +2927,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 socialSession={socialFace.session}
                 onLaunchApp={(appId, appData) => launchAppFnRef.current?.(appId, appData)}
                 onRequestAppOpen={(appId) => requestAppOpenFnRef.current?.(appId)}
+                onRequestBoardOpen={(boardKey) => requestBoardOpenFnRef.current?.(boardKey)}
                 // Only meaningful while a gaze gesture is running — with eyegaze
                 // off, a tap already selects and the extra chrome/zones would
                 // just be clutter.
@@ -2943,8 +2959,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
                 suppressLocalSpeech={aiSessionActive}
                 iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
-                eyegazeEnabled={eyegazeSettings.enabled}
-                studentRestSpace={eyegazeSettings.restSpace}
+                // Identical resolution to the AI-board branch above: a
+                // clinician-built board must not read differently under gaze.
+                selectionMethod={eyegazeSettings.enabled ? eyegazeSettings.selectionMethod : "whole_button"}
+                restSpace={eyegazeSettings.enabled ? eyegazeSettings.restSpace : "none"}
                 getFaceImage={resolveFaceImage}
                 onBack={() => {
                   // Handle back at root level - could show board selector
@@ -3274,6 +3292,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onPermittedWebsitesChange={setSnapshotPermittedWebsites}
             onLaunchAppReady={(fn) => { launchAppFnRef.current = fn; }}
             onRequestAppOpenReady={(fn) => { requestAppOpenFnRef.current = fn; }}
+            onRequestBoardOpenReady={(fn) => { requestBoardOpenFnRef.current = fn; }}
             onAppOpenPendingChange={setAppOpenPending}
             onSendConstructionStateReady={(fn) => { sendConstructionStateRef.current = fn; }}
             onConstructionSuggestionsChange={setConstructionSuggestionsState}

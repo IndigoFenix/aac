@@ -132,18 +132,14 @@ export function pointInCornerCut(
   return false;
 }
 
-/** How much corner space a board asks for. Boards differ: see REST_SPACE. */
+/**
+ * How much corner space the STUDENT asks for — one setting (aac_settings.
+ * rest_space) that applies to every board they open. It is an accessibility
+ * need, so no board gets to override it in either direction.
+ */
 export type RestSpace = "none" | "small" | "large";
 
-/**
- * Cut radius as a fraction of the button's smaller side.
- *
- * Dynamic boards get `large`: they are read rather than memorised, the buttons
- * are big, and a student needs somewhere generous to park a gaze between
- * choices. Static boards default to `small` — their buttons are typically
- * smaller and their layout is learned, so a big bite costs more area than the
- * resting space is worth.
- */
+/** Cut radius as a fraction of the button's smaller side. */
 export const REST_SPACE: Record<RestSpace, number> = {
   none: 0,
   small: 0.15,
@@ -155,26 +151,4 @@ export const DYNAMIC_REST_SPACE: RestSpace = "large";
 
 export function restSpaceRatio(space: string | null | undefined): number {
   return REST_SPACE[(space as RestSpace) ?? DEFAULT_REST_SPACE] ?? REST_SPACE[DEFAULT_REST_SPACE];
-}
-
-const ORDER: RestSpace[] = ["none", "small", "large"];
-
-function normalize(space: string | null | undefined, fallback: RestSpace): RestSpace {
-  return ORDER.includes(space as RestSpace) ? (space as RestSpace) : fallback;
-}
-
-/**
- * Combine the STUDENT's rest-space preference with a BOARD's. The board may
- * ask for less but never for more: the student setting is an accessibility
- * preference, so a board must not be able to shrink someone's resting space
- * below what they need — while a board with small buttons can still opt down
- * because the area costs it more than the space is worth.
- */
-export function minRestSpace(
-  student: string | null | undefined,
-  board: string | null | undefined,
-): RestSpace {
-  const s = normalize(student, "large");
-  const b = normalize(board, DEFAULT_REST_SPACE);
-  return ORDER.indexOf(b) < ORDER.indexOf(s) ? b : s;
 }

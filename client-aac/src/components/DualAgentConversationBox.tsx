@@ -316,7 +316,9 @@ export function DualAgentConversationBox({
       // Skip if we already sent this exact message (effect re-fired due to other dep changes)
       if (lastSentSymbolsRef.current === message) return;
       lastSentSymbolsRef.current = message;
-      sendMessageRef.current(message);
+      // The sentence the student built out of symbols — their own words, so
+      // this is one of the few sends that may show in the text box.
+      sendMessageRef.current(message, { caption: "student" });
       if (onClearSymbolsRef.current) {
         setTimeout(() => onClearSymbolsRef.current?.(), 1000);
       }

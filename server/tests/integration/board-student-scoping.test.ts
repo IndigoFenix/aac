@@ -267,10 +267,11 @@ describe('board visibility is student-scoped', () => {
       const author = await makeUser();
       const other = await makeUser();
       const { student } = await makeStudent(other.id);
+      const { institute } = await makeInstitute(author.id);
 
       const req = makeReq({
         user: { id: author.id },
-        body: { name: 'Sneaky', irData: IR, studentId: student.id },
+        body: { name: 'Sneaky', irData: IR, instituteId: institute.id, studentId: student.id },
       });
       const { res, capture } = makeRes();
       await boardController.saveBoard(req, res);
@@ -284,10 +285,17 @@ describe('board visibility is student-scoped', () => {
     it('persists on create', async () => {
       const author = await makeUser();
       const { student } = await makeStudent(author.id);
+      const { institute } = await makeInstitute(author.id);
 
       const req = makeReq({
         user: { id: author.id },
-        body: { name: 'Live', irData: IR, studentId: student.id, isGenerated: true },
+        body: {
+          name: 'Live',
+          irData: IR,
+          instituteId: institute.id,
+          studentId: student.id,
+          isGenerated: true,
+        },
       });
       const { res, capture } = makeRes();
       await boardController.saveBoard(req, res);

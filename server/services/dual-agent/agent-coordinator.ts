@@ -20,6 +20,7 @@ import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
 import { type User, type PermittedWebsite } from "@shared/schema";
 import { isUrlPermitted } from "@shared/permitted-websites";
 import { resolveBoardKey } from "@shared/board-keys";
+import { buttonActionFromOpen, renderableBoardCover } from "./board-launch";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { boardRepository } from "../../repositories/boardRepository";
 import { dualAgentService } from "./dual-agent-service";
@@ -181,7 +182,7 @@ import {
   buildStartupGreetingTurn,
   type StartupBehavior,
 } from "./startup-mode";
-import type { AACMuteState } from "./types";
+import type { AACMuteState, DualAgentSessionState } from "./types";
 import { T } from "../memory-schema/canonical-terms";
 import { getLanguageName } from "@shared/language-names";
 import { languageLevelFromInt, type LanguageLevel } from "@shared/aac-language-level";
@@ -658,11 +659,7 @@ function buildBoardFromButtons(
         ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
         row: Math.floor(i / cols),
         col: i % cols,
-        action: b.open?.website
-          ? { type: "open_website" as const, url: b.open.website }
-          : b.open?.app
-            ? { type: "open_app" as const, appId: b.open.app }
-            : { type: "speak" as const, text: b.sentence ?? b.speech ?? b.label },
+        action: buttonActionFromOpen(b.open, b.sentence ?? b.speech ?? b.label),
         style: {},
         iconRef: b.iconRef || "fas fa-comment",
         symbolPath: b.symbolPath,
@@ -2364,6 +2361,13 @@ export class AgentCoordinator {
         // the server to resolve them first. We reuse the SAME routeAppOpen path
         // as the AI's open_app — the only difference is source: "student".
         void this.handleStudentAppOpen(msg.appId, msg.appData);
+        return;
+      case "request_board_open":
+        // Student pressed a board-launch button the Board Manager authored
+        // (`open.board`). Only the server can load a pre-built board — it owns
+        // the key→board lookup, the IR fetch, and the "which board is loaded"
+        // state the agents are prompted with — so the client asks.
+        void this.handleStudentBoardOpen(msg.boardKey);
         return;
       case "social_peer_reconfigure":
         // DEBUG-only: restart the active social peer with custom parameters
@@ -7433,6 +7437,31 @@ export class AgentCoordinator {
     });
   }
 
+  /**
+   * Student pressed a board-launch button (`open.board`) the Board Manager
+   * authored — the OFFER counterpart to the AI's own set_board. Wake an idle
+   * session (a press is engagement), then run the exact same load path; only
+   * `source` differs, which is what suppresses the AI-facing feedback and adds
+   * the "user opened this" note.
+   */
+  private async handleStudentBoardOpen(boardKey: string): Promise<void> {
+    if (this.state !== "ready" || !this.sessionId) return;
+    if (typeof boardKey !== "string" || !boardKey.trim()) return;
+    if (this.asleep) await this.wakeFromSleep();
+    if (this.sessionProfile === "resting") await this.transitionToProfile("awake");
+    this.noteEngagementActivity();
+    const event: BoardLoadRequestedEvent = {
+      type: "board_load_requested",
+      source: "client",
+      timestamp: Date.now(),
+      boardKey: boardKey.trim().toLowerCase().replace(/ /g, "_"),
+    };
+    // Record it so the agents' <recent_events> shows the surface change — the
+    // press itself is silent and produces no button_pressed event.
+    this.recordEvent(event);
+    await this.applyBoardLoadRequested(event);
+  }
+
   private async routeAppOpen(event: AppOpenRequestedEvent): Promise<void> {
     const appId = event.appId;
     const triggerSource: "ai" | "student" = event.source === "client" ? "student" : "ai";
@@ -8939,10 +8968,11 @@ export class AgentCoordinator {
   }
 
   /** Re-gate a BoardManager-authored `open` launch action against the
-   *  permitted-website allowlist / enabled-app set. Returns the sanitized
-   *  action (website takes precedence if both are set), or undefined if the
-   *  target isn't permitted — in which case the button degrades to a normal
-   *  speak button rather than launching an arbitrary URL/app. */
+   *  permitted-website allowlist / enabled-app set / available boards. Returns
+   *  the sanitized action (website takes precedence, then app, then board), or
+   *  undefined if the target isn't permitted — in which case the button
+   *  degrades to a normal speak button rather than launching an arbitrary
+   *  URL/app/board. */
   private resolveButtonOpen(open: BoardButtonOpen | undefined): BoardButtonOpen | undefined {
     if (!open) return undefined;
     if (open.website) {
@@ -8955,7 +8985,49 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", `Dropped open.app "${open.app}" — not an enabled app.`);
       return undefined;
     }
+    if (open.board) {
+      // Resolve through the same helper set_board uses, so a bare slug for a
+      // package board works here too and the button always carries the
+      // CANONICAL key (what request_board_open will look up on press).
+      const boards = this.availableBoardsList();
+      const resolution = resolveBoardKey(open.board, new Map(boards.map(b => [b.id, b.key])));
+      if (resolution.kind === "found") return { board: resolution.key };
+      flowNote("COORDINATOR", `Dropped open.board "${open.board}" — ${resolution.kind === "ambiguous" ? `ambiguous (${resolution.candidates.join(", ")})` : "not an available board"}.`);
+      return undefined;
+    }
     return undefined;
+  }
+
+  /** The session's pre-built boards (key, name, cover art). Empty before the
+   *  session cache exists. */
+  private availableBoardsList(): NonNullable<DualAgentSessionState["availableBoards"]> {
+    const state = this.sessionId ? dualAgentService.getSessionCache(this.sessionId)?.state : undefined;
+    return state?.availableBoards ?? [];
+  }
+
+  /**
+   * Give a board-launch button the target board's own cover art when the AI
+   * supplied no visual of its own — the board icon a clinician chose is a
+   * better "this opens THAT board" cue than anything invented, and without it
+   * the validator would drop the button as having nothing displayable.
+   *
+   * The AI's glyph always wins. A cover is only usable when it's an emoji or a
+   * real image URL: the default `"syntaacx_logo"` placeholder and legacy
+   * Widgit/SymbolStix paths would render as a broken image on the device.
+   * Mutates in place — `entry` is always a freshly-built object here.
+   */
+  private fillBoardCoverVisual(
+    entry: { glyph?: string; glyphFallback?: string; symbolPath?: string; iconRef?: string; open?: BoardButtonOpen },
+  ): void {
+    const boardKey = entry.open?.board;
+    if (!boardKey) return;
+    if (entry.glyph || entry.glyphFallback || entry.symbolPath) return;
+    const iconRef = entry.iconRef ?? "";
+    if (iconRef.length > 0 && !iconRef.startsWith("fa")) return;   // already an emoji/text icon
+    const cover = renderableBoardCover(this.availableBoardsList().find(b => b.key === boardKey)?.coverImage);
+    if (!cover) return;
+    if (cover.iconRef) entry.iconRef = cover.iconRef;
+    if (cover.symbolPath) entry.symbolPath = cover.symbolPath;
   }
 
   private applyBoardRebuilt(event: BoardRebuiltEvent): void {
@@ -8980,6 +9052,7 @@ export class AgentCoordinator {
       imageKey?: string;
       iconRef?: string;
       symbolPath?: string;
+      open?: BoardButtonOpen;
       [k: string]: unknown;
     };
     const suggestionExpanded: any[] = [];
@@ -9040,6 +9113,10 @@ export class AgentCoordinator {
         colSpan: b.colSpan,
         open: this.resolveButtonOpen((b as any).open),
       };
+      // Board-launch buttons fall back to the target board's cover art. Runs
+      // BEFORE the validator so a visual-less board button is repaired rather
+      // than dropped.
+      this.fillBoardCoverVisual(entry);
       if (b.buttonType === "wordfinder") {
         // Drop the wordfinder entry while already guessing — the entry
         // is a no-op in that state and the gate keeps it off-screen.
@@ -9128,16 +9205,21 @@ export class AgentCoordinator {
   }
 
   /**
-   * BoardManager called set_board(board_key). Look up the board in
-   * `state.availableBoards`, fetch its IR data, and push set_board to
-   * the client — same shape as the home-board push at init / on Home
-   * press. The home board key short-circuits to the in-memory default
-   * (no DB lookup). On a missing key or missing irData, queue
-   * validator-feedback so BoardManager learns the surface didn't load
-   * and can try a different action.
+   * A pre-built board was asked for by key — by the AI (set_board) or by the
+   * USER pressing a board-launch button the Board Manager authored. Look up the
+   * board in `state.availableBoards`, fetch its IR data, and push set_board to
+   * the client — same shape as the home-board push at init / on Home press. The
+   * home board key short-circuits to the in-memory default (no DB lookup). On a
+   * missing key or missing irData, queue validator-feedback so BoardManager
+   * learns the surface didn't load and can try a different action.
+   *
+   * A USER-origin load also tells the Speaker what the user just opened: the
+   * press voices nothing, so without this the AI never learns the surface
+   * changed under it.
    */
   private async applyBoardLoadRequested(event: BoardLoadRequestedEvent): Promise<void> {
     const { boardKey } = event;
+    const byUser = event.source === "client";
     const state = this.sessionId ? dualAgentService.getSessionCache(this.sessionId)?.state : undefined;
 
     // Resolve through the shared key helper so a BARE board slug works when it
@@ -9148,9 +9230,11 @@ export class AgentCoordinator {
 
     if (resolution.kind === "ambiguous") {
       flowNote("COORDINATOR", `set_board("${boardKey}") — ambiguous: ${resolution.candidates.join(", ")}`);
-      this.queueBoardMgrFeedback("set_board", [
-        `Board "${boardKey}" is ambiguous — several packages have a board by that name. Use the full key: ${resolution.candidates.map(c => `"${c}"`).join(" or ")}.`,
-      ]);
+      if (!byUser) {
+        this.queueBoardMgrFeedback("set_board", [
+          `Board "${boardKey}" is ambiguous — several packages have a board by that name. Use the full key: ${resolution.candidates.map(c => `"${c}"`).join(" or ")}.`,
+        ]);
+      }
       return;
     }
 
@@ -9160,7 +9244,9 @@ export class AgentCoordinator {
     if (!match) {
       const availableKeys = state?.availableBoards?.map(b => b.key).join(", ") || "none";
       flowNote("COORDINATOR", `set_board("${boardKey}") — board not found. Available: ${availableKeys}`);
-      this.queueBoardMgrFeedback("set_board", [`Board "${boardKey}" not found. Available keys: ${availableKeys}.`]);
+      if (!byUser) {
+        this.queueBoardMgrFeedback("set_board", [`Board "${boardKey}" not found. Available keys: ${availableKeys}.`]);
+      }
       return;
     }
 
@@ -9173,7 +9259,9 @@ export class AgentCoordinator {
         const fullBoard = await boardRepository.getBoard(match.id);
         if (!fullBoard?.irData) {
           flowNote("COORDINATOR", `set_board("${boardKey}") — board has no IR data (id=${match.id}).`);
-          this.queueBoardMgrFeedback("set_board", [`Board "${boardKey}" has no stored data; pick a different board or rebuild dynamically.`]);
+          if (!byUser) {
+            this.queueBoardMgrFeedback("set_board", [`Board "${boardKey}" has no stored data; pick a different board or rebuild dynamically.`]);
+          }
           return;
         }
         boardData = fullBoard.irData;
@@ -9206,9 +9294,17 @@ export class AgentCoordinator {
       data: { board: boardData, name: match.name, boardId: match.id },
     });
     runInSessionContext(this.sessionId || "?", this.debugMode, () => {
-      logLiveSession("BOARD_LOADED", `key="${boardKey}" name="${match.name}" id=${match.id}`);
+      logLiveSession("BOARD_LOADED", `key="${boardKey}" name="${match.name}" id=${match.id}${byUser ? " (user press)" : ""}`);
     });
-    flowNote("COORDINATOR", `set_board("${boardKey}") — loaded "${match.name}".`);
+    flowNote("COORDINATOR", `${byUser ? "user opened" : "set_board"}("${boardKey}") — loaded "${match.name}".`);
+    if (byUser) {
+      // The press voices nothing, so this note is the only way the AI learns
+      // the user changed surface. Context only — never a turn: the user chose
+      // a board to speak FROM, not something to be answered.
+      this.speaker?.sendContextInjection(
+        `[BOARD OPENED BY USER] "${match.name}" — the user pressed a ${T.button} to open this pre-built ${T.board}. It is now their surface; they will speak from it.`,
+      );
+    }
     // Re-prime the "Practice friend" face when the home board is (re)loaded
     // through set_board (e.g. the AI returning the user home).
     if (match.key === HOME_BOARD_KEY) this.preparePeerPreview("set_board_home");
@@ -9234,24 +9330,6 @@ export class AgentCoordinator {
       );
       return;
     }
-    if (!isSpecial) {
-      // Run the same validator path as add_context_button — drop on
-      // structural errors and queue feedback.
-      const { buttons: kept, errors, violations } = validateBoardButtons([{
-        label: b.label,
-        glyph: b.glyph,
-        glyphFallback: b.glyphFallback,
-        imageKey: b.imageKey,
-        iconRef: b.iconRef,
-        symbolPath: b.symbolPath,
-      }]);
-      this.recordBoardViolations(violations);
-      if (errors.length > 0) {
-        this.queueBoardMgrFeedback("add_board_button", errors);
-      }
-      if (kept.length === 0) return;
-    }
-
     const incoming: MergeButton = {
       label: b.label,
       glyph: b.glyph,
@@ -9270,6 +9348,27 @@ export class AgentCoordinator {
       addressee: (b as { addressee?: string }).addressee,
       open: this.resolveButtonOpen((b as { open?: BoardButtonOpen }).open),
     };
+    // Board-launch buttons fall back to the target board's cover art — applied
+    // before validation so a visual-less board button is repaired, not dropped.
+    this.fillBoardCoverVisual(incoming);
+
+    if (!isSpecial) {
+      // Run the same validator path as add_context_button — drop on
+      // structural errors and queue feedback.
+      const { buttons: kept, errors, violations } = validateBoardButtons([{
+        label: incoming.label,
+        glyph: incoming.glyph,
+        glyphFallback: incoming.glyphFallback,
+        imageKey: incoming.imageKey,
+        iconRef: incoming.iconRef,
+        symbolPath: incoming.symbolPath,
+      }]);
+      this.recordBoardViolations(violations);
+      if (errors.length > 0) {
+        this.queueBoardMgrFeedback("add_board_button", errors);
+      }
+      if (kept.length === 0) return;
+    }
 
     let newIdCounter = 0;
     const newId = () => `btn-${Date.now()}-${newIdCounter++}`;

@@ -1,9 +1,11 @@
 /**
  * Board Utilities
- * 
+ *
  * Extracted business logic for AAC board manipulation.
  * Used by the session service when handling board-related memory operations.
  */
+
+import type { OutOfBoundsButton } from "@shared/board-grid";
 
 // ============================================================================
 // TYPES
@@ -94,6 +96,11 @@ export interface BoardButton {
   };
   
   export const DEFAULT_GRID: BoardGrid = { rows: 3, cols: 3 };
+
+  /** The fallback board's three buttons sit in one row, so its grid is one
+   *  row — the starter the AI is shown must obey the fit-the-buttons rule it
+   *  is told to follow. */
+  const FALLBACK_GRID: BoardGrid = { rows: 1, cols: 3 };
   
   // ============================================================================
   // SANITIZATION
@@ -209,8 +216,8 @@ export interface BoardButton {
     name?: string,
     gridSize?: BoardGrid
   ): ParsedBoardData {
-    const grid = gridSize || DEFAULT_GRID;
-  
+    const grid = gridSize || FALLBACK_GRID;
+
     return {
       name: name || "Communication Board",
       grid,
@@ -460,6 +467,34 @@ export interface BoardButton {
     return { ...currentBoard, pages: newPages };
   }
   
+  // ============================================================================
+  // GRID BOUNDS
+  // ============================================================================
+  //
+  // The rule itself lives in shared/board-grid.ts, because the AAC renderer,
+  // the clinician canvas and this guard must agree on which cells a page has.
+
+  /**
+   * The refusal the AI gets when an edit would push buttons off their page.
+   * Names every casualty, because the fix is per-button: move it into the grid,
+   * delete it, or leave the page's grid big enough to hold it.
+   */
+  export function describeOutOfBoundsButtons(violations: OutOfBoundsButton[]): string {
+    const lines = violations.map(
+      (v) =>
+        `- "${v.label || v.buttonId}" (id ${v.buttonId}) on page "${v.pageName}" ` +
+        `sits at row ${v.row}, col ${v.col}, outside that page's ${v.rows}x${v.cols} grid.`,
+    );
+    return [
+      `REJECTED — the board was left unchanged. This edit would cut ${violations.length} ` +
+        `${violations.length === 1 ? "button" : "buttons"} off their page:`,
+      ...lines,
+      `Redo the whole edit in ONE call: set the page's smaller \`layout\` AND, in the ` +
+        `same call, move each button above to a free cell inside it or delete it. ` +
+        `A page's grid must never be smaller than the buttons on it.`,
+    ].join("\n");
+  }
+
   // ============================================================================
   // BOARD CONTEXT HELPERS
   // ============================================================================

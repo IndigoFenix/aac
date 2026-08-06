@@ -13,6 +13,8 @@ import { extractFrame } from "./tools/video-frame-extractor";
 import { getFile, refreshFile, storeFile } from "./tools/media-file-cache";
 import { AgentAPIEndpoint } from "@shared/schema";
 import { lookupOrangeBook, OrangeBookQuery } from "../fda/orange-book-service";
+import { findOutOfBoundsButtons, outOfBoundsKey } from "@shared/board-grid";
+import { describeOutOfBoundsButtons } from "../board-utils";
 
 const API_PREFIX = "api_";
 const isProduction = process.env.NODE_ENV === 'production';
@@ -454,6 +456,23 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         }));
       }
 
+      // The board is the one memory field with a geometric invariant: every
+      // button must have a cell. Snapshot it before the ops so an edit that
+      // shrinks the grid out from under its buttons can be undone whole —
+      // shrink-then-move is legal, but only when both happen in ONE call.
+      const touchesBoard = inputOps.some(
+        (op: any) =>
+          typeof op?.path === "string" &&
+          op.path.split("/").filter(Boolean)[0] === "Context_Board" &&
+          op.action && op.action !== "view" && op.action !== "hide",
+      );
+      const boardBefore = touchesBoard
+        ? JSON.parse(JSON.stringify(deps.memoryValuesRef.current?.["Context_Board"] ?? null))
+        : null;
+      const violationsBefore = touchesBoard
+        ? new Set(findOutOfBoundsButtons(boardBefore).map(outOfBoundsKey))
+        : null;
+
       // Use custom processor if provided, otherwise use default
       let result;
       if (deps.memoryProcessor) {
@@ -547,6 +566,43 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
           ...result.updatedMemoryState,
           visible: [...visiblePathsAccumulator]
         };
+      }
+
+      // Board grid bounds. Only violations this call INTRODUCED are rejected —
+      // a board that arrived already broken must stay editable, or the AI can
+      // never repair it.
+      if (touchesBoard && violationsBefore) {
+        const introduced = findOutOfBoundsButtons(
+          deps.memoryValuesRef.current?.["Context_Board"],
+        ).filter((v) => !violationsBefore.has(outOfBoundsKey(v)));
+
+        if (introduced.length > 0) {
+          deps.memoryValuesRef.current = {
+            ...deps.memoryValuesRef.current,
+            Context_Board: boardBefore,
+          };
+          if (deps.onUpdateMemoryValues) {
+            await deps.onUpdateMemoryValues(deps.memoryValuesRef.current);
+          }
+          const message = describeOutOfBoundsButtons(introduced);
+          memDebug('REJECTED — board edit would cut buttons off the grid', introduced);
+          // Ops on OTHER fields in the same call stand — only the board rolled
+          // back, so only the board's ops report failure.
+          const isBoardTarget = (target: any) =>
+            typeof target === "string" &&
+            target.split("/").filter(Boolean)[0] === "Context_Board";
+          return [
+            ...(result.results || []).filter((r: MemoryOperationResult) => !isBoardTarget(r.target)),
+            ...inputOps
+              .filter((op: any) => isBoardTarget(op.path) && op.action !== "view" && op.action !== "hide")
+              .map((op: any) => ({
+                target: op.path,
+                action: op.action,
+                ok: false,
+                message,
+              })),
+          ];
+        }
       }
 
       // Record for loop detection AFTER processing — but only for mutation operations.

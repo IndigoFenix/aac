@@ -1,6 +1,7 @@
 // src/store/board-store.ts
 import { create } from "zustand";
 import { BoardIR, ButtonIR, PageIR, ActionIR } from "@/types/board-ir";
+import { pageGrid } from "@shared/board-grid";
 
 /**
  * Internal representation of a board inside the editor.
@@ -29,10 +30,6 @@ type InternalBoard = BoardIR & {
   /** Hint for the AI about when to select this board */
   automaticSelectionHint?: string;
 
-  /** How much corner rest space this board's buttons give an eyegaze student:
-   *  'none' | 'small' (default) | 'large'. See shared/button-shape.ts. */
-  restSpace?: string;
-
   /** Whether the AAC session AI may rewrite this board as it learns
    *  ("Update Automatically"). Round-trips to boards.isGenerated. */
   isGenerated?: boolean;
@@ -44,12 +41,46 @@ type InternalBoard = BoardIR & {
   studentId?: string;
 
   /** Set only on boards reached through an attached content package. Such a
-   *  board is shared content: read-only here, and edited from the package. */
+   *  board is shared content, edited from the package that owns it. */
   packageName?: string;
+
+  /** The institute that owns this board. Every saved board has one — a board
+   *  belongs to a student or to an institute, and unattached boards are listed
+   *  to the whole institute under "Not assigned". */
+  instituteId?: string;
+
+  /** May THIS user save changes to this board? The server decides (a package
+   *  the user only holds `use` on is read-only) and says so per board in the
+   *  library response; `undefined` means "not from the server yet", which is
+   *  every local board, and those are always editable. */
+  canEdit?: boolean;
 };
 
 const createId = () =>
   Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+const hasHint = (hint: unknown): boolean =>
+  typeof hint === "string" && hint.trim().length > 0;
+
+/**
+ * Should AAC Auto-Select be on, given the hint the board now carries?
+ *
+ * The hint is the whole feature: it is what tells the AI WHEN to load this
+ * board, and the checkbox is disabled without one. So writing a hint where
+ * there was none turns auto-select ON — otherwise the AI can hand a clinician
+ * a board with a perfectly good "During mealtimes" hint that never fires,
+ * because a checkbox nobody was shown stayed unticked. Clearing the hint
+ * turns it back off. In between, the clinician's own choice stands.
+ */
+export const resolveAutomaticSelection = (
+  prevHint: unknown,
+  nextHint: unknown,
+  prevEnabled: boolean | undefined,
+): boolean => {
+  if (!hasHint(nextHint)) return false;
+  if (!hasHint(prevHint)) return true;
+  return prevEnabled ?? false;
+};
 
 const toInternalBoard = (
   board: BoardIR,
@@ -167,7 +198,7 @@ export interface BoardState {
   bookmarkCurrentPage: () => void;
   jumpBack: () => void;
   applyButtonAction: (buttonId: string) => void;
-  /** Hydrate the boards list from the backend /api/boards (no irData included). */
+  /** Hydrate the boards list from the backend /api/boards/library (no irData). */
   hydrateBoardsFromServer: (
     rows: {
       id: string;
@@ -177,6 +208,8 @@ export interface BoardState {
       isGenerated?: boolean;
       studentId?: string | null;
       packageName?: string;
+      instituteId?: string | null;
+      canEdit?: boolean;
     }[]
   ) => void;
 
@@ -187,10 +220,11 @@ export interface BoardState {
     irData: BoardIR;
     automaticSelection?: boolean;
     automaticSelectionHint?: string;
-    restSpace?: string;
     isGenerated?: boolean;
     studentId?: string | null;
     packageName?: string;
+    instituteId?: string | null;
+    canEdit?: boolean;
   }) => void;
 
   /** Mark a board as saved, clear dirty flag, and store db id. */
@@ -230,6 +264,13 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const internal = toInternalBoard(boardWithDefaultCover) as InternalBoard;
       internal.isDirty = true;
       internal.loadedFromServer = false;
+      // A board the AI generated WITH a hint arrives already wanting
+      // auto-select; there is no previous hint for it to have been off under.
+      internal.automaticSelection = resolveAutomaticSelection(
+        undefined,
+        internal.automaticSelectionHint,
+        false,
+      );
   
       const nextBoards = [...state.boards, internal];
   
@@ -282,9 +323,15 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       internal.dbId = existing.dbId;
       internal.isHome = existing.isHome;
       internal.loadedFromServer = existing.loadedFromServer;
-      internal.automaticSelection = existing.automaticSelection;
       internal.automaticSelectionHint =
         (updated as any).automaticSelectionHint ?? existing.automaticSelectionHint;
+      // The AI writes the hint through this path, so this is where a hint it
+      // just invented has to switch auto-select on.
+      internal.automaticSelection = resolveAutomaticSelection(
+        existing.automaticSelectionHint,
+        internal.automaticSelectionHint,
+        existing.automaticSelection,
+      );
       internal.isDirty = true;
   
       const boards = state.boards.map((b) =>
@@ -562,11 +609,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     );
     if (!currentPage) return;
 
+    // The copy has to land on a cell THIS page has.
+    const grid = pageGrid(board, currentPage);
+
     let newRow = buttonToDuplicate.row;
     let newCol = buttonToDuplicate.col + 1;
 
-    while (newRow < board.grid.rows) {
-      while (newCol < board.grid.cols) {
+    while (newRow < grid.rows) {
+      while (newCol < grid.cols) {
         const occupied = currentPage.buttons.some(
           (b: any) => b.row === newRow && b.col === newCol
         );
@@ -575,12 +625,12 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         }
         newCol++;
       }
-      if (newCol < board.grid.cols) break;
+      if (newCol < grid.cols) break;
       newRow++;
       newCol = 0;
     }
 
-    if (newRow >= board.grid.rows) {
+    if (newRow >= grid.rows) {
       // No empty position found
       return;
     }
@@ -987,6 +1037,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
             // a board belonged to.
             studentId: row.studentId ?? undefined,
             packageName: row.packageName ?? undefined,
+            instituteId: row.instituteId ?? undefined,
+            canEdit: row.canEdit ?? existing.canEdit,
           };
         }
 
@@ -1010,6 +1062,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           isGenerated: row.isGenerated ?? false,
           studentId: row.studentId ?? undefined,
           packageName: row.packageName ?? undefined,
+          instituteId: row.instituteId ?? undefined,
+          canEdit: row.canEdit ?? true,
         };
       });
   
@@ -1025,7 +1079,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   openBoardFromServer: (row: any) => {
     set((state) => {
-      const { id, name, irData, automaticSelection, automaticSelectionHint, restSpace, isGenerated, studentId, packageName } = row;
+      const { id, name, irData, automaticSelection, automaticSelectionHint, isGenerated, studentId, packageName } = row;
   
       const existing = state.boards.find((b) => b.dbId === id);
   
@@ -1054,15 +1108,18 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       internal.isDirty = false;
       internal.automaticSelection = automaticSelection ?? false;
       internal.automaticSelectionHint = automaticSelectionHint ?? undefined;
-      internal.restSpace = restSpace ?? undefined;
       // Dropping these three used to leave "Update Automatically" reading
       // unchecked on a board the DB says is generated, and left the editor
       // unable to say which student (or package) the open board belongs to.
       internal.isGenerated = isGenerated ?? false;
       internal.studentId = studentId ?? undefined;
       // GET /api/boards/:id returns the board row, which knows nothing about
-      // packages — keep what the picker list already told us.
+      // packages or about what THIS user may do with it — keep what the picker
+      // list already told us. Losing canEdit here would re-enable Save on a
+      // read-only package board the moment it finished loading.
       internal.packageName = packageName ?? existing?.packageName ?? undefined;
+      internal.instituteId = row.instituteId ?? existing?.instituteId ?? undefined;
+      internal.canEdit = row.canEdit ?? existing?.canEdit ?? true;
   
       const boards = existing
         ? state.boards.map((b) =>
@@ -1143,6 +1200,9 @@ function validateBoard(board: BoardIR): { isValid: boolean; errors: string[] } {
       errors.push(`Page ${pageIndex + 1} name is required`);
     }
 
+    // Bounds are the PAGE's — `board.grid` is only its fallback.
+    const grid = pageGrid(board, page);
+
     (page.buttons || []).forEach((button, buttonIndex) => {
       if (!button.label.trim()) {
         errors.push(
@@ -1150,11 +1210,11 @@ function validateBoard(board: BoardIR): { isValid: boolean; errors: string[] } {
         );
       }
 
-      if (button.row < 0 || button.row >= board.grid.rows) {
+      if (button.row < 0 || button.row >= grid.rows) {
         errors.push(`Button "${button.label}" row is out of bounds`);
       }
 
-      if (button.col < 0 || button.col >= board.grid.cols) {
+      if (button.col < 0 || button.col >= grid.cols) {
         errors.push(`Button "${button.label}" column is out of bounds`);
       }
     });

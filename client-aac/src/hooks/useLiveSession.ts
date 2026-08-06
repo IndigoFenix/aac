@@ -11,6 +11,7 @@ import { useAudioRecorder } from "./useAudioRecorder";
 import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
+import { useAacCaption } from "./useAacCaption";
 import { API_BASE_URL } from "@/lib/api-base";
 import { apiRequest } from "@/lib/queryClient";
 import { getHost } from "@/lib/platform";
@@ -240,20 +241,23 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // was expected and should NOT trigger an auto-reconnect.
   const closingIntentionallyRef = useRef(false);
 
-  // Message state
-  const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
-  const [transcription, setTranscription] = useState<string | null>(null);
-  // Rolling live STT interim (grey caption) — see the transcript_interim handler.
-  const [interimTranscription, setInterimTranscription] = useState<string | null>(null);
-  const interimFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Message state.
+  //
+  // Everything the AAC text box displays lives in useAacCaption and is written
+  // ONLY through its `showCaption`. Nothing in this file may hold its own copy
+  // of box state: the box is what the student reads, and the whole point of the
+  // single writer is that a new kind of message to the AI can't quietly become
+  // something the student sees.
+  const {
+    currentMessage,
+    transcription,
+    interimTranscription,
+    transcriptConfidence,
+    transcriptClarity,
+    showCaption,
+  } = useAacCaption();
   const [utteranceText, setUtteranceText] = useState<string | null>(null);
   const [utteranceConfidence, setUtteranceConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
-  const [transcriptConfidence, setTranscriptConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
-  // How clearly the speech-to-text HEARD the words behind `transcription` —
-  // separate from transcriptConfidence (the Observer's read of the utterance).
-  // Drives the caption's fuzziness; null when nothing backs a claim either way.
-  const [transcriptClarity, setTranscriptClarity] =
-    useState<'high' | 'medium' | 'low' | 'unknown' | null>(null);
   const [debugText, setDebugText] = useState<string | null>(null);
 
   // Audio state
@@ -635,9 +639,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
               "| Kept (after last ctrl):", JSON.stringify(afterCtrl),
             );
             textAccumRef.current = "";
-            setCurrentMessage(prev =>
-              prev?.role === "assistant" ? { ...prev, content: "" } : prev,
-            );
+            showCaption({ source: "ai-restart" });
             textData = afterCtrl;
             if (!textData.trim()) break;
           }
@@ -662,22 +664,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             break;
           }
           textAccumRef.current += cleaned;
-          // The AI is now speaking — drop any lingering "spoken to the user"
-          // caption (yellow) so it doesn't overlap the AI's white words.
-          setTranscription(null);
-          setCurrentMessage(prev => ({
-            id: prev?.role === "assistant" ? prev.id : `msg-${Date.now()}`,
-            role: "assistant",
-            content: textAccumRef.current,
-            timestamp: prev?.role === "assistant" ? prev.timestamp : new Date().toISOString(),
-          }));
+          showCaption({ source: "ai", text: textAccumRef.current });
           break;
         }
 
         case "utterance":
           // The user is responding — clear the "spoken to the user" caption
           // (yellow) now that they're voicing their reply.
-          setTranscription(null);
+          showCaption({ source: "clear", scope: "heard" });
           setUtteranceText(prev => (prev || "") + (msg.text || ""));
           if (msg.confidence) setUtteranceConfidence(msg.confidence);
           break;
@@ -700,34 +694,20 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "transcript":
-          setTranscription(msg.data);
-          if (msg.confidence) setTranscriptConfidence(msg.confidence);
-          // Always assign (including null) — a fresh transcript must never
-          // inherit the previous utterance's clarity.
-          setTranscriptClarity((msg as any).asrConfidence ?? null);
-          // A routed (authoritative) transcript supersedes the live interim.
-          setInterimTranscription(null);
-          if (interimFadeTimerRef.current) { clearTimeout(interimFadeTimerRef.current); interimFadeTimerRef.current = null; }
+          showCaption({
+            source: "heard",
+            text: msg.data,
+            confidence: msg.confidence,
+            clarity: (msg as any).asrConfidence ?? null,
+          });
           break;
 
-        case "transcript_interim": {
+        case "transcript_interim":
           // Rolling live STT text — grey caption while the recognizer is still
           // hearing; "" (sent at each final) clears it back to the yellow
-          // transcript. A staleness timer clears it anyway in case the clear
-          // message is lost, so tentative text can never linger.
-          if (interimFadeTimerRef.current) { clearTimeout(interimFadeTimerRef.current); interimFadeTimerRef.current = null; }
-          const interim = (msg as any).data as string;
-          if (interim && interim.trim()) {
-            setInterimTranscription(interim);
-            interimFadeTimerRef.current = setTimeout(() => {
-              interimFadeTimerRef.current = null;
-              setInterimTranscription(null);
-            }, 4000);
-          } else {
-            setInterimTranscription(null);
-          }
+          // transcript.
+          showCaption({ source: "hearing", text: (msg as any).data as string });
           break;
-        }
 
         case "context":
           setDebugText(msg.data);
@@ -1309,7 +1289,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     } catch (err) {
       console.error("[useLiveSession] Failed to parse server message:", err);
     }
-  }, [audioEnabled, audioPlayer]);
+  }, [audioEnabled, audioPlayer, showCaption]);
 
   // Header audio-output mute: silence LOCAL speakers only, via the player's master
   // gain — the audio is still produced and still flows to the call tap, so a
@@ -1602,24 +1582,31 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Actions — send messages over WebSocket
   // -------------------------------------------------------------------------
 
-  const sendMessage = useCallback(async (message: string, board?: ParsedBoardData) => {
+  /**
+   * Send text to the AI on the `user_message` channel.
+   *
+   * SILENT by default. Most of what travels this channel is machine context
+   * written for the agents — page navigation, game narration, avatar taps —
+   * and the student must never read it as if the device had said it. Pass
+   * `{ caption: "student" }` only when the text IS the student's own words
+   * (recognized signing, a symbol sentence they built); that is the one case
+   * where outbound text belongs in the box.
+   */
+  const sendMessage = useCallback(async (
+    message: string,
+    board?: ParsedBoardData,
+    opts?: { caption?: "student" },
+  ) => {
     // Stop any playing audio — user action takes priority
     audioPlayer.clear();
     if (board) {
       wsSend({ type: "board_state", data: board });
     }
     wsSend({ type: "user_message", text: message });
-    // Don't display system messages ("[system: ...]") in the text UI —
-    // these are context signals to the AI, not user-facing content.
-    if (!message.startsWith("[system:")) {
-      setCurrentMessage({
-        id: `user-${Date.now()}`,
-        role: "user",
-        content: message,
-        timestamp: new Date().toISOString(),
-      });
+    if (opts?.caption === "student") {
+      showCaption({ source: "student", text: message });
     }
-  }, [wsSend]);
+  }, [wsSend, showCaption]);
 
   /** Inject context into the AI without triggering a response turn */
   const sendContextOnly = useCallback((text: string) => {
@@ -2160,6 +2147,17 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     }, 6000);
   }, [wsSend]);
 
+  /**
+   * Ask the server to load a pre-built board by KEY — the press half of a
+   * board-launch button the Board Manager authored. There is no local
+   * fallback: only the server can map the key to a board, fetch its IR, and
+   * update the "which board is loaded" state the agents are prompted with. The
+   * board comes back as a normal `set_board` message.
+   */
+  const requestBoardOpen = useCallback((boardKey: string) => {
+    wsSend({ type: "request_board_open", boardKey });
+  }, [wsSend]);
+
   const clearSession = useCallback(() => {
     if (wsRef.current) {
       closingIntentionallyRef.current = true;
@@ -2173,9 +2171,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     resumeSessionStudentRef.current = null;
     setIsInitialized(false);
     isInitializedRef.current = false;
-    setCurrentMessage(null);
-    setTranscription(null);
-    setInterimTranscription(null);
+    showCaption({ source: "clear" });
     setUtteranceText(null);
     setDebugText(null);
     setError(null);
@@ -2183,7 +2179,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     setSocialSession(null);
     setSocialPeerState(null);
     setSocialPeerDebug(null);
-  }, []);
+  }, [showCaption]);
 
   /** DEBUG-only: restart the active social peer with fully custom parameters. */
   const reconfigureSocialPeer = useCallback((params: import("@shared/social-bot/debug").SocialPeerParams) => {
@@ -2279,6 +2275,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     dismissApp,
     launchApp,
     requestAppOpen,
+    requestBoardOpen,
     appOpenPending,
     captureAppCanvasRef,
     // Apps available to launch from the static Apps board overlay

@@ -466,6 +466,9 @@ export interface UseDualAgentReturn {
   /** Ask the server to resolve startup params, then open the app (apps with
    *  needsStartupResolution). Server replies via the normal app_open message. */
   requestAppOpen: (appId: string, appData?: any) => void;
+  /** Ask the server to load a pre-built board by key (the press half of a
+   *  board-launch button). Server replies via the normal set_board message. */
+  requestBoardOpen: (boardKey: string) => void;
   /** appId currently awaiting a request_app_open round-trip, or null. */
   appOpenPending: string | null;
   /** Register a function to capture the app canvas (e.g. drawing) for detection */
@@ -500,7 +503,10 @@ export interface UseDualAgentReturn {
 
   // Actions
   initialize: () => Promise<void>;
-  sendMessage: (message: string, board?: ParsedBoardData) => Promise<void>;
+  /** Send text to the AI. Nothing sent this way reaches the AAC text box
+   *  unless `caption: "student"` says the text IS the student's own words —
+   *  see `useAacCaption`. */
+  sendMessage: (message: string, board?: ParsedBoardData, opts?: { caption?: "student" }) => Promise<void>;
   sendContextOnly: (text: string) => void;
   /** DEBUG-only: force the server-side budget to `percent` to exercise the
    *  throttle ladder live (server gates on debugMode). */

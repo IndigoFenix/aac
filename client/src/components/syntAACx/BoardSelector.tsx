@@ -1,7 +1,7 @@
 // src/components/syntAACx/BoardSelector.tsx
 // This component appears as a bar below the chat when in SyntAACx mode
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,8 +30,8 @@ import {
   Zap,
   Info,
   Trash2,
-  Package,
   UserPlus,
+  Lock,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -39,17 +39,27 @@ import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useBoardStore } from '@/store/board-store';
-import { useSharedState } from '@/contexts/FeaturePanelContext';
+import { useBoardStore, resolveAutomaticSelection } from '@/store/board-store';
+import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
+import type { FeatureType } from '@shared/schema';
 import { useStudent } from '@/hooks/useStudent';
+import { useInstitute } from '@/hooks/useInstitute';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
-import { BoardIR } from '@/types/board-ir';
+import type { BoardLibraryResponse } from '@shared/board-library';
 import { BoardPackageControl } from './BoardPackageControl';
+import { useBoardSave } from './use-board-save';
+
+/** What to call a {{student}} in a sentence — first name if we have one. */
+const studentDisplayName = (s: any): string => s?.firstName || s?.name || '';
 
 export function BoardSelector() {
   const [pendingSwitchBoardId, setPendingSwitchBoardId] = useState<string | null>(null);
+  // Leaving the panel altogether raises the SAME dialog as switching boards —
+  // walking away from unsaved work loses it either way. Exactly one of these
+  // two is set while the dialog is open, and it says what "continue" means.
+  const [pendingLeaveFeature, setPendingLeaveFeature] = useState<FeatureType | null>(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showClearUnsavedDialog, setShowClearUnsavedDialog] = useState(false);
   const [isLoadingBoard, setIsLoadingBoard] = useState(false);
@@ -59,8 +69,10 @@ export function BoardSelector() {
   const isDark = theme === 'dark';
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { student } = useStudent();
-  
+  const { student, selectStudent } = useStudent();
+  const { currentInstitute } = useInstitute();
+  const instituteId = currentInstitute?.id;
+
   const { 
     board, 
     boards, 
@@ -70,12 +82,12 @@ export function BoardSelector() {
     isEditMode,
     hydrateBoardsFromServer,
     openBoardFromServer,
-    markBoardSaved,
     updateBoard,
     setBoard,
   } = useBoardStore();
   
   const { sharedState, setSharedState } = useSharedState();
+  const { setActiveFeature, registerNavigationGuard, unregisterNavigationGuard } = useFeaturePanel();
 
   // "Update Automatically" (isGenerated) only makes sense when the AI is allowed
   // to manage boards dynamically for this student.
@@ -98,62 +110,108 @@ export function BoardSelector() {
   // ============================================================================
   // LOAD BOARDS LIST FROM SERVER (metadata only, no irData)
   // ============================================================================
-  
-  // With a student loaded we fetch TWO lists and show them as separate groups:
-  //   1. the student's boards — whoever authored them, plus anything reaching
-  //      them through an attached package
-  //   2. our own drafts that are attached to no student at all
-  // They used to arrive as one undifferentiated list, which is what made the
-  // picker impossible to read: a colleague's board for this child was missing
-  // while every stray draft of our own showed up under every child.
-  useQuery({
-    queryKey: ['/api/boards', student?.id ?? 'all'],
-    queryFn: async () => {
-      if (!student?.id) {
-        const res = await apiRequest('GET', '/api/boards');
-        if (!res.ok) throw new Error('Failed to load boards');
-        const rows = await res.json();
-        hydrateBoardsFromServer(rows);
-        return rows;
-      }
 
-      const [studentRes, draftsRes] = await Promise.all([
-        apiRequest('GET', `/api/boards/student/${student.id}`),
-        apiRequest('GET', '/api/boards?unassigned=1'),
-      ]);
-      if (!studentRes.ok) {
-        throw new Error('Failed to load boards');
-      }
-      // Drafts are a convenience, not the point of the panel — if that call
-      // fails, still show the student's boards rather than an empty picker.
-      const rows = [
-        ...(await studentRes.json()),
-        ...(draftsRes.ok ? await draftsRes.json() : []),
-      ];
-      hydrateBoardsFromServer(rows);
-      return rows;
+  // ONE request, already grouped and already permission-resolved: the server
+  // decides which section a board belongs to and whether this user may save it.
+  // The client used to stitch two endpoints together and guess the grouping
+  // from row fields, which is what made the picker unreadable — a colleague's
+  // board for this child was missing while every stray draft showed up under
+  // every child.
+  //
+  // With no {{student}} selected this is the whole institute (Not assigned /
+  // each package / each {{student}}); with one selected it is what that child
+  // can actually open (their own boards, then their packages).
+  const { data: library, isFetching: libraryFetching } = useQuery<BoardLibraryResponse>({
+    queryKey: ['/api/boards/library', instituteId ?? 'none', student?.id ?? 'all'],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (instituteId) params.set('instituteId', instituteId);
+      if (student?.id) params.set('studentId', student.id);
+      const res = await apiRequest('GET', `/api/boards/library?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to load boards');
+      const data: BoardLibraryResponse = await res.json();
+      hydrateBoardsFromServer(data.groups.flatMap((g) => g.boards) as any);
+      return data;
     },
     staleTime: 30000, // Consider data fresh for 30 seconds
   });
 
-  // A board is in exactly one of three states, and the three are disjoint:
-  // attached to the loaded student, reached through a package (never attached
-  // to anyone), or an unattached draft of our own.
-  const boardGroups = useMemo(() => {
-    const studentBoards: typeof boards = [];
-    const packageBoards: typeof boards = [];
-    const drafts: typeof boards = [];
-    for (const b of boards) {
-      if ((b as any).packageName) packageBoards.push(b);
-      else if ((b as any).studentId) studentBoards.push(b);
-      else drafts.push(b);
+  /** Every board id the server just listed, in the order it listed them. */
+  const listedBoardIds = useMemo(
+    () => new Set((library?.groups ?? []).flatMap((g) => g.boards.map((b) => b.id))),
+    [library],
+  );
+
+  // The picker's sections, in the server's order. Boards are resolved back to
+  // their store entries (which carry the local _id the <Select> keys on) and a
+  // board the store hasn't caught up with yet is simply skipped rather than
+  // rendered as a blank row.
+  const renderGroups = useMemo(() => {
+    const byDbId = new Map(boards.filter((b) => b.dbId).map((b) => [b.dbId as string, b]));
+
+    const sections = (library?.groups ?? []).map((g) => ({
+      key: `${g.kind}:${g.id ?? 'none'}`,
+      label:
+        g.kind === 'unassigned'
+          ? t('board.groupNotAssigned')
+          : g.kind === 'student'
+            ? t('board.groupStudentBoards', { name: g.name })
+            : g.name,
+      readOnly: g.kind === 'package' && !g.canEdit,
+      boards: g.boards.map((b) => byDbId.get(b.id)).filter(Boolean) as typeof boards,
+    }));
+
+    // A board that was never saved lives only in the store, so no server
+    // section can hold it. It still has to be reachable — losing the board you
+    // are working on out of the picker is worse than an extra heading.
+    const unsaved = boards.filter((b) => !b.dbId);
+    if (unsaved.length) {
+      sections.push({
+        key: 'unsaved',
+        label: t('board.groupUnsaved'),
+        readOnly: false,
+        boards: unsaved,
+      });
     }
-    return { studentBoards, packageBoards, drafts };
-  }, [boards]);
+    return sections.filter((s) => s.boards.length > 0);
+  }, [library, boards, t]);
 
   /** The open board is a draft we could attach to the loaded student. */
   const canAttachToStudent =
     !!board?.dbId && !(board as any).studentId && !(board as any).packageName && !!student?.id;
+
+  /**
+   * The open board must always be one the header's {{student}} could actually
+   * open. When it is not — the board belongs to another child, or to a package
+   * this one does not have — the {{student}} is cleared rather than the board,
+   * because the board is what the user is working on. The picker then falls
+   * back to the whole-institute view, where the board is listed.
+   *
+   * Gated on a settled library: mid-fetch the list is simply not the answer yet.
+   */
+  useEffect(() => {
+    if (!student?.id || !board?.dbId || !library || libraryFetching) return;
+    // A board attached to THIS child is theirs by definition. Checked before
+    // the list so a board that was just saved for them cannot clear them while
+    // the refetch is still on its way.
+    if ((board as any).studentId === student.id) return;
+    if (listedBoardIds.has(board.dbId)) return;
+    void selectStudent(null);
+    toast({
+      title: t('board.studentCleared'),
+      description: t('board.studentClearedDesc', { name: studentDisplayName(student) }),
+    });
+  }, [
+    student,
+    board?.dbId,
+    (board as any)?.studentId,
+    library,
+    libraryFetching,
+    listedBoardIds,
+    selectStudent,
+    toast,
+    t,
+  ]);
 
   const attachToStudentMutation = useMutation({
     mutationFn: async () => {
@@ -183,7 +241,7 @@ export function BoardSelector() {
           boards: state.boards.map((b: any) => (b._id === updated._id ? updated : b)),
         };
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/boards'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/boards/library'] });
       toast({
         title: t('board.attached'),
         description: t('board.attachedDesc', { name: student?.firstName || student?.name || '' }),
@@ -232,7 +290,7 @@ export function BoardSelector() {
   // LOAD FULL BOARD DATA (with irData)
   // ============================================================================
 
-  const loadFullBoardData = useCallback(async (boardMeta: { _id: string; dbId?: string; loadedFromServer?: boolean; packageName?: string }) => {
+  const loadFullBoardData = useCallback(async (boardMeta: { _id: string; dbId?: string; loadedFromServer?: boolean; packageName?: string; canEdit?: boolean }) => {
     // If already loaded from server, just select it
     if (boardMeta.loadedFromServer) {
       selectBoardById(boardMeta._id);
@@ -264,12 +322,13 @@ export function BoardSelector() {
         irData: fullBoard.irData,
         automaticSelection: fullBoard.automaticSelection,
         automaticSelectionHint: fullBoard.automaticSelectionHint,
-        restSpace: fullBoard.restSpace,
         isGenerated: fullBoard.isGenerated,
         studentId: fullBoard.studentId,
-        // The board row knows nothing about packages; the store falls back to
-        // what the picker list already recorded for this board.
+        instituteId: fullBoard.instituteId,
+        // The board row knows nothing about packages, nor about what THIS user
+        // may do with it; both come from the picker list.
         packageName: boardMeta.packageName,
+        canEdit: boardMeta.canEdit,
       });
 
       toast({
@@ -290,90 +349,10 @@ export function BoardSelector() {
   }, [selectBoardById, openBoardFromServer, setSharedState, toast, t]);
 
   // ============================================================================
-  // SAVE BOARD MUTATION
+  // SAVE BOARD  (the button itself lives in the panel footer)
   // ============================================================================
-  
-  const saveBoardMutation = useMutation({
-    mutationFn: async () => {
-      if (!board) {
-        throw new Error('No board to save');
-      }
-      
-      // Strip internal fields to get clean IR data
-      const irData: BoardIR = {
-        name: board.name,
-        grid: board.grid,
-        pages: board.pages,
-        assets: board.assets,
-        coverImage: board.coverImage,
-      };
-      
-      const payload: Record<string, any> = {
-        name: board.name,
-        irData,
-      };
-      // Include automatic selection fields if set
-      if (board.automaticSelection !== undefined) {
-        payload.automaticSelection = board.automaticSelection;
-      }
-      if (board.automaticSelectionHint !== undefined) {
-        payload.automaticSelectionHint = board.automaticSelectionHint;
-      }
-      if (board.restSpace !== undefined) {
-        payload.restSpace = board.restSpace;
-      }
-      if ((board as any).isGenerated !== undefined) {
-        (payload as any).isGenerated = (board as any).isGenerated;
-      }
 
-      // Use PATCH for existing boards, POST for new ones
-      if (board.dbId) {
-        const res = await apiRequest('PATCH', `/api/boards/${board.dbId}`, payload);
-        if (!res.ok) {
-          throw new Error('Failed to update board');
-        }
-        return res.json() as Promise<{ id: string; name: string; studentId?: string | null }>;
-      } else {
-        // Associate new boards with the currently selected student
-        if (student?.id) {
-          payload.studentId = student.id;
-        }
-        const res = await apiRequest('POST', '/api/boards', payload);
-        if (!res.ok) {
-          throw new Error('Failed to save board');
-        }
-        return res.json() as Promise<{ id: string; name: string; studentId?: string | null }>;
-      }
-    },
-    onSuccess: (saved) => {
-      markBoardSaved(saved.id, saved.name);
-      // Both POST and PATCH echo the stored row, so take the attachment from
-      // the server rather than assuming the loaded student won — otherwise a
-      // board saved for a student sits in the "not attached" group until the
-      // next refetch.
-      useBoardStore.setState((state) => {
-        const current = state.board;
-        if (!current) return state;
-        const updated = { ...current, studentId: saved.studentId ?? undefined } as any;
-        return {
-          board: updated,
-          boards: state.boards.map((b: any) => (b._id === updated._id ? updated : b)),
-        };
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/boards'] });
-      toast({
-        title: t('board.saved'),
-        description: t('board.savedDesc'),
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: t('board.saveFailed'),
-        description: error?.message || t('board.saveFailedDesc'),
-        variant: 'destructive',
-      });
-    },
-  });
+  const saveBoard = useBoardSave();
 
   // ============================================================================
   // BOARD SWITCHING WITH UNSAVED CHANGES WARNING
@@ -389,6 +368,7 @@ export function BoardSelector() {
 
     // Check if current board has unsaved changes
     if (board?.isDirty) {
+      setPendingLeaveFeature(null);
       setPendingSwitchBoardId(boardId);
       setShowUnsavedDialog(true);
       return;
@@ -398,36 +378,57 @@ export function BoardSelector() {
     loadFullBoardData(targetBoard);
   }, [board?.isDirty, boards, isLoadingBoard, loadFullBoardData]);
 
-  const handleConfirmSwitch = useCallback(() => {
+  /** Carry out whichever departure the dialog interrupted, then close it. */
+  const runPendingDeparture = useCallback(() => {
     if (pendingSwitchBoardId) {
       const targetBoard = boards.find(b => b._id === pendingSwitchBoardId);
       if (targetBoard) {
         loadFullBoardData(targetBoard);
       }
+    } else if (pendingLeaveFeature) {
+      // `force` — the guard that raised this dialog would otherwise block the
+      // very navigation the user just confirmed.
+      setActiveFeature(pendingLeaveFeature, { force: true });
     }
     setPendingSwitchBoardId(null);
+    setPendingLeaveFeature(null);
     setShowUnsavedDialog(false);
-  }, [pendingSwitchBoardId, boards, loadFullBoardData]);
+  }, [pendingSwitchBoardId, pendingLeaveFeature, boards, loadFullBoardData, setActiveFeature]);
+
+  const handleConfirmSwitch = runPendingDeparture;
 
   const handleSaveAndSwitch = useCallback(async () => {
     try {
-      await saveBoardMutation.mutateAsync();
-      if (pendingSwitchBoardId) {
-        const targetBoard = boards.find(b => b._id === pendingSwitchBoardId);
-        if (targetBoard) {
-          loadFullBoardData(targetBoard);
-        }
-      }
-    } finally {
+      await saveBoard.saveAsync();
+      runPendingDeparture();
+    } catch {
+      // Save failed (the mutation already toasted) — keep the user here with
+      // their changes rather than dropping them on the way out.
       setPendingSwitchBoardId(null);
+      setPendingLeaveFeature(null);
       setShowUnsavedDialog(false);
     }
-  }, [saveBoardMutation, pendingSwitchBoardId, boards, loadFullBoardData]);
+  }, [saveBoard, runPendingDeparture]);
 
   const handleCancelSwitch = useCallback(() => {
     setPendingSwitchBoardId(null);
+    setPendingLeaveFeature(null);
     setShowUnsavedDialog(false);
   }, []);
+
+  // Leaving the boards panel with an unsaved board raises the same dialog as
+  // switching boards. Registered while this component is mounted, which is
+  // exactly while the panel is open.
+  useEffect(() => {
+    registerNavigationGuard('boards', (target) => {
+      if (!useBoardStore.getState().board?.isDirty) return false;
+      setPendingSwitchBoardId(null);
+      setPendingLeaveFeature(target);
+      setShowUnsavedDialog(true);
+      return true;
+    });
+    return () => unregisterNavigationGuard('boards');
+  }, [registerNavigationGuard, unregisterNavigationGuard]);
 
   // ============================================================================
   // CLEAR BOARD
@@ -466,7 +467,7 @@ export function BoardSelector() {
 
   const handleSaveAndClear = useCallback(async () => {
     try {
-      await saveBoardMutation.mutateAsync();
+      await saveBoard.saveAsync();
       useBoardStore.setState({
         board: null,
         activeBoardId: null,
@@ -479,25 +480,33 @@ export function BoardSelector() {
     } finally {
       setShowClearUnsavedDialog(false);
     }
-  }, [saveBoardMutation]);
+  }, [saveBoard]);
 
   // ============================================================================
   // RENDER
   // ============================================================================
 
-  const studentName = (student as any)?.firstName || (student as any)?.name || '';
+  const studentName = studentDisplayName(student);
+
+  /** Shared content this user may open but not change. Resolved by the same
+   *  hook the footer's Save button uses, so the badge here and the disabled
+   *  button there can never disagree. */
+  const isReadOnlyBoard = saveBoard.isReadOnly;
 
   /** One labelled section of the picker. Renders nothing when empty, so a
    *  clinician with no drafts never sees an empty "not attached" heading. */
-  const renderBoardGroup = (label: string, group: typeof boards) => {
+  const renderBoardGroup = (label: string, group: typeof boards, readOnly = false) => {
     if (!group.length) return null;
     return (
       <SelectGroup>
         <SelectLabel className={cn(
-          'text-[10px] uppercase tracking-wide',
+          'text-[10px] uppercase tracking-wide flex items-center gap-1',
           isDark ? 'text-slate-500' : 'text-gray-400'
         )}>
-          {label}
+          <span className="truncate">{label}</span>
+          {/* A package this user may use but not edit. Saying so at the
+              heading is why the greyed-out Save further along makes sense. */}
+          {readOnly && <Lock className="w-2.5 h-2.5 shrink-0" />}
         </SelectLabel>
         {group.map((b) => (
           <SelectItem key={b._id} value={b._id}>
@@ -509,20 +518,14 @@ export function BoardSelector() {
                   title={b.automaticSelectionHint || undefined}
                 >
                   <Zap className="w-2.5 h-2.5 shrink-0" />
-                  {b.automaticSelectionHint && (
+                  {false && b.automaticSelectionHint && (
                     <span className="truncate">{b.automaticSelectionHint}</span>
                   )}
                 </span>
               )}
-              {(b as any).packageName && (
-                <span
-                  className="text-[9px] px-1 py-0.5 rounded bg-teal-500/20 text-teal-600 flex items-center gap-1 max-w-[140px] shrink-0"
-                  title={(b as any).packageName}
-                >
-                  <Package className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">{(b as any).packageName}</span>
-                </span>
-              )}
+              {/* No package badge here: the board is already sitting under
+                  that package's heading, so the name would just be said twice
+                  in a row that has no width to spare. */}
               {(b as any).isGenerated && (
                 <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-500 shrink-0">
                   AI
@@ -544,10 +547,10 @@ export function BoardSelector() {
     <>
       {/* The document is dir="rtl" in RTL mode, so flex rows already reverse —
           do NOT add flex-row-reverse here or it double-flips back to LTR. */}
-      <div className={cn(
-        'flex items-center justify-between gap-4 flex-wrap'
-      )}>
-        {/* Left side: Board picker */}
+      {/* Row 1: WHICH board (picker + clear) at the start, WHOSE it is
+          (ownership badges + package controls) at the end. Saving is not here —
+          it lives in the panel footer, where the board's status is reported. */}
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Select
             value={board?._id || ''}
@@ -570,107 +573,79 @@ export function BoardSelector() {
               )}
             </SelectTrigger>
             <SelectContent>
-              {boards && boards.length > 0 ? (
-                <>
-                  {renderBoardGroup(
-                    student
-                      ? t('board.groupStudentBoards', { name: studentName })
-                      : t('board.groupYourBoards'),
-                    boardGroups.studentBoards,
-                  )}
-                  {renderBoardGroup(t('board.groupFromPackages'), boardGroups.packageBoards)}
-                  {renderBoardGroup(t('board.groupUnattached'), boardGroups.drafts)}
-                </>
+              {renderGroups.length > 0 ? (
+                renderGroups.map((group) => (
+                  <Fragment key={group.key}>
+                    {renderBoardGroup(group.label, group.boards, group.readOnly)}
+                  </Fragment>
+                ))
               ) : (
                 <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                  {t('board.noBoards')}
+                  {library && !library.canCreate ? t('board.noInstitute') : t('board.noBoards')}
                 </div>
               )}
             </SelectContent>
           </Select>
+
+          {/* Clear sits with the picker because that is what it does: it
+              unselects whatever the picker selected. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              'h-7 text-xs gap-1.5',
+              isDark
+                ? 'border-slate-700 text-slate-400 hover:bg-red-950 hover:text-red-400 hover:border-red-800'
+                : 'border-gray-300 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-300'
+            )}
+            onClick={handleClearBoard}
+            disabled={!board || isLoadingBoard}
+          >
+            <Trash2 className="w-3 h-3" />
+            <span className="hidden sm:inline">{t('board.clear')}</span>
+          </Button>
         </div>
 
-        {/* Right side: Board info, Save button, and Edit/Preview toggle */}
+        {/* Right: who this board belongs to, and the actions that change
+            that. The picker on the left says WHICH board; this says WHOSE. */}
         <div className="flex items-center gap-2">
-          {/* Board name and status */}
-          {board && (
-            <div className={cn(
-              'flex items-center gap-2 mr-2',
-              // Keep the spacing on the correct visual side in RTL (physical
-              // margin swap); NOT flex-row-reverse — dir handles ordering.
-              isRTL && 'mr-0 ml-2'
-            )}>
-              <span className={cn(
-                'text-xs',
-                isDark ? 'text-slate-400' : 'text-gray-500'
-              )}>
-                {board.name}
-              </span>
-              {board.automaticSelection && (
-                <span
-                  className={cn(
-                    'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 max-w-[180px]',
-                    isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600'
-                  )}
-                  title={board.automaticSelectionHint || undefined}
-                >
-                  <Zap className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">{board.automaticSelectionHint || 'Auto'}</span>
-                </span>
+          {/* Only the surprising state gets a badge: saying "this belongs to
+              the {{student}} you have open" on every board would be noise, but
+              a board that belongs to NOBODY — so the {{student}}'s device will
+              never see it — has to say so. No package badge here either:
+              BoardPackageControl already names the package (and counts them
+              when there are several). */}
+          {board?.dbId && !(board as any).studentId && !(board as any).packageName && (
+            <span
+              className={cn(
+                'text-[9px] px-1.5 py-0.5 rounded',
+                isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-200 text-gray-600'
               )}
-              {board.isDirty && (
-                <span className={cn(
-                  'text-[9px] px-1.5 py-0.5 rounded',
-                  isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'
-                )}>
-                  {t('board.unsaved')}
-                </span>
-              )}
-              {board.dbId && !board.isDirty && (
-                <span className={cn(
-                  'text-[9px] px-1.5 py-0.5 rounded',
-                  isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-600'
-                )}>
-                  {t('board.saved')}
-                </span>
-              )}
-              {/* Who this board is for. Only the surprising states get a badge:
-                  saying "this belongs to the student you have open" on every
-                  board would be noise, but a board that belongs to NOBODY (so
-                  the student's device will never see it) or to a shared package
-                  (so editing it here is not the way) has to say so. */}
-              {(board as any).packageName ? (
-                <span
-                  className={cn(
-                    'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 max-w-[180px]',
-                    isDark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-100 text-teal-700'
-                  )}
-                  title={t('board.fromPackageTooltip')}
-                >
-                  <Package className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">{(board as any).packageName}</span>
-                </span>
-              ) : board.dbId && !(board as any).studentId ? (
-                <span
-                  className={cn(
-                    'text-[9px] px-1.5 py-0.5 rounded',
-                    isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-200 text-gray-600'
-                  )}
-                  title={t('board.notAttachedTooltip')}
-                >
-                  {t('board.notAttached')}
-                </span>
-              ) : null}
-              {/* Package membership + "add to package". Renders nothing without
-                  the packages license or on an unsaved board. */}
-              <BoardPackageControl boardId={board.dbId} isDark={isDark} />
-            </div>
+              title={t('board.notAttachedTooltip')}
+            >
+              {t('board.notAttached')}
+            </span>
           )}
-          
-          {/* Attach an unattached draft to the loaded student. This is the only
-              way a board that was saved with no student open ever reaches a
-              student's device — and it is one-way, so it cannot be used to
-              move a board off a child it already belongs to. */}
+
+          {/* Shared content this user may not change. The greyed-out Save in
+              the footer needs a visible reason, not just a tooltip. */}
+          {isReadOnlyBoard && (
+            <span
+              className={cn(
+                'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1',
+                isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-200 text-gray-600'
+              )}
+              title={t('board.readOnlyTooltip')}
+            >
+              <Lock className="w-2.5 h-2.5 shrink-0" />
+              {t('board.readOnly')}
+            </span>
+          )}
+
+          {/* Attach an unattached draft to the loaded {{student}}. This is the
+              only way a board saved with no {{student}} open ever reaches their
+              device — and it is one-way, so it cannot be used to move a board
+              off a child it already belongs to. */}
           {canAttachToStudent && (
             <Button
               variant="outline"
@@ -696,208 +671,155 @@ export function BoardSelector() {
             </Button>
           )}
 
-          {/* Save Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              'h-7 text-xs gap-1.5',
-              isDark
-                ? 'border-slate-700 hover:bg-slate-800'
-                : 'border-gray-300 hover:bg-gray-100',
-              board?.isDirty && 'border-amber-500/50 bg-amber-500/10'
-            )}
-            onClick={() => saveBoardMutation.mutate()}
-            disabled={!board || saveBoardMutation.isPending || isLoadingBoard}
-          >
-            {saveBoardMutation.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Save className="w-3 h-3" />
-            )}
-            <span className="hidden sm:inline">{t('board.save')}</span>
-          </Button>
-
-          {/* Clear Board Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              'h-7 text-xs gap-1.5',
-              isDark
-                ? 'border-slate-700 text-slate-400 hover:bg-red-950 hover:text-red-400 hover:border-red-800'
-                : 'border-gray-300 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-300'
-            )}
-            onClick={handleClearBoard}
-            disabled={!board || isLoadingBoard}
-          >
-            <Trash2 className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('board.clear')}</span>
-          </Button>
-          
-          {/* Edit/Preview Toggle */}
-          <div className={cn(
-            'flex rounded-lg overflow-hidden border',
-            isDark ? 'border-slate-700' : 'border-gray-300'
-          )}>
-            <Button
-              variant={isEditMode ? 'default' : 'ghost'}
-              size="sm"
-              className={cn(
-                'h-7 text-xs rounded-none gap-1.5',
-                isEditMode 
-                  ? 'bg-primary text-primary-foreground' 
-                  : (isDark ? 'text-slate-400' : 'text-gray-600')
-              )}
-              onClick={() => setEditMode(true)}
-              disabled={!board || isLoadingBoard}
-            >
-              <Edit className="w-3 h-3" />
-              <span className="hidden sm:inline">{t('board.edit')}</span>
-            </Button>
-            <Button
-              variant={!isEditMode ? 'default' : 'ghost'}
-              size="sm"
-              className={cn(
-                'h-7 text-xs rounded-none gap-1.5',
-                !isEditMode 
-                  ? 'bg-primary text-primary-foreground' 
-                  : (isDark ? 'text-slate-400' : 'text-gray-600')
-              )}
-              onClick={() => setEditMode(false)}
-              disabled={!board || isLoadingBoard}
-            >
-              <Eye className="w-3 h-3" />
-              <span className="hidden sm:inline">{t('board.preview')}</span>
-            </Button>
-          </div>
+          {/* Package membership + "add to package". Renders nothing without the
+              packages license or on an unsaved board. */}
+          {board && (
+            <BoardPackageControl
+              boardId={board.dbId}
+              boardStudentId={(board as any).studentId ?? null}
+              selectedStudentId={student?.id ?? null}
+              selectedStudentName={studentName}
+              boardInstituteId={(board as any).instituteId ?? null}
+              isDark={isDark}
+            />
+          )}
         </div>
       </div>
 
-      {/* Auto-Selection settings + (when dynamic boards enabled) Update-Automatically */}
-      {board && (
-        <div className="flex items-start justify-between gap-3 mt-2 px-1">
-          {/* Left: AAC Auto-Select toggle + always-visible Auto-Select Hint */}
-          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="auto-select"
-                // Auto-select is meaningless without a hint telling the AI WHEN to load,
-                // so it's gated on one: shown unchecked + disabled when the hint is empty
-                // (even if a stale automaticSelection=true is stored, e.g. from generation).
-                checked={!!(board.automaticSelectionHint ?? '').trim() && (board.automaticSelection ?? false)}
-                disabled={!(board.automaticSelectionHint ?? '').trim()}
-                onCheckedChange={(checked) => patchBoardMeta({ automaticSelection: !!checked })}
-              />
-              <Label htmlFor="auto-select" className={cn(
-                'text-xs cursor-pointer',
-                isDark ? 'text-slate-400' : 'text-gray-500'
-              )}>
-                {t('board.autoSelect') || 'AAC Auto-Select'}
-              </Label>
-            </div>
-            {/* Corner rest space — how much of each button's corner is cut away
-                so an eyegaze student has somewhere to look that selects
-                nothing. Per-board: a board with small buttons and a learned
-                layout wants less of it than a dynamic one. */}
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="rest-space" className={cn(
-                'text-xs whitespace-nowrap',
-                isDark ? 'text-slate-400' : 'text-gray-500'
-              )}>
-                {t('board.restSpace')}
-              </Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className={cn(
-                      'w-3.5 h-3.5 cursor-help shrink-0',
-                      isDark ? 'text-slate-500' : 'text-gray-400'
-                    )} />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs text-xs">
-                    {t('board.restSpaceHint')}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <select
-                id="rest-space"
-                className={cn(
-                  'text-xs rounded border px-1.5 py-0.5',
-                  isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-gray-200 text-gray-700'
-                )}
-                value={board.restSpace ?? 'small'}
-                onChange={(e) => patchBoardMeta({ restSpace: e.target.value })}
-              >
-                <option value="none">{t('board.restSpaceNone')}</option>
-                <option value="small">{t('board.restSpaceSmall')}</option>
-                <option value="large">{t('board.restSpaceLarge')}</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="auto-select-hint" className={cn(
-                'text-xs whitespace-nowrap',
-                isDark ? 'text-slate-400' : 'text-gray-500'
-              )}>
-                {t('board.autoSelectHint') || 'Auto-Select Hint'}
-              </Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className={cn(
-                      'w-3.5 h-3.5 cursor-help shrink-0',
-                      isDark ? 'text-slate-500' : 'text-gray-400'
-                    )} />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs text-xs">
-                    {t('board.autoSelectHintTooltip') || 'If set, the AAC will load this board automatically when the specified conditions are observed.'}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Input
-                id="auto-select-hint"
-                placeholder={t('board.autoSelectHintPlaceholder') || "e.g. 'During mealtimes'"}
-                value={board.automaticSelectionHint ?? ''}
-                onChange={(e) => {
-                  const newHint = e.target.value;
-                  const prev = useBoardStore.getState().board as any;
-                  const wasEmpty = !((prev?.automaticSelectionHint ?? '') as string).trim();
-                  const nowEmpty = !newHint.trim();
-                  patchBoardMeta({
-                    automaticSelectionHint: newHint,
-                    // Auto-enable on empty→non-empty; force off when emptied (toggle also disables).
-                    automaticSelection: nowEmpty ? false : (wasEmpty ? true : (prev?.automaticSelection ?? false)),
-                  });
-                }}
-                className={cn(
-                  'h-7 text-xs w-44',
-                  isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'
-                )}
-              />
-            </div>
-          </div>
-
-          {/* Right (opposite side): Update Automatically — only when dynamic boards enabled */}
-          {dynamicBoardsEnabled && (
-            <div className="flex items-center gap-2 shrink-0">
-              <Checkbox
-                id="update-auto"
-                checked={(board as any).isGenerated ?? false}
-                onCheckedChange={(checked) => patchBoardMeta({ isGenerated: !!checked })}
-              />
-              <Label htmlFor="update-auto" className={cn(
-                'text-xs cursor-pointer whitespace-nowrap',
-                isDark ? 'text-slate-400' : 'text-gray-500'
-              )}>
-                {t('board.updateAutomatically') || 'Update Automatically'}
-              </Label>
-            </div>
+      {/* Row 2: how the AAC should treat this board (start), and how this
+          editor should show it (end). */}
+      <div className="flex items-center justify-between gap-3 mt-2 px-1">
+        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+          {board && (
+            <>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="auto-select"
+                  // Auto-select is meaningless without a hint telling the AI WHEN to load,
+                  // so it's gated on one: shown unchecked + disabled when the hint is empty
+                  // (even if a stale automaticSelection=true is stored, e.g. from generation).
+                  checked={!!(board.automaticSelectionHint ?? '').trim() && (board.automaticSelection ?? false)}
+                  disabled={!(board.automaticSelectionHint ?? '').trim()}
+                  onCheckedChange={(checked) => patchBoardMeta({ automaticSelection: !!checked })}
+                />
+                <Label htmlFor="auto-select" className={cn(
+                  'text-xs cursor-pointer',
+                  isDark ? 'text-slate-400' : 'text-gray-500'
+                )}>
+                  {t('board.autoSelect')}
+                </Label>
+              </div>
+              {/* Corner rest space is NOT here on purpose — it is the student's
+                  setting (AAC Settings → Rest Areas) and applies to every board
+                  they open, so a board cannot ask for its own. */}
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="auto-select-hint" className={cn(
+                  'text-xs whitespace-nowrap',
+                  isDark ? 'text-slate-400' : 'text-gray-500'
+                )}>
+                  {t('board.autoSelectHint')}
+                </Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className={cn(
+                        'w-3.5 h-3.5 cursor-help shrink-0',
+                        isDark ? 'text-slate-500' : 'text-gray-400'
+                      )} />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-xs">
+                      {t('board.autoSelectHintTooltip')}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <Input
+                  id="auto-select-hint"
+                  placeholder={t('board.autoSelectHintPlaceholder')}
+                  value={board.automaticSelectionHint ?? ''}
+                  onChange={(e) => {
+                    const newHint = e.target.value;
+                    const prev = useBoardStore.getState().board as any;
+                    patchBoardMeta({
+                      automaticSelectionHint: newHint,
+                      // Same rule the store applies to hints the AI writes.
+                      automaticSelection: resolveAutomaticSelection(
+                        prev?.automaticSelectionHint,
+                        newHint,
+                        prev?.automaticSelection,
+                      ),
+                    });
+                  }}
+                  className={cn(
+                    'h-7 text-xs w-44',
+                    isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'
+                  )}
+                />
+              </div>
+              {/* Update Automatically — only when dynamic boards are enabled */}
+              {dynamicBoardsEnabled && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <Checkbox
+                    id="update-auto"
+                    checked={(board as any).isGenerated ?? false}
+                    onCheckedChange={(checked) => patchBoardMeta({ isGenerated: !!checked })}
+                  />
+                  <Label htmlFor="update-auto" className={cn(
+                    'text-xs cursor-pointer whitespace-nowrap',
+                    isDark ? 'text-slate-400' : 'text-gray-500'
+                  )}>
+                    {t('board.updateAutomatically')}
+                  </Label>
+                </div>
+              )}
+            </>
           )}
         </div>
-      )}
 
-      {/* Unsaved Changes Dialog (board switch) */}
-      <Dialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        {/* Edit/Preview Toggle */}
+        <div className={cn(
+          'flex rounded-lg overflow-hidden border shrink-0',
+          isDark ? 'border-slate-700' : 'border-gray-300'
+        )}>
+          <Button
+            variant={isEditMode ? 'default' : 'ghost'}
+            size="sm"
+            className={cn(
+              'h-7 text-xs rounded-none gap-1.5',
+              isEditMode
+                ? 'bg-primary text-primary-foreground'
+                : (isDark ? 'text-slate-400' : 'text-gray-600')
+            )}
+            onClick={() => setEditMode(true)}
+            disabled={!board || isLoadingBoard}
+          >
+            <Edit className="w-3 h-3" />
+            <span className="hidden sm:inline">{t('board.edit')}</span>
+          </Button>
+          <Button
+            variant={!isEditMode ? 'default' : 'ghost'}
+            size="sm"
+            className={cn(
+              'h-7 text-xs rounded-none gap-1.5',
+              !isEditMode
+                ? 'bg-primary text-primary-foreground'
+                : (isDark ? 'text-slate-400' : 'text-gray-600')
+            )}
+            onClick={() => setEditMode(false)}
+            disabled={!board || isLoadingBoard}
+          >
+            <Eye className="w-3 h-3" />
+            <span className="hidden sm:inline">{t('board.preview')}</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Unsaved Changes Dialog — raised by a board switch OR by leaving the panel */}
+      <Dialog
+        open={showUnsavedDialog}
+        // Dismissing by Esc/backdrop is a cancel: drop the pending departure
+        // too, or the next confirm would act on a stale target.
+        onOpenChange={(open) => { if (!open) handleCancelSwitch(); }}
+      >
         <DialogContent className={cn(
           'max-w-md',
           isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'
@@ -911,7 +833,9 @@ export function BoardSelector() {
               {t('board.unsavedChanges')}
             </DialogTitle>
             <DialogDescription className={isDark ? 'text-slate-400' : 'text-gray-500'}>
-              {t('board.unsavedChangesDesc')}
+              {pendingLeaveFeature
+                ? t('board.unsavedLeaveDesc')
+                : t('board.unsavedChangesDesc')}
             </DialogDescription>
           </DialogHeader>
 
@@ -933,19 +857,23 @@ export function BoardSelector() {
               variant="destructive"
               onClick={handleConfirmSwitch}
             >
-              {t('board.discardChanges')}
+              {pendingLeaveFeature
+                ? t('board.discardAndLeave')
+                : t('board.discardChanges')}
             </Button>
             <Button
               onClick={handleSaveAndSwitch}
-              disabled={saveBoardMutation.isPending}
+              disabled={saveBoard.isPending}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {saveBoardMutation.isPending ? (
+              {saveBoard.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
               ) : (
                 <Save className="w-4 h-4 mr-2" />
               )}
-              {t('board.saveAndSwitch')}
+              {pendingLeaveFeature
+                ? t('board.saveAndLeave')
+                : t('board.saveAndSwitch')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -992,10 +920,10 @@ export function BoardSelector() {
             </Button>
             <Button
               onClick={handleSaveAndClear}
-              disabled={saveBoardMutation.isPending}
+              disabled={saveBoard.isPending}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {saveBoardMutation.isPending ? (
+              {saveBoard.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
               ) : (
                 <Save className="w-4 h-4 mr-2" />

@@ -64,7 +64,7 @@ export function ChatFeature() {
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastReadMessageRef = useRef<number | null>(null);
   
@@ -277,12 +277,77 @@ export function ChatFeature() {
   }, [isListening]);
 
   // Auto-resize the textarea to fit its content (up to CSS max-height).
-  useEffect(() => {
+  const autoSizeInput = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
+    // An empty field is one row, full stop. Chrome folds the wrapped
+    // *placeholder* into scrollHeight, so measuring an empty textarea in a
+    // narrow column reports the height of the placeholder wrapped over a dozen
+    // lines. Dropping the inline height falls back to the rows={1} CSS.
+    if (!el.value) {
+      el.style.height = '';
+      return;
+    }
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [prompt, isListening, interimTranscript]);
+  }, []);
+
+  useEffect(() => {
+    autoSizeInput();
+  }, [prompt, isListening, interimTranscript, autoSizeInput]);
+
+  // scrollHeight only means anything at the width the textarea is actually laid
+  // out at, and the chat column animates its width over transitionDuration
+  // whenever the chat flips between panel and popup mode (it also changes width
+  // when the split handle is dragged or the sidebar collapses). A height
+  // measured mid-animation belongs to a column a couple of dozen pixels wide,
+  // and nothing re-ran the measurement afterwards — that is how the input came
+  // back from popup mode stretched and stayed that way until a keystroke. So
+  // re-measure whenever the width changes.
+  //
+  // Attached through a callback ref rather than an effect because the textarea
+  // is a fresh DOM node every time it remounts (panel ↔ popup, and welcome view
+  // ↔ conversation view) and a fresh node carries no height of its own.
+  //
+  // The observer watches the input bar around the textarea, never the textarea
+  // itself: once the content passes max-height the textarea grows its own
+  // scrollbar, which changes its clientWidth, which would re-trigger the resize
+  // that removes the scrollbar again — an endless width/scrollbar oscillation.
+  // The wrapper's width is set by the column above it and is unaffected by how
+  // tall the textarea gets, so it only reports the resizes we actually care about.
+  const inputResizeObserver = useRef<ResizeObserver | null>(null);
+  const inputResizeFrame = useRef<number | null>(null);
+  const lastInputWidth = useRef(0);
+  const attachInput = useCallback((el: HTMLTextAreaElement | null) => {
+    inputRef.current = el;
+    inputResizeObserver.current?.disconnect();
+    inputResizeObserver.current = null;
+    if (inputResizeFrame.current !== null) {
+      cancelAnimationFrame(inputResizeFrame.current);
+      inputResizeFrame.current = null;
+    }
+    const wrapper = el?.parentElement;
+    if (!el || !wrapper) return;
+    autoSizeInput();
+    if (typeof ResizeObserver === 'undefined') return;
+    lastInputWidth.current = wrapper.clientWidth;
+    const observer = new ResizeObserver(() => {
+      // Re-measure on the next frame rather than inside the callback: writing
+      // the height back during delivery is what provokes Chrome's
+      // "ResizeObserver loop completed with undelivered notifications" error,
+      // which Vite surfaces as a full-screen runtime-error overlay in dev.
+      if (inputResizeFrame.current !== null) return;
+      inputResizeFrame.current = requestAnimationFrame(() => {
+        inputResizeFrame.current = null;
+        // Height-only changes are our own doing — reacting to them would loop.
+        if (wrapper.clientWidth === lastInputWidth.current) return;
+        lastInputWidth.current = wrapper.clientWidth;
+        autoSizeInput();
+      });
+    });
+    observer.observe(wrapper);
+    inputResizeObserver.current = observer;
+  }, [autoSizeInput]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -729,7 +794,7 @@ export function ChatFeature() {
         )}
 
         <textarea
-          ref={inputRef}
+          ref={attachInput}
           rows={1}
           value={isListening ? (interimTranscript || prompt) : prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -781,7 +846,7 @@ export function ChatFeature() {
         </div>
       )}
     </div>
-  ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, stopGeneration, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, VoiceControls, isListening, interimTranscript, sttError]);
+  ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, stopGeneration, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, VoiceControls, isListening, interimTranscript, sttError, attachInput]);
 
   return (
     <div className="flex h-full relative">

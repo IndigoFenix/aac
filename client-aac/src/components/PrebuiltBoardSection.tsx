@@ -5,7 +5,8 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useBoards, type BoardData } from "@/contexts/BoardsContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import DynamicBoard from "@/components/DynamicBoard";
-import { minRestSpace, type RestSpace } from "@shared/button-shape";
+import type { RestSpace } from "@shared/button-shape";
+import type { SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 
 // Clinician-built ("prebuilt") boards loaded for the student. This component is
 // just the board PICKER + a host for the canonical renderer: once a board is
@@ -26,10 +27,13 @@ interface PrebuiltBoardSectionProps {
   getFaceImage?: (contactId: string) => string | null;
   /** Icon-to-text size ratio 1–5 (student preference), forwarded to the board. */
   iconTextRatio?: number;
-  /** Gate the board's corner rest space — pointless without a gaze gesture. */
-  eyegazeEnabled?: boolean;
-  /** The student's own rest-space preference; a board may narrow it, not widen it. */
-  studentRestSpace?: RestSpace;
+  /**
+   * The two eyegaze display settings, resolved by the caller exactly as they
+   * are for AI boards — a clinician-built board is the same renderer showing
+   * the same student's buttons, so it must not read differently under gaze.
+   */
+  selectionMethod?: SelectionMethod;
+  restSpace?: RestSpace;
 }
 
 export default function PrebuiltBoardSection({
@@ -41,8 +45,8 @@ export default function PrebuiltBoardSection({
   suppressLocalSpeech = false,
   getFaceImage,
   iconTextRatio = 3,
-  eyegazeEnabled = false,
-  studentRestSpace = "large",
+  selectionMethod = "whole_button",
+  restSpace = "none",
 }: PrebuiltBoardSectionProps) {
   const { t } = useLanguage();
   const [selectedBoard, setSelectedBoard] = useState<BoardData | null>(null);
@@ -168,14 +172,9 @@ export default function PrebuiltBoardSection({
         iconTextRatio={iconTextRatio}
         getFaceImage={getFaceImage}
         suppressLocalSpeech={suppressLocalSpeech}
-        // A static board may ask for LESS corner space than the student's
-        // preference — smaller buttons, learned layout — but never for more:
-        // the student setting is an accessibility need, not a default.
-        restSpace={
-          eyegazeEnabled
-            ? minRestSpace(studentRestSpace, selectedBoard.restSpace)
-            : "none"
-        }
+        // Straight from AAC Settings, same as an AI board — see the prop docs.
+        selectionMethod={selectionMethod}
+        restSpace={restSpace}
         // Board-to-board links: the target's IR may not be loaded yet, so go
         // through the same lazy path rather than the metadata list.
         onNavigateToBoard={(boardId) => void openBoard(boardId)}

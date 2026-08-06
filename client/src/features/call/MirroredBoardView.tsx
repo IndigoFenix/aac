@@ -22,6 +22,7 @@
 import { useMemo } from "react";
 import type { BoardButton, ParsedBoardData } from "@shared/schema";
 import type { MirrorQuickButton } from "@shared/call/call-data-messages";
+import { pageGrid } from "@shared/board-grid";
 import { Glyph } from "@/components/Glyph";
 import { cn } from "@/lib/utils";
 
@@ -98,9 +99,9 @@ export function MirroredBoardView({ board, pageId, rtl, contextButtons, quickBut
     return board.pages.find((p) => p.id === id) ?? board.pages[0] ?? null;
   }, [board, pageId]);
 
-  const grid = page?.layout ?? board.grid;
-  const rows = Math.max(1, grid?.rows ?? 1);
-  const cols = Math.max(1, grid?.cols ?? 1);
+  // Same resolution the student's own renderer uses — the mirror must show the
+  // board they are looking at, not a differently-shaped guess at it.
+  const { rows, cols } = pageGrid(board, page, { rows: 1, cols: 1 });
 
   return (
     <div className={cn("flex h-full w-full flex-col bg-black/40 p-2", className)} dir={rtl ? "rtl" : "ltr"}>

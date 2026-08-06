@@ -133,8 +133,12 @@ describe("open (launch-button) field gating", () => {
     ...baseConfig,
     enabledApps: [{ id: "drawing", name: "Drawing" }],
   };
+  const withBoards: BoardManagerToolConfig = {
+    ...baseConfig,
+    availableBoards: [{ key: "snack_time", name: "Snack Time" }],
+  };
 
-  test("open is absent everywhere when no websites or apps are available", () => {
+  test("open is absent everywhere when nothing is launchable", () => {
     const decls = buildBoardManagerToolDeclarations(baseConfig);
     for (const toolName of ["rebuild_board", "add_board_button", "add_context_button", "show_binary_choice"]) {
       expect(getButtonProps(decls, toolName)).not.toHaveProperty("open");
@@ -154,8 +158,29 @@ describe("open (launch-button) field gating", () => {
     const open = getButtonProps(decls, "rebuild_board").open;
     expect(open).toBeDefined();
     expect(open.description).toContain("drawing");
-    expect(open.properties).toHaveProperty("website");
     expect(open.properties).toHaveProperty("app");
+    // Sub-fields are trimmed to what's actually launchable — no permitted
+    // websites means the model is never offered a `website` branch to fill.
+    expect(open.properties).not.toHaveProperty("website");
+    expect(open.properties).not.toHaveProperty("board");
+  });
+
+  test("open.board appears when pre-built boards exist (even with no apps or sites)", () => {
+    const decls = buildBoardManagerToolDeclarations(withBoards);
+    const open = getButtonProps(decls, "rebuild_board").open;
+    expect(open).toBeDefined();
+    expect(open.properties).toHaveProperty("board");
+    expect(open.properties).not.toHaveProperty("app");
+    expect(open.properties).not.toHaveProperty("website");
+    // Board KEYS are NOT enumerated here — <prebuilt_boards> already lists them
+    // with names + hints, and this schema is inlined on every button.
+    expect(open.properties.board.description).toContain("<prebuilt_boards>");
+    expect(open.description).not.toContain("snack_time");
+  });
+
+  test("open.board is offered on add_board_button too (offer a board alongside a reply)", () => {
+    const decls = buildBoardManagerToolDeclarations(withBoards);
+    expect(getButtonProps(decls, "add_board_button").open.properties).toHaveProperty("board");
   });
 
   test("open never appears on the sidebar or binary-choice buttons", () => {
