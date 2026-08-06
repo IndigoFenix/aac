@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
-import { getDeviceId, getDeviceName } from "@/lib/device-id";
+import { ensureDeviceId, getDeviceName } from "@/lib/device-id";
 
 export interface RegisteredDevice {
   id: string;
@@ -46,7 +46,9 @@ export function useDeviceRegistration(studentId: string | null): DeviceRegistrat
     setStatus("checking");
     try {
       const res = await apiRequest("POST", `/api/students/${studentId}/devices/register`, {
-        deviceId: getDeviceId(),
+        // Resolves the durable (native-stored) id, so a wiped localStorage
+        // re-uses this device's slot instead of claiming another one.
+        deviceId: await ensureDeviceId(),
         deviceName: getDeviceName(),
       });
       const data = await res.json();

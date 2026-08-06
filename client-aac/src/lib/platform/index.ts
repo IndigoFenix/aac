@@ -17,10 +17,11 @@ export { getUpdateProvider } from "./update";
 export type { UpdateProvider, UpdateStatus } from "@shared/native-update.js";
 export {
   getBrowserBridge,
+  getDeviceIdStore,
   getElectronBridge,
   getGazeBridge,
   getInstancesBridge,
   getNativeVersion,
 } from "./bridge";
-export type { GazeBridge, GazeSidecarStatus, InstancesBridge } from "./bridge";
+export type { DeviceIdStore, GazeBridge, GazeSidecarStatus, InstancesBridge } from "./bridge";
 export type { AppInstance, AppInstanceReport } from "@shared/app-instances.js";

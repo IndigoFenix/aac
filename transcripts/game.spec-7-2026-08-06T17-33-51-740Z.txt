@@ -1,0 +1,369 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T17:33:51.740Z
+# ─────────────────────────────────────────
+> watch biscuit
+WATCH  watching biscuit.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 0.8s.
+> scene
+SCENE  house-1 — 13 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  ball-1 (ball), here south.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  bowl-1 (bowl), there east.
+  oven-1 (oven), there west.
+  a chair, here east.
+  a chair, there east.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, you can see inside.
+  house-2 (house), here north, white, shut to you.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> family
+FAMILY 4 in the household.
+  mara (Mara) — content
+  orrin (Orrin) — content
+  pip (Pip) — content
+  biscuit (Biscuit) — content
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /carry mara
+CHEAT  /carry mara
+> /carry pip
+CHEAT  /carry pip
+> /carry orrin
+CHEAT  /carry orrin
+> /carry biscuit
+CHEAT  /carry biscuit
+> wait 60
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    pip: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 18 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  pip (person), here south.
+  mara (person), here south.
+  orrin (person), here south.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  a box, here north.
+  a chair, here east.
+  a bed, there north.
+  a bowl, there east.
+  a chair, there east.
+  a box, there north.
+  an oven, there west.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> family
+FAMILY 4 in the household.
+  mara (Mara) — content
+  orrin (Orrin) — content
+  pip (Pip) — content
+  biscuit (Biscuit) — content
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /carry mara
+CHEAT  /carry mara
+> /carry pip
+CHEAT  /carry pip
+> /carry orrin
+CHEAT  /carry orrin
+> wait 60
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    pip: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    mara: "I'm not hungry."  [i_me + hungry.not]
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 18 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  pip (person), here south.
+  orrin (person), here south.
+  mara (person), here west.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  a box, here north.
+  a chair, here east.
+  a bed, there north.
+  a bowl, there east.
+  a chair, there east.
+  a box, there north.
+  an oven, there west.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  house-68 (house), close west, green, door open, shut to you.
+  46 houses, there east, all shut.
+  32 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> family
+FAMILY 4 in the household.
+  mara (Mara) — content
+  orrin (Orrin) — content
+  pip (Pip) — content
+  biscuit (Biscuit) — content
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /carry mara
+CHEAT  /carry mara
+> /carry pip
+CHEAT  /carry pip
+> /carry orrin
+CHEAT  /carry orrin
+> wait 60
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    pip: "bye-bye"  [goodbye]
+SAY    orrin: "💗"
+SAY    pip: "bye-bye"  [goodbye]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    pip: [ball]
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 19 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  orrin (person), here south, play.
+  pip (person), here north, play.
+  mara (person), here south.
+  basket-1 (basket), here south.
+  ball-2 (ball), here north.
+  a box, here north.
+  a chair, here east.
+  a table, there east.
+  a bed, there north.
+  a bowl, there east.
+  a chair, there east.
+  a box, there north.
+  an oven, there west.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  house-80 (house), close south, red, door open, shut to you.
+  46 houses, there east, all shut.
+  32 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> family
+FAMILY 4 in the household.
+  mara (Mara) — content
+  orrin (Orrin) — bored
+  pip (Pip) — playing
+  biscuit (Biscuit) — content
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /carry mara
+CHEAT  /carry mara
+> /carry pip
+CHEAT  /carry pip
+> /carry orrin
+CHEAT  /carry orrin
+> wait 60
+SAY    pip: [play]
+SAY    orrin: [play]
+SAY    biscuit: "bye-bye"  [goodbye]
+DOING  biscuit is get play.
+MOVED  biscuit is now here east.
+DOING  biscuit is go ball.
+DOING  biscuit is doing nothing.
+HOLD   biscuit is holding ball-2.
+SAY    biscuit: [ball]
+DOING  biscuit is play.
+HOLD   biscuit is holding nothing.
+MOVED  biscuit is now there north.
+SAY    orrin: "🍳"  [banana.hot]
+SAY    biscuit: [play]
+DOING  biscuit is doing nothing.
+SAY    biscuit: "🥺"  [apple]
+SAY    mara: [play]
+SAY    pip: [sit]
+MOVED  biscuit is now here north.
+MOVED  biscuit is now here east.
+SAY    orrin: [meal]
+DOING  biscuit is eat food.
+EXIT   pip went out of the white house.
+MOVED  biscuit is now there east.
+HOLD   biscuit is holding banana-1.
+SAY    mara: [apple]
+DOING  biscuit is go chair.
+DOING  biscuit is doing nothing.
+SAY    biscuit: [banana]
+HOLD   biscuit is holding nothing.
+SAY    biscuit: "🥺"  [water]
+SAY    orrin: [water]
+SAY    biscuit: "Help you."  [help + you]
+SAY    orrin: "Thank you!"  [thank_you]
+SAY    biscuit: "Help you."  [help + you]
+MOVED  biscuit is now here south.
+TOAST  🏗️ the people stake out a market (feedback)
+SAY    orrin: "Thank you!"  [thank_you]
+EXIT   orrin left view here west.
+SAY    biscuit: "Where is the food?"  [place#question + food]
+DOING  biscuit is eat water.
+SAY    biscuit: "🥺"  [water]
+SAY    mara: [water]
+DOING  biscuit is go chair.
+DOING  biscuit is go house.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 17 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south, go house.
+  mara (person), there east.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  ball-2 (ball), there north.
+  bed-2 (bed), there north.
+  a box, here north.
+  a chair, here east.
+  a bowl, there east.
+  a chair, there east.
+  a box, there north.
+  an oven, there west.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — floor laid, 0% worked, far north, 292 m
+TICK   quiet after 0.8s.
+> family
+FAMILY 4 in the household.
+  mara (Mara) — toilet
+  orrin (Orrin) — hungry
+  pip (Pip) — hungry
+  biscuit (Biscuit) — thirsty
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /carry mara
+CHEAT  /carry mara
+> /carry pip
+CHEAT  /carry pip
+> /carry orrin
+CHEAT  /carry orrin
+> wait 60
+DOING  biscuit is doing nothing.
+ENTER  orrin came into view there west.
+EXIT   mara left view here west.
+ENTER  mara came into view here west.
+SAY    orrin: [apple]
+EXIT   mara went out of the white house.
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm thirsty."  [i_me + thirsty]
+EXIT   orrin left view here west.
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 15 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  table-1 (table), there east.
+  ball-2 (ball), there north.
+  bed-2 (bed), there north.
+  bowl-1 (bowl), there east.
+  oven-1 (oven), there west.
+  a box, here north.
+  a chair, here east.
+  a chair, there east.
+  a box, there north.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — floor laid, 25% worked, far north, 292 m
+TICK   quiet after 0.8s.
+> family
+FAMILY 4 in the household.
+  mara (Mara) — content
+  orrin (Orrin) — content
+  pip (Pip) — hungry
+  biscuit (Biscuit) — thirsty
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /carry mara
+CHEAT  /carry mara
+> /carry pip
+CHEAT  /carry pip
+> /carry orrin
+CHEAT  /carry orrin
+# ─────────────────────────────────────────
+# commands=43  presses=0  screens=1  sim=309.9s
+# events: SAY 64  CHEAT 25  TICK 18  DOING 12  NOTE 6  SCENE 6  FAMILY 6  MOVED 6  EXIT 5  HOLD 4  SITE 2  ENTER 2  WATCH 1  BOARD 1  TOAST 1

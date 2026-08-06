@@ -223,6 +223,27 @@ export interface DialogueCtx {
   rng?: () => number;
 }
 
+/**
+ * WHERE A CREATURE'S OWN ACQUIRE RESOLUTION WOULD SEND IT for a resource type —
+ * see {@link ProjectionOpts.resolveSourceFor}. Three ANSWERS and one absence:
+ * an absent answer is "ask somebody else", `none` is "there is none", and those
+ * are different facts that a single nullable could never tell apart.
+ */
+export type SourceAnswer =
+  /** A box to draw from: `objId` is the world object, `glyph` the WORD it is
+   *  named by ("refrigerator") — the container half of the locative. */
+  | { kind: "container"; objId: string; glyph: string }
+  /** A place-fact subject the host can give directions to ("buy:good:food").
+   *  `at:<objId>` is the same shape for a LIVE object (a well, a ball on the
+   *  floor, a piece of furniture) — the host resolves its position. */
+  | { kind: "place"; subjectId: string }
+  /** SOMEBODY HAS IT (§8 D2 rung 3): a household body — a housemate, the pet,
+   *  or the answerer itself — is carrying the thing. Spoken as the holder clue
+   *  ("the dog has the ball"), first-person when it is the answerer's own hand. */
+  | { kind: "holder"; cid: CreatureId }
+  /** The row resolved to nothing at all — the honest there-is-none. */
+  | { kind: "none" };
+
 export interface ProjectionOpts {
   /** Does this creature volunteer its need unprompted ("before", default),
    *  only when asked ("after"), or NEVER ("never" — Request c: it just looks
@@ -263,6 +284,35 @@ export interface ProjectionOpts {
    * ⇒ fall back to the not-knowing line.
    */
   directionsForNeed?: (need: CreatureNeed) => string | undefined;
+  /**
+   * ⚖️ LAW ③ — THE ANSWER IS THE RESOLUTION (household-economy-and-where-is.md
+   * §2): *"a creature asked 'where is {type}?' answers with the source ITS OWN
+   * acquire resolution would pick, run as a READ-ONLY probe — never from a
+   * parallel copy of the world."*
+   *
+   * The world layer runs the responder's own need row for `target` over the
+   * live house/town and reports where that row would draw from. It is the ONE
+   * hook that makes a household member able to say "the food is in the
+   * refrigerator": container stock is a glyph→count map, so no sighting, no
+   * `provides` fact and no creature-world item ever carries it — the answer can
+   * only come from the machinery that already reads the shelf.
+   *
+   *   `container` — a box the responder would draw from (the fridge, a laid
+   *                 table): its object id + the WORD it is named by, spoken as
+   *                 the verbless locative `{item} + in + {container}`.
+   *   `place`     — a place-fact SUBJECT id (the market, a well), answered
+   *                 through the existing `askedDirections` channel.
+   *   `holder`    — a household body has it in its hands (§8 D2 rung 3).
+   *   `none`      — it has the row and the row resolves to NOTHING: the honest
+   *                 "I don't have any", never a shrug.
+   *   `undefined` — this creature has no such row (ask somebody else), or its
+   *                 winning candidate is one this layer has no phrase for.
+   *
+   * 🚨 READ-ONLY IS A LAW. A question must never move the sim: the probe may
+   * not reserve, park, claim or bubble. Absent hook ⇒ the chain falls straight
+   * through to the told-fact (`provides`) channel, exactly as it did before.
+   */
+  resolveSourceFor?: (creatureId: CreatureId, target: NeedTarget) => SourceAnswer | undefined;
   /** Is this creature currently EN ROUTE somewhere? Returns its destination (from the
    *  errand/goal, resolved by the world layer), or undefined when it isn't going
    *  anywhere. Present ⇒ the board offers "where are you going?" and the reply names
@@ -300,8 +350,13 @@ export interface ProjectionOpts {
   /** ROSTER-seeded presence (household-duties: the duty schedule is common
    *  knowledge): a household member's current place WORD ("home"/"work"), or
    *  undefined to fall back to perceived/told facts. Answers "where is Mara?"
-   *  without a dollhouse full of don't-knows. */
-  presenceOf?: (creatureId: CreatureId) => string | undefined;
+   *  without a dollhouse full of don't-knows.
+   *
+   *  `observer` is WHO is answering — passed so the world layer can put SIGHT
+   *  ahead of the schedule (§8 D2: a body standing in the same room is answered
+   *  by the room it is in, not by the duty roster). A hook that ignores it keeps
+   *  working; the parameter is optional, like `symbolOfCreature`'s speaker. */
+  presenceOf?: (creatureId: CreatureId, observer?: CreatureId) => string | undefined;
   /** Board capacity. Default 8 (the response board is 2×4). */
   maxActs?: number;
 }
@@ -578,11 +633,38 @@ function clueHolder(holder: string, thing: string): LeveledGlyphs {
 function clueSelf(thing: string): LeveledGlyphs {
   return phrase({ subject: "i_me", verb: "have", object: thing, key: "have" });
 }
+/**
+ * ⚖️ THE VERBLESS LOCATIVE — `{thing} + in + {place}` (construction-speech-
+ * shapes law: the item, the preposition, the place, and NO verb IS the
+ * locative). One shape, because there is one way this world says where
+ * something is; the two named clues below differ only in what fills the second
+ * slot. Level `a` is the place alone — the map answer, the whole of what a
+ * one-symbol reader needs.
+ */
+function locativeClue(thing: string, place: string): LeveledGlyphs {
+  const g = `${thing} + in + ${place}`;
+  return { a: place, b: g, c: g };
+}
 /** A building location clue: "{thing} + in + home.color_blue" — "the ball is
  *  in the blue house". Level a shows just the house (the map answer). */
 function cluePlace(thing: string, place: string): LeveledGlyphs {
-  const g = `${thing} + in + ${place}`;
-  return { a: place, b: g, c: g };
+  return locativeClue(thing, place);
+}
+/** The SORT a directions subject is really asking about, when it is asking
+ *  about a sort at all: `buy:good:food` → the food category, `buy:import:cookie`
+ *  → the cookie kind. Every other subject (a house, a home, a depot) names a
+ *  PLACE and nothing else, and answers as one. */
+function goodSubjectTarget(subjectId: string): NeedTarget | undefined {
+  if (subjectId.startsWith("buy:good:")) return { category: subjectId.slice(9) };
+  if (subjectId.startsWith("buy:import:")) return { kind: subjectId.slice(11) };
+  return undefined;
+}
+/** A CONTAINER location clue: "{thing} + in + refrigerator" — the answer a
+ *  household member gives about its own pantry stock (law ③: the box its own
+ *  hunger row would open). The container arrives as the WORD it is named by, so
+ *  the lang layer speaks it in the reader's language. */
+function clueIn(thing: string, container: string): LeveledGlyphs {
+  return locativeClue(thing, container);
 }
 /** Verbalize a generic Fact (facts.ts) as an answer line — the shape every
  *  ask-fact reply and gossip line shares. Deixis-resolved (whoSym), state-aware
@@ -948,11 +1030,19 @@ export function projectDialogue(
     // resource-TYPE want the creature can't locate an instance for, carry the
     // SOURCE directions subject (the market) so the answer POINTS the way instead
     // of "I don't know" — a shopper knows where it shops (bug #2).
+    //
+    // ⚖️ AND THE SORT RIDES WITH IT. The want's own `target` ("food") goes on the
+    // act, because the RESPONDER is the one who has to resolve it: without it
+    // the ask carried only the asker's row marker (`good:food`) — an id nobody
+    // else's world holds — so every housemate who was not itself hungry read the
+    // question as being about a thing that does not exist and said "I don't
+    // know" (§1 defect ③). A sort is what a sort question is ABOUT.
     if (!need.atPlace) {
       const dirSubj = need.target ? opts.directionsForNeed?.(need) : undefined;
       acts.push({
         kind: "where-is",
         itemId: need.itemId,
+        ...(need.target ? { target: need.target } : {}),
         ...(dirSubj ? { subjectId: dirSubj } : {}),
         glyph: at(whereIs(syms.wantOf(need)), level),
       });
@@ -1394,13 +1484,34 @@ export function selectAct(
         ui: { ...ui, list: ui?.list ? { ...ui.list, page: ui.list.page + 1 } : undefined },
       };
     case "ask-directions":
-    case "directions-pick":
+    case "directions-pick": {
+      const closeList = { ui: { ...ui, list: undefined } };
+      if (!act.subjectId) return { events: [], ...closeList };
+      // ⚖️ LAW ③ REACHES HERE TOO, and only here. A `buy:good:<key>` subject is
+      // a SORT question wearing a place's clothes — "where is the food?" picked
+      // off the directions list is the same question the where-is act asks, and
+      // answering "far, to the east" while the responder's own hunger row would
+      // open a full refrigerator two metres away is the reported bug itself. So
+      // the responder's OWN resolution is asked first, and ONLY a CONTAINER
+      // answer diverts: a place answer resolves to this very subject, so every
+      // directions reply below stays byte-identical.
+      //
+      // Narrow on purpose — a house, a person's home, a depot are places and
+      // nothing but places, and they keep pointing.
+      const good = goodSubjectTarget(act.subjectId);
+      const own = good ? opts.resolveSourceFor?.(creatureId, good) : undefined;
+      if (own?.kind === "container") {
+        return {
+          events: [],
+          responseGlyph: at(clueIn(targetGlyph(good!), own.glyph), level),
+          ...closeList,
+        };
+      }
       // The pure layer can't measure distance/bearing — hand the subject to the
       // host, which resolves the town geometry, speaks the phrase, and points.
       // Close any open list; the answer is a single spoken turn.
-      return act.subjectId
-        ? { events: [], askedDirections: act.subjectId, ui: { ...ui, list: undefined } }
-        : { events: [], ui: { ...ui, list: undefined } };
+      return { events: [], askedDirections: act.subjectId, ...closeList };
+    }
     case "agree":
       return { events: [], responseGlyph: "thank_you", close: true };
     case "refuse":
@@ -1450,12 +1561,67 @@ export function selectAct(
     }
     case "where-is": {
       if (!creature) return { events: [] };
-      // A TYPE question ("where is food?" — §2b query(type)) follows the fallback
-      // CHAIN: a KNOWN instance matching the predicate → its location clue; else a
-      // known PROVIDER (`provides` fact) → directions to the source; else the
-      // honest not-knowing. `act.target` rides the act when the asker named a
-      // SORT, not a thing.
+      /**
+       * ⚖️ LAW ③ — THE ANSWER IS THE RESOLUTION (household-economy-and-where-is
+       * .md §2). The TYPE-ask fallback chain, in ONE place so the two arms
+       * below can never drift, asked in order of what the RESPONDER actually
+       * knows:
+       *
+       *   ① its OWN acquire resolution (`resolveSourceFor`) — the box its own
+       *      hunger row would open, the place that row would walk to, or (since
+       *      §8's locate ladder) the housemate holding the thing. This is the
+       *      rung that lets a household member say "the food is in the
+       *      refrigerator": container stock is a glyph→count map, so it reaches
+       *      conversation through no other door.
+       *   ② a TOLD fact (`provides`) — the channel for a responder that has no
+       *      row of its own (a homebody, a stranger).
+       *   ③ the subject the ASKER attached — a redirect, and the weakest thing
+       *      on the page: it is somebody else's knowledge.
+       *   ④ the honest THERE-IS-NONE, when ① says the row resolves to nothing.
+       *
+       * `undefined` = nothing to say; the caller speaks the not-knowing line.
+       */
+      const typeAnswer = (target: NeedTarget | undefined): ActResult | undefined => {
+        if (!target) return act.subjectId ? { events: [], askedDirections: act.subjectId } : undefined;
+        const own = opts.resolveSourceFor?.(creatureId, target);
+        if (own?.kind === "container") {
+          // The verbless locative, container in the place slot ("food in refrigerator").
+          return { events: [], responseGlyph: at(clueIn(targetGlyph(target), own.glyph), level) };
+        }
+        if (own?.kind === "place") return { events: [], askedDirections: own.subjectId };
+        if (own?.kind === "holder") {
+          // SOMEBODY HAS IT (§8 D2 rung 3) — the same two clues a sighting
+          // speaks: first person for its own hand, the holder's name otherwise.
+          const thing = targetGlyph(target);
+          return {
+            events: [],
+            responseGlyph: at(
+              own.cid === creatureId ? clueSelf(thing) : clueHolder(whoSym(own.cid), thing),
+              level,
+            ),
+          };
+        }
+        const provider = knownProvider(creature, [target.kind, target.category]);
+        if (provider) return { events: [], askedDirections: provider };
+        if (act.subjectId) return { events: [], askedDirections: act.subjectId };
+        // "I don't have any" — the shape `needBlockedLine` already speaks when
+        // the walker blocks, said aloud instead of a shrug the asker can't act on.
+        if (own?.kind === "none") {
+          return { events: [], responseGlyph: at(cantGlyph(targetGlyph(target)), level) };
+        }
+        return undefined;
+      };
+      // A TYPE question ("where is food?" — §2b query(type)) follows that chain
+      // once no KNOWN instance matches the predicate. `act.target` rides the act
+      // when the asker named a SORT, not a thing.
       let itemId = act.itemId;
+      // ⚠️ A ROW MARKER IS NOT AN INSTANCE. A creature's resource want rides the
+      // ask as `itemId: "good:food"` — an id no world item ever carries — and
+      // letting it shortcut the chain is what made every non-hungry housemate
+      // answer "I don't know" to "where is the food?" (§1 defect ③). With a sort
+      // named, an itemId the world does not hold is dropped and the ask is what
+      // it always was: a question about a KIND of thing.
+      if (itemId && act.target && !world.items[itemId]) itemId = undefined;
       if (!itemId && act.target) {
         // The SOURCE ask ("where do we get an apple?") answers with the
         // PROVIDER first — where one GETS the sort, not where an instance
@@ -1472,10 +1638,7 @@ export function selectAct(
             return !!it && itemMatchesNeed(typeNeed, it);
           });
         if (!itemId) {
-          const provider = knownProvider(creature, [act.target.kind, act.target.category]);
-          return provider
-            ? { events: [], askedDirections: provider }
-            : { events: [], responseGlyph: at(DONT_KNOW, level) };
+          return typeAnswer(act.target) ?? { events: [], responseGlyph: at(DONT_KNOW, level) };
         }
       }
       // Nothing resolved (the asker named something this world has no instance
@@ -1497,19 +1660,14 @@ export function selectAct(
             return !!it && itemMatchesNeed(ownTargetNeed, it);
           });
         if (!match) {
-          // No known instance — but a shopper on an errand KNOWS where to GET it:
-          // if the projection attached a source directions subject, answer with the
-          // way to the market (host resolves geometry), symmetric with ask-directions
-          // and the player's own directions answer (bug #2). A learned `provides`
-          // fact answers the same way WITHOUT the host hook (NPC↔NPC). Else it
-          // truly can't say.
-          if (act.subjectId) return { events: [], askedDirections: act.subjectId };
-          const provider = knownProvider(creature, [
-            ownTargetNeed.target?.kind,
-            ownTargetNeed.target?.category,
-          ]);
-          if (provider) return { events: [], askedDirections: provider };
-          return { events: [], responseGlyph: at(DONT_KNOW, level) };
+          // No known instance — but a shopper on an errand KNOWS where to GET
+          // it, and so does anybody whose own rows draw the stuff. The SAME
+          // chain the type ask walks (law ③), so a responder that would open its
+          // own fridge says so here too rather than pointing at a market it has
+          // no reason to visit. Else it truly can't say.
+          return (
+            typeAnswer(ownTargetNeed.target) ?? { events: [], responseGlyph: at(DONT_KNOW, level) }
+          );
         }
         itemId = match;
       }
@@ -1681,10 +1839,11 @@ export function selectAct(
         if (q.creature === creatureId) {
           return { events: [], responseGlyph: at(HERE_STAY, level) };
         }
-        // The household ROSTER is common knowledge (household-duties §1): a
-        // housemate knows the schedule ("Mara is at work") ahead of any stale
+        // SIGHT, then the household ROSTER — common knowledge (household-duties
+        // §1): a housemate answers with the room it can SEE the body standing in
+        // (§8 D2), else with the schedule ("Mara is at work"), ahead of any stale
         // sighting; perception/telling still answers for everyone else.
-        const oracle = opts.presenceOf?.(q.creature);
+        const oracle = opts.presenceOf?.(q.creature, creatureId);
         if (oracle) {
           const known: Fact = { kind: "presence", creature: q.creature, place: oracle };
           const learned = playerId !== creatureId ? tellFact(world, playerId, known) : [];

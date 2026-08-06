@@ -14,11 +14,16 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   UNLIMITED_DEVICES,
+  DEVICE_REGISTRATION_TTL_DAYS,
   sumDeviceLimits,
   evaluateDeviceRegistration,
+  deviceExpiryCutoff,
 } from "../services/student-device-logic";
 
 const perms = (n: number) => ({ maxDevicesPerStudent: n });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const daysBefore = (now: Date, days: number) => new Date(now.getTime() - days * DAY_MS);
 
 describe("sumDeviceLimits", () => {
   it("returns 0 for a student with no active institutes (removed-from-institute case)", () => {
@@ -112,5 +117,31 @@ describe("evaluateDeviceRegistration", () => {
     expect(
       evaluateDeviceRegistration({ limit: 0, registeredDeviceIds: ["a"], deviceId: "a" }),
     ).toEqual({ allowed: false, isRegistered: true });
+  });
+});
+
+describe("deviceExpiryCutoff", () => {
+  const now = new Date("2026-06-15T12:00:00.000Z");
+
+  it("defaults to the TTL policy (30 days) before now", () => {
+    expect(DEVICE_REGISTRATION_TTL_DAYS).toBe(30);
+    expect(deviceExpiryCutoff(now).toISOString()).toBe("2026-05-16T12:00:00.000Z");
+    expect(deviceExpiryCutoff(now).getTime()).toBe(daysBefore(now, 30).getTime());
+  });
+
+  it("puts a 31-day-old registration before the cutoff but not a 29-day-old one", () => {
+    // Documents the strict `<` the repository applies: older than the cutoff
+    // expires, anything at or after it keeps its slot.
+    const cutoff = deviceExpiryCutoff(now);
+    expect(daysBefore(now, 31) < cutoff).toBe(true);
+    expect(daysBefore(now, 29) < cutoff).toBe(false);
+    // Exactly at the cutoff is NOT expired.
+    expect(daysBefore(now, 30) < cutoff).toBe(false);
+  });
+
+  it("shifts the cutoff when ttlDays is overridden", () => {
+    expect(deviceExpiryCutoff(now, 7).getTime()).toBe(daysBefore(now, 7).getTime());
+    expect(daysBefore(now, 10) < deviceExpiryCutoff(now, 7)).toBe(true);
+    expect(daysBefore(now, 10) < deviceExpiryCutoff(now, 14)).toBe(false);
   });
 });

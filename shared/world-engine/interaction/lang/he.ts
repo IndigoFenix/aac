@@ -219,6 +219,8 @@ const L: Record<string, Lexeme> = {
   chair: { w: "כיסא", g: "m" },
   table: { w: "שולחן", g: "m" },
   bed: { w: "מיטה", g: "f" },
+  // The food chest IS a refrigerator — the box a where-is answer names.
+  refrigerator: { w: "מקרר", g: "m" },
   cabinet: { w: "ארון", g: "m" },
   workbench: { w: "שולחן עבודה", g: "m" },
   bin: { w: "פח", g: "m" },

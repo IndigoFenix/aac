@@ -1,0 +1,182 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T20:31:08.830Z
+# ─────────────────────────────────────────
+> wait 40
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> scene
+SCENE  house-1 — 19 thing(s) in view, 82 place(s) around you.
+  orrin (person), here south.
+  pip (person), here south.
+  mara (person), here west.
+  biscuit (person), here south.
+  ball-1 (ball), here south.
+  basket-1 (basket), here south.
+  a box, here north.
+  a chair, here east.
+  a table, there east.
+  a bed, there north.
+  a bowl, there east.
+  a chair, there east.
+  a box, there north.
+  an oven, there west.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> look pip
+LOOK   pip — pip.
+  here south, 3 m away.
+  house-1.
+NOTE   your gaze rests on ball-1, which is what is drawn there.
+TICK   quiet after 1.5s.
+> say where food
+OK     said: where + food
+TOAST  💬 "where + food" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 4
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I will rest the ball."  [rest.will + ball]
+SAY    biscuit: [play]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    pip: "I'm happy."  [i_me + happy]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+TICK   waited 4.0s.
+> say where ball
+OK     said: where + ball
+SAY    mara: "hi"  [hi]
+TOAST  💬 "where + ball" — I don't understand. (feedback)
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+BOARD  resident_face:resident_99_0: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. I'm confused.  [confused]
+  3. bye-bye  [goodbye]
+  4. Return.  [return]
+NOTE   3 choice(s) on this page, plus back.
+TICK   quiet after 2.2s.
+> wait 4
+SAY    mara: "bye-bye"  [goodbye]
+SAY    pip: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> say where refrigerator
+OK     said: where + refrigerator
+SAY    mara: "The refrigerator is there."  [refrigerator]
+TICK   quiet after 0.8s.
+> wait 4
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 4.0s.
+> say where mara
+OK     said: where + mara
+SAY    mara: "I am here."  [i_me + here]
+TICK   quiet after 0.8s.
+> wait 8
+SAY    pip: "I'm happy."  [i_me + happy]
+CLOSE  the board closed.
+SAY    pip: "hi"  [hi]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+BOARD  resident_face:resident_99_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. eat with I  [eat + with + i_me]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "hi"  [hi]
+SAY    pip: "I'm happy."  [i_me + happy]
+TICK   waited 8.0s.
+> press 3
+OK     pressed 3. Where is the food?
+SAY    biscuit: "The food is far, to the east."  [food]
+BOARD  resident_face:resident_99_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. eat with I  [eat + with + i_me]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+SAY    pip: "bye-bye"  [goodbye]
+TICK   quiet after 1.2s.
+> wait 6
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    pip: "I will talk to Biscuit."  [talk.will + biscuit]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    pip: "💗"
+TICK   waited 6.0s.
+# ─────────────────────────────────────────
+# commands=13  presses=1  screens=5  sim=74.0s
+# events: SAY 82  TICK 13  NOTE 7  BOARD 5  OK 5  TOAST 2  SCENE 1  LOOK 1  CLOSE 1

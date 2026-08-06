@@ -1,5 +1,8 @@
-// client-aac/src/lib/pitchShifter.ts
+// shared/aac/pitch-shifter.ts
 // Voice transposition for speech audio: pitch shift + (optional) formant shift.
+// Shared between the AAC client (live playback pitch, via pitchByTag) and the
+// clinician client (voice-preview pitch in AAC Settings) — one implementation,
+// so the preview sounds exactly like the session.
 //
 // PITCH (WSOLA time-stretch → linear resample): shifts pitch while preserving
 // duration. Note this stage is a duration-preserving *varispeed* — it moves the

@@ -556,6 +556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/voices/active', requireAuth, voiceRecordController.getActiveVoices.bind(voiceRecordController));
   app.post('/api/voices/elevenlabs-list', requireAuth, voiceRecordController.listElevenlabsVoices.bind(voiceRecordController));
   app.post('/api/voices/preview', requireAuth, voiceRecordController.previewVoice.bind(voiceRecordController));
+  app.post('/api/voices/preview-google', requireAuth, voiceRecordController.previewGoogleVoice.bind(voiceRecordController));
 
   // ============= TOPIC/LIBRARY ROUTES =============
   // Admin routes (admins with the "library" section permission)

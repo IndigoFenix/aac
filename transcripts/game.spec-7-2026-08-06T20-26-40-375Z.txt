@@ -1,0 +1,74 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T20:26:40.375Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> watch mara
+ERR    nothing here called "mara".
+TICK   quiet after 0.8s.
+> watch pip
+WATCH  watching pip.
+TICK   quiet after 0.8s.
+> watch orrin
+WATCH  watching orrin.
+TICK   quiet after 0.8s.
+> watch biscuit
+WATCH  watching biscuit.
+MOVED  pip is now here east.
+TICK   quiet after 1.0s.
+> wait 30
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> approach mara
+ERR    you are a bodiless spirit here — act through a creature (family/send) or claim a body.
+> wait 6
+SAY    mara: "Are you okay?"  [you + ok#question]
+DOING  pip is get thing.
+DOING  pip is doing nothing.
+SAY    pip: "I'm happy."  [i_me + happy]
+HOLD   pip is holding ball-1.
+DOING  pip is put thing.
+TICK   waited 6.0s.
+> say where food
+OK     said: where + food
+SAY    mara: "bye-bye"  [goodbye]
+TOAST  💬 "where + food" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 6
+MOVED  pip is now here east.
+DOING  pip is go bedroom.
+DOING  pip is doing nothing.
+HOLD   pip is holding nothing.
+MOVED  pip is now here east.
+TICK   waited 6.0s.
+> say where ball
+OK     said: where + ball
+TOAST  💬 "where + ball" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 6
+TICK   waited 6.0s.
+> say where refrigerator
+OK     said: where + refrigerator
+TOAST  💬 "where + refrigerator" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 6
+TICK   waited 6.0s.
+> say where mara
+OK     said: where + mara
+TOAST  💬 "where + mara" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 10
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   waited 10.0s.
+# ─────────────────────────────────────────
+# commands=16  presses=0  screens=1  sim=80.5s
+# events: TICK 15  SAY 9  DOING 5  OK 4  TOAST 4  WATCH 3  MOVED 3  ERR 2  HOLD 2  BOARD 1  NOTE 1

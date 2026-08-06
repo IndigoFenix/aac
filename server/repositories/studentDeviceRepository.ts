@@ -3,7 +3,7 @@
 
 import { studentDevices, type StudentDevice } from "@shared/schema";
 import { db } from "../db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, lt } from "drizzle-orm";
 
 export class StudentDeviceRepository {
   async getDevicesForStudent(studentId: string): Promise<StudentDevice[]> {
@@ -53,6 +53,18 @@ export class StudentDeviceRepository {
         ...(deviceName ? { deviceName } : {}),
       })
       .where(and(eq(studentDevices.studentId, studentId), eq(studentDevices.deviceId, deviceId)));
+  }
+
+  /**
+   * Reclaim expired registrations: expired = not seen since the cutoff
+   * (lastSeenAt strictly older). The caller computes the cutoff from the TTL
+   * policy. Returns the removed rows.
+   */
+  async deleteExpiredDevices(studentId: string, cutoff: Date): Promise<StudentDevice[]> {
+    return db
+      .delete(studentDevices)
+      .where(and(eq(studentDevices.studentId, studentId), lt(studentDevices.lastSeenAt, cutoff)))
+      .returning();
   }
 
   /** De-register by row id (management UIs). Returns the removed row, if any. */

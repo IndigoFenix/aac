@@ -313,6 +313,43 @@ app.on("ready", async () => {
 ipcMain.handle("app:getVersion", () => app.getVersion());
 ipcMain.handle("app:getPlatform", () => process.platform);
 
+// ── Durable device identity ──
+// The AAC device id lives in localStorage, which is not durable enough to BE
+// the identity: a browser-profile reset on a shared Windows machine wipes it,
+// and every loss re-registers this same physical machine as a NEW device
+// against the student's device-slot limit. A plain-text file in userData
+// survives that, so the renderer can recover the id it already had. The
+// renderer treats this copy as authoritative and backfills localStorage.
+function deviceIdFilePath(): string {
+  return path.join(app.getPath("userData"), "aac-device-id");
+}
+// Shape guard, applied on BOTH read and write: only ever hand back (or store)
+// something that looks like an id we generate — a truncated or garbled file
+// must read as "no id at all", never as a corrupt identity we then register.
+const DEVICE_ID_PATTERN = /^[\w-]{8,64}$/;
+
+ipcMain.handle("device-id:get", async () => {
+  try {
+    const id = (await fs.promises.readFile(deviceIdFilePath(), "utf8")).trim();
+    return DEVICE_ID_PATTERN.test(id) ? id : null;
+  } catch {
+    // Absent on first run, or unreadable. Null means "ask localStorage" — the
+    // renderer writes the resolved id back through device-id:set.
+    return null;
+  }
+});
+ipcMain.handle("device-id:set", async (_e, id: unknown) => {
+  if (typeof id !== "string" || !DEVICE_ID_PATTERN.test(id)) return false;
+  try {
+    await fs.promises.writeFile(deviceIdFilePath(), id, "utf8");
+    return true;
+  } catch {
+    // A failed write is not fatal — localStorage stays the only copy until the
+    // next attempt. Never throw at the renderer over this.
+    return false;
+  }
+});
+
 // ── In-app browser allowlist ──
 // The renderer pushes the current permitted-website list when BrowserApp opens
 // and clears it on close. This is the source of truth for the main-process

@@ -71,6 +71,7 @@ export interface ElectronBridge {
   gaze?: GazeBridge;
   update?: UpdateBridge;
   instances?: InstancesBridge;
+  deviceId?: { get: () => Promise<string | null>; set: (id: string) => Promise<boolean> };
 }
 
 export function getElectronBridge(): ElectronBridge | null {
@@ -118,6 +119,78 @@ export async function getNativeVersion(): Promise<string | null> {
       // The build-time constant is a fine fallback.
       return null;
     }
+  }
+
+  return null;
+}
+
+/** Key the durable copy of the device id is filed under on Capacitor. */
+const DEVICE_ID_PREF_KEY = "aac_device_id";
+
+/**
+ * Storage for the device id that outlives the web storage layer.
+ *
+ * localStorage cannot be the record of this id: WKWebView evicts it under
+ * storage pressure on iPad, and a profile reset wipes it in a browser. Each
+ * loss re-registers the same physical device against the student's device
+ * limit. Both native hosts can hold the id somewhere the webview does not
+ * control, so where one is present this exposes it; on web there is nothing
+ * better to offer, and callers keep using localStorage alone.
+ */
+export interface DeviceIdStore {
+  get(): Promise<string | null>;
+  set(id: string): Promise<void>;
+}
+
+/** The durable store for this host, or null on web (localStorage only). */
+export function getDeviceIdStore(): DeviceIdStore | null {
+  const bridge = getElectronBridge()?.deviceId;
+  if (bridge) {
+    return {
+      async get() {
+        try {
+          return await bridge.get();
+        } catch {
+          return null;
+        }
+      },
+      async set(id: string) {
+        try {
+          // The bridge reports write success, but there is nothing a caller can
+          // do with it: a failed write only means the next boot falls back to
+          // localStorage and tries again.
+          await bridge.set(id);
+        } catch {
+          // Degrade silently — identity must never block on storage.
+        }
+      },
+    };
+  }
+
+  if (getHost() === "capacitor") {
+    // Same dynamic-import rule as getNativeVersion above: a static import of
+    // the plugin would pull it into the Electron and web bundles too, where it
+    // is dead weight.
+    return {
+      async get() {
+        try {
+          const { Preferences } = await import("@capacitor/preferences");
+          const { value } = await Preferences.get({ key: DEVICE_ID_PREF_KEY });
+          return value ?? null;
+        } catch {
+          return null;
+        }
+      },
+      async set(id: string) {
+        try {
+          const { Preferences } = await import("@capacitor/preferences");
+          await Preferences.set({ key: DEVICE_ID_PREF_KEY, value: id });
+        } catch {
+          // Plugin missing from the native project — localStorage stays the
+          // only copy.
+        }
+      },
+    };
   }
 
   return null;

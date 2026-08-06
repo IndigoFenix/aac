@@ -47,6 +47,11 @@ function resolveModel(language: string): string {
  * Speak `text` through the player, using the fastest path available.
  * Resolves when playback finishes (or when the utterance has been handed to
  * the player's queue, on the buffered fallback).
+ *
+ * REJECTS when no path produced audio (dead API key, quota exhausted, network
+ * to ElevenLabs blocked). The caller acks the server with `ok: false`, which
+ * is what triggers the server-side fallback synthesis — swallowing the
+ * failure here means a silent press and a server that believes it played.
  */
 export async function speakViaElevenLabs(
   req: ClientTtsRequest,
@@ -76,7 +81,10 @@ export async function speakViaElevenLabs(
   }
 
   // ── 3. Buffered MP3 ─────────────────────────────────────────────────────
-  await bufferedMp3(req, player);
+  const buffered = await bufferedMp3(req, player);
+  if (!buffered) {
+    throw new Error("ElevenLabs synthesis failed on every path (stream + buffered)");
+  }
 }
 
 /** Replay cached PCM through the streaming sink. Returns false if the sink
@@ -170,11 +178,13 @@ async function streamPcm(
   return true;
 }
 
-/** Original whole-file path: synthesize MP3, hand the blob to the player. */
+/** Original whole-file path: synthesize MP3, hand the blob to the player.
+ *  Returns false when no audio was produced, so the caller can report the
+ *  failure upstream instead of pretending the utterance played. */
 async function bufferedMp3(
   req: ClientTtsRequest,
   player: UseStreamingAudioPlayerReturn,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE}/text-to-speech/${req.voiceId}`, {
       method: "POST",
@@ -191,12 +201,18 @@ async function bufferedMp3(
     });
     if (!response.ok) {
       console.error("[ClientTTS] Buffered synthesis failed:", response.status);
-      return;
+      return false;
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length === 0) {
+      console.error("[ClientTTS] Buffered synthesis returned empty audio");
+      return false;
+    }
     player.queueChunk({ chunk: toBase64(bytes), format: "mp3", tag: req.tag });
+    return true;
   } catch (err) {
     console.error("[ClientTTS] Buffered synthesis threw:", err);
+    return false;
   }
 }
 

@@ -1,0 +1,171 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T15:48:04.505Z
+# ─────────────────────────────────────────
+> help
+HELP   commands:
+  look [thing]     — describe one thing (or the whole scene)
+  scene            — everything in view
+  self             — where you are, what you hold, what you look at
+  where <thing>    — its band, direction and distance
+  who              — who is in the conversation
+  board            — reprint the buttons on screen
+  spots            — the lit ground + what is being built (look <plot-n> aims at it)
+  family [who]     — the household's states; with a name, address them
+  say <words>      — compose and speak (words join with +)
+  press <n|label>  — press a button by number or caption
+  more / back      — page the board, or the builder listing
+  builder          — reprint the sentence-builder screen
+  build <word|n>   — tap a word (.word taps the modifier rail)
+  build tab <name> / build group <id> / build undo / build clear
+  build play       — speak what you composed
+  go <thing>       — walk to it
+  approach <who>   — walk to conversation distance and stop
+  stop             — stop walking
+  send <who> to <thing> — tell somebody to go to it
+  watch <thing> / unwatch <thing|all> / watching
+  wait [n]         — let 5s (or n) of world time pass
+  help             — this list
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 0.8s.
+> scene
+SCENE  house-1 — 13 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  ball-1 (ball), here south.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  bowl-1 (bowl), there east.
+  oven-1 (oven), there west.
+  a chair, here east.
+  a chair, there east.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, you can see inside.
+  house-2 (house), here north, white, shut to you.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> approach mara
+ERR    you are a bodiless spirit here — act through a creature (family/send) or claim a body.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> family
+FAMILY 4 in the household.
+  mara (Mara) — content
+  orrin (Orrin) — content
+  pip (Pip) — content
+  biscuit (Biscuit) — content
+TICK   quiet after 0.8s.
+> family mara
+OK     addressing Mara.
+TICK   quiet after 0.8s.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> builder
+BUILDER so far: (nothing)
+  1. want
+  2. I
+  3. you
+  4. where
+  5. what
+  6. more
+  7. no
+  8. yes
+  groups: creatures (3), places (3), furniture (3), structure (3), container (3)
+  tabs: things, person, verb, attribute, quantity, relation, question, connective, social
+TICK   quiet after 0.8s.
+> say place#question + food
+OK     said: place#question + food
+TICK   quiet after 0.8s.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> who
+WHO    nobody is talking.
+TICK   quiet after 0.8s.
+> say where + food
+OK     said: where + food
+TICK   quiet after 0.8s.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> who
+WHO    resident_77_1, resident_96_1.
+TICK   quiet after 0.8s.
+> build where
+BUILDER so far: where  "Where?"
+  1. you
+  2. area
+  3. altar
+  4. anvil
+  5. apple
+  6. ball
+  7. banana
+  8. barrel
+  groups: places (3), furniture (3), structure (3), container (3), creatures (3)
+  tabs: things, person, verb, attribute, quantity, relation, question, connective, social
+TICK   quiet after 0.8s.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> look mara
+LOOK   mara — mara.
+  here west, 2 m away.
+  house-1.
+TICK   quiet after 1.5s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at mara.
+  talking with resident_77_1, resident_96_1.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> who
+WHO    resident_77_1, resident_96_1.
+TICK   quiet after 0.8s.
+> say mara + where + food
+OK     said: mara + where + food
+SAY    mara: "I am here."  [i_me + here]
+TICK   quiet after 0.8s.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> who
+WHO    resident_77_1, resident_96_1.
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   quiet after 1.5s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at mara.
+  talking with resident_77_1, resident_96_1.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=25  presses=1  screens=10  sim=19.7s
+# events: TICK 24  BOARD 8  OK 4  WHO 4  SELF 3  BUILDER 2  SAY 2  HELP 1  NOTE 1  SCENE 1  ERR 1  FAMILY 1  LOOK 1

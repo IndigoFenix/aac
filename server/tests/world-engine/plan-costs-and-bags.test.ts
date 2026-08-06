@@ -391,6 +391,9 @@ function bagFetchGoal(
 
 describe("④ ENABLE at the BODY rung — bring a basket when the basket pays", () => {
   const hunger = hungerTemplate("food", 1 / NEED_FILL_S.hunger);
+  /** Keep the box FULL: fires below 6, caps at 6, so the shortfall and the home
+   *  box's remaining room are one number at every fill level. */
+  const provision = provisionTemplate("food", 6, 6);
   const price = (over: Partial<NeedPrice> = {}): NeedPrice => ({
     walkMps: WALK_MPS,
     fillS: NEED_FILL_S.hunger,
@@ -399,9 +402,31 @@ describe("④ ENABLE at the BODY rung — bring a basket when the basket pays", 
     handsS: { container: BOX_S, source: SHOP_S, loose: BOX_S, satisfy: EAT_S },
     ...over,
   });
-  /** A hungry body with BARE HANDS (room 1), an empty-ish pantry and the market
-   *  60 m off. `restock` is the household's own shortfall — quest-host resolves
-   *  it to the home box's remaining room. */
+  // ⚖️ WHOSE QUESTION THE BASKET IS (household-economy-and-where-is.md §2, law
+  // ②). "Would a bag pay for itself" is an INVENTORY MANAGER's question: it is
+  // asked of a haul, and only a haul can grow to fill a bag. A CUSTOMER's want
+  // is one ration however much room it has, so `decideNeed` returns the same
+  // units with a basket as without and the comparison never starts — pinned
+  // below rather than assumed. The restocking cases therefore ride the
+  // provision row, where the enabler is real; the hunger cases pin the
+  // customer's own two answers (the famine trip still fetches; a stocked
+  // house's meal never does).
+  /** THE MANAGER's ctx: BARE HANDS (room 1), a pantry to fill, a house cupboard
+   *  with one unit in it three metres off, and the market 60 m out. */
+  const restocking = (pantryUnits: number, pantryRoom: number): NeedCtx => ({
+    carried: 0,
+    room: 1,
+    restock: pantryRoom,
+    containers: {
+      home: { id: "pantry", place: P("pantry"), units: pantryUnits, room: pantryRoom, d: 3 },
+      storage: { id: "cupboard", place: P("cupboard"), units: 1, free: 1, d: 3 },
+    },
+    sources: [{ id: "store:food", place: P("store:food"), units: 50, d: 60 }],
+    stations: [],
+    price: price({ shortage: pantryRoom / (pantryUnits + pantryRoom) }),
+  });
+  /** THE CUSTOMER's ctx: a hungry body with BARE HANDS and the same geometry.
+   *  `shortage: 1` is what `needShortageOf` hands every non-deposit row. */
   const shopping = (pantryUnits: number, pantryRoom: number): NeedCtx => ({
     meter: 1,
     carried: 0,
@@ -410,7 +435,7 @@ describe("④ ENABLE at the BODY rung — bring a basket when the basket pays", 
     containers: { home: { id: "pantry", place: P("pantry"), units: pantryUnits, room: pantryRoom, d: 3 } },
     sources: [{ id: "store:food", place: P("store:food"), units: 50, d: 60 }],
     stations: [],
-    price: price({ shortage: pantryRoom / (pantryUnits + pantryRoom) }),
+    price: price({ shortage: 1 }),
   });
   const basket = (x: number, room = 8): IdleBag => ({
     objId: "small:basket_0",
@@ -419,24 +444,26 @@ describe("④ ENABLE at the BODY rung — bring a basket when the basket pays", 
     at: at(x),
     room,
   });
-  /** Where the two sources stand: the pantry at home, the market 60 m out. */
-  const shop = { body: at(0), anchors: { pantry: at(3), "store:food": at(60) } };
-  const takeAt = (ctx: NeedCtx) => decideNeed(hunger, ctx) as Extract<NeedIntent, { kind: "take" }>;
+  /** Where the offers stand: the pantry and the cupboard at home, the market
+   *  60 m out. */
+  const shop = { body: at(0), anchors: { pantry: at(3), cupboard: at(3), "store:food": at(60) } };
+  const takeOf = (tpl: NeedTemplate, ctx: NeedCtx) =>
+    decideNeed(tpl, ctx) as Extract<NeedIntent, { kind: "take" }>;
   const led = () => createReservationLedger();
 
-  it("FIVE SHORT: bare-handed the pantry's ONE apple wins — with a basket the MARKET does", () => {
+  it("FIVE SHORT: bare-handed the cupboard's ONE unit wins — with a basket the MARKET does", () => {
     // The whole ENABLE argument in one case. A market trip you can only bring
-    // one unit back from loses to the apple three metres away; the same trip
+    // one unit back from loses to the unit three metres away; the same trip
     // with a bag brings five and pays for the detour. So the enabler does not
     // merely enlarge the trip — it CHANGES WHERE YOU SHOP, which is why the bag
     // plan is priced against its own source rather than forced onto the bare
     // plan's.
-    const ctx = shopping(1, 5);
-    const intent = takeAt(ctx);
+    const ctx = restocking(1, 5);
+    const intent = takeOf(provision, ctx);
     expect(intent).toMatchObject({ kind: "take", units: 1 });
-    expect(intent.from.id).toBe("pantry");
-    expect(decideNeed(hunger, { ...ctx, room: 8 })).toMatchObject({ units: 5 });
-    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(4)] }, led())).toEqual({
+    expect(intent.from.id).toBe("cupboard");
+    expect(decideNeed(provision, { ...ctx, room: 8 })).toMatchObject({ units: 5, from: { id: "store:food" } });
+    expect(bagFetchGoal(provision, ctx, intent, { ...shop, bags: [basket(4)] }, led())).toEqual({
       kind: "fetch",
       item: { id: "e_basket_0" },
     });
@@ -445,57 +472,71 @@ describe("④ ENABLE at the BODY rung — bring a basket when the basket pays", 
   it("ONE SHORT: the household wants a single unit, so a basket buys NOTHING", () => {
     // The bag's room is irrelevant when the restock target is the binding
     // constraint — the comparison never even reaches the walk.
-    const ctx = shopping(5, 1);
-    const intent = takeAt(ctx);
-    expect(decideNeed(hunger, { ...ctx, room: 8 })).toMatchObject({ units: 1 });
-    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(4)] }, led())).toBeNull();
+    const ctx = restocking(5, 1);
+    const intent = takeOf(provision, ctx);
+    expect(decideNeed(provision, { ...ctx, room: 8 })).toMatchObject({ units: 1 });
+    expect(bagFetchGoal(provision, ctx, intent, { ...shop, bags: [basket(4)] }, led())).toBeNull();
   });
 
   it("THE SAME WANT fetches or refuses, on the basket's DISTANCE alone", () => {
     // An empty pantry wanting two: the bag buys exactly ONE extra ration, so the
-    // detour has a small budget and the metres decide it.
+    // detour has a small budget and the metres decide it. This is the HUNGER
+    // row — an empty shelf sends a customer out too, and `takeUnits` still
+    // sizes that trip to the restock target (the famine-fix behaviour).
     const ctx = shopping(0, 2);
-    const intent = takeAt(ctx);
-    expect(intent).toMatchObject({ units: 1 });
+    const intent = takeOf(hunger, ctx);
+    expect(intent).toMatchObject({ units: 1, from: { id: "store:food" } });
     expect(decideNeed(hunger, { ...ctx, room: 8 })).toMatchObject({ units: 2 });
     expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(4)] }, led())).not.toBeNull();
     // …and 160 m in the WRONG direction, for one extra ration, is not worth it.
     expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(-160)] }, led())).toBeNull();
   });
 
-  it("a bag with no more room than the HANDS is no enabler at all", () => {
+  it("🚨 A CUSTOMER NEVER FETCHES A BASKET WHILE THE SHELF HAS ANY (law ②)", () => {
+    // The report's stampede, at the enabler: a hungry member of a five-short
+    // household used to fetch the household's bag and walk to the market past
+    // the ration in its own pantry. Its want is ONE ration, so the bag plan
+    // brings back no more than the bare plan and the detour is never priced.
     const ctx = shopping(1, 5);
-    const intent = takeAt(ctx);
+    const intent = takeOf(hunger, ctx);
+    expect(intent).toMatchObject({ kind: "take", units: 1, from: { id: "pantry" } });
+    expect(decideNeed(hunger, { ...ctx, room: 8 })).toMatchObject({ units: 1, from: { id: "pantry" } });
+    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(4)] }, led())).toBeNull();
+  });
+
+  it("a bag with no more room than the HANDS is no enabler at all", () => {
+    const ctx = restocking(1, 5);
+    const intent = takeOf(provision, ctx);
     const full = { ...basket(2), room: 1 };
-    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [full] }, led())).toBeNull();
+    expect(bagFetchGoal(provision, ctx, intent, { ...shop, bags: [full] }, led())).toBeNull();
   });
 
   it("a bag ANOTHER trip has spoken for is invisible — no two bodies count one basket", () => {
-    const ctx = shopping(1, 5);
-    const intent = takeAt(ctx);
+    const ctx = restocking(1, 5);
+    const intent = takeOf(provision, ctx);
     const l = led();
     l.reserve("bag:agr_1", "small:basket_0", TOOL_CLAIM_GLYPH, 1);
-    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(4)] }, l)).toBeNull();
+    expect(bagFetchGoal(provision, ctx, intent, { ...shop, bags: [basket(4)] }, l)).toBeNull();
     // …and it comes back the moment that trip is over.
     l.release("bag:agr_1");
-    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(4)] }, l)).not.toBeNull();
+    expect(bagFetchGoal(provision, ctx, intent, { ...shop, bags: [basket(4)] }, l)).not.toBeNull();
   });
 
   it("the NEAREST usable basket wins, deterministically", () => {
-    const ctx = shopping(1, 5);
-    const intent = takeAt(ctx);
+    const ctx = restocking(1, 5);
+    const intent = takeOf(provision, ctx);
     const near: IdleBag = { ...basket(6), objId: "small:basket_z", entityId: "e_z" };
     const far: IdleBag = { ...basket(-40), objId: "small:basket_a", entityId: "e_a" };
-    const pick = bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [far, near] }, led());
+    const pick = bagFetchGoal(provision, ctx, intent, { ...shop, bags: [far, near] }, led());
     expect(pick).toEqual({ kind: "fetch", item: { id: "e_z" } });
     // Same inputs, same choice — no clock, no RNG.
-    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [far, near] }, led())).toEqual(pick);
+    expect(bagFetchGoal(provision, ctx, intent, { ...shop, bags: [far, near] }, led())).toEqual(pick);
   });
 
   it("flag OFF: nobody ever fetches a bag (the kill-switch)", () => {
-    const ctx = shopping(1, 5);
-    const intent = takeAt(ctx);
-    expect(bagFetchGoal(hunger, ctx, intent, { ...shop, bags: [basket(4)] }, led(), false)).toBeNull();
+    const ctx = restocking(1, 5);
+    const intent = takeOf(provision, ctx);
+    expect(bagFetchGoal(provision, ctx, intent, { ...shop, bags: [basket(4)] }, led(), false)).toBeNull();
   });
 });
 

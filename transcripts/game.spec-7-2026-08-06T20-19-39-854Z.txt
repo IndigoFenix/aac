@@ -1,0 +1,205 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T20:19:39.854Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> watch mara
+ERR    nothing here called "mara".
+TICK   quiet after 0.8s.
+> watch pip
+WATCH  watching pip.
+TICK   quiet after 0.8s.
+> watch orrin
+WATCH  watching orrin.
+TICK   quiet after 0.8s.
+> watch biscuit
+WATCH  watching biscuit.
+MOVED  pip is now here east.
+TICK   quiet after 1.0s.
+> wait 60
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    mara: "Are you okay?"  [you + ok#question]
+DOING  pip is get thing.
+DOING  pip is doing nothing.
+SAY    pip: "I'm happy."  [i_me + happy]
+HOLD   pip is holding ball-1.
+DOING  pip is put thing.
+SAY    mara: "bye-bye"  [goodbye]
+MOVED  pip is now here east.
+DOING  pip is go bedroom.
+DOING  pip is doing nothing.
+HOLD   pip is holding nothing.
+MOVED  pip is now here east.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+TICK   waited 60.0s.
+> wait 60
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    pip: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+MOVED  orrin is now there south.
+SAY    mara: "bye-bye"  [goodbye]
+MOVED  orrin is now here south.
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+MOVED  orrin is now there south.
+SAY    orrin: "bye-bye"  [goodbye]
+MOVED  orrin is now here south.
+SAY    pip: "eat with I"  [eat + with + i_me]
+MOVED  orrin is now there south.
+SAY    mara: "I'm not hungry."  [i_me + hungry.not]
+MOVED  orrin is now here south.
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> wait 60
+SAY    biscuit: "bye-bye"  [goodbye]
+DOING  pip is talk mara.
+DOING  pip is doing nothing.
+SAY    pip: "bye-bye"  [goodbye]
+DOING  orrin is talk biscuit.
+DOING  orrin is doing nothing.
+SAY    orrin: "💗"
+SAY    pip: "bye-bye"  [goodbye]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+MOVED  orrin is now there south.
+SAY    orrin: "bye-bye"  [goodbye]
+MOVED  orrin is now here south.
+DOING  pip is get play.
+MOVED  pip is now here east.
+DOING  pip is go bedroom.
+DOING  pip is doing nothing.
+HOLD   pip is holding small:mat_212.
+SAY    pip: [ball]
+DOING  pip is play.
+HOLD   pip is holding nothing.
+DOING  orrin is play.
+MOVED  orrin is now here east.
+TICK   waited 60.0s.
+> wait 60
+SAY    pip: [play]
+DOING  pip is doing nothing.
+SAY    orrin: [play]
+DOING  orrin is doing nothing.
+MOVED  orrin is now here east.
+MOVED  pip is now here east.
+SAY    biscuit: "bye-bye"  [goodbye]
+DOING  biscuit is get play.
+MOVED  biscuit is now here east.
+DOING  biscuit is go ball.
+DOING  biscuit is doing nothing.
+HOLD   biscuit is holding ball-2.
+SAY    biscuit: [ball]
+DOING  biscuit is play.
+HOLD   biscuit is holding nothing.
+DOING  orrin is eat food.
+DOING  orrin is get food.
+MOVED  biscuit is now there north.
+MOVED  orrin is now there south.
+DOING  orrin is doing nothing.
+HOLD   orrin is holding small:mat_213.
+DOING  orrin is cook food.
+DOING  pip is eat food.
+DOING  pip is rest.
+SAY    orrin: "🍳"  [banana.hot]
+DOING  orrin is doing nothing.
+HOLD   orrin is holding small:mat_214.
+MOVED  pip is now there south.
+SAY    biscuit: [play]
+DOING  biscuit is doing nothing.
+SAY    biscuit: "🥺"  [apple]
+SAY    mara: [play]
+SAY    pip: [sit]
+DOING  pip is doing nothing.
+DOING  orrin is put meal.
+MOVED  biscuit is now here north.
+MOVED  orrin is now here west.
+DOING  pip is get basket.
+MOVED  biscuit is now here east.
+MOVED  pip is now here south.
+DOING  orrin is doing nothing.
+SAY    orrin: [meal]
+HOLD   orrin is holding nothing.
+DOING  biscuit is eat food.
+MOVED  pip is now there south.
+EXIT   pip went out of the white house.
+DOING  orrin is eat water.
+MOVED  biscuit is now there east.
+HOLD   biscuit is holding banana-1.
+MOVED  orrin is now there south.
+HOLD   orrin is holding small:mat_217.
+SAY    mara: [apple]
+MOVED  orrin is now here south.
+DOING  biscuit is go chair.
+DOING  biscuit is doing nothing.
+SAY    biscuit: [banana]
+HOLD   biscuit is holding nothing.
+SAY    biscuit: "🥺"  [water]
+MOVED  orrin is now there south.
+DOING  orrin is doing nothing.
+SAY    orrin: [water]
+HOLD   orrin is holding nothing.
+SAY    biscuit: "Help you."  [help + you]
+SAY    orrin: "Thank you!"  [thank_you]
+DOING  orrin is rest.
+MOVED  orrin is now here south.
+SAY    biscuit: "Help you."  [help + you]
+MOVED  biscuit is now here south.
+TOAST  🏗️ the people stake out a market (feedback)
+SAY    orrin: "Thank you!"  [thank_you]
+MOVED  orrin is now here west.
+EXIT   orrin left view here west.
+SAY    biscuit: "I don't help you."  [help.not + you]
+DOING  biscuit is eat water.
+SAY    biscuit: "🥺"  [water]
+SAY    mara: [water]
+DOING  biscuit is go chair.
+DOING  biscuit is go house.
+DOING  biscuit is doing nothing.
+ENTER  orrin came into view there west.
+MOVED  orrin is now here west.
+MOVED  orrin is now here west.
+TICK   waited 60.0s.
+> wait 60
+MOVED  orrin is now here west.
+EXIT   mara left view here west.
+MOVED  orrin is now there west.
+HOLD   orrin is holding small:mat_219.
+MOVED  orrin is now here south.
+MOVED  orrin is now there south.
+DOING  orrin is doing nothing.
+HOLD   orrin is holding nothing.
+ENTER  mara came into view here west.
+SAY    orrin: [apple]
+EXIT   mara went out of the white house.
+SAY    orrin: "bye-bye"  [goodbye]
+DOING  orrin is rest.
+MOVED  orrin is now here south.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+MOVED  orrin is now here west.
+SAY    biscuit: "I'm thirsty."  [i_me + thirsty]
+EXIT   orrin left view here west.
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+# ─────────────────────────────────────────
+# commands=10  presses=0  screens=1  sim=313.3s
+# events: SAY 64  DOING 44  MOVED 39  HOLD 15  TICK 10  EXIT 5  WATCH 3  ENTER 2  BOARD 1  NOTE 1  ERR 1  TOAST 1

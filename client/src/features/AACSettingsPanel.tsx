@@ -27,6 +27,7 @@ import type { DefinedGesture, PermittedWebsite, PermittedYoutubeItem, PermittedY
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { LANGUAGE_LEVELS, DEFAULT_LANGUAGE_LEVEL_INT } from '@shared/aac-language-level';
 import { tierByKey } from '@shared/aac/budget-tiers';
+import { processVoice } from '@shared/aac/pitch-shifter';
 import { BudgetMeters } from '@/components/BudgetMeters';
 import { type SeizureConfig, type SeizureSensitivity, DEFAULT_SEIZURE_CONFIG, coerceSeizureConfig } from '@shared/aac/seizure-config';
 import { COMPETENCY_LABEL } from '@shared/social-bot/state';
@@ -117,6 +118,20 @@ function toRuleArray(value: unknown): string[] {
   if (typeof value === 'string' && value.trim()) return [value];
   return [];
 }
+
+// Gemini / Google Chirp 3 HD voice catalogue — the same names exist on both
+// providers, so one picked name serves Live native audio AND Google TTS.
+// i18n-ignore — official voice names with vendor-provided descriptors.
+const GEMINI_VOICE_OPTIONS = [
+  { value: 'Puck', label: 'Puck — Young, energetic' },
+  { value: 'Charon', label: 'Charon — Calm, mature male' },
+  { value: 'Kore', label: 'Kore — Clear, friendly female' },
+  { value: 'Fenrir', label: 'Fenrir — Deep, confident male' },
+  { value: 'Aoede', label: 'Aoede — Warm, expressive female' },
+  { value: 'Leda', label: 'Leda — Gentle, youthful female' },
+  { value: 'Orus', label: 'Orus — Steady, reassuring male' },
+  { value: 'Zephyr', label: 'Zephyr — Light, neutral' },
+];
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
@@ -220,7 +235,51 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  const previewVoice = useCallback(async (voiceId: string) => {
+  // Play a preview blob. A nonzero pitch runs the SAME shared pitch shifter
+  // the AAC player applies to live audio (shared/aac/pitch-shifter), so the
+  // preview sounds exactly like the session will — the Google/Chirp API's own
+  // pitch parameter is NOT used (Chirp 3 HD rejects it and would fall back to
+  // a different voice). Resolves when playback finishes.
+  const playPreviewBlob = useCallback(async (blob: Blob, pitchSemitones: number): Promise<void> => {
+    if (!pitchSemitones) {
+      const url = URL.createObjectURL(blob);
+      await new Promise<void>((resolve) => {
+        const audio = new Audio(url);
+        previewAudioRef.current = audio;
+        const done = () => {
+          URL.revokeObjectURL(url);
+          previewAudioRef.current = null;
+          resolve();
+        };
+        audio.onended = done;
+        audio.onerror = done;
+        audio.play().catch(done);
+      });
+      return;
+    }
+    const ctx = new AudioContext();
+    try {
+      const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const shifted = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+      for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+        shifted.copyToChannel(processVoice(decoded.getChannelData(ch), decoded.sampleRate, pitchSemitones), ch);
+      }
+      await new Promise<void>((resolve) => {
+        const src = ctx.createBufferSource();
+        src.buffer = shifted;
+        src.connect(ctx.destination);
+        src.onended = () => resolve();
+        src.start();
+      });
+    } finally {
+      void ctx.close();
+    }
+  }, []);
+
+  // ElevenLabs preview — voiced with the clinician-UI test phrase, then
+  // pitched like the session would pitch it (pitchByTag applies to ALL
+  // utterance/avatar audio in the AAC, ElevenLabs included).
+  const previewVoice = useCallback(async (voiceId: string, pitchSemitones = 0) => {
     if (!voiceId || previewingVoice) return;
     setPreviewingVoice(voiceId);
     try {
@@ -229,25 +288,162 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         text: t('aacSettings.elevenlabsTestPhrase'),
         apiKey: elevenlabsApiKey.trim() || undefined,
       });
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      previewAudioRef.current = audio;
-      audio.onended = () => {
-        setPreviewingVoice(null);
-        URL.revokeObjectURL(url);
-        previewAudioRef.current = null;
-      };
-      audio.onerror = () => {
-        setPreviewingVoice(null);
-        URL.revokeObjectURL(url);
-        previewAudioRef.current = null;
-      };
-      await audio.play();
+      await playPreviewBlob(await res.blob(), pitchSemitones);
     } catch {
+      // fall through to the spinner reset
+    } finally {
       setPreviewingVoice(null);
     }
-  }, [previewingVoice, elevenlabsApiKey, t]);
+  }, [previewingVoice, elevenlabsApiKey, t, playPreviewBlob]);
+
+  // Preview a Google/Gemini voice. The test line is chosen SERVER-side from
+  // the student's language (the voice will speak that language in sessions,
+  // so that's the language to judge it in), and the synthesis is billed to
+  // the selected student's budget. `slotKey` keeps the AI and student rows'
+  // spinners distinct even when both use the same voice name.
+  const previewGoogleVoice = useCallback(async (voiceName: string, slotKey: string, pitchSemitones = 0) => {
+    if (!voiceName || previewingVoice || !student?.id) return;
+    setPreviewingVoice(slotKey);
+    try {
+      const res = await apiRequest('POST', '/api/voices/preview-google', {
+        voiceName,
+        studentId: student.id,
+        language: (student as any)?.primaryLanguage || undefined,
+      });
+      await playPreviewBlob(await res.blob(), pitchSemitones);
+    } catch {
+      // fall through to the spinner reset
+    } finally {
+      setPreviewingVoice(null);
+    }
+  }, [previewingVoice, student, playPreviewBlob]);
+
+  // Effective Gemini voice per role — what the session will actually use when
+  // nothing is explicitly picked (mirrors the server's resolveVoices defaults),
+  // so the preview button can play the REAL default, not stay hidden.
+  const studentGender = String(student?.gender || '').toLowerCase();
+  const effectiveGeminiAiVoice = geminiAiVoice || 'Zephyr';
+  const effectiveGeminiStudentVoice = geminiStudentVoice || (studentGender === 'female' ? 'Leda' : 'Puck');
+
+  // One ElevenLabs voice picker row, reused by the AI and student sub-sections
+  // (same states as before the sections split: manual ID entry without a key,
+  // voice list + preview with a valid key, hidden while the key is invalid).
+  const renderElevenlabsVoicePicker = (labelKey: string, value: string, setValue: (v: string) => void, pitchSemitones = 0) => {
+    if (debouncedApiKey && elevenlabsError) return null;
+    return (
+      <div className={`flex items-center justify-between ${elevenlabsEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
+        <div className="space-y-0.5">
+          <Label className="text-sm text-muted-foreground">{t(labelKey)}</Label>
+        </div>
+        {!debouncedApiKey ? (
+          <Input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
+            className="w-full md:w-[280px] font-mono"
+          />
+        ) : elevenlabsLoading ? (
+          <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
+        ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
+          <div className="flex gap-2 items-center">
+            {value && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => previewVoice(value, pitchSemitones)}
+                disabled={!!previewingVoice}
+                title={t('aacSettings.elevenlabsTestVoice')}
+                className="shrink-0 h-8 w-8 p-0"
+              >
+                {previewingVoice === value ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+              </Button>
+            )}
+            <Select value={value || '_none'} onValueChange={(v) => setValue(v === '_none' ? '' : v)}>
+              <SelectTrigger className="w-full md:w-[280px]">
+                <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
+                {elevenlabsVoices.map((v) => (
+                  <SelectItem key={v.voice_id} value={v.voice_id}>
+                    {v.name} {v.category ? `(${v.category})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
+        )}
+      </div>
+    );
+  };
+
+  // One Gemini/Google voice row: preview button (plays the EFFECTIVE voice —
+  // the gender-based default when none is picked) + the picker itself.
+  const renderGeminiVoiceRow = (
+    labelKey: string,
+    value: string,
+    effectiveVoice: string,
+    slotKey: string,
+    onChange: (v: string) => void,
+    pitchSemitones = 0,
+  ) => (
+    <div className="flex items-center justify-between">
+      <Label className="text-sm text-muted-foreground">{t(labelKey)}</Label>
+      <div className="flex gap-2 items-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => previewGoogleVoice(effectiveVoice, slotKey, pitchSemitones)}
+          disabled={!!previewingVoice}
+          title={t('aacSettings.elevenlabsTestVoice')}
+          className="shrink-0 h-8 w-8 p-0"
+        >
+          {previewingVoice === slotKey ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Play className="w-4 h-4" />
+          )}
+        </Button>
+        <Select value={value || '_default'} onValueChange={onChange}>
+          <SelectTrigger className="w-full md:w-[200px]">
+            <SelectValue placeholder="Default" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_default">Default</SelectItem>
+            {GEMINI_VOICE_OPTIONS.map((v) => (
+              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+
+  // Per-role pitch slider (semitones), shown only when that role's Gemini
+  // voice is explicitly set — the "_default" pick resets pitch to 0.
+  const renderPitchRow = (value: number, onChange: (v: number) => void) => (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between" title={t('aacSettings.voicePitchDesc')}>
+        <Label className="text-sm text-muted-foreground">{t('aacSettings.voicePitch')}</Label>
+        <span className="text-sm text-muted-foreground">{value > 0 ? `+${value}` : value}</span>
+      </div>
+      <Slider
+        min={-6}
+        max={6}
+        step={1}
+        value={[value]}
+        onValueChange={(v: number[]) => onChange(v[0])}
+        className="w-full"
+      />
+    </div>
+  );
 
   // Listen for Spotify OAuth popup completion
   useEffect(() => {
@@ -1017,130 +1213,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             description={t('aacSettings.voiceSettingsDesc')}
           >
             <CardContent className="space-y-6">
-              {/* Live Audio Speaker — when on, AI voice comes from Gemini Live
-                  native audio and the ElevenLabs section is hidden. */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">{t('aacSettings.liveAudioSpeakerTitle')}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.liveAudioSpeakerDesc')}
-                  </p>
-                </div>
-                <Switch checked={liveAudioSpeaker} onCheckedChange={setLiveAudioSpeaker} />
-              </div>
-
-              {/* Gemini Voice Settings */}
-              <div className="space-y-4 pt-4 border-t">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">{t('aacSettings.voiceSettings')}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.geminiVoiceDesc')}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm text-muted-foreground">{t('aacSettings.aiVoice')}</Label>
-                  <Select value={geminiAiVoice || "_default"} onValueChange={(v) => { setGeminiAiVoice(v === "_default" ? "" : v); if (v === "_default") setAiVoicePitch(0); }}>
-                    <SelectTrigger className="w-full md:w-[200px]">
-                      <SelectValue placeholder="Default" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_default">Default</SelectItem>
-                      <SelectItem value="Puck">Puck — Young, energetic</SelectItem>
-                      <SelectItem value="Charon">Charon — Calm, mature male</SelectItem>
-                      <SelectItem value="Kore">Kore — Clear, friendly female</SelectItem>
-                      <SelectItem value="Fenrir">Fenrir — Deep, confident male</SelectItem>
-                      <SelectItem value="Aoede">Aoede — Warm, expressive female</SelectItem>
-                      <SelectItem value="Leda">Leda — Gentle, youthful female</SelectItem>
-                      <SelectItem value="Orus">Orus — Steady, reassuring male</SelectItem>
-                      <SelectItem value="Zephyr">Zephyr — Light, neutral</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm text-muted-foreground">{t('aacSettings.studentVoice')}</Label>
-                  <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => { setGeminiStudentVoice(v === "_default" ? "" : v); if (v === "_default") setStudentVoicePitch(0); }}>
-                    <SelectTrigger className="w-full md:w-[200px]">
-                      <SelectValue placeholder="Default" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_default">Default</SelectItem>
-                      <SelectItem value="Puck">Puck — Young, energetic</SelectItem>
-                      <SelectItem value="Charon">Charon — Calm, mature male</SelectItem>
-                      <SelectItem value="Kore">Kore — Clear, friendly female</SelectItem>
-                      <SelectItem value="Fenrir">Fenrir — Deep, confident male</SelectItem>
-                      <SelectItem value="Aoede">Aoede — Warm, expressive female</SelectItem>
-                      <SelectItem value="Leda">Leda — Gentle, youthful female</SelectItem>
-                      <SelectItem value="Orus">Orus — Steady, reassuring male</SelectItem>
-                      <SelectItem value="Zephyr">Zephyr — Light, neutral</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Voice Pitch Adjustment — only shown when at least one voice is explicitly set */}
-              {(geminiAiVoice || geminiStudentVoice) && (
-              <div className="pt-4 border-t space-y-3">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">{t('aacSettings.voicePitch')}</Label>
-                  <p className="text-sm text-muted-foreground">{t('aacSettings.voicePitchDesc')}</p>
-                </div>
-
-                {geminiAiVoice && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm text-muted-foreground">{t('aacSettings.aiVoice')}</Label>
-                    <span className="text-sm text-muted-foreground">{aiVoicePitch > 0 ? `+${aiVoicePitch}` : aiVoicePitch}</span>
-                  </div>
-                  <Slider
-                    min={-6}
-                    max={6}
-                    step={1}
-                    value={[aiVoicePitch]}
-                    onValueChange={(v: number[]) => setAiVoicePitch(v[0])}
-                    className="w-full"
-                  />
-                </div>
-                )}
-
-                {geminiStudentVoice && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm text-muted-foreground">{t('aacSettings.studentVoice')}</Label>
-                    <span className="text-sm text-muted-foreground">{studentVoicePitch > 0 ? `+${studentVoicePitch}` : studentVoicePitch}</span>
-                  </div>
-                  <Slider
-                    min={-6}
-                    max={6}
-                    step={1}
-                    value={[studentVoicePitch]}
-                    onValueChange={(v: number[]) => setStudentVoicePitch(v[0])}
-                    className="w-full"
-                  />
-                </div>
-                )}
-              </div>
-              )}
-
-              {/* Local Browser TTS */}
-              <div className="pt-4 border-t space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-base font-medium">{t('aacSettings.localTtsTitle')}</Label>
-                    <p className="text-sm text-muted-foreground">{t('aacSettings.localTtsDesc')}</p>
-                  </div>
-                  <Switch checked={useLocalTts} onCheckedChange={setUseLocalTts} />
-                </div>
-              </div>
-
-              {/* ElevenLabs Direct Voice Settings. The whole block stays
-                  visible regardless of live-audio mode — only the AI voice
-                  picker is hidden when live audio is on (the AI then speaks
-                  via Gemini Live native audio). Student voice + API key stay
-                  applicable since the student-press TTS pipeline is the same
-                  in both modes. */}
-              <div className="pt-4 border-t space-y-4">
+              {/* Shared ElevenLabs connection — ONE key feeds both voice
+                  sub-sections below; the per-role voice pickers live inside
+                  their sections. The shared/admin key never appears here. */}
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label className="text-base font-medium">
@@ -1156,161 +1232,95 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
 
                 <div className={elevenlabsEnabled ? 'space-y-4' : 'space-y-4 opacity-50 pointer-events-none'}>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm text-muted-foreground">
-                      {t('aacSettings.elevenlabsApiKey')}
-                    </Label>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm text-muted-foreground">
+                        {t('aacSettings.elevenlabsApiKey')}
+                      </Label>
+                    </div>
+                    <Input
+                      type="password"
+                      value={elevenlabsApiKey}
+                      onChange={(e) => setElevenlabsApiKey(e.target.value)}
+                      placeholder={t('aacSettings.elevenlabsApiKeyPlaceholder')}
+                      className="w-full md:w-[280px]"
+                    />
                   </div>
-                  <Input
-                    type="password"
-                    value={elevenlabsApiKey}
-                    onChange={(e) => setElevenlabsApiKey(e.target.value)}
-                    placeholder={t('aacSettings.elevenlabsApiKeyPlaceholder')}
-                    className="w-full md:w-[280px]"
-                  />
+
+                  {elevenlabsError && debouncedApiKey && (
+                    <p className="text-sm text-destructive">{t('aacSettings.elevenlabsInvalidKey')}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* AI voice settings — everything that shapes how the ASSISTANT
+                  sounds: live native audio, the Gemini/Google voice + pitch,
+                  and the ElevenLabs AI voice (hidden when live audio speaks
+                  natively). */}
+              <div className="pt-4 border-t space-y-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.aiVoiceSettings')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.aiVoiceSettingsDesc')}
+                  </p>
                 </div>
 
-                {elevenlabsError && debouncedApiKey && (
-                  <p className="text-sm text-destructive">{t('aacSettings.elevenlabsInvalidKey')}</p>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('aacSettings.liveAudioSpeakerTitle')}</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {t('aacSettings.liveAudioSpeakerDesc')}
+                    </p>
+                  </div>
+                  <Switch checked={liveAudioSpeaker} onCheckedChange={setLiveAudioSpeaker} />
+                </div>
+
+                {renderGeminiVoiceRow(
+                  'aacSettings.aiVoice',
+                  geminiAiVoice,
+                  effectiveGeminiAiVoice,
+                  'g:ai',
+                  (v) => { setGeminiAiVoice(v === '_default' ? '' : v); if (v === '_default') setAiVoicePitch(0); },
+                  aiVoicePitch,
                 )}
 
-                {debouncedApiKey && !elevenlabsError && (
-                  <>
-                    {!liveAudioSpeaker && (
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label className="text-sm text-muted-foreground">
-                          {t('aacSettings.elevenlabsAiVoiceId')}
-                        </Label>
-                      </div>
-                      {elevenlabsLoading ? (
-                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
-                      ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
-                        <div className="flex gap-2 items-center">
-                          {elevenlabsAiVoiceId && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => previewVoice(elevenlabsAiVoiceId)}
-                              disabled={!!previewingVoice}
-                              title={t('aacSettings.elevenlabsTestVoice')}
-                              className="shrink-0 h-8 w-8 p-0"
-                            >
-                              {previewingVoice === elevenlabsAiVoiceId ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Play className="w-4 h-4" />
-                              )}
-                            </Button>
-                          )}
-                          <Select
-                            value={elevenlabsAiVoiceId || '_none'}
-                            onValueChange={(v) => setElevenlabsAiVoiceId(v === '_none' ? '' : v)}
-                          >
-                            <SelectTrigger className="w-full md:w-[280px]">
-                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
-                              {elevenlabsVoices.map((v) => (
-                                <SelectItem key={v.voice_id} value={v.voice_id}>
-                                  {v.name} {v.category ? `(${v.category})` : ''}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
-                      )}
-                    </div>
-                    )}
+                {geminiAiVoice && renderPitchRow(aiVoicePitch, setAiVoicePitch)}
 
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label className="text-sm text-muted-foreground">
-                          {t('aacSettings.elevenlabsStudentVoiceId')}
-                        </Label>
-                      </div>
-                      {elevenlabsLoading ? (
-                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
-                      ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
-                        <div className="flex gap-2 items-center">
-                          {elevenlabsStudentVoiceId && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => previewVoice(elevenlabsStudentVoiceId)}
-                              disabled={!!previewingVoice}
-                              title={t('aacSettings.elevenlabsTestVoice')}
-                              className="shrink-0 h-8 w-8 p-0"
-                            >
-                              {previewingVoice === elevenlabsStudentVoiceId ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Play className="w-4 h-4" />
-                              )}
-                            </Button>
-                          )}
-                          <Select
-                            value={elevenlabsStudentVoiceId || '_none'}
-                            onValueChange={(v) => setElevenlabsStudentVoiceId(v === '_none' ? '' : v)}
-                          >
-                            <SelectTrigger className="w-full md:w-[280px]">
-                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
-                              {elevenlabsVoices.map((v) => (
-                                <SelectItem key={v.voice_id} value={v.voice_id}>
-                                  {v.name} {v.category ? `(${v.category})` : ''}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
-                      )}
-                    </div>
-                  </>
+                {!liveAudioSpeaker && renderElevenlabsVoicePicker('aacSettings.elevenlabsAiVoiceId', elevenlabsAiVoiceId, setElevenlabsAiVoiceId, aiVoicePitch)}
+              </div>
+
+              {/* Student voice settings — how the student's OWN words sound
+                  when a press / composed sentence is voiced. */}
+              <div className="pt-4 border-t space-y-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.studentVoiceSettings')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.studentVoiceSettingsDesc')}
+                  </p>
+                </div>
+
+                {renderGeminiVoiceRow(
+                  'aacSettings.studentVoice',
+                  geminiStudentVoice,
+                  effectiveGeminiStudentVoice,
+                  'g:student',
+                  (v) => { setGeminiStudentVoice(v === '_default' ? '' : v); if (v === '_default') setStudentVoicePitch(0); },
+                  studentVoicePitch,
                 )}
 
-                {!debouncedApiKey && (
-                  <>
-                    {!liveAudioSpeaker && (
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label className="text-sm text-muted-foreground">
-                          {t('aacSettings.elevenlabsAiVoiceId')}
-                        </Label>
-                      </div>
-                      <Input
-                        type="text"
-                        value={elevenlabsAiVoiceId}
-                        onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
-                        placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-                        className="w-full md:w-[280px] font-mono"
-                      />
-                    </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label className="text-sm text-muted-foreground">
-                          {t('aacSettings.elevenlabsStudentVoiceId')}
-                        </Label>
-                      </div>
-                      <Input
-                        type="text"
-                        value={elevenlabsStudentVoiceId}
-                        onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
-                        placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-                        className="w-full md:w-[280px] font-mono"
-                      />
-                    </div>
-                  </>
-                )}
+                {geminiStudentVoice && renderPitchRow(studentVoicePitch, setStudentVoicePitch)}
+
+                {renderElevenlabsVoicePicker('aacSettings.elevenlabsStudentVoiceId', elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId, studentVoicePitch)}
+              </div>
+
+              {/* Local Browser TTS — applies to both voices */}
+              <div className="pt-4 border-t space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-medium">{t('aacSettings.localTtsTitle')}</Label>
+                    <p className="text-sm text-muted-foreground">{t('aacSettings.localTtsDesc')}</p>
+                  </div>
+                  <Switch checked={useLocalTts} onCheckedChange={setUseLocalTts} />
                 </div>
               </div>
             </CardContent>

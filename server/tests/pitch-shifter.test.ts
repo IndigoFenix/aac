@@ -8,10 +8,10 @@
 // with Σw it stays flat at its original level; with Σw² it comes out ~1.33×
 // louder and rippling.
 //
-// pitchShifter.ts is pure numerical TS (no JSX / React), so it transpiles and
+// pitch-shifter.ts is pure numerical TS (no JSX / React), so it transpiles and
 // runs fine under the server jest config via a relative import.
 
-import { pitchShift, formantShift, processVoice, semitonesToFactor } from "../../client-aac/src/lib/pitchShifter";
+import { pitchShift, formantShift, processVoice, semitonesToFactor } from "../../shared/aac/pitch-shifter";
 
 const SR = 24000;
 

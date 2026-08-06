@@ -212,6 +212,12 @@ const L: Record<string, Lexeme> = {
   chair: { w: "chair" },
   table: { w: "table" },
   bed: { w: "bed" },
+  // The food chest IS a refrigerator (stations.ts `kindByGood`), and since the
+  // where-is answer names the box it would open ("the food is in the
+  // refrigerator" — household-economy-and-where-is.md §5.2) the kind needs a
+  // lexeme like every other fixture. Without one every language spelled the raw
+  // glyph, which only ever LOOKED right in English.
+  refrigerator: { w: "refrigerator" },
   // The `chest` and `cupboard` KINDS speak `box` and `cabinet` (types.ts
   // FIXTURE_WORD) — the vocabulary draws no chest/box distinction, and those
   // two words are not in it. `box` already has its entry above.

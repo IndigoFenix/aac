@@ -1,0 +1,7 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T16:16:10.307Z
+# ─────────────────────────────────────────
+# ─────────────────────────────────────────
+# commands=0  presses=0  screens=0  sim=0.1s

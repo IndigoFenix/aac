@@ -7,6 +7,26 @@ import type { LicensePermissions } from "@shared/license-permissions";
 export const UNLIMITED_DEVICES = -1;
 
 /**
+ * THE policy knob: how long an unseen device keeps its registration slot.
+ * Device ids churn on the client, so registrations nobody has used in a month
+ * are reclaimed rather than eating slots forever. The product policy is not
+ * final — this is deliberately a single code constant, not per-license config.
+ */
+export const DEVICE_REGISTRATION_TTL_DAYS = 30;
+
+/**
+ * The single source of the expiry rule: a registration is expired iff its
+ * lastSeenAt is STRICTLY older than the returned cutoff. Callers hand the
+ * cutoff to the repository, which only applies it.
+ */
+export function deviceExpiryCutoff(
+  now: Date,
+  ttlDays: number = DEVICE_REGISTRATION_TTL_DAYS,
+): Date {
+  return new Date(now.getTime() - ttlDays * 24 * 60 * 60 * 1000);
+}
+
+/**
  * A student's effective device limit is the SUM of maxDevicesPerStudent across
  * the licenses of every institute they actively belong to. Any unlimited (-1)
  * license makes the total unlimited; negative garbage other than -1 counts as 0.

@@ -502,6 +502,9 @@ import {
   type CreatureWorld,
   type DerivedCreatures,
   type DialogueAct,
+  // ⚖️ Law ③'s answer shape — what a creature's OWN acquire resolution reports
+  // when it is asked where something is (`resolveSourceFor`).
+  type SourceAnswer,
   type GoingDest,
   type GoingRoom,
   type ScheduledTrip,
@@ -537,6 +540,7 @@ import {
   ritualPrepTemplate,
   ritualAttendTemplate,
   canGrasp,
+  isGoodsRow,
   NEED_COST_SELECTION,
   NEED_PRESSURE_S,
   needPressure,
@@ -2335,6 +2339,15 @@ export interface QuestHost3D {
    * scalars. Reading it can never move the sim.
    */
   conversationAudit(): ConversationAuditRow[];
+  /**
+   * ⚖️ LAW ③ — WHERE THIS BODY'S OWN ROWS WOULD DRAW `target` FROM: the exact
+   * answer the where-is projection hook (`resolveSourceFor`) hands the dialogue
+   * layer, exposed for the same reason `scopeTree`/`stockAudit` are — a probe
+   * whose promise is "reading this cannot move the sim" needs to be readable
+   * from outside to be testable at all. Undefined = this creature has no such
+   * row. Pure read; asking never reserves, parks, claims or bubbles.
+   */
+  sourceProbe(cid: string, target: NeedTarget): SourceAnswer | undefined;
   /** WHAT ONE BODY HAS ON IT, merged for display (scope-unification.md §2.1):
    *  the object in its hands plus the stacks of the containers it carries or
    *  wears. There is no `needCarried` map to read any more — a body's carry is
@@ -2947,38 +2960,54 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
  * coloured house) and where to BUY the good a wanter needs (its vendor's
  * counter — the market that serves that trade). Deterministic; rebuilt on
  * replay. No-op off a town session.
+ *
+ * 🚨 TWO HALVES, TWO GUARDS (household-economy-and-where-is.md §4). The CAST
+ * half reads `session.creatures` (a wanter's need names the good its vendor
+ * sells), so it is gated on one existing. The AMBIENT half — where each street
+ * good is bought, and where the rare import lands — reads `town.stage` ALONE,
+ * and gating it on the cast is what left the dollhouse with an EMPTY
+ * `placeFacts` for a whole session: a spec with no `questCount` has no cast, so
+ * `creatureWorldFromGame` is null at boot, the residents' creature world is
+ * created lazily LATER, and these facts were never rebuilt. Downstream that is
+ * every "where is food?" answered "I don't know", `knownProvider` empty for
+ * every resident (`ensureResidentCreature` seeds off these very subjects), and
+ * `directionsForNeed` blind. A town knows where its own market is whether or
+ * not anybody has been cast in a quest.
  */
 function buildTownPlaceFacts(session: QuestSession): void {
   session.placeFacts.clear();
   session.knownSubjects = [];
   session.questSubjects.clear();
   const town = session.town;
-  if (!town || !session.creatures) return;
+  if (!town) return;
   const spawns = town.stage.castSpawns;
   const houses = town.plan.houses;
-  const vendorByGood = new Map<string, string>(); // good → vendor node id
-  for (const c of town.bundle.cast) if (c.role === "vendor") vendorByGood.set(c.good, c.nodeId);
-  for (const c of town.bundle.cast) {
-    if (c.role !== "wanter") continue;
-    const home = spawns.get(c.nodeId);
-    if (home && c.house != null && houses[c.house]) {
-      session.placeFacts.set(`home:${c.nodeId}`, {
-        id: `home:${c.nodeId}`,
-        thingGlyph: houseGlyphForColor(houses[c.house]!.color),
-        worldPos: home,
-      });
-    }
-    // Where to buy the good this wanter needs → its vendor's counter.
-    const creature = session.creatures.world.creatures[c.nodeId];
-    const need = creature ? (openNeeds(creature)[0] ?? creature.needs[0]) : undefined;
-    const vendorId = vendorByGood.get(c.good);
-    const vendorAt = vendorId ? spawns.get(vendorId) : undefined;
-    if (need && vendorAt) {
-      session.placeFacts.set(`buy:${need.itemId}`, {
-        id: `buy:${need.itemId}`,
-        thingGlyph: session.entities.get(need.itemId)?.glyph ?? need.itemId,
-        worldPos: vendorAt,
-      });
+  const creatures = session.creatures;
+  if (creatures) {
+    const vendorByGood = new Map<string, string>(); // good → vendor node id
+    for (const c of town.bundle.cast) if (c.role === "vendor") vendorByGood.set(c.good, c.nodeId);
+    for (const c of town.bundle.cast) {
+      if (c.role !== "wanter") continue;
+      const home = spawns.get(c.nodeId);
+      if (home && c.house != null && houses[c.house]) {
+        session.placeFacts.set(`home:${c.nodeId}`, {
+          id: `home:${c.nodeId}`,
+          thingGlyph: houseGlyphForColor(houses[c.house]!.color),
+          worldPos: home,
+        });
+      }
+      // Where to buy the good this wanter needs → its vendor's counter.
+      const creature = creatures.world.creatures[c.nodeId];
+      const need = creature ? (openNeeds(creature)[0] ?? creature.needs[0]) : undefined;
+      const vendorId = vendorByGood.get(c.good);
+      const vendorAt = vendorId ? spawns.get(vendorId) : undefined;
+      if (need && vendorAt) {
+        session.placeFacts.set(`buy:${need.itemId}`, {
+          id: `buy:${need.itemId}`,
+          thingGlyph: session.entities.get(need.itemId)?.glyph ?? need.itemId,
+          worldPos: vendorAt,
+        });
+      }
     }
   }
 
@@ -4135,6 +4164,281 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return zoneId ? village.houseSymbolByZone[zoneId] : undefined;
   }
 
+  /** Does this need ROW serve the SORT a question named? A kind ("apple") is
+   *  matched against the row's item spec the way every stack is; a category
+   *  ("food") is the row's own category, which is what a household row is
+   *  written in. Nothing else recognizes a sort, so nothing else answers. */
+  function rowServesTarget(tpl: NeedTemplate, target: NeedTarget): boolean {
+    if (target.kind) return matchesNeedItem(target.kind, tpl.item);
+    if (target.category) return tpl.item.category === target.category;
+    return false;
+  }
+
+  /**
+   * ★ ⚖️ LAW ③ — THE ANSWER IS THE RESOLUTION (household-economy-and-where-is.md
+   * §2/§5.1). RUNG 1 of the locate ladder (§8 D2 — see `resolveSourceFor`). ★
+   *
+   * *"A creature asked 'where is {type}?' answers with the source ITS OWN
+   * acquire resolution would pick, run as a READ-ONLY probe — never from a
+   * parallel copy of the world."*
+   *
+   * So this is not a search. It is the body's OWN need row — the same template,
+   * the same `residentNeedCtx`, the same `decideNeed` its walker runs every
+   * step — asked one extra time and then thrown away. Whatever the arithmetic
+   * of law ② picks (the fridge two metres away, the market at the end of the
+   * street) IS the answer, which is why the answer can never disagree with what
+   * the creature would then go and do.
+   *
+   * ⚠️ TWO THINGS ARE FORCED ON THE PROBE CTX, and only these two:
+   *   · `carried: 0` — the question is "where would I GET one", not "what am I
+   *     holding"; a hand already full would resolve to `consumeHere` and say
+   *     nothing about where the stuff lives.
+   *   · a FIRING meter — a member who is not hungry right now still knows where
+   *     the food is. Firing is a question about this body's clock; the ask is a
+   *     question about the house.
+   * Everything else is the live world, unmodified.
+   *
+   * 🚨 READ-ONLY IS A LAW, and it is a law about the SIM, not about tidiness: a
+   * question that reserved units, parked a row or bubbled a line would make
+   * asking a creature something a way of MOVING it. `residentNeedCtx` reads
+   * `freeNeedUnits` without reserving and `decideNeed` is pure, so the probe
+   * touches `needClaims`, `needStep`, `needParks` and the bubbles not at all —
+   * pinned by a test, because that is the kind of promise that rots silently.
+   */
+  function goodRowSourceFor(
+    session: QuestSession,
+    cid: string,
+    houseIndex: number,
+    target: NeedTarget,
+  ): SourceAnswer | undefined {
+    if (!world) return undefined;
+    const rows = residentNeedRowsOf(session, cid).filter((t) => rowServesTarget(t, target));
+    if (rows.length === 0) return undefined;
+    // ⚖️ THE CUSTOMER SEAT ANSWERS (law ②). A body's own drive-serving row is
+    // what it would run to get itself one; the goods/deposit row is the
+    // household's restocking errand and prices a HAUL, which is a different
+    // question. Only when there is no customer row does the manager speak.
+    const tpl = rows.find((t) => !isGoodsRow(t)) ?? rows[0]!;
+    const state = world.state;
+    const base = residentNeedCtx(session, state, cid, houseIndex, tpl);
+    const ctx: NeedCtx = {
+      ...base,
+      carried: 0,
+      ...(tpl.drive.kind === "meter" ? { meter: tpl.drive.threshold } : {}),
+    };
+    const intent = decideNeed(tpl, ctx);
+    if (intent.kind === "take") {
+      const from = intent.from;
+      // A SOURCE — the market stall, a well. The market is common knowledge and
+      // has a place fact (`buy:good:<key>`, built for every town good since the
+      // §4 guard split); a well is a live object, so it answers by POSITION
+      // through the same channel (`at:<objId>` — see `placeFactOf`).
+      if (ctx.sources.some((s) => s.id === from.id)) {
+        const key = tpl.item.category ?? "";
+        const subj = `buy:good:${key}`;
+        if (session.placeFacts.has(subj)) return { kind: "place", subjectId: subj };
+        return state.objects[from.id] ? { kind: "place", subjectId: `at:${from.id}` } : undefined;
+      }
+      // A CONTAINER role — the refrigerator, the barrel, a cupboard somebody
+      // banked into. The word it is NAMED by, never its id (`furn_9_chest_food`
+      // is a fridge).
+      if (Object.values(ctx.containers).some((c) => c?.id === from.id)) {
+        return { kind: "container", objId: from.id, glyph: objectWord(session, from.id) };
+      }
+      // A LOOSE unit lying on the floor: a real answer with no phrase in this
+      // vocabulary (the locative wants a PLACE, and "on the floor" is not one).
+      // Undefined rather than a lie — the told-fact channel gets its turn.
+      return undefined;
+    }
+    // ALREADY LAID OUT: the acquire+consume combine (`bestStation(…, waiting)`)
+    // means a unit is standing on the table. That table is where the food is.
+    if (intent.kind === "consumeAt" && intent.station.waiting > 0) {
+      return { kind: "container", objId: intent.station.id, glyph: objectWord(session, intent.station.id) };
+    }
+    // The row exists and resolves to NOTHING — an empty pantry, an empty shelf,
+    // no offer anywhere it knows. "I don't have any" is the honest answer and it
+    // is a different fact from "I don't know".
+    if (intent.kind === "blocked" || intent.kind === "idle") return { kind: "none" };
+    return undefined;
+  }
+
+  /** Does this box's STACK actually hold the KIND that was asked about? Only a
+   *  kind constrains: a CATEGORY ask is the row's own business (its larder is
+   *  its larder whatever fruit is in it), but "where is the apple" must never be
+   *  answered "in the refrigerator" by a fridge holding nothing but bananas.
+   *  (§8 D2 rung 2 — the check rung 1's container answer must also pass.) */
+  function stackHoldsTarget(session: QuestSession, objId: string, target: NeedTarget): boolean {
+    if (!target.kind) return true;
+    const stock = session.containerStock.get(objId);
+    if (!stock) return false;
+    return Object.entries(stock).some(([g, n]) => n > 0 && matchesNeedItem(g, target));
+  }
+
+  /** The household's own boxes, bolted-down and standing on the floor alike, in
+   *  one deterministic (sorted) list — the set rung 2 searches. */
+  function householdBoxIds(session: QuestSession, state: WorldState, houseIndex: number): string[] {
+    return [
+      ...houseContainerKeys(session, houseIndex),
+      ...floorContainerKeys(session, state, houseIndex),
+    ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  }
+
+  /** The answerer's own house as a world RECT — the containment rule every
+   *  household census in this file already uses (rc.center + house delta). */
+  function houseRectOf(session: QuestSession, houseIndex: number) {
+    const rc = residentTownCtx(session, houseIndex);
+    if (!rc?.house) return undefined;
+    return { x: rc.center.x + rc.house.dx, y: rc.center.y + rc.house.dy, w: rc.house.w, h: rc.house.h };
+  }
+
+  /**
+   * ★ ⚖️ "WHERE" LOCATES ANYTHING WITH A LOCATION (§8 D2 — the locate ladder). ★
+   *
+   * *User direction: "'Where' should be able to apply to anything with a
+   * location — an object, a creature, furniture, a room or a building."*
+   *
+   * ONE SEAM. Rung 1 is law ③ itself (the body's own acquire resolution); the
+   * rungs under it are what a body plainly KNOWS about its own house, asked in
+   * order of how directly it knows it — its boxes, its family's hands, the floor,
+   * the furniture, the town's common knowledge. First hit wins, every sweep is
+   * sorted, and NOTHING here writes: the whole ladder is reads over
+   * `containerStock` / `smallProps` / `state.objects` / `placeFacts`.
+   *
+   * 🚨 SCOPE LAW: the sweep NEVER leaves the answerer's own ken — its household
+   * plus town common knowledge. There is no town-wide object search: "I don't
+   * know" is the correct answer about a stranger's ball.
+   *
+   * ⚠️ ONE DEVIATION from §8's literal ladder, forced by the code: rung 1's
+   * `"none"` verdict ("I don't have any") stands for a CATEGORY ask exactly as
+   * Fix B left it, but is NOT an answer to a KIND ask. A kind ask is matched by
+   * every UNTYPED row in the book (`matchesNeedItem` says an empty item target
+   * matches anything — the tidy/unload/relieve rows), so a blocked sort row
+   * would otherwise answer "I have no ball" while the ball sits in the pet's
+   * mouth. §8 D4 demands the opposite on both cases (held → `clueHolder`,
+   * absent → DONT_KNOW), so a kind ask that rung 1 cannot place keeps climbing.
+   */
+  function resolveSourceFor(
+    session: QuestSession,
+    cid: string,
+    target: NeedTarget,
+  ): SourceAnswer | undefined {
+    if (!world) return undefined;
+    const houseIndex = houseIndexOfCid(cid);
+    // Only a body with a HOUSEHOLD has a ken to search. A quest creature, a
+    // cohort walker or a stranger has none, and `undefined` is the honest
+    // answer: ask somebody else.
+    if (!residentTownCtx(session, houseIndex)?.house) return undefined;
+    const state = world.state;
+
+    // ── RUNG 1 — the good-ROW resolution (law ③, unchanged) ──────────────────
+    const row = goodRowSourceFor(session, cid, houseIndex, target);
+    if (row?.kind === "place") return row;
+    if (row?.kind === "container" && stackHoldsTarget(session, row.objId, target)) return row;
+    if (row?.kind === "none" && !target.kind) return row;
+
+    // ── RUNG 2 — a box whose stack actually HOLDS the thing ──────────────────
+    const box = householdBoxIds(session, state, houseIndex).find((id) =>
+      target.kind
+        ? stackHoldsTarget(session, id, target)
+        : Object.entries(session.containerStock.get(id) ?? {}).some(
+            ([g, n]) => n > 0 && matchesNeedItem(g, target),
+          ),
+    );
+    if (box) return { kind: "container", objId: box, glyph: objectWord(session, box) };
+
+    // ── RUNGS 3 & 4 — the family's HANDS, then the FLOOR ─────────────────────
+    // Two passes over the same sorted census, because a thing in somebody's
+    // hands is known more directly than a thing lying about: "the dog has it"
+    // beats pointing at where it last lay.
+    const props = [...session.smallProps.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    for (const objId of props) {
+      const rec = session.smallProps.get(objId)!;
+      if (!matchesNeedItem(rec.glyph, target)) continue;
+      const holder = state.objects[objId]?.carriedBy;
+      // A HOUSEHOLD body only (pets included, the answerer itself included) —
+      // a passing stranger's hands are not this body's ken.
+      if (holder && houseIndexOfCid(holder) === houseIndex) return { kind: "holder", cid: holder };
+    }
+    const rect = houseRectOf(session, houseIndex);
+    if (rect) {
+      for (const objId of props) {
+        const rec = session.smallProps.get(objId)!;
+        if (!matchesNeedItem(rec.glyph, target)) continue;
+        const o = state.objects[objId];
+        if (!o || o.carriedBy || o.containedIn) continue;
+        if (o.x < rect.x || o.x > rect.x + rect.w || o.y < rect.y || o.y > rect.y + rect.h) continue;
+        // The `at:<objId>` shape a well already answers with — `placeFactOf`
+        // resolves the geometry and the host points at it.
+        return { kind: "place", subjectId: `at:${objId}` };
+      }
+    }
+
+    // ── RUNG 5 — FURNITURE BY WORD ("where is the refrigerator/bed/box?") ────
+    // The answerer's OWN house's pieces, named by the word the board speaks
+    // them with (`objectWord` — the fixture kind, never the id).
+    const prefix = `furn_${houseIndex}_`;
+    const furn = Object.keys(state.objects)
+      .filter((id) => id.startsWith(prefix))
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .find((id) => matchesNeedItem(objectWord(session, id), target));
+    if (furn) return { kind: "place", subjectId: `at:${furn}` };
+
+    // ── RUNG 6 — BUILDINGS AND PLACES: the town's common knowledge ───────────
+    const subject = placeSubjectFor(session, target);
+    if (subject) return { kind: "place", subjectId: subject };
+
+    // ── RUNG 7 — nothing. The evaluator falls to `knownProvider`, then to the
+    // honest don't-know. (ROOMS land here too: a room is not an object, so
+    // there is nothing for `placeFactOf` to point at — see §8's own note.)
+    return undefined;
+  }
+
+  /**
+   * Rung 6: the place-fact SUBJECT a spoken sort names, matched in the SLOT the
+   * subject itself is written in — `buy:good:<key>` is a CATEGORY subject (the
+   * market sells "food"), `buy:import:<kind>` a KIND one (the depot sells
+   * "cookie"), and every other fact names a place by its own word (a wanter's
+   * `home:` fact carries `house.color_blue`, the colour glyph directions teach —
+   * which is how a house answers by colour).
+   *
+   * 🚨 THE SLOT IS LOAD-BEARING. Matching `buy:good:food`'s glyph against a KIND
+   * ask would make "where + food" (read kind-first since §8 D1) resolve to the
+   * market and quietly undo Fix B: the fridge two metres away is the answer, and
+   * it is rung 1 that knows it. A kind ask must miss here so the parse falls
+   * through to the category reading.
+   */
+  function placeSubjectFor(session: QuestSession, target: NeedTarget): string | undefined {
+    const ids = [...session.placeFacts.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    for (const id of ids) {
+      const fact = session.placeFacts.get(id)!;
+      if (id.startsWith("buy:good:")) {
+        if (!target.kind && target.category === id.slice("buy:good:".length)) return id;
+        continue;
+      }
+      if (id.startsWith("buy:import:")) {
+        if (target.kind === id.slice("buy:import:".length)) return id;
+        continue;
+      }
+      const want = target.kind ?? target.category;
+      if (want && (fact.thingGlyph === want || spokenWord(fact.thingGlyph) === want)) return id;
+    }
+    return undefined;
+  }
+
+  /** A directions SUBJECT resolved to the fact the geometry is answered from:
+   *  the town's common knowledge first, else — for an `at:<objId>` subject, the
+   *  shape a live-object answer takes (a well) — the object's own position.
+   *  Pure read; never writes a fact into the town's knowledge. */
+  function placeFactOf(session: QuestSession, subjectId: string): PlaceFact | undefined {
+    const known = session.placeFacts.get(subjectId);
+    if (known) return known;
+    if (!subjectId.startsWith("at:") || !world) return undefined;
+    const objId = subjectId.slice(3);
+    const o = world.state.objects[objId];
+    if (!o) return undefined;
+    return { id: subjectId, thingGlyph: objectWord(session, objId), worldPos: { x: o.x, y: o.y } };
+  }
+
   /** The full projection options for a creature conversation. */
   function creatureProjectionOpts(session: QuestSession, announce?: "before" | "after" | "never") {
     return {
@@ -4151,8 +4455,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // The household name book — third-party fact questions resolve through it
       // ("where + mara" → her resident cid).
       creatureOf: (symbol: string) => nameBook(session).get(symbol),
-      // Roster presence: the duty schedule is household common knowledge.
-      presenceOf: (cid: string) => presenceWordOf(session, cid),
+      // Roster presence: the duty schedule is household common knowledge — but
+      // a body the ANSWERER can see is answered by sight first (§8 D2).
+      presenceOf: (cid: string, observer?: string) => presenceWordOf(session, cid, observer),
       askableWhere: [...session.heardWants],
       // The places the player has heard of that this townsperson can point to.
       askDirections: buildAskDirections(session),
@@ -4168,6 +4473,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const subj = key ? `buy:good:${key}` : undefined;
         return subj && session.placeFacts.has(subj) ? subj : undefined;
       },
+      // ⚖️ LAW ③ — where THIS creature's own rows would draw the stuff from. The
+      // one channel a household's box stock reaches conversation through; see
+      // `resolveSourceFor` for why it is a probe and not a search.
+      resolveSourceFor: (cid: string, target: NeedTarget) => resolveSourceFor(session, cid, target),
       // Where a creature is HEADED right now — a resident's clock/live errand, or any
       // goal-driven creature's queued body step. Powers "where are you going?" (bug #4).
       goingOf: (cid: string) => creatureGoing(session, cid),
@@ -4280,7 +4589,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  Read off the SITUATION, not off the destination: a body that has stopped
    *  walking gets no destination (see residentGoing), but it is still exactly
    *  where its errand put it — a worker standing at its bench is AT work. */
-  function presenceWordOf(session: QuestSession, cid: string): string | undefined {
+  function presenceWordOf(session: QuestSession, cid: string, observer?: string): string | undefined {
+    // ⚖️ SIGHT PRECEDES TOLD FACTS (§8 D2, the presence arm). A body you can SEE
+    // is not a roster entry: with both of you standing in one house, the answer
+    // is the ROOM it is actually in. Only when nobody can see it does the duty
+    // schedule — common knowledge, but told — get to speak.
+    const seen = observer ? seenRoomWordOf(session, cid, observer) : undefined;
+    if (seen) return seen;
     if (cid.startsWith("pet_")) return "home";
     const sit = residentSituation(session, cid);
     if (!sit) return undefined;
@@ -4300,6 +4615,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       case "idle":
         return "home";
     }
+  }
+
+  /** The ROOM word an observer standing in the SAME HOUSE can see `cid` in —
+   *  "home" when that room carries no word of its own (the living room, a hall).
+   *  Undefined when the two are not in one house together, which is the only
+   *  "visible" this world has geometry for: no new radius is invented here, only
+   *  the house rect and `roomAt`, the containment tests every household census
+   *  and the going-destination arm already run. */
+  function seenRoomWordOf(session: QuestSession, cid: string, observer: string): string | undefined {
+    if (!world || cid === observer) return undefined;
+    const houseIndex = houseIndexOfCid(cid);
+    if (!Number.isFinite(houseIndex) || houseIndexOfCid(observer) !== houseIndex) return undefined;
+    const rect = houseRectOf(session, houseIndex);
+    const them = world.state.avatars[avatarIdOf(cid)];
+    const me = world.state.avatars[avatarIdOf(observer)];
+    if (!rect || !them || !me) return undefined;
+    const inside = (p: { x: number; y: number }) =>
+      p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
+    if (!inside(them) || !inside(me)) return undefined;
+    return roomAt(houseRoomDestsOf(session, houseIndex), them)?.word ?? "home";
   }
 
   /** The rooms of a resident's own house as DESTINATIONS (going.ts): world rects
@@ -5050,7 +5385,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ) {
     if (!convo || !world) return;
     const answerer = answererId ?? convo.nodeId;
-    const fact = session.placeFacts.get(subjectId);
+    const fact = placeFactOf(session, subjectId);
     const node = session.creatures?.nodeByCreature.get(answerer);
     const player = world.state.avatars[PLAYER_ID];
     if (!fact || !session.town || !player || !node) {
@@ -9397,13 +9732,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return weight * NEED_PRESSURE_S;
   }
 
-  /** HOW BADLY THE DESTINATION WANTS UNITS — `room / capacity` on the shelf
-   *  this row fills (1 = empty, 0 = full), the `1 − got/need` shape barter
-   *  already reads scarcity in. A deposit row fills its satisfy container; every
-   *  other row's acquisition is ultimately for the HOME box, which is what makes
-   *  "the household is five short" the thing that pays for the walk to market.
-   *  No capacity to measure against ⇒ 1: an unbounded destination always wants
-   *  what you are bringing it. */
+  // (`needShortageOf`'s own note travelled with the function — it is stated in
+  // full at its definition below, law ②.)
   /** Everyone this house's room is shared by — its members and its pets. The
    *  scope that OWNS the floor, so it is the scope a placement serves. */
   function householdCids(session: QuestSession, houseIndex: number): string[] {
@@ -9461,8 +9791,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return out;
   }
 
+  /**
+   * ⚖️ LAW ② — ONE ECONOMY, TWO ROLES (household-economy-and-where-is.md §2),
+   * and this is the seat that says WHO IS ASKING.
+   *
+   * A DEPOSIT row is an inventory manager: its want IS the shelf's shortfall,
+   * so `room / capacity` on the container it fills is the honest discount — a
+   * unit brought to a nearly-full shelf is worth nearly nothing.
+   *
+   * 🚨 EVERY OTHER ROW IS A CUSTOMER AND IS NOT DISCOUNTED AT ALL. It used to
+   * read `containers.home` here — "every other row's acquisition is ultimately
+   * for the HOME box" — and that is precisely the category error the dollhouse
+   * fridge stampede reported: a body's own hunger was priced by how full its
+   * pantry was, so a half-full fridge paid its own members 40% of a ration
+   * while the market paid full price for a restock-sized haul, and three of
+   * four members walked out of a stocked house in one minute. A body's own want
+   * is one ration, and one ration is worth what a ration is worth.
+   *
+   * ⚠️ THE EMPTY-PANTRY REGIME IS BYTE-IDENTICAL EITHER WAY: an empty home box
+   * has `room === capacity`, so the old rule already returned 1 there. Only the
+   * STOCKED house changed, which is the whole of the report.
+   */
   function needShortageOf(tpl: NeedTemplate, containers: Readonly<Record<string, StockCandidate>>): number {
-    const dest = tpl.satisfy.kind === "deposit" ? containers[tpl.satisfy.container] : containers.home;
+    if (!isGoodsRow(tpl)) return 1;
+    const dest = containers[tpl.satisfy.kind === "deposit" ? tpl.satisfy.container : "home"];
     if (!dest || dest.room === undefined) return 1;
     const capacity = dest.units + dest.room;
     return capacity > 0 ? Math.max(0, Math.min(1, dest.room / capacity)) : 0;
@@ -18406,7 +18758,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // can't measure a town) — resolved here exactly as the player path resolves
     // it: the same spoken prose a child would hear, plus the pointing arm.
     if (res.askedDirections && session.town && responderId) {
-      const fact = session.placeFacts.get(res.askedDirections);
+      const fact = placeFactOf(session, res.askedDirections);
       const av = chatAvatar(state, responderId);
       if (fact && av) {
         // The ANSWERER's own town: a neighbor answers by ITS streets, with
@@ -25514,6 +25866,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           : {}),
         seq: c.convo.nextSeq,
       }));
+    },
+    sourceProbe(cid, target) {
+      return sess ? resolveSourceFor(sess, cid, target) : undefined;
     },
     carryOf(cid) {
       return sess ? bodyCarryView(bodyCarryOf(sess, cid)) : {};

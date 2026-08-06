@@ -699,6 +699,16 @@ export interface RelevanceOpts {
    * answer.
    */
   knowsPlace?: (subjectId: string, memberId: CreatureId) => boolean;
+  /**
+   * ⚖️ LAW ③ (household-economy-and-where-is.md §2) — can this member answer a
+   * SORT question out of its own acquire resolution? The stock in a household's
+   * boxes reaches no creature-world item and no `provides` fact, so the two
+   * tests `canAnswer` can make for itself both miss on "where is the food?" —
+   * and arbitration then elects somebody with nothing to say while the member
+   * who was about to open that fridge sits at the floor rung. Same hook the
+   * REPLY uses, asked as a yes/no; absent ⇒ exactly the old ladder.
+   */
+  answersSource?: (memberId: CreatureId, target: NeedTarget) => boolean;
 }
 
 /**
@@ -815,7 +825,9 @@ function canAnswer(
       if (act.itemId && member.knowledge[act.itemId]) return true;
       if (!act.target) return false;
       // A SORT question follows the same fallback chain the where-is arm walks:
-      // a known instance matching the predicate, else a known PROVIDER.
+      // its OWN resolution (the box its rows would draw from), else a known
+      // instance matching the predicate, else a known PROVIDER.
+      if (opts.answersSource?.(member.id, act.target)) return true;
       if (knownProvider(member, [act.target.kind, act.target.category])) return true;
       const probe: CreatureNeed = { itemId: "", value: 0, target: act.target };
       for (const id of Object.keys(member.knowledge)) {

@@ -283,12 +283,36 @@ describe("intentCost — the journey and the hands, priced", () => {
   });
 });
 
-describe("SEAT 2 — acquireFrom: pantry 1 vs market 50 becomes arithmetic", () => {
+// ⚖️ LAW ② — ONE ECONOMY, TWO ROLES (household-economy-and-where-is.md §2),
+// verbatim: "Every acquire decision is made by either a CUSTOMER (a
+// drive-serving row: its want is its own — one ration, one drink) or an
+// INVENTORY MANAGER (a goods-moving/deposit row: its want is a shelf's
+// shortfall). A customer selects its source by COST alone; an inventory manager
+// by `units × destination shortage × unit value − trip`. The discriminator is
+// the one `goodsUnitsOf` already encodes: `tpl.satisfy.kind === "deposit"`."
+//
+// 🚨 WHY THIS BLOCK IS SPLIT IN TWO. It used to run the WHOLE seat on a hunger
+// row and assert the inventory manager's answer — "household five short: the
+// MARKET wins despite the walk" — because `acquireFrom` priced every row's
+// offers as a goods haul. The 2026-08-06 dollhouse report is the bill for that:
+// at seed 7 the fridge held 9 of 15 raw units and three of four members walked
+// out hungry and empty-handed inside one minute, each independently outbid
+// ~restock:1 by the market. So the goods assertion MOVED to a goods row, where
+// it is still exactly true, and the customer seat below asserts the customer
+// law. Nothing was weakened; the two answers were separated.
+describe("SEAT 2 — acquireFrom ① THE CUSTOMER: a drive row buys ONE RATION, by cost", () => {
   const hunger = hungerTemplate("food", 1 / NEED_FILL_S.hunger);
-  /** A hungry body with a BASKET (room 8), a nearly-bare pantry three metres
-   *  away and a market sixty metres off. `restock` is the household's own
-   *  shortfall — quest-host resolves it to the home box's remaining room. */
-  const shopping = (pantryUnits: number, pantryRoom: number): NeedCtx => ({
+  const DISTRICT_M = 23; // the reported dollhouse geometry — a market next door
+  const LEGACY_M = 250; // the old town scale, where the walk is a real trip
+
+  /** A hungry body with a BASKET (room 8), a pantry three metres away and a
+   *  market `storeD` off. `restock` is the household's own shortfall — the home
+   *  box's remaining room, exactly as quest-host resolves it.
+   *
+   *  ⚠️ `shortage: 1` IS THE HOST'S ANSWER NOW, not a simplification:
+   *  `needShortageOf` hands every non-deposit row 1, because a body's own want
+   *  is not discounted by how full its pantry is (law ②). */
+  const shopping = (pantryUnits: number, pantryRoom: number, storeD = 60): NeedCtx => ({
     ...empty,
     meter: 1,
     room: 8,
@@ -296,20 +320,54 @@ describe("SEAT 2 — acquireFrom: pantry 1 vs market 50 becomes arithmetic", () 
     containers: {
       home: { id: "pantry", place: P("pantry"), units: pantryUnits, room: pantryRoom, d: 3 },
     },
-    sources: [{ id: "store:food", place: P("store:food"), units: 50, d: 60 }],
-    price: price({ shortage: pantryRoom / (pantryUnits + pantryRoom) }),
+    sources: [{ id: "store:food", place: P("store:food"), units: 50, d: storeD }],
+    price: price({ shortage: 1 }),
   });
 
-  it("household five short: the MARKET wins despite the walk", () => {
-    const pick = decideNeed(hunger, shopping(1, 5), ON);
-    expect(pick).toMatchObject({ kind: "take", units: 5 });
-    expect((pick as { from: StockCandidate }).from.id).toBe("store:food");
+  it("🚨 REGRESSION: a hungry member eats from a half-full fridge instead of walking to market", () => {
+    // The report, to the unit: `furn_99_chest_food` at 9 of 15 (room 6), the
+    // district market 23 m away, the household's restock target 6. Priced as a
+    // haul that was 6 units × 0.4 shortage against the fridge's 1 × 0.4, and
+    // the market won by 6:1 for every member independently — the stampede. As a
+    // CUSTOMER the same body wants one ration, both offers hand it one, and the
+    // 2.9 s reach into the fridge beats the 32 s round of the market.
+    const pick = decideNeed(hunger, shopping(9, 6, DISTRICT_M), ON);
+    expect(pick).toMatchObject({ kind: "take", units: 1 });
+    expect((pick as { from: StockCandidate }).from.id).toBe("pantry");
+  });
+
+  it("…at ANY fill level ≥ the want, and at BOTH walk scales", () => {
+    // No threshold, no fraction, no cliff: one unit on the shelf is a ration in
+    // the house, and the trip is never the cheaper way to get one.
+    for (const storeD of [DISTRICT_M, LEGACY_M]) {
+      for (let units = 1; units <= 15; units++) {
+        const pick = decideNeed(hunger, shopping(units, 15 - units, storeD), ON);
+        expect((pick as { from: StockCandidate }).from.id).toBe("pantry");
+        expect(pick).toMatchObject({ units: 1 });
+      }
+    }
   });
 
   it("household one short: the walk is not worth it — the PANTRY wins", () => {
     const pick = decideNeed(hunger, shopping(5, 1), ON);
     expect(pick).toMatchObject({ kind: "take", units: 1 });
     expect((pick as { from: StockCandidate }).from.id).toBe("pantry");
+  });
+
+  it("🚨 THE EMPTY PANTRY IS UNTOUCHED: the trip still happens, still RESTOCK-SIZED", () => {
+    // The famine fix (memory `project_famine_trap_banking`) is the half of this
+    // behaviour that must not move: execution sizing lives in `takeUnits` and
+    // was not changed, so a body legitimately sent out by a BARE shelf still
+    // fills the bag and the deposit rows bank the surplus on arrival.
+    for (const storeD of [DISTRICT_M, 60, LEGACY_M]) {
+      const pick = decideNeed(hunger, shopping(0, 6, storeD), ON);
+      expect((pick as { from: StockCandidate }).from.id).toBe("store:food");
+      expect(pick).toMatchObject({ kind: "take", units: 6 });
+    }
+    // …and an empty shelf priced 1 either way, so this regime is byte-identical
+    // under the old rule too: room === capacity ⇒ shortage 1.
+    const wasShortage = 6 / (0 + 6);
+    expect(wasShortage).toBe(1);
   });
 
   it("flag OFF: first-non-empty, so the one-unit pantry ALWAYS wins (the surveyed bug)", () => {
@@ -336,6 +394,90 @@ describe("SEAT 2 — acquireFrom: pantry 1 vs market 50 becomes arithmetic", () 
     const a = decideNeed(hunger, shopping(1, 5), ON);
     const b = decideNeed(hunger, shopping(1, 5), ON);
     expect(a).toEqual(b);
+  });
+
+  it("UNPRICED ⇒ the first-match rule, byte for byte, flag or no flag", () => {
+    // The promise in `acquireFrom`'s block comment: score every offer 0 and the
+    // argmax keeps the FIRST maximum, so a headless probe lands on template
+    // branch order — `home` before `source` — exactly as the shipped ladder
+    // does. The constant-value change must not disturb it, and it cannot:
+    // `p` null still short-circuits both arms to 0.
+    const bare: NeedCtx = { ...shopping(1, 5), price: undefined };
+    expect(decideNeed(hunger, bare, ON)).toMatchObject({ kind: "take", from: { id: "pantry" } });
+    expect(decideNeed(hunger, bare, OFF)).toEqual(decideNeed(hunger, bare, ON));
+    // …and with the pantry bare, both paths fall through to the stall together.
+    const bareEmpty: NeedCtx = { ...shopping(0, 6), price: undefined };
+    expect(decideNeed(hunger, bareEmpty, ON)).toMatchObject({ from: { id: "store:food" } });
+    expect(decideNeed(hunger, bareEmpty, OFF)).toEqual(decideNeed(hunger, bareEmpty, ON));
+  });
+
+  it("A DRIVE ROW PAYS NO FORGONE — the cull gate cannot be reached by the new valuation", () => {
+    // `forgoneOf` charges the REMOVING family only, so `forgone > 0 && worth<=0`
+    // is structurally unreachable for a customer whatever its offers are worth.
+    // (The gate's own behaviour on deposit rows is pinned in
+    // `plan-costs-and-bags.test.ts` ⑤ — a sweep worth less than the game it
+    // ends is still culled.)
+    const ctx: NeedCtx = {
+      ...empty,
+      meter: 1,
+      room: 1,
+      loose: [{ id: "small:teddy", place: P("small:teddy"), units: 1, d: 3, servesS: 999 }],
+      price: price(),
+    };
+    const intent = decideNeed(hunger, ctx, ON);
+    expect(intent).toMatchObject({ kind: "take", from: { id: "small:teddy" } });
+    expect(intentCost(hunger, ctx, intent).forgoneS).toBe(0);
+  });
+});
+
+describe("SEAT 2 — acquireFrom ② THE INVENTORY MANAGER: a deposit row buys the SHORTFALL", () => {
+  /** Keep the box FULL: fires below 6, caps at 6 — so the shortfall and the
+   *  home box's remaining room are the same number at every fill level, which
+   *  is what makes `shortage` and `restock` one story. */
+  const provision = provisionTemplate("food", 6, 6);
+
+  /** The restocking ctx. A provision row does not DRAW from its home box (that
+   *  is where it puts things), so the near offer is the house cupboard and the
+   *  far one is the stall — same geometry the customer block uses, one seat
+   *  along. `shortage` is `room / capacity` on the destination, which is what
+   *  `needShortageOf` still hands a DEPOSIT row. */
+  const restocking = (pantryUnits: number, pantryRoom: number): NeedCtx => ({
+    ...empty,
+    room: 8,
+    restock: pantryRoom,
+    containers: {
+      home: { id: "pantry", place: P("pantry"), units: pantryUnits, room: pantryRoom, d: 3 },
+      storage: { id: "cupboard", place: P("cupboard"), units: 1, free: 1, d: 3 },
+    },
+    sources: [{ id: "store:food", place: P("store:food"), units: 50, d: 60 }],
+    price: price({ shortage: pantryRoom / (pantryUnits + pantryRoom) }),
+  });
+
+  it("household five short: the MARKET wins despite the walk", () => {
+    // The assertion this file has always made, at the seat that owns it: five
+    // units of shortfall × 5/6 of a ration each is worth 833 hand-seconds and
+    // the round trip is 55, so the cupboard's single unit never comes close.
+    const pick = decideNeed(provision, restocking(1, 5), ON);
+    expect(pick).toMatchObject({ kind: "take", units: 5 });
+    expect((pick as { from: StockCandidate }).from.id).toBe("store:food");
+  });
+
+  it("household one short: the walk is not worth it — the NEAR shelf wins", () => {
+    const pick = decideNeed(provision, restocking(5, 1), ON);
+    expect(pick).toMatchObject({ kind: "take", units: 1 });
+    expect((pick as { from: StockCandidate }).from.id).toBe("cupboard");
+  });
+
+  it("🚨 AND THE SHORTAGE DISCOUNT IS STILL LIVE ON THIS SEAT — it is the whole ranking", () => {
+    // The manager's value scales with how empty the destination is AND with the
+    // haul the bag lets it bring; a shelf one short and a shelf five short do
+    // not want the same trip. (On the customer seat this term is gone — that is
+    // the split.)
+    const drawnFrom = (units: number) =>
+      (decideNeed(provision, restocking(units, 6 - units), ON) as { from: StockCandidate }).from.id;
+    expect(drawnFrom(0)).toBe("store:food"); // an empty house: six units pay for the walk
+    expect(drawnFrom(1)).toBe("store:food"); // five short: still five units of reason
+    expect(drawnFrom(5)).toBe("cupboard"); // one short: the walk buys one discounted unit
   });
 });
 

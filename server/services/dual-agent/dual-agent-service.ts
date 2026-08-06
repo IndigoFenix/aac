@@ -30,7 +30,7 @@ import {
   buildInteractiveAgentPrompt,
   composeAacPersona,
 } from "../memory-schema/aac-memory-schema";
-import { ttsFacade, isClientSideTtsVoice, type ResolvedVoice } from "../voice/tts-facade";
+import { ttsFacade, isClientSideTtsVoice, sanitizeElevenLabsApiKey, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type AppConfig } from "./app-registry";
 import { getContactsByStudent } from "../biometric";
@@ -367,6 +367,9 @@ export class DualAgentService {
 
     // ElevenLabs can be toggled off without removing the stored config
     const elEnabled = aac?.elevenlabsEnabled !== false;
+    // Keys in the retired pre-"sk_" format are dropped here so downstream
+    // consumers fall back cleanly instead of failing every synthesis.
+    const elApiKey = elEnabled ? sanitizeElevenLabsApiKey(aac?.elevenlabsApiKey) : undefined;
 
     return {
       // AI voice: in live mode the model speaks directly via Gemini native
@@ -377,7 +380,7 @@ export class DualAgentService {
         fallbackType: aiFallback,
         customVoice: aiCustom || null,
         language: student?.primaryLanguage || "en",
-        elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
+        elevenlabsApiKey: elApiKey,
         elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsAiVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiAiVoice || defaultAiGeminiVoice,
       },
@@ -389,7 +392,7 @@ export class DualAgentService {
         fallbackType: studentFallback as any,
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
-        elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
+        elevenlabsApiKey: elApiKey,
         elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsStudentVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiStudentVoice || defaultStudentGeminiVoice,
       },

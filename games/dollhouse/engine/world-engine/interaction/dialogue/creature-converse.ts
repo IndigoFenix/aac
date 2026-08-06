@@ -105,7 +105,10 @@ export function intentToAct(
   frame: IntentFrame,
   world: CreatureWorld,
   p: Perspective,
-  opts: Pick<ProjectionOpts, "symbolOf" | "creatureOf" | "doingOf" | "jointActivities">,
+  opts: Pick<
+    ProjectionOpts,
+    "symbolOf" | "creatureOf" | "doingOf" | "jointActivities" | "resolveSourceFor"
+  >,
 ): DialogueAct | null {
   const speakerId = p.speakerId;
   /** Undefined = spoken to the floor; see the null-returns below. */
@@ -166,9 +169,30 @@ export function intentToAct(
     const items = Object.values(world.items);
     if (items.some((it) => it.category === objectSymbol)) return { category: objectSymbol };
     if (items.some((it) => it.kind === objectSymbol)) return { kind: objectSymbol };
-    return listenerId && world.creatures[listenerId]?.knowledge[providesKey(objectSymbol)]
-      ? { category: objectSymbol }
-      : undefined;
+    if (listenerId && world.creatures[listenerId]?.knowledge[providesKey(objectSymbol)]) {
+      return { category: objectSymbol };
+    }
+    // ⚖️ …OR A SORT THE LISTENER CAN LOCATE (law ③ — household-economy-and-
+    // where-is.md §5.3, widened by §8 D1). Inside a household "food" names no
+    // creature-world instance (pantry stock is a glyph→count map, never an item)
+    // and nobody has been told a `provides` fact about it, so the two tests
+    // above both miss and "where is the food?" fell through to no act at all.
+    // But the person being asked EATS: it carries a hunger row for that very
+    // category and can answer from its own acquire resolution. Being able to
+    // place the word IS recognizing it.
+    //
+    // KIND FIRST — the more specific reading. "apple" is a KIND under the
+    // category "food", and the row probe compares a kind against the row's item
+    // spec the way every stack is matched, so the category-only probe could
+    // never recognize it (§8's first root gap). A word no kind reading places
+    // (like "food" itself, which is nobody's kind) falls to the category below.
+    if (listenerId && opts.resolveSourceFor) {
+      const kind = { kind: objectSymbol };
+      if (opts.resolveSourceFor(listenerId, kind)) return kind;
+      const category = { category: objectSymbol };
+      if (opts.resolveSourceFor(listenerId, category)) return category;
+    }
+    return undefined;
   };
 
   // AN INVITATION, whatever sentence shape it arrives in. "I want to play with
@@ -304,8 +328,19 @@ export function intentToAct(
         }
         // No instance of the kind anywhere → maybe a TYPE question ("where is
         // food?") — the §2b chain (instance → provider → don't-know) answers it.
+        //
+        // ⚖️ LAST RESORT: THE WORD ITSELF IS THE SORT (§8 D1). A well-formed
+        // "where + {noun}" must never come back as `dont-understand`, and must
+        // never produce an act carrying NEITHER an id nor a target — an act the
+        // evaluator can only shrug at, and whose worse shapes fell out of the
+        // conversation entirely (the reported host toast). Nobody here knows
+        // what a "ball" is? Then the question is about a ball, and the RESPONDER
+        // is the one who gets to say whether it can place one.
         const itemId = listenerItem ?? anyItem;
-        const target = itemId ? undefined : typeTarget();
+        const named = objectSymbol ?? refSymbol(frame.subject);
+        const target = itemId
+          ? undefined
+          : (typeTarget() ?? (named ? { kind: named } : undefined));
         return { kind: "where-is", itemId, ...(target ? { target } : {}), glyph };
       }
       if (frame.question === "what") {
@@ -476,12 +511,23 @@ const EPS_WEIGHT = 0.05; // every act keeps a floor weight → "when all else fa
 const BUSY_BYE_WEIGHT = 0.6;
 
 /** OPENER + navigation acts — never a spoken NPC turn. An NPC must not utter the bare
- *  menu-opener ("where", "trade") or a list control; instead each opener is EXPANDED
- *  into its concrete picks (see chooseSpeakerAct), so the NPC can still ask a specific
- *  "where is {place}" / "trade for {item}" — just not the button that opens the list. */
+ *  menu-opener ("trade") or a list control; the TRADE opener is EXPANDED into its
+ *  concrete picks (see chooseSpeakerAct), so the NPC can still ask a specific
+ *  "trade for {item}" — just not the button that opens the list.
+ *
+ * ⚖️ AND NPCs DO NOT ASK DIRECTIONS AT ALL (§9 E1 — "a question is a failed
+ * resolution"). The directions menu is generated from the ASKER'S OWN KNOWN
+ * SUBJECTS, so expanding it made every NPC turn offer several "where is the
+ * food/clothes/cookie?" asks about places that NPC already knew — the flood the
+ * user reported as "a testing artifact". Every shape of it is barred here: the
+ * opener, the single-subject `ask-directions`, and the picks themselves (which
+ * can only arrive with a list already open). THE PLAYER'S BOARD IS UNTOUCHED —
+ * the menu is pedagogy there, and post-Fix-B the answers are good. */
 const NON_SPEAKER_ACTS = new Set<DialogueAct["kind"]>([
   "trade-menu",
   "directions-menu",
+  "ask-directions",
+  "directions-pick",
   "back",
   "more",
   "confused",
@@ -589,16 +635,32 @@ export function chooseSpeakerAct(
   // under it, so it varies `ui` and never touches the shared record.
   const project = (ui?: DeviceBoardState) =>
     projectDialogue(world, listenerId, speakerId, level, opts, { ...ctx, ui }).acts;
-  // An NPC may ask a CONCRETE sub-item ("where is {place}", "trade for {item}") but
-  // never the bare menu-OPENER: expand each opener into its picks (re-project with the
+  // An NPC may ask a CONCRETE sub-item ("trade for {item}") but never the bare
+  // menu-OPENER: expand the trade opener into its picks (re-project with the
   // submenu open), then drop the openers + list controls themselves.
+  //
+  // ⚖️ A QUESTION IS A FAILED RESOLUTION (§9 E2). The state-1 where-is act is
+  // the LISTENER'S need seen from the outside — this projection is role-swapped
+  // (`projectDialogue(world, listenerId, speakerId, …)`), so the need it is
+  // built from, and the `target` riding it, belong to the LISTENER. Asking
+  // around about it is only worth a turn when the person who WANTS the thing
+  // cannot place it themselves: a genuinely empty larder, or the pet that cannot
+  // open the fridge, is exactly when "where is the food?" is the right thing to
+  // say — and a housemate who would simply walk to the refrigerator has no
+  // question to ask. `none`/absent ⇒ KEEP; a real place ⇒ drop.
+  const listenerCanPlace = (target: NeedTarget): boolean => {
+    const a = opts.resolveSourceFor?.(listenerId, target);
+    return a?.kind === "container" || a?.kind === "place";
+  };
   const acts: DialogueAct[] = [];
   for (const a of project(ctx.ui)) {
-    if (a.kind === "directions-menu") {
-      acts.push(...project({ ...ctx.ui, list: { menu: "where-is", page: 0 } }).filter((x) => x.kind === "directions-pick"));
-    } else if (a.kind === "trade-menu") {
+    if (a.kind === "trade-menu") {
       acts.push(...project({ ...ctx.ui, tradeMenu: true }).filter((x) => x.kind === "trade-pick"));
-    } else if (!NON_SPEAKER_ACTS.has(a.kind)) {
+    } else if (NON_SPEAKER_ACTS.has(a.kind)) {
+      continue;
+    } else if (a.kind === "where-is" && a.target && listenerCanPlace(a.target)) {
+      continue;
+    } else {
       acts.push(a);
     }
   }
@@ -886,6 +948,26 @@ export function speakInConversation(
   }
 
   // ── 2. WHO COULD ANSWER, AND HOW BADLY THEY WANT TO ───────────────────────
+  //
+  // ⚖️ THE RELEVANCE LADDER READS THE SAME HOOKS THE REPLY WILL (law ③). A
+  // member whose own acquire resolution can answer a sort question is a member
+  // who CAN answer it — without this the arbitration keeps electing the
+  // ignorant, they say "I don't know", and the one person in the room who was
+  // about to open that very fridge never gets the floor. Built once per turn,
+  // not per member; the probe itself runs per ask, never per frame.
+  const relevanceOpts: RelevanceOpts = {
+    ...(deps.knowsPlace ? { knowsPlace: deps.knowsPlace } : {}),
+    ...(opts.resolveSourceFor
+      ? {
+          answersSource: (memberId: CreatureId, target: NeedTarget) => {
+            const a = opts.resolveSourceFor?.(memberId, target);
+            // Every answer that NAMES A PLACE OR A HOLDER counts; `none` and
+            // absence do not — they are the two ways of having nothing to say.
+            return a?.kind === "container" || a?.kind === "place" || a?.kind === "holder";
+          },
+        }
+      : {}),
+  };
   const candidates: ResponseCandidate[] = [];
   for (const m of c.members) {
     if (m.id === speakerId || isPlayerCid(m.id)) continue;
@@ -896,7 +978,7 @@ export function speakInConversation(
       tick: deps.tick,
       personality: deps.personalityOf?.(m.id) ?? NEUTRAL_PERSONALITY,
       relation,
-      relevance: defaultRelevance(world, m.id, act, deps.knowsPlace ? { knowsPlace: deps.knowsPlace } : {}),
+      relevance: defaultRelevance(world, m.id, act, relevanceOpts),
     });
     candidates.push({
       id: m.id,

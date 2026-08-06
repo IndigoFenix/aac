@@ -5,13 +5,15 @@
 // registerDevice on every startup, so a limit that shrank (student removed
 // from an institute) blocks even previously-registered devices until enough
 // slots are freed.
+// Registrations idle beyond DEVICE_REGISTRATION_TTL_DAYS are auto-expired on
+// the next registration check or listing, so dead device ids stop eating slots.
 
 import type { StudentDevice } from "@shared/schema";
 import { instituteRepository } from "../repositories";
 import { studentDeviceRepository } from "../repositories/studentDeviceRepository";
 import { licenseService } from "./licenseService";
 import { activityLogService } from "./activityLogService";
-import { evaluateDeviceRegistration, sumDeviceLimits } from "./student-device-logic";
+import { deviceExpiryCutoff, evaluateDeviceRegistration, sumDeviceLimits } from "./student-device-logic";
 
 export interface DeviceRegistrationResult {
   allowed: boolean;
@@ -32,6 +34,7 @@ export class StudentDeviceService {
   }
 
   async listDevices(studentId: string): Promise<{ devices: StudentDevice[]; limit: number }> {
+    await this.pruneExpiredDevices(studentId);
     const [devices, limit] = await Promise.all([
       studentDeviceRepository.getDevicesForStudent(studentId),
       this.getEffectiveDeviceLimit(studentId),
@@ -52,6 +55,8 @@ export class StudentDeviceService {
     userId?: string | null;
   }): Promise<DeviceRegistrationResult> {
     const { studentId, deviceId, deviceName, userId } = opts;
+    // Prune first so the verdict is computed against live registrations only.
+    await this.pruneExpiredDevices(studentId);
     const [limit, devices] = await Promise.all([
       this.getEffectiveDeviceLimit(studentId),
       studentDeviceRepository.getDevicesForStudent(studentId),
@@ -106,7 +111,28 @@ export class StudentDeviceService {
     return !!removed;
   }
 
-  private logDeregistration(studentId: string, device: StudentDevice, userId?: string | null): void {
+  /**
+   * Drop registrations idle beyond the TTL policy so churned-away device ids
+   * stop holding license slots. Lazy: runs on the paths that consult the
+   * device list, never on de-registration.
+   */
+  private async pruneExpiredDevices(studentId: string): Promise<void> {
+    const expired = await studentDeviceRepository.deleteExpiredDevices(
+      studentId,
+      deviceExpiryCutoff(new Date()),
+    );
+    for (const device of expired) {
+      // No acting user — the expiry is the system reclaiming the slot.
+      this.logDeregistration(studentId, device, undefined, "expired");
+    }
+  }
+
+  private logDeregistration(
+    studentId: string,
+    device: StudentDevice,
+    userId?: string | null,
+    reason?: string,
+  ): void {
     activityLogService.log({
       userId,
       eventType: "device_deregistered",
@@ -114,7 +140,7 @@ export class StudentDeviceService {
       subjectId1: studentId,
       subjectType2: "user",
       subjectId2: userId,
-      details: { deviceId: device.deviceId, deviceName: device.deviceName },
+      details: { deviceId: device.deviceId, deviceName: device.deviceName, ...(reason ? { reason } : {}) },
     });
   }
 }

@@ -9,6 +9,7 @@ import {
   selectAct,
   type DialogueAct,
   type ProjectionOpts,
+  type SourceAnswer,
 } from "@shared/world-engine/interaction/dialogue/creature-dialogue.js";
 import {
   chooseSpeakerAct,
@@ -240,11 +241,14 @@ describe("chooseSpeakerAct — an NPC picks from the SAME board, by personality 
     expect(act?.kind).toBe("request");
   });
 
-  it("never utters a menu-OPENER, but CAN ask a concrete sub-item (where is {place})", () => {
-    // A listener with several askable places surfaces a `directions-menu` OPENER on the
-    // board. The NPC must never "say" the opener — but it may ask about a specific place
-    // (a directions-pick). Sweep the RNG: no opener/navigation is ever chosen, and a
-    // concrete pick IS reachable.
+  // ⚖️ §9 E1 — NPCs NEVER ASK DIRECTIONS TO PLACES THEY ALREADY KNOW. This test
+  // used to assert the opposite (the menu was expanded into one ask per known
+  // subject, and a `directions-pick` had to be reachable). That expansion was
+  // the reported flood: the picks are generated from the ASKER'S OWN known
+  // subjects, so once the dollhouse got place facts every NPC turn offered
+  // several "where is the food/clothes/cookie?" asks about places it already
+  // knew. The board the PLAYER sees is untouched — this is the NPC seat only.
+  it("never utters a menu-OPENER — and never asks directions in ANY shape", () => {
     const w = createCreatureWorld([{ id: "fox" }, { id: "bear" }], []);
     const o: ProjectionOpts = {
       symbolOf: (id) => w.items[id]?.kind ?? id,
@@ -253,14 +257,41 @@ describe("chooseSpeakerAct — an NPC picks from the SAME board, by personality 
         { id: "b", glyph: "market" },
       ], // ≥2 → a directions-menu opener appears on the board
     };
-    const banned = new Set(["directions-menu", "trade-menu", "back", "more", "confused"]);
-    const kinds = new Set<string>();
+    const banned = new Set([
+      "directions-menu",
+      "directions-pick",
+      "ask-directions",
+      "trade-menu",
+      "back",
+      "more",
+      "confused",
+    ]);
     for (let i = 0; i < 20; i++) {
       const act = chooseSpeakerAct(w, "fox", "bear", "c", o, { rng: constRng(i / 20) });
-      if (act) kinds.add(act.kind);
+      expect(act).not.toBeNull();
+      expect(banned.has(act!.kind)).toBe(false);
+    }
+    // …and a SINGLE known subject — the bare `ask-directions` shape, which never
+    // went through the menu at all — is barred by the same rule.
+    const one: ProjectionOpts = { ...o, askDirections: [{ id: "a", glyph: "house" }] };
+    for (let i = 0; i < 20; i++) {
+      const act = chooseSpeakerAct(w, "fox", "bear", "c", one, { rng: constRng(i / 20) });
       expect(act && banned.has(act.kind)).toBeFalsy();
     }
-    expect(kinds.has("directions-pick")).toBe(true); // the concrete "where is X" IS sayable
+  });
+
+  // THE PLAYER'S BOARD IS NOT THE NPC POOL — the pin §9 E1 asks for explicitly.
+  it("…while the PLAYER's board still projects the directions menu", () => {
+    const w = createCreatureWorld([{ id: "fox" }, { id: "bear" }], []);
+    const o: ProjectionOpts = {
+      symbolOf: (id) => w.items[id]?.kind ?? id,
+      askDirections: [
+        { id: "a", glyph: "house" },
+        { id: "b", glyph: "market" },
+      ],
+    };
+    const acts = projectDialogue(w, "bear", "fox", "c", o).acts;
+    expect(acts.some((a) => a.kind === "directions-menu")).toBe(true);
   });
 
   it("with no motive and the RNG at the tail, it still picks SOME act (never null/dead)", () => {
@@ -288,6 +319,77 @@ describe("chooseSpeakerAct — an NPC picks from the SAME board, by personality 
       rng: constRng(0),
     });
     expect(turn.response?.result).toBeTruthy();
+  });
+});
+
+// ⚖️ §9 E2 — A QUESTION IS A FAILED RESOLUTION.
+//
+// The state-1 where-is act is the LISTENER'S need seen from the outside: this
+// projection is role-swapped (`projectDialogue(world, listenerId, speakerId,…)`),
+// so the need — and the `target` riding the ask — belong to the LISTENER. "A"
+// asks "where is X?" because "B" visibly wants X, which is worth a turn only
+// when B cannot place X itself. *"Before, they were asking 'where is the food'
+// when they were hungry and unable to find the food, which feels more correct."*
+describe("§9 E2 — the NPC's need-ask fires only on a genuine knowledge gap", () => {
+  /** Bear (the LISTENER) is hungry for a resource TYPE — the ask-around loop. */
+  const hungryListener = () =>
+    createCreatureWorld(
+      [{ id: "fox" }, { id: "bear", needs: [{ itemId: "good:food", value: 3, target: { category: "food" } }] }],
+      [],
+    );
+  const withProbe = (answer: SourceAnswer | undefined, seen?: string[]): ProjectionOpts => ({
+    symbolOf: (id) => id,
+    resolveSourceFor: (cid) => {
+      seen?.push(cid);
+      return answer;
+    },
+  });
+  /** Every act the speaker can reach, over a full sweep of the roulette. */
+  const reachable = (o: ProjectionOpts): Set<string> => {
+    const w = hungryListener();
+    const kinds = new Set<string>();
+    for (let i = 0; i < 40; i++) {
+      const act = chooseSpeakerAct(w, "fox", "bear", "c", o, { rng: constRng(i / 40) });
+      if (act?.kind === "where-is") kinds.add(act.target ? "where-is:target" : "where-is:item");
+      else if (act) kinds.add(act.kind);
+    }
+    return kinds;
+  };
+
+  it("DROPS the targeted ask when the listener would simply open its own fridge", () => {
+    const o = withProbe({ kind: "container", objId: "furn_9_chest_food", glyph: "refrigerator" });
+    expect(reachable(o).has("where-is:target")).toBe(false);
+  });
+
+  it("DROPS it when the listener knows the place to go", () => {
+    expect(reachable(withProbe({ kind: "place", subjectId: "buy:good:food" })).has("where-is:target")).toBe(false);
+  });
+
+  it("KEEPS it when the listener's own resolution is BLOCKED — the pet at the fridge", () => {
+    // grasp=false, so biscuit's row resolves to nothing: asking around is
+    // exactly right, and §9 E3 names this as behavior NOT to suppress.
+    expect(reachable(withProbe({ kind: "none" })).has("where-is:target")).toBe(true);
+  });
+
+  it("KEEPS it when nobody can place it at all (no hook, no answer)", () => {
+    expect(reachable(withProbe(undefined)).has("where-is:target")).toBe(true);
+    expect(reachable({ symbolOf: (id) => id }).has("where-is:target")).toBe(true);
+  });
+
+  it("asks the probe about the LISTENER — the need's owner under the role swap", () => {
+    const seen: string[] = [];
+    chooseSpeakerAct(hungryListener(), "fox", "bear", "c", withProbe({ kind: "none" }, seen), {
+      rng: constRng(0.5),
+    });
+    expect(seen).toContain("bear");
+    expect(seen).not.toContain("fox");
+  });
+
+  it("THE PLAYER'S BOARD IS UNGATED — projectDialogue still offers the button", () => {
+    const w = hungryListener();
+    const o = withProbe({ kind: "container", objId: "furn_9_chest_food", glyph: "refrigerator" });
+    const acts = projectDialogue(w, "bear", "fox", "c", o).acts;
+    expect(acts.some((a) => a.kind === "where-is" && !!a.target)).toBe(true);
   });
 });
 

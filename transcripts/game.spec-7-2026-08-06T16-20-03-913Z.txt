@@ -1,0 +1,97 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T16:20:03.913Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> look mara
+ERR    nothing here called "mara".
+TICK   quiet after 1.5s.
+> say where + food
+OK     said: where + food
+TOAST  💬 "where + food" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /truth mara
+ERR    no text id "mara" is latched.
+> wait 240
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    pip: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    pip: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    mara: "I'm not hungry."  [i_me + hungry.not]
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    pip: "bye-bye"  [goodbye]
+SAY    orrin: "💗"
+SAY    pip: "bye-bye"  [goodbye]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    pip: [ball]
+SAY    pip: [play]
+SAY    orrin: [play]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    biscuit: [ball]
+SAY    orrin: "🍳"  [banana.hot]
+SAY    biscuit: [play]
+SAY    biscuit: "🥺"  [apple]
+SAY    mara: [play]
+SAY    pip: [sit]
+EXIT   mara went out of the white house.
+SAY    orrin: [meal]
+EXIT   pip went out of the white house.
+SAY    biscuit: [banana]
+SAY    biscuit: "🥺"  [water]
+SAY    orrin: [water]
+SAY    biscuit: "Help you."  [help + you]
+SAY    orrin: "Thank you!"  [thank_you]
+SAY    biscuit: "Help you."  [help + you]
+TOAST  🏗️ the people stake out a market (feedback)
+SAY    orrin: "Thank you!"  [thank_you]
+EXIT   orrin left view here west.
+SAY    biscuit: "Where is the food?"  [place#question + food]
+TICK   waited 240.0s.
+> look mara
+ERR    mara is not in view.
+TICK   quiet after 1.5s.
+> say where + food
+OK     said: where + food
+TOAST  💬 "where + food" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /truth mara
+CHEAT  /truth mara
+# ─────────────────────────────────────────
+# commands=10  presses=0  screens=1  sim=249.7s
+# events: SAY 56  TICK 6  ERR 3  TOAST 3  CHEAT 3  EXIT 3  OK 2  BOARD 1  NOTE 1

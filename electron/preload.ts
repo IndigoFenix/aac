@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
       return () => ipcRenderer.removeListener("app:instances", listener);
     },
   },
+  // Durable device id, kept in a userData file so a browser-profile reset does
+  // not burn a fresh device-registration slot (see electron/main.ts).
+  deviceId: {
+    get: () => ipcRenderer.invoke("device-id:get"),
+    set: (id: string) => ipcRenderer.invoke("device-id:set", id),
+  },
   // Eye-tracker gaze sidecar control
   gaze: {
     /** Ensure the sidecar is running for a device (auto-locates the DLL). */

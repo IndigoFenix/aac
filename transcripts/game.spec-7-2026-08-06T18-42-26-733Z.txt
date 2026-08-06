@@ -1,0 +1,144 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=00cd7d35+dirty
+# started=2026-08-06T18:42:26.733Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> watch mara
+ERR    nothing here called "mara".
+TICK   quiet after 0.8s.
+> watch pip
+WATCH  watching pip.
+TICK   quiet after 0.8s.
+> watch orrin
+WATCH  watching orrin.
+TICK   quiet after 0.8s.
+> watch biscuit
+WATCH  watching biscuit.
+MOVED  pip is now here east.
+TICK   quiet after 1.0s.
+> wait 60
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    biscuit: "Where is the cookie?"  [place#question + cookie]
+SAY    mara: "The cookie is far, to the east."  [cookie + rare]
+SAY    biscuit: "Where is the food?"  [place#question + food]
+SAY    mara: "The food is in the refrigerator."  [food + in + refrigerator]
+SAY    mara: "Where are the clothes?"  [place#question + clothing]
+SAY    biscuit: "The clothes are far, to the north."  [clothing]
+SAY    mara: "Where is the cookie?"  [place#question + cookie]
+SAY    biscuit: "The cookie is far, to the east."  [cookie + rare]
+SAY    mara: "Where is the cookie?"  [place#question + cookie]
+SAY    biscuit: "The cookie is far, to the east."  [cookie + rare]
+DOING  pip is go basket.
+SAY    pip: "hi"  [hi]
+DOING  pip is doing nothing.
+DOING  pip is get thing.
+SAY    mara: "bye-bye"  [goodbye]
+DOING  pip is doing nothing.
+HOLD   pip is holding ball-1.
+SAY    biscuit: "bye-bye"  [goodbye]
+DOING  pip is put thing.
+MOVED  pip is now here east.
+SAY    pip: "Where is the food?"  [place#question + food]
+DOING  pip is go bedroom.
+DOING  pip is doing nothing.
+HOLD   pip is holding nothing.
+SAY    biscuit: "The food is far, to the east."  [food]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+MOVED  pip is now here east.
+SAY    pip: "okay"  [ok]
+SAY    pip: "bye-bye"  [goodbye]
+MOVED  orrin is now there west.
+MOVED  orrin is now here west.
+SAY    mara: "eat with I"  [eat + with + i_me]
+TICK   waited 60.0s.
+> wait 60
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Where is the food?"  [place#question + food]
+SAY    orrin: "The food is in the refrigerator."  [food + in + refrigerator]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "Where are the clothes?"  [place#question + clothing]
+SAY    mara: "The clothes are in the box."  [clothing + in + box]
+SAY    mara: "eat with I"  [eat + with + i_me]
+DOING  pip is go house.
+DOING  biscuit is go basket.
+SAY    orrin: "okay"  [ok]
+SAY    pip: "hi"  [hi]
+DOING  pip is doing nothing.
+SAY    pip: "Where are the clothes?"  [place#question + clothing]
+SAY    biscuit: "hi"  [hi]
+DOING  biscuit is doing nothing.
+SAY    orrin: "The clothes are in the box."  [clothing + in + box]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    pip: "Where are the clothes?"  [place#question + clothing]
+SAY    biscuit: "The clothes are far, to the north."  [clothing]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Where are the clothes?"  [place#question + clothing]
+SAY    biscuit: "The clothes are far, to the north."  [clothing]
+SAY    orrin: "Where is the cookie?"  [place#question + cookie]
+SAY    mara: "The cookie is far, to the east."  [cookie + rare]
+SILENT biscuit: …
+SAY    mara: "Where is the food?"  [place#question + food]
+DOING  biscuit is go basket.
+DOING  biscuit is doing nothing.
+SAY    biscuit: "Where is the food?"  [place#question + food]
+SAY    pip: "The food is in the refrigerator."  [food + in + refrigerator]
+SAY    orrin: "Where are the clothes?"  [place#question + clothing]
+SAY    mara: "The clothes are in the box."  [clothing + in + box]
+DOING  biscuit is go basket.
+TICK   waited 60.0s.
+> wait 60
+DOING  biscuit is doing nothing.
+SAY    biscuit: "Where is the cookie?"  [place#question + cookie]
+SAY    orrin: "The cookie is far, to the east."  [cookie + rare]
+DOING  biscuit is go basket.
+DOING  biscuit is doing nothing.
+SAY    biscuit: "Where are the clothes?"  [place#question + clothing]
+SAY    pip: "The clothes are in the box."  [clothing + in + box]
+SILENT mara: …
+SAY    pip: "Are you okay?"  [you + ok#question]
+DOING  biscuit is go basket.
+DOING  biscuit is doing nothing.
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SILENT biscuit: …
+SAY    pip: "Where is the cookie?"  [place#question + cookie]
+SILENT biscuit: …
+SAY    pip: "Where is the food?"  [place#question + food]
+DOING  orrin is talk biscuit.
+DOING  orrin is doing nothing.
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    orrin: "💗"
+SAY    orrin: "okay"  [ok]
+SAY    pip: "Where is the food?"  [place#question + food]
+SAY    orrin: "The food is in the refrigerator."  [food + in + refrigerator]
+DOING  pip is talk mara.
+DOING  pip is doing nothing.
+SILENT biscuit: …
+SAY    pip: "Where is the cookie?"  [place#question + cookie]
+SAY    orrin: "Where is the cookie?"  [place#question + cookie]
+SAY    pip: "The cookie is far, to the east."  [cookie + rare]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    orrin: "bye-bye"  [goodbye]
+DOING  biscuit is go basket.
+DOING  biscuit is doing nothing.
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    orrin: "bye-bye"  [goodbye]
+MOVED  pip is now there west.
+MOVED  pip is now here west.
+SAY    orrin: "Where is the food?"  [place#question + food]
+SAY    pip: "The food is in the refrigerator."  [food + in + refrigerator]
+SAY    pip: "Where are the clothes?"  [place#question + clothing]
+SAY    orrin: "The clothes are in the box."  [clothing + in + box]
+SAY    pip: "Where is the cookie?"  [place#question + cookie]
+TICK   waited 60.0s.
+# ─────────────────────────────────────────
+# commands=8  presses=0  screens=1  sim=193.3s
+# events: SAY 74  DOING 25  TICK 8  MOVED 7  SILENT 5  WATCH 3  HOLD 2  BOARD 1  NOTE 1  ERR 1

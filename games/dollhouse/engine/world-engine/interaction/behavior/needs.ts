@@ -601,11 +601,35 @@ export function intentCost(tpl: NeedTemplate, ctx: NeedCtx, intent: NeedIntent):
   }
 }
 
+/**
+ * ⚖️ LAW ② — ONE ECONOMY, TWO ROLES (household-economy-and-where-is.md §2).
+ *
+ * *"Every acquire decision is made by either a CUSTOMER (a drive-serving row:
+ * its want is its own — one ration, one drink) or an INVENTORY MANAGER (a
+ * goods-moving/deposit row: its want is a shelf's shortfall). A customer
+ * selects its source by COST alone; an inventory manager by `units ×
+ * destination shortage × unit value − trip`."*
+ *
+ * THE DISCRIMINATOR IS THIS ONE LINE, and it is the one `goodsUnitsOf` has
+ * always encoded: a `deposit` satisfy is the whole goods family — its trip, its
+ * bank and its put-it-down all move stock for somebody else's shelf. Everything
+ * else USES what it takes, for itself, right now.
+ *
+ * 🚨 NAMED ONCE so the seats can never drift. Three of them read it —
+ * `goodsUnitsOf` (what a row's act is WORTH), `acquireFrom` (which stock to
+ * draw from) and the host's `needShortageOf` (whether a destination's emptiness
+ * discounts the row at all) — and the reported fridge stampede was exactly what
+ * a disagreement between them costs: a below-capacity fridge outbid by the
+ * market ~restock:1 for every member of the household independently.
+ */
+export function isGoodsRow(tpl: NeedTemplate): boolean {
+  return tpl.satisfy.kind === "deposit";
+}
+
 /** The units a GOODS-shaped act moves, or null when the row is serving a drive
- *  directly. A `deposit` satisfy is the whole goods family: its trip, its bank
- *  and its put-it-down all move stock for somebody else's shelf. */
+ *  directly (`isGoodsRow` is the rule). */
 function goodsUnitsOf(tpl: NeedTemplate, intent: NeedIntent): number | null {
-  if (tpl.satisfy.kind !== "deposit") return null;
+  if (!isGoodsRow(tpl)) return null;
   if (intent.kind === "take" || intent.kind === "deposit" || intent.kind === "dropHere") return intent.units;
   return null;
 }
@@ -675,8 +699,31 @@ const NOT_WORTH_IT = "notWorthIt" as const;
  *  `netValueS(goodsValueS(what this branch would actually move), the trip)`.
  *  Six lines, and "pantry 1 vs market 50" becomes arithmetic: the pantry's one
  *  unit is one unit however near it is, and a household five short outbids the
- *  walk. The valuation here is deliberately GOODS-side even for a drive row —
- *  the question this seat answers is "which stock", not "which want".
+ *  walk.
+ *
+ *  ⚖️ AND WHICH OF THE TWO SEATS IS DECIDING (`isGoodsRow`, law ②). The
+ *  valuation used to be GOODS-side for EVERY row — "the question this seat
+ *  answers is 'which stock', not 'which want'" — and the reported dollhouse
+ *  fridge stampede is the bill for that category error. A hunger row is a
+ *  CUSTOMER: it wants one ration, so every offer that can hand it one is worth
+ *  the same ration, and what separates them is the trip. Pricing its draw as a
+ *  restock-sized haul discounted by the HOME shelf's emptiness made the market
+ *  outbid a half-full fridge ~restock:1, for each member independently (hunger
+ *  carries no `exclusive`), and four people walked out of a stocked house.
+ *
+ *  So the two roles value differently and nothing else changes:
+ *    goods row   `takeUnits × p.shortage × unitValueS` — the shelf's shortfall
+ *                is the want, and how empty the destination is IS the price.
+ *    drive row   `min(want, available, room) × 1 × unitValueS` — the row's own
+ *                want, never restock-inflated, and never discounted by how full
+ *                its pantry happens to be. Offers that fully supply the want
+ *                tie on value, so the argmax decides by COST — leg + hands +
+ *                forgone + propriety — which is the customer law.
+ *
+ *  🚨 EXECUTION SIZING IS UNTOUCHED. `takeIntent`/`takeUnits` still fill the bag
+ *  to the restock target at a source, so a body legitimately sent to the market
+ *  by an EMPTY pantry still comes home with the week's food (the famine-fix
+ *  banking behaviour). Only what the offers are WORTH to the comparison moved.
  *
  *  Enumeration order is unchanged either way (branches in template order,
  *  candidates nearest-first) and the argmax keeps the FIRST maximum, so an
@@ -713,11 +760,20 @@ function acquireFrom(
   }
   if (offers.length === 0) return undefined;
   const p = ctx.price;
+  // WHICH SEAT IS DECIDING — asked once for the row, not per candidate (law ②,
+  // `isGoodsRow`). An inventory manager prices a HAUL; a customer prices the
+  // one thing it came for.
+  const goodsRow = isGoodsRow(tpl);
   let best: Acquisition | undefined;
   let bestNet = -Infinity;
   for (const offer of offers) {
-    const units = takeUnits(ctx, offer.from, offer.branch, want, opts);
-    const value = p ? goodsValueS(units, p.shortage, p.unitValueS, 1) : 0;
+    // ⚠️ VALUATION UNITS, NOT THE TAKE. What the plan is worth and what the
+    // hands come home with are the same number for a goods row and are NOT for
+    // a customer: the drive's want is one ration whatever the trip brings back.
+    const units = goodsRow
+      ? takeUnits(ctx, offer.from, offer.branch, want, opts)
+      : Math.min(want, availableUnits(offer.from), ctx.room ?? Infinity);
+    const value = p ? goodsValueS(units, goodsRow ? p.shortage : 1, p.unitValueS, 1) : 0;
     const forgone = forgoneOf(tpl, ctx, offer.from);
     const worth = netValueS(value, legCost(ctx, offer.from.d, p ? p.handsS[offer.branch] : 0, forgone));
     // ⚖️ NEVER DESTROY MORE THAN YOU MAKE. A sweep whose forgone term swallows

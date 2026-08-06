@@ -2,7 +2,7 @@
 // Hook for playing streaming audio chunks from SSE responses
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { processVoice } from "@/lib/pitchShifter";
+import { processVoice } from "@shared/aac/pitch-shifter";
 import { createPcmStreamSink, type PcmStreamSink } from "@/lib/pcmStreamSink";
 
 export interface AudioChunk {
