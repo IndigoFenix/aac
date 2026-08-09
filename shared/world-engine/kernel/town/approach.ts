@@ -10,8 +10,10 @@
  *     at the town radius, in the town's local frame. Hosts feed these to
  *     townBias (TownHost.roadBearings) so the street tree grows its
  *     arterials where the ribbons really come in.
- *   • spliceRouteAtTown — the RENDER-ONLY seam that guarantees the joint:
- *     clip the incident ribbon at the town edge and bridge it to the
+ *   • spliceRouteAtTown — PORT → GATE. Routes now END at the town's extent
+ *     (planet/routes.ts portTerminateRoute: the PORT LAW at generation), so
+ *     the mount-time seam is no longer a clip but the EXPANDED VIEW of that
+ *     port: a short connector bending the road's last stretch onto the
  *     street tree's nearest arterial tip (the refineHighways law — route
  *     data, lengths and caravan arcs never change; carts project onto the
  *     spliced geometry per client).
@@ -98,10 +100,15 @@ export function routeApproachBearing(
  * street law's compass buckets and deduped at growStreets' own gate
  * (two roads a bucket apart share one arterial). The result is what a
  * host hands townBias through TownHost.roadBearings.
+ *
+ * PORTS ARE PLURAL (pairwise over single artery): ONE bearing per incident
+ * route, up to `max` — a crossroads town with five roads grows five
+ * arterials, not two. The dedup gate still collapses roads that arrive on
+ * the same compass bucket.
  */
 export function approachBearings(
   incident: ReadonlyArray<{ route: PlanetRoute; end: "a" | "b" }>,
-  frame: TownFrame, radiusM: number, max = 2,
+  frame: TownFrame, radiusM: number, max = 6,
 ): number[] {
   const out: number[] = [];
   for (const { route, end } of incident) {
@@ -148,9 +155,16 @@ export function arterialTips(
   return tips;
 }
 
-/** The tip whose bearing is nearest `bearing` (ties keep list order). */
+/** Widest angle a road may be bent through to reach a gate. Past a right
+ *  angle the "nearest" tip is on the far side of town and the connector
+ *  would chord straight across the edge lots — no gate at all. */
+export const MAX_GATE_SEP = Math.PI / 2;
+
+/** The tip whose bearing is nearest `bearing` (ties keep list order), or
+ *  null when even the nearest is more than `maxSep` away — the town has no
+ *  gate facing this road and the plain ribbon stands. */
 export function nearestArterialTip(
-  tips: readonly ArterialTip[], bearing: number,
+  tips: readonly ArterialTip[], bearing: number, maxSep = MAX_GATE_SEP,
 ): ArterialTip | null {
   let best: ArterialTip | null = null;
   let bestSep = Infinity;
@@ -158,7 +172,7 @@ export function nearestArterialTip(
     const sep = angSep(t.bearing, bearing);
     if (sep < bestSep) { bestSep = sep; best = t; }
   }
-  return best;
+  return bestSep > maxSep ? null : best;
 }
 
 /** One corner-cutting pass in the plane, endpoints pinned. */
@@ -210,33 +224,60 @@ export interface RouteTownSplice {
   street: number;
 }
 
+/** Below this the port and the gate are effectively the same point and a
+ *  connector would be shorter than the joint it smooths. */
+const MIN_CONNECTOR_M = 60;
+
 /**
- * Clip `route` at the town edge and bridge it to the bearing-nearest
- * arterial tip. RENDER-ONLY by construction: the parent route is read,
- * never written, and the returned span mapping preserves the parent's
- * caravan parametrization. Null when the splice cannot hold (no
- * arterials, towns so close their radii overlap, a degenerate sample) —
- * callers keep the plain ribbon there.
+ * PORT → GATE: refine the route's port into the mounted town's gate.
+ *
+ * The route already ENDS at the town's extent (planet/routes.ts
+ * portTerminateRoute — the PORT LAW applied at generation), so this is no
+ * longer a clip: it is the EXPANDED VIEW of a condensed scope interaction.
+ * The last stretch of road is re-shaped into a connector running from the
+ * road onto the street tree's bearing-nearest arterial tip, so the ribbon
+ * and the carts enter town by a gate instead of stopping at the boundary.
+ *
+ * RENDER-ONLY by construction: the parent route is read, never written, and
+ * the returned span mapping preserves the parent's caravan parametrization
+ * (and is CONTINUOUS with it at the span's outer edge — a cart never jumps).
+ * Null when the refinement cannot hold (no arterials, no gate within a right
+ * angle of the road, a route shorter than its own connector, an endpoint
+ * that is not this town's port) — callers keep the plain ribbon there.
+ *
+ * `portExtentM` is the SAME extent the routes were clipped at, so an
+ * endpoint that is not really this town's port can be told apart from one
+ * that is.
  */
 export function spliceRouteAtTown(
   route: PlanetRoute, end: "a" | "b", frame: TownFrame,
-  townRadiusM: number, tips: readonly ArterialTip[], planetRadius: number,
+  portExtentM: number, tips: readonly ArterialTip[], planetRadius: number,
 ): RouteTownSplice | null {
   if (!tips.length) return null;
-  const bearing = routeApproachBearing(route, end, frame, townRadiusM);
+  // Sampling inset 0 = the endpoint itself = the PORT.
+  const bearing = routeApproachBearing(route, end, frame, 0);
   if (bearing === null) return null;
-  const tip = nearestArterialTip(tips, bearing)!;
-  // Clip OUTSIDE the joined tip so the connector always runs inward.
-  const clipR = Math.max(townRadiusM, Math.hypot(tip.tip.x, tip.tip.y) + 20);
-  if (route.lengthM < clipR * 2.2) return null;
-  const sEdge = end === "a" ? clipR : route.lengthM - clipR;
+  const sPort = end === "a" ? 0 : route.lengthM;
+  const port = toTownLocal(frame, planetRadius, routePointAt(route, sPort));
+  if (!port) return null;
+  // An endpoint at the town CENTRE is an unclipped route (no port); one far
+  // outside the extent belongs to some other town.
+  const portR = Math.hypot(port.x, port.y);
+  if (portR < 1 || portR > portExtentM * 2) return null;
+  const tip = nearestArterialTip(tips, bearing);
+  if (!tip) return null;
+  // The connector spans the port→gate gap, and the parent lends it exactly
+  // that much arc — so the drawn ribbon and the cart projection are both
+  // continuous where the span begins.
+  const connM = Math.max(MIN_CONNECTOR_M, Math.hypot(tip.tip.x - port.x, tip.tip.y - port.y));
+  if (route.lengthM < connM * 1.5) return null;
+  const sEdge = end === "a" ? connM : route.lengthM - connM;
   const clip = toTownLocal(frame, planetRadius, routePointAt(route, sEdge));
   if (!clip) return null;
-  const sIn = end === "a" ? sEdge - 30 : sEdge + 30;
-  const inner = toTownLocal(frame, planetRadius, routePointAt(route, sIn));
-  if (!inner) return null;
-  const dl = Math.hypot(inner.x - clip.x, inner.y - clip.y) || 1;
-  const clipDir = { x: (inner.x - clip.x) / dl, y: (inner.y - clip.y) / dl };
+  // Travel direction at the clip: along the road toward the port (and on
+  // into town), the same tangent the old edge clip took.
+  const dl = Math.hypot(port.x - clip.x, port.y - clip.y) || 1;
+  const clipDir = { x: (port.x - clip.x) / dl, y: (port.y - clip.y) / dl };
   const pts = spliceConnector(clip, clipDir, tip);
   const dirs = pts.map(p => toPlanetDir(frame, planetRadius, p));
   const fwd = routeFromDirs(dirs, planetRadius, -2, -2);

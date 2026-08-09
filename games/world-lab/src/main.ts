@@ -54,6 +54,7 @@ import {
 import type { TownPlay } from "@shared/world-engine/interaction/town/town-play";
 import { siteTownConfig, type FoundedSite } from "@shared/world-engine/interaction/town/founding";
 import type { PlanetCity } from "@shared/world-engine/planet/cities";
+import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
 import { mountBoardIsland } from "./board-island";
 import { createCityTownLoader, type CityTownLoader, type CityTownEntry } from "./city-towns";
 import { routeFor } from "./dispatch";
@@ -2068,12 +2069,14 @@ function nearbyCityPartners(
   simCenter: { x: number; y: number },
   excludeCell: number | null,
   maxN = 3,
-): Array<{ key: string; at: { x: number; y: number } }> {
+): Array<{ key: string; at: { x: number; y: number }; geo: PartnerGeography }> {
   if (!flight) return [];
   const east = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
   const north = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
   const other = new THREE.Vector3();
-  const rows: Array<{ key: string; ang: number; at: { x: number; y: number } }> = [];
+  const rows: Array<{
+    key: string; ang: number; at: { x: number; y: number }; geo: PartnerGeography;
+  }> = [];
   for (const c of flight.cities()) {
     if (c.body !== body || c.city.cell === excludeCell) continue;
     other.set(c.city.dir[0], c.city.dir[1], c.city.dir[2]);
@@ -2090,10 +2093,24 @@ function nearbyCityPartners(
         x: simCenter.x + toward.dot(east) * distM,
         y: simCenter.y + toward.dot(north) * distM,
       },
+      geo: cityPartnerGeography(c),
     });
   }
   rows.sort((a, b) => a.ang - b.ang);
-  return rows.slice(0, maxN).map(({ key, at }) => ({ key, at }));
+  return rows.slice(0, maxN).map(({ key, at, geo }) => ({ key, at, geo }));
+}
+
+/** ⚖️ WHAT A DISTANT CITY'S GROUND SAYS IT CAN SELL (R&T ⑤ T5) — the founding
+ *  scan's own verdict, forwarded verbatim: the node taxon `classifyNode` read
+ *  off its terrain, plus the charter-box sums that verdict was derived from.
+ *  Nothing new is computed here; "geography chooses" simply reaches the
+ *  scarcity proxy the barter clerk quotes from. */
+function cityPartnerGeography(fc: FlightCity): PartnerGeography {
+  return {
+    node: fc.city.node?.type ?? null,
+    farmland: fc.city.charter?.farmland,
+    ore: fc.city.charter?.ore_access,
+  };
 }
 
 /** Aim the town's intercity trade line (kernel/town/trade.ts) at its REAL
@@ -2125,9 +2142,21 @@ function bindTradePartner(fc: FlightCity, mesh: THREE.Group, play: TownPlay): vo
   const north = new THREE.Vector3(0, 0, 1).applyQuaternion(mesh.quaternion);
   const distM = bestAng * fc.body.radius;
   const c0 = play.stage.center;
+  // TRADE PRICES THE ROAD, NOT THE CHORD: the caravan walks the route, whose
+  // port-to-port length runs longer than the line of sight wherever the road
+  // went round a mountain. The chord stays the fallback for a partner with
+  // no road between — common only where the nearest city is across a border
+  // the state-adjacency net never paired.
+  const road = cityIncidentRoutes(fc).find(
+    ({ route, end }) => (end === "a" ? route.b : route.a) === best!.city.cell,
+  );
   trade.bindPartner({
     key: `city:${best.city.cell}`,
     at: { x: c0.x + toward.dot(east) * distM, y: c0.y + toward.dot(north) * distM },
+    distanceM: road?.route.lengthM,
+    // ⚖️ T5: the neighbour's own terrain reading rides the bind, so the closed-
+    // form proxy quotes a river-mouth granary differently from a mining camp.
+    geo: cityPartnerGeography(best),
   });
 }
 
@@ -2144,24 +2173,29 @@ function townFrameOf(fc: FlightCity): TownFrame {
 }
 
 /** The trade-roads splice spec for a city whose street plan is built —
- *  null until the town is ready (no plan, nothing to join). */
+ *  null until the town is ready (no plan, nothing to join). The extent is
+ *  TOWN_DIMS.townRMax, the SAME one planet/routes.ts ported the routes at
+ *  (plan.radius is the BUILT-UP radius, which shrinks with the town and
+ *  would no longer name the port). */
 function townSpliceSpecOf(fc: FlightCity): TownSpliceSpec | null {
   const play = cityTowns?.entry(fc.city.cell)?.play;
   if (!play) return null;
   return {
     frame: townFrameOf(fc),
-    radiusM: play.plan.radius,
+    radiusM: TOWN_DIMS.townRMax,
     tips: arterialTips(play.plan.streets.streets),
+    // The building line the connector's PAINT must stop at (the ribbon may
+    // still thread the lots to reach its gate).
+    houses: play.plan.houses.map(h => ({ dx: h.dx, dy: h.dy, w: h.w, h: h.h })),
   };
 }
 
-/** Fix C's data: the city's incident road POLYLINES → true approach
- *  bearings at the town's eventual street radius, most important first
- *  (interstates, then the region's village roads). Stitch pair roads are
- *  EXCLUDED on purpose — whether the neighbour region is loaded is
- *  session noise, and bearings must replay identically every session.
- *  Null = no route knowledge at all (townBias falls back). */
-function cityRoadBearings(fc: FlightCity): readonly number[] | null {
+/** The city's incident routes, with which endpoint the city is: the
+ *  founding interstates plus the region's own village lanes. Stitch pair
+ *  roads are EXCLUDED on purpose — whether the neighbour region is loaded
+ *  is session noise, and anything derived here must replay identically
+ *  every session. */
+function cityIncidentRoutes(fc: FlightCity): Array<{ route: PlanetRoute; end: "a" | "b" }> {
   const incident: Array<{ route: PlanetRoute; end: "a" | "b" }> = [];
   const net = ensureRoadNet(fc.body);
   if (net) incident.push(...net.incidentRoutes(fc.city.cell));
@@ -2174,8 +2208,18 @@ function cityRoadBearings(fc: FlightCity): readonly number[] | null {
       else if (r.b === fc.city.cell) incident.push({ route: r, end: "b" });
     }
   }
-  if (!net && !incident.length) return null;
-  return approachBearings(incident, townFrameOf(fc), TOWN_DIMS.townRMax);
+  return incident;
+}
+
+/** Fix C's data: the city's incident road POLYLINES → the bearing of each
+ *  road's PORT (its endpoint, which planet/routes.ts already terminated at
+ *  the town's extent), one per road — the gates the street tree grows its
+ *  arterials to. Null = no route knowledge at all (townBias falls back). */
+function cityRoadBearings(fc: FlightCity): readonly number[] | null {
+  const incident = cityIncidentRoutes(fc);
+  if (!ensureRoadNet(fc.body) && !incident.length) return null;
+  // Inset 0: the endpoint IS the port, so its bearing is the gate bearing.
+  return approachBearings(incident, townFrameOf(fc), 0);
 }
 const cityViz = new Map<number, CityViz>();
 const TOWN_REVEAL_M = 30_000; // beacon → street-plan handoff distance

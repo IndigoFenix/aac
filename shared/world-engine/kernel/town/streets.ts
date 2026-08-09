@@ -269,9 +269,12 @@ export function growStreets(seed: number, key: string, minSlots: number, opts?: 
   // Typed bearings first (trade roads, the farm/mine side), deduped;
   // the remaining arterials fan out from a random rotation. A blocked
   // or clustered gate self-heals through the reseeding below.
+  // PORTS ARE PLURAL: every incident road gets its own gate (cap 6 — the
+  // compass dedup below collapses roads sharing a bucket, so the cap only
+  // bounds a pathological hub).
   const given: number[] = [];
   for (const b of opts?.bearings ?? []) {
-    if (given.length >= 3) break;
+    if (given.length >= 6) break;
     if (given.some(g => angSep(g, b) < 0.5)) continue;
     given.push(b);
   }

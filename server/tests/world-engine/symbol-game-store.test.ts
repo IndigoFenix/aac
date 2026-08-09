@@ -5,6 +5,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   FOOD_DAY_SEC,
+  HOUSEHOLD,
   economyDay,
   storeUnitsLeft,
   addStoreConsumption,
@@ -13,6 +14,18 @@ import {
   SURPLUS_FRAC_MIN,
   SURPLUS_FRAC_MAX,
 } from "@shared/world-engine/kernel/town/goods.js";
+import { compileEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
+import {
+  TOWN_PLAY_ECONOMY,
+  townPlayEconomy,
+} from "@shared/world-engine/interaction/town/town-play.js";
+import {
+  clothingFillDays,
+  DOLLHOUSE_SCALE,
+  REAL_CLOTHING_DAYS,
+  REAL_SCALE,
+  SEASONAL_SCALE,
+} from "@shared/world-engine/scale.js";
 
 describe("economyDay — dawn-to-dawn buckets", () => {
   it("floors time into FOOD_DAY_SEC-long days", () => {
@@ -108,5 +121,92 @@ describe("pantryLevel — a never-empty sawtooth bottoming at the surplus buffer
       prev = v;
     }
     expect(prev).toBeLessThan(boxCap); // it did drain
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// F4 — CLOTHING DEMAND, GROUNDED (economy-arc-opening.md)
+//
+// USER LAW (2026-08-09), verbatim: *"How much clothing do these people need,
+// anyway? I think people need new food a lot more than they need new clothes.
+// Ground it in a roughly normal value (we'll handle adjustments later), and
+// assume that the need scales at the metabolic multiplier."*
+//
+// One anchor (`REAL_CLOTHING_DAYS = 180`) and derivations off it. Everything
+// here is a RATIO or a derivation — the only absolute pinned is the anchor
+// itself, because the anchor IS the decision. Pure; no boot.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("F4 — the clothing anchor and its derivations", () => {
+  it("REAL_CLOTHING_DAYS is the half-year garment, and wear scales at METABOLISM", () => {
+    expect(REAL_CLOTHING_DAYS).toBe(180);
+    // Realism: a garment lasts the anchor. The dollhouse spins its planet and
+    // nothing else, so its wear is the anchor too.
+    expect(clothingFillDays(REAL_SCALE)).toBe(180);
+    expect(clothingFillDays(DOLLHOUSE_SCALE)).toBe(180);
+    // A world that eats three times a game-day wears clothes out three times
+    // as fast — the SAME 180 meals per garment, which is the point.
+    expect(clothingFillDays(SEASONAL_SCALE)).toBe(60);
+    expect(clothingFillDays({ ...REAL_SCALE, metabolism: 4 })).toBe(45);
+  });
+
+  it("the BOOKS say 180 : 1 — food is the caloric anchor and does not move", () => {
+    const food = TOWN_PLAY_ECONOMY.commodities!.find((c) => c.key === "food")!;
+    const clothing = TOWN_PLAY_ECONOMY.commodities!.find((c) => c.key === "clothing")!;
+    // 🔒 THE CALORIC ANCHOR, byte-for-byte what it has always been.
+    expect(food.perPersonDaily).toBe(0.001);
+    expect(food.perPersonDaily! / clothing.perPersonDaily!).toBeCloseTo(180, 9);
+    // …and it is DERIVED, not typed: a faster metabolism re-grounds it.
+    const fast = townPlayEconomy({ ...REAL_SCALE, metabolism: 3 });
+    const fastFood = fast.commodities!.find((c) => c.key === "food")!;
+    const fastClothing = fast.commodities!.find((c) => c.key === "clothing")!;
+    expect(fastFood.perPersonDaily).toBe(food.perPersonDaily); // the anchor never moves
+    expect(fastFood.perPersonDaily! / fastClothing.perPersonDaily!).toBeCloseTo(60, 9);
+  });
+
+  it("🚨 the STREET hears the books: `perCapitaDaily` is food-normalized, not a flat 1", () => {
+    // The mis-wiring F4 closes: the compiler used to hard-set `perCapitaDaily: 1`
+    // for EVERY street good, so clothing was bought as often as bread whatever
+    // the books said, and `capDays` was the only cadence lever anyone had.
+    const eco = compileEconomy([TOWN_PLAY_ECONOMY], { construction: true });
+    const food = eco.goods.find((g) => g.key === "food")!;
+    const clothing = eco.goods.find((g) => g.key === "clothing")!;
+    expect(food.perCapitaDaily).toBe(1); // 🔒 the RATION, exactly — the unit itself
+    expect(clothing.perCapitaDaily).toBeCloseTo(1 / 180, 12);
+  });
+
+  it("the WARDROBE holds a whole number of garments at any metabolism", () => {
+    // `capDays` is DERIVED (boxUnits × wearDays ÷ HOUSEHOLD) precisely so the
+    // pinned box formula comes out whole instead of degenerating to ~0.56.
+    for (const metabolism of [1, 2, 3, 7]) {
+      const eco = compileEconomy([townPlayEconomy({ ...REAL_SCALE, metabolism })], { construction: true });
+      const clothing = eco.goods.find((g) => g.key === "clothing")!;
+      const boxCap = HOUSEHOLD * clothing.capDays * clothing.perCapitaDaily;
+      expect(boxCap).toBeCloseTo(2, 9);
+    }
+    // The staple's box is untouched — HOUSEHOLD(5) × capDays(3) × 1 ration.
+    const eco = compileEconomy([TOWN_PLAY_ECONOMY], { construction: true });
+    const food = eco.goods.find((g) => g.key === "food")!;
+    expect(HOUSEHOLD * food.capDays * food.perCapitaDaily).toBe(15);
+  });
+
+  it("a doc whose staple declares no per-person draw keeps the pre-F4 flat rate", () => {
+    // The fallback is deliberate: an intermediate that somehow carries a box is
+    // never silently zeroed off the street.
+    const eco = compileEconomy([{
+      commodities: [
+        // The implicit human's declared diet — present, but NOT a street good
+        // and carrying no per-person row, so there is no staple to quote against.
+        { key: "food", scalarMax: 200, transport: {} },
+        {
+          key: "widget", scalarMax: 10, transport: {},
+          street: {
+            capDays: 4, shopSec: 10, cartRations: 10, unit: "widgets",
+            producers: ["hall"], stockColor: "#fff", boxLabel: "Box", errandName: "widgets",
+          },
+        },
+      ],
+    }]);
+    expect(eco.goods.find((g) => g.key === "widget")!.perCapitaDaily).toBe(1);
   });
 });

@@ -1,0 +1,160 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=addc01a2+dirty
+# started=2026-08-07T09:29:44.517Z
+# ─────────────────────────────────────────
+> wait 20
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 20.0s.
+> scene
+SCENE  house-1 — 19 thing(s) in view, 82 place(s) around you.
+  orrin (person), here south.
+  pip (person), here south.
+  mara (person), here west.
+  biscuit (person), here south.
+  ball-1 (ball), here south.
+  basket-1 (basket), here south.
+  a box, here north.
+  a chair, here east.
+  a table, there east.
+  a bed, there north.
+  a bowl, there east.
+  a chair, there east.
+  a box, there north.
+  an oven, there west.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  house-59 (house), close east, red, door open, shut to you.
+  46 houses, there east, all shut.
+  32 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> look mara
+LOOK   mara — mara.
+  here west, 3 m away.
+  house-1.
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+BOARD  resident_face:resident_99_0: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. I'm confused.  [confused]
+  4. bye-bye  [goodbye]
+  5. Return.  [return]
+NOTE   4 choice(s) on this page, plus back.
+TICK   quiet after 2.3s.
+> board
+BOARD  resident_face:resident_99_0: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. I'm confused.  [confused]
+  4. bye-bye  [goodbye]
+  5. Return.  [return]
+TICK   quiet after 0.8s.
+> look oven-1
+LOOK   oven-1 — oven.
+  there west, 6 m away.
+  house-1.
+SAY    mara: "I will go to the oven."  [go.will + oven]
+BOARD  oven-1: 
+  1. oven  [oven]
+  2. Return.  [return]
+NOTE   1 choice(s) on this page, plus back.
+TICK   quiet after 1.9s.
+> board
+BOARD  oven-1: 
+  1. oven  [oven]
+  2. Return.  [return]
+TICK   quiet after 0.8s.
+> look mara
+LOOK   mara — mara.
+  here west, 3 m away.
+  house-1.
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    mara: "I will go to the house."  [go.will + house]
+TICK   quiet after 3.3s.
+> board
+BOARD  oven-1: 
+  1. oven  [oven]
+  2. Return.  [return]
+TICK   quiet after 0.8s.
+> look pip
+LOOK   pip — pip.
+  here south, 2 m away.
+  house-1.
+SAY    mara: "I'm not lonely."  [i_me + lonely.not]
+SAY    pip: "hi"  [hi]
+CLOSE  the board closed.
+BOARD  resident_face:resident_99_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+TICK   quiet after 2.3s.
+> board
+BOARD  resident_face:resident_99_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+TICK   quiet after 0.8s.
+> look oven-1
+LOOK   oven-1 — oven.
+  there west, 6 m away.
+  house-1.
+SAY    pip: "I will go to the oven."  [go.will + oven]
+TICK   quiet after 1.9s.
+> board
+BOARD  resident_face:resident_99_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+TICK   quiet after 0.8s.
+> look pip
+LOOK   pip — pip.
+  here west, 4 m away.
+  house-1.
+TICK   quiet after 1.5s.
+> board
+BOARD  resident_face:resident_99_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+SAY    pip: "I will go to the house."  [go.will + house]
+TICK   quiet after 1.3s.
+# ─────────────────────────────────────────
+# commands=14  presses=0  screens=10  sim=38.9s
+# events: SAY 23  TICK 14  BOARD 10  LOOK 6  NOTE 5  SCENE 1  CLOSE 1

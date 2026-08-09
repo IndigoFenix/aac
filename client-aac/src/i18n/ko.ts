@@ -869,6 +869,7 @@ export const ko: Translations = {
     neitherOfThese: "둘 다 아님",
     guess: "단어 찾기",
     exitConfirm: "나갈까요?",
+    homeActionConfirm: "이걸 할까요?",
   },
 
   silentMode: {

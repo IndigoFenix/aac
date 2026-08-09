@@ -273,6 +273,10 @@ const L: Record<string, Lexeme> = {
   talk: { w: "מדבר", f: "מדברת", vmpl: "מדברים", vfpl: "מדברות", inf: "לדבר" },
   // Household CHORE verbs the needs templates speak ("אני הולך לבשל את האוכל").
   cook: { w: "מבשל", f: "מבשלת", vmpl: "מבשלים", vfpl: "מבשלות", inf: "לבשל" },
+  // ⚖️ WHY-CHAINS law ④ — the AUTHORITY link's verb ("…כי אתה מבקש").
+  ask: { w: "מבקש", f: "מבקשת", vmpl: "מבקשים", vfpl: "מבקשות", inf: "לבקש" },
+  // ⚖️ WHY-CHAINS law ④ — the BROAD ACTIVITY verb ("אני לא עושה כלום").
+  do: { w: "עושה", f: "עושה", vmpl: "עושים", vfpl: "עושות", inf: "לעשות" },
   // City-founding areas — the map-reading overlay verb.
   show: { w: "מראה", f: "מראה", vmpl: "מראים", vfpl: "מראות", inf: "להראות" },
   // City-founding ③ — the structure board's room words + the demolish verb.

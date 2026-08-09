@@ -212,6 +212,10 @@ const L: Record<string, Lexeme> = {
   talk: { w: "falo", v2: "falas", v3: "fala", v3p: "falam", v1p: "falamos", inf: "falar" },
   // Household CHORE verbs the needs templates speak ("vou cozinhar a comida").
   cook: { w: "cozinho", v2: "cozinhas", v3: "cozinha", v3p: "cozinham", inf: "cozinhar" },
+  // ⚖️ WHY-CHAINS law ④ — the AUTHORITY link's verb ("…porque tu pedes").
+  ask: { w: "peço", v2: "pedes", v3: "pede", v3p: "pedem", v1p: "pedimos", inf: "pedir" },
+  // ⚖️ WHY-CHAINS law ④ — the BROAD ACTIVITY verb ("não faço nada").
+  do: { w: "faço", v2: "fazes", v3: "faz", v3p: "fazem", v1p: "fazemos", inf: "fazer" },
   // City-founding areas — the map-reading overlay verb.
   show: { w: "mostro", v2: "mostras", v3: "mostra", v3p: "mostram", inf: "mostrar" },
   // City-founding ③ — the structure board's room words + the demolish verb.

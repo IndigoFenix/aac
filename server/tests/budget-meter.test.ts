@@ -11,6 +11,7 @@ import {
   applyBudgetCharge,
   bindingEnergy,
   budgetReadings,
+  mergeBudgetState,
   worseBand,
   type BudgetWindow,
 } from "../../shared/aac/budget-meter.js";
@@ -211,5 +212,70 @@ describe("persistence — JSONB round-trip", () => {
     const before = bindingEnergy(s, WINDOWS, t0 + HOUR);
     const after = bindingEnergy(reloaded, WINDOWS, t0 + HOUR);
     expect(after).toEqual(before);
+  });
+});
+
+describe("mergeBudgetState — stale writers can't clobber accumulated drain", () => {
+  const t0 = 1_000_000;
+
+  it("null/empty sides pass the other side through", () => {
+    const s = applyBudgetCharge(initBudget(WINDOWS, t0), WINDOWS, 1, t0);
+    expect(mergeBudgetState(null, s, WINDOWS, t0)).toEqual(s);
+    expect(mergeBudgetState(s, null, WINDOWS, t0)).toEqual(s);
+    expect(mergeBudgetState(null, undefined, WINDOWS, t0)).toEqual({});
+  });
+
+  it("unions windows present on only one side", () => {
+    const a = { short: { drain: 1, asOf: t0 } };
+    const b = { long: { drain: 3, asOf: t0 } };
+    const m = mergeBudgetState(a, b, WINDOWS, t0);
+    expect(m.short).toEqual(a.short);
+    expect(m.long).toEqual(b.long);
+  });
+
+  it("at the same asOf, the higher drain wins per window", () => {
+    const a = { short: { drain: 1.5, asOf: t0 }, mid: { drain: 0.2, asOf: t0 } };
+    const b = { short: { drain: 0.4, asOf: t0 }, mid: { drain: 6, asOf: t0 } };
+    const m = mergeBudgetState(a, b, WINDOWS, t0);
+    expect(m.short.drain).toBe(1.5); // from a
+    expect(m.mid.drain).toBe(6); // from b
+  });
+
+  it("compares regen-NORMALIZED drain — an old record decays before comparing", () => {
+    // "short" regens 2/hr. An hour-old drain of 1.9 is worth 0 now; a fresh
+    // drain of 0.5 is the fuller record despite the lower raw number.
+    const a = { short: { drain: 1.9, asOf: t0 } };
+    const b = { short: { drain: 0.5, asOf: t0 + HOUR } };
+    const m = mergeBudgetState(a, b, WINDOWS, t0 + HOUR);
+    expect(m.short.drain).toBeCloseTo(0.5, 9);
+    expect(m.short.asOf).toBe(t0 + HOUR);
+  });
+
+  it("the reconnect-clobber scenario: a coordinator saving from a stale base cannot erase accumulated spend", () => {
+    // DB holds a session's accumulated drain. A reconnect-resumed coordinator
+    // seeded from a stale snapshot spends a little and saves. The merge must
+    // keep the accumulated record, not the stale-based overwrite.
+    const accumulated = applyBudgetCharge(initBudget(WINDOWS, t0), WINDOWS, 6, t0);
+    const staleBased = applyBudgetCharge(initBudget(WINDOWS, t0), WINDOWS, 0.3, t0 + 60_000);
+    const m = mergeBudgetState(accumulated, staleBased, WINDOWS, t0 + 60_000);
+    // long window regens 0.5/hr → 6 drain has decayed only ~0.008 in a minute.
+    expect(m.long.drain).toBeGreaterThan(5.9);
+    // And the binding view reflects the real spend, not the reset.
+    expect(bindingEnergy(m, WINDOWS, t0 + 60_000).percent)
+      .toBe(bindingEnergy(accumulated, WINDOWS, t0 + 60_000).percent);
+  });
+
+  it("merge is commutative on the normalized result", () => {
+    const a = applyBudgetCharge(initBudget(WINDOWS, t0), WINDOWS, 2, t0);
+    const b = applyBudgetCharge(initBudget(WINDOWS, t0 + 30_000), WINDOWS, 0.7, t0 + 30_000);
+    const now = t0 + 60_000;
+    expect(mergeBudgetState(a, b, WINDOWS, now)).toEqual(mergeBudgetState(b, a, WINDOWS, now));
+  });
+
+  it("a key with no window config (old tier leftover) compares raw drain and is preserved", () => {
+    const a = { legacy: { drain: 4, asOf: t0 } };
+    const b = { legacy: { drain: 1, asOf: t0 + HOUR } };
+    const m = mergeBudgetState(a, b, WINDOWS, t0 + HOUR);
+    expect(m.legacy.drain).toBe(4); // no regen model → higher raw drain wins
   });
 });

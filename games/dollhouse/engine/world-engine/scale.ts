@@ -24,6 +24,22 @@ export const REAL_TOWN_SPACING_M = 25_000;
 /** A real house takes roughly half a year to raise — the construction
  *  factor's anchor (a structure's relative buildDays are multiples of it). */
 export const REAL_HOUSE_BUILD_DAYS = 180;
+/**
+ * A garment lasts roughly half a year — THE CLOTHING ANCHOR.
+ *
+ * USER LAW (2026-08-09), verbatim: *"How much clothing do these people need,
+ * anyway? I think people need new food a lot more than they need new clothes.
+ * Ground it in a roughly normal value (we'll handle adjustments later), and
+ * assume that the need scales at the metabolic multiplier."*
+ *
+ * One garment per person per half-year, against one ration per person per day:
+ * the food:clothing daily need is **180 : 1**. This is the ONE absolute; every
+ * clothing rate downstream is a ratio off it (`clothingFillDays`, and through
+ * that the books' `perPersonDaily` and the street's food-normalized
+ * `perCapitaDaily`). It is deliberately NOT tuned — a roughly normal value,
+ * adjusted later if play asks.
+ */
+export const REAL_CLOTHING_DAYS = 180;
 /** Earth. */
 export const REAL_PLANET_RADIUS_M = 6_371_000;
 export const REAL_LAND_FRACTION = 0.29;
@@ -312,6 +328,27 @@ export function restDwellS(scale: WorldScale): number {
  *  (house = 1; see town-play.ts TOWN_PLAY_STRUCTURES). */
 export function constructionGameDays(relativeBuildDays: number, scale: WorldScale): number {
   return (relativeBuildDays * REAL_HOUSE_BUILD_DAYS) / scale.construction;
+}
+
+/**
+ * Game-days a garment lasts under a scale — `REAL_CLOTHING_DAYS ÷ metabolism`.
+ *
+ * WEAR IS A METABOLIC PROCESS (the user's law): one factor per process class
+ * applied to every species at once, exactly as `needFillDays` divides the need
+ * pacings and `constructionGameDays` divides the build anchor. A world that
+ * eats three times a game-day wears its clothes out three times as fast, so
+ * the food:clothing ratio a household actually feels — 180 meals per garment —
+ * survives compression by construction.
+ *
+ * Named rather than generic (`wearDays(realDays, scale)`): the codebase's own
+ * shape for this is ANCHOR + NAMED DERIVATION (`REAL_HOUSE_BUILD_DAYS` /
+ * `constructionGameDays`, `NEED_FILL_DAYS` / `needFillDays`), and there is
+ * exactly ONE durable anchor today — a free function with a single caller
+ * would be indirection without a second instance to justify it. The generic
+ * shape is one rename away the day a second durable arrives.
+ */
+export function clothingFillDays(scale: WorldScale): number {
+  return REAL_CLOTHING_DAYS / scale.metabolism;
 }
 
 /** A lifespan in GAME-YEARS (the real ~70 divided by the life acceleration).

@@ -1,0 +1,131 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=addc01a2+dirty
+# started=2026-08-07T08:01:05.894Z
+# ─────────────────────────────────────────
+> say build workshop
+OK     said: build + workshop
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪧 build + workshop — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 60
+EXIT   orrin left view here west.
+EXIT   mara went out of the white house.
+ENTER  orrin came into view here west.
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    pip: "okay"  [ok]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    pip: "okay"  [ok]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> wait 60
+SITE   1 thing(s) being built.
+  site-1: a workshop — pillars up, 50% worked, far north, 292 m
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    pip: "I'm happy."  [i_me + happy]
+SAY    pip: "bye-bye"  [goodbye]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    pip: "okay"  [ok]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> wait 60
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+TOAST  🏛️ the carpentry is finished (feedback)
+SAY    biscuit: "💗"
+SAY    orrin: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> wait 60
+SAY    pip: [ball]
+SAY    pip: [play]
+SAY    orrin: [play]
+SAY    pip: "play with I"  [play + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    pip: "Where is the food?"  [place#question + food]
+SAY    orrin: "The food is far, to the east."  [food]
+SAY    biscuit: [ball]
+SAY    pip: "Where is the banana?"  [place#question + banana]
+SAY    orrin: "🍳"  [banana.hot]
+SAY    orrin: "The food is far, to the east."  [food]
+SAY    pip: "Where is the banana?"  [place#question + banana]
+SAY    orrin: "The food is far, to the east."  [food]
+SAY    pip: [sit]
+SAY    biscuit: [play]
+SAY    biscuit: "🥺"  [apple]
+SAY    pip: "Where is the banana?"  [place#question + banana]
+SAY    orrin: "The food is far, to the east."  [food]
+SAY    orrin: [meal]
+SAY    pip: "I don't have the banana."  [have.not + banana]
+EXIT   pip went out of the white house.
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    orrin: "Because I'm hungry."  [because + i_me + hungry]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    biscuit: [banana]
+SAY    orrin: [water]
+TOAST  🪑 the workbench is set up for the living (feedback)
+SAY    biscuit: "🥺"  [water]
+TOAST  🏗️ the people stake out a market (feedback)
+TICK   waited 60.0s.
+> /why mara
+CHEAT  /why mara
+> wait 60
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    orrin: [apple]
+EXIT   orrin left view here west.
+ENTER  orrin came into view here west.
+TOAST  📦 bring door — delivered (feedback)
+TOAST  🚪 a door is hung in the living (feedback)
+EXIT   orrin went out of the white house.
+TOAST  🪑 the workbench is set up for the living (feedback)
+TOAST  📦 bring door — delivered (feedback)
+TICK   waited 60.0s.
+> wait 60
+TOAST  🚪 a door is hung in the living (feedback)
+SAY    biscuit: "😴"
+SITE   1 thing(s) being built.
+  site-2: a market — pillars up, 50% worked, far south, 417 m
+TICK   waited 60.0s.
+> /scope
+CHEAT  /scope
+> wait 60
+ENTER  orrin came into view there south.
+SAY    orrin: [water]
+SAY    biscuit: [water]
+EXIT   orrin left view here west.
+TICK   waited 60.0s.
+> wait 60
+ENTER  orrin came into view here west.
+SAY    biscuit: "💗"
+SAY    orrin: [shirt.color_red]
+SAY    orrin: [water]
+EXIT   orrin left view here west.
+TOAST  🏛️ the market is finished (feedback)
+ENTER  orrin came into view here west.
+SAY    orrin: [ball]
+SAY    orrin: [play]
+SAY    orrin: [clothing]
+SAY    biscuit: [play]
+SAY    orrin: "bye-bye"  [goodbye]
+TOAST  🏗️ the people stake out a market (feedback)
+SAY    biscuit: "🥺"  [apple]
+TICK   waited 60.0s.
+> /scope
+CHEAT  /scope
+> /why mara
+CHEAT  /why mara
+> /why orrin
+CHEAT  /why orrin
+# ─────────────────────────────────────────
+# commands=14  presses=0  screens=1  sim=480.9s
+# events: SAY 64  TOAST 11  TICK 9  EXIT 7  ENTER 5  CHEAT 5  SITE 2  OK 1  BOARD 1  NOTE 1

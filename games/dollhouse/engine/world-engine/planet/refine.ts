@@ -42,7 +42,11 @@ import { findFoundingSites, type FoundingOpts } from "../kernel/cells/index.js";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
 import { foundCitiesFromSites, type PlanetCity } from "./cities.js";
 import { RIVER_MIN_ACCUM, traceRiverPolylines, type RiverPolyline } from "./rivers.js";
-import { chaikinSphere, routeFromDirs, routePointAt, type PlanetRoute } from "./routes.js";
+import {
+  chaikinSphere, portTerminateRoute, routeFromDirs, routePointAt,
+  type PlanetRoute, type RouteTerminal,
+} from "./routes.js";
+import { TOWN_DIMS } from "../kernel/town/dimensions.js";
 import { borderTowns, chebyshevDistance, type BorderTown } from "./border.js";
 import { REAL_TOWN_SPACING_M } from "../scale.js";
 
@@ -243,6 +247,12 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   // ── CAPITALS as fixed points (occupied) ─────────────────────────────────
   const occupied: Array<[number, number]> = [];
   const capitalCells: number[] = [];
+  // THE PORT LAW needs each hub's TRUE centre, not its chart tile's centre:
+  // a capital or border town lands anywhere inside its rounded tile (up to
+  // ~a kilometre off at region resolution), and clipping a lane 450 m from
+  // the wrong point would leave it painted through half the town. Villages
+  // are founded ON tile centres, so they need no entry (dirs[tile] is exact).
+  const hubDirs = new Map<number, readonly [number, number, number]>();
   for (const site of built.sites) {
     const d = topo.pos3!(site.cell);
     const w = d[0] * frame.dir0[0] + d[1] * frame.dir0[1] + d[2] * frame.dir0[2];
@@ -253,8 +263,11 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     const tx = px / cellSizeM + cols / 2 - 0.5;
     const ty = py / cellSizeM + rows / 2 - 0.5;
     if (tx < -cols * 0.25 || tx > cols * 1.25 || ty < -rows * 0.25 || ty > rows * 1.25) continue;
-    occupied.push([Math.round(tx), Math.round(ty)]);
+    const cx = Math.round(tx);
+    const cy = Math.round(ty);
+    occupied.push([cx, cy]);
     capitalCells.push(site.cell);
+    if (cx >= 0 && cx < cols && cy >= 0 && cy < rows) hubDirs.set(cy * cols + cx, d);
   }
 
   // ── OWNERSHIP MASK + half-spacing setback ───────────────────────────────
@@ -325,7 +338,10 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     const rx = Math.round(tx);
     const ry = Math.round(ty);
     occupied.push([rx, ry]);
-    if (rx >= 0 && rx < cols && ry >= 0 && ry < rows) borderHubKeys.set(ry * cols + rx, t.cell);
+    if (rx >= 0 && rx < cols && ry >= 0 && ry < rows) {
+      borderHubKeys.set(ry * cols + rx, t.cell);
+      hubDirs.set(ry * cols + rx, d);
+    }
   }
 
   // ── The child substrate: rivers/fertility/crowds re-solve locally ───────
@@ -529,6 +545,14 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   // into the same town hash the same caravan identity space.
   const keyOfTile = (tile: number): number =>
     borderHubKeys.get(tile) ?? villageKey(regionCell, tile);
+  // THE PORT LAW at the village tier: every lane hub is a real town, so
+  // every lane ports at that town's extent instead of driving to the tile
+  // centre through its houses (planet/routes.ts portTerminateRoute).
+  const terminalOfTile = (tile: number): RouteTerminal => ({
+    id: keyOfTile(tile),
+    dir: hubDirs.get(tile) ?? dirs[tile]!,
+    extentM: TOWN_DIMS.townRMax,
+  });
   const roadRoutes: PlanetRoute[] = [];
   for (const cells of routes) {
     if (cells.length < 2) continue;
@@ -538,7 +562,11 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
       keyOfTile(cells[0]!),
       keyOfTile(cells[cells.length - 1]!),
     );
-    if (route) roadRoutes.push(route);
+    if (route) {
+      roadRoutes.push(portTerminateRoute(
+        route, R, terminalOfTile(cells[0]!), terminalOfTile(cells[cells.length - 1]!),
+      ));
+    }
   }
 
   // ── THE REGION'S OWN STREAMS: the child solve, traced (rivers.ts) ───────
@@ -677,10 +705,29 @@ export function refineHighways(
       if (!solved || solved.cells.length < 2) return;
       // Endpoints PINNED to the parent's exact entry/exit points, so the
       // refined ribbon physically meets the tier-0 line at the seam.
+      const pin0 = routePointAt(parent, s0);
+      const pin1 = routePointAt(parent, s1);
+      // THE PORT LAW survives the refinement. A span that reaches the
+      // parent's END reaches a TOWN's port — and the re-solved cells are
+      // child-grid CENTRES, the last of which is the town's OWN tile, whose
+      // centre sits among the buildings the port exists to stay out of.
+      // Drop the cells whose centre can be inside the town: the pinned port
+      // already stands for that stretch.
+      const atPort0 = s0 <= 0;
+      const atPort1 = s1 >= parent.lengthM;
+      const inTown = (
+        d: readonly [number, number, number], pin: readonly [number, number, number],
+      ): boolean =>
+        Math.acos(Math.max(-1, Math.min(1, d[0] * pin[0] + d[1] * pin[1] + d[2] * pin[2]))) * R
+          < TOWN_DIMS.townRMax * 2;
+      const cells = (atPort0 || atPort1)
+        ? solved.cells.filter(c => {
+            const d = dirAt(c);
+            return !((atPort0 && inTown(d, pin0)) || (atPort1 && inTown(d, pin1)));
+          })
+        : solved.cells;
       const raw: Array<readonly [number, number, number]> = [
-        routePointAt(parent, s0),
-        ...solved.cells.map(dirAt),
-        routePointAt(parent, s1),
+        pin0, ...cells.map(dirAt), pin1,
       ];
       const route = routeFromDirs(chaikinSphere(chaikinSphere(raw)), R, parent.a, parent.b);
       if (route) out.push({ a: parent.a, b: parent.b, s0, s1, route });
@@ -811,7 +858,13 @@ export function stitchRegions(
     if (!route) continue;
     usedA.add(va.cell);
     usedB.add(vb.cell);
-    out.push(route);
+    // THE PORT LAW: a stitch is an ordinary road between two towns, so it
+    // ends at their extents like every other one.
+    out.push(portTerminateRoute(
+      route, R,
+      { id: va.cell, dir: va.dir, extentM: TOWN_DIMS.townRMax },
+      { id: vb.cell, dir: vb.dir, extentM: TOWN_DIMS.townRMax },
+    ));
   }
   return out;
 }

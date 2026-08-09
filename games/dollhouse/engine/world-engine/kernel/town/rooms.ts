@@ -232,6 +232,31 @@ export function houseIndexOfBuildingId(id: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Every room-id suffix this module mints: `_r1.._r3` bedrooms · `_rb` bath ·
+ *  `_rh` hall · `_rk` kitchen · `_rs` a work's stock band. The FRONT room
+ *  carries no suffix at all — it IS the building id. */
+const ROOM_SUFFIX = /_r[a-z0-9]*$/;
+
+/**
+ * THE BUILDING A ROOM ID NAMES — `h_3_r1` → `h_3`, `w_8_rs` → `w_8`, and a
+ * front room (`h_3`) answers itself.
+ *
+ * `houseIndexOfBuildingId` above is the same question asked of HOUSES only and
+ * answered as an index; this is the general form, answered in the BUILDING-KEY
+ * vocabulary every delta, order, furnish task and scope id speaks
+ * (kernel/town/scope.ts `BUILDING_KEY`). It lives here because this module
+ * mints the suffix, and a second place that knew how to strip it would be a
+ * second owner of the convention.
+ *
+ * ⚠️ A ROOM IS NOT A SCOPE (yet). Anything that resolves geometry to a scope —
+ * "which ledger counts a thing lying at this point" — must ask this on the way
+ * out, or a prop on a bedroom floor hangs off an id no scope tree contains and
+ * is counted by nobody.
+ */
+export function buildingIdOfRoomId(roomId: string): string {
+  return roomId.replace(ROOM_SUFFIX, "");
+}
+
 /** The fields a floor plan is a pure function of (color/floors don't
  *  shape rooms). `species` — the CONSTRUCTING species — shapes them too:
  *  its body radius sets every passability floor (houseMetricsFor). */

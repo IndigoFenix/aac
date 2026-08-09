@@ -163,6 +163,15 @@ input.sf-ctl[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; accen
 .lab-debug-c > summary { cursor: pointer; padding: 2px 0; color: #b9d0a8; }
 .lab-debug-c.flash { background: #3a2f10; }
 .lab-debug pre { margin: 2px 0 8px; white-space: pre-wrap; word-break: break-word; color: #b9d0a8; }
+/* The EXPANDED creature row: labelled lines, then the why-chain as its clause
+   ladder. Same palette as the rest of the readout — an expansion, not a new
+   surface. */
+.lab-debug-detail { margin: 2px 0 8px 10px; border-left: 1px solid #263453; padding-left: 8px; }
+.lab-debug-kv { padding: 1px 0; color: #b9d0a8; word-break: break-word; }
+.lab-debug-kv > b { color: #9fb3d8; font-weight: 600; }
+.lab-debug-why { padding: 2px 0; color: #b9d0a8; }
+.lab-debug-why > b { color: #9fb3d8; font-weight: 600; }
+.lab-debug-why-list { margin: 2px 0 2px 0; padding-left: 20px; color: #f2c14e; }
 
 /* ── Playable scopes: the symbol game (living town / quest village) ──────── */
 

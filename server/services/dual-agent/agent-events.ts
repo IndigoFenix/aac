@@ -109,8 +109,25 @@ export interface GuessingExitedEvent extends BaseEvent {
   source: "client";
 }
 
+/**
+ * The user fired a smart-home action (pressed an `open.home` button the Board
+ * Manager authored, and the client reported it via `request_home_action`).
+ * Recorded for agent visibility only — the actuation itself is dispatched by
+ * `executeHomeAction`, and for today's `spoken` type it happens on the device.
+ * A home action does NOT navigate: the user stays on the same board.
+ */
+export interface HomeActionRequestedEvent extends BaseEvent {
+  type: "home_action_requested";
+  source: "client";
+  /** Action id, already gated against the student's ENABLED home actions. */
+  actionId: string;
+  /** The action's human/AI-facing name ("Lights on"). What the agents see. */
+  label: string;
+}
+
 export type ExternalEvent =
   | ButtonPressedEvent
+  | HomeActionRequestedEvent
   | SentenceComposedEvent
   | MuteToggledEvent
   | BuilderOpenedEvent
@@ -469,10 +486,11 @@ export type SpeakerEvent =
  * before getting wrapped in the IR.
  */
 /** A launch target for a board button that opens an app/website/pre-built board
- *  on press instead of voicing speech. Set by the Board Manager; the coordinator
- *  gates `website` against the permitted-sites list, `app` against enabled apps,
- *  and `board` against the session's available boards before it reaches the
- *  client. Exactly one field is populated. */
+ *  — or fires a smart-home action — on press instead of voicing speech. Set by
+ *  the Board Manager; the coordinator gates `website` against the permitted-sites
+ *  list, `app` against enabled apps, `board` against the session's available
+ *  boards and `home` against the student's ENABLED home actions before it reaches
+ *  the client. Exactly one field is populated. */
 export interface BoardButtonOpen {
   /** A permitted website URL to open in the in-frame browser app. */
   website?: string;
@@ -482,6 +500,10 @@ export interface BoardButtonOpen {
    *  Manager OFFER a board instead of loading it outright — the user decides by
    *  pressing. Normalized to the canonical key by the coordinator's gate. */
   board?: string;
+  /** A smart-home action id from the student's `aac_settings.home_actions`.
+   *  Unlike the other three this ACTUATES in place — the device speaks the
+   *  action's command aloud and the student stays on the board. */
+  home?: string;
 }
 
 export interface BoardButton {

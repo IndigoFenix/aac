@@ -246,6 +246,35 @@ export interface NeedPrice {
    *  box, buying at a stall, bending for a loose thing, and the satisfying
    *  act itself (the nap, the meal, the scrub). */
   handsS: { container: number; source: number; loose: number; satisfy: number };
+  /**
+   * ⚖️ THE FREED-HANDS TERM — what EMPTYING THE HANDS is worth to this body,
+   * in hand-seconds (stocking-offload-and-carry.md §3.2, mechanism ①).
+   *
+   * *(user direction, 2026-08-07, verbatim)*: "Continuing to hold an item
+   * should be treated as a cost — dropping the item should be cheaper than
+   * carrying it… they should drop it by default."
+   *
+   * The 2026-08-02 put-down row already spelled the cost as a WANT worth its
+   * own ladder rung (`relieveTemplate`, 0.8 × NEED_PRESSURE_S = 32 s), and the
+   * dirty-shirt arc is the bill for that number: 32 hand-seconds loses to every
+   * real motive, so the shirt rode the hands to the toilet, through sleep, and
+   * was washed only after waking. What was missing is not a bigger constant —
+   * it is the OTHER SIDE of the trade. A body whose hands are its whole
+   * inventory (`stackRoom` 0 with a thing in them) cannot take anything at all
+   * while it holds one, so the carry is charged against WHATEVER IT IS ABOUT TO
+   * DO. This is that charge, moved onto the row that removes it: the put-down's
+   * value includes what the hands are worth free.
+   *
+   * The CALLER resolves it, like every other term here — it is a question about
+   * this body's live wants, and this module holds no meters. Absent (or 0) ⇒
+   * the row is worth exactly its own rung, which is the shipped number, so a
+   * headless probe and an idle body decide precisely as they always did.
+   *
+   * ⚠️ Only ever added to an intent that actually EMPTIES the hands (`dropHere`
+   * / `deposit` — see `rowValueS`). A row that merely walks somewhere frees
+   * nothing and must not be paid for it.
+   */
+  freedHandsS?: number;
 }
 
 /** Everything `decideNeed` reads for ONE template, resolved fresh each step. Candidate
@@ -285,6 +314,28 @@ export interface NeedCtx {
   /** For an `exclusive` template: does THIS body hold the household's claim on
    *  the errand? `"other"` = a housemate has it, so this row stands down. */
   claimed?: "self" | "other";
+  /**
+   * ⚖️ THE DROP LAW'S WORLD QUESTION (stocking-offload-and-carry.md §3.1),
+   * resolved by the caller: **would setting this thing down WHERE THE BODY
+   * STANDS still leave it counted by the scope that owns it?**
+   *
+   * The user asked for the concept in a scope-ambiguous shape — *"if dropping
+   * the item would not constitute losing it (consider a scope-ambiguous way of
+   * expressing this concept)"* — so the answer is a scope-tree question the
+   * host owns (`dropKeepsItem`), never an interior test, and this module only
+   * reads the boolean.
+   *
+   * THREE STATES, and the third is the shipped one:
+   *   `true`   a drop here keeps it ⇒ the put-down row takes the FLOOR rather
+   *            than walking to a box (a drop's leg is never dearer than a
+   *            deposit's — 0 ≤ d — so the comparison is settled once, here).
+   *   `false`  a drop here LOSES it ⇒ the row may not drop at all: it deposits
+   *            if it has anywhere to, else the want simply surfaces. (The
+   *            market walk keeps the basket.)
+   *   absent   NOT ASKED — every row but the put-down one, and every unpriced
+   *            probe. `orDrop` behaves exactly as it always has.
+   */
+  dropKeepsItem?: boolean;
   /** THE PRICE BOARD (step ④) — absent = unpriced, see `NeedPrice`. */
   price?: NeedPrice;
 }
@@ -648,14 +699,23 @@ function goodsUnitsOf(tpl: NeedTemplate, intent: NeedIntent): number | null {
  *                  rung: one ration serves one hunger cycle, one bucket one
  *                  thirst. (A town shelf's draw is many-per-cycle; that is the
  *                  town rung's own pass.)
+ *
+ * …plus, on an act that EMPTIES THE HANDS, what the hands are worth free
+ * (`NeedPrice.freedHandsS`). It is added to both arms because it is a fact
+ * about the BODY, not about the goods: a put-down row that files a unit and one
+ * that sets it on the floor free the same pair of hands.
  */
 export function rowValueS(tpl: NeedTemplate, ctx: NeedCtx, intent: NeedIntent): number {
   const p = ctx.price;
   if (!p) return 0;
+  // ⚖️ THE FREED-HANDS TERM (§3.2 mechanism ①) — see `NeedPrice.freedHandsS`.
+  // Charged ONLY where the hands actually empty; a walk frees nothing.
+  const freed =
+    intent.kind === "dropHere" || intent.kind === "deposit" ? Math.max(0, p.freedHandsS ?? 0) : 0;
   const units = goodsUnitsOf(tpl, intent);
-  if (units !== null) return goodsValueS(units, p.shortage, p.unitValueS, 1);
+  if (units !== null) return goodsValueS(units, p.shortage, p.unitValueS, 1) + freed;
   const fillS = Math.max(1, p.fillS);
-  return driveValueS((urgencyOf(tpl, ctx) * tpl.priority * NEED_PRESSURE_S) / fillS, fillS);
+  return driveValueS((urgencyOf(tpl, ctx) * tpl.priority * NEED_PRESSURE_S) / fillS, fillS) + freed;
 }
 
 /** Best consume-station: the template's `at` kinds in preference order, else the nearest
@@ -954,14 +1014,40 @@ export function decideNeed(tpl: NeedTemplate, ctx: NeedCtx, opts?: NeedDecideOpt
   const home = ctx.containers[tpl.satisfy.container];
   const mayDrop = tpl.satisfy.orDrop === true;
   if (ctx.carried > 0) {
+    // ⚖️ THE DROP LAW (§3.2): *"DROP-HERE beats the deposit WALK when both
+    // fire."* A drop's leg is 0 by construction and a deposit's is `d ≥ 0`, so
+    // there is nothing to recompute per decide — when the caller has answered
+    // that a drop HERE keeps the thing, the floor is the cheaper answer to the
+    // same question and the row takes it.
+    //
+    // 🚨 GATED ON `acquire.length === 0`, which is THE LIVELOCK INVARIANT this
+    // file already runs on (`unloadTemplate`/`relieveTemplate`: "NO acquire
+    // branches — it can never take anything, so it can never spin against the
+    // row that did"). A row that can pick things up must never prefer the floor
+    // to the box, or it would sweep a thing up and put it straight back down.
+    // Belt and braces with the caller, which asks the question only for the row
+    // whose subject is the idle held object.
+    const dropsHere = mayDrop && ctx.dropKeepsItem === true && tpl.acquire.length === 0;
     // PUT IT AWAY if there is anywhere to put it; else PUT IT DOWN (orDrop).
     // A graspless body reaches this every time — it can hold a ball but can
     // never open the box — and without the drop it would carry the ball for
     // the rest of the session.
-    if (!home) return mayDrop ? { kind: "dropHere", units: ctx.carried } : { kind: "blocked" };
+    //
+    // ⚠️ …unless a drop here would LOSE it (`dropKeepsItem === false` — the
+    // street, a stranger's house). Then "nowhere to put it" is the honest
+    // BLOCKED: the want surfaces and the thing stays in hand until the body is
+    // somewhere its own scope still counts it. Only the caller that asked the
+    // question can reach this; every other row keeps `orDrop`'s old promise.
+    const dropOrStuck = (): NeedIntent =>
+      mayDrop && ctx.dropKeepsItem !== false
+        ? { kind: "dropHere", units: ctx.carried }
+        : { kind: "blocked" };
+    if (!home) return dropOrStuck();
     const units = Math.min(ctx.carried, home.room ?? ctx.carried);
-    if (units > 0) return { kind: "deposit", into: home, units };
-    return mayDrop ? { kind: "dropHere", units: ctx.carried } : { kind: "blocked" };
+    if (units > 0) {
+      return dropsHere ? { kind: "dropHere", units: ctx.carried } : { kind: "deposit", into: home, units };
+    }
+    return dropOrStuck();
   }
   // NEVER PICK SOMETHING UP TO PUT IT AWAY WHEN THERE IS NOWHERE TO PUT IT.
   // Without this, a tidier with no reachable box lifts the clutter, fails to
@@ -1463,6 +1549,18 @@ export function unloadTemplate(): NeedTemplate {
  *  of walking and NOTHING outbids a want (fun's own 40 beats it, and every rung
  *  above fun beats it by more). It fires when the body would otherwise be idle,
  *  which is exactly what the direction asks for.
+ *
+ *  ⚖️ …AND THAT IS ONLY HALF THE PRICE (2026-08-07, stocking-offload-and-carry.md
+ *  §3). The rung says what putting a thing down is worth; it says nothing about
+ *  what going on holding it COSTS, and the reported arcs — a dirty shirt carried
+ *  to the toilet and through a night's sleep, the household basket riding along
+ *  all day — are 32 hand-seconds losing to every real motive, every decide. The
+ *  missing half now arrives on the price board as `NeedPrice.freedHandsS`: what
+ *  this body's hands are worth FREE, added to this row's value by `rowValueS`
+ *  whenever its act actually empties them. The rung is untouched, so an idle
+ *  body with nothing pressing decides exactly as it did; a body with a live want
+ *  now puts the thing down FIRST and serves the want unencumbered, which is what
+ *  "dropping should be cheaper than carrying" means in this currency.
  *
  *  ⚠️ THE LIVELOCK INVARIANT, satisfied STRUCTURALLY as `unload`'s is: NO
  *  acquire branches. It can never pick anything up, so it can never spin

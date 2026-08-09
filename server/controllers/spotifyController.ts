@@ -1,8 +1,31 @@
 // server/controllers/spotifyController.ts
 // Handles Spotify OAuth flow for per-student Spotify account linking
+//
+// SECRETS: the refresh token lives ENCRYPTED in the `external_connections` vault
+// (server/services/externalConnectionsService.ts), never in
+// `aac_settings.app_config` — that jsonb blob is client-writable through the
+// settings save path. Only non-secret display state (enabled / connected /
+// accountEmail) still goes to appConfig, because the clinician panel reads it
+// from there.
+//
+// Tokens stored under the old plaintext scheme are LAZY-migrated: getToken()
+// falls back to `appConfig.spotify.refreshToken`, encrypts it into the vault, and
+// strips ONLY that key back out of the blob. A SQL backfill is impossible (the
+// ciphertext only exists app-side), so the code path is the migration.
 
 import type { Request, Response } from "express";
 import { aacSettingsRepository } from "../repositories";
+import {
+  chooseTokenSource,
+  deleteConnection,
+  getDecryptedTokens,
+  stripLegacySecret,
+  upsertConnection,
+} from "../services/externalConnectionsService";
+
+/** appConfig section + key that held the plaintext refresh token before the vault. */
+const LEGACY_APP_KEY = "spotify";
+const LEGACY_SECRET_KEY = "refreshToken";
 
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -105,16 +128,36 @@ class SpotifyController {
         }
       } catch { /* ignore */ }
 
-      // Update appConfig with connection info
+      // No refresh token means nothing to store — never mark the panel connected
+      // with no usable credential behind it.
+      if (!refreshToken) {
+        console.error("[Spotify] Token exchange returned no refresh token");
+        return res.send(this.closePopupHtml("Failed to connect Spotify account."));
+      }
+
+      // The refresh token is a secret: it goes to the encrypted vault, never to
+      // appConfig. Written first, so a failure here never leaves the panel
+      // claiming "connected" with no usable credential.
+      await upsertConnection(studentId as string, "spotify", {
+        refreshToken,
+        providerAccountId: accountEmail || null,
+        metadata: { accountEmail },
+      });
+
+      // Update appConfig with NON-SECRET connection info only (what the clinician
+      // panel displays), and drop any plaintext token left by the old scheme.
       const settings = await aacSettingsRepository.getByStudentId(studentId as string);
-      const currentAppConfig = (settings?.appConfig as Record<string, any>) || {};
+      const stripped = stripLegacySecret(
+        settings?.appConfig as Record<string, any>,
+        LEGACY_APP_KEY,
+        LEGACY_SECRET_KEY,
+      );
       const updatedAppConfig = {
-        ...currentAppConfig,
+        ...stripped.appConfig,
         spotify: {
-          ...currentAppConfig.spotify,
+          ...stripped.appConfig.spotify,
           enabled: true,
           connected: true,
-          refreshToken,
           accountEmail,
         },
       };
@@ -139,12 +182,31 @@ class SpotifyController {
         return res.status(400).json({ error: "studentId required" });
       }
 
+      // Vault first; the plaintext appConfig token is a legacy fallback only.
+      const vault = await getDecryptedTokens(studentId, "spotify");
       const settings = await aacSettingsRepository.getByStudentId(studentId);
       const appConfig = (settings?.appConfig as Record<string, any>) || {};
-      const refreshToken = appConfig.spotify?.refreshToken;
+      const decision = chooseTokenSource(vault?.refreshToken, appConfig.spotify?.refreshToken);
+      const refreshToken = decision.token;
 
       if (!refreshToken) {
         return res.status(404).json({ error: "No Spotify account connected" });
+      }
+
+      // LAZY MIGRATION: encrypt the legacy plaintext token into the vault when
+      // that is where it came from, then strip it out of the blob either way —
+      // ONLY the refreshToken key; every other appConfig key survives. Stripping
+      // unconditionally makes the migration self-healing if a previous attempt
+      // wrote the vault but failed before clearing the blob.
+      if (decision.needsMigration) {
+        await upsertConnection(studentId, "spotify", { refreshToken });
+      }
+      const stripped = stripLegacySecret(appConfig, LEGACY_APP_KEY, LEGACY_SECRET_KEY);
+      if (stripped.changed) {
+        await aacSettingsRepository.upsert(studentId, { appConfig: stripped.appConfig });
+        console.log(
+          `[Spotify] Plaintext refresh token moved out of appConfig for student ${studentId} (source=${decision.source})`,
+        );
       }
 
       const { clientId, clientSecret } = getClientCredentials();
@@ -171,13 +233,9 @@ class SpotifyController {
 
       const data = await tokenResponse.json();
 
-      // If Spotify issued a new refresh token, store it
+      // If Spotify issued a new refresh token, store it — vault only.
       if (data.refresh_token && data.refresh_token !== refreshToken) {
-        const updatedAppConfig = {
-          ...appConfig,
-          spotify: { ...appConfig.spotify, refreshToken: data.refresh_token },
-        };
-        await aacSettingsRepository.upsert(studentId, { appConfig: updatedAppConfig });
+        await upsertConnection(studentId, "spotify", { refreshToken: data.refresh_token });
       }
 
       res.json({ accessToken: data.access_token, expiresIn: data.expires_in });
@@ -198,14 +256,21 @@ class SpotifyController {
         return res.status(400).json({ error: "studentId required" });
       }
 
+      // Drop the vault row, then clear the display state and any plaintext
+      // remnant a pre-vault connection left behind.
+      await deleteConnection(studentId, "spotify");
+
       const settings = await aacSettingsRepository.getByStudentId(studentId);
-      const currentAppConfig = (settings?.appConfig as Record<string, any>) || {};
+      const stripped = stripLegacySecret(
+        settings?.appConfig as Record<string, any>,
+        LEGACY_APP_KEY,
+        LEGACY_SECRET_KEY,
+      );
       const updatedAppConfig = {
-        ...currentAppConfig,
+        ...stripped.appConfig,
         spotify: {
-          ...currentAppConfig.spotify,
+          ...stripped.appConfig.spotify,
           connected: false,
-          refreshToken: undefined,
           accountEmail: undefined,
         },
       };

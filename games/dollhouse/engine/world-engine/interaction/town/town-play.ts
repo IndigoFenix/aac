@@ -9,7 +9,7 @@
 // `engine: "town-play"` — hosts that predate it reject it harmlessly.
 
 import { compileEconomy, type CompiledEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
-import { HOUSEHOLD } from "@shared/world-engine/kernel/town/goods.js";
+import { HOUSEHOLD, streetServiceWarnings } from "@shared/world-engine/kernel/town/goods.js";
 import { createTownWorld, type TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
 import {
   FOUNDING_AGE_DAYS, PLAZA_WELL, townPlanSteps, wellVergePoint, type TownHouse, type TownPlan,
@@ -36,7 +36,7 @@ import {
 } from "@shared/world-engine/kernel/town/programs.js";
 import { registerPlaceArt } from "@shared/glyph-place-art.js";
 import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
-import { serviceRadiusM, type WorldScale } from "@shared/world-engine/scale.js";
+import { clothingFillDays, REAL_SCALE, serviceRadiusM, type WorldScale } from "@shared/world-engine/scale.js";
 
 export interface TownPlayConfig {
   seed: number;
@@ -190,82 +190,175 @@ export function isTownPlayPayload(v: unknown): v is TownPlayPayload {
 }
 
 /**
+ * ⚖️ THE CALORIC ANCHOR — one person's daily draw of the STAPLE, and the
+ * numeraire of every other household want in this document (the street layer
+ * quotes each good's `perCapitaDaily` against it: food is 1 RATION by
+ * definition). Byte-identical to the value it has always carried; F4 named it
+ * so the derived rows below could point at something instead of restating a
+ * literal.
+ */
+const FOOD_PER_PERSON_DAILY = 0.001;
+
+/**
+ * Garments a household WARDROBE holds — the one absolute in clothing's box, and
+ * the reason `capDays` below is derived rather than typed.
+ *
+ * With demand grounded (a garment per person per `clothingFillDays`), the box
+ * formula `HOUSEHOLD × capDays × perCapitaDaily` DEGENERATES if `capDays` stays
+ * a hand-typed street-day count: at the shipped 20 it holds 5 × 20 × (1/180) ≈
+ * 0.56 of an outfit — a wardrobe that cannot contain one garment. Inverting the
+ * same formula for the box we want (`capDays = boxUnits × clothingFillDays ÷
+ * HOUSEHOLD`) makes `boxCap` come out at EXACTLY `CLOTHING_BOX_UNITS` at any
+ * metabolism, and leaves the pinned box/period algebra (goods.ts `shopPeriod`,
+ * `pantryLevel`, `boxCap`) untouched — it is an INPUT that was re-derived, not
+ * a formula that was edited.
+ */
+const CLOTHING_BOX_UNITS = 2;
+
+/**
  * The symbol game's own village CONTENT: two goods whose vocabularies the
  * quest pools already speak (food → treats, cloth → clothing). Farms grow
  * the food (banked in the granary — the stockpile session deliveries
  * credit); the weaver clothes the town. Content, not machinery: a game
  * that wants a richer village swaps this doc, nothing else.
+ *
+ * ⚖️ A FUNCTION OF THE WORLD'S SCALE (F4), because two of its numbers are
+ * DERIVED from a real anchor and the metabolic multiplier — and `scale` is not
+ * in reach of a module-level const. `TOWN_PLAY_ECONOMY` below is this document
+ * at the engine default (realism, metabolism 1), which is what every shipped
+ * profile declares today (`DOLLHOUSE_SCALE.metabolism === 1`); the live founder
+ * calls this with the session's own scale, so a world that eats faster also
+ * wears out faster without a second seat to keep in step.
  */
-export const TOWN_PLAY_ECONOMY: EconomyDoc = {
-  stockpiles: [{ key: "granary", max: 400, construction: true }],
-  commodities: [
-    {
-      key: "food", scalarMax: 200, perPersonDaily: 0.001,
-      transport: { drift: "granary", driftRequiresConstruction: true },
-      street: {
-        capDays: 3, shopSec: 18, cartRations: 25, unit: "rations", producers: ["farm"], market: true,
-        stockColor: "#e0b25c", boxLabel: "Pantry", errandName: "shopping",
+export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
+  const wearDays = clothingFillDays(scale);
+  return {
+    stockpiles: [
+      { key: "granary", max: 400, construction: true },
+      // ⚖️ R&T ⑤ (T3b) — THE TOWN'S CLOTH STORE. Clothing had NOWHERE to bank:
+      // `transport: {}` declares the convention scalars and nothing else, so a
+      // landed import had no stockpile to credit and the books could not see the
+      // lane at all. Not construction-gated (unlike the granary, whose contents
+      // are also a build material): a town owns its cloth store from day one.
+      { key: "drapery", max: 120 },
+    ],
+    commodities: [
+      {
+        // ⚖️ THE CALORIC ANCHOR — one ration a day, and the denominator every
+        // other household want in this document is quoted against. Byte-
+        // identical to the literal it replaces (0.001); it must stay so.
+        key: "food", scalarMax: 200, perPersonDaily: FOOD_PER_PERSON_DAILY,
+        transport: { drift: "granary", driftRequiresConstruction: true },
+        street: {
+          capDays: 3, shopSec: 18, cartRations: 25, unit: "rations", producers: ["farm"], market: true,
+          stockColor: "#e0b25c", boxLabel: "Pantry", errandName: "shopping",
+        },
       },
-    },
-    {
-      // PURE INTERMEDIATE: cloth is the TAILOR's raw material (the weaver's
-      // cloth_out → tailor's clothing_out chain below), NOT something a
-      // household consumes — only CLOTHING is worn. So it carries no
-      // `perPersonDaily` demand and no `street` box, the documented
-      // convention for intermediates (ore, planks, wool). `transport` stays
-      // ONLY to declare its cloth_out/_need/_got convention scalars, which
-      // the sew process reads. Previously the household `street` box made
-      // every resident run a spurious provision:cloth errand ("I'm going to
-      // get cloth") for a material nothing in the home ever uses.
-      key: "cloth", scalarMax: 50,
-      transport: {},
-    },
-    {
-      // The wool chain's last link: the TAILOR sews the weaver's cloth into
-      // CLOTHING (the sheep → wool → cloth → clothing → store flow). Households
-      // stock a wardrobe of it; residents visibly wear it (outfit presets).
-      key: "clothing", scalarMax: 30, perPersonDaily: 0.0001,
-      transport: {},
-      street: {
-        capDays: 20, shopSec: 20, cartRations: 8, unit: "outfits", producers: ["tailor"],
-        stockColor: "#c47ba0", boxLabel: "Wardrobe", errandName: "clothes",
+      {
+        // PURE INTERMEDIATE: cloth is the TAILOR's raw material (the weaver's
+        // cloth_out → tailor's clothing_out chain below), NOT something a
+        // household consumes — only CLOTHING is worn. So it carries no
+        // `perPersonDaily` demand and no `street` box, the documented
+        // convention for intermediates (ore, planks, wool). `transport` stays
+        // ONLY to declare its cloth_out/_need/_got convention scalars, which
+        // the sew process reads. Previously the household `street` box made
+        // every resident run a spurious provision:cloth errand ("I'm going to
+        // get cloth") for a material nothing in the home ever uses.
+        key: "cloth", scalarMax: 50,
+        transport: {},
       },
-    },
-  ],
-  buildings: [
-    {
-      key: "farm", countScalar: "farms", cap: { by: "farmland", rate: 1 / 60 },
-      processes: [
-        { id: "farm", input: "farmland", output: "grain_out", efficiency: 0.08, capacityRate: 5 },
-        { id: "mill", input: "grain_out", output: "food_out", efficiency: 1 },
-      ],
-      vars: [{ name: "grain_out", max: 200 }],
-      construction: { tier: "base", costs: [{ stockpile: "granary", amount: 20 }] },
-      sells: ["food"], leansToward: "fertility", mapCap: 8, district: "farm",
-      style: { color: "#7d9c53", w: 18, h: 12 }, vignette: { w: 5, h: 4 },
-      glyph: "🌾", title: "🌾 Farmstead", info: ["{farms} farms."],
-    },
-    {
-      key: "weaver", countScalar: "weavers", cap: { by: "population", rate: 0.002 },
-      processes: [{ id: "weave", input: "farmland", output: "cloth_out", efficiency: 0.001, capacityRate: 2 }],
-      construction: { tier: "industry", costs: [{ stockpile: "granary", amount: 25 }] },
-      sells: ["cloth"], shelved: true, leansToward: null, mapCap: 2, district: "craft",
-      style: { color: "#8a7fae", w: 14, h: 10 }, vignette: { w: 4, h: 4 },
-      glyph: "🧵", title: "🧵 Weaver", info: ["{weavers} weavers."],
-    },
-    {
-      // Sews the weaver's cloth into clothing — a process whose INPUT is the
-      // cloth commodity's own site var, so the chain is real in the aggregate:
-      // more cloth ⇒ more clothing; a starving weaver starves the tailor.
-      key: "tailor", countScalar: "tailors", cap: { by: "population", rate: 0.0015 },
-      processes: [{ id: "sew", input: "cloth_out", output: "clothing_out", efficiency: 0.5, capacityRate: 1 }],
-      construction: { tier: "industry", costs: [{ stockpile: "granary", amount: 20 }] },
-      sells: ["clothing"], shelved: true, leansToward: null, mapCap: 2, district: "craft",
-      style: { color: "#a06a8a", w: 12, h: 10 }, vignette: { w: 4, h: 3 },
-      glyph: "👕", title: "👕 Tailor", info: ["{tailors} tailors."],
-    },
-  ],
-};
+      {
+        // The wool chain's last link: the TAILOR sews the weaver's cloth into
+        // CLOTHING (the sheep → wool → cloth → clothing → store flow). Households
+        // stock a wardrobe of it; residents visibly wear it (outfit presets).
+        // ⚖️ R&T ⑤ (T3b) — AND THE ONE GOOD THIS TOWN CAN IMPORT. The drapery
+        // banks the tailor's surplus and, with `driftFeeds`, is EATEN by a
+        // shortfall (the granary feedback: `fed = min(stock, shortage)`), so a
+        // caravan that lands clothing in a town with no tailor relieves the
+        // wardrobe the households actually open. Food's granary keeps the flag
+        // OFF — flipping THAT is a town-wide pacing change (granary-feed.test.ts
+        // pins the off-state), and the staple stays yard-bound this batch.
+        // ⚖️ F4 — DEMAND GROUNDED (scale.ts `REAL_CLOTHING_DAYS`). USER LAW
+        // (2026-08-09): *"people need new food a lot more than they need new
+        // clothes … ground it in a roughly normal value … and assume that the
+        // need scales at the metabolic multiplier."* One garment per person per
+        // `clothingFillDays` against one ration per person per day, so the ratio
+        // IS the anchor — 180:1 at metabolism 1, and 60:1 in a world that eats
+        // three times a game-day, because wear is a metabolic process. The
+        // number this replaces (a typed 0.0001, i.e. 10:1) was a guess, and the
+        // street layer never even honoured that much.
+        key: "clothing", scalarMax: 30, perPersonDaily: FOOD_PER_PERSON_DAILY / wearDays,
+        transport: { drift: "drapery", driftFeeds: true },
+        street: {
+          // ⚖️ TWO PLACEMENT LAWS MAY NOT BE MIXED (economy arc, GL-feedback
+          // round). A good sold ONLY at its producer's gate is placed by the
+          // work's PRODUCTION CAP — a fraction of population, blind to distance
+          // — while the market channel founds stalls on the SERVICE RADIUS ("a
+          // district is a need cycle's walk across"). Seed 12's two tailors for
+          // 199 households put the mean clothing walk at 539 m against food's
+          // 96 m radius: a 693 s round trip, and the good-blind street-body
+          // budget then let the long trip crowd food's walkers off the street
+          // (32 clothing shoppers embodied against 9 for food — the reported
+          // flood). Clothing therefore JOINS THE MARKET CHANNEL: the tailors
+          // still sell at their gates, and the stalls the radius already founded
+          // sell it too (sources 2 → 16, the trip ~693 s → ~114 s). The
+          // invariant that catches the next one is `streetServiceWarnings`.
+          // ⚖️ F4 — `capDays` IS DERIVED, not chosen. The box formula is a pinned
+          // contract (`boxCap = HOUSEHOLD × capDays × perCapitaDaily`), so with the
+          // demand grounded the only coherent way to hold `CLOTHING_BOX_UNITS`
+          // garments is to invert it: `capDays = boxUnits × wearDays ÷ HOUSEHOLD`.
+          // At metabolism 1 that is 2 × 180 ÷ 5 = 72 street days, and `boxCap`
+          // comes out at exactly 2 outfits at ANY metabolism. The shipped 20 was
+          // the last cadence lever anyone had while `perCapitaDaily` was hard-set
+          // to 1; it is not one any more.
+          capDays: (CLOTHING_BOX_UNITS * wearDays) / HOUSEHOLD,
+          shopSec: 20, cartRations: 8, unit: "outfits", producers: ["tailor"], market: true,
+          stockColor: "#c47ba0", boxLabel: "Wardrobe", errandName: "clothes",
+        },
+      },
+    ],
+    buildings: [
+      {
+        key: "farm", countScalar: "farms", cap: { by: "farmland", rate: 1 / 60 },
+        processes: [
+          { id: "farm", input: "farmland", output: "grain_out", efficiency: 0.08, capacityRate: 5 },
+          { id: "mill", input: "grain_out", output: "food_out", efficiency: 1 },
+        ],
+        vars: [{ name: "grain_out", max: 200 }],
+        construction: { tier: "base", costs: [{ stockpile: "granary", amount: 20 }] },
+        sells: ["food"], leansToward: "fertility", mapCap: 8, district: "farm",
+        style: { color: "#7d9c53", w: 18, h: 12 }, vignette: { w: 5, h: 4 },
+        glyph: "🌾", title: "🌾 Farmstead", info: ["{farms} farms."],
+      },
+      {
+        key: "weaver", countScalar: "weavers", cap: { by: "population", rate: 0.002 },
+        processes: [{ id: "weave", input: "farmland", output: "cloth_out", efficiency: 0.001, capacityRate: 2 }],
+        construction: { tier: "industry", costs: [{ stockpile: "granary", amount: 25 }] },
+        sells: ["cloth"], shelved: true, leansToward: null, mapCap: 2, district: "craft",
+        style: { color: "#8a7fae", w: 14, h: 10 }, vignette: { w: 4, h: 4 },
+        glyph: "🧵", title: "🧵 Weaver", info: ["{weavers} weavers."],
+      },
+      {
+        // Sews the weaver's cloth into clothing — a process whose INPUT is the
+        // cloth commodity's own site var, so the chain is real in the aggregate:
+        // more cloth ⇒ more clothing; a starving weaver starves the tailor.
+        key: "tailor", countScalar: "tailors", cap: { by: "population", rate: 0.0015 },
+        processes: [{ id: "sew", input: "cloth_out", output: "clothing_out", efficiency: 0.5, capacityRate: 1 }],
+        construction: { tier: "industry", costs: [{ stockpile: "granary", amount: 20 }] },
+        sells: ["clothing"], shelved: true, leansToward: null, mapCap: 2, district: "craft",
+        style: { color: "#a06a8a", w: 12, h: 10 }, vignette: { w: 4, h: 3 },
+        glyph: "👕", title: "👕 Tailor", info: ["{tailors} tailors."],
+      },
+    ],
+  };
+}
+
+/** The shipped document at the ENGINE DEFAULT (realism, metabolism 1) — the
+ *  name every pre-F4 reader already imports, and the only reading that differs
+ *  from `townPlayEconomy(scale)` is in a world that declares a metabolism.
+ *  Evaluated once; `townPlayEconomy` builds a fresh object per call, so a
+ *  caller may not mutate this one and expect the founder to agree. */
+export const TOWN_PLAY_ECONOMY: EconomyDoc = townPlayEconomy();
 
 /**
  * The DEFAULT BUILDABLE-STRUCTURE CATALOG (①b) — world content beside
@@ -600,7 +693,12 @@ export function buildTownPlay(config: TownPlayConfig): TownPlay {
  * frame on founding.
  */
 export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, TownPlay> {
-  const compiled = compileEconomy([TOWN_PLAY_ECONOMY], { construction: true });
+  // ⚖️ F4 — THE DOCUMENT IS READ AT THIS WORLD'S SCALE. Clothing's demand and
+  // box are derived from `REAL_CLOTHING_DAYS ÷ metabolism`, and a module-level
+  // const cannot see a session's scale; this is the first seat that can. A
+  // config with no scale (the clock-blind legacy layout) reads the engine
+  // default, which is byte-identical to `TOWN_PLAY_ECONOMY`.
+  const compiled = compileEconomy([townPlayEconomy(config.scale ?? REAL_SCALE)], { construction: true });
   // E4 numeraire override: config wins over the doc; a medium naming no
   // street good fails at build, named (never a silent barter-forever).
   if (config.numeraire && !compiled.goods.some((g) => g.key === config.numeraire)) {
@@ -714,6 +812,16 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     const work = spec?.economy ? eco.works.find((w) => w.key === spec.economy) : null;
     if (work) town.inject(work.countScalar, 1);
   }
+  // ⚖️ R&T ⑤ (T3b) — AND SO DOES WHAT THE CARAVANS ALREADY LANDED. The town
+  // world steps ONLY in the fast-forward above; a live session's import
+  // credits are therefore injections into a world that never steps again, and
+  // they would vanish with it. The bank is the durable half: replayed HERE,
+  // after the fast-forward and the plan, so a reloaded town's books still show
+  // the cloth its partner sent. Same shape, same place, same reason as the
+  // founded producers directly above.
+  for (const [scalar, units] of Object.entries(deltas.driftBank)) {
+    if (units > 0) town.inject(scalar, units);
+  }
   yield "meeting residents";
   const bundle = buildTownQuestGame(town, eco, plan, key, {
     seed: config.seed,
@@ -764,5 +872,20 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     residentSpecies: famSpecies,
     ...(fam.excluded.length ? { excludedResidents: fam.excluded } : {}),
   });
+  // ⚖️ THE SERVICE-RADIUS INVARIANT, said out loud (goods.ts
+  // `streetServiceWarnings`, the scaleWarnings doctrine): a street good whose
+  // households out-walk the radius its stalls would be founded on is mixing
+  // two placement laws, and the flood that follows is invisible until somebody
+  // counts walkers. Never a throw — the world is legal, and the sentence is
+  // the whole point. Measured against the SAME radius the plan sites stalls on.
+  if (config.scale) {
+    for (const w of streetServiceWarnings(
+      stage.goods,
+      plan.houses,
+      serviceRadiusM(config.scale, "hunger"),
+    )) {
+      console.warn(`[town] service radius — ${w}`);
+    }
+  }
   return { config, town, eco, plan, bundle, stage, deltas, structures, familyHouse: fam.house };
 }

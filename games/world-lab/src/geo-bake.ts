@@ -191,8 +191,11 @@ export function createGeologyBaker(): GeologyBaker {
       // Version the key with the refine ALGORITHM, not just the payload
       // shape: "refine6" = trunk inflow feeds the child solve + the region's
       // streams ride along (cross-region stitching lives in its own
-      // pair-keyed entries, not here).
-      const cacheKey = `refine6:${baked.key}:${regionCell}`;
+      // pair-keyed entries, not here). "refine7" = growth phase A port fix:
+      // village lanes port-terminate at town extents and refined highway
+      // spans drop solved cells near a port — a stale grid keeps painting
+      // roads through towns.
+      const cacheKey = `refine7:${baked.key}:${regionCell}`;
       const hit = await cacheGet(db, cacheKey);
       if (hit) {
         // Villages ride the sites slot; roads/highways/rivers ride their own.
@@ -236,7 +239,9 @@ export function createGeologyBaker(): GeologyBaker {
       // "stitch8": stream joins anchor on the downstream side's run STARTS
       // (crossing↔crossing matching paired almost nothing — the wet-threshold
       // asymmetry; see refine.ts stitchRegionStreams).
-      const cacheKey = `stitch8:${baked.key}:${lo}:${hi}`;
+      // "stitch9": growth phase A — cross-border village roads
+      // port-terminate at both villages' extents.
+      const cacheKey = `stitch9:${baked.key}:${lo}:${hi}`;
       const hit = await cacheGet(db, cacheKey);
       if (hit) {
         return {

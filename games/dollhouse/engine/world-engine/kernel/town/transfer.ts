@@ -34,7 +34,7 @@
 
 import { FOOD_DAY_SEC } from "./goods.js";
 import type { TradeRoute } from "./trade.js";
-import { IMPORT_ALLOTMENT, TRADE_IMPORT_KINDS } from "./trade.js";
+import { IMPORT_ALLOTMENT } from "./trade.js";
 import { headOf } from "../../variations.js";
 import { journeyTimeS, priceOf } from "./pricing.js";
 import { costTotalS } from "./scope-shape.js";
@@ -575,6 +575,44 @@ export function shelfEndpointId(goodKey: string, srcIdx: number): string {
   return `store:${goodKey}:${srcIdx}`;
 }
 
+/** The narrow view of a `TownGoods` this rule reads — declared structurally so a
+ *  test can answer it without standing up a town. */
+export interface GoodSourceBook {
+  good: { key: string; shelved: ReadonlyArray<string> };
+  sources: ReadonlyArray<{ kind: string; work?: number }>;
+  producerWorks(): number[];
+}
+
+/**
+ * WHERE A SHOPPER DRAWS THIS GOOD, at the source the goods clock bound them to
+ * (`TownGoods.sourceOf(house)` → its index here). ONE rule, read by BOTH the
+ * world seeding that mints the endpoints and the live needs loop that shops at
+ * them — which is the whole of stocking-offload-and-carry.md §1.2's law: *"the
+ * logic determining household member shopping trips should be the same as the
+ * logic determining shop stocking"*.
+ *
+ * Two closed forms, both the economy's own, chosen by what the economy actually
+ * puts at that source:
+ *  · a SHELVED source has a dawn-carted shelf (`stockOf` > 0 only there) — a
+ *    market stall, `store:<good>:<srcIdx>`, this file's own ledger spelling;
+ *  · an UNSHELVED PRODUCER GATE sells from the field: its stock is the pile the
+ *    dawn cart comes for (`produceAt`), which already stands there as
+ *    `produce:<good>:<work>`. No second box at the same doorstep.
+ *
+ * The fall-through (unshelved, not a producer — the hall of a town with no
+ * seller at all) keeps a shelf id whose `stockOf` is 0: an empty shelf, which is
+ * what such a town has, and never an ABSENT one (the §2.5 DEFER distinction).
+ * Total: null only for an index that names no source.
+ */
+export function goodSourceEndpointId(g: GoodSourceBook, srcIdx: number): string | null {
+  const src = g.sources[srcIdx];
+  if (!src) return null;
+  if (!g.good.shelved.includes(src.kind) && src.work !== undefined && g.producerWorks().includes(src.work)) {
+    return produceEndpointId(g.good.key, src.work);
+  }
+  return shelfEndpointId(g.good.key, srcIdx);
+}
+
 /**
  * ONE dawn-cart supply leg (goods.ts `haul()`: producer pile → market shelf,
  * every street day) as a standing-agreement input. Descriptive today — the
@@ -612,7 +650,10 @@ export function tradeRouteAgreementInputs(
   townKey: string,
   opts?: { exportDaily?: number; issuer?: string; now?: number },
 ): PostTransferInput[] {
-  const per = Math.floor(IMPORT_ALLOTMENT / Math.max(1, TRADE_IMPORT_KINDS.length));
+  // ⚖️ The allotment splits across the kinds THIS ROUTE carries — the authored
+  // list is only what an unbound line brings (R&T ⑤ T2), so reading its length
+  // here would mis-split a derived cargo. Identical for the authored list.
+  const per = Math.floor(IMPORT_ALLOTMENT / Math.max(1, route.imports.length));
   const imports: Record<string, number> = {};
   for (const k of route.imports) imports[k] = per;
   imports[route.rare.kind] = (imports[route.rare.kind] ?? 0) + route.rare.perVisit;

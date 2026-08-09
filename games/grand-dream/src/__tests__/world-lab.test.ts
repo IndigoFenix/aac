@@ -22,13 +22,16 @@ import {
 } from "@shared/world-engine/interaction/town/town-play-game";
 import { buildCreatureQuestWorld, certifyCreatureQuestWorld } from "@shared/world-engine/interaction/quest/creature-quests";
 import { planetCities } from "@shared/world-engine/planet/cities";
+import { TOWN_DIMS } from "@shared/world-engine/kernel/town/dimensions";
 import {
   planetRoutes, caravanArc, caravanCount, CARAVAN_SPEED_MPS,
 } from "@shared/world-engine/planet/routes";
 import { planetStates, statePairs, stateBorders } from "@shared/world-engine/planet/states";
 import { buildTownPlay, buildTownPlayStaged } from "@shared/world-engine/interaction/town/town-play";
 import { TEST_WORLDS, DEFAULT_WORLD_ID } from "../../../world-lab/src/worlds";
-import { subtractSpans } from "../../../world-lab/src/trade-roads";
+import { paintableConnector, subtractSpans } from "../../../world-lab/src/trade-roads";
+import { toPlanetDir, toTownLocal, type TownFrame } from "@shared/world-engine/kernel/town/approach";
+import { routeFromDirs, type PlanetRoute } from "@shared/world-engine/planet/routes";
 import { cityTownConfig } from "../../../world-lab/src/city-towns";
 import type { FlightCity } from "../../../world-lab/src/space-fly";
 import {
@@ -386,11 +389,35 @@ describe("planet cities — a settled world's founding sites become its cities",
         for (const d of r.dirs) {
           expect(Math.abs(Math.hypot(d[0], d[1], d[2]) - 1)).toBeLessThan(1e-6);
         }
-        // Endpoints pinned to the cities' own cell directions.
+        // THE PORT LAW (growth-phase-a-port-fix A1): an endpoint lands on the
+        // city's EXTENT, not its cell centre — the road stops at the town's
+        // edge so the terrain paint, the ribbon and the carts never run
+        // through the buildings. (Was: pinned to `city.dir` exactly — that
+        // pin WAS the bug.) The one exception, and it is the norm on THIS
+        // 2 km fixture: where two towns sit closer than their own extents
+        // there is no open country between them to cross, so the pair has no
+        // ports and the road stays as solved.
         const cityA = cities.find(c => c.cell === r.a)!;
         const cityB = cities.find(c => c.cell === r.b)!;
-        expect(r.dirs[0]).toEqual(cityA.dir);
-        expect(r.dirs[r.dirs.length - 1]).toEqual(cityB.dir);
+        const arcTo = (
+          d: readonly [number, number, number], c: readonly [number, number, number],
+        ): number =>
+          Math.acos(Math.max(-1, Math.min(1, d[0] * c[0] + d[1] * c[1] + d[2] * c[2])))
+            * built.spec.radius;
+        const portedA = Math.abs(arcTo(r.dirs[0]!, cityA.dir) - TOWN_DIMS.townRMax) < 0.05;
+        const portedB = Math.abs(
+          arcTo(r.dirs[r.dirs.length - 1]!, cityB.dir) - TOWN_DIMS.townRMax) < 0.05;
+        if (portedA || portedB) {
+          // A ported route ports at BOTH ends (one extent cannot swallow the
+          // road while the other clears it) and keeps a real road between.
+          expect(portedA && portedB).toBe(true);
+          expect(r.lengthM).toBeGreaterThanOrEqual(10);
+        } else {
+          expect(r.dirs[0]).toEqual(cityA.dir);
+          expect(r.dirs[r.dirs.length - 1]).toEqual(cityB.dir);
+          // Overlapping extents are the ONLY licence to skip the ports.
+          expect(arcTo(cityA.dir, cityB.dir)).toBeLessThan(TOWN_DIMS.townRMax * 2);
+        }
       }
     });
 
@@ -508,6 +535,51 @@ describe("planet cities — a settled world's founding sites become its cities",
         [[0, 50], [60, 100]],
         [{ s0: 20, s1: 70 }, { s0: 90, s1: 95 }],
       )).toEqual([[0, 20], [70, 90], [95, 100]]);
+    });
+  });
+
+  describe("the port→gate connector's PAINT stops at the building line", () => {
+    // The connector's RIBBON may thread the lots to reach its gate; ground
+    // PAINT may not — painted road across a footprint is the very
+    // roads-through-buildings bug the port law closed. (Measured on a real
+    // 651-house village: gates sit at 94-219 m against a 450 m port, so the
+    // untruncated connector crossed 7 footprints.)
+    const PR = 1_000_000;
+    const FR = { center: [0, 0, 1], east: [1, 0, 0], north: [0, 1, 0] } as const;
+    const conn = (pts: Array<[number, number]>): PlanetRoute => {
+      const r = routeFromDirs(pts.map(([x, y]) => toPlanetDir(FR, PR, { x, y })), PR, -2, -2);
+      if (!r) throw new Error("degenerate");
+      return r;
+    };
+    // Runs inward along +x from open country (700 m) toward the plaza.
+    const inward = conn([[700, 0], [600, 0], [500, 0], [400, 0], [300, 0], [200, 0]]);
+    const spec = (houses?: Array<{ dx: number; dy: number; w: number; h: number }>) =>
+      ({ frame: FR as unknown as TownFrame, radiusM: 450, tips: [], houses });
+
+    it("paints the whole joint when the approach is clear", () => {
+      expect(paintableConnector(inward, spec([{ dx: -50, dy: -50, w: 20, h: 20 }]), PR, 3))
+        .not.toBeNull();
+      // No plan detail at all → paint it whole (the pre-plan fallback).
+      expect(paintableConnector(inward, spec(undefined), PR, 3)).toBe(inward);
+    });
+
+    it("TRUNCATES at the first footprint and never crosses one", () => {
+      // A house squarely on the approach at x≈400.
+      const painted = paintableConnector(
+        inward, spec([{ dx: 390, dy: -10, w: 20, h: 20 }]), PR, 3);
+      expect(painted).not.toBeNull();
+      const end = toTownLocal(FR as unknown as TownFrame, PR, painted!.dirs[painted!.dirs.length - 1]!)!;
+      expect(end.x).toBeGreaterThan(400);   // stopped OUTSIDE the house
+      expect(painted!.lengthM).toBeLessThan(inward.lengthM);
+      for (const d of painted!.dirs) {
+        const p = toTownLocal(FR as unknown as TownFrame, PR, d)!;
+        expect(p.x >= 385 && p.x <= 415 && p.y >= -15 && p.y <= 15).toBe(false);
+      }
+    });
+
+    it("paints NOTHING when the buildings already reach the clip", () => {
+      expect(paintableConnector(inward, spec([{ dx: 650, dy: -60, w: 120, h: 120 }]), PR, 3))
+        .toBeNull();
     });
   });
 

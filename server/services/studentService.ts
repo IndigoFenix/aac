@@ -47,6 +47,8 @@ import type { PersistedBaseline } from "@shared/aac/seizure-config";
 import { ADMIN_ONLY_AAC_FIELDS } from "@shared/aac/admin-budget-fields";
 import { eq, inArray } from "drizzle-orm";
 import { deleteExternalData, type EntityRef } from "../external-storage";
+import { findAccountLink } from "./smart-home/account-link-service";
+import { homeGraphClient } from "./smart-home/google/homegraph-client";
 
 /** Fields that belong to the aac_settings table (sent without the 'aac' prefix from clients) */
 const AAC_SETTINGS_FIELDS = new Set([
@@ -64,7 +66,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
-  "dynamicBoardsEnabled", "appConfig", "permittedWebsites",
+  "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "homeActions",
   "permittedYoutubeItems", "permittedYoutubeChannels", "permittedYoutubeVideos",
   "accessibility", "definedGestures", "seizureDetection",
   "allowFacilitatorControl",
@@ -254,6 +256,19 @@ export class StudentService {
         aacUpdates.seizureDetection = await this.mergeSeizureDetection(studentId, aacUpdates.seizureDetection);
       }
       await aacSettingsRepository.upsert(studentId, aacUpdates as UpdateAacSettings);
+
+      // Google requires a Request Sync whenever the device list may have
+      // changed. Gate on a live Google link (not on slot content — REMOVING the
+      // last google slot must sync too). Awaited: this runs on Lambda, where a
+      // detached promise dies at response write. Soft-fail only.
+      if ("homeActions" in aacUpdates) {
+        try {
+          const link = await findAccountLink(studentId, "google");
+          if (link) await homeGraphClient.requestSyncForStudent(studentId);
+        } catch (err) {
+          console.error("[studentService] smart-home requestSync failed:", err);
+        }
+      }
     }
 
     // Return the full updated student with settings

@@ -109,6 +109,11 @@ export function intentToAct(
     ProjectionOpts,
     "symbolOf" | "creatureOf" | "doingOf" | "jointActivities" | "resolveSourceFor"
   >,
+  /** ⚖️ WHY-CHAINS §5 — the SPEAKER'S OWN BOARD STATE, so a spoken "why?" can
+   *  ride the same `why-doing` act the button does (spoken and board are ONE
+   *  path, not two readings of one word). Only `ui.whyChain` is read; absent ⇒
+   *  every "why" keeps its needs-gated meaning, exactly as before. */
+  ui?: DeviceBoardState,
 ): DialogueAct | null {
   const speakerId = p.speakerId;
   /** Undefined = spoken to the floor; see the null-returns below. */
@@ -234,6 +239,28 @@ export function intentToAct(
       return { kind: "cant", itemId: speakerItem, glyph };
     }
     return { kind: "refuse", glyph };
+  }
+
+  // ⚖️ WHY-CHAINS §1/§5 — THE BARE ACTIVITY VERB IS THE ACTIVITY QUESTION.
+  // *"[{subject} do what?] or [{subject} do?] lead to the same path. Just [do]
+  // by itself parses as 'What are you doing?'"* The `what + …` shapes already
+  // route through the question arm below; these two do not, because `do` is a
+  // non-directive verb with no object, so "mara + do" classified as a plain
+  // STATEMENT and came out as a bare `tell` ("thank you") — the one phrasing a
+  // child on a two-glyph board can actually reach. No new word, no new act: the
+  // same `what-doing` the question arm builds.
+  if (frame.verb === "do" && !frame.question && !frame.modal && !frame.object && !frame.relation) {
+    // `classifyPredicate` FILLS a missing subject with the speaker, so a bare
+    // "do" arrives looking like a statement about me. Only an EXPLICIT "i_me"
+    // is a real self-reference (the same test `explicitCreature` makes in the
+    // statement arm); anything else means the listener, which is who a child
+    // pressing one glyph is talking to. No addressee ⇒ leave the frame alone
+    // and let the ordinary arms have it — an ask aimed at nobody is a
+    // different act, not a quieter one.
+    const named =
+      frame.subject?.kind === "player" && !frame.raw.includes("i_me") ? undefined : aboutRef();
+    const about = named ?? (listenerId ? { symbol: "you", id: listenerId } : undefined);
+    if (about) return { kind: "what-doing", about, glyph };
   }
 
   switch (frame.kind) {
@@ -405,6 +432,14 @@ export function intentToAct(
         return { kind: "how-are-you", glyph };
       }
       if (frame.question === "why") {
+        // ⚖️ WHY-CHAINS §5 — A BARE "WHY" INSIDE AN OPEN CHAIN WALK IS THE
+        // CHAIN'S WHY. The board button and the spoken word are one path: the
+        // child who pressed "what are you doing" and then says "why?" means the
+        // same thing the follow-up button means, and answering it with the
+        // needs-gated motive would change the subject mid-conversation. A "why"
+        // that names a VERB keeps its premise-checked reading below — that is a
+        // question about a specific activity, not a step up this ladder.
+        if (!frame.verb && ui?.whyChain) return { kind: "why-doing", glyph };
         // "why + you + build" PRESUMES the listener is building — check the
         // premise before dumping a motive ("I want an apple" answers nothing).
         // Verifiably doing it → the motive; verifiably NOT → the correction
@@ -531,6 +566,14 @@ const NON_SPEAKER_ACTS = new Set<DialogueAct["kind"]>([
   "back",
   "more",
   "confused",
+  // ⚖️ AND NPCs DO NOT ASK "WHAT ARE YOU DOING" EITHER (why-chains.md §7 — no
+  // ask-generation changes at all in v1; §9 E1's gates stand). §5 pushes
+  // `what-doing` onto the board UNCONDITIONALLY, and this projection is
+  // role-swapped, so without this line every ambient turn gained a free
+  // "what are you doing?" about the listener — the exact flood E1 removed.
+  // `why-doing` rides with it: an NPC has no board walk to follow up on.
+  "what-doing",
+  "why-doing",
 ]);
 
 /**

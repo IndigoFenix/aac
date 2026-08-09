@@ -181,6 +181,11 @@ interface DualAgentContextType {
   /** Ask the server to load a pre-built board by key (the press half of a
    *  board-launch button the Board Manager authored). Replies via set_board. */
   requestBoardOpen: (boardKey: string) => void;
+  /** Report a smart-home button press (run_home_action). The board already
+   *  spoke the command/announce line; the server just records `[HOME] <label>`.
+   *  `confirmed` is the student's answer to the board's confirm step, present
+   *  only for actions flagged `requiresConfirmation`. */
+  requestHomeAction: (actionId: string, confirmed?: boolean) => void;
   /** appId currently awaiting a request_app_open round-trip, or null. */
   appOpenPending: string | null;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
@@ -1668,6 +1673,7 @@ function ProviderShell({
     launchApp: agent.launchApp,
     requestAppOpen: agent.requestAppOpen,
     requestBoardOpen: agent.requestBoardOpen,
+    requestHomeAction: agent.requestHomeAction,
     appOpenPending: agent.appOpenPending,
     registerAppCanvasCapture,
     enabledApps: agent.enabledApps,

@@ -96,6 +96,10 @@ interface WorldOpts {
   byState?: Record<string, string>;
   /** Omit the price board — an UNPRICED resolver, the zero-cost path. */
   unpriced?: boolean;
+  /** ⚖️ W1 — the world's own "how far is that, really" measure. Absent ⇒ the
+   *  planner's chord default (a townless world), which is the byte-identical
+   *  case every other test in this file runs. */
+  journeyM?(from: { x: number; y: number }, to: { x: number; y: number }): number;
 }
 
 function world(o: WorldOpts = {}): WorldResolver {
@@ -113,7 +117,9 @@ function world(o: WorldOpts = {}): WorldResolver {
     itemPosition: (id) => items[id] ?? null,
     stationFor: () => null,
     carrierOf: () => null,
-    ...(o.unpriced ? {} : { price: { walkMps: WALK_MPS, handsS } }),
+    ...(o.unpriced
+      ? {}
+      : { price: { walkMps: WALK_MPS, handsS, ...(o.journeyM ? { journeyM: o.journeyM } : {}) } }),
   };
 }
 
@@ -163,6 +169,63 @@ describe("③ pricePlan — a plan's cost is its legs plus its hands", () => {
     const r = { ...world({ places: { box: at(4) }, items: { apple1: at(10) } }), positionOf: () => null };
     const plan = compileGoal({ kind: "putIn", item: { id: "apple1" }, container: P("box") }, "bear", r)!;
     expect(plan.cost.journeyS).toBeCloseTo(6 / WALK_MPS); // 10 → 4, the second leg only
+  });
+
+  // ── W1 (economy-arc-opening.md) — PAY WHAT YOU PRICE ────────────────────
+  //
+  // The diagnosed defect: the pursuit priced a leg by CHORD while the body
+  // paid STREET. A town's street tree routes through the plaza ring, so two
+  // points on different arterial subtrees are 68 m apart and 400 m of walking
+  // away — and nothing in the calculus could tell, because `pricePlan` used
+  // `Math.hypot`. The fix is a resolver-supplied journey measure threaded
+  // through the price board; the planner itself stays engine-agnostic.
+
+  it("W1: with no journey measure the price is the CHORD — the byte-identical default", () => {
+    const r = world({ places: { box: at(4) }, items: { apple1: at(10) } });
+    expect(r.price!.journeyM).toBeUndefined(); // a townless world supplies none
+    const plan = compileGoal({ kind: "putIn", item: { id: "apple1" }, container: P("box") }, "bear", r)!;
+    expect(plan.cost.journeyS).toBeCloseTo((10 + 6) / WALK_MPS);
+  });
+
+  it("W1: the world's OWN measure is what the legs are billed at — and it CHAINS", () => {
+    // A street world where every leg costs three times its chord (the detour
+    // through the hub, in miniature). Both legs must carry it, and the second
+    // must still start where the first ended — pricing the detour by street
+    // and the chain by chord would be a new way to lose the same money.
+    const detour = (a: { x: number; y: number }, b: { x: number; y: number }) => 3 * dist(a, b);
+    const r = world({ places: { box: at(4) }, items: { apple1: at(10) }, journeyM: detour });
+    const plan = compileGoal({ kind: "putIn", item: { id: "apple1" }, container: P("box") }, "bear", r)!;
+    expect(plan.cost.journeyS).toBeCloseTo((3 * 10 + 3 * 6) / WALK_MPS);
+    // The hands are untouched — W1 moves metres, never dwells.
+    expect(plan.cost.handsS).toBeCloseTo(2 * BOX_S);
+    // …and it is genuinely the STEP LIST being re-billed, not the goal.
+    expect(costTotalS(pricePlan(plan.steps, "bear", r))).toBeCloseTo(costTotalS(plan.cost));
+  });
+
+  it("🚨 W1: THE SELECTION MOVES — a 400 m 'bargain' stops beating a 90 m walk", () => {
+    // Two stalls. `near` is 68 m as the crow flies but sits on the far side of
+    // the ring, so the body must walk 400 m to it; `far` is 90 m of honest
+    // street. Priced by chord the near stall wins by a mile; priced the way
+    // the body will actually walk, it loses — which is the whole point of the
+    // fix, and the reason selections were expected to move.
+    const NEAR = at(68);
+    const FAR = at(90);
+    const street = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      dist(a, b) === 68 ? 400 : dist(a, b);
+    const buy = (place: string) =>
+      ({ kind: "takeUnits", from: P(place), category: "food", units: 5 }) as const;
+
+    const chordWorld = world({ places: { "store:near": NEAR, "store:far": FAR } });
+    const nearByChord = compileGoal(buy("store:near"), "bear", chordWorld)!;
+    const farByChord = compileGoal(buy("store:far"), "bear", chordWorld)!;
+    expect(costTotalS(nearByChord.cost)).toBeLessThan(costTotalS(farByChord.cost));
+
+    const streetWorld = world({ places: { "store:near": NEAR, "store:far": FAR }, journeyM: street });
+    const nearByStreet = compileGoal(buy("store:near"), "bear", streetWorld)!;
+    const farByStreet = compileGoal(buy("store:far"), "bear", streetWorld)!;
+    expect(costTotalS(nearByStreet.cost)).toBeGreaterThan(costTotalS(farByStreet.cost));
+    // …and the number it now pays is the walk it will really take.
+    expect(nearByStreet.cost.journeyS).toBeCloseTo(400 / WALK_MPS);
   });
 });
 

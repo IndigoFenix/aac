@@ -17,10 +17,12 @@
 import type { IncomingMessage } from "http";
 import { WebSocketServer, type WebSocket as WSWebSocket } from "ws";
 
-import { type User, type PermittedWebsite } from "@shared/schema";
+import { type User, type PermittedWebsite, type HomeAction } from "@shared/schema";
 import { isUrlPermitted } from "@shared/permitted-websites";
+import { enabledHomeActions, findHomeAction } from "@shared/home-actions";
+import { executeHomeAction } from "./home-action-service";
 import { resolveBoardKey } from "@shared/board-keys";
-import { buttonActionFromOpen, renderableBoardCover } from "./board-launch";
+import { buttonActionFromOpen, renderableBoardCover, renderableEmojiIcon } from "./board-launch";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { boardRepository } from "../../repositories/boardRepository";
 import { dualAgentService } from "./dual-agent-service";
@@ -172,6 +174,7 @@ import {
   initBudget,
   applyBudgetCharge,
   bindingEnergy,
+  mergeBudgetState,
   type BudgetState,
   type BudgetWindow,
 } from "@shared/aac/budget-meter";
@@ -643,6 +646,9 @@ function buildBoardFromButtons(
     narrowValue?: string;
     open?: BoardButtonOpen;
   }>,
+  /** The session's firable home actions — an `open.home` button embeds the
+   *  slot's command + label in its action, so the lookup has to reach here. */
+  homeActions: HomeAction[] = [],
 ): unknown {
   const pageId = `page-${Date.now()}`;
   const cols = 4;
@@ -666,7 +672,7 @@ function buildBoardFromButtons(
         ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
         row: Math.floor(i / cols),
         col: i % cols,
-        action: buttonActionFromOpen(b.open, b.sentence ?? b.speech ?? b.label),
+        action: buttonActionFromOpen(b.open, b.sentence ?? b.speech ?? b.label, homeActions),
         style: {},
         iconRef: b.iconRef || "fas fa-comment",
         symbolPath: b.symbolPath,
@@ -748,12 +754,25 @@ function describeCallOutcome(outcome: string): string {
   }
 }
 
+/**
+ * Coordinators that lost their client socket but are kept alive through the
+ * adoption grace window, keyed by sessionId. A reconnect that resumes the same
+ * session ADOPTS the detached coordinator — new socket, same agents — instead
+ * of paying a full re-initialize (prompt rebuild + three Live handshakes +
+ * ~10s of dead air for the student). Reconnect storms (hospital WiFi resets
+ * every 2–3 min) made the re-init path a dominant cost and UX drag.
+ * In-memory, same-process only — exactly the scope of the session cache.
+ */
+const detachedCoordinators = new Map<string, AgentCoordinator>();
+
 export class AgentCoordinator {
   // -------------------------------------------------------------------------
   // Connection lifecycle
   // -------------------------------------------------------------------------
   private state: CoordinatorState = "initializing";
-  private readonly ws: WSWebSocket;
+  /** The client socket. NOT readonly: adoptSocket rebinds a detached
+   *  coordinator to a reconnect's fresh socket in place. */
+  private ws: WSWebSocket;
   private readonly authedUser: User;
 
   // Session identity
@@ -1042,6 +1061,41 @@ export class AgentCoordinator {
    *  is deferred to the next idle boundary (onSpeakerSpeechEnd) so it never cuts
    *  a sentence, then lands the moment it's not busy. */
   private economySwitchPendingIdle = false;
+  /** A backend switch request that arrived while it couldn't be applied
+   *  (coordinator still initializing, or another switch in flight). Queued and
+   *  drained at ready / switch-completion instead of silently dropped — a
+   *  fresh Observer often assesses the room and calls set_observation_mode
+   *  within seconds of SESSION_START, and those early requests used to vanish
+   *  in the not-ready guard, leaving the session on live for its whole life. */
+  private pendingObserverModeSwitch: { mode: "live" | "economy"; reason?: string } | null = null;
+  /** How long after cleanup (WS drop / error) to wait before running the final
+   *  Monitor pass + session summary. A reconnect within this window cancels
+   *  the deferred finalization (see SessionCache.pendingFinalization) — under
+   *  a reconnect storm, finalizing on every drop ran a full Monitor drain +
+   *  summary per reconnect. 0 restores immediate finalization. */
+  private static readonly FINALIZATION_GRACE_MS = (() => {
+    const v = Number(process.env.AAC_FINALIZATION_GRACE_MS);
+    return Number.isFinite(v) && v >= 0 ? v : 120_000;
+  })();
+  /** Socket adoption: on WS loss a ready session DETACHES (agents kept warm,
+   *  client-bound streams dropped) for the grace window instead of tearing
+   *  down; a reconnect that resumes the same session adopts this coordinator
+   *  with the new socket and skips the full re-initialize. Disable with
+   *  AAC_SOCKET_ADOPTION="false"/"0"/"off" to restore teardown-per-drop. */
+  private static readonly SOCKET_ADOPTION_ENABLED = (() => {
+    const v = process.env.AAC_SOCKET_ADOPTION?.toLowerCase();
+    return !(v === "false" || v === "0" || v === "off");
+  })();
+  /** True while this coordinator has no client socket but is adoptable. */
+  private detached = false;
+  /** Tears the session down for real if no reconnect adopts it in time. */
+  private detachExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Set when the detach grace expired — cleanup() then finalizes immediately
+   *  instead of stacking the finalization grace on top. */
+  private detachExpired = false;
+  /** The clientConfig sent with `initialized`, kept so an adopting reconnect
+   *  can replay the identical handshake without rebuilding it. */
+  private lastClientConfig: ClientConfig | null = null;
   /** Unsubscribe from the ledger charge hook (every session charge → budget). */
   private budgetChargeUnsub: (() => void) | null = null;
   /** Last binding budget % pushed to the client's energy bar; -1 = never sent.
@@ -1500,11 +1554,14 @@ export class AgentCoordinator {
    * against existing ones by glyph/sentence overlap, not just label.
    */
   private currentBoardButtons: MergeButton[] = [];
-  /** Permitted-website allowlist + launchable app ids, mirrored from the
-   *  prompt inputs so `resolveButtonOpen` can re-gate BoardManager-authored
-   *  launch buttons server-side before they reach the client. */
+  /** Permitted-website allowlist + launchable app ids + firable home actions,
+   *  mirrored from the prompt inputs so `resolveButtonOpen` can re-gate
+   *  BoardManager-authored launch buttons server-side before they reach the
+   *  client. The home list carries whole actions (not just ids) because a
+   *  gated `open.home` button also needs the action's icon and command. */
   private permittedWebsites: PermittedWebsite[] = [];
   private launchableAppIds = new Set<string>();
+  private launchableHomeActions: HomeAction[] = [];
   /** Max buttons on the main board. Mirrors maxBoardItems on the
    *  BoardManager tool config; kept here so add_board_button merge has
    *  a single source of truth. */
@@ -1596,13 +1653,7 @@ export class AgentCoordinator {
     this.authedUser = authedUser;
     this.userId = authedUser.id;
 
-    ws.on("message", (raw) => this.handleRawMessage(raw));
-    ws.on("close", (code, reason) => this.cleanup(`ws closed code=${code} reason=${reason?.toString() || ""}`));
-    ws.on("error", (err) => {
-      console.error("[AgentCoordinator] WS error:", err);
-      this.cleanup("ws error");
-    });
-    ws.on("pong", () => { this.pongReceived = true; });
+    this.wireSocket(ws);
     this.startPingTimer();
     this.startIdleWatchdog();
 
@@ -1631,10 +1682,119 @@ export class AgentCoordinator {
   // Public lifecycle
   // -------------------------------------------------------------------------
 
+  /** Attach this coordinator's handlers to a client socket. Used by the
+   *  constructor and by adoptSocket (rebinding to a reconnect's socket). */
+  private wireSocket(ws: WSWebSocket): void {
+    ws.on("message", (raw) => this.handleRawMessage(raw));
+    ws.on("close", (code, reason) => this.handleSocketLoss(`ws closed code=${code} reason=${reason?.toString() || ""}`));
+    ws.on("error", (err) => {
+      console.error("[AgentCoordinator] WS error:", err);
+      this.handleSocketLoss("ws error");
+    });
+    ws.on("pong", () => { this.pongReceived = true; });
+  }
+
+  /**
+   * The client socket died. For a ready session, DETACH instead of tearing
+   * down: drop everything socket-bound (STT streams, pending client TTS,
+   * ping timer), keep the Live agents and session warm, and give a reconnect
+   * the grace window to adopt this coordinator in place. Idle agents with no
+   * client input generate no turns, so the warm window costs nothing.
+   * Falls back to full cleanup when the session isn't adoptable.
+   */
+  private handleSocketLoss(reason: string): void {
+    if (this.state === "closed" || this.detached) return;
+    const graceMs = AgentCoordinator.FINALIZATION_GRACE_MS;
+    const adoptable = AgentCoordinator.SOCKET_ADOPTION_ENABLED && graceMs > 0
+      && this.state === "ready" && !!this.sessionId && !this.superseded;
+    if (!adoptable) {
+      this.cleanup(reason);
+      return;
+    }
+    this.detached = true;
+    this.stopPingTimer();
+    // Client-bound state dies with the socket; the agents stay up.
+    this.abortSttStreams();
+    if (this.studentTtsAbortController) {
+      this.studentTtsAbortController.abort();
+      this.studentTtsAbortController = null;
+    }
+    this.flushPendingClientTts();
+    this.clearAllProcessing();
+    this.flushBudget();
+    detachedCoordinators.set(this.sessionId!, this);
+    this.detachExpiryTimer = setTimeout(() => {
+      this.detachExpiryTimer = null;
+      this.detachExpired = true;
+      runInSessionContext(this.sessionId!, this.debugMode, () =>
+        this.cleanup(`socket-loss grace expired without reconnect (${reason})`));
+    }, graceMs);
+    // Persist the close reason — close codes were previously console-only,
+    // which made reconnect storms undiagnosable from the DB.
+    runInSessionContext(this.sessionId!, this.debugMode, () => {
+      flowNote("COORDINATOR", `Socket lost (${reason}) — detached for up to ${Math.round(graceMs / 1000)}s; a reconnect adopts this session with agents kept warm.`);
+    });
+  }
+
+  /**
+   * Rebind this detached coordinator to a reconnect's socket: the client gets
+   * its session back with the agents still connected — no prompt rebuild, no
+   * Live handshakes, no dead air. Returns false if adoption isn't possible
+   * (caller then falls back to the full re-initialize path). The handshake
+   * resends `initialized` with the ORIGINAL clientConfig plus the app
+   * snapshot; the board is deliberately NOT re-pushed — server board state
+   * didn't change, and a set_board could move buttons under an aiming student.
+   */
+  adoptSocket(ws: WSWebSocket, newUser: User, msg: Extract<ClientMessage, { type: "initialize" }>): boolean {
+    if (!this.detached || this.superseded || this.state !== "ready") return false;
+    if (!this.lastClientConfig) return false;
+    // Same authenticated user and same student only — anything else deserves
+    // the full permission-checked initialize path.
+    if (newUser.id !== this.authedUser.id) return false;
+    if (msg.studentId && this.studentId && msg.studentId !== this.studentId) return false;
+    if (this.detachExpiryTimer) {
+      clearTimeout(this.detachExpiryTimer);
+      this.detachExpiryTimer = null;
+    }
+    detachedCoordinators.delete(this.sessionId!);
+    this.detached = false;
+    const oldWs = this.ws;
+    try {
+      try { if (oldWs.readyState === oldWs.OPEN) oldWs.close(); } catch { /* old socket is normally dead already */ }
+      this.ws = ws;
+      this.wireSocket(ws);
+      this.startPingTimer();
+      this.noteEngagementActivity();
+      runInSessionContext(this.sessionId!, this.debugMode, () => {
+        flowNote("COORDINATOR", "Reconnect adopted the detached session — same agents, new socket; full re-initialize skipped.");
+      });
+      this.send({ type: "initialized", sessionId: this.sessionId, clientConfig: this.lastClientConfig } as any);
+      this.lastSentBudgetPercent = -1;
+      this.maybePushBudget(Date.now());
+      this.sendAppsSnapshot();
+      return true;
+    } catch (err) {
+      // Point this coordinator back at its dead socket so the caller's
+      // fallback cleanup can never close the LIVE socket it still owns.
+      this.ws = oldWs;
+      console.error("[AgentCoordinator] adoptSocket failed mid-rebind:", err);
+      return false;
+    }
+  }
+
   cleanup(reason?: string): void {
     if (this.state === "closed") return;
     console.log(`[AgentCoordinator] cleanup: ${reason || "(no reason)"}`);
     this.state = "closing";
+
+    // Leave the adoption registry — this session is no longer resumable.
+    if (this.detachExpiryTimer) {
+      clearTimeout(this.detachExpiryTimer);
+      this.detachExpiryTimer = null;
+    }
+    if (this.sessionId && detachedCoordinators.get(this.sessionId) === this) {
+      detachedCoordinators.delete(this.sessionId);
+    }
 
     // Clear timers
     this.stopPingTimer();
@@ -1674,15 +1834,44 @@ export class AgentCoordinator {
     // Keep the budget charge hook alive until the final pass finishes so the
     // session-summary HTTP charge is captured too, then unsubscribe. The
     // late charge persists via recordBudgetDrain → maybePersistBudget (the
-    // debounce is bypassed once closing).
-    this.runFinalMonitorPass()
-      .catch(err => {
-        console.error("[AgentCoordinator] Final monitor pass failed:", err);
-      })
-      .finally(() => {
-        this.budgetChargeUnsub?.();
-        this.budgetChargeUnsub = null;
-      });
+    // debounce is bypassed once closing). Capture the unsub NOW rather than
+    // reading the field when the pass settles: a reconnect-resume can re-run
+    // start() and re-subscribe before then, and unsubscribing via the field
+    // would kill the successor's live subscription. If a successor did
+    // re-subscribe, onLedgerCharge already replaced this callback in its map,
+    // so this captured unsub is a guarded no-op.
+    const unsubBudgetOnSettle = this.budgetChargeUnsub;
+    this.budgetChargeUnsub = null;
+    const runFinalization = () => {
+      this.runFinalMonitorPass()
+        .catch(err => {
+          console.error("[AgentCoordinator] Final monitor pass failed:", err);
+        })
+        .finally(() => {
+          unsubBudgetOnSettle?.();
+        });
+    };
+    // Defer finalization by a grace window so a quick reconnect rescues the
+    // session instead of paying a full Monitor drain + summary per drop (a
+    // reconnect storm used to run one per reconnect). The timer lives on the
+    // shared SessionCache so the resuming coordinator can cancel it
+    // (handleInitialize); if nobody reconnects, it fires wrapped in the
+    // session log context (timer callbacks otherwise lose it).
+    const graceMs = AgentCoordinator.FINALIZATION_GRACE_MS;
+    const cache = this.sessionId ? dualAgentService.getSessionCache(this.sessionId) : undefined;
+    // A detach that expired already waited out its grace — finalize now
+    // rather than stacking a second window on top.
+    if (cache && graceMs > 0 && !this.detachExpired) {
+      if (cache.pendingFinalization) clearTimeout(cache.pendingFinalization);
+      const sessionId = this.sessionId!;
+      cache.pendingFinalization = setTimeout(() => {
+        cache.pendingFinalization = undefined;
+        runInSessionContext(sessionId, this.debugMode, () => runFinalization());
+      }, graceMs);
+      flowNote("COORDINATOR", `Session finalization deferred ${Math.round(graceMs / 1000)}s — a reconnect within the window cancels it.`);
+    } else {
+      runFinalization();
+    }
 
     // Leave any group conversation room so peers stop delivering to a dead
     // session (and get a "left" notice).
@@ -2378,6 +2567,15 @@ export class AgentCoordinator {
         // state the agents are prompted with — so the client asks.
         void this.handleStudentBoardOpen(msg.boardKey);
         return;
+      case "request_home_action":
+        // Student pressed a home-action button the Board Manager authored
+        // (`open.home`). The device does the actuating for today's `spoken`
+        // type; this message is the server's ONE notification per press —
+        // it gates the id, audits the press, and shows the agents a [HOME]
+        // line so they can follow up. `confirmed` carries the client's
+        // confirm step for slots that require one.
+        void this.handleStudentHomeAction(msg.actionId, msg.confirmed);
+        return;
       case "social_peer_reconfigure":
         // DEBUG-only: restart the active social peer with custom parameters
         // from the client debug dialog. Self-guards on debugMode + active session.
@@ -2475,6 +2673,44 @@ export class AgentCoordinator {
       return;
     }
 
+    // Socket adoption fast path: if the client is reconnecting into a session
+    // whose coordinator is still warm (detached within the grace window), hand
+    // that coordinator this socket and stand down — the student gets the
+    // session back with the agents still connected, no DB round-trips, no
+    // prompt rebuild, no dead air. adoptSocket validates user + student; any
+    // refusal or failure falls through to the normal full init below, so the
+    // safe path is never lost.
+    if (msg.sessionId && AgentCoordinator.SOCKET_ADOPTION_ENABLED) {
+      const warm = detachedCoordinators.get(msg.sessionId);
+      if (warm && warm !== this) {
+        // Strip THIS coordinator's socket handlers first so the adopter's
+        // wiring is the only one left on the socket.
+        this.stopPingTimer();
+        this.stopIdleWatchdog();
+        for (const ev of ["message", "close", "error", "pong"] as const) this.ws.removeAllListeners(ev);
+        let adopted = false;
+        try {
+          adopted = warm.adoptSocket(this.ws, this.authedUser, msg);
+        } catch (err) {
+          console.error("[AgentCoordinator] socket adoption failed — falling back to full re-init:", err);
+        }
+        if (adopted) {
+          // The warm coordinator owns the socket now; this instance stands
+          // down without ever having touched the session.
+          this.state = "closed";
+          return;
+        }
+        // Adoption refused/failed: reclaim the socket and re-init in full.
+        // Strip any partial wiring a failed rebind may have left, then re-add
+        // ours. The stale warm coordinator must not linger with agents up.
+        for (const ev of ["message", "close", "error", "pong"] as const) this.ws.removeAllListeners(ev);
+        this.wireSocket(this.ws);
+        this.startPingTimer();
+        this.startIdleWatchdog();
+        try { warm.cleanup("displaced by a full re-initialize (adoption not possible)"); } catch { /* best-effort */ }
+      }
+    }
+
     // 1. Load / create session via the shared service. This populates the
     //    in-memory SessionCache the dual-agent-service already manages and
     //    gives us the per-agent prompts already built (the service can
@@ -2519,6 +2755,18 @@ export class AgentCoordinator {
     this.sessionWasResumed = !!msg.sessionId && state.sessionId === msg.sessionId;
     if (this.sessionWasResumed) {
       console.log(`[AgentCoordinator] Resumed session ${this.sessionId} (reconnect) — startup greeting suppressed`);
+    }
+    // Reconnected within the finalization grace window: cancel the deferred
+    // final Monitor pass the dropped connection's cleanup scheduled — the
+    // session is live again, and a [SESSION_CLOSED] drain + summary mid-session
+    // would be both wrong and wasted spend.
+    {
+      const cacheEarly = dualAgentService.getSessionCache(this.sessionId!);
+      if (cacheEarly?.pendingFinalization) {
+        clearTimeout(cacheEarly.pendingFinalization);
+        cacheEarly.pendingFinalization = undefined;
+        flowNote("COORDINATOR", "Reconnected within the finalization grace window — deferred final Monitor pass canceled.");
+      }
     }
     // Register so a clinician action (e.g. AAC reload) can reach this session,
     // and so a student never runs TWO billing sessions at once: if another live
@@ -2693,9 +2941,19 @@ export class AgentCoordinator {
     // budgetTier + observerPolicy were resolved earlier (before prompt build).
     this.budgetWindows = windowsForTier(this.budgetTier);
     {
-      const persistedBudget = (studentRow as any)?.budgetMeters as BudgetState | undefined;
-      this.budgetState = persistedBudget && Object.keys(persistedBudget).length
-        ? persistedBudget
+      // Fresh DB read — NOT the session-cache's student snapshot above. On a
+      // reconnect-resume that snapshot predates this session's own spend, so
+      // seeding from it reset the meter to ~full on every re-init and the next
+      // debounced save clobbered the accumulated drain (the meter lost ~86% of
+      // real spend under reconnect storms and the throttle ladder never
+      // engaged). Merging with the in-memory state also preserves the ≤30s
+      // debounce tail a dropped connection hadn't persisted yet.
+      const persistedBudget = this.studentId
+        ? await studentRepository.getBudgetMeters(this.studentId)
+        : null;
+      const merged = mergeBudgetState(persistedBudget, this.budgetState, this.budgetWindows, Date.now());
+      this.budgetState = Object.keys(merged).length
+        ? merged
         : initBudget(this.budgetWindows, Date.now());
     }
     const startupBudgetPct = this.budgetThrottleEnabled
@@ -2747,12 +3005,14 @@ export class AgentCoordinator {
         ...(promptInputs.boardManager.enabledApps ?? []).map(a => ({ id: a.id, name: a.name })),
         ...(promptInputs.boardManager.availableCustomApps ?? []).map(a => ({ id: a.id, name: a.name })),
       ],
+      homeActions: (promptInputs.boardManager.homeActions ?? []).map(a => ({ id: a.id, label: a.label })),
     };
     this.boardManagerToolConfig = bmToolConfig;
     // Mirror the launch allowlists so resolveButtonOpen can re-gate
     // BoardManager-authored open.* buttons server-side.
     this.permittedWebsites = promptInputs.boardManager.permittedWebsites ?? [];
     this.launchableAppIds = new Set((bmToolConfig.enabledApps ?? []).map(a => a.id));
+    this.launchableHomeActions = enabledHomeActions(this.sessionHomeActions());
 
     // 6. Construct agent handles.
     // Startup backend = the economy policy (default backend + allowLive pin) with
@@ -2762,8 +3022,18 @@ export class AgentCoordinator {
     // pick up short-memory automatically via lowBandActive().
     {
       const backend = this.initialObserverBackend(startupBudgetPct);
-      this.observerMode = backend.mode;
+      // A resumed session restores the Observer's last deliberate backend
+      // choice (state.observerBackendMode, set on every successful runtime
+      // switch) rather than the policy default — a reconnect used to reset an
+      // economy Observer to live on every re-init. The forced floor (low
+      // budget / live-forbidden policy) still wins.
+      const persisted = state.observerBackendMode;
+      const restored = !backend.forced && (persisted === "economy" || persisted === "live");
+      this.observerMode = restored ? persisted! : backend.mode;
       this.observerForcedEconomy = backend.forced;
+      if (restored && persisted !== backend.mode) {
+        flowNote("COORDINATOR", `Observer backend restored from session state: ${persisted} (policy default was ${backend.mode}).`);
+      }
     }
     this.observer = this.createObserverAgent();
     this.speaker = startupBoardOnly ? null : this.createSpeakerAgent();
@@ -2948,15 +3218,14 @@ export class AgentCoordinator {
 
     // 8. Announce ready to client.
     this.state = "ready";
-    this.send({
-      type: "initialized",
-      sessionId: this.sessionId,
-      // Ship the tunable client-side constants (activity monitor cadence,
-      // sleep thresholds, gesture window) from the server so they can
-      // change without a client rebuild. Full-attention mode (per-student)
-      // governs awake-while-streaming cost: OFF → apply the resting input
-      // filter while awake (awakeDataSaver), ON → continuous streaming.
-      clientConfig: buildDefaultClientConfig({
+    // Ship the tunable client-side constants (activity monitor cadence,
+    // sleep thresholds, gesture window) from the server so they can
+    // change without a client rebuild. Full-attention mode (per-student)
+    // governs awake-while-streaming cost: OFF → apply the resting input
+    // filter while awake (awakeDataSaver), ON → continuous streaming.
+    // Kept on the instance so a reconnect that ADOPTS this coordinator can
+    // replay the identical handshake (adoptSocket).
+    this.lastClientConfig = buildDefaultClientConfig({
         awakeDataSaver: this.economize,
         // When active, the client transcribes speech on-device and sends
         // `speech_text` instead of streaming raw audio (Phase 1 cost saving).
@@ -2975,7 +3244,11 @@ export class AgentCoordinator {
         // client's own sleep state machine and shows the manual wake/sleep
         // control. Omitted from the payload entirely when off.
         slpMode: this.slpMode,
-      }),
+    });
+    this.send({
+      type: "initialized",
+      sessionId: this.sessionId,
+      clientConfig: this.lastClientConfig,
     });
 
     // Seed the client's energy bar with the loaded budget level right away, and
@@ -2983,6 +3256,12 @@ export class AgentCoordinator {
     // in the low band with a Speaker.
     this.maybePushBudget(Date.now());
     this.applyBudgetFloors(Date.now());
+
+    // Apply any Observer backend request that arrived while we were still
+    // initializing — the fresh Observer often assesses the room and calls
+    // set_observation_mode within seconds of connecting, before state flips
+    // to "ready"; those requests are queued rather than dropped.
+    this.drainPendingObserverModeSwitch();
 
     // Deliver the apps lists to the client. The client populates its Apps
     // board ONLY from a session_snapshot (useLiveSession's session_snapshot
@@ -3241,6 +3520,14 @@ export class AgentCoordinator {
           description: a.description,
         })),
         permittedWebsites: state.permittedWebsites,
+        // Smart-home slots the BoardManager may author `open.home` buttons for.
+        // ENABLED only — a disabled slot must be invisible to the AI, not just
+        // ungated on press.
+        homeActions: enabledHomeActions(state.homeActions ?? []).map(a => ({
+          id: a.id,
+          label: a.label,
+          description: a.description,
+        })),
         autoSymbolsEnabled: !!(student?.aacSettings?.generateSymbols),
         singleGlyphButtons: !!student?.aacSettings?.singleGlyphButtons,
         glyphInputTranslation: !!student?.aacSettings?.glyphInputTranslation,
@@ -6416,8 +6703,21 @@ export class AgentCoordinator {
   private async switchObserverBackend(mode: "live" | "economy", reason?: string): Promise<void> {
     if (!this.economyObserverEnabled) return;
     if (this.observerMode === mode) return;
-    if (this.asleep || this.state !== "ready" || !this.observerPrompt) return;
-    if (this.observerSwitchInFlight) return;
+    // Asleep tears both backends down; the wake path re-derives the mode, so a
+    // request during sleep is genuinely moot (not deferred).
+    if (this.asleep) return;
+    if (this.state !== "ready" || !this.observerPrompt || this.observerSwitchInFlight) {
+      // Can't apply yet — queue it instead of dropping. Drained when the
+      // coordinator reaches ready (end of start()) or the in-flight switch
+      // settles. Last request wins.
+      this.pendingObserverModeSwitch = { mode, reason };
+      flowNote(
+        "COORDINATOR",
+        `Observer backend switch → ${mode} deferred (${this.observerSwitchInFlight ? "switch in flight" : "still initializing"}) — queued to apply when ready.`,
+      );
+      return;
+    }
+    this.pendingObserverModeSwitch = null;
     this.observerSwitchInFlight = true;
     const prev = this.observerMode;
     flowNote("COORDINATOR", `Observer backend switch ${prev} → ${mode}${reason ? ` (${reason})` : ""}`);
@@ -6448,6 +6748,10 @@ export class AgentCoordinator {
       // Seed the freshly-built backend with the current budget/energy level so
       // it doesn't lose the throttle context across the swap.
       this.primeFreshObserver();
+      // Remember the choice in session state so a reconnect-resumed
+      // coordinator starts on this backend instead of the policy default.
+      const cache = this.sessionId ? dualAgentService.getSessionCache(this.sessionId) : undefined;
+      if (cache?.state) cache.state.observerBackendMode = mode;
       runInSessionContext(this.sessionId!, this.debugMode, () => {
         logLiveSession("OBSERVER_MODE_SWITCH", `${prev} → ${mode}${reason ? ` (${reason})` : ""}`);
       });
@@ -6456,7 +6760,18 @@ export class AgentCoordinator {
       // Leave whatever we have; next event will retry if needed.
     } finally {
       this.observerSwitchInFlight = false;
+      this.drainPendingObserverModeSwitch();
     }
+  }
+
+  /** Apply a queued backend switch (one that arrived pre-ready or mid-switch),
+   *  if it still differs from the current mode. Called at ready and when an
+   *  in-flight switch settles. */
+  private drainPendingObserverModeSwitch(): void {
+    const pending = this.pendingObserverModeSwitch;
+    this.pendingObserverModeSwitch = null;
+    if (!pending || pending.mode === this.observerMode) return;
+    void this.switchObserverBackend(pending.mode, pending.reason);
   }
 
   /** Handle the Observer's own set_observation_mode request. Refuses going back
@@ -7497,6 +7812,61 @@ export class AgentCoordinator {
     // press itself is silent and produces no button_pressed event.
     this.recordEvent(event);
     await this.applyBoardLoadRequested(event);
+  }
+
+  /**
+   * Student pressed a home-action button (`open.home`) the Board Manager
+   * authored. A home action ACTUATES in place — nothing navigates and the
+   * board stays put — so unlike the board case there is no load path to run.
+   *
+   * For the `spoken` type the device does the actuating itself (it utters
+   * the command through the student-voice press pipeline); the cloud types
+   * actuate here, through the provider seam. The server's job on press is:
+   * gate the id against the student's ENABLED slots, enforce confirmation,
+   * dispatch through the provider seam, and record the press so the agents see
+   * a [HOME] line. The client sends exactly ONE notification per press — the
+   * spoken command is NOT additionally reported as student speech.
+   *
+   * `confirmed` is the client's confirm step. It is DEFENCE IN DEPTH for the
+   * cloud class only: a `spoken` slot actuates client-side and so cannot be
+   * blocked from here — refusing it still costs nothing and keeps one rule.
+   */
+  private async handleStudentHomeAction(actionId: string, confirmed?: boolean): Promise<void> {
+    if (this.state !== "ready" || !this.sessionId) return;
+    if (typeof actionId !== "string" || !actionId.trim()) return;
+    if (this.asleep) await this.wakeFromSleep();
+    if (this.sessionProfile === "resting") await this.transitionToProfile("awake");
+    this.noteEngagementActivity();
+    // Authoritative gate: the student's own slot list, ENABLED entries only.
+    // Settings may have changed since the button was authored.
+    const action = findHomeAction(this.sessionHomeActions(), actionId);
+    if (!action) {
+      flowNote("COORDINATOR", `Ignored request_home_action "${actionId}" — not an enabled home action.`);
+      return;
+    }
+    if (action.requiresConfirmation && confirmed !== true) {
+      // Record nothing, execute nothing: an unconfirmed press of a flagged
+      // slot never happened as far as the agents are concerned.
+      flowNote("COORDINATOR", `Refused home action "${action.id}" — requires confirmation and the press was not confirmed.`);
+      return;
+    }
+    const outcome = await executeHomeAction(action, { studentId: this.studentId ?? "" });
+    if (outcome.kind === "failed") {
+      // Nothing actuated — don't tell the agents it did.
+      flowNote("COORDINATOR", `Home action "${action.id}" failed: ${outcome.reason}.`);
+      return;
+    }
+    // Both success kinds — the client spoke it (`client_spoken`) or a cloud
+    // trigger fired (`triggered`) — record identically: what the agents need to
+    // know is that the named action happened, not which seam carried it.
+    this.recordEvent({
+      type: "home_action_requested",
+      source: "client",
+      timestamp: Date.now(),
+      actionId: action.id,
+      label: action.label,
+    });
+    flowNote("COORDINATOR", `Home action "${action.id}" fired (${outcome.kind}).`);
   }
 
   private async routeAppOpen(event: AppOpenRequestedEvent): Promise<void> {
@@ -9079,11 +9449,11 @@ export class AgentCoordinator {
   }
 
   /** Re-gate a BoardManager-authored `open` launch action against the
-   *  permitted-website allowlist / enabled-app set / available boards. Returns
-   *  the sanitized action (website takes precedence, then app, then board), or
-   *  undefined if the target isn't permitted — in which case the button
-   *  degrades to a normal speak button rather than launching an arbitrary
-   *  URL/app/board. */
+   *  permitted-website allowlist / enabled-app set / available boards / firable
+   *  home actions. Returns the sanitized action (website takes precedence, then
+   *  app, then board, then home), or undefined if the target isn't permitted —
+   *  in which case the button degrades to a normal speak button rather than
+   *  launching an arbitrary URL/app/board or firing an unknown home action. */
   private resolveButtonOpen(open: BoardButtonOpen | undefined): BoardButtonOpen | undefined {
     if (!open) return undefined;
     if (open.website) {
@@ -9106,6 +9476,13 @@ export class AgentCoordinator {
       flowNote("COORDINATOR", `Dropped open.board "${open.board}" — ${resolution.kind === "ambiguous" ? `ambiguous (${resolution.candidates.join(", ")})` : "not an available board"}.`);
       return undefined;
     }
+    if (open.home) {
+      // findHomeAction searches ENABLED slots only, so a disabled slot the AI
+      // remembers from an earlier turn drops here just like an unknown id.
+      if (findHomeAction(this.launchableHomeActions, open.home)) return { home: open.home };
+      flowNote("COORDINATOR", `Dropped open.home "${open.home}" — not an enabled home action.`);
+      return undefined;
+    }
     return undefined;
   }
 
@@ -9116,29 +9493,59 @@ export class AgentCoordinator {
     return state?.availableBoards ?? [];
   }
 
+  /** The student's normalized smart-home slots (all of them, enabled or not).
+   *  Empty before the session cache exists. */
+  private sessionHomeActions(): HomeAction[] {
+    const state = this.sessionId ? dualAgentService.getSessionCache(this.sessionId)?.state : undefined;
+    return state?.homeActions ?? [];
+  }
+
   /**
-   * Give a board-launch button the target board's own cover art when the AI
-   * supplied no visual of its own — the board icon a clinician chose is a
-   * better "this opens THAT board" cue than anything invented, and without it
-   * the validator would drop the button as having nothing displayable.
+   * Give a launch button the target's own artwork when the AI supplied no
+   * visual of its own — the board cover / home-action emoji a clinician chose,
+   * or the app registry's icon — is a better "this opens THAT" cue than
+   * anything invented, and without it the validator would have nothing
+   * displayable to work with.
    *
-   * The AI's glyph always wins. A cover is only usable when it's an emoji or a
-   * real image URL: the default `"syntaacx_logo"` placeholder and legacy
+   * The AI's glyph always wins. A board cover is only usable when it's an emoji
+   * or a real image URL: the default `"syntaacx_logo"` placeholder and legacy
    * Widgit/SymbolStix paths would render as a broken image on the device.
+   * Custom games (DB-authored, launched by uuid) aren't in the registry and
+   * have no icon here — they fall through to whatever the AI supplied.
+   *
+   * Runs BEFORE validation, and AGAIN after it for any launch button the
+   * validator stripped — a bad glyph blocks the first pass (the AI's visual
+   * wins while it exists), so the refill is what actually dresses that button.
    * Mutates in place — `entry` is always a freshly-built object here.
    */
-  private fillBoardCoverVisual(
+  private fillLaunchButtonVisual(
     entry: { glyph?: string; glyphFallback?: string; symbolPath?: string; iconRef?: string; open?: BoardButtonOpen },
   ): void {
     const boardKey = entry.open?.board;
-    if (!boardKey) return;
+    const homeId = entry.open?.home;
+    const appId = entry.open?.app;
+    if (!boardKey && !homeId && !appId) return;
     if (entry.glyph || entry.glyphFallback || entry.symbolPath) return;
     const iconRef = entry.iconRef ?? "";
     if (iconRef.length > 0 && !iconRef.startsWith("fa")) return;   // already an emoji/text icon
-    const cover = renderableBoardCover(this.availableBoardsList().find(b => b.key === boardKey)?.coverImage);
-    if (!cover) return;
-    if (cover.iconRef) entry.iconRef = cover.iconRef;
-    if (cover.symbolPath) entry.symbolPath = cover.symbolPath;
+    // Same precedence as buttonActionFromOpen, so the icon depicts the target
+    // the press will actually reach. (`website` has no artwork of its own and
+    // simply falls through to the next target that does.)
+    if (appId) {
+      const icon = renderableEmojiIcon(getAppDefinition(appId)?.icon);
+      if (icon?.iconRef) entry.iconRef = icon.iconRef;
+      return;
+    }
+    if (boardKey) {
+      const cover = renderableBoardCover(this.availableBoardsList().find(b => b.key === boardKey)?.coverImage);
+      if (cover?.iconRef) entry.iconRef = cover.iconRef;
+      if (cover?.symbolPath) entry.symbolPath = cover.symbolPath;
+      return;
+    }
+    if (homeId) {
+      const icon = renderableEmojiIcon(findHomeAction(this.launchableHomeActions, homeId)?.icon);
+      if (icon?.iconRef) entry.iconRef = icon.iconRef;
+    }
   }
 
   private applyBoardRebuilt(event: BoardRebuiltEvent): void {
@@ -9224,10 +9631,10 @@ export class AgentCoordinator {
         colSpan: b.colSpan,
         open: this.resolveButtonOpen((b as any).open),
       };
-      // Board-launch buttons fall back to the target board's cover art. Runs
-      // BEFORE the validator so a visual-less board button is repaired rather
-      // than dropped.
-      this.fillBoardCoverVisual(entry);
+      // Launch buttons fall back to the target's own artwork. Runs BEFORE the
+      // validator so a visual-less board/home button is repaired rather than
+      // dropped.
+      this.fillLaunchButtonVisual(entry);
       if (b.buttonType === "wordfinder") {
         // Drop the wordfinder entry while already guessing — the entry
         // is a no-op in that state and the gate keeps it off-screen.
@@ -9248,6 +9655,9 @@ export class AgentCoordinator {
     if (errors.length > 0) {
       this.queueBoardMgrFeedback("rebuild_board", errors);
     }
+    // A launch button the validator stripped is now visual-less — dress it in
+    // the target's own icon so it renders as something the student can aim at.
+    for (const b of kept) this.fillLaunchButtonVisual(b);
     // When in guessing mode, tag every non-suggestion button as a
     // "guess" so the word-finder UI on the client renders it alongside
     // the system suggestion buttons. The AI's prompt asks it to prefix
@@ -9298,7 +9708,7 @@ export class AgentCoordinator {
     } else {
       this.send({
         type: "board",
-        data: buildBoardFromButtons(merged as any),
+        data: buildBoardFromButtons(merged as any, this.launchableHomeActions),
       });
       void this.applySymbolPipeline(merged as any);
     }
@@ -9459,26 +9869,23 @@ export class AgentCoordinator {
       addressee: (b as { addressee?: string }).addressee,
       open: this.resolveButtonOpen((b as { open?: BoardButtonOpen }).open),
     };
-    // Board-launch buttons fall back to the target board's cover art — applied
-    // before validation so a visual-less board button is repaired, not dropped.
-    this.fillBoardCoverVisual(incoming);
+    // Launch buttons fall back to the target's own artwork — applied before
+    // validation so a visual-less launch button is repaired, not dropped.
+    this.fillLaunchButtonVisual(incoming);
 
     if (!isSpecial) {
       // Run the same validator path as add_context_button — drop on
-      // structural errors and queue feedback.
-      const { buttons: kept, errors, violations } = validateBoardButtons([{
-        label: incoming.label,
-        glyph: incoming.glyph,
-        glyphFallback: incoming.glyphFallback,
-        imageKey: incoming.imageKey,
-        iconRef: incoming.iconRef,
-        symbolPath: incoming.symbolPath,
-      }]);
+      // structural errors and queue feedback. `incoming` goes in whole (not a
+      // field copy) so it carries its `open` target: the validator strips a
+      // launch button's bad visual in place rather than deleting the button.
+      const { buttons: kept, errors, violations } = validateBoardButtons([incoming]);
       this.recordBoardViolations(violations);
       if (errors.length > 0) {
         this.queueBoardMgrFeedback("add_board_button", errors);
       }
       if (kept.length === 0) return;
+      // Re-dress a stripped launch button in the target's own icon.
+      this.fillLaunchButtonVisual(incoming);
     }
 
     let newIdCounter = 0;
@@ -10083,7 +10490,7 @@ export class AgentCoordinator {
     if (!closing && now - this.lastBudgetSaveAt < AgentCoordinator.BUDGET_SAVE_MIN_INTERVAL_MS) return;
     this.lastBudgetSaveAt = now;
     this.budgetDirty = false;
-    void studentRepository.updateBudgetMeters(this.studentId, this.budgetState);
+    void studentRepository.updateBudgetMeters(this.studentId, this.budgetState, this.budgetWindows);
   }
 
   /** Force-persist the latest budget state (session close). Fire-and-forget;
@@ -10092,7 +10499,7 @@ export class AgentCoordinator {
     if (!this.budgetDirty || !this.studentId) return;
     this.budgetDirty = false;
     this.lastBudgetSaveAt = Date.now();
-    void studentRepository.updateBudgetMeters(this.studentId, this.budgetState);
+    void studentRepository.updateBudgetMeters(this.studentId, this.budgetState, this.budgetWindows);
   }
 
   /**

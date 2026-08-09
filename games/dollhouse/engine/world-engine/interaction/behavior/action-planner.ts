@@ -477,9 +477,14 @@ export function pricePlan(steps: readonly GoalStep[], self: CreatureId, r: World
   let at = r.positionOf(self);
   let journeyS = 0;
   let handsS = 0;
+  // ⚖️ W1 — PAY WHAT YOU PRICE. A leg's metres are whatever the body will
+  // really walk: street metres in a town (the resolver hands its road measure
+  // down through `p.journeyM`), the chord everywhere else. The default keeps
+  // an unwired world byte-identical.
+  const legM = p.journeyM ?? ((a: Vec2, b: Vec2) => Math.hypot(b.x - a.x, b.y - a.y));
   for (const step of steps) {
     if (step.kind === "moveTo") {
-      if (at) journeyS += journeyTimeS(Math.hypot(step.pos.x - at.x, step.pos.y - at.y), p.walkMps);
+      if (at) journeyS += journeyTimeS(legM(at, step.pos), p.walkMps);
       at = step.pos;
       continue;
     }

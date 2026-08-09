@@ -35,6 +35,7 @@ import {
   type WorldState,
 } from "./engine.js";
 import type { RenderIntent, ScreenPick, WorldView, WorldViewDeps } from "./world-view.js";
+import { bubbleAnchorDraws, exemptSpeakers, type BubbleViewpoint } from "./bubble-visibility.js";
 import { cornerOrbitDelta } from "./spirit/corner-orbit.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
 import { buildObjectModel, objectModelKey, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
@@ -3193,7 +3194,20 @@ export class World3DRenderer {
     rbMark("objects", rbNow() - _rb); _rb = rbNow();
     this.syncBuildings(state, fade, dt);
     rbMark("buildings", rbNow() - _rb); _rb = rbNow();
-    this.syncBubbles(state, glyphFor);
+    // A BUBBLE MAY ONLY BE READ WHERE ITS ANCHOR CAN BE SEEN (bubble-visibility.ts).
+    // The viewer's half of that gate, computed once for the frame: the reveal set
+    // this frame drew with, the space the camera's subject stands in (the SAME
+    // body the reveal keys on), and the bodies whose lines are never gated.
+    this.syncBubbles(state, glyphFor, {
+      subjectSpace: me ? buildingAt(state, me.x, me.y)?.id ?? null : null,
+      revealed: visible,
+      exempt: exemptSpeakers({
+        localId: this.localId,
+        drivenId: state.drivenId,
+        conversation: intent?.conversation ?? null,
+        bodyAt: (id) => state.avatars[id],
+      }),
+    });
     rbMark("bubbles", rbNow() - _rb); _rb = rbNow();
     this.updateCamera(state, dt, intent);
     this.updateFog();
@@ -4157,11 +4171,24 @@ export class World3DRenderer {
     }
   }
 
-  /** Draw every live world bubble (state.bubbles), keyed by its caller id and
-   *  floated over its anchor — an avatar (tracked each frame) or a fixed world
-   *  point (a character/object/caption). One path for networked utterances and
-   *  in-game speech alike. Bubbles live directly in the scene (auto-billboarded). */
-  private syncBubbles(state: WorldState, glyphFor?: (glyph: string) => CanvasImageSource[] | null): void {
+  /** Draw every live world bubble (state.bubbles) whose ANCHOR can be seen,
+   *  keyed by its caller id and floated over that anchor — an avatar (tracked
+   *  each frame) or a fixed world point (a character/object/caption). One path
+   *  for networked utterances and in-game speech alike. Bubbles live directly in
+   *  the scene (auto-billboarded).
+   *
+   *  THE GATE (`bubbleAnchorDraws`, bubble-visibility.ts): a bubble sprite is
+   *  `depthTest:false`, so an ungated one is READABLE THROUGH WALLS — a sealed
+   *  house across town used to speak over its own roof. A gated-out bubble is
+   *  dropped from the scene entirely rather than merely hidden: three raycasts
+   *  invisible objects too, and a pickable phantom voice would be worse than a
+   *  drawn one. It re-appears (repainted) the frame its anchor comes back into
+   *  view — bubbles are few and short-lived, so the churn is nothing. */
+  private syncBubbles(
+    state: WorldState,
+    glyphFor: ((glyph: string) => CanvasImageSource[] | null) | undefined,
+    view: BubbleViewpoint,
+  ): void {
     // Screen-up in world space, shared by every bubble this frame.
     const up = this._bubbleUp.set(0, 1, 0).applyQuaternion(this.camLocalFrame.quaternion);
     const live = new Set<string>();
@@ -4169,6 +4196,16 @@ export class World3DRenderer {
       const pos = b.anchor.kind === "avatar" ? state.avatars[b.anchor.id] : b.anchor;
       const alpha = pos ? bubbleAlpha(b.at, state.time, b.ttl) : 0;
       if (alpha <= 0 || !pos) continue;
+      const seen = bubbleAnchorDraws(
+        {
+          x: pos.x,
+          y: pos.y,
+          bodyId: b.anchor.kind === "avatar" ? b.anchor.id : null,
+          space: buildingAt(state, pos.x, pos.y)?.id ?? null,
+        },
+        view,
+      );
+      if (!seen) continue;
       live.add(key);
       let bubble = this.bubbles.get(key);
       if (!bubble) {

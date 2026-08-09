@@ -58,6 +58,13 @@ const CHEAT_HOST = {
   stockAudit: () => ({ apple: 7, cookie: 1 }),
   carryOf: (cid: string) => ({ who: cid, apple: 1 }),
   debugProbe: () => "cutaway=1 mode=dollhouse pointer=none",
+  // why-chains.md §4 — the degeneration instrument: the raw task chain behind
+  // "why are you doing that?", which no player can see and so lives here.
+  whyProbe: (cid: string) => [
+    { kind: "activity", clause: { subject: "i_me", verb: "get", object: "apple" }, who: cid },
+    { kind: "motive", clause: { subject: "i_me", verb: "hungry", key: "hungry" } },
+    { kind: "end" },
+  ],
 };
 
 function rig(opts: { cheats?: boolean; host?: typeof CHEAT_HOST | Record<string, never> } = {}) {
@@ -137,6 +144,47 @@ describe("cheats — a peek is a different channel with a marker in the stream",
     expect(out.events).toEqual([{ tag: "CHEAT", text: "/carry mara" }]);
     expect(out.cheatLines?.[0]).toBe("mara = npc_mara");
     expect(out.cheatLines?.join("\n")).toContain(`"who": "npc_mara"`);
+  });
+
+  it("⚖️ `/carry` says what is IN THE HANDS — the thing the merged view drops", () => {
+    // `carryOf` is the merged stock view, which never lists the held bag ("the
+    // shelf, not the goods"), so this dump alone reported a body walking home
+    // with an EMPTY BASKET as carrying nothing at all. Same renderer as the
+    // creature readout (`carryRowText`), so the two cannot drift.
+    const empty = runCheat("carry", "npc_mara", {
+      host: { carryOf: () => ({}), handsOf: () => ({ objId: "p1", glyph: "basket", bag: true }) },
+      simIdOf: () => undefined,
+      recordOf: () => null,
+    });
+    expect(empty.lines[1]).toBe("hands = basket (empty)");
+    const full = runCheat("carry", "npc_mara", {
+      host: { carryOf: () => ({ apple: 2 }), handsOf: () => ({ objId: "p1", glyph: "basket", bag: true }) },
+      simIdOf: () => undefined,
+      recordOf: () => null,
+    });
+    expect(full.lines[1]).toBe("hands = basket [apple×2]");
+    // A build whose cheat host has no `handsOf` still answers — with the
+    // merged view alone, exactly as before.
+    const old = runCheat("carry", "npc_mara", {
+      host: { carryOf: () => ({ apple: 2 }) },
+      simIdOf: () => undefined,
+      recordOf: () => null,
+    });
+    expect(old.lines[1]).toBe("hands = apple×2");
+  });
+
+  it("`/why` resolves a TEXT id too, and dumps the raw chain", () => {
+    const r = rig({ cheats: true });
+    r.session.command("scene"); // latch `mara`
+    const out = r.session.command("/why mara");
+    expect(out.events).toEqual([{ tag: "CHEAT", text: "/why mara" }]);
+    expect(out.cheatLines?.[0]).toBe("mara = npc_mara");
+    // One JSON row per LINK — the ladder, in order, terminator included.
+    expect(out.cheatLines?.slice(1)).toEqual([
+      `{"kind":"activity","clause":{"subject":"i_me","verb":"get","object":"apple"},"who":"npc_mara"}`,
+      `{"kind":"motive","clause":{"subject":"i_me","verb":"hungry","key":"hungry"}}`,
+      `{"kind":"end"}`,
+    ]);
   });
 
   it("`/truth` needs no host at all — it is the projection's own confession", () => {

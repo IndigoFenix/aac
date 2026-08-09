@@ -692,6 +692,14 @@ export interface SerializedTownDeltas {
   /** QUEUED make-orders (phase 4), house index → the waiting line behind
    *  the one craft slot. Absent = none (every pre-phase-4 save). */
   craftQueue?: Record<string, QueuedCraft[]>;
+  /** ⚖️ THE IMPORT BANK (R&T ⑤ T3b), drift SCALAR → units this session's
+   *  landed caravans credited to the town's books. `TownWorld.step` runs
+   *  only during the boot fast-forward, so a live session's injections
+   *  would evaporate on reload; this is the ledger that re-injects them,
+   *  exactly as a completed founded producer re-injects its count scalar.
+   *  Keyed by the scalar (never the good) so the re-inject needs no
+   *  economy lookup. Absent = none (every pre-⑤ save). */
+  driftBank?: Record<string, number>;
 }
 
 /** The per-town overlay store. `version` is the global monotone the
@@ -815,6 +823,10 @@ export interface TownDeltas {
    *  the one craft slot, mutated in place (the craftJobs pattern);
    *  serializes with the deltas. */
   readonly craftQueue: Map<number, QueuedCraft[]>;
+  /** ⚖️ THE IMPORT BANK (⑤ T3b): drift scalar → units landed caravans have
+   *  credited, mutated in place (the `stock` pattern); serializes with the
+   *  deltas so a reload re-injects what the lane already delivered. */
+  readonly driftBank: Record<string, number>;
   toJSON(): SerializedTownDeltas;
 }
 
@@ -939,6 +951,7 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       q.map((e) => JSON.parse(JSON.stringify(e)) as QueuedCraft),
     ]),
   );
+  const driftBank: Record<string, number> = { ...(json?.driftBank ?? {}) };
   const store: TownDeltas = {
     version: json?.version ?? 0,
     get: (key) => buildings.get(key),
@@ -1051,6 +1064,7 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     craftJobs,
     shellFurnPiles,
     craftQueue,
+    driftBank,
     toJSON: () => ({
       version: store.version,
       buildings: Object.fromEntries(
@@ -1079,6 +1093,7 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
           .filter(([, q]) => q.length > 0)
           .map(([k, q]) => [String(k), q.map((e) => JSON.parse(JSON.stringify(e)) as QueuedCraft)]),
       ),
+      driftBank: { ...driftBank },
     }),
   };
   return store;

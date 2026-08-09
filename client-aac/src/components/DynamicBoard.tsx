@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { ParsedBoardData, BoardButton } from "@shared/schema";
+import type { ParsedBoardData, BoardButton, BoardButtonAction } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -21,6 +21,11 @@ import { ShapedButton } from "@client-shared/board/ShapedButton";
 import type { SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 import { ProceduralFace, NEUTRAL_FACE } from "@shared/social-bot/ProceduralFace";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
+import HomeActionConfirm, { type PendingHomeAction } from "@/components/HomeActionConfirm";
+import { confirmPlacementFor, type ConfirmPlacement } from "@/lib/home-confirm-placement";
+// One estimator for "how long will this utterance take" — the same one the
+// world engine hands the mic gate over games-bridge `game_speech`.
+import { speechEstimateMs } from "@shared/world-engine/npc-voice";
 
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
@@ -78,6 +83,20 @@ interface DynamicBoardProps {
   onLaunchApp?: (appId: string, appData?: any) => void;
   onRequestAppOpen?: (appId: string) => void;
   onRequestBoardOpen?: (boardKey: string) => void;
+  /** Fire one of the student's curated smart-home actions (run_home_action).
+   *  The command phrase is SPOKEN here, in place — this callback only reports
+   *  the press so the session records it. Passed as a prop for the same reason
+   *  as the three above.
+   *  `confirmed` is sent only for actions the clinician flagged
+   *  `requiresConfirmation`, once the student has answered the confirm step —
+   *  the server refuses to execute a flagged action without it. */
+  onRunHomeAction?: (actionId: string, confirmed?: boolean) => void;
+  /** Hold the mic gate while THIS window speaks a home-action command through
+   *  browser speechSynthesis. That audio leaves the same speaker the mic
+   *  listens through, and the AAC's echo gate only sees its own audio player —
+   *  see `lib/app-speech-gate.ts`. Prop-lifted like the callbacks above,
+   *  because the board renders outside the provider that owns the gate. */
+  onNoteAppSpeech?: (speaking: boolean, ms?: number) => void;
   /**
    * How a gaze selects a button (`aacSettings.selectionMethod`). Both non-default
    * modes exist to solve the same problem — a student can't read a label without
@@ -256,6 +275,8 @@ export default function DynamicBoard({
   onLaunchApp,
   onRequestAppOpen,
   onRequestBoardOpen,
+  onRunHomeAction,
+  onNoteAppSpeech,
   selectionMethod = "whole_button",
   restSpace = "none",
 }: DynamicBoardProps) {
@@ -332,6 +353,9 @@ export default function DynamicBoard({
   }, [cornerRatioForMeasure, gridRows, gridCols]);
 
   const [slots, setSlots] = useState<SlotState[]>(Array(totalSlots).fill(BLANK_SLOT));
+  // A flagged smart-home press waiting on the student's Yes/No. Held here, not
+  // in the parent, because this is where a home press is resolved.
+  const [pendingHomeAction, setPendingHomeAction] = useState<PendingHomeAction | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPatchRef = useRef<BoardPatch | null>(null);
   const prevBoardRef = useRef<ParsedBoardData | null>(null);
@@ -344,6 +368,10 @@ export default function DynamicBoard({
       setCurrentPageId(firstPageId);
       setPageHistory([]);
       prevBoardRef.current = board;
+      // An unanswered confirm belongs to the board it was raised from. A new
+      // board means the question is stale — drop it rather than let a Yes
+      // actuate against a button the student can no longer see.
+      setPendingHomeAction(null);
     }
   }, [board]);
 
@@ -544,8 +572,86 @@ export default function DynamicBoard({
     }
   }, [aiButtonPress, navigateToPage, navigateBack, navigateHome]);
 
+  /**
+   * ACTUATE a smart-home action — the whole of what a home press does.
+   *
+   * `spoken` slots actuate BY SPEAKING: the device says the command phrase
+   * aloud ("Alexa, turn on the lights") and the family's smart speaker hears it
+   * like any other voice. Cloud slots are actuated by the SERVER, so they carry
+   * an `announce` line instead — the device still speaks, because a press that
+   * makes no sound tells the student nothing. Exactly one of the two is present
+   * per the contract; the label is a defensive floor beneath both, because a
+   * press must NEVER be silent.
+   *
+   * Whichever line it is, it is spoken VERBATIM — `command` is a wake-word
+   * phrase, so it is never rewritten, trimmed or localized — and it is spoken
+   * instead of the button's label/spokenText.
+   *
+   * Two deliberate departures from the default speak path below:
+   *  - `suppressLocalSpeech` is NOT honoured. That flag exists to avoid double
+   *    speech while the server voices a press; the server does not voice a home
+   *    action (it only records it), so honouring it would make the press silent
+   *    mid-session.
+   *  - `onButtonClick` is NOT called. That is the path that reports a press to
+   *    the server as something the STUDENT said; a home action is reported
+   *    exactly once instead, by `onRunHomeAction`, which the session logs as a
+   *    `[HOME]` event.
+   *
+   * Because that speech happens mid-session and through speechSynthesis rather
+   * than our audio player, the echo gate cannot see it — so we announce it
+   * exactly as an embedded game announces its NPC lines (`game_speech` →
+   * noteAppSpeech). Without the hold, the mic hears "Alexa, turn on the
+   * lights", the Observer attributes it to whoever is in the room and the
+   * Speaker answers a line nobody said. The edge is raised BEFORE the utterance
+   * starts (a gate that closes after the first syllable has already leaked it)
+   * and lowered when it ends; the `ms` estimate bounds the hold so a failed
+   * utterance cannot strand the mic.
+   */
+  const actuateHomeAction = useCallback(
+    (action: BoardButtonAction, button: BoardButton, confirmed?: boolean) => {
+      if (!action.actionId) return;
+      const report = onRunHomeAction ?? dualAgent?.requestHomeAction;
+      console.log("[DynamicBoard] run_home_action press:", action.actionId, "| confirmed:", !!confirmed, "| via", onRunHomeAction ? "prop" : dualAgent?.requestHomeAction ? "context" : "NONE (no handler!)");
+      // Respect the header audio-output mute: it silences EVERYTHING from this
+      // window, including this immediate local speech (the streaming player is
+      // already gated by audioEnabled; this Web-Speech path was the leak).
+      const outputMuted = dualAgent?.audioEnabled === false;
+      const phrase = action.command || action.announce || action.label || button.spokenText || button.label;
+      if (phrase && !outputMuted) {
+        const noteSpeech = onNoteAppSpeech ?? dualAgent?.noteAppSpeech;
+        noteSpeech?.(true, speechEstimateMs(phrase));
+        // Not awaited — the utterance must start now, and the hold is a
+        // deadline that stands on its own if this promise never settles.
+        void speak(phrase, language, voiceType as any).finally(() => {
+          noteSpeech?.(false);
+        });
+      }
+      report?.(action.actionId, confirmed);
+    },
+    [speak, language, voiceType, dualAgent, onRunHomeAction, onNoteAppSpeech],
+  );
+
+  /**
+   * Measure the grid for the confirm step's placement rule — the decision
+   * itself (and why it exists at all) lives in `lib/home-confirm-placement`,
+   * where it can be tested without a DOM.
+   */
+  const confirmPlacement = useCallback(
+    (index?: number): ConfirmPlacement => {
+      const el = gridRef.current;
+      if (!el) return { place: "bottom", bandPx: null };
+      return confirmPlacementFor(index, {
+        heightPx: el.getBoundingClientRect().height,
+        rows: gridRows,
+        cols: gridCols,
+        gapPx: GRID_GAP_PX,
+      });
+    },
+    [gridRows, gridCols],
+  );
+
   const handleButtonClick = useCallback(
-    (button: BoardButton) => {
+    (button: BoardButton, index?: number) => {
       console.log("[DynamicBoard] click:", button.label, "| buttonType:", (button as any).buttonType, "| action:", button.action?.type ?? "(none)");
       const action = button.action;
 
@@ -609,6 +715,31 @@ export default function DynamicBoard({
         return;
       }
 
+      // Respect the header audio-output mute: it silences EVERYTHING from this
+      // window, including the immediate local button speech below (the streaming
+      // player is already gated by audioEnabled; this Web-Speech path was the leak).
+      const outputMuted = dualAgent?.audioEnabled === false;
+
+      // Handle run_home_action — a curated smart-home trigger the clinician
+      // authored. The button never navigates and never opens anything: the
+      // student stays right here while `actuateHomeAction` fires it (see there
+      // for what actuating means and why it speaks).
+      //
+      // Actions the clinician flagged `requiresConfirmation` do NOT actuate on
+      // this press. It raises the confirm step instead — nothing is spoken and
+      // nothing is reported until the student answers Yes, at which point the
+      // press carries `confirmed: true` and the server will execute it. A No,
+      // or no answer at all, ends here: no speech, no report, no actuation.
+      if (action?.type === "run_home_action" && action.actionId) {
+        if (action.requiresConfirmation) {
+          console.log("[DynamicBoard] run_home_action press:", action.actionId, "| awaiting confirmation");
+          setPendingHomeAction({ action, button, ...confirmPlacement(index) });
+          return;
+        }
+        actuateHomeAction(action, button);
+        return;
+      }
+
       // Guessing-mode SUGGESTION buttons fall through to the default path
       // below: speak() for local feedback, then onButtonClick → home's
       // handleBoardButtonClick, which routes them to pressSuggestion (rather
@@ -623,16 +754,12 @@ export default function DynamicBoard({
       const textToSpeak = button.spokenText || button.label;
       const bt = (button as any).buttonType;
       const isMeta = bt === "suggestion" || bt === "wordfinder" || bt === "more";
-      // Respect the header audio-output mute: it silences EVERYTHING from this
-      // window, including this immediate local button speech (the streaming player
-      // is already gated by audioEnabled; this Web-Speech path was the leak).
-      const outputMuted = dualAgent?.audioEnabled === false;
       if (!suppressLocalSpeech && !isMeta && !outputMuted) {
         speak(textToSpeak, language, voiceType as any);
       }
       onButtonClick(button, textToSpeak);
     },
-    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen, onRequestBoardOpen]
+    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen, onRequestBoardOpen, actuateHomeAction, confirmPlacement]
   );
 
   // Render nothing if completely empty
@@ -712,10 +839,11 @@ export default function DynamicBoard({
     const actionType = button.action?.type;
     const isLinkButton = actionType === "link";
     const isBackButton = actionType === "back" || actionType === "home";
-    // Launch buttons (open an app / website / pre-built board on press) get a
-    // distinct border so the child learns "this one opens something" rather
-    // than speaks.
-    const isLaunchButton = actionType === "open_website" || actionType === "open_app" || actionType === "open_board";
+    // Launch buttons (open an app / website / pre-built board on press, or
+    // fire a smart-home action) get a distinct border so the child learns
+    // "this one DOES something" rather than speaks.
+    const isLaunchButton = actionType === "open_website" || actionType === "open_app" || actionType === "open_board"
+      || actionType === "run_home_action";
 
     const isGuessButton = (button as any).buttonType === "guess";
     const isSuggestionButton = (button as any).buttonType === "suggestion";
@@ -909,7 +1037,10 @@ export default function DynamicBoard({
         key={`btn-${button.label}-${index}`}
         variant="board"
         button={button}
-        onClick={() => handleButtonClick(button)}
+        // The slot index goes with the press so a confirm step (smart-home
+        // actions the clinician flagged) knows which cell the gaze is resting
+        // on and can place its Yes/No clear of it.
+        onClick={() => handleButtonClick(button, index)}
         borderClassName={borderClass}
         extraButtonProps={{ "data-mirror-id": button.id, "data-speech": button.spokenText || button.label }}
         getFaceImage={getFaceImage ?? undefined}
@@ -1038,8 +1169,9 @@ export default function DynamicBoard({
         </div>
       )}
 
-      {/* Grid */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Grid. `relative` so the smart-home confirm can cover exactly the grid
+          box — the band it measures its placement against is the grid's. */}
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         <div
           ref={gridRef}
           data-scan-root
@@ -1054,6 +1186,20 @@ export default function DynamicBoard({
           </AnimatePresence>
           {cornerSpace && <CornerVoids rows={gridRows} cols={gridCols} radius={cutRadius} />}
         </div>
+
+        {/* Confirm step for flagged smart-home actions. Its scrim is a
+            dwell trap, so while it is up the board behind it is unreachable —
+            the only two answers are the ones on screen. */}
+        <HomeActionConfirm
+          pending={pendingHomeAction}
+          onConfirm={() => {
+            const p = pendingHomeAction;
+            setPendingHomeAction(null);
+            if (p) actuateHomeAction(p.action, p.button, true);
+          }}
+          onDecline={() => setPendingHomeAction(null)}
+          onTimeout={() => setPendingHomeAction(null)}
+        />
       </div>
     </div>
   );

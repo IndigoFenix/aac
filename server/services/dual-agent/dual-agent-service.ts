@@ -5,8 +5,9 @@ import { randomUUID } from "node:crypto";
 import { db } from "../../db";
 import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { ChatMessage, ParsedBoardData, PermittedWebsite } from "@shared/schema";
+import type { ChatMessage, HomeAction, ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
+import { normalizeHomeActions } from "@shared/home-actions";
 import { resolvePermittedYoutubeItems, splitYoutubeItems } from "@shared/youtube-items";
 import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
 import { creditsForModelUsage, creditsForLiveUsageByModality, creditsForTtsUsage, creditsForSttUsage, type TtsProvider } from "../chat/cost-helpers";
@@ -137,6 +138,11 @@ interface SessionCache {
    *  Lets a caller (notably the session-close final pass) await the
    *  pending→log drain to completion instead of firing-and-forgetting. */
   monitorInFlight?: Promise<void>;
+  /** Deferred session-finalization timer (final Monitor pass + summary),
+   *  scheduled by a coordinator's cleanup on WS drop. A reconnect within the
+   *  grace window cancels it — without this, every drop of a reconnect storm
+   *  ran a full Monitor drain + summary generation mid-session. */
+  pendingFinalization?: NodeJS.Timeout;
 }
 
 const sessionCache = new Map<string, SessionCache>();
@@ -751,6 +757,8 @@ export class DualAgentService {
     const permittedWebsites: PermittedWebsite[] = Array.isArray(aacSt?.permittedWebsites)
       ? (aacSt!.permittedWebsites as PermittedWebsite[])
       : [];
+    // Smart-home slots go through the shared sanitizer — never the raw jsonb.
+    const homeActions: HomeAction[] = normalizeHomeActions(aacSt?.homeActions);
     const {
       channels: permittedYoutubeChannels,
       playlists: permittedYoutubePlaylists,
@@ -773,6 +781,7 @@ export class DualAgentService {
       permittedYoutubeChannels,
       permittedYoutubeVideos,
       permittedYoutubePlaylists,
+      homeActions,
       currentEmote: "happy",
       boardButtonLabels: [],
       aiAddedButtonLabels: [],
@@ -914,6 +923,7 @@ export class DualAgentService {
         permittedYoutubeChannels: [], // Populated with aacSettings below
         permittedYoutubeVideos: [], // Populated with aacSettings below
         permittedYoutubePlaylists: [], // Populated with aacSettings below
+        homeActions: [], // Populated with aacSettings below
         currentEmote: "neutral",
         boardButtonLabels: [],
         aiAddedButtonLabels: [],
@@ -957,6 +967,8 @@ export class DualAgentService {
         state.permittedYoutubeChannels = splitYt.channels;
         state.permittedYoutubeVideos = splitYt.videos;
         state.permittedYoutubePlaylists = splitYt.playlists;
+        // Smart-home slots go through the shared sanitizer — never the raw jsonb.
+        state.homeActions = normalizeHomeActions(aacSt?.homeActions);
       }
 
       // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
@@ -1911,6 +1923,48 @@ export class DualAgentService {
    * Trigger monitor processing for a session (public wrapper).
    * Used by LiveRelay to trigger monitor after turn completion.
    */
+  /**
+   * Sweep support: run the missed final Monitor pass for a session that was
+   * abandoned mid-flight (app killed, host recycled, monitor stuck) — the
+   * pending→log drain never ran, leaving the turns invisible to clinicians
+   * and deep analysis. Loads the session into the cache when cold
+   * (loadSessionFromDB also clears a stale monitorBusy flag), queues the
+   * [SESSION_CLOSED] directive, and awaits the forced drain.
+   * Returns:
+   *  - "drained"          — pending messages existed and the Monitor ran
+   *  - "no-pending"       — nothing to drain (the log is already durable)
+   *  - "notes-disallowed" — privacy forbids the Monitor pass (the caller
+   *                         skips the summary too, mirroring runFinalMonitorPass)
+   *  - "load-failed"      — session couldn't be loaded (caller may still
+   *                         summarize from the raw row)
+   */
+  async finalizeAbandonedSession(
+    sessionId: string,
+  ): Promise<"drained" | "no-pending" | "notes-disallowed" | "load-failed"> {
+    let cached = sessionCache.get(sessionId);
+    if (!cached) {
+      const state = await this.loadSessionFromDB(sessionId);
+      if (!state) return "load-failed";
+      cached = sessionCache.get(sessionId);
+      if (!cached) return "load-failed";
+    }
+    if (cached.state.privacyOptions?.allowNotes === false) return "notes-disallowed";
+    const pendingCount = cached.state.pendingMessages?.length ?? 0;
+    if (pendingCount === 0) return "no-pending";
+    await this.addPendingMessage(sessionId, {
+      role: "user",
+      content: [
+        "[SESSION_CLOSED] The AAC session ended without a clean close (the device disconnected).",
+        "Perform these final tasks:",
+        "1. Summarize the session — note anything significant that happened.",
+        "2. Clean up Student_Notes: delete duplicate or redundant entries and consolidate related information.",
+      ].join("\n"),
+      timestamp: Date.now(),
+    });
+    await this.triggerMonitor(sessionId, /* force */ true, undefined, /* awaitCompletion */ true);
+    return "drained";
+  }
+
   async triggerMonitor(
     sessionId: string,
     force = false,

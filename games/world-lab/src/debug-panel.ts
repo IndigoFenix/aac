@@ -7,17 +7,33 @@
 
 import type { QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
 import {
-  assignTownJobs,
-  inShiftWindow,
-  jobDutyOf,
-  rosterOf,
-  shopDutyOf,
-  type JobAssignment,
-} from "@shared/world-engine/kernel/town/roster";
-import { FOOD_DAY_SEC, houseDoorstep, workDoorstep } from "@shared/world-engine/kernel/town/goods";
+  inspectCreature,
+  inspectRoster,
+  summarizeCreature,
+  type CreatureInspection,
+  type InspectProbes,
+} from "@shared/world-engine/interaction/quest/creature-inspect";
 
 const host = (): QuestHost3D | null =>
   (window as unknown as { __questLab?: QuestHost3D }).__questLab ?? null;
+
+/** THE PROBE BUNDLE, wired from the host's EXISTING read-only surface — no new
+ *  sim state, no mutation. Rebuilt per call because `__questLab` is replaced on
+ *  every world reload. */
+const probesOf = (h: QuestHost3D | null): InspectProbes => ({
+  state: h?.world?.state ?? null,
+  activityOf: (cid) => h?.activityOf(cid),
+  whyProbe: (cid) => h?.whyProbe(cid),
+  carryOf: (cid) => h?.carryOf(cid) ?? {},
+  nameOf: (cid) => h?.nameOf(cid),
+  errandPath: (avatarId) => h?.world?.npcErrandPath(avatarId) ?? null,
+});
+
+/** ⏱️ THE OPEN ROW REFRESHES AT ~1 Hz, NOT PER RENDER. The list re-renders every
+ *  400 ms; a why-chain walk plus a place-word lookup per creature per tick would
+ *  be pure waste (and `reasonChainOf` is the most expensive read in the host).
+ *  So a detail block is CACHED per creature and recomputed only when stale. */
+const DETAIL_REFRESH_MS = 1000;
 
 const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement) => {
   const n = document.createElement(tag);
@@ -25,50 +41,6 @@ const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: 
   parent.appendChild(n);
   return n;
 };
-
-/** Town job assignments, memoized per TownPlay (assignTownJobs is pure but a
- *  city-sized sort — don't rerun it every 400 ms render tick). */
-const jobsMemo = new WeakMap<object, Map<number, JobAssignment[]>>();
-function townJobsOf(session: QuestSession): Map<number, JobAssignment[]> | null {
-  const town = session.town;
-  if (!town) return null;
-  let jobs = jobsMemo.get(town);
-  if (!jobs) {
-    jobs = assignTownJobs(
-      town.plan.houses.map((h) => ({ index: h.index, door: houseDoorstep(town.stage.center, h) })),
-      town.plan.works.map((wk) => ({ door: workDoorstep(town.stage.center, wk) })),
-      town.stage.goods.length,
-      town.config.seed,
-    );
-    jobsMemo.set(town, jobs);
-  }
-  return jobs;
-}
-
-/** A resident's DUTY line: its shop errand phase and/or its job shift state,
- *  from the household roster — the one allocator. "" for pure homebodies. */
-function errandOf(session: QuestSession, cid: string): string {
-  try {
-    if (!cid.startsWith("resident_") || !session.town) return "";
-    const house = session.town.plan.houses[Number(cid.split("_")[1])];
-    const m = Number(cid.split("_")[2]);
-    if (!house) return "";
-    const roster = rosterOf(
-      session.town.stage.goods.map((g, i) => ({ key: g.good.key, slot: g.good.slot ?? i })),
-      undefined,
-      townJobsOf(session)?.get(house.index),
-    );
-    let out = "";
-    const duty = shopDutyOf(roster[m]);
-    const good = duty ? session.town.stage.goods.find((g) => g.good.key === duty.good) : undefined;
-    if (good) out += ` · ${good.good.key}:${good.errand(house, session.townClock).phase}`;
-    const jd = jobDutyOf(roster[m]);
-    if (jd) out += ` · job:${jd.work}${inShiftWindow(jd.window, session.townClock, FOOD_DAY_SEC) ? " ON-SHIFT" : ""}`;
-    return out;
-  } catch {
-    return "";
-  }
-}
 
 /** An on-screen entity id → the creature id it belongs to (avatar bodies are
  *  `npc_<cid>`; residents/objects are bare). */
@@ -95,55 +67,65 @@ function outstandingTasks(session: QuestSession): Record<string, unknown> {
   };
 }
 
-/** WHAT a creature is doing and WHY — the first applicable driver in the loop's
- *  own priority order — plus its inventory and meters. The per-person readout. */
-function describeCreature(session: QuestSession, cid: string): Record<string, unknown> {
+/** Items the creature-world says this creature OWNS (as opposed to carries) —
+ *  the one reading `inspectCreature` deliberately leaves to the caller, because
+ *  it is a creature-world question rather than a body question. */
+function ownedItemsOf(session: QuestSession, cid: string): string[] {
   const world = session.creatures?.world;
-  const c = world?.creatures[cid];
-  const pursuit = session.pursuits.get(cid);
-  const claimed = session.taskPool?.claimedBy(cid);
-  const help = session.helpOrders.get(cid);
-  const step = session.needStep.get(cid);
-  const blocked = session.blockedNeeds.get(cid);
-  const hold = session.actionHold.get(cid);
-  let why = "idle / autonomous (own needs)";
-  if (hold)
-    why = `✋ ACTING: ${hold.label} (crouch ${Math.round((hold.t / hold.dur) * 100)}%${hold.applied ? " — effect landed" : ""})`;
-  else if (pursuit) why = `▶ ${pursuit.source.toUpperCase()}: "${pursuit.glyph}" (${pursuit.goal.kind}, acts ${pursuit.acts ?? 0}) → ${JSON.stringify(pursuit.goal)}`;
-  else if (session.party.has(cid)) why = "following the player (party)";
-  else if (help) why = `helping ${help} (on-behalf order)`;
-  else if (claimed) why = `claimed pooled task: "${claimed.sourceGlyph ?? claimed.goal.kind}"`;
-  else if (step) why = `need step: ${step.kind} ${step.goodKey}×${step.units} @ ${step.objId ?? "in place"}`;
-  else if (blocked) why = `⚠ BLOCKED want: ${blocked.goodKey} (${blocked.tplKey}) — can't be served here`;
-  const owned = world
+  return world
     ? Object.values(world.items)
         .filter((it) => it.ownerId === cid)
         .map((it) => `${it.kind ?? it.id}${(it.states ?? []).length ? `.${it.states.join(".")}` : ""}`)
     : [];
-  return {
-    why,
-    going: session.npcGoing.get(cid) ?? null,
-    condition: c?.condition ?? null,
-    wants: (c?.needs ?? [])
-      .filter((n) => !n.fulfilled)
-      .map((n) => n.target?.category ?? n.target?.kind ?? n.itemId),
-    // A body's carry is DERIVED now (scope-unification.md §2.1 — its hands plus
-    // the containers it holds), so the host answers for it instead of a map.
-    inventory: { owned, carrying: host()?.carryOf(cid) ?? {} },
-    meters: Object.fromEntries(
-      [...session.needMeters]
-        .filter(([k]) => k.startsWith(`${cid}|`))
-        .map(([k, v]) => [k.slice(cid.length + 1), Math.round(v * 100) / 100]),
-    ),
-    flags: {
-      party: session.party.has(cid),
-      escorting: session.escorting.has(cid),
-      bonded: session.bondedCreatures.has(cid),
-      addressed: session.addressedFamily === cid,
-      liveNeedBody: session.liveNeedBodies.has(cid),
-    },
-    duty: errandOf(session, cid).trim() || null,
-  };
+}
+
+/** PAINT ONE EXPANDED ROW: the labelled detail lines, then the why-chain as its
+ *  clause list, then the raw entity JSON behind a nested fold. Read-only — every
+ *  value came out of `inspectCreature`, which only ever `get`s.
+ *
+ *  `openRaw` is the caller's view-local memory of which raw folds are open: the
+ *  400 ms re-render throws this DOM away, and a fold that slams shut twice a
+ *  second is the very complaint this section exists to fix. */
+function paintDetail(
+  parent: HTMLElement,
+  session: QuestSession,
+  ins: CreatureInspection,
+  openRaw: Set<string>,
+) {
+  const box = mk("div", "lab-debug-detail", parent);
+  for (const row of ins.rows) {
+    const line = mk("div", "lab-debug-kv", box);
+    mk("b", "", line).textContent = `${row.label}: `;
+    line.append(row.value);
+  }
+  const owned = ownedItemsOf(session, ins.cid);
+  if (owned.length) {
+    const line = mk("div", "lab-debug-kv", box);
+    mk("b", "", line).textContent = "owns: ";
+    line.append(owned.join(", "));
+  }
+  // THE WHY-CHAIN, as the ladder it is: one rung per line, in the order
+  // `reasonChainOf` walked them (activity → because → authority/motive → end).
+  const why = mk("div", "lab-debug-why", box);
+  mk("b", "", why).textContent = "why:";
+  if (ins.why.length) {
+    const list = mk("ol", "lab-debug-why-list", why);
+    for (const rung of ins.why) mk("li", "", list).textContent = rung;
+  } else {
+    why.append(" (no chain — the host can't read one)");
+  }
+  const raw = mk("details", "lab-debug-c", box) as HTMLDetailsElement;
+  raw.open = openRaw.has(ins.cid);
+  mk("summary", "", raw).textContent = "raw entity";
+  mk("pre", "", raw).textContent = JSON.stringify(
+    session.creatures?.world.creatures[ins.cid] ?? null,
+    null,
+    2,
+  );
+  raw.addEventListener("toggle", () => {
+    if (raw.open) openRaw.add(ins.cid);
+    else openRaw.delete(ins.cid);
+  });
 }
 
 export interface DebugPanel {
@@ -179,11 +161,35 @@ export function mountDebugPanel(): DebugPanel {
 
   let timer: ReturnType<typeof setInterval> | null = null;
   let clickedId: string | null = null; // the last on-screen entity clicked
+  /** 👁️ VIEW-LOCAL EXPANSION STATE. Which rows the reader has opened is a fact
+   *  about this panel, never about the sim — nothing here is written back, and
+   *  a world reload simply drops it. It survives the 400 ms re-render because it
+   *  lives out here rather than in the DOM the render throws away. */
+  const openCids = new Set<string>();
+  /** Creatures the reader CLICKED that the named roster doesn't carry (an
+   *  ambient townsperson). Pinning them keeps the crowd a statistic by default
+   *  while still letting one be singled out — also view-local. */
+  const pinnedCids = new Set<string>();
+  /** Which raw-entity folds inside an open row are open — same reasoning. */
+  const openRaw = new Set<string>();
+  /** The ~1 Hz cache behind `DETAIL_REFRESH_MS`: cid → its last inspection. */
+  const detailCache = new Map<string, { at: number; ins: CreatureInspection }>();
   const stopTimer = () => {
     if (timer) {
       clearInterval(timer);
       timer = null;
     }
+  };
+
+  /** The open row's readout, recomputed at most once a second. Every call is a
+   *  pure read of the host's probes (see creature-inspect.ts). */
+  const detailOf = (session: QuestSession, cid: string): CreatureInspection => {
+    const now = Date.now();
+    const hit = detailCache.get(cid);
+    if (hit && now - hit.at < DETAIL_REFRESH_MS) return hit.ins;
+    const ins = inspectCreature(session, cid, probesOf(host()));
+    detailCache.set(cid, { at: now, ins });
+    return ins;
   };
 
   const render = () => {
@@ -200,8 +206,8 @@ export function mountDebugPanel(): DebugPanel {
       return d;
     };
 
-    // CLICKED entity (from a game click) at the top — a creature leads with the
-    // human-readable WHAT & WHY + inventory, then the raw entity JSON; else a
+    // CLICKED entity (from a game click) at the top — a creature shows the SAME
+    // detail block an expanded list row does (one readout, one owner); else a
     // world-item / bare id.
     if (clickedId) {
       const world = session.creatures?.world;
@@ -209,10 +215,7 @@ export function mountDebugPanel(): DebugPanel {
       const creature = world?.creatures[cid];
       const clicked = sec(`▶ Clicked: ${clickedId}`, true);
       if (creature) {
-        mk("pre", "lab-debug-why", clicked).textContent = JSON.stringify(describeCreature(session, cid), null, 2);
-        const raw = mk("details", "lab-debug-c", clicked) as HTMLDetailsElement;
-        mk("summary", "", raw).textContent = "raw entity";
-        mk("pre", "", raw).textContent = JSON.stringify(creature, null, 2);
+        paintDetail(clicked, session, detailOf(session, cid), openRaw);
       } else {
         const item = world?.items[clickedId] ?? null;
         mk("pre", "", clicked).textContent = item
@@ -269,27 +272,41 @@ export function mountDebugPanel(): DebugPanel {
       2,
     );
 
+    // CREATURES — every row EXPANDS (stocking-offload-and-carry.md §2). The list
+    // is `inspectRoster`'s: the family and its pets (whether or not anything has
+    // registered them yet), everything the session HAS registered, and every
+    // body the live needs loop drives. OFF-SCREEN AND ABSTRACTED BODIES ARE THE
+    // POINT — clicking needs a body under the pointer, which is exactly what a
+    // shopper that vanished mid-trip does not have. The rest of the town is a
+    // COUNT, never enumerated (a crowd is summarized, an individual is named).
     const world = session.creatures?.world;
-    const creatures = world ? Object.values(world.creatures) : [];
-    const cs = sec(`Creatures (${creatures.length})`, true);
-    for (const c of creatures) {
+    const roster = inspectRoster(session, probesOf(host()));
+    const listed = [...roster.named];
+    for (const cid of pinnedCids) if (!listed.includes(cid)) listed.push(cid);
+    const cs = sec(
+      `Creatures (${listed.length}${roster.ambient ? ` + ${roster.ambient} ambient` : ""})`,
+      true,
+    );
+    for (const cid of listed) {
       const d = mk("details", "lab-debug-c", cs) as HTMLDetailsElement;
-      d.dataset.cid = c.id; // click-to-link target
-      const wants = c.needs
-        .filter((n) => !n.fulfilled)
-        .map((n) => n.target?.category ?? n.target?.kind ?? n.itemId)
-        .join(",");
-      // A DEFINED family member (world doc entities) shows its authored name.
-      const famName = (() => {
-        const fam = session.town?.config.family;
-        const fh = session.town?.familyHouse;
-        if (!fam || fh === null || fh === undefined || !c.id.startsWith(`resident_${fh}_`)) return "";
-        const name = fam.members[Number(c.id.split("_")[2])]?.name;
-        return name ? ` “${name}”` : "";
-      })();
-      mk("summary", "", d).textContent =
-        `${c.id}${famName}${c.condition ? ` [${c.condition}]` : ""}${wants ? ` want:${wants}` : ""}${errandOf(session, c.id)}`;
-      mk("pre", "", d).textContent = JSON.stringify(c, null, 2);
+      d.dataset.cid = cid; // click-to-link target
+      d.open = openCids.has(cid);
+      // The COLLAPSED line stays cheap: no why-chain walk for a row nobody
+      // opened (`summarizeCreature` asks none of the expensive probes).
+      mk("summary", "", d).textContent = summarizeCreature(session, cid, probesOf(host()));
+      if (d.open) paintDetail(d, session, detailOf(session, cid), openRaw);
+      // Expand/collapse paints or drops the block IN PLACE — never a full
+      // re-render, which would tear down the very row being toggled (and, since
+      // setting `.open` above queues a toggle event of its own, would loop).
+      d.addEventListener("toggle", () => {
+        if (d.open) {
+          openCids.add(cid);
+          if (!d.querySelector(".lab-debug-detail")) paintDetail(d, session, detailOf(session, cid), openRaw);
+        } else {
+          openCids.delete(cid);
+          d.querySelector(".lab-debug-detail")?.remove();
+        }
+      });
     }
 
     const items = world ? Object.values(world.items) : [];
@@ -311,6 +328,10 @@ export function mountDebugPanel(): DebugPanel {
   /** Clicking an object in the game shows its data at the top + flashes its row. */
   const linkEntity = (rawId: string) => {
     clickedId = rawId;
+    // A clicked CREATURE joins the list even when it is ambient — so the reader
+    // can keep watching it after it walks off screen and abstracts away.
+    const clickedCid = cidOf(rawId);
+    if (host()?.session?.creatures?.world.creatures[clickedCid]) pinnedCids.add(clickedCid);
     setActive("debug"); // switches tab + renders (which now includes the Clicked section)
     clickedEl.textContent = `clicked: ${rawId}`;
     const target = body.querySelector(`[data-cid="${CSS.escape(cidOf(rawId))}"]`) as HTMLDetailsElement | null;

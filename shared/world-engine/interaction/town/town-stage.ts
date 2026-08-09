@@ -26,7 +26,7 @@ import {
   type RoadPath,
   type WorldSpec,
 } from "@shared/world-engine/index.js";
-import type { CompiledEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
+import { MARKET_CHANNEL, type CompiledEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { probesOn } from "@shared/world-engine/perf-probes.js";
 import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/furniture.js";
 import {
@@ -38,7 +38,8 @@ import type { TownHost } from "@shared/world-engine/kernel/town/host.js";
 import type { TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
 import type { TownHouse, TownPlan, TownWork } from "@shared/world-engine/kernel/town/plan.js";
 import {
-  ERRAND_WALK, FOOD_DAY_SEC, HOUSEHOLD, doorTransit, houseDoorstep, streetGoods, type TownGoods,
+  ERRAND_WALK, FOOD_DAY_SEC, HOUSEHOLD, doorTransit, hasLedger, houseDoorstep, streetGoods,
+  type ImportDepotReading, type TownGoods,
 } from "@shared/world-engine/kernel/town/goods.js";
 import {
   annexWorldRect,
@@ -428,17 +429,79 @@ export function* createTownStageSteps(
 
   // --- Ambient residents: the founding good's shoppers, nearest first. ---
   yield "stocking stalls";
-  const goods: TownGoods[] = streetGoods(town, eco, { key: siteKey, center, plan }, opts.seed);
   // The INTERCITY line: a caravan a day, exporting ~a third of the food draw
   // (the surplus the aggregate doesn't eat), importing trinkets. The partner
   // stays abstract until hierarchical-cells lands real neighbors.
-  const foodGood = goods.find((g) => g.good.key === "food");
-  const trade = foodGood
+  //
+  // ⚖️ R&T ⑤ (T3a) — BUILT BEFORE THE GOODS, because the goods now ask it a
+  // question: a good the caravan lands gets a DEPOT SOURCE in the source list,
+  // and that list is fixed the moment `createTownGoods` runs. The line needs
+  // only the food DESCRIPTOR for its export volume, which the registry holds
+  // directly — never the projection.
+  const foodSpec = eco.goods.find(
+    (g) => g.key === "food" && (g.slot === 0 || hasLedger(town, g)),
+  );
+  const trade = foodSpec
     ? createTownTrade(center, plan, plan.streets, opts.seed, {
         exportGood: "food",
-        exportDaily: plan.houses.length * HOUSEHOLD * foodGood.good.perCapitaDaily * 0.3,
+        exportDaily: plan.houses.length * HOUSEHOLD * foodSpec.perCapitaDaily * 0.3,
       })
     : null;
+  /**
+   * ⚖️ R&T ⑤ (T3a) — DOES THE LANE FEED THIS GOOD'S HOUSEHOLDS? Two derived
+   * conditions, no name list:
+   *
+   *  ① THE BOOKS CAN RECEIVE IT. The good's flow net must FEED from its drift
+   *     stockpile (`transport.driftFeeds`) — that is the same flag T3b's
+   *     landing credit and `townShortage`'s relief term read, so a good whose
+   *     ledger cannot bank an import never grows a shop for one. It is also
+   *     the SCOPE CUT made mechanical: food's granary keeps `driftFeeds` off,
+   *     so staples stay yard-bound this batch by their own declaration.
+   *  ② THE TOWN MAKES NONE OF IT. With no GATE SELLER and no producer in the
+   *     plan, the depot REPLACES the empty hall stub these households were sent
+   *     to — the unlicensed-refinery case, and the one where an import is the
+   *     whole supply. A town that makes its own keeps its stalls: a depot beside
+   *     the hall would out-compete the market for the plaza quarter on distance
+   *     alone, which is a catchment question the lane has not earned yet.
+   *
+   *     ⚖️ A MARKET STALL IS A SHELF, NOT A SOURCE (2026-08-09): it sells what
+   *     a cart brings it, so its presence says nothing about whether the town
+   *     MAKES the good — only a gate seller (a building that `sells` it) does.
+   *     The distinction was invisible while only gate sellers were listed; the
+   *     moment clothing joined the market channel, reading the plaza stall as
+   *     "this town has a seller" switched the import lane off for every town
+   *     that has a market, which is every town. So the test is gate sellers and
+   *     producers, and `MARKET_CHANNEL` is filtered out by name.
+   *
+   * Both are FIXED for the session (the plan and the doc do not move), so the
+   * source list is stable; the ALLOTMENT behind it is re-read every `stockOf`.
+   */
+  const importable = new Map<string, boolean>();
+  const importsOf = (goodKey: string): ImportDepotReading | null => {
+    if (!trade) return null;
+    let ok = importable.get(goodKey);
+    if (ok === undefined) {
+      const spec = eco.goods.find((g) => g.key === goodKey);
+      const net = eco.flownets.find((f) => f.source === `${goodKey}_out`);
+      const gateSellers = spec?.sellers.filter((s) => s !== MARKET_CHANNEL) ?? [];
+      ok =
+        !!spec &&
+        !!net?.feed &&
+        !plan.works.some(
+          (w) => gateSellers.includes(w.type) || spec.producers.includes(w.type),
+        );
+      importable.set(goodKey, ok);
+    }
+    if (!ok) return null;
+    return {
+      at: trade.depot,
+      dailyUnits: trade.importUnitsPerVisit(goodKey),
+      dayFrac: (t) => trade.dayPhase(t),
+    };
+  };
+  const goods: TownGoods[] = streetGoods(
+    town, eco, { key: siteKey, center, plan }, opts.seed, undefined, importsOf,
+  );
   // The cast holds its NPC-budget share whether it ships in the spec or
   // the host embodies it itself.
   // RESIDENTS: the shared model owns the mechanics (who exists where,

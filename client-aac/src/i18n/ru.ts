@@ -869,6 +869,7 @@ export const ru: Translations = {
     neitherOfThese: "\u041d\u0438 \u0442\u043e\u0442, \u043d\u0438 \u0434\u0440\u0443\u0433\u043e\u0439",
     guess: "Найти слово",
     exitConfirm: "Хочешь выйти?",
+    homeActionConfirm: "Хочешь это сделать?",
   },
 
   silentMode: {

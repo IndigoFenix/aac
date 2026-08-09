@@ -67,7 +67,14 @@ export interface GoodSpec {
   gotScalar: string;
   /** Work types that SELL this good over a counter — their doorsteps
    *  become sources. Empty/absent in a town ⇒ the hall hands out the
-   *  imports (flow-net towns still eat). */
+   *  imports (flow-net towns still eat).
+   *
+   *  ⚖️ TWO KINDS OF ENTRY, and they are not the same claim: a GATE SELLER
+   *  (a building key — the farm, the tailor) means THE TOWN MAKES IT HERE,
+   *  while `MARKET_CHANNEL` means it is DISTRIBUTED by the stalls the service
+   *  radius founds. A stall is a shelf a cart fills; its presence says nothing
+   *  about whether the town produces the good (town-stage's import-depot
+   *  eligibility turns on exactly that difference). */
   sellers: ReadonlyArray<string>;
   /** Source kinds with a stocked SHELF (dawn-stocked, drawn down across
    *  the day). Others sell from the field / hand out at the door. */
@@ -75,7 +82,14 @@ export interface GoodSpec {
   /** Work types the supply hauls set out from (district supply order —
    *  who is "near the producers" for THIS good). */
   producers: ReadonlyArray<string>;
-  /** Units one person draws per street day (food: 1 ration). */
+  /**
+   * Units one person draws per street day, QUOTED IN RATIONS — one person-day
+   * of the founding staple (goods.ts's header unit). The staple is 1 by
+   * definition; every other good is its own `perPersonDaily` divided by the
+   * staple's, so the street cadence says exactly what the books say (F4: a
+   * garment every 180 days is `1/180`, not the flat `1` the compiler used to
+   * hard-set for every good alike).
+   */
   perCapitaDaily: number;
   /** Street days of the good a full house box holds. */
   capDays: number;
@@ -132,6 +146,15 @@ export interface StockpileDef {
    *  into it) exists only when the world runs construction. */
   construction?: boolean;
 }
+
+/**
+ * THE MARKET CHANNEL, as a seller entry. Not a building key: it names the
+ * stalls the town PLAN founds on the service radius, which is why a good
+ * carrying it is placed by distance while a gate seller is placed by its
+ * work's production cap. Every reader that must tell "distributed here" from
+ * "made here" compares against this.
+ */
+export const MARKET_CHANNEL = "market";
 
 export interface CommodityStreetDef {
   /** Street days a full house box holds (trip cadence). */
@@ -868,17 +891,34 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
   }
 
   // ---- street goods (roles/box slots by registration order) ----
+  //
+  // ⚖️ THE RATION IS THE UNIT (F4, economy-arc-opening.md). goods.ts's header
+  // has always said so — *"the unit throughout is the RATION — one person-day
+  // of whatever the traits declared"* — but the compiler hard-set
+  // `perCapitaDaily: 1` for EVERY street good, so the street layer heard every
+  // commodity as a staple however the books priced it. Clothing's books said
+  // 10× rarer than food and the street bought it daily anyway; the ONLY
+  // cadence lever left was `capDays`, which is a box size, not a want.
+  //
+  // The rate is now the books' own, NORMALIZED ON THE FOUNDING STAPLE (the
+  // first street commodity — slot 0, the good `hasLedger` treats as always
+  // present). The staple divides by itself and is EXACTLY 1, byte-identical
+  // to the constant it replaces; everything else is quoted against it. A
+  // street good with no `perPersonDaily` (or a doc whose staple declares
+  // none) falls back to the flat 1 — the pre-F4 reading, so an intermediate
+  // that somehow carries a box is never silently zeroed off the street.
+  const stapleDaily = doc.commodities.find(c => c.street && c.perPersonDaily !== undefined)?.perPersonDaily;
   const goods: GoodSpec[] = [];
   for (const c of doc.commodities) {
     if (!c.street) continue;
     const st = c.street;
     const gateSellers = doc.buildings.filter(b => (b.sells ?? []).includes(c.key));
     const sellers = [
-      ...(st.market ? ["market"] : []),
+      ...(st.market ? [MARKET_CHANNEL] : []),
       ...gateSellers.map(b => b.key),
     ];
     const shelved = [
-      ...(st.market ? ["market"] : []),
+      ...(st.market ? [MARKET_CHANNEL] : []),
       ...gateSellers.filter(b => b.shelved).map(b => b.key),
     ];
     goods.push({
@@ -888,7 +928,8 @@ export function compileEconomy(docs: EconomyDoc[], opts: CompileOpts = {}): Comp
       sellers: sellers as GoodSpec["sellers"],
       shelved,
       producers: st.producers as GoodSpec["producers"],
-      perCapitaDaily: 1,
+      perCapitaDaily:
+        stapleDaily && c.perPersonDaily !== undefined ? c.perPersonDaily / stapleDaily : 1,
       capDays: st.capDays,
       shopSec: st.shopSec,
       cartRations: st.cartRations,

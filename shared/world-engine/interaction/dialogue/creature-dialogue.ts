@@ -108,6 +108,12 @@ export type DialogueActKind =
   | "directions-menu" // open the "where is…" list (several known subjects)
   | "directions-pick" // a pick inside the "where is…" list
   | "why" // ask WHY a need exists — reveals the cause clause (narration)
+  /** ⚖️ WHY-CHAINS §5 — ask WHY the creature is DOING what it just said it was
+   *  doing. A DIFFERENT act from `why` above, deliberately: that one is
+   *  NEEDS-gated (causal facts / condition / likes) and answers about a WANT;
+   *  this one walks the live task chain (`reasonChainOf`) and answers about an
+   *  ACTIVITY. Only on the board while a `whyChain` walk is open. */
+  | "why-doing"
   | "tell" // ASSERT a fact to the listener (a location the speaker knows) — inform
   | "ask-fact" // query the listener's KNOWLEDGE for a generic Fact (facts.ts)
   | "tell-fact" // ASSERT a generic Fact (itemState/condition/presence) — inform
@@ -130,6 +136,30 @@ export type GoingDest =
   /** Off to DO something ("I will eat", "I will wash the clothing") — the answer
    *  when the destination has no name worth speaking but the errand does. */
   | { kind: "activity"; verb: string; object?: string };
+
+/**
+ * ★ ⚖️ LAW ① — THE REASON IS THE CHAIN (why-chains.md §2/§4). ★
+ *
+ * One rung of a creature's REAL task chain, phrased. The world layer walks the
+ * structures that actually drive the body — pursuit → need step → row →
+ * order/roster → motive — and hands back the ladder; this layer only speaks it
+ * (`causalPhrase(chain[d].clause, "because", chain[d+1].clause)`). A "why"
+ * answer is therefore never a composed story: behavior and explanation come out
+ * of one source and cannot disagree.
+ *
+ * ⚖️ LAW ② — CHAINS END. The last link is always `end` (the existential shrug),
+ * a `motive` or an `authority`; nothing here may loop.
+ *
+ * ⚖️ LAW ④ — NO NEW LEXICON. A rung whose clause cannot be spoken with existing
+ * words in every locale is COLLAPSED by the world layer (skipped, the chain
+ * continues above it) — never invented, never English-only.
+ */
+export type ReasonLink =
+  | { kind: "activity"; clause: PhraseSpec } // link 0 — what I am doing
+  | { kind: "because"; clause: PhraseSpec } // one why-step up
+  | { kind: "authority"; clause: PhraseSpec } // "you asked"
+  | { kind: "motive"; clause: PhraseSpec } // "I am hungry" / "I want X"
+  | { kind: "end" }; // existential — the DONT_KNOW shape
 
 export interface DialogueAct {
   kind: DialogueActKind;
@@ -183,6 +213,13 @@ export interface DeviceBoardState {
    *  menu). `menu` selects the item provider; `page` is the 0-based page,
    *  wrapped on overflow. */
   list?: { menu: string; page: number };
+  /** ⚖️ WHY-CHAINS §5 — A "WHY" WALK IS OPEN on this device: whose chain
+   *  (`cid` — the creature the doing answer was ABOUT, which need not be the
+   *  answerer), and how far up it we have climbed. Set by answering
+   *  `what-doing`/`where-going`, bumped by each `why-doing`, and CLEARED when
+   *  the chain runs out (law ② — the button disappears because chains end).
+   *  Board navigation like every other field here: never synced, never shared. */
+  whyChain?: { cid: CreatureId; depth: number };
 }
 
 /**
@@ -327,6 +364,20 @@ export interface ProjectionOpts {
    *  apple"). `null` = verifiably idle; `undefined` = can't tell. Hook absent
    *  ⇒ fall back to doingOf (verb only, no object). */
   activityOf?: (creatureId: CreatureId) => { verb: string; object?: string } | null | undefined;
+  /**
+   * ⚖️ LAW ① — THE REASON IS THE CHAIN (why-chains.md §2). The world layer
+   * walks `creatureId`'s REAL task chain and hands back the phrased ladder
+   * (`ReasonLink[]`) — link 0 is the activity `activityOf` reports, so the two
+   * can never disagree. Derived FRESH per ask and never cached; law ③ says
+   * deriving it moves nothing.
+   *
+   * `observer` is WHO is answering, exactly as `presenceOf` carries one: a
+   * creature explains ITSELF in full, a HOUSEMATE may explain it too (household
+   * business is common knowledge — household-duties §1), and `undefined` is the
+   * honest "I can't say" for anybody else. Hook absent ⇒ no chain, so the
+   * why-follow-up never reaches the board at all.
+   */
+  reasonChainOf?: (creatureId: CreatureId, observer?: CreatureId) => ReasonLink[] | undefined;
   /** The ACTIVITIES this world gathers for — the verbs a "do it with me" can
    *  name ("eat", "play"). Supplied by the host from the culture's own ritual
    *  rows, never a list hard-coded here: a culture that declares a song gets a
@@ -464,6 +515,32 @@ function cantGlyph(thing: string): LeveledGlyphs {
  *  the button reads as the question, not the command "you go place". */
 function whereGoingAsk(): LeveledGlyphs {
   return { a: "place#question + go", b: "place#question + you + go", c: "place#question + you + go" };
+}
+/**
+ * ⚖️ WHY-CHAINS §5 — "What are you doing?", the board button.
+ *
+ * The POLAR shape on the broad activity verb, NOT `thing#question + you + do`.
+ * `place#question + [you +] go` speaks properly because lang/core owns a
+ * purpose-built `where` construction for exactly that string; there is no
+ * `thing#question` + verb construction, so that phrasing degraded to the
+ * telegraphic gloss ("thing you do" / "דבר אתה עושה") in every locale — and law
+ * ④ (no new lexicon; §7: no new sentence forms) says use what already speaks.
+ * This does, everywhere: "You do?" / "¿Haces?" / "Você faz?" / "אתה עושה?".
+ *
+ * It also PARSES BACK to `what-doing` about the listener, which the other
+ * phrasing did not — so pressing the button and saying the words are one
+ * utterance rather than two readings of one intent.
+ */
+function whatDoingAsk(): LeveledGlyphs {
+  return { a: "do#question", b: "you + do#question", c: "you + do#question" };
+}
+/** ⚖️ WHY-CHAINS §5 — the "…why?" follow-up button, offered only while a chain
+ *  walk is open. BARE, like `WHY_PLAIN`: every `why + X` form the rulesets know
+ *  renders as a WANT-why ("Why do you want a do?"), which is a different
+ *  question. A spoken bare "why" routes to this same act while the walk is
+ *  open, so the button and the word stay one path. */
+function whyDoingAsk(): LeveledGlyphs {
+  return WHY_PLAIN;
 }
 /** A moving creature's answer to "where are you going?", from its errand destination:
  *  fetching a good, heading home, or bound for a named place. */
@@ -1116,6 +1193,28 @@ export function projectDialogue(
   if (opts.goingOf?.(creatureId)) {
     push("where-going", whereGoingAsk());
   }
+  // ★ WHAT ARE YOU DOING — ALWAYS, in both dialogue states. ★
+  //
+  // User direction (why-chains.md): *"'What are you doing' should be one of the
+  // default questions the player can ask to any creature at any time"* — so it
+  // is NOT gated on the creature being busy, the way `where-going` is gated on
+  // it walking. An idle one answers the existing `notDoing` shape, which is a
+  // real answer and a truthful one; the ask was SPOKEN-PATH ONLY before this,
+  // and a question you can only reach by composing a sentence is not a default.
+  acts.push({
+    kind: "what-doing",
+    // "you", exactly as the spoken "what + you + do" resolves it (`aboutRef`):
+    // the ASKER is the player, so the second person is the creature being faced.
+    about: { symbol: "you", id: creatureId },
+    glyph: at(whatDoingAsk(), level),
+  });
+  // …AND WHY. The follow-up exists exactly as long as the chain does (§5): the
+  // doing answer opened the walk, each press climbs a rung, and the rung after
+  // the last one clears `whyChain` — so the button LEAVES the board when the
+  // chain ends (law ②). No hook, no chain, no button.
+  if (ui?.whyChain && opts.reasonChainOf) {
+    push("why-doing", whyDoingAsk());
+  }
   // ASK FOR DIRECTIONS — the town places the player has heard of that THIS
   // person can point to (host-filtered). One subject → a direct "where is X?";
   // several → open the paginated "where is…" list. Available in both states:
@@ -1139,14 +1238,21 @@ export function projectDialogue(
   // ALWAYS be asked where it's off to and why, however crowded the want board is
   // (they used to be pushed last and fall off exactly when a shopper was out
   // fetching — the busiest, most askable moment). One of each; order preserved.
+  //
+  // ⚖️ WHY-CHAINS §5 puts `what-doing` and its `why-doing` follow-up in the same
+  // company: "at any time" is not a promise a board that can drop the button
+  // keeps. A busy creature with a full want board is precisely the one worth
+  // asking what it is up to.
+  const NATURAL = ["why", "why-doing", "where-going", "what-doing"] as const;
   const standing = acts.filter((a) => a.kind === "confused" || a.kind === "bye");
   const natural: DialogueAct[] = [];
-  for (const kind of ["why", "where-going"] as const) {
+  for (const kind of NATURAL) {
     const a = acts.find((x) => x.kind === kind);
     if (a) natural.push(a); // first of each — a fact-why and a motive-why answer alike
   }
+  const naturalKinds = new Set<DialogueActKind>(NATURAL);
   const rest = acts.filter(
-    (a) => a.kind !== "confused" && a.kind !== "bye" && a.kind !== "why" && a.kind !== "where-going",
+    (a) => a.kind !== "confused" && a.kind !== "bye" && !naturalKinds.has(a.kind),
   );
   const keep = new Set<DialogueAct>([
     ...rest.slice(0, Math.max(0, maxActs - standing.length - natural.length)),
@@ -1250,6 +1356,13 @@ export function selectAct(
   const reveal = () => {
     if (ctx?.convo) markRevealed(ctx.convo, creatureId);
   };
+  /** ⚖️ WHY-CHAINS §5 — a doing answer OPENS the why walk on the asking device,
+   *  at rung 0 and about `subject` (which is the answerer itself for
+   *  `where-going`, and whoever `what-doing` named otherwise). Board navigation,
+   *  so it rides `ui` home like every page turn; with no chain hook there is
+   *  nothing to walk and the board stays as it was. */
+  const openWhyChain = (subject: CreatureId | undefined): { ui?: DeviceBoardState } =>
+    subject && opts.reasonChainOf ? { ui: { ...ui, whyChain: { cid: subject, depth: 0 } } } : {};
   switch (act.kind) {
     case "offer": {
       if (!act.itemId) return { events: [] };
@@ -1782,7 +1895,13 @@ export function selectAct(
       // "I am going to get {good}" / "I am going home" / "I am going to {place}".
       // Not en route ⇒ "I'm here". No world effect, no close.
       const dest = creature ? opts.goingOf?.(creatureId) : undefined;
-      return { events: [], responseGlyph: at(dest ? goingLine(dest) : HERE_STAY, level) };
+      return {
+        events: [],
+        responseGlyph: at(dest ? goingLine(dest) : HERE_STAY, level),
+        // ⚖️ WHY-CHAINS §5 — "where are you going?" has a meaningful why, and
+        // it is the SAME why: a walk is a step of the same task chain.
+        ...openWhyChain(creatureId),
+      };
     }
     case "what-doing": {
       // "What is {X} doing / eating?" (semantic-tests §Questions) — answered
@@ -1811,15 +1930,20 @@ export function selectAct(
             return verbs.length ? { verb: verbs[0]! } : null; // [] = verifiably idle
           })();
       if (activity === undefined) return { events: [], responseGlyph: at(DONT_KNOW, level) };
+      // ⚖️ WHY-CHAINS §5 — every doing answer, including the two honest
+      // NEGATIVES below, opens the why walk. An idle creature's chain is
+      // `[end]`, so the follow-up asks once and terminates (law ②); refusing to
+      // open it at all would make "why?" available only on lucky presses.
+      const chain = openWhyChain(act.about.id);
       // Synonym-family match (parse-intent VERB_FAMILY): "what dog take?" is
       // confirmed by a creature whose live verb reads "get" — same primitive,
       // different word. The correction still speaks the ASKED word back.
       if (act.verb && (activity === null || canonicalVerb(activity.verb) !== canonicalVerb(act.verb))) {
-        return { events: [], responseGlyph: at(notDoing(who, act.verb), level) };
+        return { events: [], responseGlyph: at(notDoing(who, act.verb), level), ...chain };
       }
       if (activity === null) {
         // Broad "what are you doing?" while idle — "I'm not doing (anything)".
-        return { events: [], responseGlyph: at(notDoing(who, "do"), level) };
+        return { events: [], responseGlyph: at(notDoing(who, "do"), level), ...chain };
       }
       return {
         events: [],
@@ -1827,6 +1951,36 @@ export function selectAct(
           phrase({ subject: who, verb: activity.verb, ...(activity.object ? { object: activity.object } : {}) }),
           level,
         ),
+        ...chain,
+      };
+    }
+    case "why-doing": {
+      // ★ ⚖️ LAW ① — THE REASON IS THE CHAIN (why-chains.md §2/§5). ★
+      //
+      // One rung, spoken: `causalPhrase(chain[depth], "because", chain[depth+1])`.
+      // The chain is RE-DERIVED here, on this ask, off the live world — the
+      // creature may have moved on between presses, and a cached ladder would
+      // explain a body that no longer exists (law ③ forbids the alternative
+      // shortcut of parking it on the conversation).
+      //
+      // ⚖️ LAW ② — CHAINS END. Walking off the top, or onto an `end` link, is
+      // the existential shrug AND the close: `whyChain` clears, so the button
+      // leaves the board rather than answering "I don't know" forever.
+      const stop = { events: [], responseGlyph: at(DONT_KNOW, level), ui: { ...ui, whyChain: undefined } };
+      const walk = ui?.whyChain;
+      if (!walk) return { events: [], responseGlyph: at(NOT_UNDERSTOOD, level) };
+      // ANSWERER SCOPE (§5): the world layer decides whether THIS creature may
+      // explain THAT one — itself always, a housemate by common knowledge,
+      // anybody else not at all (undefined ⇒ the honest don't-know at depth 1).
+      const links = opts.reasonChainOf?.(walk.cid, creatureId);
+      if (!links) return stop;
+      const effect = links[walk.depth];
+      const cause = links[walk.depth + 1];
+      if (!effect || effect.kind === "end" || !cause || cause.kind === "end") return stop;
+      return {
+        events: [],
+        responseGlyph: at(causalPhrase(effect.clause, "because", cause.clause), level),
+        ui: { ...ui, whyChain: { cid: walk.cid, depth: walk.depth + 1 } },
       };
     }
     case "ask-fact": {

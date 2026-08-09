@@ -5,18 +5,41 @@
  * session search (memory field Context_StudentSessions / Context_UserSessions)
  * has something meaningful to match against.
  *
+ * Two paths:
+ * - LIGHT: very short sessions get a single-shot summary of the transcript
+ *   (grounded with the student's name + output language). Nothing happened;
+ *   no investigation needed.
+ * - CONTEXT-AWARE: substantial sessions run a small post-session analyst with
+ *   the SAME memory access the Monitor has (all fields read-only) via the
+ *   manageMemory tool — bounded view/search rounds over Student_Notes,
+ *   Context_StudentSessions etc. — so importance reflects actual NOVELTY
+ *   ("first time she…" vs routine) and recurring patterns get named in the
+ *   summary for deep analysis to pick up later. Runs post-session, so unlike
+ *   the Monitor it has time to think and nothing it reads can leak into the
+ *   live session. Falls back to the light path on any failure.
+ *
  * Idempotent: if the session already has both title and summary, no work is done.
  * Safe to call in the background (errors are logged, not thrown).
  */
 
 import { db } from "../db";
-import { chatSessions, type ChatMessage } from "@shared/schema";
+import { chatSessions, type ChatMessage, type StudentWithAacSettings } from "@shared/schema";
 import type { PendingMessage } from "./dual-agent/types";
 import { eq } from "drizzle-orm";
 import { getStructuredProvider } from "./providers/provider-factory";
-import type { JSONSchema, GPTInputItem } from "./chat/gpt";
+import type { JSONSchema, GPTInputItem, GPTResponse } from "./chat/gpt";
 import { settingsRepository } from "../repositories/settingsRepository";
+import { studentRepository } from "../repositories/studentRepository";
+import { getLanguageName } from "@shared/language-names";
 import { chargeModelUsage } from "./credit-ledger";
+import { buildMemoryTool, processMemoryToolResponse, renderMemorySchema } from "./chat/memory-system";
+import { processMemoryToolWithDB, createMemoryLoadState } from "./chat/memory-db-bridge";
+import type { MemoryState, AgentMemoryFieldWithDB } from "./chat/memory-types";
+import { MASTER_MEMORY_FIELDS } from "./sessionService";
+import { getAACMemoryFields } from "./memory-schema/aac-memory-schema";
+import { SESSION_MEMORY_FIELDS } from "./memory-schema/session-memory-schema";
+import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
+import { buildSessionAccessCtx } from "./sharing/sessionCtx";
 import fs from "fs";
 import path from "path";
 
@@ -29,6 +52,11 @@ function log(msg: string) {
 
 const MAX_MESSAGES_IN_CONTEXT = 40;
 const MAX_CHARS_PER_MESSAGE = 500;
+/** Transcripts shorter than this skip the context-aware analyst entirely —
+ *  a greeting exchange doesn't need memory investigation. */
+const CONTEXT_TRANSCRIPT_MIN_CHARS = 600;
+/** Max manageMemory rounds before the analyst is forced to answer. */
+const MAX_CONTEXT_STEPS = 4;
 
 function messageText(m: ChatMessage): string {
   const c = m.content;
@@ -40,19 +68,19 @@ function messageText(m: ChatMessage): string {
 }
 
 function buildTranscript(messages: ChatMessage[]): string {
-  const filtered = messages.filter(m => m.role !== "tool" && m.role !== "system");
+  // Tool-call assistant turns carry no content; their empty "ASSISTANT:" lines
+  // only add noise for the summarizer, so drop text-less messages entirely.
+  const filtered = messages
+    .filter(m => m.role !== "tool" && m.role !== "system")
+    .map(m => ({ role: m.role, text: messageText(m).slice(0, MAX_CHARS_PER_MESSAGE) }))
+    .filter(m => m.text.trim().length > 0);
   const slice = filtered.length <= MAX_MESSAGES_IN_CONTEXT
     ? filtered
     : [
         ...filtered.slice(0, MAX_MESSAGES_IN_CONTEXT / 2),
         ...filtered.slice(-MAX_MESSAGES_IN_CONTEXT / 2),
       ];
-  return slice
-    .map(m => {
-      const text = messageText(m).slice(0, MAX_CHARS_PER_MESSAGE);
-      return `${m.role.toUpperCase()}: ${text}`;
-    })
-    .join("\n");
+  return slice.map(m => `${m.role.toUpperCase()}: ${m.text}`).join("\n");
 }
 
 const SUMMARY_SCHEMA: JSONSchema = {
@@ -88,6 +116,10 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
     // When a clinician has manually renamed the session, generate the summary
     // for search but never overwrite their chosen title.
     const keepTitle = session.titleManual === true;
+    // Summarization marks the end of a session's life — record it in status
+    // so lists show "ended" and the abandoned-session sweeper stops matching.
+    // CRM landing chats keep their own lifecycle (crmRepository filters open).
+    const closeStatus = session.crmPotentialCustomerId ? {} : { status: "closed" as const };
 
     let messages: ChatMessage[] = Array.isArray(session.log) ? (session.log as ChatMessage[]) : [];
 
@@ -115,46 +147,114 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
     if (messages.length === 0) {
       await db
         .update(chatSessions)
-        .set({ summary: "No messages.", importance: 0, ...(keepTitle ? {} : { title: "(empty session)" }) })
+        .set({ summary: "No messages.", importance: 0, ...closeStatus, ...(keepTitle ? {} : { title: "(empty session)" }) })
         .where(eq(chatSessions.id, sessionId));
       return;
     }
 
     const transcript = buildTranscript(messages);
+    if (!transcript.trim()) {
+      // Everything was tool calls / empty content — nothing to summarize.
+      await db
+        .update(chatSessions)
+        .set({ summary: "No messages.", importance: 0, ...closeStatus, ...(keepTitle ? {} : { title: "(empty session)" }) })
+        .where(eq(chatSessions.id, sessionId));
+      return;
+    }
     const cfg = await settingsRepository.getLLMConfig("clinician");
     const provider = getStructuredProvider(cfg.provider);
 
-    const input: GPTInputItem[] = [
-      {
-        type: "message",
-        role: "user",
-        content: `Summarize the following session transcript.\n\nChat mode: ${session.chatMode}\n\nTranscript:\n${transcript}`,
-      },
+    // Ground the summarizer in WHO the session is about. Without this, a
+    // transcript in another language left the model free to confabulate the
+    // subject's identity from medical priors — a hospitalized child was once
+    // summarized as the family's DOG (cluster seizures + midazolam pattern-
+    // matched to canine epilepsy). One line of grounding closes that door.
+    let student: StudentWithAacSettings | undefined;
+    if (session.studentId) {
+      try {
+        student = await studentRepository.getStudentWithAacSettings(session.studentId);
+      } catch (err) {
+        log(`[${sessionId}] student lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    const subjectName = student?.firstName || student?.name?.split(" ")[0];
+    const subjectLine = subjectName
+      ? `\nSubject: ${subjectName} — a student (a person) who communicates using an AAC device.\n`
+      : "";
+    // Explicit output language beats "match the transcript" for small models
+    // (haiku wrote English titles over Hebrew transcripts). The student's
+    // primaryLanguage is the language of the people who read these.
+    const languageLine = student?.primaryLanguage
+      ? `Write the title and summary in ${getLanguageName(student.primaryLanguage)}.`
+      : "Write the title and summary in the transcript's dominant language.";
+
+    const baseInstructions = [
+      "You are summarizing a chat session transcript for later retrieval.",
+      "Produce a concise title, a 2-4 sentence summary, and an importance score (0-3).",
+      "Focus on topics, outcomes, and notable events.",
+      languageLine,
+      "Do not invent facts. Refer to people exactly as the transcript presents them",
+      "— never infer species, age, or relationships that are not stated.",
     ];
+    const userContent = `Summarize the following session transcript.\n\nChat mode: ${session.chatMode}${subjectLine}\nTranscript:\n${transcript}`;
 
-    const response = await provider.structuredComplete({
-      model: cfg.model,
-      input,
-      instructions:
-        "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 sentence summary, and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
-      schemaName: "SessionSummary",
-      schema: SUMMARY_SCHEMA,
-      maxTokens: 400,
-    });
+    const chargeResponse = async (r: GPTResponse) => {
+      await chargeModelUsage({
+        provider: cfg.provider,
+        model: cfg.model,
+        promptTokens: r.promptTokens || 0,
+        completionTokens: r.completionTokens || 0,
+        cachedTokens: r.cachedTokens || 0,
+        cacheCreationTokens: r.cacheCreationTokens || 0,
+        sessionId,
+        studentId: session.studentId,
+        userId: session.userId,
+        category: "session-summary",
+        label: "session-summary",
+      });
+    };
 
-    await chargeModelUsage({
-      provider: cfg.provider,
-      model: cfg.model,
-      promptTokens: response.promptTokens || 0,
-      completionTokens: response.completionTokens || 0,
-      cachedTokens: response.cachedTokens || 0,
-      cacheCreationTokens: response.cacheCreationTokens || 0,
-      sessionId,
-      studentId: session.studentId,
-      userId: session.userId,
-      category: "session-summary",
-      label: "session-summary",
-    });
+    // Substantial student sessions get the context-aware analyst (Monitor-grade
+    // read-only memory access, bounded searches) so importance reflects real
+    // novelty. Short sessions — nothing happened — skip it entirely. Honors
+    // the same allowNotes privacy gate the Monitor's final pass respects.
+    const contextAware =
+      !!session.studentId &&
+      transcript.length >= CONTEXT_TRANSCRIPT_MIN_CHARS &&
+      student?.aacSettings?.allowNotes !== false;
+
+    let response: GPTResponse | null = null;
+    if (contextAware) {
+      try {
+        response = await runContextAwareSummary({
+          studentId: session.studentId!,
+          userId: session.userId,
+          instituteId: session.instituteId,
+          privacy: {
+            allowReadProgress: student?.aacSettings?.allowReadProgress !== false,
+            allowReadReports: student?.aacSettings?.allowReadReports !== false,
+          },
+          provider,
+          model: cfg.model,
+          userContent,
+          baseInstructions,
+          chargeResponse,
+        });
+      } catch (err) {
+        log(`[${sessionId}] context-aware summary failed — falling back to light path: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (!response) {
+      response = await provider.structuredComplete({
+        model: cfg.model,
+        input: [{ type: "message", role: "user", content: userContent }],
+        instructions: baseInstructions.join("\n"),
+        schemaName: "SessionSummary",
+        schema: SUMMARY_SCHEMA,
+        maxTokens: 400,
+      });
+      await chargeResponse(response);
+    }
 
     // Structured providers return `content` as a JSON *string* (Claude
     // JSON.stringifies the tool input; OpenAI returns output_text). Every other
@@ -185,12 +285,122 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
 
     await db
       .update(chatSessions)
-      .set({ summary, importance, ...(keepTitle ? {} : { title }) })
+      .set({ summary, importance, ...closeStatus, ...(keepTitle ? {} : { title }) })
       .where(eq(chatSessions.id, sessionId));
     log(`[${sessionId}] summary generated (importance=${importance}${keepTitle ? ", title kept (manual)" : ""})`);
   } catch (err) {
     log(`[${sessionId}] error: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/**
+ * The memory surface for the post-session analyst: the SAME fields the
+ * Monitor and deep analysis see, but ALL read-only — the analyst observes
+ * and scores; the Monitor and deep analysis own the writes.
+ */
+function summarizerMemoryFields(privacy: {
+  allowReadProgress: boolean;
+  allowReadReports: boolean;
+}): AgentMemoryFieldWithDB[] {
+  const ro = (f: unknown) => ({ ...(f as AgentMemoryFieldWithDB), readOnly: true }) as AgentMemoryFieldWithDB;
+  return [
+    ...MASTER_MEMORY_FIELDS.map(ro),
+    ro(AAC_AUTO_PROMPT_FIELD),
+    ro(AAC_PROMPT_FIELD),
+    ...getAACMemoryFields(privacy).map(ro),
+    ...SESSION_MEMORY_FIELDS.map(ro),
+  ];
+}
+
+/**
+ * Bounded post-session analyst loop. Each round the model either calls
+ * manageMemory (view/search — executed through the same DB bridge the Monitor
+ * and deep analysis use, PHI-scoped by the session's access context) or emits
+ * the final structured summary. After MAX_CONTEXT_STEPS rounds the tool is
+ * withdrawn, forcing the answer. Throws on provider errors — the caller falls
+ * back to the light single-shot path.
+ */
+async function runContextAwareSummary(opts: {
+  studentId: string;
+  userId?: string | null;
+  instituteId?: string | null;
+  privacy: { allowReadProgress: boolean; allowReadReports: boolean };
+  provider: ReturnType<typeof getStructuredProvider>;
+  model: string;
+  userContent: string;
+  baseInstructions: string[];
+  chargeResponse: (r: GPTResponse) => Promise<void>;
+}): Promise<GPTResponse> {
+  const fields = summarizerMemoryFields(opts.privacy);
+  const memoryValues: Record<string, unknown> = {};
+  const memoryState: MemoryState = { visible: [], page: {} };
+  const loadState = createMemoryLoadState();
+  const accessCtx = await buildSessionAccessCtx({
+    userId: opts.userId ?? undefined,
+    studentId: opts.studentId,
+    instituteId: opts.instituteId ?? undefined,
+  });
+  const baseContext = { studentId: opts.studentId, userId: opts.userId ?? undefined, accessCtx };
+  const memoryTool = buildMemoryTool(false);
+
+  const instructions = [
+    ...opts.baseInstructions,
+    "",
+    "You have READ-ONLY access to the student's memory via manageMemory.",
+    "Importance depends on NOVELTY. Before scoring above 1:",
+    "- view Student_Notes for what is already known,",
+    "- search Context_StudentSessions for similar past sessions.",
+    `Keep it bounded — at most ${MAX_CONTEXT_STEPS} manageMemory calls, then answer.`,
+    "If the session shows a recurring pattern worth deep-analysis attention, name it in the summary.",
+    "",
+    renderMemorySchema(fields),
+  ].join("\n");
+
+  const input: GPTInputItem[] = [{ type: "message", role: "user", content: opts.userContent }];
+
+  for (let step = 0; step <= MAX_CONTEXT_STEPS; step++) {
+    const finalStep = step === MAX_CONTEXT_STEPS;
+    const response = await opts.provider.structuredComplete({
+      model: opts.model,
+      input,
+      instructions,
+      schemaName: "SessionSummary",
+      schema: SUMMARY_SCHEMA,
+      tools: finalStep ? undefined : [memoryTool],
+      maxTokens: 600,
+    });
+    await opts.chargeResponse(response);
+    const toolCalls = response.toolCalls ?? [];
+    if (toolCalls.length === 0) return response;
+    for (const tc of toolCalls) {
+      input.push({ type: "function_call", call_id: tc.call_id, name: tc.name, arguments: tc.arguments || "{}" });
+      let output: string;
+      if (tc.name === "manageMemory") {
+        try {
+          const args = JSON.parse(tc.arguments || "{}");
+          const result = await processMemoryToolWithDB(
+            fields,
+            memoryValues,
+            memoryState,
+            loadState,
+            args,
+            baseContext,
+            (ff, vv, ss, i) => processMemoryToolResponse(ff, vv, ss, i),
+          );
+          Object.assign(memoryValues, result.updatedMemoryValues);
+          Object.assign(memoryState, result.updatedMemoryState);
+          output = JSON.stringify({ results: result.results }).slice(0, 20000);
+        } catch (err) {
+          output = `manageMemory failed: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      } else {
+        output = `Unknown tool: ${tc.name}`;
+      }
+      input.push({ type: "function_call_output", call_id: tc.call_id, output });
+    }
+  }
+  // Unreachable: the final step runs without tools, so it always returns above.
+  throw new Error("context-aware summary did not produce a final response");
 }
 
 /**

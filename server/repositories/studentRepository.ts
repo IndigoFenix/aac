@@ -18,6 +18,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, or, isNotNull, sql } from "drizzle-orm";
+import { mergeBudgetState, type BudgetState, type BudgetWindow } from "@shared/aac/budget-meter";
 import { instituteRepository } from "./instituteRepository";
 import { personRepository } from "./personRepository";
 import {
@@ -134,15 +135,50 @@ export class StudentRepository {
   }
 
   /**
+   * The persisted multi-window budget-meter state, read fresh from the DB.
+   * Coordinators MUST load through this rather than a cached student snapshot:
+   * a reconnect-resume's cached row predates the session's own spend, and
+   * seeding the meter from it reset the budget to ~full on every re-init.
+   */
+  async getBudgetMeters(studentId: string): Promise<BudgetState | null> {
+    const [row] = await db
+      .select({ budgetMeters: students.budgetMeters })
+      .from(students)
+      .where(eq(students.id, studentId));
+    return (row?.budgetMeters as BudgetState | null) ?? null;
+  }
+
+  /**
    * Persist the multi-window budget-meter state (leaky-bucket {drain,asOf} per
-   * window). Best-effort: a failure is logged but never breaks the live session
-   * — the in-memory meter keeps governing; only cross-session continuity is at
+   * window). MERGES with the stored row under a row lock — per window the
+   * higher regen-normalized drain wins — instead of overwriting, so a save
+   * from a stale base (reconnect-resumed coordinator, late teardown flush,
+   * concurrent session) can never erase drain accumulated by another writer.
+   * Best-effort: a failure is logged but never breaks the live session — the
+   * in-memory meter keeps governing; only cross-session continuity is at
    * risk. Not sensitive, so it bypasses the external-storage extraction path.
    * See planning-docs/aac-budget-tiers-spec.md §7.
    */
-  async updateBudgetMeters(studentId: string, state: Record<string, unknown>): Promise<void> {
+  async updateBudgetMeters(
+    studentId: string,
+    state: BudgetState,
+    windows: BudgetWindow[],
+  ): Promise<void> {
     try {
-      await db.update(students).set({ budgetMeters: state }).where(eq(students.id, studentId));
+      await db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ budgetMeters: students.budgetMeters })
+          .from(students)
+          .where(eq(students.id, studentId))
+          .for("update");
+        const merged = mergeBudgetState(
+          row?.budgetMeters as BudgetState | null,
+          state,
+          windows,
+          Date.now(),
+        );
+        await tx.update(students).set({ budgetMeters: merged }).where(eq(students.id, studentId));
+      });
     } catch (err) {
       console.error(`[StudentRepository] updateBudgetMeters(${studentId}) failed:`, err);
     }

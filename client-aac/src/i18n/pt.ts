@@ -869,6 +869,7 @@ export const pt: Translations = {
     neitherOfThese: "Nenhum destes",
     guess: "Achar palavra",
     exitConfirm: "Quer sair?",
+    homeActionConfirm: "Quer fazer isto?",
   },
 
   silentMode: {

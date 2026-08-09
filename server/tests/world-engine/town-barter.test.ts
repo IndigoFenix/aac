@@ -21,16 +21,27 @@ import {
   BARTER_RATIO_CAP,
   BARTER_RETRY_SEC,
   BARTER_WANT_MIN,
+  GEO_FARMLAND_REF,
   barterQuote,
   barterRatio,
   barterWillingness,
   barterWorth,
   defaultTakeGood,
+  geoGoodClass,
+  geographyShortageBase,
+  nextShortageBelow,
   runDueBarters,
   stockAbstractPartner,
   stubPartnerSignals,
   type BarterSignals,
+  type PartnerGeography,
 } from "@shared/world-engine/kernel/town/barter.js";
+import {
+  complementaryTrade,
+  freightSurvivesLeg,
+} from "@shared/world-engine/kernel/town/complementary.js";
+import { carryReachM, freightOf } from "@shared/world-engine/freight.js";
+import { DOLLHOUSE_SCALE } from "@shared/world-engine/scale.js";
 import {
   createTransferLedger,
   runDueTransfers,
@@ -224,6 +235,179 @@ describe("stubPartnerSignals — the closed-form partner proxy", () => {
     expect(stubPartnerSignals("hamlet-1", 5).shortage("wood")).not.toBe(
       stubPartnerSignals("hamlet-2", 5).shortage("wood"),
     );
+  });
+});
+
+// ── 3b. GEOGRAPHY CHOOSES WHAT A DISTANT TOWN HAS TO SELL (R&T ⑤ T5) ────────
+//
+// The hash proxy was BLIND: it made a river-mouth granary as likely to be
+// starving as a mining camp. These pin that the terrain now speaks, that it
+// speaks THROUGH the same closed form (so the derived wakes still agree with
+// the refusals), and — the one that matters most — that a partner whose
+// terrain is unknown reads EXACTLY as it did before.
+
+describe("stubPartnerSignals + geography — terrain biases what a stub can spare", () => {
+  const KEYS = ["city:14", "hamlet-1", "away:7"];
+  const GOODS = ["food", "wood", "stone", "cloth", "clothing", "widget"];
+
+  it("🔒 ABSENT geography is byte-identical to the shipped hash proxy", () => {
+    for (const key of KEYS) {
+      for (const day of [0, 3, 11, 40]) {
+        const shipped = stubPartnerSignals(key, day);
+        for (const geo of [undefined, null, {} as PartnerGeography]) {
+          const s = stubPartnerSignals(key, day, geo);
+          for (const g of GOODS) expect(s.shortage(g)).toBe(shipped.shortage(g));
+        }
+      }
+    }
+  });
+
+  it("classes a good by its FREIGHT ROW, never by its name", () => {
+    expect(geoGoodClass("food")).toBe("staple"); // the hauler eats the cargo
+    expect(geoGoodClass("apple")).toBe("staple");
+    expect(geoGoodClass("wood")).toBe("rawBulk"); // barely repays its own haul
+    expect(geoGoodClass("stone")).toBe("rawBulk");
+    expect(geoGoodClass("cloth")).toBe("refined");
+    expect(geoGoodClass("clothing")).toBe("refined");
+    // An undeclared good sits at the staple anchor and durable — no class,
+    // therefore no geographic opinion (the honest "we don't know").
+    expect(geoGoodClass("widget")).toBeNull();
+    expect(geographyShortageBase("widget", { node: "surplus" })).toBeNull();
+  });
+
+  it("SURPLUS/MOUTH country has food to sell; EXTRACTION country does not", () => {
+    for (const key of KEYS) {
+      for (const day of [0, 5, 9]) {
+        const surplus = stubPartnerSignals(key, day, { node: "surplus" }).shortage("food");
+        const mouth = stubPartnerSignals(key, day, { node: "mouth" }).shortage("food");
+        const mine = stubPartnerSignals(key, day, { node: "extraction" }).shortage("food");
+        expect(surplus).toBeLessThan(mine);
+        expect(mouth).toBeLessThan(mine);
+      }
+    }
+  });
+
+  it("EXTRACTION country has ore/stone to sell; a SHADOW town is desperate for refined goods", () => {
+    for (const key of KEYS) {
+      const mine = stubPartnerSignals(key, 4, { node: "extraction" });
+      const port = stubPartnerSignals(key, 4, { node: "mouth" });
+      expect(mine.shortage("stone")).toBeLessThan(port.shortage("stone"));
+      expect(mine.shortage("wood")).toBeLessThan(port.shortage("wood"));
+      // Shadow: grows its own food, cannot get manufactures — the refining
+      // license, read from the other side of the road.
+      const shadow = stubPartnerSignals(key, 4, { node: "shadow" });
+      const rich = stubPartnerSignals(key, 4, { node: "surplus" });
+      expect(shadow.shortage("cloth")).toBeGreaterThan(rich.shortage("cloth"));
+      expect(shadow.shortage("food")).toBeLessThan(mine.shortage("food"));
+    }
+  });
+
+  it("the CONTINUOUS charter reading is monotone — more farmland, less hunger", () => {
+    let prev = Infinity;
+    for (const farmland of [0, 45, 90, GEO_FARMLAND_REF, GEO_FARMLAND_REF * 3]) {
+      const s = stubPartnerSignals("city:14", 6, { farmland }).shortage("food");
+      expect(s).toBeLessThanOrEqual(prev);
+      prev = s;
+    }
+    expect(stubPartnerSignals("city:14", 6, { farmland: 0 }).shortage("food")).toBeGreaterThan(
+      stubPartnerSignals("city:14", 6, { farmland: GEO_FARMLAND_REF * 3 }).shortage("food"),
+    );
+  });
+
+  it("stays a PURE function of (key, day, geography) — replays, drifts, bounded", () => {
+    const geo: PartnerGeography = { node: "extraction", farmland: 20, ore: 120 };
+    for (const g of GOODS) {
+      expect(stubPartnerSignals("city:2", 7, geo).shortage(g)).toBe(
+        stubPartnerSignals("city:2", 7, { ...geo }).shortage(g),
+      );
+      for (const day of [0, 4, 8, 12, 16]) {
+        const v = stubPartnerSignals("city:2", day, geo).shortage(g);
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+    // The season still moves the terms — geography is a BASE, not a freeze.
+    const days = [0, 3, 6, 9, 12].map((d) => stubPartnerSignals("city:2", d, geo).shortage("food"));
+    expect(new Set(days.map((v) => v.toFixed(6))).size).toBeGreaterThan(1);
+  });
+
+  it("the FORWARD SAMPLERS still read the same closed form a geo partner quotes from", () => {
+    const geo: PartnerGeography = { node: "extraction" };
+    const atDay = (d: number) => stubPartnerSignals("city:33", d, geo);
+    const day = nextShortageBelow(atDay, "food", BARTER_FAMINE_MAX, 0);
+    // Whatever it answers, the answer must be TRUE of the very signal the
+    // refusal read — a wake that disagreed with its predicate is the bug.
+    if (day !== null) expect(atDay(day).shortage("food")).toBeLessThan(BARTER_FAMINE_MAX);
+  });
+});
+
+// ── 3c. COMPLEMENTARY SCARCITY — what this pair has for each other (T2) ─────
+
+describe("complementaryTrade — their surplus ∩ our shortage, over a real road", () => {
+  const SCALE = DOLLHOUSE_SCALE;
+  const GOODS = ["food", "wood", "cloth", "clothing"];
+  const us = sig({ cloth: 0.9, clothing: 0.4, food: 0.02, wood: 0 });
+  const them = sig({ cloth: 0, clothing: 0.05, food: 0.8, wood: 0.3 });
+
+  it("lists what they can spare that we lack, best first — and the mirror", () => {
+    const pair = complementaryTrade(us, them, GOODS, 300, SCALE);
+    expect(pair.imports).toEqual(["cloth", "clothing"]);
+    expect(pair.exports).toEqual(["food", "wood"]);
+  });
+
+  it("🔒 PERSPECTIVE CONSISTENCY — A's imports from B ⊆ B's exports to A", () => {
+    const a = complementaryTrade(us, them, GOODS, 300, SCALE);
+    const b = complementaryTrade(them, us, GOODS, 300, SCALE);
+    for (const g of a.imports) expect(b.exports).toContain(g);
+    for (const g of a.exports) expect(b.imports).toContain(g);
+    expect(a.imports).toEqual(b.exports); // in fact the same list, same order
+  });
+
+  it("a good NEITHER side can spare, or neither wants, is on no list", () => {
+    const both = sig({ food: 0.9, cloth: 0.9 });
+    const pair = complementaryTrade(both, both, ["food", "cloth"], 100, SCALE);
+    expect(pair).toEqual({ imports: [], exports: [] });
+    const flush = sig({});
+    expect(complementaryTrade(flush, flush, GOODS, 100, SCALE)).toEqual({
+      imports: [], exports: [],
+    });
+  });
+
+  it("🔒 THE FREIGHT FILTER — a fragile good never makes the list, however short they are", () => {
+    // The leg is past MILK's own reach (it sours before it lands) but well
+    // inside CLOTH's — derived from the freight rows, not from a literal.
+    const legM = carryReachM(SCALE, freightOf("milk")) * 1.5;
+    expect(freightSurvivesLeg("milk", legM, SCALE)).toBe(false);
+    expect(freightSurvivesLeg("cloth", legM, SCALE)).toBe(true);
+    // Maximum desperation on our side, maximum surplus on theirs: it changes
+    // nothing. Desperation is not a preservative.
+    const desperate = sig({ milk: 1, cloth: 1 });
+    const flush = sig({ milk: 0, cloth: 0 });
+    const pair = complementaryTrade(desperate, flush, ["milk", "cloth"], legM, SCALE);
+    expect(pair.imports).toEqual(["cloth"]);
+    expect(pair.imports).not.toContain("milk");
+    // Short enough a road and the same milk DOES travel — the filter is the
+    // road's arithmetic, never a ban on the good.
+    expect(
+      complementaryTrade(desperate, flush, ["milk"], legM / 10, SCALE).imports,
+    ).toEqual(["milk"]);
+  });
+
+  it("ranks by NEED and breaks ties toward the earlier good (deterministic)", () => {
+    const need = sig({ wood: 0.5, cloth: 0.5, clothing: 0.9 });
+    const spare = sig({});
+    const pair = complementaryTrade(need, spare, ["wood", "cloth", "clothing"], 200, SCALE);
+    expect(pair.imports).toEqual(["clothing", "wood", "cloth"]);
+    expect(complementaryTrade(need, spare, ["wood", "cloth", "clothing"], 200, SCALE)).toEqual(pair);
+  });
+
+  it("reads the WANT LINE the willingness refusal reads — one threshold, not two", () => {
+    const spare = sig({ cloth: BARTER_WANT_MIN - 1e-9 }); // just barely "enough"
+    const need = sig({ cloth: BARTER_WANT_MIN });
+    expect(complementaryTrade(need, spare, ["cloth"], 100, SCALE).imports).toEqual(["cloth"]);
+    // Nudge their own need up to the line and they no longer have it spare.
+    const holding = sig({ cloth: BARTER_WANT_MIN });
+    expect(complementaryTrade(need, holding, ["cloth"], 100, SCALE).imports).toEqual([]);
   });
 });
 

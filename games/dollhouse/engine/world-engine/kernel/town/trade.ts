@@ -32,6 +32,12 @@ import type { TownPlan } from "./plan";
 // being served. freight.ts is read-only from here, forever.
 import { carryReachM, freightOf } from "../../freight";
 import { DOLLHOUSE_SCALE, type WorldScale } from "../../scale";
+// R&T ⑤ (T2): the pair's complementary read. It lives in a LEAF sibling of
+// barter.ts precisely so this call can exist — barter.ts itself reads
+// transfer.ts, which reads this module, and a value edge into it would be a
+// cycle. `BarterSignals`/`PartnerGeography` are TYPE ONLY (erased).
+import { complementaryTrade } from "./complementary";
+import type { BarterSignals, PartnerGeography } from "./barter";
 
 export interface TradeRoute {
   /** Opaque partner settlement key — `"away:<seed>"` until a REAL neighbor is
@@ -43,7 +49,11 @@ export interface TradeRoute {
   gate: { x: number; y: number };
   /** Road polyline, gate → depot (world meters). */
   route: Array<{ x: number; y: number }>;
-  /** What arrives (goods the town doesn't make) / what leaves (the surplus). */
+  /** What arrives / what leaves. AUTHORED until the line is bound with both
+   *  sides' scarcity reads (`bindPartner`), from which point they are the
+   *  pair's own complementary lists — their surplus ∩ our shortage, and the
+   *  mirror (complementary.ts). The constants below are the fallback for a
+   *  line with no partner to read, never a floor under a derived list. */
   imports: readonly string[];
   exports: readonly string[];
   /** TRAVEL COST made visible: how far the partner is (world meters; the
@@ -51,6 +61,18 @@ export interface TradeRoute {
    *  the farther the road, the fewer arrive each visit. */
   distanceM: number;
   rare: { kind: string; perVisit: number };
+  /** ⚖️ THE PARTNER'S OWN PLACE (world metres) — present only once
+   *  `bindPartner` bound a REAL neighbour. Its absence is the honest marker of
+   *  the abstract `away:` line, whose only "place" is our own gate: a caller
+   *  that measured that would be pricing a fiction. Present ⇒ `distanceM` is a
+   *  road (or the chord to a real town) and the caravan leg may be priced on
+   *  it (`barterLegSeconds`) instead of the flat fallback day. */
+  partnerAt?: { x: number; y: number };
+  /** ⚖️ WHAT THE PARTNER'S TERRAIN DECLARES (barter.ts `PartnerGeography`) —
+   *  passed through by `bindPartner` from the tier that knows the neighbour's
+   *  node reading. Absent ⇒ nothing is known and the closed-form proxy stays
+   *  pure hash (byte-identical to the shipped stub). */
+  partnerGeo?: PartnerGeography;
 }
 
 /** The caravan's position in its daily visit — `away` = no body exists. */
@@ -77,14 +99,57 @@ export interface TownTrade {
    *  keys its consumed offset to the bucket, so takes persist between visits
    *  and the crate refreshes the moment a new caravan lands. */
   tradeDay(t: number): number;
+  /** How far through the CURRENT visit bucket `t` falls, [0,1) — 0 the instant
+   *  a caravan finishes arriving. The depot shelf's sawtooth runs on THIS, not
+   *  on the farms' dawn (⑤ T3a: `ImportDepotReading.dayFrac`). */
+  dayPhase(t: number): number;
+  /** ⚖️ R&T ⑤ (T3) — UNITS OF `good` ONE VISIT LANDS, the ONE definition: the
+   *  visit allotment split across whatever the line actually carries, and the
+   *  rare treat's own distance-scaled count. 0 for a good this line does not
+   *  carry. Read by the crate the player opens AND by the depot shelf the
+   *  households shop — the same caravan cannot land two different amounts. */
+  importUnitsPerVisit(good: string): number;
+  /** ⚖️ R&T ⑤ (T3) — RE-DERIVE THE CARGO off TODAY's books, without touching
+   *  the geometry. `bindPartner` is a ONE-SHOT at boot; scarcity is not, and a
+   *  cargo list frozen on bind-day would have the caravan hauling last season's
+   *  complement forever. The host calls this once per visit bucket. No-op
+   *  before a partner is bound (an abstract line carries the authored kinds). */
+  refreshCargo(scarcity: { us: BarterSignals; them: BarterSignals; goods: readonly string[] }): void;
   /** Export units piled at `t`: fills from the last departure toward the next
    *  (the caravan takes the pile with it). UN-damped — the host multiplies by
    *  producer attendance so absent crews truthfully thin the load. */
   exportPile(t: number): number;
   /** Bind the line to a REAL partner (a cluster hamlet; later a
    *  hierarchical-cells neighbor): re-aims the gate toward it, rebuilds the
-   *  entry route, and re-scales the rare allotment by the true distance. */
-  bindPartner(partner: { key: string; at: { x: number; y: number } }): void;
+   *  entry route, and re-scales the rare allotment by the true distance.
+   *
+   *  TRADE PRICES THE ROAD, NOT THE CHORD: pass `distanceM` when a real
+   *  route joins the two settlements — its port-to-port `lengthM` is what a
+   *  caravan actually walks (a road around a mountain is longer than the
+   *  line of sight, and the rare allotment must feel that). Omitted = the
+   *  straight-line fallback, for partners with no road between them.
+   *
+   *  ⚖️ THE BIND IS ALSO WHAT THE HOST READS. Binding records the partner's
+   *  own place (`route.partnerAt`) and, where the tier knows it, its terrain
+   *  (`geo`): the road length used to be re-discarded downstream because
+   *  nothing on the route said "this partner is real". Both are additive —
+   *  a caller that passes neither binds exactly as it always did.
+   *
+   *  ⚖️ AND WHERE BOTH SIDES' BOOKS ARE IN HAND (`scarcity`), the two cargo
+   *  lists stop being constants: `complementaryTrade` derives what this pair
+   *  actually has for each other over this exact road, and the authored
+   *  `TRADE_IMPORT_KINDS`/`exportGood` fall back to being what an UNBOUND
+   *  line carries. Omitted ⇒ the authored lists stand, untouched. */
+  bindPartner(partner: {
+    key: string;
+    at: { x: number; y: number };
+    distanceM?: number;
+    /** The partner's terrain reading, for the closed-form scarcity proxy. */
+    geo?: PartnerGeography;
+    /** BOTH sides' live scarcity reads + the goods vocabulary they share —
+     *  the pair's facts, from which the two cargo lists are derived. */
+    scarcity?: { us: BarterSignals; them: BarterSignals; goods: readonly string[] };
+  }): void;
 }
 
 /** Units of imports each visit lands (split across the import kinds). */
@@ -148,7 +213,11 @@ export function rarePerVisit(
 export const AWAY_DISTANCE_M = 3000;
 /** Seconds the caravan trades at the depot. */
 export const TRADE_DWELL_SEC = 36;
-/** v1 import kinds: trinkets outside the subsistence economy (translated glyphs). */
+/** v1 import kinds: trinkets outside the subsistence economy (translated
+ *  glyphs). ⚖️ DEMOTED TO THE UNBOUND FALLBACK (R&T ⑤ T2): what a line with a
+ *  bound partner and both sides' books carries is DERIVED
+ *  (`complementaryTrade`); this is what an abstract `away:` caravan brings
+ *  when there is no partner to read. */
 export const TRADE_IMPORT_KINDS: readonly string[] = ["ball", "teddy", "blocks"];
 
 function hashSeed(seed: number, key: string): number {
@@ -299,11 +368,48 @@ export function createTownTrade(
     return { ...base, phase: "leaving", pos, walkTo: g.route.slice(0, Math.max(1, idx)).reverse() };
   };
 
+  /** ⚖️ THE CARGO, DERIVED (R&T ⑤ T2) — ONE definition, called by the bind
+   *  (which has the pair's books in hand) and by the host's per-visit refresh
+   *  (which has today's). Both sides' reads ⇒ the lists are this pair's
+   *  complementary scarcity over this exact road; never called ⇒ the authored
+   *  constants stand, which is what an unbound `away:` line carries. */
+  const deriveCargo = (scarcity: {
+    us: BarterSignals;
+    them: BarterSignals;
+    goods: readonly string[];
+  }): void => {
+    const pair = complementaryTrade(
+      scarcity.us,
+      scarcity.them,
+      scarcity.goods,
+      route.distanceM,
+      scale,
+    );
+    route.imports = pair.imports;
+    route.exports = pair.exports;
+  };
+
   return {
     route,
     depot,
     caravan,
     tradeDay: (t) => Math.floor(t / FOOD_DAY_SEC - arriveFrac - geo!.walk / FOOD_DAY_SEC),
+    dayPhase: (t) => {
+      const u = t / FOOD_DAY_SEC - arriveFrac - geo!.walk / FOOD_DAY_SEC;
+      return ((u % 1) + 1) % 1;
+    },
+    importUnitsPerVisit: (good) => {
+      // The RARE treat is carried BESIDE the allotment (travel cost as
+      // scarcity — it has its own distance-scaled count), and wins where a
+      // line happens to list it as ordinary cargo too.
+      if (good === route.rare.kind) return Math.max(0, route.rare.perVisit);
+      if (!route.imports.includes(good)) return 0;
+      return Math.floor(IMPORT_ALLOTMENT / route.imports.length);
+    },
+    refreshCargo: (scarcity) => {
+      if (!route.partnerAt) return; // nobody real to read — the authored list stands
+      deriveCargo(scarcity);
+    },
     exportPile: (t) => {
       const departFrac = arriveFrac + (geo!.walk * 2 + TRADE_DWELL_SEC) / FOOD_DAY_SEC;
       const since = (((t / FOOD_DAY_SEC - departFrac) % 1) + 1) % 1;
@@ -316,8 +422,21 @@ export function createTownTrade(
       route.partnerKey = partner.key;
       route.gate = g.route[0]!;
       route.route = g.route;
-      route.distanceM = Math.hypot(partner.at.x - center.x, partner.at.y - center.y);
+      // The ROAD's length when one joins the pair; the chord only when no
+      // road does (`at` still aims the gate either way).
+      route.distanceM = partner.distanceM !== undefined && partner.distanceM > 0
+        ? partner.distanceM
+        : Math.hypot(partner.at.x - center.x, partner.at.y - center.y);
       route.rare = { kind: RARE_IMPORT_KIND, perVisit: rarePerVisit(route.distanceM, scale) };
+      // ⚖️ THE PARTNER IS NOW REAL, AND THE ROUTE SAYS SO. Downstream readers
+      // (the host's trade-partner table) used to have no way to tell a bound
+      // line from the `away:` fiction and threw the road away on every one.
+      route.partnerAt = { x: partner.at.x, y: partner.at.y };
+      if (partner.geo) route.partnerGeo = partner.geo;
+      // ⚖️ THE CARGO, DERIVED. Both sides' books in hand ⇒ the lists are this
+      // pair's complementary scarcity over this exact road; absent ⇒ the
+      // authored constants stand (the unbound fallback).
+      if (partner.scarcity) deriveCargo(partner.scarcity);
     },
   };
 }

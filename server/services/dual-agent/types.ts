@@ -1,7 +1,7 @@
 // server/services/dual-agent/types.ts
 // Type definitions for the dual-agent AAC system
 
-import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeItem, PermittedYoutubeVideo } from "@shared/schema";
+import type { ChatMessage, HomeAction, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeItem, PermittedYoutubeVideo } from "@shared/schema";
 import type { LLMProviderKey } from "@shared/llm-options";
 import type { AppStartupSpec } from "@shared/app-startup";
 
@@ -211,6 +211,15 @@ export interface DualAgentSessionState {
   observerPrompt?: string;
   speakerPrompt?: string;
   boardManagerPrompt?: string;
+  /**
+   * Last deliberate Observer backend choice, recorded on every successful
+   * runtime switch. A reconnect-resumed coordinator starts on this backend
+   * instead of the policy default — without it, every re-init reset an
+   * economy Observer back to expensive live native-audio, and under a
+   * reconnect storm the session ran live essentially the whole time.
+   * The budget's forced-economy floor still overrides it.
+   */
+  observerBackendMode?: "live" | "economy";
   monitorBusy: boolean; // Is Monitor currently processing?
   monitorBusySince?: number; // Timestamp when Monitor started (for staleness detection)
 
@@ -262,6 +271,12 @@ export interface DualAgentSessionState {
   // Permitted YouTube playlists (clinician-configured). Browsed like channels
   // (RSS-backed video list) in the AAC player; searched alongside channels.
   permittedYoutubePlaylists: PermittedYoutubeItem[];
+
+  // Smart-home action slots (clinician-authored, `aac_settings.home_actions`).
+  // Always read through normalizeHomeActions — the raw jsonb never lands here.
+  // Backs the Board Manager's <home_context> and the server-side press gate
+  // (which checks ENABLED slots only, via findHomeAction).
+  homeActions: HomeAction[];
 
   // Avatar emotion state
   currentEmote: "happy" | "sad" | "neutral";

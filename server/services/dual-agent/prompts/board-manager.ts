@@ -52,6 +52,10 @@ export interface BoardManagerPromptConfig extends BaseStudentContext {
   loadedPageName?: string | null;
   enabledApps?: Array<{ id: string; name: string; description: string }>;
   availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
+  /** Smart-home slots the student may fire (ENABLED ones only). `description`
+   *  is the author's when-to-surface hint, read like a board `hint`. Empty /
+   *  omitted → no <home_context> block at all. */
+  homeActions?: Array<{ id: string; label: string; description?: string }>;
   permittedWebsites?: PermittedWebsite[];
   autoSymbolsEnabled?: boolean;
   singleGlyphButtons?: boolean;
@@ -130,7 +134,7 @@ export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): Board
     studentName, language, memoryContext, muteState: _muteState,
     knownContacts, classroom,
     cachedSymbols, availableBoards, loadedBoardKey, loadedBoardName, loadedPageName,
-    enabledApps, availableCustomApps, permittedWebsites,
+    enabledApps, availableCustomApps, homeActions, permittedWebsites,
     autoSymbolsEnabled = false, singleGlyphButtons = false,
     glyphInputTranslation = false, languageLevel,
     gestureOverrides, safetyNotes, boardManagerGuidance,
@@ -376,10 +380,29 @@ Write it like any other ${T.button}: first-person \`speech\` for the intent ("I 
     ...(availableCustomApps ?? []).map(a => `"${a.id}" (${a.name})`),
   ];
   if (appList.length > 0) {
+    // Build the example from a REAL app in this session's list so the id shown
+    // is always one the model may actually use.
+    const exampleApp = (enabledApps ?? [])[0] ?? (availableCustomApps ?? [])[0];
     prompt += `\n\n<apps_context>
 To open an app for the user, add a ${T.button} with \`open.app\` set to the app id — the user presses it to launch. Apps: ${appList.join(", ")}.
+  - The ${T.button} that AGREES to an app IS the ${T.button} that opens it. Asked "want to play ${exampleApp.name}?", the yes-${T.button} carries the launch: \`{ label: "Yes", speech: "Yes, I want ${exampleApp.name}", open: { app: "${exampleApp.id}" } }\`. A plain "yes" that only speaks leaves the user agreeing to something that never opens.
+  - Omit the \`glyph\` to use the app's own icon.
   - When an app is already open, prefer add_context_button() and offer ${T.button}s relevant to it.
 </apps_context>`;
+  }
+
+  if (homeActions && homeActions.length > 0) {
+    const homeList = homeActions
+      .map(a => `"${a.id}" (${a.label})${a.description ? ` — ${a.description}` : ""}`)
+      .join("\n  - ");
+    // Only explain the trailing note when a slot actually carries one.
+    const homeHintLine = homeActions.some(a => a.description)
+      ? `\nThe text after each name is the author's note on WHEN to offer it.\n`
+      : "";
+    prompt += `\n\n<home_context>
+The user can control things in their HOME. Give a ${T.button} \`open\` = \`{ home: "<action id>" }\` — pressing it runs that action. Nothing is voiced and the ${T.board} stays put.
+  - ${homeList}
+${homeHintLine}</home_context>`;
   }
 
   if (permittedWebsites && permittedWebsites.length > 0) {
@@ -791,6 +814,10 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
       return `[APP CLOSE]`;
     case "website_open_requested":
       return `[WEBSITE OPEN] ${event.url}${event.label ? ` (${event.label})` : ""}`;
+    case "home_action_requested":
+      // The user fired a smart-home action. Nothing was said and the board
+      // didn't change — surface it so a follow-up can be offered.
+      return `[HOME] The user triggered "${event.label}"`;
     case "board_load_requested":
       // BoardManager's own past set_board call. Render in the same
       // `[YOU] tool(args)` shape as the other own-action lines so it
@@ -944,6 +971,10 @@ export interface BoardManagerToolConfig {
   /** Apps the BoardManager may author `open.app` launch-buttons for — the
    *  enabled built-in apps plus available custom games, as `{ id, name }`. */
   enabledApps?: Array<{ id: string; name: string }>;
+  /** Smart-home actions the BoardManager may author `open.home` buttons for
+   *  (ENABLED slots only). When empty the `open.home` sub-field stays off the
+   *  schema entirely. Re-gated in the coordinator. */
+  homeActions?: Array<{ id: string; label: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -989,9 +1020,9 @@ interface ButtonSchemaOpts {
   includeGuessingFields?: boolean;
   includeMetaButtonField?: boolean;
   /** When present + non-empty, exposes an `open` field so the button LAUNCHES
-   *  an app/website/pre-built board on press instead of voicing speech. Lists
-   *  constrain the AI to the permitted targets; the coordinator re-gates
-   *  server-side. */
+   *  an app/website/pre-built board — or FIRES a smart-home action — on press
+   *  instead of voicing speech. Lists constrain the AI to the permitted
+   *  targets; the coordinator re-gates server-side. */
   openTargets?: {
     websites: Array<{ url: string; label: string }>;
     apps: Array<{ id: string; name: string }>;
@@ -999,20 +1030,24 @@ interface ButtonSchemaOpts {
      *  already listed with their names + author hints in <prebuilt_boards>,
      *  and this schema is inlined on every button of every rebuild. */
     boards: string[];
+    /** Smart-home action slots (ENABLED only). Enumerated inline like apps —
+     *  the list is short and the ids are opaque slugs. */
+    homeActions: Array<{ id: string; label: string }>;
   };
 }
 
 /** Build the `openTargets` for buttonObjectSchema from a tool config — flattens
- *  permitted websites (incl. subpages), the enabled-app list, and the pre-built
- *  board keys. Returns undefined when there's nothing launchable, so the `open`
- *  field stays off the schema entirely. */
+ *  permitted websites (incl. subpages), the enabled-app list, the pre-built
+ *  board keys, and the smart-home slots. Returns undefined when there's nothing
+ *  launchable, so the `open` field stays off the schema entirely. */
 function openTargetsFromConfig(config: BoardManagerToolConfig): ButtonSchemaOpts["openTargets"] | undefined {
   const websites = (config.permittedWebsites ? flattenPermittedWebsites(config.permittedWebsites) : [])
     .map(w => ({ url: w.url, label: w.label }));
   const apps = config.enabledApps ?? [];
   const boards = config.availableBoards.map(b => b.key);
-  if (websites.length === 0 && apps.length === 0 && boards.length === 0) return undefined;
-  return { websites, apps, boards };
+  const homeActions = config.homeActions ?? [];
+  if (websites.length === 0 && apps.length === 0 && boards.length === 0 && homeActions.length === 0) return undefined;
+  return { websites, apps, boards, homeActions };
 }
 
 function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown> {
@@ -1054,8 +1089,8 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
     },
   };
 
-  if (opts.openTargets && (opts.openTargets.websites.length > 0 || opts.openTargets.apps.length > 0 || opts.openTargets.boards.length > 0)) {
-    const { websites, apps, boards } = opts.openTargets;
+  if (opts.openTargets && (opts.openTargets.websites.length > 0 || opts.openTargets.apps.length > 0 || opts.openTargets.boards.length > 0 || opts.openTargets.homeActions.length > 0)) {
+    const { websites, apps, boards, homeActions } = opts.openTargets;
     const allowed: string[] = [];
     if (websites.length > 0) {
       allowed.push(`WEBSITES — ${websites.map(w => `"${w.url}"${w.label ? ` (${w.label})` : ""}`).join(", ")}`);
@@ -1066,10 +1101,14 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
     if (boards.length > 0) {
       allowed.push(`PRE-BUILT ${T.board}S — the keys listed in <prebuilt_boards>`);
     }
+    if (homeActions.length > 0) {
+      allowed.push(`HOME ACTIONS — ${homeActions.map(a => `"${a.id}" (${a.label})`).join(", ")}`);
+    }
     const oneOf = [
       ...(websites.length > 0 ? ["`website`"] : []),
       ...(apps.length > 0 ? ["`app`"] : []),
       ...(boards.length > 0 ? ["`board`"] : []),
+      ...(homeActions.length > 0 ? ["`home`"] : []),
     ].join(" / ");
     properties.open = {
       type: "object",
@@ -1078,6 +1117,7 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
         ...(websites.length > 0 ? { website: { type: "string", description: `A permitted website URL to open in the browser (one of the listed WEBSITES, or a subpage of one).` } } : {}),
         ...(apps.length > 0 ? { app: { type: "string", description: `An app id to launch (one of the listed APPS).` } } : {}),
         ...(boards.length > 0 ? { board: { type: "string", description: `A pre-built ${T.board} KEY from <prebuilt_boards> (snake_case, NOT the display name). Pressing loads that ${T.board} — the OFFER alternative to set_board. See <board_buttons>.` } } : {}),
+        ...(homeActions.length > 0 ? { home: { type: "string", description: `A HOME ACTION id (one of the listed HOME ACTIONS). Pressing runs it in the user's home; nothing is voiced and the ${T.board} stays put. See <home_context>.` } } : {}),
       },
     };
   }

@@ -41,7 +41,7 @@ import { houseRoomPlan, type HouseShape } from "./rooms";
 import { goodBoxPlacement } from "./placement";
 import { roadDistance, roadRoute, roadStreetPath, type TownStreets } from "./streets";
 import { allocateDistrictFill, deriveDistricts, type CityDistrict } from "./city-districts";
-import type { CompiledEconomy, GoodSpec } from "../modules/economy/economy";
+import { MARKET_CHANNEL, type CompiledEconomy, type GoodSpec } from "../modules/economy/economy";
 import { DAY_S, ERRAND_WALK_MPS } from "../../scale";
 
 export type { GoodSpec };
@@ -153,7 +153,45 @@ export interface GoodSource {
   y: number;
   /** Index of this source's building in `plan.works` (renderer match). */
   work?: number;
+  /**
+   * ⚖️ R&T ⑤ (T3a) — THE IMPORT DEPOT. This source is not a local seller: it
+   * is the crate the caravan unloads at, and its shelf is the LANE's daily
+   * allotment (`createTownGoods`'s `imports` reader), not a dawn cart's.
+   *
+   * Marked rather than inferred from `kind`, because every downstream rule
+   * that must NOT see it — the served/catchment counts `produceAt` splits
+   * the town's draw by, `stallDaily`'s market formula, `haulGeom`'s dawn
+   * cart (and therefore `streetTraffic`'s road wear) — is asking exactly
+   * "is this a stall a producer supplies?", and a depot answers no whatever
+   * building it happens to stand beside.
+   */
+  depot?: true;
 }
+
+/**
+ * ⚖️ R&T ⑤ (T3a) — WHAT THE LANE PUTS AT THE DEPOT, for one good. Returned by
+ * the optional `imports` reader `createTownGoods` takes (the mirror of the
+ * optional `roads?` param): null ⇒ this town imports nothing of this good and
+ * no depot source exists at all.
+ *
+ * The WHERE is read once, when the source list is built — a depot is a PLACE,
+ * and the source list is a persistence key (`store:<good>:<srcIdx>`), so it may
+ * never be re-ordered mid-session. The HOW MUCH is re-read on every `stockOf`
+ * — an allotment is a SHIPMENT, and the pair's cargo list is re-derived as
+ * their books move (quest-host `stepTradeCargo`). Both stay closed forms of
+ * `t`, so `shelfRestockAt`'s forward sampling and its DEFER wakes keep working.
+ */
+export interface ImportDepotReading {
+  /** Where the crate stands (world meters) — the caravan depot. */
+  at: { x: number; y: number };
+  /** Units one visit lands of this good (0 = the lane carries none today). */
+  dailyUnits: number;
+  /** How far through the CARAVAN's own day `t` falls, [0,1) — the depot's
+   *  sawtooth refills when the caravan lands, not at the farm's dawn. */
+  dayFrac(t: number): number;
+}
+/** The reader itself: good key → its depot reading, or null. */
+export type ImportDepotReader = (goodKey: string) => ImportDepotReading | null;
 /** The pre-genericization name — food was the first good. */
 export type FoodSource = GoodSource;
 
@@ -212,7 +250,9 @@ export interface TownGoods {
   reanchor(house: TownHouse, units: number, t: number): void;
   /** Rations on ONE source's shelves at t — its catchment's delivered
    *  share, stocked at dawn and drawn down by shoppers. 0 for non-market
-   *  sources (farm gates sell from the field, not a shelf). */
+   *  sources (farm gates sell from the field, not a shelf). An IMPORT
+   *  DEPOT (⑤ T3a) is stocked by the caravan instead, on the caravan's
+   *  own day — same sawtooth, a different cart. */
   stockOf(src: FoodSource, t: number): number;
   /** Rations across ALL market shelves at t. 0 for market-less towns. */
   marketStock(t: number): number;
@@ -387,6 +427,7 @@ export function createTownGoods(
   seed: number,
   good: GoodSpec,
   roads?: TownStreets,
+  imports?: ImportDepotReader,
 ): TownGoods {
   const { key, center, plan } = town;
   const net = roads ?? plan.streets;
@@ -405,6 +446,17 @@ export function createTownGoods(
       sources.push({ kind: wk.type, x: d.x, y: d.y, work: i });
     }
   });
+  // ⚖️ R&T ⑤ (T3a) — THE IMPORT DEPOT, APPENDED (never inserted). `srcIdx` is
+  // positional AND a persistence key: `store:<good>:<srcIdx>` spells the shelf
+  // in serialized agreements, hauler body ids and the dawn hashes below, so a
+  // new source may only ever arrive at the END of the list. It is appended
+  // BEFORE the seller-less fallback because a town that imports the good HAS a
+  // place it is handed out — the depot IS the hall's old role, with real stock
+  // behind it instead of an empty shelf.
+  const depotRead = imports?.(good.key) ?? null;
+  if (depotRead) {
+    sources.push({ kind: "hall", x: depotRead.at.x, y: depotRead.at.y, depot: true });
+  }
   if (sources.length === 0) {
     // No seller in town: households live off what the roads bring —
     // rations are handed out at the hall.
@@ -629,7 +681,12 @@ export function createTownGoods(
   const catchHouses = new Map<FoodSource, TownHouse[]>();
   for (const h of plan.houses) {
     const s = sourceOf(h);
-    servedBy.set(s, (servedBy.get(s) ?? 0) + 1);
+    // ⚖️ T3a: the DEPOT is not served by this town's own producers, so its
+    // households are not part of the draw `produceAt` splits across them —
+    // counting them there would inflate every farm pile with mouths the
+    // caravan feeds. Its CATCHMENT is still real (the districts are the
+    // town's quarters, whoever supplies them).
+    if (!s.depot) servedBy.set(s, (servedBy.get(s) ?? 0) + 1);
     const list = catchHouses.get(s);
     if (list) list.push(h);
     else catchHouses.set(s, [h]);
@@ -688,11 +745,16 @@ export function createTownGoods(
 
   /** The catchment's daily draw × the DISTRICT's fill: what the dawn
    *  cart actually delivers to this stall's stands. */
-  const stallDaily = (src: FoodSource): number => {
-    if (!good.shelved.includes(src.kind)) return 0;
+  /** The DISTRICT FILL a source is served at — the one reading `stallDaily`
+   *  scales its dawn stock by and `stockOf` floors its display at. */
+  const srcFill = (src: FoodSource): number => {
     districts();
-    const dFill = bySource.get(src)?.fill ?? fill();
-    return (servedBy.get(src) ?? 0) * HOUSEHOLD * good.perCapitaDaily * dFill;
+    return bySource.get(src)?.fill ?? fill();
+  };
+  const stallDaily = (src: FoodSource): number => {
+    if (src.depot) return 0; // ⚖️ T3a: a lane's allotment, not a catchment's draw
+    if (!good.shelved.includes(src.kind)) return 0;
+    return (servedBy.get(src) ?? 0) * HOUSEHOLD * good.perCapitaDaily * srcFill(src);
   };
 
   // ── The dawn-cart HAUL + the producer's produce pile ─────────────────────
@@ -730,8 +792,11 @@ export function createTownGoods(
     if (haulCache.has(src)) return haulCache.get(src)!;
     let out: HaulGeom | null = null;
     // Only shelved sources are stocked by a cart, and a producer selling its
-    // own shelf needs no haul.
-    if (good.shelved.includes(src.kind) && !good.producers.includes(src.kind)) {
+    // own shelf needs no haul. ⚖️ T3a: NOR DOES A DEPOT — its cart is the
+    // caravan, already walked by `TownTrade.caravan`; giving it a dawn haul
+    // would spawn a phantom cart out of the nearest farm every morning and
+    // wear the streets it never rode (`streetTraffic`).
+    if (!src.depot && good.shelved.includes(src.kind) && !good.producers.includes(src.kind)) {
       districts();
       const d = bySource.get(src);
       if (d) {
@@ -805,13 +870,39 @@ export function createTownGoods(
   };
 
   const stockOf = (src: FoodSource, t: number): number => {
+    // ⚖️ R&T ⑤ (T3a) — THE DEPOT'S OWN SHELF, and the FIRST arm: an import
+    // crate is stocked by the CARAVAN, on the caravan's day, not by a dawn
+    // cart out of a farm this town does not have. Same closed form as a
+    // stall's (a little over the day's allotment on arrival, drawn down
+    // across the day) so `shelfRestockAt` samples it forward exactly as it
+    // samples every other source and no wake has to be invented.
+    if (src.depot) {
+      const r = imports?.(good.key) ?? null;
+      if (!r) return 0;
+      return Math.max(0, r.dailyUnits * (1.15 - 0.95 * r.dayFrac(t)));
+    }
     if (!good.shelved.includes(src.kind)) return 0;
     // Stocked a little over daily draw at dawn (each stall's dawn cart
     // on its own offset), drawn down across the day.
     const daily = stallDaily(src);
+    if (!(daily > 0)) return 0; // no catchment, or a district with nothing
     const dawn = hashSeed(seed, `${key}:dawn:${sources.indexOf(src)}`) / 4294967296;
     const dayFrac = (((t / FOOD_DAY_SEC + dawn) % 1) + 1) % 1;
-    return Math.max(0, daily * (1.15 - 0.95 * dayFrac));
+    // ⚖️ A STALL THAT STOCKS A GOOD KEEPS ONE ON DISPLAY (F4). The sawtooth is
+    // "a day's draw in at dawn, eaten down by the modelled shoppers" — which is
+    // the staple's truth and a FICTION for a slow good: with clothing grounded
+    // at a garment per person per 180 days a stall's catchment draws 0.35
+    // outfits a day, the shelf reads `Math.floor` → 0 for ~86% of the day, and
+    // the good becomes unbuyable in a town whose stalls between them supply 3×
+    // what it wants. The drain is modelling traffic that is not there. So the
+    // display never falls below ONE WHOLE UNIT — you cannot rack a third of a
+    // coat — thinned by the DISTRICT'S FILL like everything else, so scarcity
+    // still empties a slow good's shelf. Latent until F4: the compiler hard-set
+    // every good's `perCapitaDaily` to 1, so no shelf had ever been sub-unit.
+    // Food is untouched — its leanest seed-12 stall draws 10 rations a day and
+    // sits at 2× the floor even at dusk. The player's own takes still empty it
+    // (`storeUnitsLeft` subtracts them), so "sold out" survives.
+    return Math.max(srcFill(src), daily * (1.15 - 0.95 * dayFrac));
   };
   const marketStock = (t: number): number => {
     let sum = 0;
@@ -899,8 +990,59 @@ export function streetGoods(
   town: { key: string; center: { x: number; y: number }; plan: TownPlan },
   seed: number,
   roads?: TownStreets,
+  imports?: ImportDepotReader,
 ): TownGoods[] {
   return eco.goods
     .filter(spec => spec.slot === 0 || hasLedger(tri, spec))
-    .map(spec => createTownGoods(tri, eco, town, seed, spec, roads));
+    .map(spec => createTownGoods(tri, eco, town, seed, spec, roads, imports));
+}
+
+/**
+ * ⚖️ THE SERVICE-RADIUS INVARIANT — two placement laws may not be mixed.
+ *
+ * A street good reaches its households by one of two laws, and they are sized
+ * by different things:
+ *   • THE MARKET CHANNEL places sellers on the SERVICE RADIUS (needs-aware
+ *     districts: "a district is a need cycle's walk across"). Distance is the
+ *     input, so the walk is bounded by construction.
+ *   • A PRODUCER'S GATE is placed by the work's PRODUCTION CAP — a fraction of
+ *     population — which is blind to distance. Two tailors serve 199
+ *     households from wherever the craft district happens to be.
+ *
+ * Mix them and the second law silently wins. Measured at seed 12 before
+ * clothing joined the market channel: a 539 m mean walk against food's 96 m
+ * radius, a 693 s round trip, and the good-blind street-body budget then let
+ * the long trip crowd the staple's walkers off the street (32 clothing
+ * shoppers embodied against 9 for food — the reported "clothing-shopper
+ * flood"). Nothing was broken; two laws were simply mixed.
+ *
+ * Reported as READABLE SENTENCES, never a throw (the `scaleWarnings` doctrine
+ * — an incoherent world is legal and sometimes intended; incoherence must be a
+ * visible number, never an ambush). Goods on the market channel are exempt by
+ * construction: their sellers ARE placed on the radius.
+ *
+ * `radiusM` is the caller's own derivation (`serviceRadiusM(scale, "hunger")`
+ * — the radius the stalls were actually founded on), never a literal.
+ */
+export function streetServiceWarnings(
+  goods: ReadonlyArray<TownGoods>,
+  houses: ReadonlyArray<TownHouse>,
+  radiusM: number,
+): string[] {
+  const out: string[] = [];
+  if (!(radiusM > 0) || houses.length === 0) return out;
+  for (const g of goods) {
+    if (g.good.sellers.includes(MARKET_CHANNEL)) continue; // placed BY the radius
+    let sum = 0;
+    for (const h of houses) sum += g.cycle(h).walk * ERRAND_WALK;
+    const mean = sum / houses.length;
+    if (!(mean > radiusM)) continue;
+    out.push(
+      `${g.good.key}: households walk ${mean.toFixed(0)} m to the nearest seller on average, ` +
+        `past the ${radiusM.toFixed(0)} m service radius its stalls would be founded on — ` +
+        `its sellers (${g.good.sellers.join(", ") || "none"}) are production-capped, not ` +
+        `distance-placed. Declare \`street.market\` or give it a source the radius sites.`,
+    );
+  }
+  return out;
 }

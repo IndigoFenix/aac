@@ -5,9 +5,12 @@
 //      bearing where it crosses the town radius (a least-cost road curves
 //      around hills, so this differs from the straight line to the
 //      neighbor) — what townBias grows the arterials with when a host
-//      hands it through TownHost.roadBearings.
-//   D. spliceRouteAtTown: the render-only clip-and-join at the town edge
-//      onto the street tree's nearest gen-0 arterial tip.
+//      hands it through TownHost.roadBearings. ONE bearing per incident
+//      road: ports are plural.
+//   D. spliceRouteAtTown: the render-only PORT → GATE refinement. Routes
+//      arrive already terminated at the town's extent (planet/routes.ts
+//      portTerminateRoute), so this bends their last stretch onto the
+//      street tree's nearest gen-0 arterial tip.
 //
 // Plus the seam laws: quantization to the street compass, determinism,
 // and the persisted-bearings regrow contract (same (seed, key, bearings)
@@ -27,7 +30,9 @@ import {
   BEARING_QUANT,
   type TownFrame,
 } from "@shared/world-engine/kernel/town/approach.js";
-import { routeFromDirs, routePointAt, type PlanetRoute } from "@shared/world-engine/planet/routes.js";
+import {
+  portTerminateRoute, routeFromDirs, routePointAt, type PlanetRoute,
+} from "@shared/world-engine/planet/routes.js";
 import { townBias } from "@shared/world-engine/kernel/town/plan.js";
 import { growStreets, type Street } from "@shared/world-engine/kernel/town/streets.js";
 import type { TownHost } from "@shared/world-engine/kernel/town/host.js";
@@ -36,12 +41,23 @@ import type { CompiledEconomy } from "@shared/world-engine/kernel/modules/econom
 const R = 1_000_000; // planet radius (metres) — tangent-chart errors ~ (d/R)²
 const FRAME: TownFrame = { center: [0, 0, 1], east: [1, 0, 0], north: [0, 1, 0] };
 
+/** The town's extent — where every incident route now PORTS. */
+const PORT_EXTENT_M = 450;
+
 /** A route through town-local waypoints (last point = the town center). */
 function routeThrough(local: Array<[number, number]>): PlanetRoute {
   const dirs = local.map(([x, y]) => toPlanetDir(FRAME, R, { x, y }));
   const route = routeFromDirs(dirs, R, 1, 2);
   if (!route) throw new Error("degenerate test route");
   return route;
+}
+
+/** The same route as planet/routes.ts now EMITS it: terminated at the
+ *  town's extent, with the town standing at endpoint `end`. */
+function portedThrough(local: Array<[number, number]>, end: "a" | "b"): PlanetRoute {
+  const route = routeThrough(local);
+  const t = { id: end === "a" ? route.a : route.b, dir: FRAME.center, extentM: PORT_EXTENT_M };
+  return portTerminateRoute(route, R, end === "a" ? t : null, end === "b" ? t : null);
 }
 
 /** A CURVED route into the town: from the far northeast, swinging around
@@ -75,6 +91,17 @@ describe("routeApproachBearing — the route's TRUE bearing at the town radius",
     expect(angSep(b!, Math.PI / 2)).toBeLessThan(0.05);
   });
 
+  it("reads the PORT bearing at inset 0 on a port-terminated route", () => {
+    // The route now ENDS at the extent, so inset 0 samples the port itself
+    // — the bearing of the gate the road wants, with no radius to guess.
+    const route = portedThrough(CURVED, "b");
+    const b = routeApproachBearing(route, "b", FRAME, 0);
+    expect(b).not.toBeNull();
+    expect(angSep(b!, Math.PI / 2)).toBeLessThan(0.05);
+    const end = toTownLocal(FRAME, R, route.dirs[route.dirs.length - 1]!)!;
+    expect(Math.hypot(end.x, end.y)).toBeCloseTo(PORT_EXTENT_M, 3);
+  });
+
   it("round-trips the chart: toTownLocal inverts toPlanetDir", () => {
     const p = { x: 1234.5, y: -678.9 };
     const back = toTownLocal(FRAME, R, toPlanetDir(FRAME, R, p));
@@ -99,21 +126,24 @@ describe("approachBearings — quantized, deduped, most important first", () => 
     expect(angSep(out[1]!, Math.PI / 2)).toBeLessThan(0.3);  // north road second
   });
 
-  it("dedupes near-identical approaches (one arterial serves both) and caps at max", () => {
+  it("PORTS ARE PLURAL: one bearing per road, twins deduped", () => {
     const east = routeThrough([[9000, 300], [4000, 100], [0, 0]]);
     const eastToo = routeThrough([[9000, -300], [4000, -100], [0, 0]]);
     const north = routeThrough([[300, 9000], [100, 4000], [0, 0]]);
     const west = routeThrough([[-9000, 0], [-4000, 0], [0, 0]]);
-    const out = approachBearings(
-      [
-        { route: east, end: "b" }, { route: eastToo, end: "b" },
-        { route: north, end: "b" }, { route: west, end: "b" },
-      ],
-      FRAME, 450,
-    );
-    expect(out).toHaveLength(2); // twin east collapsed, west beyond the cap
+    const incident = [
+      { route: east, end: "b" as const }, { route: eastToo, end: "b" as const },
+      { route: north, end: "b" as const }, { route: west, end: "b" as const },
+    ];
+    const out = approachBearings(incident, FRAME, 450);
+    // The twin east collapses; the west road KEEPS its own gate (under the
+    // old max-2 cap it was silently dropped and the town grew blind to it).
+    expect(out).toHaveLength(3);
     expect(angSep(out[0]!, 0)).toBeLessThan(0.3);
     expect(angSep(out[1]!, Math.PI / 2)).toBeLessThan(0.3);
+    expect(angSep(out[2]!, Math.PI)).toBeLessThan(0.3);
+    // An explicit cap still bounds a pathological hub.
+    expect(approachBearings(incident, FRAME, 450, 2)).toHaveLength(2);
   });
 
   it("is deterministic: the same inputs yield byte-equal bearings", () => {
@@ -187,6 +217,12 @@ describe("arterial tips and the splice connector", () => {
     expect(nearestArterialTip(tips, Math.PI / 2 - 0.2)!.street).toBe(2); // ~north
   });
 
+  it("refuses a gate more than a right angle away (no cross-town chord)", () => {
+    const tips = arterialTips(testStreets()); // gates ~east and ~north only
+    expect(nearestArterialTip(tips, -2.4)).toBeNull(); // a road from the SW
+    expect(nearestArterialTip(tips, -2.4, Math.PI)).not.toBeNull(); // opt-out
+  });
+
   it("bridges clip point to tip exactly (endpoints pinned through smoothing)", () => {
     const tips = arterialTips(testStreets());
     const clip = { x: 460, y: 40 };
@@ -197,26 +233,31 @@ describe("arterial tips and the splice connector", () => {
   });
 });
 
-describe("spliceRouteAtTown — the render-only clip-and-join", () => {
+describe("spliceRouteAtTown — the render-only PORT → GATE refinement", () => {
   const tips = arterialTips(testStreets());
 
-  it("clips at the town edge and joins the bearing-nearest arterial tip", () => {
-    const route = routeThrough(CURVED); // approaches due +y → street 2
-    const cut = spliceRouteAtTown(route, "b", FRAME, 320, tips, R);
+  it("bends the port-terminated road's last stretch onto the nearest gate", () => {
+    const route = portedThrough(CURVED, "b"); // ports due +y → street 2
+    const cut = spliceRouteAtTown(route, "b", FRAME, PORT_EXTENT_M, tips, R);
     expect(cut).not.toBeNull();
     expect(cut!.street).toBe(2);
-    // The span replaces the parent's last stretch, up to the endpoint.
+    // The span is the parent's last stretch, up to the endpoint (the port).
     expect(cut!.s1).toBe(route.lengthM);
     expect(cut!.s0).toBeGreaterThan(route.lengthM - 500);
-    // The drawn connector starts ON the parent at the clip arc…
+    // CONTINUITY: the drawn connector starts exactly where the parent
+    // ribbon's remaining span ends — no gap, and no cart teleport.
     const clipLocal = toTownLocal(FRAME, R, routePointAt(route, cut!.s0))!;
     const drawStart = toTownLocal(FRAME, R, cut!.draw.dirs[0]!)!;
     expect(drawStart.x).toBeCloseTo(clipLocal.x, 4);
     expect(drawStart.y).toBeCloseTo(clipLocal.y, 4);
-    // …and ends at the arterial tip (within float epsilon).
+    // …and it ends at the arterial tip (within float epsilon).
     const drawEnd = toTownLocal(FRAME, R, cut!.draw.dirs[cut!.draw.dirs.length - 1]!)!;
     expect(drawEnd.x).toBeCloseTo(-20, 4);
     expect(drawEnd.y).toBeCloseTo(300, 4);
+    // The connector runs INWARD past the port: the parent stopped at the
+    // extent, the gate is inside it.
+    expect(Math.hypot(clipLocal.x, clipLocal.y)).toBeGreaterThan(PORT_EXTENT_M);
+    expect(Math.hypot(drawEnd.x, drawEnd.y)).toBeLessThan(PORT_EXTENT_M);
     // The caravan-projection route is param-aligned with the span: parent
     // arc s0 ↦ connector arc 0 (the clip), parent end ↦ the tip.
     const projStart = toTownLocal(FRAME, R, routePointAt(cut!.route, 0))!;
@@ -226,25 +267,45 @@ describe("spliceRouteAtTown — the render-only clip-and-join", () => {
   });
 
   it("maps the town-at-'a' span with arc 0 at the TIP (parent arc grows a→b)", () => {
-    const route = routeThrough([...CURVED].reverse());
-    const cut = spliceRouteAtTown(route, "a", FRAME, 320, tips, R);
+    const route = portedThrough([...CURVED].reverse(), "a");
+    const cut = spliceRouteAtTown(route, "a", FRAME, PORT_EXTENT_M, tips, R);
     expect(cut).not.toBeNull();
     expect(cut!.s0).toBe(0);
     const atCenter = toTownLocal(FRAME, R, routePointAt(cut!.route, 0))!;
     expect(atCenter.y).toBeCloseTo(300, 4); // the tip, not the plaza
+    // …and the OUTER end of the span sits on the parent, continuous.
+    const spanEnd = toTownLocal(FRAME, R, routePointAt(route, cut!.s1))!;
+    const projEnd = toTownLocal(FRAME, R, routePointAt(cut!.route, cut!.route.lengthM))!;
+    expect(projEnd.x).toBeCloseTo(spanEnd.x, 4);
+    expect(projEnd.y).toBeCloseTo(spanEnd.y, 4);
   });
 
-  it("refuses when towns overlap (route shorter than the clip window) or no tips", () => {
-    const short = routeThrough([[600, 0], [300, 0], [0, 0]]);
-    expect(spliceRouteAtTown(short, "b", FRAME, 320, tips, R)).toBeNull();
-    const route = routeThrough(CURVED);
-    expect(spliceRouteAtTown(route, "b", FRAME, 320, [], R)).toBeNull();
+  it("refuses a route with no port (an UNCLIPPED endpoint at the centre)", () => {
+    const raw = routeThrough(CURVED); // ends ON the town centre
+    expect(spliceRouteAtTown(raw, "b", FRAME, PORT_EXTENT_M, tips, R)).toBeNull();
+  });
+
+  it("refuses when the road is shorter than its own connector, or no tips", () => {
+    // A 150 m stub between overlapping towns: the midpoint clamp keeps it a
+    // road (routes never vanish), but there is less road left than the
+    // port→gate connector would need, so the plain ribbon stands.
+    const short = portedThrough([[150, 0], [75, 0], [0, 0]], "b");
+    expect(spliceRouteAtTown(short, "b", FRAME, PORT_EXTENT_M, tips, R)).toBeNull();
+    const route = portedThrough(CURVED, "b");
+    expect(spliceRouteAtTown(route, "b", FRAME, PORT_EXTENT_M, [], R)).toBeNull();
+  });
+
+  it("refuses when no gate faces the road (the cross-town chord guard)", () => {
+    // A road porting from the south-west; the test town's only gates face
+    // east and north — chording across it would cut through the edge lots.
+    const sw = portedThrough([[-9000, -9000], [-4000, -4000], [-900, -900], [0, 0]], "b");
+    expect(spliceRouteAtTown(sw, "b", FRAME, PORT_EXTENT_M, tips, R)).toBeNull();
   });
 
   it("is deterministic: double-call byte-equal", () => {
-    const route = routeThrough(CURVED);
-    const a = spliceRouteAtTown(route, "b", FRAME, 320, tips, R);
-    const b = spliceRouteAtTown(route, "b", FRAME, 320, tips, R);
+    const route = portedThrough(CURVED, "b");
+    const a = spliceRouteAtTown(route, "b", FRAME, PORT_EXTENT_M, tips, R);
+    const b = spliceRouteAtTown(route, "b", FRAME, PORT_EXTENT_M, tips, R);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });

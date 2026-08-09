@@ -23,8 +23,9 @@ import { CollapsibleSection, CollapsibleSubSection } from '@/components/ui/colla
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
-import type { DefinedGesture, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
+import type { DefinedGesture, HomeAction, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
+import { normalizeHomeActions } from '@shared/home-actions';
 import { LANGUAGE_LEVELS, DEFAULT_LANGUAGE_LEVEL_INT } from '@shared/aac-language-level';
 import { tierByKey } from '@shared/aac/budget-tiers';
 import { processVoice } from '@shared/aac/pitch-shifter';
@@ -81,6 +82,7 @@ import {
   Accessibility,
   Globe,
   Hand,
+  Home,
   Plus,
   Trash2,
   Video,
@@ -118,6 +120,15 @@ function toRuleArray(value: unknown): string[] {
   if (typeof value === 'string' && value.trim()) return [value];
   return [];
 }
+
+/**
+ * A stable id for a new smart-home action slot. Same shape the board store uses
+ * for local ids — random enough to be unique within one student's list, and
+ * fixed once created (the server gates presses on it, so it must NEVER be
+ * derived from the editable label).
+ */
+const createHomeActionId = () =>
+  'home-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 // Gemini / Google Chirp 3 HD voice catalogue — the same names exist on both
 // providers, so one picked name serves Live native audio AND Google TTS.
@@ -200,6 +211,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
+  const [homeActions, setHomeActions] = useState<HomeAction[]>([]);
   const [definedGestures, setDefinedGestures] = useState<DefinedGesture[]>([]);
   const [permittedYoutubeItems, setPermittedYoutubeItems] = useState<PermittedYoutubeItem[]>([]);
   const [youtubeInput, setYoutubeInput] = useState('');
@@ -499,6 +511,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
+      setHomeActions(normalizeHomeActions(aac?.homeActions));
       setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const acc = aac?.accessibility || {};
@@ -553,6 +566,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       const originalAppConfig = aac?.appConfig || {};
       const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
+      // Normalized on BOTH sides of this comparison (state is seeded from the same
+      // helper), so an untouched list compares equal instead of showing dirty.
+      const originalHomeActions = normalizeHomeActions(aac?.homeActions);
       const originalDefinedGestures = Array.isArray(aac?.definedGestures) ? aac.definedGestures : [];
       const originalPermittedYoutubeItems = resolvePermittedYoutubeItems(aac);
       const origAcc = aac?.accessibility || {};
@@ -600,6 +616,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
+        JSON.stringify(homeActions) !== JSON.stringify(originalHomeActions) ||
         JSON.stringify(definedGestures) !== JSON.stringify(originalDefinedGestures) ||
         JSON.stringify(permittedYoutubeItems) !== JSON.stringify(originalPermittedYoutubeItems) ||
         accessFontSize !== origAccessFontSize ||
@@ -608,7 +625,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -648,6 +665,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useUnapprovedSymbols: boolean;
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
+      homeActions?: HomeAction[];
       definedGestures?: DefinedGesture[];
       permittedYoutubeItems?: PermittedYoutubeItem[];
       accessibility?: Record<string, any>;
@@ -738,6 +756,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useUnapprovedSymbols,
       appConfig,
       permittedWebsites,
+      // Sanitized through the shared chokepoint so half-filled rows (a slot the
+      // clinician added but never named) never reach the stored blob.
+      homeActions: normalizeHomeActions(homeActions),
       definedGestures,
       permittedYoutubeItems,
       accessibility: {
@@ -791,6 +812,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
+      setHomeActions(normalizeHomeActions(aac?.homeActions));
       setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const accR = aac?.accessibility || {};
@@ -2444,6 +2466,151 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               >
                 <Plus className="w-4 h-4 me-2" />
                 {t('aacSettings.permittedWebsitesAddWebsite')}
+              </Button>
+            </CardContent>
+              </CollapsibleSubSection>
+
+              {/* Smart Home Actions — clinician-authored slots the AAC can fire
+                  from a board. The authored type is still `spoken` ONLY: the
+                  device utters `command` aloud and the family's own smart
+                  speaker hears it, so there is no account to link and no type
+                  selector to show. `requiresConfirmation` is now offered
+                  because it is now ENFORCED — the AAC asks the student before
+                  the action runs, and the server refuses a flagged press that
+                  arrives without that answer. Deliberately not AI-editable —
+                  see shared/home-actions.ts. */}
+              <CollapsibleSubSection
+                icon={<Home className="w-5 h-5" />}
+                title={t('aacSettings.homeActionsTitle')}
+                description={t('aacSettings.homeActionsDescription')}
+              >
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">{t('aacSettings.homeActionsHint')}</p>
+              {homeActions.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('aacSettings.homeActionsEmpty')}</p>
+              )}
+              {homeActions.map((action, idx) => (
+                <div
+                  key={action.id}
+                  className={cn(
+                    "rounded-lg border p-3 space-y-2",
+                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
+                  )}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_7rem] gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.homeActionsLabel')}</Label>
+                      <Input
+                        value={action.label}
+                        onChange={(e) =>
+                          setHomeActions((prev) =>
+                            prev.map((a, i) => (i === idx ? { ...a, label: e.target.value } : a)),
+                          )
+                        }
+                        placeholder={t('aacSettings.homeActionsLabelPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.homeActionsIcon')}</Label>
+                      <Input
+                        value={action.icon || ''}
+                        onChange={(e) =>
+                          setHomeActions((prev) =>
+                            prev.map((a, i) => (i === idx ? { ...a, icon: e.target.value } : a)),
+                          )
+                        }
+                        placeholder={t('aacSettings.homeActionsIconPlaceholder')}
+                        maxLength={4}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t('aacSettings.homeActionsCommand')}</Label>
+                    <Input
+                      value={action.command}
+                      onChange={(e) =>
+                        setHomeActions((prev) =>
+                          prev.map((a, i) => (i === idx ? { ...a, command: e.target.value } : a)),
+                        )
+                      }
+                      placeholder={t('aacSettings.homeActionsCommandPlaceholder')}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t('aacSettings.homeActionsCommandHelp')}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t('aacSettings.homeActionsDescriptionField')}</Label>
+                    <Input
+                      value={action.description || ''}
+                      onChange={(e) =>
+                        setHomeActions((prev) =>
+                          prev.map((a, i) => (i === idx ? { ...a, description: e.target.value } : a)),
+                        )
+                      }
+                      placeholder={t('aacSettings.homeActionsDescriptionPlaceholder')}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`home-action-enabled-${action.id}`}
+                          checked={action.enabled !== false}
+                          onCheckedChange={(checked) =>
+                            setHomeActions((prev) =>
+                              prev.map((a, i) => (i === idx ? { ...a, enabled: checked } : a)),
+                            )
+                          }
+                        />
+                        <Label htmlFor={`home-action-enabled-${action.id}`} className="text-xs">
+                          {t('aacSettings.homeActionsEnabled')}
+                        </Label>
+                      </div>
+                      {/* Enforced from phase 1 on: the AAC shows a Yes/No confirm
+                          step before the action runs, and the press it sends is
+                          refused server-side without that answer. */}
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`home-action-confirm-${action.id}`}
+                          checked={action.requiresConfirmation === true}
+                          onCheckedChange={(checked) =>
+                            setHomeActions((prev) =>
+                              prev.map((a, i) => (i === idx ? { ...a, requiresConfirmation: checked } : a)),
+                            )
+                          }
+                        />
+                        <Label htmlFor={`home-action-confirm-${action.id}`} className="text-xs">
+                          {t('aacSettings.homeActionsRequiresConfirmation')}
+                        </Label>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setHomeActions((prev) => prev.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 className="w-3 h-3 me-1" />
+                      {t('aacSettings.homeActionsRemove')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('aacSettings.homeActionsRequiresConfirmationHelp')}
+                  </p>
+                </div>
+              ))}
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setHomeActions((prev) => [
+                    ...prev,
+                    { id: createHomeActionId(), label: '', type: 'spoken', command: '', enabled: true },
+                  ])
+                }
+              >
+                <Plus className="w-4 h-4 me-2" />
+                {t('aacSettings.homeActionsAdd')}
               </Button>
             </CardContent>
               </CollapsibleSubSection>

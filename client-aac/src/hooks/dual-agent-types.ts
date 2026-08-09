@@ -469,6 +469,12 @@ export interface UseDualAgentReturn {
   /** Ask the server to load a pre-built board by key (the press half of a
    *  board-launch button). Server replies via the normal set_board message. */
   requestBoardOpen: (boardKey: string) => void;
+  /** Report that a smart-home button was pressed. The command/announce line has
+   *  already been spoken locally; this only records the press. No reply.
+   *  `confirmed` carries the student's answer to the board's confirm step —
+   *  sent only for actions flagged `requiresConfirmation`, which the server
+   *  refuses to execute without it. */
+  requestHomeAction: (actionId: string, confirmed?: boolean) => void;
   /** appId currently awaiting a request_app_open round-trip, or null. */
   appOpenPending: string | null;
   /** Register a function to capture the app canvas (e.g. drawing) for detection */

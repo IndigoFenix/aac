@@ -1,0 +1,283 @@
+# world-text v1   proto=1
+# world=game.spec  seed=7  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=addc01a2+dirty
+# started=2026-08-07T06:42:15.174Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> scene
+SCENE  house-1 — 13 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  ball-1 (ball), here south.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  bowl-1 (bowl), there east.
+  oven-1 (oven), there west.
+  a chair, here east.
+  a chair, there east.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, you can see inside.
+  house-2 (house), here north, white, shut to you.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> wait 120
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    pip: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    pip: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    mara: "I'm not hungry."  [i_me + hungry.not]
+SAY    pip: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 120.0s.
+> wait 120
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    pip: "bye-bye"  [goodbye]
+SAY    orrin: "💗"
+SAY    pip: "bye-bye"  [goodbye]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    pip: [ball]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    orrin: [play]
+SAY    pip: [play]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    biscuit: [ball]
+SAY    orrin: "🍳"  [banana.hot]
+SAY    biscuit: [play]
+SAY    biscuit: "🥺"  [apple]
+SAY    mara: [play]
+SAY    pip: [sit]
+SAY    orrin: [meal]
+EXIT   pip went out of the white house.
+SAY    mara: [apple]
+SAY    biscuit: [banana]
+SAY    biscuit: "🥺"  [water]
+SAY    orrin: [water]
+SAY    biscuit: "Help you."  [help + you]
+SAY    orrin: "Thank you!"  [thank_you]
+SAY    biscuit: "Help you."  [help + you]
+TOAST  🏗️ the people stake out a market (feedback)
+SAY    orrin: "Thank you!"  [thank_you]
+EXIT   orrin left view here west.
+SAY    biscuit: "I don't help you."  [help.not + you]
+SAY    biscuit: "🥺"  [water]
+SAY    mara: [water]
+ENTER  orrin came into view there west.
+TICK   waited 120.0s.
+> scene
+SCENE  house-1 — 22 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here west.
+  mara (person), here south, rest.
+  orrin (person), there west, eat food.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  ball-2 (ball), there north.
+  a box, here north.
+  a chair, here east.
+  2 beds, there north.
+  2 boxes, there north.
+  a bowl, there east.
+  a chair, there east.
+  an oven, there west.
+  a bin, there east.
+  a cupboard, there west.
+  a toilet, there north.
+  a barrel, there west.
+  a bath, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, door open, you can see inside.
+  house-5 (house), there west, white, door open, you can see inside.
+  45 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — floor laid, 0% worked, far north, 292 m
+TICK   quiet after 0.8s.
+> /why mara
+CHEAT  /why mara
+> /why orrin
+CHEAT  /why orrin
+> /why pip
+CHEAT  /why pip
+> look mara
+LOOK   mara — mara.
+  here south, 2 m away.
+  house-1.
+  rest.
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+BOARD  resident_face:resident_99_0: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+TICK   quiet after 2.3s.
+> say do
+OK     said: do
+SAY    mara: "I rest."  [i_me + rest]
+BOARD  resident_face:resident_99_0: I rest.  [i_me + rest]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Why?  [why]
+  5. Where is the food?  [place#question + food]
+  6. I'm confused.  [confused]
+  7. bye-bye  [goodbye]
+  8. Return.  [return]
+NOTE   7 choice(s) on this page, plus back.
+EXIT   mara left view here west.
+TICK   quiet after 1.3s.
+> say why
+OK     said: why
+BOARD  resident_face:resident_99_0: Because I need toilet.  [because + i_me + need_toilet]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Why?  [why]
+  5. Where is the food?  [place#question + food]
+  6. I'm confused.  [confused]
+  7. bye-bye  [goodbye]
+  8. Return.  [return]
+NOTE   7 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+BOARD  resident_face:resident_99_0: I don't know.  [i_me + think.not]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Where is the food?  [place#question + food]
+  5. I'm confused.  [confused]
+  6. bye-bye  [goodbye]
+  7. Return.  [return]
+NOTE   6 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+BOARD  resident_face:resident_99_0: Because I need toilet.  [because + i_me + need_toilet]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Where is the food?  [place#question + food]
+  5. I'm confused.  [confused]
+  6. bye-bye  [goodbye]
+  7. Return.  [return]
+NOTE   6 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> board
+BOARD  resident_face:resident_99_0: Because I need toilet.  [because + i_me + need_toilet]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Where is the food?  [place#question + food]
+  5. I'm confused.  [confused]
+  6. bye-bye  [goodbye]
+  7. Return.  [return]
+TICK   quiet after 0.8s.
+> look pip
+ERR    pip is not in view.
+TICK   quiet after 1.5s.
+> say do
+OK     said: do
+BOARD  resident_face:resident_99_0: I'm going to the bathroom.  [go + bathroom]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Why?  [why]
+  5. Where is the food?  [place#question + food]
+  6. I'm confused.  [confused]
+  7. bye-bye  [goodbye]
+  8. Return.  [return]
+NOTE   7 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+BOARD  resident_face:resident_99_0: I don't know.  [i_me + think.not]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Where is the food?  [place#question + food]
+  5. I'm confused.  [confused]
+  6. bye-bye  [goodbye]
+  7. Return.  [return]
+NOTE   6 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+BOARD  resident_face:resident_99_0: I don't know.  [i_me + think.not]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> board
+BOARD  resident_face:resident_99_0: I don't know.  [i_me + think.not]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where is the food?  [place#question + food]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=19  presses=0  screens=11  sim=262.9s
+# events: SAY 79  TICK 16  BOARD 11  NOTE 11  OK 7  EXIT 3  CHEAT 3  SCENE 2  TOAST 1  ENTER 1  SITE 1  LOOK 1  ERR 1

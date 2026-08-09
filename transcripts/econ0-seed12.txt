@@ -1,0 +1,353 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=addc01a2+dirty
+# started=2026-08-08T23:01:04.814Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> scene
+SCENE  house-1 — 13 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  ball-1 (ball), here south.
+  basket-1 (basket), here south.
+  table-1 (table), there east.
+  bowl-1 (bowl), there east.
+  oven-1 (oven), there west.
+  a chair, here east.
+  a chair, there east.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, you can see inside.
+  house-2 (house), here north, white, shut to you.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> wait 30
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> watch mara
+WATCH  watching mara.
+TICK   quiet after 0.8s.
+> watch orrin
+WATCH  watching orrin.
+TICK   quiet after 0.8s.
+> watch pip
+WATCH  watching pip.
+TICK   quiet after 0.8s.
+> wait 30
+SAY    orrin: "Are you okay?"  [you + ok#question]
+DOING  mara is get thing.
+DOING  pip is get thing.
+SAY    pip: "I'm happy."  [i_me + happy]
+DOING  mara is doing nothing.
+HOLD   mara is holding ball-1.
+DOING  pip is doing nothing.
+DOING  mara is put thing.
+SAY    orrin: "bye-bye"  [goodbye]
+MOVED  mara is now here west.
+EXIT   mara left view here west.
+ENTER  mara came into view here north.
+MOVED  mara is now here west.
+TICK   waited 30.0s.
+> watch mara
+NOTE   already watching mara.
+TICK   quiet after 0.8s.
+> watch orrin
+NOTE   already watching orrin.
+TICK   quiet after 0.8s.
+> watch pip
+NOTE   already watching pip.
+TICK   quiet after 0.8s.
+> wait 30
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> watch mara
+NOTE   already watching mara.
+TICK   quiet after 0.8s.
+> watch orrin
+NOTE   already watching orrin.
+TICK   quiet after 0.8s.
+> watch pip
+NOTE   already watching pip.
+TICK   quiet after 0.8s.
+> wait 30
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+MOVED  orrin is now there south.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+MOVED  orrin is now here south.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> watch mara
+NOTE   already watching mara.
+DOING  pip is talk mara.
+DOING  pip is doing nothing.
+SAY    pip: "bye-bye"  [goodbye]
+TICK   quiet after 1.6s.
+> watch orrin
+NOTE   already watching orrin.
+TICK   quiet after 0.8s.
+> watch pip
+NOTE   already watching pip.
+TICK   quiet after 0.8s.
+> wait 30
+DOING  orrin is talk biscuit.
+DOING  orrin is doing nothing.
+SAY    orrin: "💗"
+MOVED  orrin is now there south.
+SAY    orrin: "bye-bye"  [goodbye]
+MOVED  orrin is now here south.
+TICK   waited 30.0s.
+> watch mara
+NOTE   already watching mara.
+TICK   quiet after 0.8s.
+> watch orrin
+NOTE   already watching orrin.
+TICK   quiet after 0.8s.
+> watch pip
+NOTE   already watching pip.
+TICK   quiet after 0.8s.
+> wait 30
+MOVED  mara is now there south.
+MOVED  mara is now here south.
+SAY    orrin: "bye-bye"  [goodbye]
+MOVED  orrin is now there south.
+SAY    biscuit: "bye-bye"  [goodbye]
+MOVED  orrin is now here south.
+MOVED  mara is now there west.
+MOVED  mara is now here west.
+TICK   waited 30.0s.
+> watch mara
+NOTE   already watching mara.
+TICK   quiet after 0.8s.
+> watch orrin
+NOTE   already watching orrin.
+DOING  mara is get play.
+TICK   quiet after 1.2s.
+> watch pip
+NOTE   already watching pip.
+MOVED  mara is now here west.
+EXIT   mara left view here west.
+TICK   quiet after 2.2s.
+> wait 30
+SAY    biscuit: "🥺"  [apple]
+DOING  orrin is get basket.
+DOING  orrin is doing nothing.
+DOING  pip is get basket.
+HOLD   orrin is holding basket-1.
+DOING  pip is get satchel.
+DOING  pip is play.
+ENTER  mara came into view here north.
+DOING  orrin is play.
+MOVED  mara is now here west.
+MOVED  pip is now here west.
+MOVED  orrin is now here west.
+EXIT   orrin left view here west.
+EXIT   pip left view here north.
+MOVED  mara is now there south.
+EXIT   mara went out of the white house.
+SAY    biscuit: "Help you."  [help + you]
+ENTER  orrin came into view here west.
+ENTER  pip came into view here north.
+MOVED  orrin is now here west.
+MOVED  pip is now here west.
+SAY    biscuit: "Help you."  [help + you]
+EXIT   biscuit left view here west.
+MOVED  orrin is now there west.
+SAY    pip: "Thank you!"  [thank_you]
+MOVED  pip is now there west.
+DOING  orrin is doing nothing.
+HOLD   pip is holding small:mat_273.
+DOING  orrin is eat food.
+DOING  orrin is doing nothing.
+MOVED  pip is now here south.
+DOING  orrin is eat food.
+SAY    pip: "bye-bye"  [goodbye]
+MOVED  orrin is now here south.
+DOING  orrin is eat water.
+MOVED  pip is now there south.
+SAY    pip: "bye-bye"  [goodbye]
+MOVED  orrin is now there south.
+DOING  pip is doing nothing.
+SAY    pip: [apple]
+HOLD   pip is holding nothing.
+DOING  orrin is doing nothing.
+DOING  orrin is drink.
+DOING  pip is eat water.
+MOVED  orrin is now here south.
+MOVED  pip is now here south.
+HOLD   pip is holding small:mat_274.
+MOVED  pip is now there south.
+MOVED  orrin is now there south.
+TICK   waited 30.0s.
+> watch mara
+ERR    mara is not in view.
+DOING  pip is doing nothing.
+SAY    pip: [water]
+HOLD   pip is holding nothing.
+TICK   quiet after 1.6s.
+> watch orrin
+NOTE   already watching orrin.
+DOING  orrin is doing nothing.
+DOING  orrin is eat water.
+DOING  pip is go bathroom.
+TOAST  🏗️ the people stake out a market (feedback)
+TICK   quiet after 2.2s.
+> watch pip
+NOTE   already watching pip.
+TICK   quiet after 0.8s.
+> wait 30
+MOVED  pip is now here south.
+ENTER  biscuit came into view here north.
+MOVED  pip is now here west.
+MOVED  pip is now here west.
+MOVED  pip is now there west.
+EXIT   pip left view there west.
+ENTER  pip came into view there west.
+MOVED  pip is now here west.
+MOVED  pip is now here west.
+MOVED  pip is now here west.
+MOVED  orrin is now here south.
+SAY    biscuit: "bye-bye"  [goodbye]
+MOVED  orrin is now there south.
+DOING  orrin is doing nothing.
+DOING  orrin is eat food.
+MOVED  orrin is now here south.
+MOVED  orrin is now there south.
+TICK   waited 30.0s.
+> watch mara
+ERR    mara is not in view.
+DOING  orrin is doing nothing.
+TICK   quiet after 1.0s.
+> watch orrin
+NOTE   already watching orrin.
+TICK   quiet after 0.8s.
+> watch pip
+NOTE   already watching pip.
+SAY    orrin: [apple]
+TICK   quiet after 0.9s.
+> wait 30
+DOING  orrin is eat water.
+DOING  orrin is doing nothing.
+SAY    orrin: [water]
+DOING  pip is sleep.
+DOING  orrin is go bathroom.
+MOVED  orrin is now here south.
+MOVED  pip is now here east.
+SAY    pip: "😴"
+DOING  pip is go bedroom.
+MOVED  pip is now there north.
+MOVED  orrin is now here west.
+EXIT   orrin left view here west.
+DOING  pip is doing nothing.
+DOING  pip is go bedroom.
+MOVED  pip is now here north.
+SAY    pip: "I'm happy."  [i_me + happy]
+MOVED  pip is now here east.
+SAY    pip: "Where are you going?"  [place#question + you + go]
+MOVED  pip is now here east.
+TICK   waited 30.0s.
+> watch mara
+ERR    mara is not in view.
+DOING  pip is doing nothing.
+TICK   quiet after 1.0s.
+> watch orrin
+ERR    orrin is not in view.
+TICK   quiet after 0.8s.
+> watch pip
+NOTE   already watching pip.
+TICK   quiet after 0.8s.
+> wait 30
+SAY    pip: "Are you okay?"  [you + ok#question]
+MOVED  pip is now here east.
+DOING  pip is go bedroom.
+MOVED  pip is now here east.
+DOING  pip is get basket.
+SAY    pip: "I'm happy."  [i_me + happy]
+MOVED  pip is now here east.
+ENTER  orrin came into view there north.
+MOVED  orrin is now here north.
+DOING  orrin is doing nothing.
+SAY    orrin: "Where are you going?"  [place#question + you + go]
+SILENT pip: …
+MOVED  pip is now here west.
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+ENTER  orrin came into view here west.
+ENTER  pip came into view here west.
+SAY    biscuit: "😴"
+SAY    pip: "bye-bye"  [goodbye]
+MOVED  pip is now here west.
+MOVED  orrin is now here west.
+MOVED  orrin is now there south.
+EXIT   orrin went out of the white house.
+TICK   waited 30.0s.
+> watch mara
+ERR    mara is not in view.
+TICK   quiet after 0.8s.
+> watch orrin
+ERR    orrin is not in view.
+TICK   quiet after 0.8s.
+> watch pip
+NOTE   already watching pip.
+TICK   quiet after 0.8s.
+> scene
+SCENE  house-1 — 15 thing(s) in view, 82 place(s) around you.
+  pip (person), here south, holding basket-1.
+  biscuit (person), here south.
+  table-1 (table), there east.
+  bed-2 (bed), there north.
+  bowl-1 (bowl), there east.
+  oven-1 (oven), there west.
+  a box, here north.
+  a chair, here east.
+  a chair, there east.
+  a box, there north.
+  a bin, there east.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  46 houses, there east, all shut.
+  33 houses, close west, all shut.
+NOTE   about 993 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — floor laid, 38% worked, far north, 292 m
+DOING  pip is talk biscuit.
+DOING  pip is doing nothing.
+SAY    pip: "💗"
+SITE   1 thing(s) being built.
+  site-1: a market — pillars up, 50% worked, far north, 292 m
+TICK   quiet after 1.9s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=44  presses=0  screens=1  sim=341.6s
+# events: MOVED 55  SAY 46  DOING 45  TICK 44  NOTE 24  EXIT 11  ENTER 9  HOLD 6  ERR 6  WATCH 3  SCENE 2  SITE 2  BOARD 1  TOAST 1  SILENT 1  SELF 1

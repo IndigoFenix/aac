@@ -69,6 +69,46 @@ export function applyBudgetCharge(
   return next;
 }
 
+/**
+ * Merge two budget states into the most-complete record: per window, both
+ * sides are regenerated to `now` and the one with the HIGHER remaining drain
+ * wins. Drain only ever decays (by regen) — it never spontaneously drops — so
+ * the higher normalized drain is always the fuller accounting of real spend.
+ * This makes concurrent or stale writers safe by construction: a coordinator
+ * saving from a stale base can no longer erase drain another one accumulated
+ * (last-writer-wins clobbering was how the meter lost ~86% of real spend and
+ * read 94% instead of 62%). Windows present on only one side carry over
+ * unchanged; a key with no config in `windows` (left over from an old tier)
+ * can't be regen-normalized, so raw drain compares directly.
+ */
+export function mergeBudgetState(
+  a: BudgetState | null | undefined,
+  b: BudgetState | null | undefined,
+  windows: BudgetWindow[],
+  now: number,
+): BudgetState {
+  const perHourByKey = new Map(windows.map(w => [w.key, w.cfg.perHour]));
+  const out: BudgetState = {};
+  const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
+  for (const key of keys) {
+    const sa = a?.[key];
+    const sb = b?.[key];
+    if (!sa || !sb) {
+      out[key] = (sa ?? sb)!;
+      continue;
+    }
+    const perHour = perHourByKey.get(key);
+    if (perHour === undefined) {
+      out[key] = sa.drain >= sb.drain ? sa : sb;
+      continue;
+    }
+    const ra = regenerate(sa, now, perHour);
+    const rb = regenerate(sb, now, perHour);
+    out[key] = ra.drain >= rb.drain ? ra : rb;
+  }
+  return out;
+}
+
 export interface WindowReading {
   key: string;
   percent: number;

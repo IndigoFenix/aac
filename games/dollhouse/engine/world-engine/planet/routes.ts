@@ -15,6 +15,10 @@
 
 import { hubRoutes, pairRoutes, type TravelOpts } from "../kernel/civ/travel.js";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
+// THE PORT LAW's one dimension: a town's extent. dimensions.ts is a
+// constants-only leaf (no imports at all), so reading it here keeps ONE
+// definition of "how far a town reaches" instead of a planet-side copy.
+import { TOWN_DIMS } from "../kernel/town/dimensions.js";
 import type { BuiltPlanet } from "./planet-game.js";
 import type { PlanetCity } from "./cities.js";
 
@@ -39,6 +43,12 @@ export interface PlanetRouteOpts {
    *  K nearest — the polity-aware net (states.ts adjacency), where every
    *  interstate joins two neighbouring capitals across their real border. */
   pairs?: ReadonlyArray<readonly [number, number]>;
+  /** THE PORT LAW (growth-unification §1): every route ends at its town's
+   *  EXTENT, never at the city cell's center — otherwise the terrain paint,
+   *  the ribbon and the carts all drive through the buildings. Default
+   *  TOWN_DIMS.townRMax; 0 keeps the raw centre-to-centre polyline (tests
+   *  that measure the substrate solve itself). */
+  townExtentM?: number;
 }
 
 const norm3 = (v: [number, number, number]): [number, number, number] => {
@@ -119,6 +129,132 @@ export function routePointAt(route: PlanetRoute, s: number): [number, number, nu
   ]);
 }
 
+// ── THE PORT LAW: a route ends at the town's EXTENT, not at its centre ─────
+//
+// growth-unification §1: circulation crosses a scope boundary only at a PORT,
+// and a route is the CONDENSED representation of the scope interaction. A
+// condensed (unmounted) town has no street plan, so its port is derivable
+// with nothing but its extent: the crossing of the town's extent circle.
+// Clipping here — at GENERATION, once — is what makes the three downstream
+// representations agree: the terrain vertex paint, the ribbon mesh and the
+// caravan arcs all read this one geometry, so none of them can run through
+// the buildings. Mounting the town REFINES the port to the gate (a short
+// connector, kernel/town/approach.ts) — an expanded VIEW of the same data.
+
+/** A route endpoint's TOWN: the identity the route names it by, where its
+ *  centre stands, and how far its built extent reaches. */
+export interface RouteTerminal {
+  /** The endpoint identity claimed (must equal `route.a` / `route.b`). */
+  id: number;
+  /** Unit direction of the town centre from the planet's centre. */
+  dir: readonly [number, number, number];
+  /** Arc distance from `dir` at which the route PORTS (metres). */
+  extentM: number;
+}
+
+/** The shortest road a port pair may leave standing. Below this the two
+ *  towns' extents have swallowed the whole road and there is no open
+ *  country between them to cross — see portTerminateRoute. */
+const MIN_PORT_ROUTE_M = 10;
+
+/** Arc positions this close are the same point (kills zero-length segments
+ *  when a clip lands exactly on a vertex). */
+const PORT_EPS_M = 1e-3;
+
+/** Fraction along `in → out` where the great-circle distance to `c` reaches
+ *  the extent — bisection on the SAME nlerp `routePointAt` interpolates
+ *  with, so the pinned endpoint lies exactly on the sampled polyline. */
+function portFrac(
+  vIn: readonly [number, number, number],
+  vOut: readonly [number, number, number],
+  c: readonly [number, number, number],
+  cosLimit: number,
+): number {
+  let lo = 0;
+  let hi = 1;
+  for (let k = 0; k < 40; k++) {
+    const mid = (lo + hi) / 2;
+    const m = norm3([
+      vIn[0] + (vOut[0] - vIn[0]) * mid,
+      vIn[1] + (vOut[1] - vIn[1]) * mid,
+      vIn[2] + (vOut[2] - vIn[2]) * mid,
+    ]);
+    if (m[0] * c[0] + m[1] * c[1] + m[2] * c[2] > cosLimit) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** Arc position where the route leaves `t`'s extent, scanning inward from
+ *  `end`. Returns the end's own arc position when the endpoint already lies
+ *  outside (nothing to clip), and the FAR end's when the whole route is
+ *  inside (the caller's midpoint clamp then rescues it). */
+function portCrossingS(route: PlanetRoute, radius: number, end: "a" | "b", t: RouteTerminal): number {
+  const c = t.dir;
+  const cosLimit = Math.cos(Math.min(Math.PI, Math.max(0, t.extentM / radius)));
+  const inside = (v: readonly [number, number, number]): boolean =>
+    v[0] * c[0] + v[1] * c[1] + v[2] * c[2] > cosLimit;
+  const n = route.dirs.length;
+  if (end === "a") {
+    let i = 0;
+    while (i < n && inside(route.dirs[i]!)) i++;
+    if (i === 0) return 0;
+    if (i >= n) return route.lengthM;
+    const f = portFrac(route.dirs[i - 1]!, route.dirs[i]!, c, cosLimit);
+    return route.cum[i - 1]! + f * (route.cum[i]! - route.cum[i - 1]!);
+  }
+  let j = n - 1;
+  while (j >= 0 && inside(route.dirs[j]!)) j--;
+  if (j === n - 1) return route.lengthM;
+  if (j < 0) return 0;
+  const f = portFrac(route.dirs[j + 1]!, route.dirs[j]!, c, cosLimit);
+  return route.cum[j + 1]! + f * (route.cum[j]! - route.cum[j + 1]!);
+}
+
+/**
+ * Clip a route's ends at its terminals' extents — the PORT LAW made
+ * geometry. For each end whose identity matches its terminal, the polyline
+ * inside `extentM` of the terminal is dropped and the new endpoint is pinned
+ * exactly ON the crossing (interpolated with routePointAt's own nlerp).
+ *
+ * TOWNS THAT OVERLAP HAVE NO PORTS. Where the extents swallow the whole road
+ * — neighbours closer together than their own extents, which is ordinary on
+ * a compressed world (the 2 km test planet spaces its cities ~800 m apart
+ * against a 450 m extent) — the route comes back UNCLIPPED. A port is the
+ * crossing of a boundary into open country, and between overlapping towns
+ * there is no open country to cross; minting a metres-long stub there would
+ * give it a caravan period of seconds and a ribbon of noise. Unclipped is
+ * the honest answer, and it is never null for a route that existed.
+ *
+ * The result is an ordinary PlanetRoute: `cum`/`lengthM` are honest
+ * PORT-TO-PORT figures (so caravan counts, arcs and trade distances price
+ * the road that exists), identities are unchanged, and a route with no
+ * matching terminal comes back by reference. Pure and deterministic.
+ */
+export function portTerminateRoute(
+  route: PlanetRoute,
+  radius: number,
+  a?: RouteTerminal | null,
+  b?: RouteTerminal | null,
+): PlanetRoute {
+  const termA = a && a.id === route.a ? a : null;
+  const termB = b && b.id === route.b ? b : null;
+  if (!termA && !termB) return route;
+  const s0 = termA ? portCrossingS(route, radius, "a", termA) : 0;
+  const s1 = termB ? portCrossingS(route, radius, "b", termB) : route.lengthM;
+  // No open country between the extents ⇒ no ports ⇒ the road as solved.
+  // (`portCrossingS` reports the FAR end when a whole route lies inside an
+  // extent, so that case lands here too, with s1 − s0 ≤ 0.)
+  if (s1 - s0 < MIN_PORT_ROUTE_M) return route;
+  if (s0 <= PORT_EPS_M && s1 >= route.lengthM - PORT_EPS_M) return route;
+  const dirs: Array<readonly [number, number, number]> = [routePointAt(route, s0)];
+  for (let i = 0; i < route.dirs.length; i++) {
+    const s = route.cum[i]!;
+    if (s > s0 + PORT_EPS_M && s < s1 - PORT_EPS_M) dirs.push(route.dirs[i]!);
+  }
+  dirs.push(routePointAt(route, s1));
+  return routeFromDirs(dirs, radius, route.a, route.b) ?? route;
+}
+
 /** The travel scaling the tier-0 substrate really has (the same numbers
  *  planet-game's climate pass derives). */
 export function planetTravelOpts(built: BuiltPlanet): TravelOpts {
@@ -154,12 +290,25 @@ export function planetRoutes(
     : hubRoutes(built.grid, cities.map(c => c.cell), travel);
 
   const radius = built.spec.radius;
+  // THE PORT LAW: every endpoint is a CITY, so every end ports at that
+  // city's extent — the raw solve ends on the cell centre, i.e. inside the
+  // town's buildings.
+  const extentM = opts.townExtentM ?? TOWN_DIMS.townRMax;
+  const byCell = new Map<number, PlanetCity>();
+  for (const c of cities) byCell.set(c.cell, c);
+  const terminalOf = (cell: number): RouteTerminal | null => {
+    const city = byCell.get(cell);
+    return city ? { id: cell, dir: city.dir, extentM } : null;
+  };
   const out: PlanetRoute[] = [];
   for (const cells of cellRoutes) {
     if (cells.length < 2) continue;
     const dirs = chaikinSphere(chaikinSphere(cells.map(c => pos3(c))));
     const route = routeFromDirs(dirs, radius, cells[0]!, cells[cells.length - 1]!);
-    if (route) out.push(route);
+    if (!route) continue;
+    out.push(extentM > 0
+      ? portTerminateRoute(route, radius, terminalOf(route.a), terminalOf(route.b))
+      : route);
   }
   return out;
 }

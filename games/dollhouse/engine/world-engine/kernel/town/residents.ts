@@ -476,6 +476,18 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
           // WATCHED house is never distance-culled — the observed family stays
           // loaded through its whole commute/errand (despawning mid-walk is
           // what made returns read as teleports).
+          //
+          // 🔎 VERDICT, 2026-08-07 (stocking-offload-and-carry.md §1 — "is the
+          // household's shopper being OFFLOADED mid-trip?"): NO, and THIS line
+          // is why. A dollhouse session answers `isVisible(focusHouse)` true
+          // unconditionally, so `houseVisible` holds at ANY distance and the
+          // gate never fires for a focus-family member; the family lock below
+          // then puts every one of them in `desired` UNBUDGETED, so the
+          // `!desired.has(id)` cull can never name one either. (And under a
+          // spirit camera `peopleR` is the whole town regardless.) Measured:
+          // 354 heartbeats over 600 sim-s, zero NOT-EMBODIED. What was really
+          // lost is the RETURN LEG — see the TRIP SPAN in quest-host
+          // `stepNeeds`. Do not "fix" stocking by loosening this gate.
           const at = bodyPos(id) ?? door;
           const d = Math.hypot(at.x - p.x, at.y - p.y);
           if (d > peopleR && !houseVisible) continue;

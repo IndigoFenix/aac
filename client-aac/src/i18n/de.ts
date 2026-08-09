@@ -869,6 +869,7 @@ export const de: Translations = {
     neitherOfThese: "Keines davon",
     guess: "Wort finden",
     exitConfirm: "Möchtest du beenden?",
+    homeActionConfirm: "Möchtest du das machen?",
   },
 
   silentMode: {

@@ -2158,6 +2158,23 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: "request_board_open", boardKey });
   }, [wsSend]);
 
+  /**
+   * Fire one of the student's curated home actions — the press half of a
+   * smart-home button the Board Manager surfaced. The board has ALREADY spoken
+   * the command phrase aloud (that is what actuates a `spoken` action), so
+   * unlike `requestAppOpen` there is nothing here to back-stop: this is purely
+   * the report, so the server can re-gate the id and record `[HOME] <label>`
+   * for the agents. Nothing comes back.
+   *
+   * `confirmed` is the student's answer to the board's confirm step, sent only
+   * for actions the clinician flagged `requiresConfirmation` — the server
+   * REFUSES to execute a flagged action without it. The field is omitted
+   * entirely otherwise, so an unflagged press is byte-identical to before.
+   */
+  const requestHomeAction = useCallback((actionId: string, confirmed?: boolean) => {
+    wsSend({ type: "request_home_action", actionId, ...(confirmed ? { confirmed: true } : {}) });
+  }, [wsSend]);
+
   const clearSession = useCallback(() => {
     if (wsRef.current) {
       closingIntentionallyRef.current = true;
@@ -2276,6 +2293,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     launchApp,
     requestAppOpen,
     requestBoardOpen,
+    requestHomeAction,
     appOpenPending,
     captureAppCanvasRef,
     // Apps available to launch from the static Apps board overlay

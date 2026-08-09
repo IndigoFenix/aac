@@ -1374,7 +1374,7 @@ export interface BoardGrid {
  * Board button action type
  */
 export interface BoardButtonAction {
-  type: "speak" | "link" | "back" | "home" | "exit" | "open_website" | "open_app" | "open_board";
+  type: "speak" | "link" | "back" | "home" | "exit" | "open_website" | "open_app" | "open_board" | "run_home_action";
   text?: string;
   toPageId?: string;
   /**
@@ -1397,6 +1397,29 @@ export interface BoardButtonAction {
    * follows the switch. Gated against the session's available boards.
    */
   boardKey?: string;
+  /**
+   * For "run_home_action" actions: the id of the student's home action to fire
+   * (see HomeAction). `command` is the exact phrase the client speaks aloud
+   * through the standard student-voice press pipeline — emitted for `spoken`
+   * slots ONLY; `label` is the human/AI-facing name recorded in the session.
+   * A home action actuates in place — it never navigates. Gated server-side
+   * against the student's ENABLED home actions; unknown ids degrade to a plain
+   * speak button.
+   *
+   * `announce` is the cloud-type counterpart of `command`: the server actuates,
+   * so the device instead says this (already defaulted to the label) in the
+   * student's voice so the press isn't silent. Exactly one of
+   * `command`/`announce` is present.
+   *
+   * `requiresConfirmation` tells the client to show its dwell-friendly confirm
+   * step before firing, and to send `confirmed: true` on the WS press; the
+   * server refuses unconfirmed execution of flagged actions.
+   */
+  actionId?: string;
+  command?: string;
+  label?: string;
+  announce?: string;
+  requiresConfirmation?: boolean;
 }
 
 /**
@@ -1409,6 +1432,44 @@ export interface PermittedWebsite {
   label: string;
   description?: string;
   subpages?: PermittedWebsite[];
+}
+
+/**
+ * A clinician-authored smart-home action slot the student can fire from a board.
+ *
+ * Two families of type, one press flow:
+ *  - `spoken` (live today): the AAC utters `command` aloud through the
+ *    student-voice pipeline and the family's own smart speaker hears it like
+ *    any other voice. Nothing actuates server-side.
+ *  - `alexa` / `google` (phase-1 framework, env-gated until the developer
+ *    accounts exist): the SERVER fires the slot's virtual-trigger event through
+ *    the provider seam in `server/services/smart-home/`. These slots carry no
+ *    `command` at all — what the device SAYS on press is `announce`.
+ *
+ * See planning-docs/smart-home-actions.md. Helpers live in shared/home-actions.ts;
+ * deliberately NOT AI-editable.
+ */
+export interface HomeAction {
+  id: string;            // stable slug, unique within the student's list
+  label: string;         // human/AI-facing name ("Lights on")
+  icon?: string;         // emoji for button visuals
+  type: 'spoken' | 'alexa' | 'google';  // which provider actuates this slot
+  /**
+   * REQUIRED for `spoken`: the exact phrase the AAC device speaks aloud
+   * ("Alexa, turn on the lights"). Never paraphrased — a wake-word phrase only
+   * works said verbatim. UNUSED by the cloud types, which actuate server-side.
+   */
+  command?: string;
+  /**
+   * CLOUD types only: what the device says in the STUDENT'S VOICE when the
+   * action fires, so a server-side actuation isn't a silent press. Defaults to
+   * `label` when unset. `spoken` actions ignore it — they utter `command`
+   * verbatim instead.
+   */
+  announce?: string;
+  description?: string;  // AI-facing hint for when to surface it
+  requiresConfirmation?: boolean; // client shows a confirm step; server refuses unconfirmed presses
+  enabled?: boolean;     // default true
 }
 
 /**

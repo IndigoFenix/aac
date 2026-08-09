@@ -26,10 +26,11 @@
 // `help` never mentions the channel — a driver that does not know it exists
 // cannot accidentally lean on it.
 
+import { carryRowText } from "../quest/creature-inspect.js";
 import type { TextCheatHost } from "./types.js";
 
 /** The commands, without their `/`. `help` must never print this list. */
-export const CHEAT_COMMANDS: readonly string[] = ["convos", "scope", "stock", "carry", "probe", "truth"];
+export const CHEAT_COMMANDS: readonly string[] = ["convos", "scope", "stock", "carry", "probe", "truth", "why"];
 
 /** What the ordinary path says when the channel is off. The flag is named so a
  *  driver can turn it on deliberately, never by accident. */
@@ -101,7 +102,29 @@ export function runCheat(name: string, arg: string | undefined, ctx: CheatCtx): 
       // A text id resolves to its sim id; anything else goes through verbatim,
       // so a driver who already knows the sim id can name it directly.
       const cid = ctx.simIdOf(arg) ?? arg;
-      return { ok: true, marker, lines: [`${arg} = ${cid}`, ...dump(host.carryOf(cid))] };
+      const carry = host.carryOf(cid);
+      // ⚖️ THE HANDS LINE FIRST — `carryOf` merges bag CONTENTS and never the
+      // bag, so this dump alone reported an empty basket as nothing at all.
+      // Same renderer as the creature readout, so the two cannot drift apart.
+      const hands = host.handsOf?.(cid) ?? undefined;
+      return {
+        ok: true,
+        marker,
+        lines: [
+          `${arg} = ${cid}`,
+          `hands = ${carryRowText(hands, carry as Record<string, number> | undefined)}`,
+          ...dump(carry),
+        ],
+      };
+    }
+    case "why": {
+      // ⚖️ WHY-CHAINS §4 — the raw ladder behind "why are you doing that?",
+      // dumped. A cheat and not an ordinary command because it reads the chain
+      // of a body nobody is standing in front of, which no player can see.
+      if (!arg) return { ok: false, marker, lines: [], error: "/why needs a creature id." };
+      if (!host?.whyProbe) return missing("whyProbe");
+      const cid = ctx.simIdOf(arg) ?? arg;
+      return { ok: true, marker, lines: [`${arg} = ${cid}`, ...dump(host.whyProbe(cid))] };
     }
     case "truth": {
       if (!arg) return { ok: false, marker, lines: [], error: "/truth needs a text id." };

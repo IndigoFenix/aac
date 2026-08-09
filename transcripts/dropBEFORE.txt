@@ -1,0 +1,173 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=addc01a2+dirty
+# started=2026-08-07T13:30:15.476Z
+# ─────────────────────────────────────────
+> watch mara
+ERR    nothing here called "mara".
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 0.8s.
+> watch orrin
+ERR    nothing here called "orrin".
+TICK   quiet after 0.8s.
+> watch pip
+ERR    nothing here called "pip".
+TICK   quiet after 0.8s.
+> watch biscuit
+WATCH  watching biscuit.
+TICK   quiet after 0.8s.
+> wait 30
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> wait 30
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    pip: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   mara left view here west.
+ENTER  mara came into view here north.
+TICK   waited 30.0s.
+> wait 30
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> wait 30
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+TICK   waited 30.0s.
+> wait 30
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    biscuit: "I'm happy."  [i_me + happy]
+SAY    biscuit: "bye-bye"  [goodbye]
+SAY    pip: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> wait 30
+SAY    mara: "bye-bye"  [goodbye]
+DOING  biscuit is talk orrin.
+DOING  biscuit is go basket.
+DOING  biscuit is doing nothing.
+SAY    biscuit: "💗"
+SAY    pip: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm lonely."  [i_me + lonely]
+SAY    pip: "bye-bye"  [goodbye]
+SAY    biscuit: "bye-bye"  [goodbye]
+TICK   waited 30.0s.
+> wait 30
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   mara left view here west.
+SAY    biscuit: "🥺"  [apple]
+DOING  biscuit is play.
+ENTER  mara came into view here north.
+SAY    orrin: "🍳"  [banana.hot]
+SAY    pip: [sit]
+TICK   waited 30.0s.
+> wait 30
+SAY    pip: [sit]
+EXIT   mara went out of the white house.
+SAY    orrin: [meal]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    orrin: [water]
+SAY    pip: [water]
+SAY    orrin: [banana.hot]
+TOAST  🏗️ the people stake out a market (feedback)
+MOVED  biscuit is now here west.
+TICK   waited 30.0s.
+> wait 30
+EXIT   pip went out of the white house.
+EXIT   orrin left view there west.
+SAY    biscuit: [play]
+DOING  biscuit is doing nothing.
+ENTER  orrin came into view there west.
+DOING  biscuit is eat food.
+EXIT   biscuit left view here west.
+SAY    orrin: "🍳"  [banana.hot]
+SAY    orrin: [meal]
+TICK   waited 30.0s.
+> wait 30
+EXIT   orrin went out of the white house.
+ENTER  mara came into view there south.
+SAY    mara: [water]
+SAY    mara: [banana]
+ENTER  biscuit came into view here west.
+MOVED  biscuit is now here west.
+TICK   waited 30.0s.
+> wait 30
+EXIT   mara left view here west.
+MOVED  biscuit is now there south.
+DOING  biscuit is doing nothing.
+ENTER  mara came into view here west.
+EXIT   mara went out of the white house.
+DOING  biscuit is sleep.
+SAY    biscuit: "😴"
+DOING  biscuit is go chair.
+DOING  biscuit is doing nothing.
+TICK   waited 30.0s.
+> wait 30
+SITE   1 thing(s) being built.
+  site-1: a market — pillars up, 50% worked, far north, 292 m
+ENTER  mara came into view there south.
+DOING  biscuit is talk mara.
+EXIT   mara left view here west.
+MOVED  biscuit is now here south.
+TICK   waited 30.0s.
+> wait 30
+SAY    biscuit: "Because I'm hungry."  [because + i_me + hungry]
+SAY    biscuit: "eat with I"  [eat + with + i_me]
+ENTER  mara came into view here west.
+DOING  biscuit is go house.
+DOING  biscuit is doing nothing.
+SAY    mara: "I'm not hungry."  [i_me + hungry.not]
+SAY    biscuit: "💗"
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   mara went out of the white house.
+TICK   waited 30.0s.
+> wait 30
+TICK   waited 30.0s.
+> scene
+SCENE  house-1 — 14 thing(s) in view, 82 place(s) around you.
+  biscuit (person), here south.
+  table-1 (table), there east.
+  bed-2 (bed), there north.
+  bowl-1 (bowl), there east.
+  oven-1 (oven), there west.
+  bin-1 (bin), there east.
+  a box, here north.
+  a chair, here east.
+  a chair, there east.
+  a box, there north.
+  a cupboard, there west.
+  a barrel, there west.
+  a chest, there east.
+  a refrigerator, there west.
+  house-1 (house), here south, white, door open, you can see inside.
+  house-2 (house), here north, white, door open, you can see inside.
+  house-3 (house), here north, white, shut to you.
+  house-36 (house), there north, purple, door open, shut to you.
+  house-57 (house), close north, blue, door open, shut to you.
+  house-68 (house), close west, green, door open, shut to you.
+  house-69 (house), close south, yellow, door open, shut to you.
+  75 more houses, ring the town, all shut.
+NOTE   about 993 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — pillars up, 88% worked, far north, 292 m
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=20  presses=0  screens=1  sim=424.6s
+# events: SAY 49  TICK 20  DOING 13  EXIT 11  ENTER 8  MOVED 4  ERR 3  NOTE 2  SITE 2  BOARD 1  WATCH 1  TOAST 1  SCENE 1  SELF 1

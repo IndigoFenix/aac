@@ -178,9 +178,17 @@ function joinGlyphStrings(glyphs: GlyphSym[], strOf: (g: GlyphSym) => string): s
   return out;
 }
 
-/** Structured glyph array → legacy glyph strings. `fallback` is emitted ONLY
- *  when some glyph uses `gen` (each `gen` slot rendered via its `fb`, every
- *  other slot mirroring itself), so the model never hand-writes a fallback. */
+/** Structured glyph array → legacy glyph strings. `fallback` is emitted when
+ *  any slot NEEDS one — it uses `gen`, or it carries an `fb` of its own — with
+ *  each such slot rendered via its `fb` and every other slot mirroring itself,
+ *  so the model never hand-writes a whole fallback string.
+ *
+ *  The `fb`-on-a-`sym` case matters because a `sym` can name a key the device
+ *  can't draw (an app id, say). That is NOT a shape to encourage — the schema
+ *  still asks for `gen`+`fb` for anything generation-bound — but when the model
+ *  has supplied a usable stand-in anyway, honoring it renders the button. The
+ *  alternative is dropping the `fb` on the floor and letting the validator bin
+ *  the button, which is how an app-launch button once vanished mid-session. */
 export function serializeGlyph(
   glyph: unknown,
   op?: unknown,
@@ -195,14 +203,19 @@ export function serializeGlyph(
     (g) => serializeHeadMods(g.gen ? `generate:${g.gen}` : (g.sym ?? ""), g.mods),
   ) + opTag;
 
-  const hasGen = glyphs.some((g) => g.gen);
-  if (!hasGen) return { sentence };
+  const needsFallback = glyphs.some((g) => g.gen || g.fb?.sym);
+  if (!needsFallback) return { sentence };
 
+  // A slot with an `fb` renders through it; a `gen` slot WITHOUT one
+  // serializes empty and is skipped by the join (the validator catches the
+  // missing stand-in); everything else mirrors itself.
   const fallback = joinGlyphStrings(
     glyphs,
-    (g) => g.gen
-      ? serializeHeadMods(g.fb?.sym ?? "", g.fb?.mods)
-      : serializeHeadMods(g.sym ?? "", g.mods),
+    (g) => g.fb?.sym
+      ? serializeHeadMods(g.fb.sym, g.fb.mods)
+      : g.gen
+        ? ""
+        : serializeHeadMods(g.sym ?? "", g.mods),
   ) + opTag;
   return { sentence, fallback };
 }

@@ -18,7 +18,11 @@ import { buildTownQuestGame } from "@shared/world-engine/interaction/town/town-q
 import {
   INTERIOR_LOAD_R, createTownStage,
 } from "@shared/world-engine/interaction/town/town-stage.js";
-import { AWAY_DISTANCE_M, RARE_IMPORT_KIND, rarePerVisit } from "@shared/world-engine/kernel/town/trade.js";
+import {
+  AWAY_DISTANCE_M, RARE_IMPORT_KIND, TRADE_IMPORT_KINDS, rarePerVisit,
+} from "@shared/world-engine/kernel/town/trade.js";
+import { barterLegSeconds, type BarterSignals } from "@shared/world-engine/kernel/town/barter.js";
+import { DOLLHOUSE_SCALE } from "@shared/world-engine/scale.js";
 import {
   annexOptions, bankLabor, createTownDeltas, requestAnnex,
 } from "@shared/world-engine/kernel/town/construction.js";
@@ -696,6 +700,80 @@ describe("trade v1.5 — a REAL partner, distance-priced rarity (trade.ts bindPa
     for (let t = 0; t < 240; t += 2) phases.add(tr.caravan(t).phase);
     expect(phases.has("trading")).toBe(true);
     expect(phases.has("away")).toBe(true);
+  });
+
+  // ── R&T ⑤ T1: the bind RECORDS the partner, so nothing downstream has to
+  //    guess whether the road is real (the host used to re-push this line as a
+  //    place-less stub and price every caravan at the flat fallback day).
+  it("🔒 T1 — an UNBOUND line declares no partner place: the flat leg is the honest one", () => {
+    const { stage } = setup();
+    const tr = stage.trade!;
+    expect(tr.route.partnerAt).toBeUndefined();
+    expect(tr.route.partnerGeo).toBeUndefined();
+    // Its `gate` is OUR OWN street tip, never the partner's place — which is
+    // exactly why a reader must not measure it.
+    expect(Math.hypot(tr.route.gate.x - stage.center.x, tr.route.gate.y - stage.center.y))
+      .toBeLessThan(AWAY_DISTANCE_M);
+  });
+
+  it("🔒 T1 — a BOUND partner carries its place AND its road, and its leg is NOT the flat fallback", () => {
+    const { stage } = setup();
+    const tr = stage.trade!;
+    const partnerAt = { x: stage.center.x + 700, y: stage.center.y };
+    // A road that goes round something: longer than the 700 m line of sight.
+    tr.bindPartner({ key: "hamlet-1", at: partnerAt, distanceM: 920 });
+    expect(tr.route.partnerAt).toEqual(partnerAt);
+    expect(tr.route.distanceM).toBe(920);
+    const flat = barterLegSeconds(DOLLHOUSE_SCALE, null);
+    const bound = barterLegSeconds(DOLLHOUSE_SCALE, tr.route.distanceM);
+    expect(bound).toBeGreaterThan(flat); // the whole point of T1
+    // …and it is the ROAD that was priced, not the chord.
+    expect(bound).toBeCloseTo(barterLegSeconds(DOLLHOUSE_SCALE, 920), 9);
+    expect(bound).not.toBeCloseTo(barterLegSeconds(DOLLHOUSE_SCALE, 700), 6);
+  });
+
+  it("🔒 T5 — the partner's terrain reading rides the bind (absent ⇒ nothing is invented)", () => {
+    const { stage } = setup();
+    const tr = stage.trade!;
+    tr.bindPartner({ key: "city:9", at: { x: stage.center.x + 400, y: stage.center.y } });
+    expect(tr.route.partnerGeo).toBeUndefined();
+    tr.bindPartner({
+      key: "city:9",
+      at: { x: stage.center.x + 400, y: stage.center.y },
+      geo: { node: "surplus", farmland: 260, ore: 4 },
+    });
+    expect(tr.route.partnerGeo).toEqual({ node: "surplus", farmland: 260, ore: 4 });
+  });
+
+  // ── R&T ⑤ T2: the cargo lists stop being constants once both books are read.
+  it("🔒 T2 — binding WITHOUT scarcity reads leaves the authored lists byte-identical", () => {
+    const { stage } = setup();
+    const tr = stage.trade!;
+    tr.bindPartner({ key: "hamlet-1", at: { x: stage.center.x + 700, y: stage.center.y } });
+    expect(tr.route.imports).toEqual(TRADE_IMPORT_KINDS);
+    expect(tr.route.exports).toEqual(["food"]);
+  });
+
+  it("🔒 T2 — binding WITH both books derives the pair's own cargo (their surplus ∩ our shortage)", () => {
+    const { stage } = setup();
+    const tr = stage.trade!;
+    const sig = (m: Record<string, number>): BarterSignals => ({ shortage: (g) => m[g] ?? 0 });
+    tr.bindPartner({
+      key: "hamlet-1",
+      at: { x: stage.center.x + 700, y: stage.center.y },
+      distanceM: 700,
+      scarcity: {
+        // We are short of cloth and clothing; they are short of food and wood.
+        us: sig({ cloth: 0.8, clothing: 0.5, food: 0, wood: 0 }),
+        them: sig({ cloth: 0, clothing: 0, food: 0.9, wood: 0.4 }),
+        goods: ["food", "wood", "cloth", "clothing"],
+      },
+    });
+    expect(tr.route.imports).toEqual(["cloth", "clothing"]); // ranked by OUR need
+    expect(tr.route.exports).toEqual(["food", "wood"]); // ranked by THEIRS
+    // The authored trinkets are gone — they were the unbound fallback, never a
+    // floor under a derived list.
+    for (const k of TRADE_IMPORT_KINDS) expect(tr.route.imports).not.toContain(k);
   });
 });
 

@@ -869,6 +869,7 @@ export const he: Translations = {
     neitherOfThese: "אף אחד מאלה",
     guess: "מצא מילה",
     exitConfirm: "רוצה לצאת?",
+    homeActionConfirm: "רוצה לעשות את זה?",
   },
 
   silentMode: {

@@ -294,6 +294,11 @@ export function constraintCeiling(grid: NodeGrid, cell: number, opts: CeilingOpt
 export function parasiteReading(
   pop: number,
   r: CeilingReading,
+  /** ⚖️ R&T ⑤ (T4) — WHO is covering the gap, when the caller knows (the
+   *  bound trade partner's key). Diagnostic only: the verdict, the strain
+   *  and the mechanism are unchanged, the sentence simply stops saying "a
+   *  partner" about a partner it can name. Absent ⇒ the shipped wording. */
+  partnerKey?: string,
 ): { parasite: boolean; strain: number; sentence: string } {
   const strain = pop / Math.max(1, r.ceiling);
   if (pop > r.ceiling) {
@@ -302,7 +307,8 @@ export function parasiteReading(
       strain,
       sentence:
         `lives ${strain.toFixed(1)}× beyond its ${r.binding} — a parasite: legal only while ` +
-        `a partner covers the gap; sever the lane and the population leaves, not riots`,
+        `${partnerKey ? `${partnerKey} covers` : "a partner covers"} the gap; ` +
+        `sever the lane and the population leaves, not riots`,
     };
   }
   return {

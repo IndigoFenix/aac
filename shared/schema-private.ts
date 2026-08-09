@@ -727,6 +727,9 @@ export const aacSettings = pgTable("aac_settings", {
   // Permitted websites — array of { url, label, description?, subpages? } the AI is allowed to open via the browser app
   permittedWebsites: jsonb("permitted_websites").default([]),
 
+  // Smart-home action slots — array of clinician-authored { id, label, type, command, ... } the student can fire from a board (see shared/home-actions.ts)
+  homeActions: jsonb("home_actions").default([]),
+
   // Unified permitted YouTube content — array of { type: 'channel'|'playlist'|'video', id, label, description? }.
   // Supersedes permittedYoutubeChannels/permittedYoutubeVideos below. The two
   // legacy columns are retained (and backfilled into this one by migration
@@ -2418,6 +2421,35 @@ export const dropboxBackups = pgTable("dropbox_backups", {
   index("idx_dropbox_backups_board_id").on(table.boardId),
 ]);
 
+// External Connections table — the per-STUDENT credentials vault.
+//
+// One row per (student, provider) OAuth link. Tokens are stored ENCRYPTED
+// (AES-256-GCM, app-side — server/services/encryption.ts), never plaintext, and
+// never in `aac_settings.app_config`: that jsonb blob is client-writable through
+// the normal settings save path, so secrets do not belong there. Modeled on
+// dropboxConnections (above), which is per-USER; smart-home / Spotify scope is
+// per-STUDENT instead.
+//
+// `provider` is a plain text column (not a pg enum) so a new integration needs
+// no migration: 'spotify' today, 'alexa' / 'google' when the smart-home
+// account-linking flow goes live (planning-docs/smart-home-actions.md).
+// onDelete cascade: a deleted student's credentials must not outlive them.
+export const externalConnections = pgTable("external_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  provider: text("provider").notNull(), // 'spotify' | 'alexa' | 'google'
+  providerAccountId: text("provider_account_id"), // display/account handle at the provider
+  encryptedAccessToken: text("encrypted_access_token"),
+  encryptedRefreshToken: text("encrypted_refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  metadata: jsonb("metadata").default({}), // non-secret provider state (scopes, display name…)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_external_connections_student_provider").on(table.studentId, table.provider),
+  index("idx_external_connections_student_id").on(table.studentId),
+]);
+
 // Invite Codes table
 export const inviteCodes = pgTable("invite_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -3419,3 +3451,111 @@ export const captionProjects = pgTable("caption_projects", {
 
 export type CaptionProject = typeof captionProjects.$inferSelect;
 export type InsertCaptionProject = typeof captionProjects.$inferInsert;
+
+// =============================================================================
+// SMART-HOME ACCOUNT LINKING — we are the OAuth AUTHORIZATION SERVER
+//
+// Alexa/Google send a family through OUR authorize page; a parent/clinician
+// signs in with the normal session auth, picks the STUDENT, and the resulting
+// grant binds `(provider → studentId)`. Fulfillment requests then arrive as a
+// bearer token WE minted, and the only question the handlers ask is "whose
+// student is this?" (server/services/smart-home/account-link-service.ts).
+//
+// The OTHER direction from `external_connections` above: that table is the
+// vault for credentials THEY issued to US (Spotify, the Alexa event gateway).
+// These two tables hold what WE issue to THEM.
+//
+// See planning-docs/smart-home-actions.md ("Account linking").
+// =============================================================================
+
+/**
+ * One row per (provider account → student) link a parent/clinician approved.
+ *
+ * SOFT REVOKE, never delete: a revoked grant stays as the audit record of who
+ * authorized what, when, and until when. The partial unique index is the
+ * invariant — at most ONE LIVE grant per (student, provider) — so re-linking
+ * SUPERSEDES rather than duplicating (the service revokes the old grant inside
+ * the same transaction that inserts the new one; two live grants would make
+ * "is this student linked?" ambiguous).
+ *
+ * `clientId` / `redirectUri` are recorded from the validated authorize request
+ * so the token exchange can pin a code to the exact client and redirect it was
+ * issued for (OAuth 2.0 RFC 6749 §4.1.3).
+ *
+ * onDelete cascade on studentId: a deleted student's links must not outlive
+ * them. Nothing cascades from the granting user — the audit trail survives a
+ * clinician leaving.
+ */
+export const accountLinkGrants = pgTable("account_link_grants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  provider: text("provider").notNull(), // 'alexa' | 'google' (plain text — a new ecosystem needs no migration)
+  // The parent/clinician who approved the link on the authorize page. Never the student.
+  grantedByUserId: varchar("granted_by_user_id").references(() => users.id).notNull(),
+  // The provider client the link was authorized for, and the exact redirect_uri
+  // used — both re-checked at the token endpoint.
+  clientId: text("client_id").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  // THE invariant: one live link per (student, provider).
+  uniqueIndex("idx_account_link_grants_live")
+    .on(table.studentId, table.provider)
+    .where(sql`revoked_at IS NULL`),
+  index("idx_account_link_grants_student_id").on(table.studentId),
+]);
+
+/**
+ * Every credential we MINT off a grant: the one-time authorization `code`, the
+ * short-lived `access` bearer, and the rotating `refresh` token.
+ *
+ * ONLY THE SHA-256 HASH IS STORED. A dump of this table leaks nothing usable —
+ * the raw value exists exactly once, in the HTTP response that handed it to the
+ * provider. (Unlike `external_connections`, these are not encrypted-reversible:
+ * we never need to read them back, only to recognise one presented to us.)
+ *
+ * Lifecycle by `kind`:
+ *   code    — 10 min, single use. `consumedAt` is set by an atomic
+ *             `UPDATE … WHERE consumed_at IS NULL RETURNING`, so two racing
+ *             exchanges of the same code produce exactly one winner.
+ *   access  — 1 h. Resolved by `resolveAccountLinkBearer` on every fulfillment.
+ *   refresh — long-lived and ROTATED: presenting one consumes it and mints a
+ *             fresh pair, so a stolen refresh token is usable at most once.
+ *
+ * `redirectUri` is set on codes only — RFC 6749 §4.1.3 requires the token
+ * request to present the same redirect_uri the code was issued for.
+ * onDelete cascade on grantId: revoking a link cannot leave live bearers behind
+ * (the service also sets `revokedAt` on them, since grants soft-revoke).
+ */
+export const accountLinkCredentials = pgTable("account_link_credentials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  grantId: varchar("grant_id")
+    .references(() => accountLinkGrants.id, { onDelete: "cascade" })
+    .notNull(),
+  kind: text("kind").notNull(), // 'code' | 'access' | 'refresh'
+  // sha256(raw token), hex. NEVER the raw token.
+  tokenHash: text("token_hash").notNull(),
+  // Codes only: the redirect_uri the code was issued for.
+  redirectUri: text("redirect_uri"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  // Single-use spend (codes; refresh tokens on rotation).
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  // Bulk invalidation when the grant is revoked or superseded.
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  // The lookup key — a presented token is hashed and matched here. Unique
+  // because 256 bits of randomness never collide, and a duplicate would make
+  // "which grant is this?" ambiguous.
+  uniqueIndex("idx_account_link_credentials_hash").on(table.tokenHash),
+  index("idx_account_link_credentials_grant_id").on(table.grantId),
+  // For a future sweep of expired rows (mirrors phone_otp_codes).
+  index("idx_account_link_credentials_expires_at").on(table.expiresAt),
+]);
+
+export type AccountLinkGrantRow = typeof accountLinkGrants.$inferSelect;
+export type InsertAccountLinkGrantRow = typeof accountLinkGrants.$inferInsert;
+export type AccountLinkCredentialRow = typeof accountLinkCredentials.$inferSelect;
+export type InsertAccountLinkCredentialRow = typeof accountLinkCredentials.$inferInsert;

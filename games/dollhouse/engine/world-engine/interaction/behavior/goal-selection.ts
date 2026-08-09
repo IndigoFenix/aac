@@ -333,6 +333,17 @@ export interface PlanPrice {
   walkMps: number;
   /** Hand-seconds this non-walk step occupies. */
   handsS(step: GoalStep): number;
+  /**
+   * ⚖️ METRES BETWEEN TWO POINTS AS THE BODY WILL ACTUALLY WALK THEM (economy
+   * arc W1). A plan that prices its legs by CHORD while the body pays STREET
+   * buys bargains it cannot afford — the observed 68 m "nearby" source that
+   * cost a 400 m detour through the plaza ring. A world with streets supplies
+   * its road measure here; the planner itself stays engine-agnostic.
+   *
+   * OPTIONAL, and absent means CHORD — so a townless / headless world (and
+   * every static bake) prices byte-identically to before.
+   */
+  journeyM?(from: Vec2, to: Vec2): number;
 }
 
 /** One executable step. The world-host maps `moveTo` to an NpcErrand waypoint and the

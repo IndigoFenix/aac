@@ -6,6 +6,7 @@ import { stringify } from "csv-stringify";
 import { renderBrowserTestPage } from "./dev/browser-test-page";
 import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
 import { getLiveSession } from "./services/dual-agent/live-session-registry";
+import { startSessionSweeper } from "./services/session-sweeper";
 import { getPeerFacePhotoDataUrl } from "./services/dual-agent/peer-photo";
 import { studentService } from "./services/studentService";
 import { setupSocialBotWebSocket } from "./services/social-bot/social-bot-relay";
@@ -97,6 +98,9 @@ import { calendarController } from "./controllers/calendarController";
 import { locationController } from "./controllers/locationController";
 import { incidentController } from "./controllers/incidentController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
+import { accountLinkRouter } from "./controllers/accountLinkController";
+import { googleSmartHomeRouter } from "./services/smart-home/google/router";
+import { alexaSmartHomeRouter } from "./services/smart-home/alexa/router";
 import { activityLogService } from "./services/activityLogService";
 import { activityLogController } from "./controllers/activityLogController";
 import { insuranceBridgeController } from "./controllers/insuranceBridgeController";
@@ -238,6 +242,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Machine-to-machine cron trigger — authenticated by a shared secret header,
     // not a session cookie, so CSRF doesn't apply.
     if (req.path === "/internal/run-crons") return next();
+    // Smart-home machine-to-machine endpoints: Amazon/Google POST these
+    // server-to-server with no Origin/session cookie. Each carries its own
+    // auth (token: client secret; google: our issued bearer; alexa: bearer
+    // inside the directive envelope). The /link/authorize POST is NOT exempt —
+    // it is a same-origin form submit and must keep CSRF.
+    if (req.path === "/api/smart-home/link/token") return next();
+    if (req.path === "/api/smart-home/google/fulfillment") return next();
+    if (req.path === "/api/smart-home/alexa/directives") return next();
     return validateCSRF(req, res, next);
   });
 
@@ -1798,6 +1810,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     spotifyController.disconnect(req, res)
   );
 
+  // ============= SMART HOME (Alexa / Google Home) =============
+  // Account linking: we are the OAuth authorization server that Amazon/Google
+  // send families through when they enable our skill/integration.
+  app.use("/api/smart-home/link", accountLinkRouter);
+  // Google cloud-to-cloud fulfillment. No session middleware: Google presents
+  // the bearer we issued at account linking and the route resolves it itself.
+  app.use("/api/smart-home/google", googleSmartHomeRouter);
+  // Alexa directives — dev/tunnel testing only. Production Alexa smart home
+  // skills require a Lambda endpoint; the Terraform wrapper imports the same
+  // handler (see server/services/smart-home/alexa/router.ts).
+  app.use("/api/smart-home/alexa", alexaSmartHomeRouter);
+
   // ============= DUAL-AGENT AAC SESSION ROUTE =============
   // Get session state
   app.get("/api/aac/dual/session/:sessionId", optionalAuth, (req, res) =>
@@ -2543,6 +2567,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   initPersonChatFanout();
   initCallFanout();
   initConversationRoomFanout();
+
+  // Finalize abandoned sessions (app killed / monitor stuck → pending turns
+  // never drained, no summary): periodic sweep, LLM cost bounded per tick.
+  startSessionSweeper();
 
   registerRealtimeHandler({
     path: "/ws/person-chat",

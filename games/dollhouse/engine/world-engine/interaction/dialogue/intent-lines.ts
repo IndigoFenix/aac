@@ -487,8 +487,29 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
       return { verb: "make", object: syms.item(goal.item) };
     case "satisfy":
       return NEED_ACTIVITY[goal.need] ?? { verb: goal.need };
-    case "rest":
-      return { verb: goal.pose === "sleep" ? "sleep" : "rest" };
+    case "rest": {
+      // ⚖️ THE STATION SAYS WHAT THE DWELL IS (civic-labor-and-polish.md §4.2)
+      // — the SAME fork `goalIntentLine`'s rest arm makes, over the same
+      // `syms.place` reading, because the announcement and the activity are one
+      // fact read twice and must never disagree.
+      //
+      // The bug this closes: `waste` (needs.ts `wasteTemplate`) satisfies with
+      // `{kind:"rest", at:["toilet"], requireStation:true}`, which the walker
+      // compiles to a `rest` pursuit carrying NO pose — so this arm answered
+      // "rest" and the creature said *"I rest… because I need toilet"* (the
+      // /why sweep's reading, why-chains.md's ledger). The legacy step path
+      // has always read that row correctly through `NEED_ACTIVITY.waste`; only
+      // the pursuit path was words apart from it. Same for `hygiene` (the bath
+      // is a wash) and `energy` at a bed (a nap is a sleep).
+      //
+      // No new lexicon (law ④): the toilet word IS `NEED_ACTIVITY.waste`, read
+      // from the one table rather than re-spelled here.
+      const where = syms.place(goal.place);
+      if (goal.pose === "sleep" || where === "bed") return { verb: "sleep" };
+      if (where === "bath") return { verb: "wash" };
+      if (where === "toilet" || where === "bathroom") return NEED_ACTIVITY.waste!;
+      return { verb: "rest" };
+    }
     case "setOpen":
       return { verb: goal.open ? "open" : "shut", object: syms.place(goal.place) };
     case "wear":

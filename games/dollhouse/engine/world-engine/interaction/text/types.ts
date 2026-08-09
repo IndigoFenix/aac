@@ -473,7 +473,15 @@ export interface TextCheatHost {
   scopeTree?(): unknown;
   stockAudit?(): unknown;
   carryOf?(cid: string): unknown;
+  /** ⚖️ THE OBJECT IN THE HANDS (`carriedBy`), which `carryOf` DELIBERATELY
+   *  drops — a held bag is "the shelf, not the goods". Without it `/carry` said
+   *  "(nothing)" for a body walking home with an empty basket. */
+  handsOf?(cid: string): { objId: string; glyph: string; bag: boolean } | null;
   debugProbe?(): string;
+  /** ⚖️ WHY-CHAINS §4 — the creature's REAL task chain, walked (`/why <id>`).
+   *  THE DEGENERATION INSTRUMENT: what is this body actually under orders to
+   *  do? A pure read — deriving a chain moves nothing (law ③). */
+  whyProbe?(cid: string): unknown;
 }
 
 /**

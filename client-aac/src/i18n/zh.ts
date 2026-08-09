@@ -869,6 +869,7 @@ export const zh: Translations = {
     neitherOfThese: "都不是",
     guess: "找词",
     exitConfirm: "你想退出吗？",
+    homeActionConfirm: "你想这样做吗？",
   },
 
   silentMode: {

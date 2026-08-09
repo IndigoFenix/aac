@@ -275,6 +275,19 @@ const L: Record<string, Lexeme> = {
   talk: { w: "talk", inf: "talk" },
   // Household CHORE verbs the needs templates speak ("I will cook the food").
   cook: { w: "cook", inf: "cook" },
+  // ⚖️ WHY-CHAINS law ④ — the AUTHORITY link's verb ("…because you ask"). The
+  // concept already ships (`ask` is an INTENT_LEXICON verb and a registered
+  // glyph with its own `aac.glyph.ask` label); only the sentence-rendering
+  // lexeme was missing, and without it a Hebrew chain would have spoken the
+  // English token. Subject + verb only: no locale here can govern this verb's
+  // OBJECT (Hebrew wants ממני, not the accusative), so "you ask" is the shape.
+  ask: { w: "ask", inf: "ask" },
+  // ⚖️ WHY-CHAINS law ④ — the BROAD ACTIVITY verb ("I am not doing (anything)"
+  // — `notDoing(who, "do")`, the shipped idle answer, which spoke the raw
+  // English token in every locale because the lexeme was never added). Same
+  // standing as `ask`: an INTENT_LEXICON verb and a registered glyph
+  // (`aac.glyph.do`) with no sentence-rendering entry until now.
+  do: { w: "do", inf: "do" },
   // City-founding areas — the map-reading overlay verb.
   show: { w: "show" },
   // City-founding ③ — the structure board's room words + the demolish verb.

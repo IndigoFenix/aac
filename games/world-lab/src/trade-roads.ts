@@ -40,7 +40,7 @@ import {
 import { simulateHistory, type PoliticalHistory } from "@shared/world-engine/planet/history";
 import type { HighwayRefinement } from "@shared/world-engine/planet/refine";
 import {
-  spliceRouteAtTown, type ArterialTip, type TownFrame,
+  spliceRouteAtTown, toTownLocal, type ArterialTip, type TownFrame,
 } from "@shared/world-engine/kernel/town/approach";
 import { roadMaterial, surfaceMaterial } from "@shared/world-engine/materials";
 
@@ -115,9 +115,18 @@ export interface RegionRoads {
  *  tips (kernel/town/approach.ts arterialTips). */
 export interface TownSpliceSpec {
   frame: TownFrame;
-  /** Built-up radius (plan.radius): where incident ribbons clip. */
+  /** The town's PORT EXTENT — the SAME extent planet/routes.ts terminated
+   *  its incident routes at (TOWN_DIMS.townRMax), NOT the built-up radius:
+   *  the port is where the road ends, and the built-up radius moves as the
+   *  town grows. */
   radiusM: number;
   tips: ArterialTip[];
+  /** House footprints in TOWN-LOCAL metres (plan.houses). The connector's
+   *  PAINT stops at the building line — see paintableConnector: a ribbon may
+   *  thread the lots to reach its gate, but ground paint that crossed a
+   *  footprint would re-open the very roads-through-buildings bug the port
+   *  law closed. */
+  houses?: ReadonlyArray<{ dx: number; dy: number; w: number; h: number }>;
 }
 
 export interface TradeRoads {
@@ -129,9 +138,9 @@ export interface TradeRoads {
   addRegion(key: string, data: RegionRoads): void;
   /** The region evicted — its roads and overrides leave every layer. */
   removeRegion(key: string): void;
-  /** A town's detailed render mounted (spec) or left (null): incident
-   *  NEAR ribbons clip at the town edge and splice onto the street
-   *  tree's nearest arterial tip. RENDER-ONLY (the refineHighways law):
+  /** A town's detailed render mounted (spec) or left (null): each incident
+   *  route's PORT refines into a gate — its last stretch bends onto the
+   *  street tree's nearest arterial tip. RENDER-ONLY (the refineHighways law):
    *  route data, lengths and caravan arcs never change — carts project
    *  onto the spliced geometry. Far ribbons keep the map glyph. */
   setTownSplice(cell: number, spec: TownSpliceSpec | null): void;
@@ -176,6 +185,54 @@ export interface TradeRoads {
     fillBuilt: number; fillPending: number; fillVisible: boolean;
   };
   dispose(): void;
+}
+
+/** Painted lane half-widths. The two `addRoutes` call sites' literals, named
+ *  so a town connector paints at the SAME width as the road it continues. */
+const INTERSTATE_PAINT_HALF_W_M = 6;
+const LOCAL_PAINT_HALF_W_M = 3;
+
+/**
+ * The stretch of a port→gate connector that may be PAINTED into the terrain:
+ * from the clip (out in open country) inward, stopping at the town's
+ * building line.
+ *
+ * WHY IT IS TRUNCATED. The connector's job is to reach a gate — the street
+ * tree's arterial tip — and those tips sit deep inside the town (measured on
+ * a 651-house village: gates at 94–219 m against a 450 m port). A ribbon may
+ * thread the lots to get there; ground PAINT may not, because painted road
+ * across a house footprint is exactly the roads-through-buildings bug the
+ * port law was built to close. So the paint runs as far as open ground goes
+ * and stops — which is precisely the gap the player sees between the road's
+ * dead end and the town, and no further.
+ *
+ * Returns null when nothing worth painting survives (the buildings already
+ * reach the port — a town whose built radius has outgrown the extent).
+ */
+export function paintableConnector(
+  draw: PlanetRoute,
+  spec: TownSpliceSpec,
+  planetRadius: number,
+  halfWidthM: number,
+): PlanetRoute | null {
+  const houses = spec.houses;
+  if (!houses?.length) return draw; // no plan detail — paint the joint whole
+  const clear = halfWidthM + 2;
+  const kept: Array<readonly [number, number, number]> = [];
+  for (const d of draw.dirs) {
+    const p = toTownLocal(spec.frame, planetRadius, d);
+    if (!p) break;
+    let blocked = false;
+    for (const h of houses) {
+      if (p.x >= h.dx - clear && p.x <= h.dx + h.w + clear
+        && p.y >= h.dy - clear && p.y <= h.dy + h.h + clear) { blocked = true; break; }
+    }
+    if (blocked) break;
+    kept.push(d);
+  }
+  if (kept.length < 2) return null;
+  const out = routeFromDirs(kept, planetRadius, draw.a, draw.b);
+  return out && out.lengthM > 20 ? out : null;
 }
 
 /** Interval subtraction on route-arc spans: what remains of `spans` after
@@ -425,9 +482,13 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
   // Override shape drives both span subtraction and caravan projection.
   const townSpecs = new Map<number, TownSpliceSpec>();
   let townCuts = new Map<PlanetRoute, Override[]>();
-  // A route endpoint counts as "at the town" within this chord — endpoints
-  // land ON the city cell's center, so the gate only has to absorb float.
-  const TOWN_END_EPS_M = 60;
+  // WHICH ROUTES END AT THIS TOWN is an IDENTITY question now: a route's
+  // endpoint is the town's PORT (planet/routes.ts clips every route at the
+  // extent), and `route.a`/`route.b` carry the town's own key — exact, no
+  // float. The position check remains only to separate a parent route from
+  // a REFINED HIGHWAY SPAN, which carries the parent's identities but
+  // usually stops far short of the town.
+  const TOWN_PORT_SLACK_M = 60;
   const _end = new THREE.Vector3();
   const _ctr = new THREE.Vector3();
   const rebuildTownSplices = (): void => {
@@ -439,14 +500,23 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
     if (townSpecs.size) {
       const drawn = new Set<string>(); // one drawn connector per (town, tip)
       const snapshot = live.slice();   // appended connectors never re-splice
+      // THE JOINT MUST BE PAINTED. The connector renders as a NEAR ribbon a
+      // few metres wide and lifted a metre — at the altitude a town is read
+      // from, that is sub-pixel, so a splice that fires perfectly still looks
+      // like a road dead-ending in open ground. Terrain paint is what a
+      // player reads as "road", so the connector paints too (truncated at the
+      // building line — paintableConnector). Bucketed by (town, lane width)
+      // because addRoutes takes one width per key.
+      const paintJobs = new Map<string, { cell: number; halfW: number; conns: PlanetRoute[] }>();
       for (const lr of snapshot) {
         const route = lr.route;
         for (const [cell, spec] of townSpecs) {
           _ctr.set(spec.frame.center[0], spec.frame.center[1], spec.frame.center[2]).multiplyScalar(radius);
           for (const endName of ["a", "b"] as const) {
+            if ((endName === "a" ? route.a : route.b) !== cell) continue;
             const d = endName === "a" ? route.dirs[0]! : route.dirs[route.dirs.length - 1]!;
             _end.set(d[0], d[1], d[2]).multiplyScalar(radius);
-            if (_end.distanceTo(_ctr) > TOWN_END_EPS_M) continue;
+            if (_end.distanceTo(_ctr) > spec.radiusM + TOWN_PORT_SLACK_M) continue;
             const cut = spliceRouteAtTown(route, endName, spec.frame, spec.radiusM, spec.tips, radius);
             if (!cut) continue;
             let list = townCuts.get(route);
@@ -461,9 +531,29 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
                 route: cut.draw, pts: chordPts(cut.draw),
                 nearHalfW: lr.nearHalfW, tag: `town:${cell}`, carts: false,
               });
+              const halfW = lr.nearHalfW >= NEAR_HALF_W_M
+                ? INTERSTATE_PAINT_HALF_W_M : LOCAL_PAINT_HALF_W_M;
+              const paint = paintableConnector(cut.draw, spec, radius, halfW);
+              if (paint) {
+                const pk = `town-connector:${cell}:${halfW}`;
+                let job = paintJobs.get(pk);
+                if (!job) { job = { cell, halfW, conns: [] }; paintJobs.set(pk, job); }
+                job.conns.push(paint);
+              }
             }
           }
         }
+      }
+      // Paint is GROWABLE and idempotent per key, so repeated rebuilds are
+      // free. It is also PERMANENT (no removal until the deferred repaint
+      // seam), so the key deliberately carries only the town and the width:
+      // a town RE-LAID inside one session would keep its first connectors
+      // rather than stack a ghost set over the new ones. Accepted — a
+      // re-lay mid-session is not a path the lab currently walks.
+      for (const [pk, job] of paintJobs) {
+        if (!built.routePaint.addRoutes(pk, job.conns, job.halfW)) continue;
+        const spec = townSpecs.get(job.cell);
+        if (spec) body.refreshTerrain?.(spec.frame.center, spec.radiusM * 4);
       }
     }
     invalidateNear();
@@ -474,7 +564,7 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
   // ground and washed the map from altitude — the river-ribbon disease. The
   // net now paints into the terrain's own vertex colours at TRUE lane width
   // (fading below mesh resolution), and standing chunks re-sample once.
-  built.routePaint.addRoutes("interstates", routes, 6);
+  built.routePaint.addRoutes("interstates", routes, INTERSTATE_PAINT_HALF_W_M);
   body.refreshTerrain?.(routes[0]!.dirs[0]!, radius * 4);
 
   // The far QUEUE remains for BORDER ink only — map information, not ground.
@@ -924,7 +1014,7 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
       // Village lanes paint like the interstates — narrower, same law. The
       // paint persists after eviction (world truth, idempotent per key); the
       // caller refreshes nearby chunks with the rest of the region's landing.
-      built.routePaint.addRoutes(key, data.roads, 3);
+      built.routePaint.addRoutes(key, data.roads, LOCAL_PAINT_HALF_W_M);
       for (const hw of data.highways) {
         const ri = interstateIdx.get(`${hw.a}:${hw.b}`);
         if (ri === undefined) continue; // a route this net never derived

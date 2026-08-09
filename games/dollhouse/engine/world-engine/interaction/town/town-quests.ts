@@ -317,19 +317,22 @@ export interface TownOutcome {
   deliveries: TownDelivery[];
 }
 
-/** Credit ONE delivered item of a good to the town's books, live: the
+/** Credit delivered units of a good to the town's books, live: the
  *  stockpile its flow net banks into (the drift target, found by the
  *  ONE-VOCABULARY rule — the net whose source is `{good}_out`). Returns
  *  the credited scalar, or null when the economy banks nothing for it.
  *  The per-event form of `applyTownOutcome` — call it as needs fulfill
- *  in an OPEN-ENDED session (no session end to batch at). */
+ *  in an OPEN-ENDED session (no session end to batch at). `units`
+ *  defaults to the ONE item every fulfillment is; a landed caravan (R&T ⑤
+ *  T3b) credits its whole load through the same one rule. */
 export function creditDelivery(
   town: { inject(scalar: string, delta: number): void },
   eco: CompiledEconomy,
   good: string,
+  units = 1,
 ): string | null {
   const drift = eco.flownets.find(f => f.source === `${good}_out`)?.drift ?? null;
-  if (drift) town.inject(drift, RATION_VALUE);
+  if (drift && units > 0) town.inject(drift, RATION_VALUE * units);
   return drift;
 }
 

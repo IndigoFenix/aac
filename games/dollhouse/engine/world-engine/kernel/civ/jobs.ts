@@ -19,6 +19,10 @@
 //                     taxonomy (mouth, anchorage, chokepoint, junction,
 //                     extraction). `surplus` is deliberately NOT a job — a
 //                     caloric battery is a fat village, not a city.
+//   exchange        — R&T ⑤: the terrain's "must pause" made ACTUAL. A
+//                     standing barter relationship (money.ts
+//                     `activeTradePairs`) is a settlement doing the swap its
+//                     partners cannot do without it, whatever the ground says.
 //   refinery        — §③'s license: a hinterland whose raw good dies on
 //                     the road NEEDS this town to concentrate it.
 //   store of last   — the road graph: a settlement that is the hub of
@@ -59,6 +63,12 @@ export interface JobSources {
   /** Degree at/over which the settlement is a HUB — the store of last
    *  resort for its spokes (default 3: variance needs neighbours). */
   hubDegree?: number;
+  /** ⚖️ R&T ⑤ (T4) — DISTINCT ACTIVE TRADE RELATIONSHIPS standing at this
+   *  settlement (`activeTradePairs`, kernel/town/money.ts: one per
+   *  partner × give-good × take-good row still alive). ≥1 is the EXCHANGE
+   *  job — the settlement-emergence source this list was recorded missing.
+   *  Absent ⇒ nobody counted, and the list is exactly what it was. */
+  tradePairs?: number;
   /** The compiled refineries with each one's CURRENT license verdict at
    *  this settlement (§③ — honest only where `refineLicensing` runs;
    *  without it every license reads its initial 1). */
@@ -66,7 +76,8 @@ export interface JobSources {
 }
 
 /** Every job this settlement holds, in a stable order (terrain first,
- *  then the graph, then the licensed refineries). */
+ *  then the graph, then the standing lanes, then the licensed
+ *  refineries). */
 export function hinterlandJobs(src: JobSources): HinterlandJob[] {
   const out: HinterlandJob[] = [];
   for (const t of src.node?.types ?? []) {
@@ -79,6 +90,19 @@ export function hinterlandJobs(src: JobSources): HinterlandJob[] {
       sentence:
         `exists because ${src.roadDegree} roads meet at its granary — ` +
         `the store of last resort when a neighbour's harvest fails`,
+    });
+  }
+  // ⚖️ R&T ⑤ (T4) — THE EXCHANGE. The node taxonomy says where cargo MUST
+  // pause; a standing trade pair says where cargo actually DOES. One live
+  // relationship is enough: a settlement that is somebody's counterparty is
+  // doing a job no village does for itself, whatever its terrain reads.
+  const pairs = src.tradePairs ?? 0;
+  if (pairs >= 1) {
+    out.push({
+      kind: "exchange",
+      sentence:
+        `exists because ${pairs} standing trade ${pairs === 1 ? "lane runs" : "lanes run"} ` +
+        `through its yard — the swap its partners cannot make without it`,
     });
   }
   for (const r of src.refineries ?? []) {

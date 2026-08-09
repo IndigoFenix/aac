@@ -734,6 +734,7 @@ export type ClientMessage =
   | { type: "builder_close" }                                           // sentence builder closed — end the builder detour
   | { type: "request_app_open"; appId: string; appData?: any }          // student pressed an app that needs server-resolved startup params; server resolves then replies with app_open
   | { type: "request_board_open"; boardKey: string }                    // student pressed a board-launch button (open.board) the BoardManager authored; server loads that pre-built board and replies with set_board
+  | { type: "request_home_action"; actionId: string; confirmed?: boolean }  // student pressed a home-action button (open.home); the client speaks the command itself — the server gates + audits it so the agents see the [HOME] line. `confirmed` is set when the client's confirm step was completed; a requiresConfirmation slot is refused without it
   | { type: "social_trainer_started" }                                  // SocialBot session began — server composes the activation prompt
   | { type: "social_trainer_peer_said"; text: string }                  // SocialBot peer just spoke — server composes the per-turn context
   | { type: "social_trainer_ended"; report?: import("@shared/social-bot/state").SessionReport; feedbackSummary?: string } // SocialBot session ended — server composes the debrief

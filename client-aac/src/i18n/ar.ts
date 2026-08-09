@@ -869,6 +869,7 @@ export const ar: Translations = {
     neitherOfThese: "\u0644\u0627 \u0647\u0630\u0627 \u0648\u0644\u0627 \u0630\u0627\u0643",
     guess: "إيجاد كلمة",
     exitConfirm: "هل تريد الخروج؟",
+    homeActionConfirm: "هل تريد فعل هذا؟",
   },
 
   silentMode: {

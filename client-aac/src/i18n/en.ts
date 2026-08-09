@@ -869,6 +869,7 @@ export const en = {
     neitherOfThese: "Neither of these",
     guess: "Find word",
     exitConfirm: "Do you want to exit?",
+    homeActionConfirm: "Do you want to do this?",
   },
 
   silentMode: {

@@ -6,7 +6,13 @@
 // NEVER silent:
 //
 //   1. Device cache — quick-button "yes"/"no" only. Zero network.
-//   2. Streaming PCM — plays at time-to-first-byte via the worklet sink.
+//   2. PCM via the stream endpoint — played in one of two MODES, chosen per
+//      audio source by the stream-health tracker (see stream-health.ts):
+//        - "buffered" (the safe default): the whole utterance is collected
+//          before playback, and the chunk arrival timings double as a shadow
+//          probe of whether streaming would have stuttered.
+//        - "streaming": plays at time-to-first-byte via the worklet sink.
+//          Earned by a streak of clean probes; revoked on real underruns.
 //   3. Buffered MP3 — the original whole-file path, used when the worklet is
 //      unavailable, the stream endpoint rejects the model, or anything throws.
 //
@@ -16,6 +22,8 @@
 
 import type { UseStreamingAudioPlayerReturn } from "@/hooks/useStreamingAudioPlayer";
 import { getCachedClip, putCachedClip, isCacheablePhrase } from "@/services/tts-cache";
+import { streamHealth, simulateStreamPlayback, type ChunkTiming, type PlaybackMode } from "@/services/stream-health";
+import { DEFAULT_PREBUFFER_MS } from "@/lib/pcmStreamSink";
 
 const API_BASE = "https://api.elevenlabs.io/v1";
 
@@ -41,6 +49,13 @@ export interface ClientTtsRequest {
 
 function resolveModel(language: string): string {
   return V3_LANGUAGES.has(language) ? "eleven_v3" : "eleven_multilingual_v2";
+}
+
+/** Stream-health tracker key. Per TAG because the student voice and AI voice
+ *  are separate audio sources with separate stakes, and per MODEL because
+ *  render pacing (and stream-endpoint support at all) differs by model. */
+function sourceKeyFor(req: ClientTtsRequest): string {
+  return `${req.tag}:${resolveModel(req.language)}`;
 }
 
 /**
@@ -72,12 +87,16 @@ export async function speakViaElevenLabs(
     }
   }
 
-  // ── 2. Streaming PCM ────────────────────────────────────────────────────
-  try {
-    const streamed = await streamPcm(req, player);
-    if (streamed) return;
-  } catch (err) {
-    console.warn("[ClientTTS] Streaming path failed, falling back to buffered:", err);
+  // ── 2. PCM via the stream endpoint (buffered-probe or streaming mode) ───
+  const sourceKey = sourceKeyFor(req);
+  const decision = streamHealth.decide(sourceKey);
+  if (decision.useStreamEndpoint) {
+    try {
+      const played = await streamPcm(req, player, decision.mode, sourceKey);
+      if (played) return;
+    } catch (err) {
+      console.warn("[ClientTTS] Stream-endpoint path failed, falling back to buffered MP3:", err);
+    }
   }
 
   // ── 3. Buffered MP3 ─────────────────────────────────────────────────────
@@ -103,18 +122,49 @@ async function playCachedClip(
   return true;
 }
 
+/** Statuses that mean "this model/tier cannot serve the PCM stream endpoint"
+ *  (eleven_v3 in particular) — a capability fact worth remembering, unlike
+ *  auth failures (401/403), rate limits (429), or server blips (5xx). */
+const UNSUPPORTED_STATUSES = new Set([400, 404, 405, 422]);
+
 /**
- * Stream PCM straight from ElevenLabs into the worklet sink.
+ * Fetch PCM from the ElevenLabs stream endpoint and play it in `mode`:
+ *
+ *   "streaming"  — write chunks into the worklet sink as they land; playback
+ *                  starts at the prebuffer gate. Real underruns from
+ *                  `sink.finished` feed the stream-health tracker.
+ *   "buffered"   — collect the whole utterance first, then play it as one
+ *                  block (prebuffer 0, like a cache hit). The recorded chunk
+ *                  timings are replayed through `simulateStreamPlayback` as a
+ *                  shadow probe: "would streaming have stuttered?" — so every
+ *                  buffered press teaches the tracker at zero audible risk.
+ *
  * Returns false (without consuming the request) when the sink can't be opened
- * or the endpoint refuses — the caller then uses the buffered path.
+ * or the endpoint refuses — the caller then uses the buffered MP3 path.
  */
 async function streamPcm(
   req: ClientTtsRequest,
   player: UseStreamingAudioPlayerReturn,
+  mode: PlaybackMode,
+  sourceKey: string,
 ): Promise<boolean> {
-  const sink = await player.openPcmStream({ tag: req.tag, sourceRate: PCM_SAMPLE_RATE });
+  // Buffered mode writes the whole utterance in one go, so the prebuffer gate
+  // would only delay the start — 0, same as the cache-replay path.
+  const sink = await player.openPcmStream({
+    tag: req.tag,
+    sourceRate: PCM_SAMPLE_RATE,
+    ...(mode === "buffered" ? { prebufferMs: 0 } : {}),
+  });
   if (!sink) return false;
 
+  // In buffered mode the sink sits idle while we collect; a supersede
+  // (second press, audio_clear) can close it under us. Writes to a closed
+  // sink are no-ops, but track it so a superseded utterance is dropped
+  // rather than "recovered" through the MP3 fallback (double speech).
+  let sinkClosed = false;
+  void sink.finished.then(() => { sinkClosed = true; });
+
+  const fetchStart = performance.now();
   let response: Response;
   try {
     response = await fetch(
@@ -135,9 +185,13 @@ async function streamPcm(
   }
 
   // A model or tier that can't serve streaming PCM (eleven_v3 in particular)
-  // rejects here — abort cleanly so the buffered path can still speak.
+  // rejects here — abort cleanly so the buffered path can still speak, and
+  // remember the rejection so future presses skip this doomed round trip.
   if (!response.ok || !response.body) {
     sink.abort();
+    if (UNSUPPORTED_STATUSES.has(response.status)) {
+      streamHealth.reportEndpointUnsupported(sourceKey);
+    }
     console.warn(
       `[ClientTTS] Stream endpoint unavailable (${response.status}) for model ` +
         `${resolveModel(req.language)} — using buffered MP3.`,
@@ -145,8 +199,13 @@ async function streamPcm(
     return false;
   }
 
-  const collect = isCacheablePhrase(req.text);
+  const streaming = mode === "streaming";
+  const cache = isCacheablePhrase(req.text);
+  // Buffered mode needs every chunk (that IS the playback); streaming keeps
+  // them only for the yes/no cache.
+  const collect = !streaming || cache;
   const collected: Uint8Array[] = [];
+  const timings: ChunkTiming[] = [];
   const reader = response.body.getReader();
 
   try {
@@ -154,18 +213,45 @@ async function streamPcm(
       const { done, value } = await reader.read();
       if (done) break;
       if (!value || value.length === 0) continue;
-      sink.write(value);
+      timings.push({ atMs: performance.now() - fetchStart, bytes: value.length });
+      if (streaming) sink.write(value);
       if (collect) collected.push(value.slice());
     }
-    sink.end();
   } catch (err) {
     sink.abort();
+    // A stream that died mid-transfer is a strong "connection bad" signal.
+    if (streaming) {
+      streamHealth.reportStreamPlayback(sourceKey, 1); // demotes
+    } else if (timings.length > 0) {
+      streamHealth.reportProbe(sourceKey, false);
+    }
     throw err;
   }
 
-  await sink.finished;
+  if (streaming) {
+    sink.end();
+    const { underruns } = await sink.finished;
+    streamHealth.reportStreamPlayback(sourceKey, underruns);
+  } else {
+    // Shadow probe first — the timing data is valid even if playback below
+    // gets skipped because the utterance was superseded mid-collection.
+    if (timings.length > 0) {
+      streamHealth.reportProbe(
+        sourceKey,
+        simulateStreamPlayback(timings, {
+          bytesPerSecond: PCM_SAMPLE_RATE * 2, // s16 mono
+          prebufferMs: DEFAULT_PREBUFFER_MS,
+        }).pass,
+      );
+    }
+    if (!sinkClosed) {
+      for (const chunk of collected) sink.write(chunk);
+      sink.end();
+      await sink.finished;
+    }
+  }
 
-  if (collect && collected.length > 0) {
+  if (cache && collected.length > 0) {
     void putCachedClip({
       text: req.text,
       voiceId: req.voiceId,

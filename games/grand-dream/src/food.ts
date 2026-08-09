@@ -59,7 +59,15 @@ export const TOOLS_GOOD: GoodSpec = {
   sellers: ["smithy"],
   shelved: ["smithy"],
   producers: ["smithy"],
-  perCapitaDaily: 1,
+  // ⚖️ F4 RIPPLE (economy-arc-opening.md, 2026-08-09): the RATION is the unit —
+  // one person-day of the founding staple — and the compiler now quotes every
+  // street good against it instead of hard-setting 1 for all of them. This
+  // world's own books have always said `tools` is drawn at 0.0002 a head
+  // against food's 0.001, i.e. a FIFTH of a ration, and the frozen descriptor
+  // has to say what the compiler emits or `economy-equivalence` is measuring
+  // nothing. Wares boxCap 45 → 9 tool-days follows; the cadence (`capDays 9`)
+  // is untouched — `shopPeriod` never read this number.
+  perCapitaDaily: 0.2,
   capDays: 9,
   shopSec: 26,
   cartRations: 40,

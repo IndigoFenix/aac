@@ -869,6 +869,7 @@ export const yue: Translations = {
     neitherOfThese: "都唔係",
     guess: "搵字",
     exitConfirm: "想唔想退出？",
+    homeActionConfirm: "想唔想咁做？",
   },
 
   silentMode: {

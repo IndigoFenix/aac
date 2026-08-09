@@ -21,6 +21,7 @@ import {
 import { buildPlanetWorld } from "@shared/world-engine/planet/planet-game";
 import { createWalkChart } from "@shared/world-engine/planet/walk-chart";
 import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan";
+import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
 import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play";
 import { clusterStages, widenSpecWindow } from "@shared/world-engine/interaction/town/town-cluster";
 import { buildTownScope } from "@shared/world-engine/interaction/town/town-play-game";
@@ -794,7 +795,9 @@ export function bootTownEmbedded(
   opts?: {
     spirit?: boolean;
     scale?: WorldScale;
-    tradePartners?: () => Array<{ key: string; at: { x: number; y: number } }>;
+    tradePartners?: () => Array<{
+      key: string; at: { x: number; y: number }; geo?: PartnerGeography;
+    }>;
   },
 ): EmbeddedTown {
   // ── Overlay DOM: ONLY the in-world HUD (toast/win) floats over the flight
@@ -974,8 +977,11 @@ export function bootWildernessQuest(
     /** Nearby settlements (planet cities) a FOUNDED SITE here can trade
      *  with, in the wilderness chart's sim coordinates (nations P0 —
      *  quest-host deps.tradePartners). Late-bound: re-read every sweep so
-     *  a floating-origin re-anchor keeps the bearings true. */
-    tradePartners?: () => Array<{ key: string; at: { x: number; y: number } }>;
+     *  a floating-origin re-anchor keeps the bearings true. `geo` carries the
+     *  city's own terrain reading (R&T ⑤ T5) — absent ⇒ the hash proxy. */
+    tradePartners?: () => Array<{
+      key: string; at: { x: number; y: number }; geo?: PartnerGeography;
+    }>;
     /** PLANET-SCALE FOUNDING (nations P0): the boot registers a spoken
      *  "build"'s new site with the planet (beacon + town-loader override)
      *  and drops it again on abandonment. Sim coords are chunk-local. */

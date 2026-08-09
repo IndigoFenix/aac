@@ -136,6 +136,11 @@ export function collectInvalidModifiers(glyph: string | undefined): string[] {
  * Filtered buttons survive; the rest of the board still renders. The AI
  * is expected to retry / patch via a follow-up rebuild_board call when it
  * sees the error array in the tool response.
+ *
+ * EXCEPTION — LAUNCH BUTTONS. A button carrying `open` (app / board / website /
+ * home) is the only way the student can reach what it opens, so rules 1–6 (all
+ * of which are about the PICTURE) strip its visual instead of deleting it. The
+ * error is still reported. Only the label-shape rules (0, 0b) drop it outright.
  */
 /** Rule identifiers for structured violation reporting — used by the
  *  Coordinator's session-scoped violation memory so the (stateless) Board
@@ -157,22 +162,53 @@ export interface BoardButtonViolation {
   tokens: string[];
 }
 
-export function validateBoardButtons<
-  T extends {
-    label: string;
-    glyph?: string;
-    glyphFallback?: string;
-    imageKey?: string;
-    iconRef?: string;
-    symbolPath?: string;
-  }
->(buttons: T[]): { buttons: T[]; errors: string[]; violations: BoardButtonViolation[] } {
+/** The launch targets a button may carry. A button with any of them OPENS
+ *  something on press instead of voicing its speech. */
+interface ValidatableButton {
+  label: string;
+  glyph?: string;
+  glyphFallback?: string;
+  imageKey?: string;
+  iconRef?: string;
+  symbolPath?: string;
+  open?: { app?: string; board?: string; website?: string; home?: string };
+}
+
+/** True when pressing this button OPENS something — an app, a board, a site,
+ *  or a smart-home action. */
+function hasLaunchTarget(btn: ValidatableButton): boolean {
+  const o = btn.open;
+  return !!(o && (o.app || o.board || o.website || o.home));
+}
+
+export function validateBoardButtons<T extends ValidatableButton>(
+  buttons: T[],
+): { buttons: T[]; errors: string[]; violations: BoardButtonViolation[] } {
   const kept: T[] = [];
   const errors: string[] = [];
   const violations: BoardButtonViolation[] = [];
   // Track first-seen owners so the error message can name the conflict.
   const seenGlyph = new Map<string, string>();
   const seenFallback = new Map<string, string>();
+
+  /**
+   * A visual rule has rejected `btn`. Drop it — UNLESS it's a launch button,
+   * which is the ONLY path to whatever it opens. Losing the artwork costs the
+   * student a picture; losing the button costs them the app. So strip the
+   * offending visual, keep the press, and let the caller refill the target's
+   * own icon (`fillLaunchButtonVisual`). The error and violation are recorded
+   * either way, so the model still learns the rule.
+   *
+   * Returns true when the button was rescued and should be kept.
+   */
+  const rescueLaunchButton = (btn: T): boolean => {
+    if (!hasLaunchTarget(btn)) return false;
+    btn.glyph = undefined;
+    btn.glyphFallback = undefined;
+    btn.imageKey = undefined;
+    if ((btn.iconRef ?? "").startsWith("fa")) btn.iconRef = undefined;
+    return true;
+  };
 
   for (const btn of buttons) {
     // (0) Malformed [NARROW:...] prefix surviving the parser. parseBoardButtons
@@ -217,6 +253,7 @@ export function validateBoardButtons<
       const offending = new Set<string>();
       collectGlyphImageKeys(btn.glyph, offending);
       violations.push({ rule: "imagekey_no_fallback", tokens: [...offending] });
+      if (rescueLaunchButton(btn)) kept.push(btn);
       continue;
     }
 
@@ -233,6 +270,7 @@ export function validateBoardButtons<
         `Mirror the shape of the sentence (e.g. \`i_me+want+generate:planet_mars\` → fallback \`i_me+want+🌑.color_red\` — pair an existing emoji with a canonical modifier to approximate the generated concept).`
       );
       violations.push({ rule: "imagekey_in_fallback", tokens: [...fallbackImageKeys] });
+      if (rescueLaunchButton(btn)) kept.push(btn);
       continue;
     }
 
@@ -260,6 +298,7 @@ export function validateBoardButtons<
         rule: "non_canonical_modifier",
         tokens: [...badGlyphMods, ...badFallbackMods].map((m) => `.${stripBrackets(m)}`),
       });
+      if (rescueLaunchButton(btn)) kept.push(btn);
       continue;
     }
 
@@ -273,6 +312,7 @@ export function validateBoardButtons<
           `Each button needs a distinct visual; vary the slots or add descriptors.`
         );
         violations.push({ rule: "duplicate_glyph", tokens: [] });
+        if (rescueLaunchButton(btn)) kept.push(btn);
         continue;
       }
     }
@@ -287,6 +327,7 @@ export function validateBoardButtons<
           `Each fallback must produce a distinct visual.`
         );
         violations.push({ rule: "duplicate_fallback", tokens: [] });
+        if (rescueLaunchButton(btn)) kept.push(btn);
         continue;
       }
     }
@@ -309,6 +350,7 @@ export function validateBoardButtons<
         `or a single emoji / \`symbol:ID\` / \`face:ID\`. Never leave a ${T.button} with only a label.`
       );
       violations.push({ rule: "no_visual", tokens: [] });
+      if (rescueLaunchButton(btn)) kept.push(btn);
       continue;
     }
 

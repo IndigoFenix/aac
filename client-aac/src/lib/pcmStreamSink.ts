@@ -33,7 +33,8 @@ export interface PcmStreamSink {
 
 // A short buffer is enough to absorb ordinary network jitter without making the
 // press feel laggy. This is the single knob that trades latency for smoothness.
-const DEFAULT_PREBUFFER_MS = 120;
+// Exported so the stream-health probe simulates the same gate the worklet uses.
+export const DEFAULT_PREBUFFER_MS = 120;
 
 let workletModulePromise: Promise<void> | null = null;
 

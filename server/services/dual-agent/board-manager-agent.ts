@@ -157,11 +157,12 @@ function extractButtonAddressee(input: unknown): string | undefined {
   return typeof a === "string" && a.trim() ? a.trim() : undefined;
 }
 
-/** Read the AI's launch action for a button: `{ website }`, `{ app }` or
- *  `{ board }` (a URL, an app id, or a pre-built board key). Undefined when
- *  none is a usable string. Each target is re-gated against the permitted
- *  lists in the coordinator before it reaches the client — this only extracts
- *  the shape. Precedence when several are set: website → app → board. */
+/** Read the AI's launch action for a button: `{ website }`, `{ app }`,
+ *  `{ board }` or `{ home }` (a URL, an app id, a pre-built board key, or a
+ *  home-action id). Undefined when none is a usable string. Each target is
+ *  re-gated against the permitted lists in the coordinator before it reaches
+ *  the client — this only extracts the shape. Precedence when several are set:
+ *  website → app → board → home. */
 function extractButtonOpen(input: unknown): BoardButtonOpen | undefined {
   const o = (input as { open?: unknown } | null)?.open;
   if (!o || typeof o !== "object") return undefined;
@@ -173,6 +174,9 @@ function extractButtonOpen(input: unknown): BoardButtonOpen | undefined {
   // Same normalization set_board applies, so the coordinator's key resolution
   // sees one shape whether the board was loaded by the AI or offered as a button.
   if (typeof board === "string" && board.trim()) return { board: board.trim().toLowerCase().replace(/ /g, "_") };
+  const home = (o as { home?: unknown }).home;
+  // Home-action ids are clinician-authored slugs — matched verbatim by the gate.
+  if (typeof home === "string" && home.trim()) return { home: home.trim() };
   return undefined;
 }
 

@@ -105,6 +105,18 @@ export interface DwellContext {
    *  as dwelling `conversingWith` does. Only consulted for fellow members — see
    *  "A ROSTER NEVER SILENCES AN OUTSIDER" above. */
   currentAddressee?: string;
+  /** Has something ELSE taken the board while the conversation is still open —
+   *  the menu of a hovered chest, a build panel? Present ONLY then (never
+   *  present-and-false), so an absent flag is the old table exactly.
+   *
+   *  It is the fourth fact, and it earns its place: without it, looking back at
+   *  the person you are talking to is the one gesture with NO way home. Every
+   *  other hover replaces the board; this cell is deliberately silent
+   *  ("attention, not an instruction"), so after a glance at a chest the
+   *  conversation board simply never came back and the child was stranded on a
+   *  menu (civic-labor-and-polish.md §5). Silence is right when the board is
+   *  already the conversation's; it is a dead end when it is not. */
+  boardElsewhere?: true;
   /** BUILD MODE (⑦): is the player holding the build word, with the ground
    *  lit? While they are, a settled look is ABOUT the ground. */
   building?: boolean;
@@ -136,6 +148,12 @@ export type DwellAction =
    *  thing said is said TO. Never a hand-off: the roster does not change, and
    *  nobody leaves anything (multi-entity-conversations.md §3f). */
   | { act: "address"; id: string }
+  /** PUT THE OPEN CONVERSATION BACK ON THE BOARD. Not an opening and not a
+   *  join: this conversation never ended — something else merely borrowed the
+   *  screen — so the host RE-PRESENTS the one that is still running (roster,
+   *  act state, why-chain depth, open list menus all as they were) and must not
+   *  take the fresh-open path, which greets afresh. */
+  | { act: "present"; id: string }
   /** Name the room under the point (no conversation running). */
   | { act: "room"; x: number; y: number }
   /** Send the partner to this spot. */
@@ -224,7 +242,17 @@ export function dwellInteraction(
   // Looking at the person whose board I face — or at the fellow member I am
   // already addressing — is ATTENTION, not an instruction, in either phase.
   // Otherwise listening to someone would keep re-commanding them.
-  if (id === partner || (fellow && id === ctx.currentAddressee)) return [];
+  //
+  // …UNLESS THE BOARD IS SOMEWHERE ELSE, in which case the look is the way
+  // BACK. Attention with the conversation on screen has nothing to add; the
+  // same attention with a chest's menu on screen is the child asking for their
+  // conversation again, and it was the one gesture the table answered with
+  // nothing (§5). Both phases, for the reason the fellow cell gives below: a
+  // re-present is idempotent, and a player whose short rest was spent elsewhere
+  // still gets their board back.
+  if (id === partner || (fellow && id === ctx.currentAddressee)) {
+    return ctx.boardElsewhere ? [{ act: "present", id }] : [];
+  }
 
   // A FELLOW MEMBER IS NEVER SWITCHED TO, and never commanded ABOUT. We are in
   // the same conversation already: there is no partner to take them from, so

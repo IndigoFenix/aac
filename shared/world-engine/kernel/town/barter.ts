@@ -55,6 +55,19 @@ import {
 // ⚖️ §7 step 6: `journeyS` into the barter leg. The region rung already owns
 // "how far one day of legs carries you" — the town stops inventing it.
 import { dailyTravelM, type WorldScale } from "../../scale.js";
+// ⚖️ R&T ⑤ (T5): the freight registry classes a good by how it travels, so the
+// geography term never has to name one. Read-only from here, exactly as
+// trade.ts reads it — the town rung asks, it never re-derives.
+import { freightOf, VALUE_TIER } from "../../freight.js";
+// TYPE ONLY (erased at build): the node taxonomy is kernel/cells' vocabulary
+// and this module borrows the NOUN, never the module — no runtime edge.
+import type { NodeType } from "../cells/node-typing.js";
+// ⚖️ R&T ⑤ (T2): the pair's complementary read lives in a leaf sibling so
+// `bindPartner` can call it without closing barter → transfer → trade into a
+// cycle (see complementary.ts's header). `BARTER_WANT_MIN` is defined there —
+// ONE definition — and keeps its established name here.
+import { BARTER_WANT_MIN } from "./complementary.js";
+export { BARTER_WANT_MIN };
 
 // ---------------------------------------------------------------------------
 // Signals — the model's whole input
@@ -72,8 +85,9 @@ export const BARTER_SCARCITY_WEIGHT = 1;
 /** Ratio clamp — no deal goes infinite/free, and every quote stays inside
  *  the speakable quantity words (one/two/three per side). */
 export const BARTER_RATIO_CAP = 3;
-/** Below this, a town doesn't WANT a good ("they have enough wood"). */
-export const BARTER_WANT_MIN = 0.15;
+// `BARTER_WANT_MIN` ("below this a town doesn't WANT a good") is re-exported
+// from complementary.ts at the top of this file — the derived-trade read and
+// the willingness refusal are the SAME line, declared once.
 /** At/above this, a town won't PART with a good (its own famine). */
 export const BARTER_FAMINE_MAX = 0.7;
 /**
@@ -221,18 +235,138 @@ function fnv(key: string): number {
 /** Days of one full stub-scarcity season (terms drift over ~weeks). */
 export const STUB_SEASON_DAYS = 16;
 
+// ─── GEOGRAPHY CHOOSES WHAT A DISTANT TOWN HAS TO SELL (R&T ⑤, T5) ──────────
+//
+// The hash base above is honest but BLIND: it makes a river-mouth granary as
+// likely to be starving as a mining camp is. "Geography chooses, spec marks"
+// (node-typing.ts) already decided what each settlement IS — this extends that
+// same verdict to what it can spare. The reading stays a PURE function of
+// (partnerKey, good, day, geography): no books, no session, no clock.
+//
+// The hash never leaves: where geography has no opinion about a good it is the
+// whole base (byte-identical to the shipped proxy), and where geography DOES
+// speak the hash still supplies the per-good texture, so two food-ish goods in
+// one town are never numerically identical.
+
+/**
+ * The compact terrain reading a partner can carry — every field optional,
+ * because a partner that declares none is exactly the shipped stub.
+ * Whatever the tier knows, it passes; whatever it doesn't, the hash covers.
+ */
+export interface PartnerGeography {
+  /** The economic node its terrain makes it (kernel/cells node-typing). */
+  node?: NodeType | null;
+  /** Charter-box FARMLAND sum, as `PlanetCity.charter.farmland` holds it. */
+  farmland?: number;
+  /** Charter-box ORE sum (`PlanetCity.charter.ore_access`). */
+  ore?: number;
+}
+
+/** The farmland sum at which a charter box is SURPLUS COUNTRY — node-typing's
+ *  own `surplusFarmland` line, so the continuous reading and the taxon that
+ *  was derived from it agree instead of drifting apart. */
+export const GEO_FARMLAND_REF = 180;
+/** The ore sum at which the ground is worth traveling for — node-typing's
+ *  `extractionOre` line, same reason. */
+export const GEO_ORE_REF = 50;
+/** How loudly geography speaks over the hash where it has an opinion at all
+ *  (the remainder stays the hash's per-good texture). */
+export const GEO_BASE_WEIGHT = 0.75;
+
+/**
+ * The three FREIGHT classes geography has an opinion about — derived from the
+ * good's own freight row, never from its name (freight.ts's law, honored one
+ * rung up): the staple is the good the hauler eats, raw bulk is what barely
+ * repays its own haul, refined is what a workshop's work concentrated. A good
+ * in none of them (a plain durable at the staple anchor — an undeclared good)
+ * gets no geographic opinion, which is the honest answer.
+ */
+export type GeoGoodClass = "staple" | "rawBulk" | "refined";
+
+export function geoGoodClass(good: string): GeoGoodClass | null {
+  const f = freightOf(good);
+  if (f.transit === "selfConsuming") return "staple";
+  if (f.valueDensity >= VALUE_TIER.refined) return "refined";
+  if (f.valueDensity < VALUE_TIER.staple) return "rawBulk";
+  return null;
+}
+
+/**
+ * PER-NODE SHORTAGE BASES — one row per taxon, read straight off the sentence
+ * node-typing prints for it:
+ *   • `surplus` "grows more here than its farmers can eat" ⇒ food to sell, and
+ *     no workshop of its own ⇒ it wants refined goods.
+ *   • `shadow` is surplus country that CANNOT ship its grain — food cheap,
+ *     manufactures desperately wanted (that lack is the refining license).
+ *   • `extraction` "yields what the lowlands lack" ⇒ raw bulk to sell; mine
+ *     country does not farm, so its own food runs thin.
+ *   • `mouth`/`anchorage`/`junction`/`chokepoint` are TRAFFIC nodes: everything
+ *     passes over their quays, so nothing is desperate — mildest at the mouth,
+ *     where both a river and a sea deliver.
+ * A blank cell = no opinion for that class (the hash keeps it).
+ */
+const NODE_SHORTAGE_BASES: Record<NodeType, Partial<Record<GeoGoodClass, number>>> = {
+  mouth: { staple: 0.25, rawBulk: 0.35, refined: 0.35 },
+  anchorage: { staple: 0.35, rawBulk: 0.4, refined: 0.4 },
+  chokepoint: { staple: 0.4, rawBulk: 0.45, refined: 0.45 },
+  junction: { staple: 0.35, rawBulk: 0.4, refined: 0.4 },
+  extraction: { staple: 0.7, rawBulk: 0.1, refined: 0.55 },
+  surplus: { staple: 0.15, refined: 0.6 },
+  shadow: { staple: 0.2, refined: 0.85 },
+};
+
+/**
+ * ⚖️ THE GEOGRAPHY TERM — the standing shortage base a partner's TERRAIN
+ * implies for one good, or null when its terrain says nothing about that good
+ * (⇒ the caller keeps the hash). Pure, side-effect free, and independent of
+ * the day: the season rides on top of whatever this returns.
+ *
+ * Where both the taxon and a continuous charter reading speak, they are
+ * AVERAGED — the taxon is a threshold verdict off the very sums the charter
+ * carries, so the two are the same evidence at two resolutions, and averaging
+ * lets a barely-surplus box read differently from a drowning-in-grain one.
+ */
+export function geographyShortageBase(good: string, geo: PartnerGeography): number | null {
+  const cls = geoGoodClass(good);
+  if (!cls) return null;
+  const reads: number[] = [];
+  const byNode = geo.node ? NODE_SHORTAGE_BASES[geo.node]?.[cls] : undefined;
+  if (byNode !== undefined) reads.push(byNode);
+  if (cls === "staple" && typeof geo.farmland === "number" && Number.isFinite(geo.farmland)) {
+    reads.push(clamp01(1 - Math.max(0, geo.farmland) / GEO_FARMLAND_REF));
+  }
+  if (cls === "rawBulk" && typeof geo.ore === "number" && Number.isFinite(geo.ore)) {
+    reads.push(clamp01(1 - Math.max(0, geo.ore) / GEO_ORE_REF));
+  }
+  if (!reads.length) return null;
+  return clamp01(reads.reduce((a, b) => a + b, 0) / reads.length);
+}
+
 /**
  * Scarcity proxy for a partner that ISN'T fully simulated (the abstract
- * `away:<seed>` line, a flight-tier `city:<cell>`): a hash-seeded BASE per
- * (partner, good) plus a slow TRIANGULAR season over the town day — pure
- * f(partnerKey, good, day), so replays and both ends of a call agree, and
- * the terms a player hears SHIFT over time even against a stub.
+ * `away:<seed>` line, a flight-tier `city:<cell>`): a BASE per (partner, good)
+ * plus a slow TRIANGULAR season over the town day — pure
+ * f(partnerKey, good, day, geography), so replays and both ends of a call
+ * agree, and the terms a player hears SHIFT over time even against a stub.
+ *
+ * The base is the partner's terrain where it has an opinion (T5 —
+ * `geographyShortageBase`, blended with the hash for texture) and the bare
+ * hash where it doesn't. `geo` ABSENT ⇒ the hash alone, bit for bit as it
+ * shipped: a tier that knows nothing about its neighbour must not be made to
+ * pretend it does.
  */
-export function stubPartnerSignals(partnerKey: string, day: number): BarterSignals {
+export function stubPartnerSignals(
+  partnerKey: string,
+  day: number,
+  geo?: PartnerGeography | null,
+): BarterSignals {
   return {
     shortage(good: string): number {
       const h = fnv(`${partnerKey}|${good}`);
-      const base = ((h >>> 8) % 1000) / 1000; // 0..1 — the partner's standing bias
+      const hash = ((h >>> 8) % 1000) / 1000; // 0..1 — the partner's standing bias
+      const terrain = geo ? geographyShortageBase(good, geo) : null;
+      const base =
+        terrain === null ? hash : clamp01(GEO_BASE_WEIGHT * terrain + (1 - GEO_BASE_WEIGHT) * hash);
       const phase = (h % STUB_SEASON_DAYS) / STUB_SEASON_DAYS;
       const u = (day / STUB_SEASON_DAYS + phase) % 1;
       const tri = u < 0.5 ? u * 2 : 2 - u * 2; // 0→1→0 across a season

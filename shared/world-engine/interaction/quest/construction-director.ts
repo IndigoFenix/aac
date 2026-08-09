@@ -391,6 +391,7 @@ import { claimMessage, sayMessage, type WorldCommand, type WorldNetMessage } fro
 import { resolveAddressee } from "./addressee.js";
 import type { WorldView } from "../../world-view.js";
 import type { NpcErrand, NpcErrandPoint } from "../../npc-controller.js";
+import { DEFAULT_TASK_TTL_S } from "../behavior/task-pool.js";
 import { CLOCK_SCHEDULE_RATE } from "../../npc-controller.js";
 import {
   carryObject,
@@ -623,7 +624,7 @@ import {
 } from "../behavior/laws.js";
 import { resolveWorldCulture, type WorldCultureSpec } from "../../culture.js";
 import type { QuestSession, QuestBoardView, QuestHostDeps, QuestPresenter, TownPark } from "./quest-host.js";
-import { constructionGameDays, serviceRadiusM } from "@shared/world-engine/scale.js";
+import { constructionGameDays, serviceRadiusM, type WorldScale } from "@shared/world-engine/scale.js";
 
 /** Stable tiny hash — deterministic salts (same input, same value forever).
  *  Moved here from quest-host (phase 1a) so both modules share one copy. */
@@ -690,6 +691,45 @@ export const FURN_SETUP_R = 3.2;
 /** How far around a staked plot its haul tasks recruit (the communal
  *  work-together radius — any idle body in earshot of the site). */
 export const SITE_HAUL_FOCUS_R = 60;
+
+/**
+ * ⚖️ HOW FAR A CIVIC TASK RECRUITS — the SITE'S OWN NEIGHBOURHOOD, and no
+ * further (civic-labor-and-polish.md §1, "conscription must be LOCAL").
+ *
+ * "Everyone works together" STANDS; what it may not mean is *everyone in
+ * town*. The pool's candidates are registered creatures plus **embodied**
+ * street residents, and embodiment follows the CAMERA — so for a site the
+ * camera is not standing at, the only bodies inside a town-wide radius are
+ * the player's always-embodied family, and `chooseClaimant`'s "nearest wins"
+ * elects them BY FORFEIT. Observed 2026-08-07 (seed 7, a spoken `build
+ * workshop`): mara spent 95 of 95 sampled frames on `drive=task`/`transfer`,
+ * walking a ~520 m round trip to the town yard and back, while the households
+ * beside the site — abstracted, therefore invisible to the pool — did nothing.
+ * A site with no LOCAL body does not get one shipped in: it banks on the
+ * schedule (the clock arm), which is what an unwatched town has always done.
+ *
+ * ⚖️ THE RADIUS IS DERIVED, and it is the SAME derivation the districts use
+ * (`serviceRadiusM` — needs-aware districts: "a district is a need cycle's
+ * walk across"). Two terms used to stand here; only the second survives:
+ *
+ *   · `plan.radius × 2` — the town's own DIAMETER. THIS was the over-reach:
+ *     it made "the neighbourhood" mean "the town", which is the whole bug.
+ *   · `serviceRadiusM(scale, "social")` — the reach itself now. WHY THE
+ *     SOCIAL CLOCK (unchanged reasoning): a work party is a GATHERING, not
+ *     hunger and not energy, and `social` is the drive that already measures
+ *     how far a body ranges to be among its neighbours. On the shipped street
+ *     profile that is 1.6 m/s × 192 s × 0.5 / 2 = **76.8 m** — a walk of about
+ *     a minute, which is what "the next street over" costs.
+ *
+ * Off a town the WILDERNESS EARSHOT rule stays exactly as it was
+ * ({@link SITE_HAUL_FOCUS_R}), and it doubles as the floor in town: a world
+ * whose social clock runs faster than the legs never recruits from less than
+ * shouting distance.
+ */
+export function civicRecruitRadiusM(scale: WorldScale, inTown: boolean): number {
+  return inTown ? Math.max(SITE_HAUL_FOCUS_R, serviceRadiusM(scale, "social")) : SITE_HAUL_FOCUS_R;
+}
+
 /** A waiting plot re-resolves its missing materials at most this often —
  *  fresh stock (a felled tree hauled to the yard) unsticks it, without
  *  re-posting expired tasks every sweep.
@@ -2420,6 +2460,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  fact itself is per-tick; this is not per-row memory of progress). */
   const orderObservedPrev = new Map<number, boolean>();
 
+  /** Task-clock second a build-work site last had a hand CLAIMED to it (or
+   *  first put its call out). A site that goes a whole claim window unanswered
+   *  has no LOCAL labor and banks on the clock arm instead — §1's other half,
+   *  in `workSite`. */
+  const siteStaffedAt = new Map<string, number>();
+
   /** STREAM-IN materialization (phase 2 step 3): the reveal must show the
    *  work IN MOTION. Stage geometry at its banked fraction and the pile
    *  stacks are emergent (pure reads of labor and the pile map) — but the
@@ -2654,38 +2700,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return `${ANNEX_PILE_EP}${ord}`;
   }
 
-  /**
-   * How far a CIVIC task recruits (⑥ — "everyone works together"): the WHOLE
-   * town volunteers for communal construction, not just the bodies within
-   * earshot of the site — a 205-house town's free lots all sit at the edge, far
-   * from anyone. The recruited walker is PINNED (busy) for the trek. Off a
-   * town, the wilderness earshot rule stays.
-   *
-   * ⚖️ THE MARGIN IS DERIVED (scope-behaviors.md §4.7: "`civicRecruitRadius`'s
-   * literal-plus-geometry, which should be scale-derived like
-   * `serviceRadiusM`"). Two terms, and only one of them was ever a literal:
-   *
-   *   · `plan.radius × 2` — the town's own DIAMETER. Geometry, not a constant:
-   *     a body anywhere in town must be able to answer a call from anywhere
-   *     else in it, which is the whole point of the civic radius.
-   *   · `+ 80` — the reach PAST the edge, and the literal §4.7 sentences. It is
-   *     now `serviceRadiusM(scale, "social")`.
-   *
-   * WHY THE SOCIAL CLOCK. `serviceRadiusM` measures a journey "in units of the
-   * need's own fill clock" (§3), so the question is which drive a work party
-   * is. It is not hunger (nobody walks to a raising because they are hungry)
-   * and not energy (the trek is not the work). "Everyone works together" is a
-   * GATHERING: the drive that already measures how far a body ranges to be
-   * among its neighbours is `social`, and answering a call from the town is the
-   * same act as answering one from a friend. On the shipped street profile that
-   * is 1.6 m/s × 192 s × 0.5 / 2 = **76.8 m** against the old 80 — the same
-   * radius to within 4 %, so no shipped town reshapes; on a world with a slower
-   * appetite or faster legs it now moves with them instead of staying 80.
-   */
+  /** How far a CIVIC task recruits — {@link civicRecruitRadiusM}, bound to
+   *  the SITE'S OWN NEIGHBOURHOOD (§1's locality law). ONE definition; this
+   *  is only the session-shaped call. */
   function civicRecruitRadius(session: QuestSession): number {
-    const t = session.town;
-    const margin = serviceRadiusM(session.scale, "social");
-    return t ? Math.max(SITE_HAUL_FOCUS_R, t.plan.radius * 2 + margin) : SITE_HAUL_FOCUS_R;
+    return civicRecruitRadiusM(session.scale, !!session.town);
   }
 
   /** A designation's building, resolved from its delta key: a plan house
@@ -3535,6 +3554,31 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     lastSites = sites;
   }
 
+  /**
+   * ⚖️ A HAUL'S DESTINATION IS THE BUILDING, NEVER THE PIECE
+   * (civic-labor-and-polish.md §4.1).
+   *
+   * The `to` PlaceRef on a pooled TRANSFER goal is WORDING and nothing else —
+   * the haul itself runs off the agreement's endpoint (`a.to`), so this word is
+   * only ever read by `goalIntentLine` / `goalDestination`. Both call sites that
+   * fill it for a `bfurn:` delivery used to derive it from the CARGO: the shell
+   * program passed the `StationKind` it was asking for, and the reload re-pool
+   * ran `furnitureKindOfGlyph` over the goods. With a door in the goods that
+   * makes the object and the destination the SAME WORD, and the hauler announces
+   * *"I will carry the door to the door"* — the user's report.
+   *
+   * The building's own word answers it. The structure TYPE is the spoken one
+   * ("workshop", "market") — exactly the reading `buildingPlaceWord` gives a
+   * body standing inside it, and every type in the catalog is already a lexeme
+   * in every locale; the catalog LABEL ("carpentry") is display chrome and may
+   * not be drawable. `"building"` is the honest fallback for a key that names
+   * nothing standing (it, too, is a catalog type and a lexeme).
+   */
+  function shellHaulDestWord(session: QuestSession, key: string): string {
+    const wi = workIndexOfKey(session, key);
+    return (wi >= 0 ? session.town?.plan.works[wi]?.type : undefined) ?? "building";
+  }
+
   /** The plan-works index a building delta key names (f_<ord> → the founded
    *  row's live index; w_<i> → i). -1 when it names nothing standing. */
   function workIndexOfKey(session: QuestSession, key: string): number {
@@ -3547,14 +3591,86 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   }
 
   /**
+   * ⚖️ WHICH HOUSEHOLD MAKES A SHELL'S PIECE — a household of the SITE'S OWN
+   * NEIGHBOURHOOD (civic-labor-and-polish.md §1 step 3), never the focus family
+   * by fiat.
+   *
+   * This line used to read `familyOf(session)?.house`, so EVERY door and every
+   * workbench any shell in town ever wanted was made at the player's kitchen
+   * table — the user's "why was the player's house specifically conscripted for
+   * everything?". It is the same embodied-set bias as the recruit radius wearing
+   * a different hat: there, the family was nearest by forfeit; here, they were
+   * named outright.
+   *
+   * The walk is the ordinary one: houses inside {@link civicRecruitRadiusM} of
+   * the site, measured the way every other source walk measures
+   * (`sourceDistanceM` — street metres where there are streets), BENCHED houses
+   * first (a benchless one has to bootstrap its own workbench before the piece,
+   * so it is strictly slower and mints a tool nobody asked for), then nearest,
+   * then lowest index so the same shell picks the same kitchen every sweep. A
+   * household already holding a craft job is skipped — one slot per house.
+   *
+   * `"none"` = no local household can take it. The want then WAITS: the next
+   * sweep asks again, the neighbourhood's own crafters free up, and nothing is
+   * ever conscripted from across town to fill the gap.
+   *
+   * 🚨 `"held"` — THE SAME WALK ANSWERS "DO WE NEED TO MAKE ONE AT ALL"
+   * (project_building_scope_inventory's law, at the one call site that never
+   * got it: *"Every 'do we need to make one' gate means `anywhere`"*). The
+   * caller reaches here only because no BOX in reach holds the piece — but a
+   * finished craft on a SHOWN house leaves its box the instant it is made
+   * (`dropFromStack` — it becomes a prop on the floor, which is a real unit
+   * that no `stockEndpointOf` can name), and the household's hands and the
+   * shell's own delivery pile are the same blind spot. Asking the boxes alone,
+   * this sweep saw "none stored" over a door that was lying right there and
+   * designated ANOTHER one, every window, forever: the user's "Mara kept
+   * crafting it over and over", and a standing breach of item conservation
+   * (blocks burnt to mint duplicates). One exists ⇒ we wait for it.
+   */
+  type CraftHand = { kind: "make"; house: number } | { kind: "held" } | { kind: "none" };
+  function craftHouseholdFor(
+    session: QuestSession,
+    at: { x: number; y: number },
+    glyph: string,
+  ): CraftHand {
+    const t = session.town;
+    if (!t) return { kind: "none" };
+    const reach = civicRecruitRadius(session);
+    let best: { hi: number; d: number; benched: boolean } | null = null;
+    for (const h of t.plan.houses) {
+      const hi = h.index;
+      const door = houseDoorstep(t.stage.center, h);
+      // Chord first: a street walk is never SHORTER than the straight line, so
+      // a house already too far as the crow flies can be dropped without
+      // walking the graph for it (this runs over every house in town).
+      if (Math.hypot(door.x - at.x, door.y - at.y) > reach) continue;
+      const d = sourceDistanceM(session, at, door);
+      if (d > reach) continue;
+      if (houseHolds(session, hi, glyph) > 0) return { kind: "held" };
+      if (craftJobsOf(session).get(hi)) continue; // its one slot is taken
+      const benched =
+        !!houseBench(session, hi) || houseHolds(session, hi, furnitureGlyph("workbench")) > 0;
+      if (
+        !best ||
+        (benched !== best.benched
+          ? benched
+          : d < best.d - 1e-6 || (Math.abs(d - best.d) <= 1e-6 && hi < best.hi))
+      ) {
+        best = { hi, d, benched };
+      }
+    }
+    return best ? { kind: "make", house: best.hi } : { kind: "none" };
+  }
+
+  /**
    * WORK-BUILDING PROGRAM PULL (pipeline ⑥ — recursion's craft-designation
    * leg): a standing program row on a completed work building (a shell's
    * ordered bedroom) PULLS its required furniture. A stored `furn.<kind>`
    * stack anywhere usable is hauled over as a CIVIC task (any resident may
    * carry it — the `bfurn:` delivery pile); none stored starts a CRAFT JOB
-   * at the family's house, bench-first (the ④ automation law) — the shell's
-   * bed recurses into wood, which recurses into the felled tree. One action
-   * per sweep; per-building rate limit.
+   * at a NEIGHBOURING household, bench-first (the ④ automation law) — the
+   * shell's bed recurses into wood, which recurses into the felled tree. One
+   * action per sweep; per-building rate limit.
    */
   function stepShellPrograms(session: QuestSession, issuer: string = LOCAL_PLAYER_CID) {
     const t = session.town;
@@ -3637,15 +3753,26 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           });
           postPooledTask(
             session,
-            { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: k } },
+            // §4.1 — the SHELL is where this is going, not `k`: the piece being
+            // carried is already the sentence's object, and naming it twice is
+            // "I will carry the door to the door".
+            {
+              kind: "transfer",
+              agreementId: a.id,
+              goods: a.goods,
+              to: { kind: "named", id: shellHaulDestWord(session, key) },
+            },
             issuer,
             { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
             `bring ${k}`,
           );
           return "done";
         }
-        // NONE STORED — the craft designation: the family's house makes
-        // it (bench-first). Busy crafter ⇒ retry next sweep.
+        // NONE STORED — the craft designation: a household in THE SITE'S OWN
+        // NEIGHBOURHOOD makes it (bench-first). Busy crafter ⇒ retry next
+        // sweep; nobody local ⇒ the want simply waits (§1's locality law —
+        // never the focus family from across town, which is what this line
+        // used to name outright).
         //
         // ⚠️ THE BENCH-FIRST FORK IS ④'s ENABLE COMPARISON, HARD-CODED
         // (scope-behaviors.md §2.4 — "the workbench bootstrap … enabler-shaped,
@@ -3657,8 +3784,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // its own bill and its own labour clock, and pricing that needs the
         // station costs that land with §7 step 6. When they do, this fork
         // FOLDS INTO `haulBagLeg`'s arithmetic rather than living beside it.
-        const hi = familyOf(session)?.house ?? t.plan.houses[0]?.index;
-        if (hi === undefined || craftJobsOf(session).get(hi)) return "done";
+        const hand = craftHouseholdFor(session, at, glyph);
+        if (hand.kind === "held") return "wait"; // one exists — never mint a second
+        if (hand.kind === "none") return "done"; // nobody local is free; ask again next sweep
+        const hi = hand.house;
         const target =
           houseBench(session, hi) || houseHolds(session, hi, furnitureGlyph("workbench")) > 0
             ? fdef
@@ -4352,7 +4481,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           : a.to.startsWith(SITE_PILE_EP)
             ? foundGlyph(deltas.founded().find((f) => f.ord === Number(a.to.slice(SITE_PILE_EP.length))))
             : a.to.startsWith(BFURN_EP)
-              ? (furnitureKindOfGlyph(Object.keys(a.goods)[0] ?? "") ?? "room")
+              // §4.1 — the SHELL, not the cargo. Reading the destination off
+              // `a.goods` is the very collision the shell program's own post
+              // had: a re-pooled door haul announced "carry the door to the
+              // door". The endpoint already names the building; ask it.
+              ? shellHaulDestWord(session, a.to.slice(BFURN_EP.length))
               : "room";
         postPooledTask(
           session,
@@ -4397,7 +4530,26 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const tasks = [...session.taskPool.open(), ...session.taskPool.claimed()].filter(
         (t) => t.goal.kind === "buildwork" && t.goal.site === siteId,
       );
-      for (let n = tasks.length; n < cap; n++) {
+      // ⚖️ NOBODY LOCAL ⇒ THE CLOCK ARM (§1 step 2, the other half of the
+      // locality law). With recruiting bound to the neighbourhood, a lot whose
+      // own streets are empty of embodied bodies gets NO claimant — and the
+      // observed arm banks only what stands at the work, so the site would sit
+      // at 0 % for as long as anyone watched it. That is not honesty, it is a
+      // stall: the town's crew IS working the site, they are simply abstracted
+      // like everything else outside the streamer bands. So a site that goes a
+      // full CLAIM WINDOW with nobody answering banks on the SAME schedule arm
+      // an unwatched site has always used. The window is the pool's own TTL
+      // (no new constant): one whole posting cycle unanswered is the pool's
+      // definition of "no one can do that".
+      const staffed = tasks.some((t) => t.status === "claimed");
+      if (staffed || !siteStaffedAt.has(siteId)) siteStaffedAt.set(siteId, session.taskClock);
+      const unstaffed =
+        !staffed && session.taskClock - (siteStaffedAt.get(siteId) ?? session.taskClock) >= DEFAULT_TASK_TTL_S;
+      // An unstaffed site keeps ONE standing call out (a passer-by may still
+      // take it, and the moment one does the observed arm resumes) — but not
+      // `cap` of them, which would be three expiries a window for a site whose
+      // labor is already accounted for.
+      for (let n = tasks.length; n < (unstaffed ? 1 : cap); n++) {
         session.taskPool.post({
           goal: { kind: "buildwork", site: siteId },
           issuer,
@@ -4441,6 +4593,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             clocked: true,
           });
         }
+      }
+      if (unstaffed && present === 0) {
+        clockArm(row, cap); // schedule-banked: the abstract crew, same rate function
+        return;
       }
       const banked = elapsedS * laborRatePerS(session, Math.min(cap, present));
       bankLabor(row, banked);
@@ -6868,6 +7024,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     shellFurnPilesOf,
     prosperitySignals, stepConstructionHousekeeping,
     foundNewSite, stepFoundedSite,
+    // ⚖️ THE ONE "how far is that, really" RULE (economy arc W1). Born here for
+    // the site bill, but it is not a construction fact: it is what a WALK
+    // measures, and a body that PRICES a leg by chord while PAYING street buys
+    // a 68 m bargain and walks 400 m of plaza detour. The host's plan pricer
+    // and its bag fetch now read the same number — through this handle, so the
+    // coordinate-pair memo (and its street-net invalidation) stays ONE cache.
+    sourceDistanceM,
     buildContext, buildSpotsNow, cancellableSite, cancelWork, structureLabelOf,
     structureCatalogOf, buildMissingMaterials, pendingGrowthRects,
     steeringNear, buildCandidates, buildworkSiteAt, foundedLotAt,
@@ -6880,6 +7043,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // exported path exposes, and the routing they decide is invisible from
     // outside until a hauler has already walked to the wrong bench.
     refineSpotOf, ensureRefineOrders,
+    // §1's third decision point: WHICH HOUSEHOLD makes a shell's piece. A pure
+    // lookup over the town plan, invisible from outside until somebody's mother
+    // has already been put to work on a door across town.
+    craftHouseholdFor,
+    // §4.1's decision point: WHAT WORD a shell's furniture haul walks toward.
+    // Pure over the town plan, and invisible from outside until a hauler has
+    // already announced that it is carrying the door to the door.
+    shellHaulDestWord,
     executeBuildOrder, stepFoundedConstruction, stepFurnitureSetup,
     orderCraft, orderBuild, orderZone, stepZonedFounding,
     structureFocusOf, structureActsFor, structureConstructionOptions, structureFurnishOptions,

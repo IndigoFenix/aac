@@ -116,3 +116,87 @@ describe("validateBoardButtons", () => {
     expect(errors).toHaveLength(0);
   });
 });
+
+/**
+ * LAUNCH BUTTONS are the only route the student has to whatever they open, so
+ * the picture rules may take their artwork but never the button. Dropping one
+ * silently removes the app from the session: an agent-flow log shows a Sandbox
+ * launch button rejected for a missing glyph fallback, the retry re-authored
+ * without `open` at all, and the Speaker announcing "opening Sandbox" over a
+ * board that had no launcher on it.
+ */
+describe("validateBoardButtons — launch buttons survive the picture rules", () => {
+  type LaunchBtn = Btn & { open?: { app?: string; board?: string; website?: string; home?: string } };
+
+  it("strips the visual instead of dropping the button, and still reports the error", () => {
+    const btn: LaunchBtn = {
+      label: "Let's play",
+      glyph: "yes+play+sandbox_game",
+      iconRef: "fas fa-comment",
+      open: { app: "sandbox_game" },
+    };
+    const { buttons, errors, violations } = validateBoardButtons<LaunchBtn>([btn]);
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].open).toEqual({ app: "sandbox_game" });
+    expect(buttons[0].glyph).toBeUndefined();
+    // The fa-comment sentinel is cleared too, so the caller's icon refill lands.
+    expect(buttons[0].iconRef).toBeUndefined();
+    expect(errors[0]).toMatch(/imageKey but no fallback/i);
+    expect(violations[0].rule).toBe("imagekey_no_fallback");
+  });
+
+  it("still drops the SAME button when it opens nothing", () => {
+    const { buttons, errors } = validateBoardButtons<LaunchBtn>([
+      { label: "Let's play", glyph: "yes+play+sandbox_game", iconRef: "fas fa-comment" },
+    ]);
+    expect(buttons).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("rescues board / website / home targets too", () => {
+    const { buttons } = validateBoardButtons<LaunchBtn>([
+      { label: "Snack", glyph: "bad_key_a", open: { board: "snack" } },
+      { label: "Wiki", glyph: "bad_key_b", open: { website: "https://wikipedia.org" } },
+      { label: "Lights", glyph: "bad_key_c", open: { home: "lights_on" } },
+    ]);
+    expect(buttons.map(b => b.label)).toEqual(["Snack", "Wiki", "Lights"]);
+  });
+
+  it("rescues a non-canonical modifier and a duplicate glyph", () => {
+    const { buttons, violations } = validateBoardButtons<LaunchBtn>([
+      // A fallback is present, so this clears rule 1 and lands on rule 3.
+      { label: "Draw", glyph: "\u{1F3A8}.funny", glyphFallback: "\u{1F3A8}", open: { app: "drawing" } },
+      { label: "Bubbles A", glyph: "\u{1FAE7}", open: { app: "bubbles_game" } },
+      { label: "Bubbles B", glyph: "\u{1FAE7}", open: { app: "bubbles_game" } },
+    ]);
+    expect(buttons.map(b => b.label)).toEqual(["Draw", "Bubbles A", "Bubbles B"]);
+    expect(violations.map(v => v.rule)).toEqual(["non_canonical_modifier", "duplicate_glyph"]);
+  });
+
+  it("keeps a visual-less launch button so the caller can dress it", () => {
+    const { buttons, violations } = validateBoardButtons<LaunchBtn>([
+      { label: "Sandbox", iconRef: "fas fa-comment", open: { app: "sandbox_game" } },
+    ]);
+    expect(buttons).toHaveLength(1);
+    expect(violations[0].rule).toBe("no_visual");
+  });
+
+  it("a stripped launch button does not claim a glyph signature", () => {
+    // Its glyph is gone, so a LATER button may legitimately use that glyph.
+    const { buttons } = validateBoardButtons<LaunchBtn>([
+      { label: "Sandbox", glyph: "some_unknown_key", open: { app: "sandbox_game" } },
+      { label: "Also", glyph: "some_unknown_key", glyphFallback: "\u{1F3AE}" },
+    ]);
+    expect(buttons.map(b => b.label)).toEqual(["Sandbox", "Also"]);
+  });
+
+  it("still drops a launch button whose LABEL shape is broken", () => {
+    // Label rules aren't cosmetic — a malformed prefix means the button itself
+    // is malformed, not just its picture.
+    const { buttons, errors } = validateBoardButtons<LaunchBtn>([
+      { label: "[NARROW:] ", glyph: "\u{1F3AE}", open: { app: "sandbox_game" } },
+    ]);
+    expect(buttons).toHaveLength(0);
+    expect(errors[0]).toMatch(/malformed \[NARROW/i);
+  });
+});
