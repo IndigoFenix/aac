@@ -295,11 +295,17 @@ export interface VocabularyItem {
    * for tomorrow / yesterday, the hand orientation of give / take). A
    * toward-me / toward-you contrast drawn in DEPTH — my / your, where the
    * possessor holds the thing in or offers it out — is not directional; the
-   * reading survives a mirror. This declares WHY an item needs bundled art
-   * at all — an emoji can't be flipped, so a directional concept carried by
-   * an emoji reads backwards in Hebrew or Arabic (see
-   * scripts/bundled-icon-priorities.ts, which audits exactly that gap). See
-   * <DIRECTIONAL_EMOJIS> for the raw-emoji side of the same rule.
+   * reading survives a mirror.
+   *
+   * This is DESCRIPTIVE, not a render switch. Mirroring is opt-OUT: every
+   * symbol flips in RTL — bundled art, generated art, and the emoji alike,
+   * since an emoji mirrors as readily as a PNG (see `shouldMirror` in
+   * emoji-registry, the one rule every surface asks) — unless `nonReversible`
+   * or a text-like emoji says otherwise. So a directional item carried by an
+   * emoji is NOT broken in Hebrew; it turns around with everything else.
+   * The flag records which concepts the mirror actually matters for, which is
+   * useful when judging whether art reads correctly both ways.
+   * See <DIRECTIONAL_EMOJIS> for the raw-emoji side of the same rule.
    */
   directional?: boolean;
   /**
@@ -310,7 +316,7 @@ export interface VocabularyItem {
    *
    * Only needed for bundled art — an item whose canonical EMOJI is already a
    * digit / keycap / `?` is detected automatically from the emoji itself (see
-   * `isNonReversible` in glyph-compositor.tsx), so it needs no flag here.
+   * `isNonReversibleEmoji` in emoji-registry.ts), so it needs no flag here.
    */
   nonReversible?: boolean;
   /**

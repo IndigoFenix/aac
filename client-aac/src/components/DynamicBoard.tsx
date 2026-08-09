@@ -12,6 +12,7 @@ import { Glyph } from "@/components/Glyph";
 import { SentenceButton, resolveButtonBackground } from "@/components/SentenceButton";
 // Shared MORE OPTIONS look — kept in lockstep with the fixed quick-actions row.
 import { MORE_OPTIONS_ICON } from "@shared/button-color";
+import { rtlMirrorStyle } from "@shared/emoji-registry";
 import { SelectionAreaMark } from "@/components/SelectionAreaMark";
 import { IntentCoreMark } from "@/components/IntentCoreMark";
 import { ratioLevel } from "@shared/button-sizing";
@@ -1076,6 +1077,14 @@ export default function DynamicBoard({
     // single emoji/chars via cqmin font-size. `emojiStyle` is kept only for
     // the multi-character / FontAwesome fallbacks that must stay fixed-size.
     const emojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
+    // Same mirror rule the composed glyph uses, so a symbol doesn't face one
+    // way on the button and the other in the sentence it lands in. Keyed on
+    // `iconRef` for the image branches so an icon can't turn around the moment
+    // its artwork finishes loading. Faces are excluded by `shouldMirror`.
+    // `more` is chrome, not a word — the quick-actions row draws the same 🔄
+    // unmirrored, and one icon must not read two ways on one screen.
+    const symbolRtl = isRTL && (button as any).buttonType !== "more";
+    const mirror = rtlMirrorStyle(symbolRtl, { key: button.symbolPath, emoji: button.iconRef });
 
     // Glyph wins over everything except __FACE__/__SYMBOL__ pseudo-paths
     // (special instance-bound resolution that the glyph system doesn't replace).
@@ -1092,7 +1101,7 @@ export default function DynamicBoard({
 
     const renderLoadingOverlay = (emoji: string, _halfSize = false) => (
       <span className="icon-fill-emoji" style={{ position: "relative" as const, display: "inline-block" }}>
-        {emoji}
+        <span style={rtlMirrorStyle(symbolRtl, emoji)}>{emoji}</span>
         {/* Solid-blue spinner on a white circular backdrop. The previous
          * 10x10 / 50%-alpha / top:-2 right:-6 placement was clipped by the
          * parent button's overflow-hidden and blended into many button
@@ -1126,10 +1135,10 @@ export default function DynamicBoard({
     // Resolve __SYMBOL__:symbolId to custom symbol image
     if (button.symbolPath?.startsWith("__SYMBOL__:")) {
       const symbolId = button.symbolPath.substring(11);
-      return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className="icon-fill-img" loading="lazy" />;
+      return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className="icon-fill-img" loading="lazy" style={mirror} />;
     }
     if (button.symbolPath) {
-      return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className="icon-fill-img" />;
+      return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className="icon-fill-img" style={mirror} />;
     }
     // Show emoji with loading spinner while symbol is being generated
     if ((button as any).imageKey) {
@@ -1139,15 +1148,18 @@ export default function DynamicBoard({
     if (button.iconRef && isDisplayableIcon(button.iconRef)) {
       // Single emoji/char fills the box; multi-emoji strings (e.g. "🏞️🌳")
       // stay fixed-size so they don't overflow the width.
+      // Multi-emoji strings stay unmirrored: they read as a sequence, and a
+      // flip would reverse their order as well as each shape.
       if (button.iconRef.length > 2) {
         return <span style={{ ...emojiStyle, fontSize: `calc(${iconFontSize} * 0.5)` }}>{button.iconRef}</span>;
       }
-      return <span className="icon-fill-emoji">{button.iconRef}</span>;
+      return <span className="icon-fill-emoji" style={mirror}>{button.iconRef}</span>;
     }
     if (button.iconRef) {
       return <i className={`${button.iconRef} icon-fill-emoji`} />;
     }
-    return <span className="icon-fill-emoji">{getEmojiForLabel(button.label)}</span>;
+    const labelEmoji = getEmojiForLabel(button.label);
+    return <span className="icon-fill-emoji" style={rtlMirrorStyle(symbolRtl, labelEmoji)}>{labelEmoji}</span>;
   };
 
   return (

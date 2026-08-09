@@ -570,6 +570,7 @@ export const ar = {
     gbAddPerson: "إضافة شخص",
     gbEmpty: "اضغط رمزًا للبدء",
     gbEmoji: "إيموجي",
+    gbJoin: "ربط",
     gbCustomImage: "صورة",
     gbPerson: "شخص",
     gbModifiers: "المعدّلات",

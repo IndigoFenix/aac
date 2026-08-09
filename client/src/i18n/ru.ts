@@ -570,6 +570,7 @@ export const ru = {
     gbAddPerson: "Добавить человека",
     gbEmpty: "Нажмите символ, чтобы начать",
     gbEmoji: "Эмодзи",
+    gbJoin: "Связка",
     gbCustomImage: "Изображение",
     gbPerson: "Человек",
     gbModifiers: "Модификаторы",

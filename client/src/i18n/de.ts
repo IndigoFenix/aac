@@ -570,6 +570,7 @@ export const de = {
     gbAddPerson: "Person hinzufügen",
     gbEmpty: "Tippe ein Symbol an",
     gbEmoji: "Emoji",
+    gbJoin: "Verbindung",
     gbCustomImage: "Bild",
     gbPerson: "Person",
     gbModifiers: "Modifikatoren",

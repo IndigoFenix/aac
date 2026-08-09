@@ -39,6 +39,21 @@ Suppress a false positive with an `i18n-ignore` comment on the line or the line 
 Note: `t()` returns the key itself when a key is missing, which is truthy — so the
 `t('x') || 'Fallback'` idiom is dead code. The fallback never renders; the raw key does.
 
+The sentence builder's vocabulary is DATA, not call sites — no `t()` call ever names
+`aac.glyph.apple` literally — so both scanners above look straight past a `shared/glyph-registry.ts`
+item nobody translated (the builder then renders the raw English key on a Hebrew board).
+`npm run validate-glyphs` (scripts/validate-glyph-registry.ts) closes that gap and audits bundled
+artwork in the same pass: missing/dead/blank `aac.glyph.*` keys and non-Latin values still in
+English (errors), plus the art queue — emoji-only items, `directional: true` items with no
+mirrorable art, dangling `imagePath`s, missing `-male`/`-female` gender variants (warnings).
+`npm run validate-glyphs:art` lists the full art backlog; `--strict` fails on it. The
+translation half is also a jest suite (`server/tests/glyph-registry.test.ts`), so it gates merges.
+
+To add glyph keys, use `npx tsx scripts/i18n-insert-keys.ts <input.json>` — it writes all 11
+locale files in one deterministic pass so the identical-line invariant survives. Supply each
+locale's value in the spec (anything omitted is seeded with English and marked `// TODO-i18n`),
+and use `"after": "<siblingKey>"` to keep the `aac.glyph` block in registry order.
+
 ## Testing
 At the end of each minor task, check to see if we have a testing suite set up for that part of the system. If not, create one. If so, test it.
 Run a full npm test after completing major tasks that touch a large part of the system.

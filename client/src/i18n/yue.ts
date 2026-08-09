@@ -570,6 +570,7 @@ export const yue = {
     gbAddPerson: "加人物",
     gbEmpty: "撳符號開始",
     gbEmoji: "表情",
+    gbJoin: "連接",
     gbCustomImage: "圖片",
     gbPerson: "人物",
     gbModifiers: "修飾",

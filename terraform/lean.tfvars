@@ -71,3 +71,26 @@ coturn_instance_type = "t4g.micro"
 existing_rds_endpoint          = ""
 existing_rds_security_group_id = ""
 session_timeout_minutes        = 60   # Longer timeout for dev convenience
+
+# =============================================================================
+# Email authentication (SPF / DKIM / DMARC) — see docs/EMAIL.md
+# =============================================================================
+# Keep these in sync across BOTH tfvars files: whichever path applies is the
+# one that publishes the records, and a half-configured domain silently loses
+# authentication on the other.
+
+# Google Workspace DKIM public key (Admin > Apps > Google Workspace > Gmail >
+# Authenticate email). Signs mail sent from real @aivota.ai mailboxes.
+google_workspace_dkim_value = "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqdbq4tti3uOFkIWdsGaYM4ee7k6j4PUtoI4E8RefsYA3+yl0gGD8LN9y8/Dm38/CQzdRxaQ4vS8gwk9lmiZJlMzsJY+MYxc0uN0NxJBVs5U7OXua45tiPoCp/Tbn5N2pbS4+4VKN84Swmrjd8jLDbRpdoZkw9f8LVwafjacmnudnykWCzT5JHO54BVIsYeTNzYYa/TVeQTRf/1fM9lMfey1RvMB64mQWfADHND7CGgKyWstpHQx2w12JsFkm3+pzPWVR2zqwQpEkbRnWoCVs7MzuSKaerO/c0aRaGoPK0dXUSL2/tWav+BP8OIFCj8SY9tFAMcobAH3JsfxG0V2LMQIDAQAB"
+
+# Resend sends the app's transactional mail from send.aivota.ai. Fill these two
+# in from the Resend dashboard after adding that domain (Domains > Add Domain);
+# while they are empty the subdomain records are skipped and Resend cannot
+# verify the domain, so every transactional send fails with validation_error.
+mail_sending_subdomain = "send"
+resend_bounce_mx_host  = ""   # e.g. feedback-smtp.eu-west-1.amazonses.com
+resend_dkim_value      = ""   # p=MIIBIjANBgkq... from the same page
+
+# Start at p=none and read the reports; tighten to quarantine, then reject.
+dmarc_policy = "none"
+dmarc_rua    = "dmarc@aivota.ai"

@@ -199,33 +199,23 @@ resource "aws_ecs_task_definition" "main" {
         },
         {
           # Email transport is the Resend HTTP API (SMTP is blocked outbound on
-          # our hosts). SMTP_* below are retained as fallbacks only.
+          # our hosts). The old SMTP_* vars are deliberately NOT injected: the
+          # app used to fall back to SMTP_FROM/SMTP_USER for its sender
+          # identity, so a leftover Gmail credential silently became the From
+          # address on every transactional email. Delete those keys from the
+          # app-secrets JSON too — on Lambda every key in it becomes an env var.
           name      = "RESEND_API_KEY"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:RESEND_API_KEY::"
         },
         {
+          # "Aivota <noreply@send.aivota.ai>" — must be on the Resend-verified
+          # sending subdomain, and must not be a person's mailbox or alias.
           name      = "EMAIL_FROM"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:EMAIL_FROM::"
         },
         {
-          name      = "SMTP_PASS"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
-        },
-        {
-          name      = "SMTP_FROM"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_FROM::"
-        },
-        {
-          name      = "SMTP_HOST"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_HOST::"
-        },
-        {
-          name      = "SMTP_USER"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_USER::"
-        },
-        {
-          name      = "SMTP_PORT"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
+          name      = "EMAIL_REPLY_TO"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:EMAIL_REPLY_TO::"
         },
         {
           name      = "DROPBOX_CLIENT_ID"

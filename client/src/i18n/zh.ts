@@ -570,6 +570,7 @@ export const zh = {
     gbAddPerson: "添加人物",
     gbEmpty: "点按符号开始",
     gbEmoji: "表情",
+    gbJoin: "连接",
     gbCustomImage: "图片",
     gbPerson: "人物",
     gbModifiers: "修饰",

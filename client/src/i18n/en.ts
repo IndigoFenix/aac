@@ -570,6 +570,7 @@ export const en = {
     gbAddPerson: "Add person",
     gbEmpty: "Tap a symbol to start",
     gbEmoji: "Emoji",
+    gbJoin: "Join",
     gbCustomImage: "Custom image",
     gbPerson: "Person",
     gbModifiers: "Modifiers",

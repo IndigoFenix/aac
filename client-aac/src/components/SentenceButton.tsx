@@ -14,6 +14,7 @@
 
 import { type ReactNode } from "react";
 import { Glyph } from "@/components/Glyph";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
@@ -138,9 +139,14 @@ interface SentenceButtonProps {
 }
 
 export function SentenceButton(props: SentenceButtonProps) {
+  // RTL reaches the shared renderer so a button's symbol mirrors the same way
+  // the composed glyph does. The clinician side already passed this; without it
+  // the student's own board was the one surface that stayed unmirrored.
+  const { isRTL } = useLanguage();
   const deps: BoardRenderDeps = {
     resolveIcon: makeAacResolveIcon(props.getFaceImage),
     GlyphComponent: AacGlyph,
+    rtl: isRTL,
   };
   return (
     <BoardButtonVisual

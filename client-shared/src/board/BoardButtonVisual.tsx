@@ -17,6 +17,7 @@
 import { type ReactNode, useMemo } from "react";
 import { motion } from "framer-motion";
 import { resolveButtonBackground, MORE_OPTIONS_ICON } from "@shared/button-color";
+import { rtlMirrorStyle } from "@shared/emoji-registry";
 import { labelFontSize, labelLines, type RatioLevel } from "@shared/button-sizing";
 import { ShapedButton, type CornerSpace } from "./ShapedButton";
 import type { BoardButtonInput, BoardRenderDeps, IconVisual } from "./types";
@@ -113,6 +114,19 @@ function isSingleVisual(str: string): boolean {
 
 /** Render the icon area from a resolved IconVisual. Every branch fills its container. */
 function renderIcon(visual: IconVisual, button: BoardButtonInput, deps: BoardRenderDeps, iconFontSize: string): ReactNode {
+  // A board button shows the same concept the composed glyph does, so it
+  // mirrors on the same terms — otherwise pressing 🏃 in Hebrew puts a symbol
+  // into the sentence facing the opposite way from the button it came from.
+  // The `glyph` branch is exempt: the compositor mirrors per slot internally,
+  // and flipping the wrapper too would undo it.
+  // The MORE affordance is chrome rather than a word — the same 🔄 renders
+  // unmirrored in the quick-actions row, so flipping it here would give one
+  // icon two readings on the same screen. Navigation resolves to `fontawesome`,
+  // which no branch mirrors, and whose arrow class is already picked by RTL.
+  const rtl = !!deps.rtl && button.buttonType !== "more";
+  // `iconRef` is this button's emoji whichever branch wins, so the image and
+  // its emoji stand-in agree instead of turning around on load.
+  const mirror = rtlMirrorStyle(rtl, { key: button.symbolPath, emoji: button.iconRef });
   switch (visual.kind) {
     case "glyph": {
       const Glyph = deps.GlyphComponent;
@@ -129,12 +143,17 @@ function renderIcon(visual: IconVisual, button: BoardButtonInput, deps: BoardRen
           alt={button.label}
           className={`icon-fill-img${visual.rounded ? " rounded-full" : ""}`}
           loading="lazy"
+          // `rounded` is the face-photo marker on this branch, and a portrait
+          // never mirrors — the student is being asked to recognize someone.
+          style={visual.rounded ? undefined : mirror}
         />
       );
     case "spinner":
       return (
+        // Only the emoji mirrors; the spinner badge is chrome pinned to a
+        // corner, and flipping the wrapper would move it to the wrong side.
         <span className="icon-fill-emoji" style={{ position: "relative", display: "inline-block" }}>
-          {visual.emoji}
+          <span style={rtlMirrorStyle(rtl, visual.emoji)}>{visual.emoji}</span>
           <span
             style={{
               position: "absolute",
@@ -164,17 +183,24 @@ function renderIcon(visual: IconVisual, button: BoardButtonInput, deps: BoardRen
           </span>
         </span>
       );
-    case "emoji":
+    case "emoji": {
+      // The literal rendered char decides here, not the button's iconRef —
+      // this branch may be showing a label-derived emoji the button never
+      // declared, and a "?" or a digit must stay upright either way.
+      const emojiMirror = rtlMirrorStyle(rtl, { key: button.symbolPath, emoji: visual.text });
       if (isSingleVisual(visual.text)) {
-        return <span className="icon-fill-emoji">{visual.text}</span>;
+        return <span className="icon-fill-emoji" style={emojiMirror}>{visual.text}</span>;
       }
       // Multi-character text — fixed size so it can't overflow the cell width.
+      // Left unmirrored: several glyphs side by side read as a sequence, and a
+      // mirror would reverse their order as well as each shape.
       return <span style={{ fontSize: `calc(${iconFontSize} * 0.5)`, lineHeight: 1 }}>{visual.text}</span>;
+    }
     case "fontawesome":
       return <i className={`${visual.className} icon-fill-emoji`} />;
     case "placeholder":
     default:
-      return <span className="icon-fill-emoji">💬</span>;
+      return <span className="icon-fill-emoji" style={mirror}>💬</span>;
   }
 }
 

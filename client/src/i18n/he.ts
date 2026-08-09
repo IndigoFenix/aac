@@ -570,6 +570,7 @@ export const he = {
     gbAddPerson: "הוסף אדם",
     gbEmpty: "הקש על סמל כדי להתחיל",
     gbEmoji: "אימוג'י",
+    gbJoin: "חיבור",
     gbCustomImage: "תמונה",
     gbPerson: "אדם",
     gbModifiers: "מאפיינים",

@@ -68,6 +68,125 @@ resource "aws_route53_record" "mx" {
 }
 
 # =============================================================================
+# Email authentication (SPF / DKIM / DMARC) — see docs/EMAIL.md
+# =============================================================================
+# Two senders share this domain and each needs its own authentication:
+#
+#   • Google Workspace sends human mail from the APEX (MX above). SPF at the
+#     apex + DKIM at google._domainkey cover it.
+#   • Resend sends the app's transactional mail from a dedicated SUBDOMAIN
+#     (<mail_sending_subdomain>.<domain>). It gets its own MX (bounce
+#     handling), SPF and DKIM. It MUST be a subdomain: Resend requires an MX
+#     on the sending domain, and the apex MX already belongs to Google.
+#
+# Keeping them apart also means a bad bounce rate on bulk invites can't drag
+# down the reputation of the team's real mailboxes.
+
+locals {
+  # Route 53 caps one TXT character-string at 255 bytes, and a 2048-bit DKIM
+  # key runs ~410. Embedding `""` splits the value into two character-strings,
+  # which resolvers concatenate back into one on lookup.
+  google_dkim_txt = length(var.google_workspace_dkim_value) > 255 ? join("\"\"", [
+    substr(var.google_workspace_dkim_value, 0, 255),
+    substr(var.google_workspace_dkim_value, 255, -1),
+  ]) : var.google_workspace_dkim_value
+
+  resend_dkim_txt = length(var.resend_dkim_value) > 255 ? join("\"\"", [
+    substr(var.resend_dkim_value, 0, 255),
+    substr(var.resend_dkim_value, 255, -1),
+  ]) : var.resend_dkim_value
+
+  mail_subdomain_fqdn = "${var.mail_sending_subdomain}.${var.domain_name}"
+}
+
+# --- Apex: Google Workspace -------------------------------------------------
+
+# NOTE: a Route 53 record set is per (name, type), so this resource owns EVERY
+# apex TXT record. Domain-verification strings (Google site verification, etc.)
+# must be added to this `records` list rather than as a second TXT resource —
+# a second one would clobber this.
+resource "aws_route53_record" "spf_apex" {
+  count = var.domain_name != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = var.domain_name
+  type    = "TXT"
+  ttl     = 3600
+
+  # ~all (softfail) rather than -all: mail forwarded by a recipient's server
+  # breaks SPF through no fault of ours, and DKIM still carries the signature.
+  records = ["v=spf1 include:_spf.google.com ~all"]
+}
+
+resource "aws_route53_record" "google_dkim" {
+  count = var.domain_name != "" && var.google_workspace_dkim_value != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "google._domainkey.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 3600
+  records = [local.google_dkim_txt]
+}
+
+# --- Apex: DMARC ------------------------------------------------------------
+# Covers the apex and, through the org-level policy, subdomains without their
+# own _dmarc record — so this one entry governs Workspace and Resend alike.
+# Start at p=none (monitor only), read the aggregate reports, then tighten to
+# quarantine and finally reject once both senders pass cleanly.
+resource "aws_route53_record" "dmarc" {
+  count = var.domain_name != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "_dmarc.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 3600
+
+  # Relaxed alignment (adkim/aspf=r) is what lets a subdomain sender pass DMARC
+  # for the organizational domain — strict would fail send.<domain> mail.
+  records = [join("; ", compact([
+    "v=DMARC1",
+    "p=${var.dmarc_policy}",
+    var.dmarc_rua != "" ? "rua=mailto:${var.dmarc_rua}" : "",
+    "adkim=r",
+    "aspf=r",
+  ]))]
+}
+
+# --- Sending subdomain: Resend ---------------------------------------------
+# Values come from the Resend dashboard (Domains → add <subdomain>.<domain>).
+# The MX host is region-specific — copy it verbatim from that page.
+
+resource "aws_route53_record" "resend_bounce_mx" {
+  count = var.domain_name != "" && var.resend_bounce_mx_host != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = local.mail_subdomain_fqdn
+  type    = "MX"
+  ttl     = 3600
+  records = ["10 ${var.resend_bounce_mx_host}"]
+}
+
+resource "aws_route53_record" "resend_spf" {
+  count = var.domain_name != "" && var.resend_bounce_mx_host != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = local.mail_subdomain_fqdn
+  type    = "TXT"
+  ttl     = 3600
+  records = ["v=spf1 include:amazonses.com ~all"]
+}
+
+resource "aws_route53_record" "resend_dkim" {
+  count = var.domain_name != "" && var.resend_dkim_value != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "resend._domainkey.${local.mail_subdomain_fqdn}"
+  type    = "TXT"
+  ttl     = 3600
+  records = [local.resend_dkim_txt]
+}
+
+# =============================================================================
 # ACM Certificate DNS Validation (for ALB - only when NOT using Lambda)
 # =============================================================================
 resource "aws_route53_record" "cert_validation" {

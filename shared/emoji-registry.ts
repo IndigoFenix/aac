@@ -476,6 +476,79 @@ export function isNonReversibleItem(item: {
   return isNonReversibleEmoji(item.emoji ?? "");
 }
 
+/** What a surface knows about the symbol it is about to draw. */
+export interface MirrorSubject {
+  /**
+   * The slot / button key, when there is one (`walk`, `🏃`, `face:<id>`).
+   * Board buttons name a contact through `symbolPath` as `__FACE__:<id>`;
+   * both spellings count as a face.
+   */
+  key?: string;
+  /** The emoji this concept renders as, or would fall back to. */
+  emoji?: string;
+  /** The registry item, when the key resolved to one. */
+  item?: { nonReversible?: boolean; emoji?: string };
+}
+
+/**
+ * THE mirror rule. One predicate, called by every surface that draws a symbol —
+ * the SVG glyph compositor, the board buttons, the sentence-builder chips, the
+ * clinician's picker — because a symbol that mirrors in the composed glyph but
+ * not on the button it was pressed from reads as two different symbols.
+ *
+ * Mirror in RTL by DEFAULT. An ordinary pictograph is a picture of a concept,
+ * and in a right-to-left sentence it should face the way the sentence runs;
+ * that holds whether it renders as bundled art, as generated art, or as the
+ * emoji standing in for either. Three things opt out:
+ *
+ *   1. A person's photo (`face:` key). A portrait is not a pictograph — it has
+ *      no direction relative to the sentence axis, and the face gallery exists
+ *      so a student RECOGNIZES someone. Mirroring works against that.
+ *   2. An item flagged `nonReversible` — bundled art carrying a numeral, a
+ *      letter, or asymmetric punctuation.
+ *   3. A text-like emoji (digits, keycaps, enclosed letterforms, `?`), via
+ *      `isNonReversibleEmoji`.
+ *
+ * Deliberately NOT gated on the key resolving to a registry item. Whether we
+ * happen to have catalogued a concept says nothing about whether its picture
+ * can be flipped — and gating on it is what let an AI-emitted 🦒 mirror on the
+ * builder chip while staying upright in the glyph beside it.
+ */
+export function shouldMirror(rtl: boolean, subject: MirrorSubject): boolean {
+  if (!rtl) return false;
+  if (isFaceKey(subject.key)) return false;
+  if (subject.item && isNonReversibleItem(subject.item)) return false;
+  return !isNonReversibleEmoji(subject.emoji ?? subject.item?.emoji ?? "");
+}
+
+/** A key naming a contact's photo, in either the glyph or the board spelling. */
+export function isFaceKey(key: string | undefined): boolean {
+  return !!key && (key.startsWith("face:") || key.startsWith("__FACE__:"));
+}
+
+/** Frozen so every mirrored node shares one object — cheap prop identity. */
+const RTL_MIRROR_STYLE = Object.freeze({ transform: "scaleX(-1)" });
+
+/**
+ * `shouldMirror` as an inline style for DOM surfaces (`undefined` when the
+ * symbol must stay upright). The SVG side builds its own `transform` around a
+ * centre point instead; both ask the same question first.
+ *
+ * Pass the CONCEPT's representative emoji, not the node being rendered: an
+ * `<img>` and the emoji standing in for it while it loads must agree, or the
+ * icon visibly turns around the moment the image arrives.
+ *
+ * Returns a plain object rather than React.CSSProperties so this module stays
+ * importable by server code — it is assignable to a `style` prop as-is.
+ */
+export function rtlMirrorStyle(
+  rtl: boolean,
+  subject: MirrorSubject | string | undefined,
+): { transform: string } | undefined {
+  const s: MirrorSubject = typeof subject === "string" ? { emoji: subject } : subject ?? {};
+  return shouldMirror(rtl, s) ? RTL_MIRROR_STYLE : undefined;
+}
+
 // Re-export the pattern check for callers that need to distinguish a
 // raw emoji slot from a snake_case imageKey (e.g. parsers deciding
 // whether to queue symbol generation).

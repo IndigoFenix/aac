@@ -297,3 +297,50 @@ variable "coturn_credential_ttl_seconds" {
   type        = number
   default     = 3600
 }
+
+# =============================================================================
+# EMAIL AUTHENTICATION (see docs/EMAIL.md)
+# =============================================================================
+# Google Workspace sends human mail from the apex; Resend sends the app's
+# transactional mail from a dedicated subdomain. Each needs SPF + DKIM, and
+# one DMARC record at the apex governs both.
+
+variable "google_workspace_dkim_value" {
+  description = "TXT value for google._domainkey.<domain> — the DKIM public key generated in Google Admin (Apps > Google Workspace > Gmail > Authenticate email). Per-domain: regenerate if domain_name changes. Empty = no record (mail still authenticates via SPF, but DMARC alignment gets fragile)."
+  type        = string
+  default     = ""
+}
+
+variable "mail_sending_subdomain" {
+  description = "Subdomain under domain_name that the ESP sends from (final domain = <this>.<domain_name>). Must NOT be the apex: Resend needs an MX on the sending domain for bounces and the apex MX belongs to Google Workspace. EMAIL_FROM must use an address on this domain."
+  type        = string
+  default     = "send"
+}
+
+variable "resend_bounce_mx_host" {
+  description = "Resend's bounce-handling MX host for the sending subdomain, e.g. feedback-smtp.eu-west-1.amazonses.com. Region-specific — copy verbatim from the Resend dashboard. Empty = the subdomain's MX and SPF records are skipped."
+  type        = string
+  default     = ""
+}
+
+variable "resend_dkim_value" {
+  description = "TXT value for resend._domainkey.<mail_sending_subdomain>.<domain> — the DKIM public key shown in the Resend dashboard when the domain is added. Empty = no record, and Resend will not verify the domain."
+  type        = string
+  default     = ""
+}
+
+variable "dmarc_policy" {
+  description = "DMARC policy for unauthenticated mail: none (monitor only), quarantine, or reject. Start at none, read the rua reports, then tighten once Workspace and Resend both pass."
+  type        = string
+  default     = "none"
+  validation {
+    condition     = contains(["none", "quarantine", "reject"], var.dmarc_policy)
+    error_message = "dmarc_policy must be none, quarantine, or reject."
+  }
+}
+
+variable "dmarc_rua" {
+  description = "Mailbox receiving DMARC aggregate reports (bare address, no mailto:). Empty = no rua tag, which means no visibility into who is sending as this domain."
+  type        = string
+  default     = ""
+}

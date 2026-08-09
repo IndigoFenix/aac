@@ -8,6 +8,9 @@ import { describe, it, expect } from "@jest/globals";
 import {
   isNonReversibleEmoji,
   isNonReversibleItem,
+  shouldMirror,
+  rtlMirrorStyle,
+  isFaceKey,
   resolveEmoji,
 } from "../../shared/emoji-registry.js";
 import { getVocabularyItem } from "../../shared/glyph-registry.js";
@@ -141,5 +144,77 @@ describe("isNonReversibleItem", () => {
       expect(item).toBeDefined();
       expect(isNonReversibleItem(item!)).toBe(false);
     }
+  });
+});
+
+describe("shouldMirror — the one rule every surface asks", () => {
+  // The glyph compositor, the board buttons and both sentence builders used to
+  // each carry their own version of this test. They disagreed: the builder
+  // chips mirrored any pictograph, while the compositor mirrored only concepts
+  // that resolved to a registry item — so an AI-emitted emoji faced one way on
+  // the chip and the other in the glyph it was pressed into.
+
+  it("mirrors an ordinary pictograph in RTL and nothing in LTR", () => {
+    expect(shouldMirror(true, { key: "walk", emoji: "🚶" })).toBe(true);
+    expect(shouldMirror(false, { key: "walk", emoji: "🚶" })).toBe(false);
+  });
+
+  it("mirrors an emoji with no registry item behind it", () => {
+    // The behaviour that used to differ per surface. Whether we happen to have
+    // catalogued a giraffe says nothing about whether its picture can flip.
+    expect(shouldMirror(true, { key: "🦒", emoji: "🦒" })).toBe(true);
+    expect(shouldMirror(true, { emoji: "🦒" })).toBe(true);
+  });
+
+  it("keeps text-like emoji upright", () => {
+    for (const emoji of ["❓", "1️⃣", "💯", "🔤"]) {
+      expect(shouldMirror(true, { emoji })).toBe(false);
+    }
+  });
+
+  it("keeps a contact's photo upright, in either key spelling", () => {
+    // 👤 is an ordinary pictograph, so the emoji rule alone would flip a face.
+    // A portrait has no direction relative to the sentence, and the face
+    // gallery exists so a student RECOGNIZES someone.
+    expect(shouldMirror(true, { key: "face:abc", emoji: "👤" })).toBe(false);
+    expect(shouldMirror(true, { key: "__FACE__:abc", emoji: "👤" })).toBe(false);
+    expect(isFaceKey("face:abc")).toBe(true);
+    expect(isFaceKey("__FACE__:abc")).toBe(true);
+    expect(isFaceKey("apple")).toBe(false);
+  });
+
+  it("honours an item's nonReversible flag over its emoji", () => {
+    expect(shouldMirror(true, { emoji: "🚶", item: { nonReversible: true } })).toBe(false);
+  });
+
+  it("falls back to the item's emoji when the surface passes none", () => {
+    expect(shouldMirror(true, { item: { emoji: "❓" } })).toBe(false);
+    expect(shouldMirror(true, { item: { emoji: "🚶" } })).toBe(true);
+  });
+
+  it("mirrors bundled-art items that carry no emoji at all", () => {
+    // Defaulting these to upright would freeze most of the artwork in Hebrew.
+    expect(shouldMirror(true, { key: "some_drawn_thing" })).toBe(true);
+  });
+});
+
+describe("rtlMirrorStyle — the DOM form of the same rule", () => {
+  it("returns a scaleX(-1) style exactly when shouldMirror is true", () => {
+    expect(rtlMirrorStyle(true, "🚶")).toEqual({ transform: "scaleX(-1)" });
+    expect(rtlMirrorStyle(false, "🚶")).toBeUndefined();
+    expect(rtlMirrorStyle(true, "❓")).toBeUndefined();
+    expect(rtlMirrorStyle(true, { key: "face:abc", emoji: "👤" })).toBeUndefined();
+  });
+
+  it("accepts a bare emoji string as shorthand", () => {
+    expect(rtlMirrorStyle(true, "🐱")).toEqual(rtlMirrorStyle(true, { emoji: "🐱" }));
+  });
+
+  it("returns one shared object so React sees a stable style prop", () => {
+    expect(rtlMirrorStyle(true, "🐱")).toBe(rtlMirrorStyle(true, "🚶"));
+  });
+
+  it("tolerates an absent subject", () => {
+    expect(rtlMirrorStyle(true, undefined)).toEqual({ transform: "scaleX(-1)" });
   });
 });

@@ -570,6 +570,7 @@ export const ko = {
     gbAddPerson: "사람 추가",
     gbEmpty: "기호를 눌러 시작",
     gbEmoji: "이모지",
+    gbJoin: "연결",
     gbCustomImage: "이미지",
     gbPerson: "사람",
     gbModifiers: "수식어",

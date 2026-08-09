@@ -55,7 +55,7 @@ import {
   type VocabularyItem,
   type GlyphCategory,
 } from "@shared/glyph-registry";
-import { resolveEmoji } from "@shared/emoji-registry";
+import { resolveEmoji, rtlMirrorStyle } from "@shared/emoji-registry";
 
 const TABS: readonly GlyphCategory[] = ["who", "do", "what", "where", "when", "chat"];
 const TAB_ICON: Record<GlyphCategory, string> = {
@@ -177,9 +177,13 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
       );
     }
     const url = item.imagePath ? resolveIconPath(item.imagePath) : null;
-    if (url) return <img src={url} alt="" className="w-11 h-11 object-contain" />;
+    // Same mirror rule as the compositor and the student's own board: the
+    // clinician is picking the symbol the student will see, so it has to face
+    // the way it will face in their sentence.
     const emoji = item.emoji ?? resolveEmoji(item.key);
-    return <span className="text-4xl leading-none">{emoji ?? "•"}</span>;
+    const mirror = rtlMirrorStyle(isRTL, { key: item.key, emoji, item });
+    if (url) return <img src={url} alt="" className="w-11 h-11 object-contain" style={mirror} />;
+    return <span className="text-4xl leading-none" style={mirror}>{emoji ?? "•"}</span>;
   };
 
   const panelBg = isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200";
@@ -212,6 +216,7 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
             {parsed.slots.map((slot, i) => {
               const item = getVocabularyItem(slot.key);
               const emoji = item?.emoji ?? resolveEmoji(slot.key) ?? (slot.key.startsWith("symbol:") ? "🖼️" : slot.key.startsWith("face:") ? "👤" : slot.key);
+              const slotMirror = rtlMirrorStyle(isRTL, { key: slot.key, emoji, item });
               return (
                 <button
                   key={i}
@@ -224,7 +229,7 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
                       : (isDark ? "border-slate-700 bg-slate-800" : "border-gray-300 bg-white"),
                   )}
                 >
-                  <span className="leading-none">{emoji}</span>
+                  <span className="leading-none" style={slotMirror}>{emoji}</span>
                   {slot.modifiers.length > 0 && <span className="text-[9px] text-blue-500">+{slot.modifiers.length}</span>}
                 </button>
               );
@@ -339,12 +344,12 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
                   {activeEmotionMods.map((m) => (
                     <button key={m.key} type="button" title={m.key} onClick={() => pickExclusive(m)}
                       className={cn("w-6 h-6 rounded-full border flex items-center justify-center text-sm leading-none", activeSlotModifiers.includes(m.key) ? "ring-2 ring-blue-500" : (isDark ? "border-slate-600" : "border-gray-300"))}>
-                      {m.emoji ?? "🙂"}
+                      <span style={rtlMirrorStyle(isRTL, { key: m.key, emoji: m.emoji ?? "🙂", item: m })}>{m.emoji ?? "🙂"}</span>
                     </button>
                   ))}
                   {activeAmountMods.map((m) => (
                     <button key={m.key} type="button" onClick={() => pickExclusive(m)} className={chipCls(activeSlotModifiers.includes(m.key))}>
-                      {m.emoji ? m.emoji + " " : ""}{m.key}
+                      {m.emoji && <span style={rtlMirrorStyle(isRTL, { key: m.key, emoji: m.emoji, item: m })}>{m.emoji}</span>}{m.emoji ? " " : ""}{m.key}
                     </button>
                   ))}
                   {activeQualityPairs.map((p) => {
@@ -353,13 +358,17 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
                     return (
                       <button key={p.pos.key} type="button" title={`${p.pos.key} / ${p.neg.key}`} onClick={() => toggleQuality(p)}
                         className={chipCls(has !== "off")}>
-                        {has === "neg" ? (p.neg.emoji ?? "👎") : (p.pos.emoji ?? "👍")}
+                        {(() => {
+                          const pole = has === "neg" ? p.neg : p.pos;
+                          const face = pole.emoji ?? (has === "neg" ? "👎" : "👍");
+                          return <span style={rtlMirrorStyle(isRTL, { key: pole.key, emoji: face, item: pole })}>{face}</span>;
+                        })()}
                       </button>
                     );
                   })}
                   {activeMods.map((m) => (
                     <button key={m.key} type="button" onClick={() => toggleModifier(m)} className={chipCls(activeSlotModifiers.includes(m.key))}>
-                      {m.emoji ? m.emoji + " " : ""}{m.key.replace(/_/g, " ")}
+                      {m.emoji && <span style={rtlMirrorStyle(isRTL, { key: m.key, emoji: m.emoji, item: m })}>{m.emoji}</span>}{m.emoji ? " " : ""}{m.key.replace(/_/g, " ")}
                     </button>
                   ))}
                   {activeMods.length === 0 && activeColorMods.length === 0 && activeEmotionMods.length === 0
@@ -376,10 +385,10 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
                 NEXT symbol added. Available once at least one slot exists. */}
             {canJoin && (
               <div className="flex items-center gap-1 flex-wrap">
-                <span className={cn("text-[10px] mr-1", isDark ? "text-slate-500" : "text-gray-500")}>{t("button.gbJoin") || "Join"}:</span>
+                <span className={cn("text-[10px] mr-1", isDark ? "text-slate-500" : "text-gray-500")}>{t("button.gbJoin")}:</span>
                 {joinOptions.map((j) => (
                   <button key={j.key} type="button" title={j.key} onClick={() => pickJoin(j.key)} className={chipCls(pendingJoin === j.key)}>
-                    {j.emoji ? j.emoji + " " : ""}{j.key}
+                    {j.emoji && <span style={rtlMirrorStyle(isRTL, { key: j.key, emoji: j.emoji, item: j })}>{j.emoji}</span>}{j.emoji ? " " : ""}{j.key}
                   </button>
                 ))}
               </div>

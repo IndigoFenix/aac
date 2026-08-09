@@ -570,6 +570,7 @@ export const pt = {
     gbAddPerson: "Adicionar pessoa",
     gbEmpty: "Toque num símbolo para começar",
     gbEmoji: "Emoji",
+    gbJoin: "Ligação",
     gbCustomImage: "Imagem",
     gbPerson: "Pessoa",
     gbModifiers: "Modificadores",

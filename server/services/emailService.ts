@@ -5,8 +5,44 @@
 // SMTP here — our production host (Render) blocks outbound SMTP egress on ports
 // 25/465/587, so SMTP connections silently time out (IPv4) or hit ENETUNREACH
 // (IPv6, no egress route). Resend sends over HTTPS:443, which is never blocked.
+//
+// Sender identity — see docs/EMAIL.md. Two rules the hard way:
+//
+//  1. The From address must live on the ESP-verified sending SUBDOMAIN
+//     (send.aivota.ai), never the apex. Resend needs an MX on the sending
+//     domain for bounce handling and the apex MX belongs to Google Workspace,
+//     so the apex can never be verified — sends from it fail with a
+//     validation_error.
+//  2. The From address must NOT be a human's mailbox or an alias of one.
+//     Gmail resolves a known address against the Workspace directory and
+//     renders that person's profile name no matter what display name we set,
+//     so mail from `cs@aivota.ai` (an alias) shows up as its owner.
 
 import { Resend } from "resend";
+
+/**
+ * Fallback sender. `EMAIL_FROM` should be set in every deployed environment;
+ * this default exists so a misconfigured host still sends under a neutral
+ * identity rather than an arbitrary leftover address.
+ */
+const DEFAULT_FROM = "Aivota <noreply@send.aivota.ai>";
+
+/** Where replies go. noreply@ is unattended, so point humans at support. */
+const DEFAULT_REPLY_TO = "cs@aivota.ai";
+
+/**
+ * Pre-Resend Gmail SMTP settings. The From address used to fall back through
+ * SMTP_FROM → SMTP_USER, which meant a stale credential silently *became* the
+ * platform's sender identity. Nothing reads these now; we only look at them to
+ * tell the operator they are dead weight and should be removed.
+ */
+const LEGACY_SMTP_VARS = [
+  "SMTP_FROM",
+  "SMTP_USER",
+  "SMTP_PASS",
+  "SMTP_HOST",
+  "SMTP_PORT",
+] as const;
 
 interface EmailOptions {
   to: string;
@@ -51,22 +87,24 @@ interface PasswordResetEmailData {
   expiresAt: Date;
 }
 
-class EmailService {
+export class EmailService {
   private resend: Resend | null = null;
   private isConfigured: boolean = false;
   private fromAddress: string;
+  private replyToAddress: string;
 
   constructor() {
-    // Resend requires the From address to be on a domain verified in the Resend
-    // dashboard. EMAIL_FROM is the canonical knob; SMTP_FROM/SMTP_USER are kept
-    // as fallbacks so existing environments keep working without a rename.
-    // Format may be a bare "addr@domain" or "Display Name <addr@domain>".
-    this.fromAddress =
-      process.env.EMAIL_FROM ||
-      process.env.SMTP_FROM ||
-      process.env.SMTP_USER ||
-      "cs@aivota.ai";
+    // EMAIL_FROM is the ONLY source of sender identity — no fallback chain.
+    // Format should be "Display Name <addr@domain>"; a bare address works but
+    // leaves the display name up to the recipient's mail client.
+    this.fromAddress = process.env.EMAIL_FROM?.trim() || DEFAULT_FROM;
+    this.replyToAddress = process.env.EMAIL_REPLY_TO?.trim() || DEFAULT_REPLY_TO;
     this.initialize();
+  }
+
+  /** The From header this service sends under. Exposed for diagnostics/tests. */
+  getFromAddress(): string {
+    return this.fromAddress;
   }
 
   private getLogoUrl(): string {
@@ -117,11 +155,27 @@ class EmailService {
       return;
     }
 
+    if (!process.env.EMAIL_FROM?.trim()) {
+      console.warn(
+        `Email service: EMAIL_FROM not set — falling back to "${DEFAULT_FROM}". ` +
+          "Set EMAIL_FROM to an address on the Resend-verified sending domain."
+      );
+    }
+
+    const staleVars = LEGACY_SMTP_VARS.filter((name) => process.env[name]);
+    if (staleVars.length > 0) {
+      console.warn(
+        `Email service: legacy SMTP settings are set but IGNORED (${staleVars.join(", ")}). ` +
+          "Delete them — mail is sent via the Resend API, and these used to " +
+          "override the sender identity."
+      );
+    }
+
     try {
       this.resend = new Resend(apiKey);
       this.isConfigured = true;
       console.log(
-        `Email service: Resend configured (from=${this.fromAddress})`
+        `Email service: Resend configured (from=${this.fromAddress}, replyTo=${this.replyToAddress})`
       );
     } catch (error) {
       console.error("Email service: Failed to configure Resend:", error);
@@ -157,6 +211,7 @@ class EmailService {
     try {
       const { data, error } = await this.resend!.emails.send({
         from: this.fromAddress,
+        replyTo: this.replyToAddress,
         to: options.to,
         subject: options.subject,
         text: options.text,
@@ -168,8 +223,14 @@ class EmailService {
         // pinpoint the cause (e.g. "validation_error" for an unverified From
         // domain, "missing_api_key", rate limits).
         const errorMsg = `${error.name ? `${error.name}: ` : ""}${error.message || String(error)}`;
+        // A validation_error almost always means the From domain isn't verified
+        // in Resend — the single most common way this service goes quiet.
+        const hint =
+          error.name === "validation_error"
+            ? ` (check that the domain of "${this.fromAddress}" is verified in Resend — see docs/EMAIL.md)`
+            : "";
         console.error(
-          `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}`
+          `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}${hint}`
         );
         return { success: false, error: errorMsg };
       }

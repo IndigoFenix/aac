@@ -1,6 +1,6 @@
 {
   "name": "aivota-aac",
-  "version": "1.0.27",
+  "version": "1.0.29",
   "type": "module",
   "main": "dist-electron/main.js",
   "license": "MIT",
@@ -81,7 +81,9 @@
     "validate-i18n": "tsx scripts/validate-i18n.ts",
     "scan:i18n": "tsx scripts/scan-i18n-coverage.ts",
     "scan:i18n:keys": "tsx scripts/scan-i18n-coverage.ts --only=keys,errors",
-    "scan:i18n:report": "tsx scripts/scan-i18n-coverage.ts --unused --report --no-fail"
+    "scan:i18n:report": "tsx scripts/scan-i18n-coverage.ts --unused --report --no-fail",
+    "validate-glyphs": "tsx scripts/validate-glyph-registry.ts",
+    "validate-glyphs:art": "tsx scripts/validate-glyph-registry.ts --icons --verbose --no-fail"
   },
   "overrides": {
     "shell-quote": "^1.8.4"

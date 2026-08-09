@@ -48,7 +48,7 @@ import { applyExclusiveModifier, cycleQualityPole, pushSlotWithJoin } from "@sha
 import { placeArt } from "@shared/glyph-place-art";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
 import { apiUrl } from "@/lib/queryClient";
-import { resolveEmoji, isNonReversibleEmoji } from "@shared/emoji-registry";
+import { resolveEmoji, rtlMirrorStyle } from "@shared/emoji-registry";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import type {
@@ -2130,27 +2130,6 @@ function useItemLabel(item: VocabularyItem): string {
   return translated === item.tKey ? item.key : translated;
 }
 
-/**
- * RTL flip style. Matches the sentence display in `glyph-compositor.tsx`,
- * which mirrors slot images via `scale(-1, 1)` in RTL. Buttons are plain
- * `<img>` / emoji `<span>` (not SVG), so the equivalent is a CSS `scaleX(-1)`
- * transform applied at render.
- */
-const RTL_IMG_STYLE: React.CSSProperties = { transform: "scaleX(-1)" };
-
-/**
- * Decide whether a button's icon should mirror in RTL. Mirrors the compositor:
- * flip in RTL EXCEPT for text-like emoji (digits/letters/words/"?"), which read
- * wrong reversed. Both branches of every chip — the `<img>` and the emoji
- * `<span>` — go through this, so a chip can't flip its emoji one way and a
- * later-loaded image the other (the "starts one direction, then flips" bug).
- * Pass the concept's representative emoji for the image branch and the literal
- * rendered char for the emoji branch.
- */
-function rtlFlipStyle(isRTL: boolean, emojiChar: string | undefined): React.CSSProperties | undefined {
-  return isRTL && !isNonReversibleEmoji(emojiChar ?? "") ? RTL_IMG_STYLE : undefined;
-}
-
 function ModifierButton(props: {
   item: VocabularyItem;
   onPress: () => void;
@@ -2177,9 +2156,9 @@ function ModifierButton(props: {
     >
       <div className="icon-fill-area">
         {url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, item.emoji ?? resolveEmoji(item.key))} />
+          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? resolveEmoji(item.key), item })} />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, item.emoji ?? "•")}>
+          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? "•", item })}>
             {item.emoji ?? "•"}
           </span>
         )}
@@ -2213,9 +2192,9 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
           // shows a bare 🛌 for the button that draws `room(bed)`.
           <Glyph glyph={item.key} noBackground ariaLabel={label} />
         ) : url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, item.emoji ?? resolveEmoji(item.key))} />
+          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? resolveEmoji(item.key), item })} />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, item.emoji ?? "❓")}>
+          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? "❓", item })}>
             {item.emoji ?? "❓"}
           </span>
         )}
@@ -2268,9 +2247,9 @@ function EngineWordButton(props: { word: BuilderWord; onPress: () => void }) {
           // compositor resolves the composition from the key itself.
           <Glyph glyph={word.glyph ?? word.key} noBackground ariaLabel={label} />
         ) : url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, emoji)} />
+          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: word.key, emoji })} />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, emoji ?? "❓")}>
+          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: word.key, emoji: emoji ?? "❓" })}>
             {emoji ?? "❓"}
           </span>
         )}
@@ -2318,9 +2297,9 @@ function EngineModifierButton(props: {
         {word.glyph || placeArt(word.key) ? (
           <Glyph glyph={word.glyph ?? word.key} noBackground ariaLabel={label} />
         ) : url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlFlipStyle(isRTL, emoji)} />
+          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: word.key, emoji, item: item ?? undefined })} />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, emoji ?? "•")}>
+          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: word.key, emoji: emoji ?? "•", item: item ?? undefined })}>
             {emoji ?? "•"}
           </span>
         )}
@@ -2750,13 +2729,13 @@ function AiCandidateButton(props: {
             src={renderUrl}
             alt=""
             className="icon-fill-img"
-            style={rtlFlipStyle(isRTL, item?.emoji ?? resolveEmoji(candidate.key))}
+            style={rtlMirrorStyle(isRTL, { key: candidate.key, emoji: item?.emoji ?? resolveEmoji(candidate.key), item: item ?? undefined })}
             onError={() => {
               if (renderUrl === primary.url) setPrimaryFailed(true);
             }}
           />
         ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlFlipStyle(isRTL, renderEmoji ?? "❓")}>
+          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: candidate.key, emoji: renderEmoji ?? "❓", item: item ?? undefined })}>
             {renderEmoji ?? "❓"}
           </span>
         )}

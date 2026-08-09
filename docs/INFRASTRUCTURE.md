@@ -120,7 +120,8 @@ Secrets are stored in AWS Secrets Manager, not in environment variables or code.
 - OPENAI_API_KEY
 - STRIPE_SECRET_KEY
 - Google OAuth credentials
-- SMTP credentials
+- RESEND_API_KEY, EMAIL_FROM, EMAIL_REPLY_TO (transactional email — see [EMAIL.md](EMAIL.md);
+  the old SMTP_* keys are obsolete and should be deleted from the secret)
 - Dropbox credentials
 
 **Runtime Injection:** Secrets are injected into containers at runtime by ECS/Lambda, never baked into images.

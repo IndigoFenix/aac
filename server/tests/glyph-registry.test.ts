@@ -466,3 +466,64 @@ describe("bundled artwork actually exists on disk", () => {
     expect(found).toBe(true);
   });
 });
+
+describe("every registry item has a label in every AAC locale", () => {
+  // The registry is DATA, so no `t()` call ever names `aac.glyph.apple`
+  // literally — which means `validate-i18n` (files vs each other) and
+  // `scan:i18n` (files vs call sites) both look straight past a vocabulary
+  // item nobody translated. The sentence builder falls back to `item.key`, so
+  // the gap ships as an English snake_case word on a Hebrew board.
+  //
+  // `scripts/validate-glyph-registry.ts` is the same check with a report and
+  // an artwork audit attached; this is the version that gates a merge.
+  const LOCALE_DIR = path.resolve(process.cwd(), "client-aac", "src", "i18n");
+  const locales = fs
+    .readdirSync(LOCALE_DIR)
+    .filter((f) => f.endsWith(".ts") && f !== "index.ts" && !f.endsWith(".bak"))
+    .map((f) => f.replace(/\.ts$/, ""))
+    .sort();
+
+  /**
+   * Read the locale sources rather than importing them — a `.ts` outside
+   * jest's `roots` still transforms fine, but 11 eager imports of a
+   * 1500-line object is a needless tax on a suite that only needs to know
+   * which keys are present. `aac.glyph` is a flat block of string literals.
+   */
+  function glyphKeysOf(locale: string): Set<string> {
+    const lines = fs.readFileSync(path.join(LOCALE_DIR, `${locale}.ts`), "utf-8").split("\n");
+    const out = new Set<string>();
+    const stack: string[] = [];
+    for (const raw of lines) {
+      const t = raw.trim();
+      const open = t.match(/^(\w+)\s*:\s*\{/);
+      if (open) { stack.push(open[1]); continue; }
+      if (t === "}" || t === "},") { stack.pop(); continue; }
+      const kv = t.match(/^(\w+)\s*:\s*["'`]/);
+      if (kv && stack.join(".") === "aac.glyph") out.add(kv[1]);
+    }
+    return out;
+  }
+
+  it("finds the locale files", () => {
+    expect(locales).toContain("en");
+    expect(locales.length).toBeGreaterThan(5);
+  });
+
+  it.each(locales)("%s translates every vocabulary item", (locale) => {
+    const present = glyphKeysOf(locale);
+    expect(present.size).toBeGreaterThan(100); // the block was actually found
+    // An item may point its tKey at ANOTHER item's key — the emotion
+    // modifiers deliberately reuse the feeling's label — so resolve through
+    // tKey rather than assuming `aac.glyph.<own key>`.
+    const missing = listAllVocabulary()
+      .filter((v) => !present.has(v.tKey.replace(/^aac\.glyph\./, "")))
+      .map((v) => v.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("en.ts has no glyph label without a registry item", () => {
+    const known = new Set(listAllVocabulary().map((v) => v.tKey.replace(/^aac\.glyph\./, "")));
+    const orphans = [...glyphKeysOf("en")].filter((k) => !known.has(k));
+    expect(orphans).toEqual([]);
+  });
+});

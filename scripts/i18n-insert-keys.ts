@@ -20,6 +20,10 @@
  *     "keys": [ { "key": "login.signIn", "en": "Sign In" }, ... ]
  *   }
  *
+ * A key may also carry `"after": "<siblingLeaf>"` to land directly below that
+ * sibling instead of at the end of its section — for blocks that mirror a data
+ * source and read badly out of order.
+ *
  * Usage:
  *   npx tsx scripts/i18n-insert-keys.ts <input.json> [--dry]
  *
@@ -50,8 +54,21 @@ const TODO = "// TODO-i18n";
 interface KeySpec {
   key: string;
   en: string;
-  [locale: string]: string;
+  /**
+   * Optional sibling leaf key to insert directly after, inside the same parent
+   * section. Sections that mirror a data source — `aac.glyph.*` follows
+   * `shared/glyph-registry.ts` — stay readable only if a late addition lands
+   * beside its neighbours instead of at the bottom. Omitted, or naming a
+   * sibling that isn't there, appends to the end of the section as usual.
+   *
+   * Not a locale code: it's filtered out of the per-locale value lookup below.
+   */
+  after?: string;
+  [locale: string]: string | undefined;
 }
+
+/** Spec fields that are not locale codes. */
+const RESERVED_FIELDS = new Set(["key", "en", "after"]);
 
 // ---------------------------------------------------------------------------
 // Structure walking
@@ -144,11 +161,31 @@ function valueLine(indent: string, leaf: string, value: string, markTodo: boolea
 }
 
 /**
+ * Line index just past a section's direct child `after`, or the section's
+ * close when there's no such child. Only direct children count — a nested
+ * section's member with the same name must not capture the anchor — so the
+ * scan tracks brace depth and matches at depth 0.
+ */
+function insertionPoint(lines: string[], section: Section, after?: string): number {
+  if (!after) return section.close;
+  let depth = 0;
+  for (let i = section.open + 1; i < section.close; i++) {
+    const t = lines[i].trim();
+    if (t === "}" || t === "},") { depth--; continue; }
+    if (t.endsWith("{")) { depth++; continue; }
+    if (depth !== 0) continue;
+    const kv = t.match(/^["']?([\w$]+)["']?\s*:/);
+    if (kv && kv[1] === after) return i + 1;
+  }
+  return section.close;
+}
+
+/**
  * Insert one key, creating any missing parent sections. Mutates `lines`.
  * The algorithm is deterministic given identical input structure, which is
  * what keeps all 11 files on the same line numbers.
  */
-function insertKey(lines: string[], key: string, value: string, markTodo: boolean): void {
+function insertKey(lines: string[], key: string, value: string, markTodo: boolean, after?: string): void {
   const parts = key.split(".");
   const leaf = parts.pop()!;
 
@@ -170,7 +207,35 @@ function insertKey(lines: string[], key: string, value: string, markTodo: boolea
 
   const section = findSection(lines, parts);
   if (!section) throw new Error(`failed to create section for ${key}`);
-  lines.splice(section.close, 0, valueLine(section.indent, leaf, value, markTodo));
+  lines.splice(insertionPoint(lines, section, after), 0, valueLine(section.indent, leaf, value, markTodo));
+}
+
+/**
+ * Reorder specs so an `after` anchor that is itself being inserted in this
+ * batch is written first. Chains resolve transitively; a cycle (a after b,
+ * b after a) is left in its input order rather than hanging.
+ */
+function orderByAnchor(specs: Array<[string, KeySpec]>): Array<[string, KeySpec]> {
+  const parentOf = (key: string) => key.slice(0, key.lastIndexOf("."));
+  const leafOf = (key: string) => key.slice(key.lastIndexOf(".") + 1);
+  // Anchors are sibling leaf names, so index by "<parent>.<leaf>" — the key itself.
+  const byFullKey = new Map(specs.map((s) => [s[0], s]));
+
+  const out: Array<[string, KeySpec]> = [];
+  const state = new Map<string, "visiting" | "done">();
+  const visit = (entry: [string, KeySpec]) => {
+    const [key, spec] = entry;
+    if (state.get(key)) return; // done, or a cycle we're already inside
+    state.set(key, "visiting");
+    if (spec.after) {
+      const anchor = byFullKey.get(`${parentOf(key)}.${spec.after}`);
+      if (anchor && leafOf(anchor[0]) !== leafOf(key)) visit(anchor);
+    }
+    state.set(key, "done");
+    out.push(entry);
+  };
+  for (const entry of specs) visit(entry);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,13 +272,16 @@ function main(): void {
     }
     if (!prev) byKey.set(k.key, k);
   }
-  // Sort so sibling keys land together and the order is reproducible
-  const specs = [...byKey].sort((a, b) => a[0].localeCompare(b[0]));
+  // Sort so sibling keys land together and the order is reproducible, then
+  // pull any spec anchored to another spec in the same batch after its anchor —
+  // otherwise the anchor isn't in the file yet and the insert falls back to
+  // end-of-section, silently losing the requested placement.
+  const specs = orderByAnchor([...byKey].sort((a, b) => a[0].localeCompare(b[0])));
 
   const preTranslated = new Set<string>();
   for (const [, spec] of specs) {
     for (const code of Object.keys(spec)) {
-      if (code !== 'key' && code !== 'en') preTranslated.add(code);
+      if (!RESERVED_FIELDS.has(code)) preTranslated.add(code);
     }
   }
   if (preTranslated.size > 0) {
@@ -246,7 +314,7 @@ function main(): void {
       // is seeded with English and flagged for a translator.
       const supplied = isEn ? undefined : spec[locale];
       if (supplied !== undefined) known++;
-      insertKey(lines, key, supplied ?? spec.en, !isEn && supplied === undefined);
+      insertKey(lines, key, supplied ?? spec.en, !isEn && supplied === undefined, spec.after);
       added++;
     }
 

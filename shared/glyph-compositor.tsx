@@ -20,8 +20,7 @@ import {
 import {
   resolveEmoji,
   isEmoji,
-  isNonReversibleEmoji,
-  isNonReversibleItem,
+  shouldMirror,
 } from "./emoji-registry.js";
 import { buildNumeralGlyph, parseNumeralValue, type NumeralShape } from "./numeral-glyph.js";
 import { isAppearanceOnlyFacet } from "./world-engine/variations.js";
@@ -371,11 +370,14 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // When the host carries a gender modifier but has no variant art (url null),
   // swap the emoji fallback to a gendered one so he/she/they still read.
   const emojiChar = genderSuffix ? applyGenderEmoji(baseEmojiChar, genderSuffix) : baseEmojiChar;
-  const imageReversible = !!item && !isNonReversible(item) && !isNonReversibleEmoji(emojiChar);
+  // One rule for the whole render — art, emoji raster and <text> fallback all
+  // read this, so a slot can't face one way before its image loads and the
+  // other after. `shouldMirror` already accounts for rtl.
+  const mirrored = shouldMirror(!!rtl, { key: slot?.key, emoji: emojiChar, item });
   const mainCx = mainX + mainSize / 2;
   const mainCy = mainY + mainSize / 2;
   const imageTransforms: string[] = [];
-  if (rtl && imageReversible) {
+  if (mirrored) {
     imageTransforms.push(`translate(${mainCx} ${mainCy}) scale(-1 1) translate(${-mainCx} ${-mainCy})`);
   }
   if (dimensionScale) {
@@ -392,9 +394,9 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // same <image> path the real-image branch uses. The flip is baked into the
   // bitmap (not applied as an SVG transform) so it composes with the dimension
   // warp without double-flipping.
-  // `imageReversible` already excludes text-like emoji (see above), so this
-  // also keeps "💯"/"🔤"/"?" upright in RTL.
-  const emojiFlip = rtl && imageReversible;
+  // `mirrored` already excludes text-like emoji and face portraits (see above),
+  // so this keeps "💯"/"🔤"/"?" and a contact's photo upright in RTL.
+  const emojiFlip = mirrored;
   const wantCanvasEmoji =
     !!slot &&
     !url &&
@@ -413,6 +415,20 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   // taint on cross-origin generated/S3 art) or when the raster is unavailable.
   const tintedViaCanvas = !!emojiDataUrl && !!colorValue;
   const showColorFrame = !!colorValue && !tintedViaCanvas;
+
+  // Last-resort <text> emoji — reached when the canvas raster is unavailable
+  // (jsdom, SSR, a tainted context). It still has to mirror: the raster is an
+  // optimization for tinting, not the thing that makes a flip legal, and a
+  // symbol that stays upright only on the fallback path is a symbol that reads
+  // differently depending on where it rendered.
+  const textCx = layout.x + SLOT_UNIT / 2;
+  const textCy = layout.y + SLOT_UNIT / 2;
+  const textEmojiParts: string[] = [];
+  if (emojiFlip) textEmojiParts.push(`translate(${textCx} ${textCy}) scale(-1 1) translate(${-textCx} ${-textCy})`);
+  if (dimensionScale) {
+    textEmojiParts.push(`translate(${textCx} ${textCy}) scale(${dimensionScale[0]} ${dimensionScale[1]}) translate(${-textCx} ${-textCy})`);
+  }
+  const textEmojiTransform = textEmojiParts.length ? textEmojiParts.join(" ") : undefined;
 
   return (
     <g
@@ -486,7 +502,7 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
           dominantBaseline="central"
           fontSize={SLOT_UNIT * emojiFrac * mainScale}
           filter={hasGlow ? "url(#glyph-glow)" : undefined}
-          transform={dimensionScale ? `translate(${layout.x + SLOT_UNIT / 2} ${layout.y + SLOT_UNIT / 2}) scale(${dimensionScale[0]} ${dimensionScale[1]}) translate(${-(layout.x + SLOT_UNIT / 2)} ${-(layout.y + SLOT_UNIT / 2)})` : undefined}
+          transform={textEmojiTransform}
         >
           {emojiChar}
         </text>
@@ -695,8 +711,11 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
   const payloadItem = getVocabularyItem(slot.payload);
   const url = resolveImage?.({ item: payloadItem, key: slot.payload }) ?? null;
   const payloadEmoji = payloadItem?.emoji ?? resolveEmoji(slot.payload) ?? "❓";
-  const payloadReversible =
-    !!payloadItem && !isNonReversible(payloadItem) && !isNonReversibleEmoji(payloadEmoji);
+  const payloadReversible = shouldMirror(!!rtl, {
+    key: slot.payload,
+    emoji: payloadEmoji,
+    item: payloadItem,
+  });
 
   return (
     <g>
@@ -720,21 +739,31 @@ function PayloadOverlay(props: PayloadOverlayProps): React.ReactElement | null {
           width={size}
           height={size}
           transform={
-            rtl && payloadReversible
+            payloadReversible
               ? `translate(${x + size}, ${y}) scale(-1, 1) translate(${-x}, ${-y})`
               : undefined
           }
           onError={onImageError ? () => onImageError(url) : undefined}
         />
       ) : (
+        // The emoji stand-in mirrors on the same terms as the artwork it
+        // replaces — otherwise `eat(fish)` faces one way with bundled art and
+        // the other without, and the payload visibly turns around the moment a
+        // generated image lands. A <text> transform is enough here: unlike the
+        // main symbol, a payload carries no dimension warp to compose with.
         <text
           x={cx}
           y={cy}
           textAnchor="middle"
           dominantBaseline="central"
           fontSize={size * 0.85}
+          transform={
+            payloadReversible
+              ? `translate(${cx} ${cy}) scale(-1 1) translate(${-cx} ${-cy})`
+              : undefined
+          }
         >
-          {payloadItem?.emoji ?? resolveEmoji(slot.payload) ?? "❓"}
+          {payloadEmoji}
         </text>
       )}
     </g>
@@ -1188,12 +1217,22 @@ function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
           const { x, y } = computeBadgeXY(corner, i);
           const item = entry.kind === "canonical" ? entry.item : undefined;
           const url = resolveImage?.({ item, key: entry.key }) ?? null;
-          // Flip image content horizontally in RTL so a directional hand still
-          // points the same way relative to the speaker/addressee axis.
-          const imageTransform = url && rtl && item && !isNonReversible(item)
+          const fallbackGlyph = item?.emoji ?? resolveEmoji(entry.key) ?? "•";
+          // Flip badge content horizontally in RTL so a directional hand still
+          // points the same way relative to the speaker/addressee axis. Gated on
+          // the badge's emoji as well as the item, matching the main symbol and
+          // the payload: a `?` or a digit badge reads wrong reversed whether it
+          // renders as art or as the emoji, and the two branches must agree.
+          const badgeReversible = shouldMirror(!!rtl, {
+            key: entry.key,
+            emoji: fallbackGlyph,
+            item,
+          });
+          const imageTransform = url && badgeReversible
             ? `translate(${x + badgeSize}, ${y}) scale(-1, 1) translate(${-x}, ${-y})`
             : undefined;
-          const fallbackGlyph = item?.emoji ?? resolveEmoji(entry.key) ?? "•";
+          const badgeCx = x + badgeSize / 2;
+          const badgeCy = y + badgeSize / 2;
           return url ? (
             <image
               key={entry.key}
@@ -1208,11 +1247,16 @@ function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
           ) : (
             <text
               key={entry.key}
-              x={x + badgeSize / 2}
-              y={y + badgeSize / 2}
+              x={badgeCx}
+              y={badgeCy}
               textAnchor="middle"
               dominantBaseline="central"
               fontSize={badgeSize * 0.9}
+              transform={
+                badgeReversible
+                  ? `translate(${badgeCx} ${badgeCy}) scale(-1 1) translate(${-badgeCx} ${-badgeCy})`
+                  : undefined
+              }
             >
               {fallbackGlyph}
             </text>
@@ -1546,21 +1590,6 @@ function TenseCornerBadge(props: ToneCornerBadgeProps & { rtl?: boolean }): Reac
 // ─────────────────────────────────────────────────────────────────────────────
 // RTL handling
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * True when an item must NOT be horizontally mirrored in RTL. The rule itself
- * lives in emoji-registry (`isNonReversibleItem`) so that server code and tests
- * can reach it without importing this React module; this is just the local name
- * the render paths below read.
- *
- * Consulting it per ITEM and not only per emoji matters here: the badge stack
- * tests item reversibility alone, so before this a `?` badge on a WH-word would
- * flip in Hebrew the moment such a badge gained bundled art, even though the
- * emoji path already knew better.
- */
-function isNonReversible(item: VocabularyItem): boolean {
-  return isNonReversibleItem(item);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Emoji rasterization (tint + mirror)
