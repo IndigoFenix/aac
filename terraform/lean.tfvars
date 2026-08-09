@@ -83,14 +83,14 @@ session_timeout_minutes        = 60   # Longer timeout for dev convenience
 # Authenticate email). Signs mail sent from real @aivota.ai mailboxes.
 google_workspace_dkim_value = "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqdbq4tti3uOFkIWdsGaYM4ee7k6j4PUtoI4E8RefsYA3+yl0gGD8LN9y8/Dm38/CQzdRxaQ4vS8gwk9lmiZJlMzsJY+MYxc0uN0NxJBVs5U7OXua45tiPoCp/Tbn5N2pbS4+4VKN84Swmrjd8jLDbRpdoZkw9f8LVwafjacmnudnykWCzT5JHO54BVIsYeTNzYYa/TVeQTRf/1fM9lMfey1RvMB64mQWfADHND7CGgKyWstpHQx2w12JsFkm3+pzPWVR2zqwQpEkbRnWoCVs7MzuSKaerO/c0aRaGoPK0dXUSL2/tWav+BP8OIFCj8SY9tFAMcobAH3JsfxG0V2LMQIDAQAB"
 
-# Resend sends the app's transactional mail from send.aivota.ai. Fill these two
-# in from the Resend dashboard after adding that domain (Domains > Add Domain);
-# while they are empty the subdomain records are skipped and Resend cannot
-# verify the domain, so every transactional send fails with validation_error.
-mail_sending_subdomain = "send"
-resend_bounce_mx_host  = ""   # e.g. feedback-smtp.eu-west-1.amazonses.com
-resend_dkim_value      = ""   # p=MIIBIjANBgkq... from the same page
+# The app's transactional mail goes out via Amazon SES (terraform/ses.tf) —
+# identity, DKIM and bounce-domain records are all created by apply; SES
+# verifies automatically once the DKIM CNAMEs resolve. The ONE manual step is
+# requesting production access (new SES accounts start in sandbox mode):
+# AWS console > SES (il-central-1) > Account dashboard > Request production access.
 
 # Start at p=none and read the reports; tighten to quarantine, then reject.
 dmarc_policy = "none"
-dmarc_rua    = "dmarc@aivota.ai"
+# Your own group first (raw XML archive), then optionally a digest service
+# that mails a readable weekly summary, e.g. "...@dmarc.postmarkapp.com".
+dmarc_rua    = ["dmarc@aivota.ai"]

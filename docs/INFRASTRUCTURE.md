@@ -120,9 +120,12 @@ Secrets are stored in AWS Secrets Manager, not in environment variables or code.
 - OPENAI_API_KEY
 - STRIPE_SECRET_KEY
 - Google OAuth credentials
-- RESEND_API_KEY, EMAIL_FROM, EMAIL_REPLY_TO (transactional email — see [EMAIL.md](EMAIL.md);
-  the old SMTP_* keys are obsolete and should be deleted from the secret)
 - Dropbox credentials
+
+Transactional email needs **no secret**: SES authenticates via the Lambda/ECS
+role (see [EMAIL.md](EMAIL.md)). The old SMTP_*/RESEND_*/EMAIL_* keys are
+obsolete and should be deleted from the app-secrets JSON — on Lambda every key
+in it becomes an env var and would override the Terraform-set config.
 
 **Runtime Injection:** Secrets are injected into containers at runtime by ECS/Lambda, never baked into images.
 

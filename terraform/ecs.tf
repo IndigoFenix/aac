@@ -123,6 +123,17 @@ resource "aws_ecs_task_definition" "main" {
             value = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
           },
           {
+            # Transactional email via SES (docs/EMAIL.md). Sender identity is
+            # config, not a secret — the role's ses:SendEmail grant is the
+            # credential; region comes from AWS_REGION above.
+            name  = "EMAIL_FROM"
+            value = var.email_from
+          },
+          {
+            name  = "EMAIL_REPLY_TO"
+            value = var.email_reply_to
+          },
+          {
             # Realtime fanout selection. With Redis on, ID-only payloads cross
             # the bus (see server/services/personChat/personChatFanout.ts); without
             # it, falls back to Postgres LISTEN/NOTIFY.
@@ -197,26 +208,13 @@ resource "aws_ecs_task_definition" "main" {
           name      = "GOOGLE_CLIENT_SECRET"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GOOGLE_CLIENT_SECRET::"
         },
-        {
-          # Email transport is the Resend HTTP API (SMTP is blocked outbound on
-          # our hosts). The old SMTP_* vars are deliberately NOT injected: the
-          # app used to fall back to SMTP_FROM/SMTP_USER for its sender
-          # identity, so a leftover Gmail credential silently became the From
-          # address on every transactional email. Delete those keys from the
-          # app-secrets JSON too — on Lambda every key in it becomes an env var.
-          name      = "RESEND_API_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:RESEND_API_KEY::"
-        },
-        {
-          # "Aivota <noreply@send.aivota.ai>" — must be on the Resend-verified
-          # sending subdomain, and must not be a person's mailbox or alias.
-          name      = "EMAIL_FROM"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:EMAIL_FROM::"
-        },
-        {
-          name      = "EMAIL_REPLY_TO"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:EMAIL_REPLY_TO::"
-        },
+        # Email needs NO secret: SES authenticates via the task role
+        # (ses:SendEmail in ses.tf). The old SMTP_*/RESEND_* keys are
+        # deliberately not injected — the app once fell back to
+        # SMTP_FROM/SMTP_USER for its sender identity, so a leftover Gmail
+        # credential silently became the From address on every email. Delete
+        # those keys from the app-secrets JSON too; on Lambda every key in it
+        # becomes an env var.
         {
           name      = "DROPBOX_CLIENT_ID"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_ID::"

@@ -72,15 +72,12 @@ resource "aws_route53_record" "mx" {
 # =============================================================================
 # Two senders share this domain and each needs its own authentication:
 #
-#   • Google Workspace sends human mail from the APEX (MX above). SPF at the
-#     apex + DKIM at google._domainkey cover it.
-#   • Resend sends the app's transactional mail from a dedicated SUBDOMAIN
-#     (<mail_sending_subdomain>.<domain>). It gets its own MX (bounce
-#     handling), SPF and DKIM. It MUST be a subdomain: Resend requires an MX
-#     on the sending domain, and the apex MX already belongs to Google.
+#   • Google Workspace sends the humans' mail from the APEX (MX above). SPF at
+#     the apex + DKIM at google._domainkey (below) cover it.
+#   • Amazon SES sends the app's transactional mail — its identity, DKIM
+#     CNAMEs and MAIL FROM subdomain records live in ses.tf.
 #
-# Keeping them apart also means a bad bounce rate on bulk invites can't drag
-# down the reputation of the team's real mailboxes.
+# One DMARC record at the apex (below) governs both.
 
 locals {
   # Route 53 caps one TXT character-string at 255 bytes, and a 2048-bit DKIM
@@ -90,13 +87,6 @@ locals {
     substr(var.google_workspace_dkim_value, 0, 255),
     substr(var.google_workspace_dkim_value, 255, -1),
   ]) : var.google_workspace_dkim_value
-
-  resend_dkim_txt = length(var.resend_dkim_value) > 255 ? join("\"\"", [
-    substr(var.resend_dkim_value, 0, 255),
-    substr(var.resend_dkim_value, 255, -1),
-  ]) : var.resend_dkim_value
-
-  mail_subdomain_fqdn = "${var.mail_sending_subdomain}.${var.domain_name}"
 }
 
 # --- Apex: Google Workspace -------------------------------------------------
@@ -146,44 +136,10 @@ resource "aws_route53_record" "dmarc" {
   records = [join("; ", compact([
     "v=DMARC1",
     "p=${var.dmarc_policy}",
-    var.dmarc_rua != "" ? "rua=mailto:${var.dmarc_rua}" : "",
+    length(var.dmarc_rua) > 0 ? "rua=${join(",", [for addr in var.dmarc_rua : "mailto:${addr}"])}" : "",
     "adkim=r",
     "aspf=r",
   ]))]
-}
-
-# --- Sending subdomain: Resend ---------------------------------------------
-# Values come from the Resend dashboard (Domains → add <subdomain>.<domain>).
-# The MX host is region-specific — copy it verbatim from that page.
-
-resource "aws_route53_record" "resend_bounce_mx" {
-  count = var.domain_name != "" && var.resend_bounce_mx_host != "" ? 1 : 0
-
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = local.mail_subdomain_fqdn
-  type    = "MX"
-  ttl     = 3600
-  records = ["10 ${var.resend_bounce_mx_host}"]
-}
-
-resource "aws_route53_record" "resend_spf" {
-  count = var.domain_name != "" && var.resend_bounce_mx_host != "" ? 1 : 0
-
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = local.mail_subdomain_fqdn
-  type    = "TXT"
-  ttl     = 3600
-  records = ["v=spf1 include:amazonses.com ~all"]
-}
-
-resource "aws_route53_record" "resend_dkim" {
-  count = var.domain_name != "" && var.resend_dkim_value != "" ? 1 : 0
-
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = "resend._domainkey.${local.mail_subdomain_fqdn}"
-  type    = "TXT"
-  ttl     = 3600
-  records = [local.resend_dkim_txt]
 }
 
 # =============================================================================

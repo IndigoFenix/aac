@@ -1,47 +1,44 @@
 // server/services/emailService.ts
 // Email service for sending transactional emails.
 //
-// Transport: Resend HTTP API (https://resend.com). We deliberately do NOT use
-// SMTP here — our production host (Render) blocks outbound SMTP egress on ports
-// 25/465/587, so SMTP connections silently time out (IPv4) or hit ENETUNREACH
-// (IPv6, no egress route). Resend sends over HTTPS:443, which is never blocked.
+// Transport: Amazon SES (SESv2 SendEmail over HTTPS). We run on AWS, so this
+// needs NO credential of its own — the Lambda/ECS role carries ses:SendEmail
+// (terraform/ses.tf), and locally the SDK uses AWS_PROFILE. Never SMTP: the
+// Gmail-SMTP era authenticated as a personal mailbox, which both branded all
+// platform mail as that person and coupled sending to their account.
 //
-// Sender identity — see docs/EMAIL.md. Two rules the hard way:
-//
-//  1. The From address must live on the ESP-verified sending SUBDOMAIN
-//     (send.aivota.ai), never the apex. Resend needs an MX on the sending
-//     domain for bounce handling and the apex MX belongs to Google Workspace,
-//     so the apex can never be verified — sends from it fail with a
-//     validation_error.
-//  2. The From address must NOT be a human's mailbox or an alias of one.
-//     Gmail resolves a known address against the Workspace directory and
-//     renders that person's profile name no matter what display name we set,
-//     so mail from `cs@aivota.ai` (an alias) shows up as its owner.
+// Sender identity — see docs/EMAIL.md. The rule learned the hard way: the
+// From address must NOT be a human's mailbox or a Workspace alias of one.
+// Gmail resolves a known address against the Workspace directory and renders
+// that person's profile name no matter what display name we set, so mail from
+// `cs@aivota.ai` (an alias) shows up as its owner.
 
-import { Resend } from "resend";
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
 /**
  * Fallback sender. `EMAIL_FROM` should be set in every deployed environment;
  * this default exists so a misconfigured host still sends under a neutral
  * identity rather than an arbitrary leftover address.
  */
-const DEFAULT_FROM = "Aivota <noreply@send.aivota.ai>";
+const DEFAULT_FROM = "Aivota <noreply@aivota.ai>";
 
 /** Where replies go. noreply@ is unattended, so point humans at support. */
 const DEFAULT_REPLY_TO = "cs@aivota.ai";
 
 /**
- * Pre-Resend Gmail SMTP settings. The From address used to fall back through
- * SMTP_FROM → SMTP_USER, which meant a stale credential silently *became* the
- * platform's sender identity. Nothing reads these now; we only look at them to
- * tell the operator they are dead weight and should be removed.
+ * Settings from retired transports (Gmail SMTP, then briefly Resend). The
+ * From address used to fall back through SMTP_FROM → SMTP_USER, which meant a
+ * stale credential silently *became* the platform's sender identity. Nothing
+ * reads these now; we only look at them to tell the operator they are dead
+ * weight and should be removed.
  */
-const LEGACY_SMTP_VARS = [
+const LEGACY_EMAIL_VARS = [
   "SMTP_FROM",
   "SMTP_USER",
   "SMTP_PASS",
   "SMTP_HOST",
   "SMTP_PORT",
+  "RESEND_API_KEY",
 ] as const;
 
 interface EmailOptions {
@@ -88,7 +85,7 @@ interface PasswordResetEmailData {
 }
 
 export class EmailService {
-  private resend: Resend | null = null;
+  private ses: SESv2Client | null = null;
   private isConfigured: boolean = false;
   private fromAddress: string;
   private replyToAddress: string;
@@ -146,39 +143,37 @@ export class EmailService {
   }
 
   private initialize(): void {
-    const apiKey = process.env.RESEND_API_KEY;
-
-    if (!apiKey) {
-      console.warn(
-        "Email service: RESEND_API_KEY not set. Email sending disabled."
-      );
-      return;
-    }
-
     if (!process.env.EMAIL_FROM?.trim()) {
       console.warn(
         `Email service: EMAIL_FROM not set — falling back to "${DEFAULT_FROM}". ` +
-          "Set EMAIL_FROM to an address on the Resend-verified sending domain."
+          "Set EMAIL_FROM to an address on the SES-verified domain."
       );
     }
 
-    const staleVars = LEGACY_SMTP_VARS.filter((name) => process.env[name]);
+    const staleVars = LEGACY_EMAIL_VARS.filter((name) => process.env[name]);
     if (staleVars.length > 0) {
       console.warn(
-        `Email service: legacy SMTP settings are set but IGNORED (${staleVars.join(", ")}). ` +
-          "Delete them — mail is sent via the Resend API, and these used to " +
-          "override the sender identity."
+        `Email service: settings from retired email transports are set but IGNORED (${staleVars.join(", ")}). ` +
+          "Delete them — mail is sent via SES with role credentials, and the " +
+          "SMTP ones used to override the sender identity."
       );
     }
 
+    // No API key to check: SES authenticates with the ambient AWS credentials
+    // (task/execution role in AWS, AWS_PROFILE locally). If those are missing
+    // or lack ses:SendEmail, the failure surfaces per-send below. SES lives in
+    // the same region as the rest of the stack — AWS_REGION is set by the
+    // Lambda/ECS runtime and in local .env; SES_REGION is an escape hatch.
+    const region =
+      process.env.SES_REGION || process.env.AWS_REGION || "il-central-1";
     try {
-      this.resend = new Resend(apiKey);
+      this.ses = new SESv2Client({ region });
       this.isConfigured = true;
       console.log(
-        `Email service: Resend configured (from=${this.fromAddress}, replyTo=${this.replyToAddress})`
+        `Email service: SES configured (region=${region}, from=${this.fromAddress}, replyTo=${this.replyToAddress})`
       );
     } catch (error) {
-      console.error("Email service: Failed to configure Resend:", error);
+      console.error("Email service: Failed to configure SES:", error);
     }
   }
 
@@ -186,11 +181,11 @@ export class EmailService {
    * Check if email service is ready to send emails
    */
   isReady(): boolean {
-    return this.isConfigured && this.resend !== null;
+    return this.isConfigured && this.ses !== null;
   }
 
   /**
-   * Verify the email transport is configured. Resend is a stateless HTTP API
+   * Verify the email transport is configured. SES is a stateless HTTP API
    * with no connection to open, so this just reports configuration status —
    * kept for API compatibility with prior callers.
    */
@@ -209,42 +204,43 @@ export class EmailService {
 
     const start = Date.now();
     try {
-      const { data, error } = await this.resend!.emails.send({
-        from: this.fromAddress,
-        replyTo: this.replyToAddress,
-        to: options.to,
-        subject: options.subject,
-        text: options.text,
-        html: options.html,
-      });
-
-      if (error) {
-        // Resend resolves (does not throw) on API-level errors — name/message
-        // pinpoint the cause (e.g. "validation_error" for an unverified From
-        // domain, "missing_api_key", rate limits).
-        const errorMsg = `${error.name ? `${error.name}: ` : ""}${error.message || String(error)}`;
-        // A validation_error almost always means the From domain isn't verified
-        // in Resend — the single most common way this service goes quiet.
-        const hint =
-          error.name === "validation_error"
-            ? ` (check that the domain of "${this.fromAddress}" is verified in Resend — see docs/EMAIL.md)`
-            : "";
-        console.error(
-          `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}${hint}`
-        );
-        return { success: false, error: errorMsg };
-      }
+      // Explicit UTF-8 charsets: subjects and bodies are frequently Hebrew.
+      const result = await this.ses!.send(
+        new SendEmailCommand({
+          FromEmailAddress: this.fromAddress,
+          ReplyToAddresses: [this.replyToAddress],
+          Destination: { ToAddresses: [options.to] },
+          Content: {
+            Simple: {
+              Subject: { Data: options.subject, Charset: "UTF-8" },
+              Body: {
+                Text: { Data: options.text, Charset: "UTF-8" },
+                Html: { Data: options.html, Charset: "UTF-8" },
+              },
+            },
+          },
+        })
+      );
 
       console.log(
-        `Email sent successfully to ${options.to} in ${Date.now() - start}ms, messageId: ${data?.id}`
+        `Email sent successfully to ${options.to} in ${Date.now() - start}ms, messageId: ${result.MessageId}`
       );
-      return { success: true, messageId: data?.id };
+      return { success: true, messageId: result.MessageId };
     } catch (error: any) {
-      // Network/unexpected errors (Resend SDK throws only on transport-level
-      // failures, which should be rare over HTTPS:443).
-      const errorMsg = error?.message || String(error);
+      // The SES SDK throws on failure; error.name pinpoints the cause. The two
+      // usual ways this service goes quiet:
+      //  • MessageRejected "Email address is not verified" — the From domain's
+      //    identity isn't verified yet, OR the account is still in SANDBOX
+      //    mode and the RECIPIENT isn't verified (docs/EMAIL.md).
+      //  • CredentialsProviderError / AccessDenied — the role is missing
+      //    ses:SendEmail (or no AWS creds locally).
+      const errorMsg = `${error?.name ? `${error.name}: ` : ""}${error?.message || String(error)}`;
+      const hint =
+        error?.name === "MessageRejected"
+          ? ` (unverified identity or SES sandbox — see docs/EMAIL.md)`
+          : "";
       console.error(
-        `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}`
+        `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}${hint}`
       );
       return { success: false, error: errorMsg };
     }

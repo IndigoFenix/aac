@@ -299,11 +299,11 @@ variable "coturn_credential_ttl_seconds" {
 }
 
 # =============================================================================
-# EMAIL AUTHENTICATION (see docs/EMAIL.md)
+# EMAIL (see docs/EMAIL.md)
 # =============================================================================
-# Google Workspace sends human mail from the apex; Resend sends the app's
-# transactional mail from a dedicated subdomain. Each needs SPF + DKIM, and
-# one DMARC record at the apex governs both.
+# Google Workspace sends the humans' mail from the apex; Amazon SES (ses.tf)
+# sends the app's transactional mail. Each needs SPF + DKIM, and one DMARC
+# record at the apex governs both.
 
 variable "google_workspace_dkim_value" {
   description = "TXT value for google._domainkey.<domain> — the DKIM public key generated in Google Admin (Apps > Google Workspace > Gmail > Authenticate email). Per-domain: regenerate if domain_name changes. Empty = no record (mail still authenticates via SPF, but DMARC alignment gets fragile)."
@@ -312,21 +312,21 @@ variable "google_workspace_dkim_value" {
 }
 
 variable "mail_sending_subdomain" {
-  description = "Subdomain under domain_name that the ESP sends from (final domain = <this>.<domain_name>). Must NOT be the apex: Resend needs an MX on the sending domain for bounces and the apex MX belongs to Google Workspace. EMAIL_FROM must use an address on this domain."
+  description = "Subdomain used as SES's custom MAIL FROM (Return-Path) domain — where SPF is checked and bounces land. Keeps bounce traffic off the apex; the visible From address stays on the apex (email_from)."
   type        = string
   default     = "send"
 }
 
-variable "resend_bounce_mx_host" {
-  description = "Resend's bounce-handling MX host for the sending subdomain, e.g. feedback-smtp.eu-west-1.amazonses.com. Region-specific — copy verbatim from the Resend dashboard. Empty = the subdomain's MX and SPF records are skipped."
+variable "email_from" {
+  description = "From header for all transactional mail. Must be on domain_name (SES-verified) and must NOT be a human's mailbox or a Workspace alias of one — Gmail resolves known addresses against the directory and shows the owner's name instead of this display name."
   type        = string
-  default     = ""
+  default     = "Aivota <noreply@aivota.ai>"
 }
 
-variable "resend_dkim_value" {
-  description = "TXT value for resend._domainkey.<mail_sending_subdomain>.<domain> — the DKIM public key shown in the Resend dashboard when the domain is added. Empty = no record, and Resend will not verify the domain."
+variable "email_reply_to" {
+  description = "Reply-To for all transactional mail — the From address is unattended, so replies need a monitored mailbox."
   type        = string
-  default     = ""
+  default     = "cs@aivota.ai"
 }
 
 variable "dmarc_policy" {
@@ -340,7 +340,7 @@ variable "dmarc_policy" {
 }
 
 variable "dmarc_rua" {
-  description = "Mailbox receiving DMARC aggregate reports (bare address, no mailto:). Empty = no rua tag, which means no visibility into who is sending as this domain."
-  type        = string
-  default     = ""
+  description = "Mailboxes receiving DMARC aggregate reports (bare addresses, no mailto:). Reports are gzipped XML, so the usual setup is your own address plus a digest service that mails a readable weekly summary. Empty list = no rua tag, i.e. no visibility into who is sending as this domain. NOTE: an address on a DIFFERENT domain only receives reports if that domain publishes an authorization record (<this domain>._report._dmarc.<their domain> TXT v=DMARC1) — digest services publish it for you, but it is why an off-domain rua can go silent."
+  type        = list(string)
+  default     = []
 }

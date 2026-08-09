@@ -217,6 +217,13 @@ resource "aws_lambda_function" "api" {
       S3_UPLOADS_BUCKET       = aws_s3_bucket.uploads.bucket
       # Public URL for email links (Lambda sees API Gateway host, not the domain)
       APP_URL                 = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
+      # Transactional email via SES (docs/EMAIL.md) — role creds, no secret;
+      # region comes from the runtime's own AWS_REGION.
+      # NOTE: index.lambda.ts copies every key of the app-secrets JSON into
+      # process.env AFTER these are set, so stale SMTP_*/EMAIL_* keys in that
+      # secret would override this. Delete them from the secret.
+      EMAIL_FROM              = var.email_from
+      EMAIL_REPLY_TO          = var.email_reply_to
     },
     # TURN relay (live calls). Secret is KMS-encrypted at rest as a Lambda env
     # var; URLs are non-secret. Both absent → app serves STUN-only.
