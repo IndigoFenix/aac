@@ -43,6 +43,7 @@ import {
   AXIS_WORDS,
   DESCRIPTOR_AXES_FOR_VERB,
   descriptorAxesFor,
+  isObjectProperty,
   PROPERTY_FOR_VERB,
   type DescriptorAxis,
   type ObjectProperty,
@@ -257,6 +258,62 @@ const OBJECT_OPTIONAL = new Set([
 ]);
 /** High-frequency opener verbs (concept-parser.md "core 40"). */
 const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play"];
+
+/** TRANSPORT VERBS — the ones that MOVE A THING to an endpoint. Their `to` does
+ *  not have to point at a body: "bring + wood + to + yard" ends at a place and
+ *  compiles to the same `putIn` that "put + wood + in + yard" does. So after one
+ *  of these, `to` opens places and containers alongside the recipients; every
+ *  other verb keeps `to` = whom. */
+const TRANSPORT_VERBS = new Set(["carry", "bring", "put", "drop", "throw"]);
+
+/** A class of noun, named from either side of the one vocabulary: an object
+ *  PROPERTY (what a thing is for) or a noun KIND (what sort of thing it is). */
+type NounClass = ObjectProperty | "creature" | "place" | "item";
+
+const isClass = (n: SurfaceNoun, c: NounClass): boolean =>
+  isObjectProperty(c) ? (n.properties ?? []).includes(c) : n.kind === c;
+
+/**
+ * WHAT EACH LINK POINTS AT. A preposition is not a generic noun slot: every one
+ * names a relation with its OWN kind of second argument, and the board should
+ * say so. `in` wants something that holds things; `on` something with a surface
+ * to hold them up; the proximity and facing links want an anchor that
+ * physically stands somewhere (furniture first, then the room itself); `from`
+ * wants a source — what a thing comes out of, or whom it comes from; and the
+ * social links (to/with/for) want a body.
+ *
+ * Tiers, strongest first. This RANKS, it never filters — the universal band
+ * still offers every noun underneath, so no composition is ever blocked by a
+ * classification the library happened not to carry.
+ *
+ * Keyed by the LEXICON's `rel`, never by the board word, so `next_to`/`beside`
+ * and `in_front_of`/`front` share one entry by construction.
+ */
+const LINK_TARGETS: Readonly<Record<string, readonly (readonly NounClass[])[]>> = {
+  in: [["container"], ["place"]],
+  on: [["furniture", "tableware", "appliance"], ["place"]],
+  under: [["furniture"], ["place"]],
+  over: [["furniture"], ["place"]],
+  behind: [["furniture"], ["place"]],
+  front: [["furniture"], ["place"]],
+  beside: [["furniture"], ["place"]],
+  near: [["furniture"], ["place"]],
+  from: [["container", "creature"], ["place"]],
+  to: [["creature"]],
+  with: [["creature"]],
+  for: [["creature"]],
+};
+
+/** THE SPATIAL LINK BAND for the put family (`implied: "in"`), best first.
+ *  WHICH link leads is the OBJECT's business: a piece of furniture is placed
+ *  RELATIVE to what already stands there and never dropped inside it, so the
+ *  adjacency words lead for one; anything a hand can carry goes INTO or ONTO
+ *  something, so containment leads for the other. Both keep the whole set —
+ *  every link a physical anchor can support stays one press away. */
+const PLACEMENT_LINKS: Readonly<Record<"furniture" | "movable", readonly (readonly [string, number])[]>> = {
+  furniture: [["next_to", 4], ["near", 3], ["in", 3], ["on", 2], ["under", 1], ["behind", 1], ["in_front_of", 1]],
+  movable: [["in", 3], ["on", 2], ["next_to", 1], ["near", 1], ["under", 1], ["behind", 1], ["in_front_of", 1]],
+};
 
 /** THE FREQUENCY PRIOR: AAC core-vocabulary order (most frequent first). It
  *  breaks every rank tie — so within any legal band the child's most likely
@@ -496,10 +553,24 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
 
   // ── Stage: hard-forced continuations ──────────────────────────────────────
   if (lastLex?.cat === "relation") {
-    // A dangling relation binds the NEXT noun — nothing else is legal.
+    // A dangling relation binds the NEXT noun — nothing else is legal. WHICH
+    // noun is the link's own business (LINK_TARGETS): "in" asks for a box
+    // before a bedroom, "on" for a table before a kitchen, "from" for the
+    // container or the person a thing came out of. One extra rung is the
+    // FRAME's: a transport verb's "to" ends at a place as readily as at a body
+    // ("bring + wood + to + yard"), so its endpoint classes join the band.
+    // Beyond that the surfacer stays context-blind — the verb is read off the
+    // partial parse it already has, never off the scene.
     const rel = (lastLex as { rel: string }).rel;
-    const want = rel === "to" || rel === "with" || rel === "for" ? "creature" : "place";
-    addNouns("relation-noun", (n) => n.kind === want || n.kind === "unknown", 5);
+    const tiers = [...(LINK_TARGETS[rel] ?? [])];
+    if (rel === "to" && frame?.verb && TRANSPORT_VERBS.has(frame.verb)) tiers.push(["container", "place"]);
+    tiers.forEach((classes, i) => {
+      addNouns("relation-noun", (n) => classes.some((c) => isClass(n, c)), Math.max(1, 5 - 2 * i));
+    });
+    // A noun the classifier could not place is never JUDGED by a kind it does
+    // not carry — it sits just above the universal band rather than below every
+    // classified word.
+    addNouns("relation-noun", (n) => n.kind === "unknown", 1);
     addNouns("relation-noun", () => true);
     add("i_me", "relation-noun", 4);
     add("you", "relation-noun", 4);
@@ -650,6 +721,20 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       add("home", "destination", 4);
       add("here", "destination", 2);
       add("there", "destination", 2);
+    } else if (canonicalVerb(verb) === "stay") {
+      // STAY/WAIT name a POSITION TO HOLD, so the only question after them is
+      // where — `{stay, place?}` is exactly the goal they compile to, and
+      // without this band they fell through the generic object dump with no
+      // boost at all. There is no `at` in the LEXICON and inventing one would
+      // be a word the parser cannot read: `in` (inside a room) and `near` (by a
+      // thing) carry the whole sense between them, with the gaze words for the
+      // spot underfoot.
+      addNouns("destination", (nn) => nn.kind === "place", 5);
+      add("in", "destination", 3);
+      add("near", "destination", 2);
+      add("here", "destination", 2);
+      add("there", "destination", 2);
+      addNouns("object", () => true);
     } else {
       // The verb's object. §3.1 first: the PROPERTY the verb wants leads (an
       // `eat` surfaces every food, whether or not that food's own affordance
@@ -679,32 +764,65 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     const meta = LEXICON[verb];
     const transfer = meta?.cat === "verb" && (meta as { transfer?: boolean }).transfer;
     const implied = meta?.cat === "verb" ? (meta as { implied?: string }).implied : undefined;
+    // THE VERB'S SECOND ARGUMENT. With the theme named, what comes next is the
+    // OTHER end of the verb's own frame — and which end that is differs by
+    // family: a partner (trade), a destination (carry, put), a recipient
+    // (give), a source (get). Each family opens the LINK WORDS that name its
+    // end together with the class of noun that can fill them, so the link is a
+    // press away instead of buried in the generic joiner dump below, where the
+    // connective quota of three is spent on and/then/because every time.
+    if (verb === "trade") {
+      // A TRADE IS A SWAP, not a handover, and it needs two links no other verb
+      // needs: the PARTNER (`with`) and the counter-good (`for`) — precisely the
+      // pair compileAction reads out of the frame (trade{give, take, partner}).
+      // Partners are bodies and settlements alike: a town trades.
+      add("with", "destination", 6);
+      add("for", "destination", 5);
+      addNouns("destination", (nn) => nn.kind === "creature", 4);
+      addNouns("destination", (nn) => nn.kind === "place", 3);
+    }
+    if (verb === "carry") {
+      // CARRYING IS A HAUL, not a handover. `carry` shares give's implied "to",
+      // but a load is carried to a yard or into a box far more often than into
+      // somebody's hands — so its endpoint band leads and the recipients below
+      // rank under it, instead of a board of people for "carry the wood ___".
+      addNouns("destination", (nn) => nn.kind === "place", 6);
+      addNouns("destination", wants("container"), 6);
+      add("to", "destination", 5);
+      add("in", "destination", 4);
+    }
     if (transfer || implied === "to") {
       addNouns("recipient", (nn) => nn.kind === "creature", 5);
       add("i_me", "recipient", 4);
       add("to", "recipient", 3);
     }
+    if (canonicalVerb(verb) === "get" || implied === "from") {
+      // ACQUISITION OPENS A SOURCE. get/take/pick_up name a thing coming INTO
+      // the hands, so the open question is where from — `take`'s own argument
+      // frame says as much (implied "from"), and the compiler already carries it
+      // (fetch{item, from}). A source is what a thing comes out of (a container)
+      // or whom it comes from (a body). The recipient band above still stands:
+      // an explicit "to" turns the acquisition into a delivery — the to/from
+      // opposition, not two competing readings of one verb.
+      add("from", "destination", 3);
+      addNouns("destination", wants("container"), 4);
+      addNouns("destination", (nn) => nn.kind === "creature", 2);
+    }
     if (implied === "in") {
-      // "put + ball + …" wants a CONTAINER — the same §3.1 table, read for the
-      // destination slot rather than the object slot.
+      // "put + ball + …" wants somewhere to put it — the same §3.1 table, read
+      // for the destination slot rather than the object slot.
       subTab = PROPERTY_FOR_VERB[verb];
       if (subTab) addNouns("destination", wants(subTab), 6);
       addNouns("destination", (nn) => nn.kind === "place", 5);
-      add("in", "destination", 3);
-      // A PIECE OF FURNITURE is placed RELATIVE to what already stands there —
-      // never dropped inside it. So when the object is furniture the placement
-      // relations join the destination band: `on` (a surface), `next_to` (the
-      // adjacent spot) and `near` (the vicinity). They were only ever reachable
-      // through the generic relation band below, where the connective quota
-      // buried them under and/then/because — which is why composers reached for
-      // whatever place word the board did show.
+      // THE SPATIAL LINKS ARE THE SENTENCE, so they ride the destination band
+      // beside the places rather than the generic relation band below, where the
+      // connective quota buried them under and/then/because — which is why
+      // composers reached for whatever place word the board did show. EVERY
+      // named object opens them: a ball goes on the table or under the bed just
+      // as a chair goes next to one. PLACEMENT_LINKS decides only which lead.
       const placedKind = frame.object?.kind === "entity" ? frame.object.symbol : null;
       const furnish = !!placedKind && (nounBy.get(placedKind)?.properties ?? []).includes("furniture");
-      if (furnish) {
-        add("next_to", "destination", 4);
-        add("near", "destination", 3);
-        add("on", "destination", 2);
-      }
+      for (const [w, b] of PLACEMENT_LINKS[furnish ? "furniture" : "movable"]) add(w, "destination", b);
     }
     // Joins that extend any complete verb phrase — plus quantities ("give
     // apple two") and the object's own descriptors ("give apple hot").

@@ -39,6 +39,8 @@ import {
   type DBOperationContext,
 } from "../chat/memory-types";
 import { studentService } from "../studentService";
+import { activityLogService } from "../activityLogService";
+import { summarizeChanges, changeDetails } from "../activityChanges";
 import type { AccessCtx } from "../sharing/visibility";
 import { normalizeAacPromptList } from "./aac-memory-schema";
 import { COMPETENCY_LABEL } from "@shared/social-bot/state";
@@ -206,12 +208,36 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
 
   if (Object.keys(filtered).length === 0) return updates;
 
+  // Snapshot before the write so the audit row can name the fields. This path
+  // is the AI's only door into aac_settings — including `aiName`, which lands
+  // verbatim in the live system prompts — and until now it wrote silently, so
+  // an AI-set value was indistinguishable from a clinician-set one after the
+  // fact. Read from the same place the write goes, so the diff matches what
+  // actually happened.
+  const before = await readAACSettings(ctx);
+
   filtered.updatedAt = new Date();
 
   await db
     .update(aacSettings)
     .set(filtered)
     .where(eq(aacSettings.studentId, studentId));
+
+  const details = changeDetails(
+    summarizeChanges("aac_settings", before, filtered),
+    { via: "aac_settings" },
+  );
+  if (details) {
+    activityLogService.log({
+      instituteId: (ctx.all.instituteId as string | undefined) ?? null,
+      userId: userId ?? null,
+      eventType: "update",
+      subjectType1: "student",
+      subjectId1: studentId,
+      isAiInitiated: true,
+      details,
+    });
+  }
 
   console.log(`[aac-settings-memory] Wrote ${Object.keys(filtered).length} fields for student ${studentId}`);
   return updates;

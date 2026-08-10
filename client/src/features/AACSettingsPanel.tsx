@@ -1026,11 +1026,24 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             defaultOpen
           >
             <CardContent className="space-y-6">
-              {/* AI Name */}
+              {/* AI Name.
+                  Named, labelled and autofill-proofed on purpose: this used to
+                  be an anonymous text input (no id/name/autoComplete, label not
+                  associated) sitting ahead of the ElevenLabs password field, so
+                  a browser could classify it as the username box and fill a
+                  caretaker's saved email into it. That name goes straight into
+                  the live system prompts ("You are <email>"), so a stray
+                  autofill leaks a real address into every LLM call. */}
               <div className="space-y-2">
-                <Label className="text-base font-medium">{t('aacSettings.aiName')}</Label>
+                <Label htmlFor="aac-ai-name" className="text-base font-medium">{t('aacSettings.aiName')}</Label>
                 <p className="text-xs text-muted-foreground">{t('aacSettings.aiNameDesc')}</p>
                 <Input
+                  id="aac-ai-name"
+                  name="aac-ai-name"
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-1p-ignore
+                  data-testid="input-ai-name"
                   value={aiName}
                   onChange={(e) => setAiName(e.target.value)}
                   placeholder={t('aacSettings.aiNamePlaceholder')}
@@ -1260,8 +1273,16 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         {t('aacSettings.elevenlabsApiKey')}
                       </Label>
                     </div>
+                    {/* An API key, not a credential — `new-password` stops the
+                        browser offering to save/fill it (and stops it hunting
+                        the page for a username field to pair it with). */}
                     <Input
                       type="password"
+                      id="aac-elevenlabs-api-key"
+                      name="aac-elevenlabs-api-key"
+                      autoComplete="new-password"
+                      data-lpignore="true"
+                      data-1p-ignore
                       value={elevenlabsApiKey}
                       onChange={(e) => setElevenlabsApiKey(e.target.value)}
                       placeholder={t('aacSettings.elevenlabsApiKeyPlaceholder')}

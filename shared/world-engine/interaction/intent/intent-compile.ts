@@ -191,6 +191,18 @@ export const SELF_NEEDS = new Set([
 // unambiguous item reading; "play"/"wear" with an object are left to the
 // need machinery until a targeted use/equip primitive exists.
 const INGEST_VERBS = new Set(["eat", "drink"]);
+// POSTURE verbs: the self-care verbs whose object is not a THING acted on but a
+// STATION the body settles at ("sit on the chair", "sleep in the bed", "rest at
+// the bench"). Bare they are ordinary self-needs (above); with a station bound
+// they compile to `rest`, the dwell primitive rules.ts declares for exactly
+// this. Kept to the three that name a posture — "play + box" stays the fun
+// motive, whose own ritual owns the toy.
+const REST_VERBS = new Set(["sit", "sleep", "rest"]);
+/** The relations that can name a STATION — the parser's LOCATIVES. `with` is
+ *  deliberately absent: it marks COMPANY, never a place ("sleep with Mara" is a
+ *  shared need, not a bed). `to`/`from`/`for` are transport and benefit
+ *  markers, and neither names a spot a body settles at. */
+const STATION_RELATIONS = ["in", "on", "under", "over", "near", "behind", "front", "beside"] as const;
 
 /** The colour a `color`/recolour command names — a `color_*` value carried as a
  *  descriptor on the object (`shirt.color_red`) or a standalone colour modifier
@@ -395,7 +407,14 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
       return from ? { kind: "fetch", item: { match: {} }, from } : null;
     }
     case "give":
-    case "bring": {
+    case "bring":
+    case "share": {
+      // `share` is the GIVE family's third word, not a fourth primitive: the
+      // lexicon already frames it identically (transitive, transfer, implied
+      // "to"), and what a body DOES to share a thing is hand it over. Handing
+      // half an apple back is a portioning the item layer has no shape for, so
+      // the whole thing travels — the honest reading of the goal set we have,
+      // and the alternative was the sentence not compiling at all.
       const it = item();
       if (!it) return null;
       const dest = destOf(frame.target);
@@ -630,6 +649,39 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
         const it = item();
         if (it) return { kind: "wear", item: it };
       }
+      // REST AT A STATION (rules.ts `rest`): a posture verb that NAMES where the
+      // body settles is not the abstract need — "sit on the chair" and "sleep in
+      // the bed" are orders about THAT fixture, and serving them with a bare
+      // `satisfy` threw away the one word the child chose. A bound station
+      // compiles to the dwell primitive instead: walk there, occupy it, hold the
+      // pose. Nothing else changes — bare "you sleep" falls straight through to
+      // the self-need below, which is still the only reading it has.
+      //
+      // NO pose and NO dwellS ride the goal. The FIXTURE says what the dwell is
+      // (a bed sleeps, a toy box plays, anything else sits) and the executor
+      // reads it there; `pose` exists only to OVERRIDE that reading for a
+      // need-born dwell in the open, where no fixture is present to say it. The
+      // absent `dwellS` is the command default — an order is not a nap.
+      //
+      // COMPANY OUTRANKS THE STATION: `rest` carries no companion and `satisfy`
+      // does, so "sleep with Mara" / "rest together" stay the SHARED need, where
+      // the gathering machinery can actually serve them. Compiling those to a
+      // rest would silently drop the one person the child named, and dropping a
+      // named body is the worse loss of the two.
+      //
+      // WHICH word is the station: a LOCATIVE-bound noun ("in the bed", "next to
+      // Mara"), else a bare second noun ("sit + chair", "rest + bed"). A named
+      // BODY resolves creature-first, like every other endpoint in this file: a
+      // creature IS a place — its own spot — which is what PlaceRef's `creature`
+      // kind means, so "sit next to Mara" settles where Mara is. A kind-blind
+      // binder reads every name as a creature; the world's classifier-backed one
+      // sends furniture and rooms down the place channel, as it does for `from`.
+      if (REST_VERBS.has(v) && !companionsOf(frame, binder)) {
+        const at = boundRef(...STATION_RELATIONS) ?? frame.object;
+        const who = binder.creature(at);
+        const station = who ? ({ kind: "creature", id: who } as const) : binder.place(at);
+        if (station) return { kind: "rest", place: station };
+      }
       if (SELF_NEEDS.has(v)) return { kind: "satisfy", need: v };
       return null;
     }
@@ -715,9 +767,14 @@ export function compileRule(frame: IntentFrame, binder: IntentBinder, meta: Comp
   // in the condition ("if window.open, shut [it]" → shut the window). Borrow the
   // condition's item KIND, stripped of its state modifier (we act on the window, not
   // on "open").
+  //
+  // A POSTURE verb never borrows: it is COMPLETE bare, so a borrowed token would be
+  // read as its STATION — "when night, sleep" is a bedtime rule, not an order to
+  // sleep at the night. The transitive verbs the anaphora was written for are
+  // unaffected; only the verbs with nothing to do with an object opt out.
   const condObj = frame.condition.object;
   const actionFrame =
-    !frame.object && condObj?.kind === "entity"
+    !frame.object && condObj?.kind === "entity" && !REST_VERBS.has(frame.verb ?? "")
       ? { ...frame, object: { kind: "entity" as const, symbol: condObj.symbol, modifiers: [] } }
       : frame;
   const action = compileAction(actionFrame, binder);

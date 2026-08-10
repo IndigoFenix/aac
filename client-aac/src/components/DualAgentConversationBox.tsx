@@ -161,7 +161,6 @@ export function DualAgentConversationBox({
     sendMessage,
     setAudioEnabled,
     setVoiceEnabled,
-    stopAudio,
     startVoiceRecording,
     stopVoiceRecording,
     cancelVoiceRecording,
@@ -399,10 +398,11 @@ export function DualAgentConversationBox({
         sendMessage("[system: the user has unmuted you, greet them]");
       }
     } else {
+      // setMuteState cuts the avatar voice itself (tag-scoped, so a student
+      // utterance mid-play survives) — no separate stopAudio() needed.
       setMuteState('muted');
-      stopAudio();
     }
-  }, [socialBot, muteState, isInitialized, setMuteState, sendMessage, stopAudio, attentiveness]);
+  }, [socialBot, muteState, isInitialized, setMuteState, sendMessage, attentiveness]);
 
   // Sprite presentation (eye/ear/mouth/focus, animation frames, sleep flags)
   // comes from <AvatarSpriteProvider> so the header avatar and the fullscreen
@@ -436,7 +436,7 @@ export function DualAgentConversationBox({
             {/* Token-budget energy bar — left of the cave (right in RTL: it's the
                 first flex child, and the header runs under dir="rtl", so it lands
                 on the right automatically). Only shown once the server has pushed
-                a budget level (economizing sessions). */}
+                a budget level (all sessions with a budget, full-attention too). */}
             {budget && (
               <EnergyBar
                 percent={budget.percent}

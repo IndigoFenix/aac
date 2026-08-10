@@ -266,11 +266,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // User-controlled mute state (cave toggle — the AI cannot change this)
   const [muteState, setMuteStateImpl] = useState<"unmuted" | "muted">("unmuted");
+  // Ref mirror for handleServerMessage (a long-lived callback that must see
+  // the CURRENT state): avatar_audio / AI-voice TTS that was already in
+  // flight from the server when the user muted is dropped on arrival.
+  const muteStateRef = useRef<"unmuted" | "muted">("unmuted");
   // Last AI-initiated mode change — used to flash the "AI: <mode>" indicator
   const [lastModeChange, setLastModeChange] = useState<{ mode: "companion" | "facilitator" | "standby"; reason?: string; source: "ai"; at: number } | null>(null);
   // AAC token-budget level for the in-client energy bar (binding window % + band).
-  // null until the server sends the first budget_update (it only does so for
-  // economizing sessions, which are the ones that track a budget).
+  // null until the server sends the first budget_update. Every session with a
+  // budget tracks and pushes it — full-attention sessions included (they drain
+  // the same meter; they just never throttle on it).
   const [budget, setBudget] = useState<{ percent: number; band: "high" | "moderate" | "low"; window: string | null } | null>(null);
 
   // Response mode
@@ -776,10 +781,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "avatar_audio":
-          // AI voice audio chunk — tagged so avatar mouth animates. Always queued so
+          // AI voice audio chunk — tagged so avatar mouth animates. Queued so
           // it plays AND transmits over a call; the header mute silences only LOCAL
           // speakers via the player's master gain (setLocalMuted), it never drops the
           // audio (which would also stop it reaching the call).
+          // The cave mute is different — the AI must not speak AT ALL. The server
+          // stops sending while muted; this drop covers chunks already in flight
+          // when the user clicked, so muting lands mid-word, not mid-turn.
+          if (muteStateRef.current === "muted") break;
           audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "avatar" });
           break;
 
@@ -800,6 +809,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student"; id?: string;
           };
           const tag = voiceRole === "ai" ? "avatar" : "utterance";
+          // Cave mute: skip AI-voice synthesis that was in flight when the
+          // user muted. Still ack so the server's ordering wait releases.
+          if (voiceRole === "ai" && muteStateRef.current === "muted") {
+            if (ttsId) wsSend({ type: "tts_done", id: ttsId, ok: true });
+            break;
+          }
           // Chain to preserve ordering between consecutive client_tts events
           clientTtsChainRef.current = clientTtsChainRef.current.then(async () => {
             let ok = true;
@@ -825,6 +840,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           const { text: localText, language: localLang, voiceRole: localRole } = msg.data as {
             text: string; language: string; voiceRole: "ai" | "student";
           };
+          // Cave mute: drop AI-voice fallback speech in flight at mute time.
+          if (localRole === "ai" && muteStateRef.current === "muted") break;
           // Buffer text and flush at sentence boundaries to avoid choppy speech
           localTtsBufferRef.current += (localTtsBufferRef.current ? " " : "") + localText;
           // Clear any pending flush timer
@@ -2080,9 +2097,17 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Mute setter — user-only toggle (cave click). Notify server so the live
   // session can rebuild its system prompt for the new mode.
   const setMuteState = useCallback((state: "unmuted" | "muted") => {
+    // Ref first: any avatar_audio processed later this tick is already gated.
+    muteStateRef.current = state;
     setMuteStateImpl(state);
+    if (state === "muted") {
+      // Muting is immediate: cut the AI's voice mid-word — queued chunks,
+      // the live stream, and current playback. Tag-scoped so the student's
+      // own utterance voice (their way of speaking) is never cut.
+      audioPlayer.clearByTag("avatar");
+    }
     wsSend({ type: "set_mute_state", muteState: state });
-  }, [wsSend]);
+  }, [wsSend, audioPlayer]);
 
   // Response mode setter — also notify server
   const setResponseMode = useCallback((mode: "fast" | "analyze") => {

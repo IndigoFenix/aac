@@ -82,6 +82,103 @@ function formatSubjectType(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// ---------- Field-level changes ----------
+//
+// `details.changes` is written by server/services/activityChanges.ts as
+// { fieldName: { from, to, redacted? } }. Redacted entries carry a descriptor
+// instead of the value — "empty" / "set" / "[n items]" / "{n fields}" — which
+// stays readable when the table is queried directly in psql and is mapped to
+// localized text here.
+
+interface FieldChange {
+  from: unknown;
+  to: unknown;
+  redacted?: boolean;
+}
+
+function changeMapOf(details: unknown): Record<string, FieldChange> | null {
+  if (!details || typeof details !== "object") return null;
+  const changes = (details as Record<string, unknown>).changes;
+  if (!changes || typeof changes !== "object" || Array.isArray(changes)) return null;
+  const entries = Object.entries(changes as Record<string, unknown>).filter(
+    ([, v]) => v !== null && typeof v === "object" && "to" in (v as object),
+  );
+  return entries.length ? (Object.fromEntries(entries) as Record<string, FieldChange>) : null;
+}
+
+function useChangeValue() {
+  const { t } = useLanguage();
+  return (value: unknown, redacted?: boolean): string => {
+    if (value === null || value === undefined) return "—";
+    if (typeof value === "boolean") return value ? t("common.yes") : t("common.no");
+    if (typeof value === "string") {
+      // Only a redacted entry speaks in descriptors; a real value that happens
+      // to read "set" is left exactly as the user typed it.
+      if (redacted) {
+        if (value === "empty") return t("admin.activityLog.changes.empty");
+        if (value === "set") return t("admin.activityLog.changes.set");
+        const items = /^\[(\d+) items\]$/.exec(value);
+        if (items) return t("admin.activityLog.changes.items", { count: items[1] });
+        const fields = /^\{(\d+) fields\}$/.exec(value);
+        if (fields) return t("admin.activityLog.changes.fields", { count: fields[1] });
+      }
+      return value;
+    }
+    return String(value);
+  };
+}
+
+/** Compact "aiName, iconTextRatio +2" summary for the table row. */
+function ChangeSummary({ details }: { details: unknown }) {
+  const { t } = useLanguage();
+  const changes = changeMapOf(details);
+  if (!changes) return <span className="text-muted-foreground">—</span>;
+
+  const names = Object.keys(changes);
+  const shown = names.slice(0, 2);
+  const rest = names.length - shown.length;
+  return (
+    <span className="text-xs font-mono">
+      {shown.join(", ")}
+      {rest > 0 && (
+        <span className="text-muted-foreground ms-1">
+          {t("admin.activityLog.changes.more", { count: rest })}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Full before → after table for the detail dialog. */
+function ChangeTable({ changes }: { changes: Record<string, FieldChange> }) {
+  const { t, isRTL } = useLanguage();
+  const renderValue = useChangeValue();
+  // before → after reads right-to-left in Hebrew/Arabic, so the arrow flips
+  // with the text direction rather than always pointing at the old value.
+  const arrow = isRTL ? '←' : '→';
+  return (
+    <div className="mt-1 rounded border divide-y">
+      {Object.entries(changes).map(([field, change]) => (
+        <div key={field} className="flex items-baseline gap-2 px-2 py-1.5 text-xs">
+          <span className="font-mono font-medium shrink-0">{field}</span>
+          <span className="flex-1 min-w-0 flex items-baseline gap-1.5 justify-end text-end">
+            <span className="text-muted-foreground break-all">
+              {renderValue(change.from, change.redacted)}
+            </span>
+            <span aria-hidden="true">{arrow}</span>
+            <span className="break-all">{renderValue(change.to, change.redacted)}</span>
+          </span>
+          {change.redacted && (
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+              {t("admin.activityLog.changes.hidden")}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString(undefined, {
     month: "short",
@@ -100,13 +197,14 @@ function PaginationBar({
   onOffsetChange: (o: number) => void;
   onLimitChange: (l: number) => void;
 }) {
+  const { t } = useLanguage();
   const from = total === 0 ? 0 : offset + 1;
   const to = Math.min(offset + limit, total);
 
   return (
     <div className="flex items-center justify-between mt-4">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>{from}–{to} of {total}</span>
+        <span>{t("admin.activityLog.pagination.range", { from, to, total })}</span>
         <Select value={String(limit)} onValueChange={(v) => onLimitChange(Number(v))}>
           <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -119,11 +217,11 @@ function PaginationBar({
       <div className="flex gap-2">
         <Button variant="outline" size="sm" disabled={offset === 0}
           onClick={() => onOffsetChange(Math.max(0, offset - limit))}>
-          <ChevronLeft className="w-4 h-4" /> Prev
+          <ChevronLeft className="w-4 h-4" /> {t("admin.activityLog.pagination.prev")}
         </Button>
         <Button variant="outline" size="sm" disabled={offset + limit >= total}
           onClick={() => onOffsetChange(offset + limit)}>
-          Next <ChevronRight className="w-4 h-4" />
+          {t("admin.activityLog.pagination.next")} <ChevronRight className="w-4 h-4" />
         </Button>
       </div>
     </div>
@@ -131,7 +229,17 @@ function PaginationBar({
 }
 
 function DetailDialog({ entry, open, onClose }: { entry: ActivityLogEntry | null; open: boolean; onClose: () => void }) {
+  const { t } = useLanguage();
   if (!entry) return null;
+  const changes = changeMapOf(entry.details);
+  // Anything in `details` that isn't the change map (consent opt-ins, share
+  // metadata, …) still gets the raw dump — the map is an addition, not a
+  // replacement.
+  const rest = changes
+    ? Object.fromEntries(Object.entries(entry.details as Record<string, unknown>).filter(([k]) => k !== "changes"))
+    : (entry.details as Record<string, unknown> | null);
+  const hasRest = rest && Object.keys(rest).length > 0;
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
@@ -139,22 +247,28 @@ function DetailDialog({ entry, open, onClose }: { entry: ActivityLogEntry | null
           <DialogTitle>{formatSubjectType(entry.eventType)} — {formatSubjectType(entry.subjectType1)}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 text-sm">
-          <div><span className="text-muted-foreground">Date:</span> {new Date(entry.createdAt).toLocaleString()}</div>
-          <div><span className="text-muted-foreground">User:</span> {entry.userName ?? entry.userEmail ?? entry.userId ?? "—"}</div>
-          <div><span className="text-muted-foreground">Organization:</span> {entry.instituteName ?? entry.instituteId ?? "—"}</div>
-          <div><span className="text-muted-foreground">Event:</span> {entry.eventType}</div>
-          <div><span className="text-muted-foreground">Subject:</span> {formatSubjectType(entry.subjectType1)} ({entry.subjectId1 ?? "—"})</div>
+          <div><span className="text-muted-foreground">{t("admin.activityLog.detail.date")}:</span> {new Date(entry.createdAt).toLocaleString()}</div>
+          <div><span className="text-muted-foreground">{t("admin.activityLog.detail.user")}:</span> {entry.userName ?? entry.userEmail ?? entry.userId ?? "—"}</div>
+          <div><span className="text-muted-foreground">{t("admin.activityLog.detail.organization")}:</span> {entry.instituteName ?? entry.instituteId ?? "—"}</div>
+          <div><span className="text-muted-foreground">{t("admin.activityLog.detail.event")}:</span> {entry.eventType}</div>
+          <div><span className="text-muted-foreground">{t("admin.activityLog.detail.subject")}:</span> {formatSubjectType(entry.subjectType1)} ({entry.subjectId1 ?? "—"})</div>
           {entry.subjectType2 && (
-            <div><span className="text-muted-foreground">Related:</span> {formatSubjectType(entry.subjectType2)} ({entry.subjectId2 ?? "—"})</div>
+            <div><span className="text-muted-foreground">{t("admin.activityLog.detail.related")}:</span> {formatSubjectType(entry.subjectType2)} ({entry.subjectId2 ?? "—"})</div>
           )}
           {entry.isAiInitiated && (
             <div><Badge variant="outline"><Bot className="w-3 h-3 me-1" />AI</Badge></div>
           )}
-          {entry.details && (
+          {changes && (
             <div>
-              <span className="text-muted-foreground">Details:</span>
+              <span className="text-muted-foreground">{t("admin.activityLog.changes.title")}:</span>
+              <ChangeTable changes={changes} />
+            </div>
+          )}
+          {hasRest && (
+            <div>
+              <span className="text-muted-foreground">{t("admin.activityLog.detail.raw")}:</span>
               <pre className="mt-1 p-2 bg-muted rounded text-xs overflow-auto max-h-60">
-                {JSON.stringify(entry.details, null, 2)}
+                {JSON.stringify(rest, null, 2)}
               </pre>
             </div>
           )}
@@ -264,6 +378,7 @@ export function ActivityLog() {
                 <TableHead>{t("admin.activityLog.columns.user")}</TableHead>
                 <TableHead>{t("admin.activityLog.columns.event")}</TableHead>
                 <TableHead>{t("admin.activityLog.columns.subject")}</TableHead>
+                <TableHead>{t("admin.activityLog.columns.changes")}</TableHead>
                 <TableHead>{t("admin.activityLog.columns.relatedSubject")}</TableHead>
                 <TableHead>{t("admin.activityLog.columns.institute")}</TableHead>
                 <TableHead className="w-12">{t("admin.activityLog.columns.ai")}</TableHead>
@@ -288,6 +403,9 @@ export function ActivityLog() {
                     {entry.subjectId1 && (
                       <span className="text-xs text-muted-foreground ms-1">({entry.subjectId1.slice(0, 8)})</span>
                     )}
+                  </TableCell>
+                  <TableCell className="max-w-48 truncate">
+                    <ChangeSummary details={entry.details} />
                   </TableCell>
                   <TableCell className="text-sm">
                     {entry.subjectType2 ? (

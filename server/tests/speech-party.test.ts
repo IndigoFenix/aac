@@ -52,6 +52,26 @@ describe("isUserTarget", () => {
     expect(isUserTarget("DEVICE", "שחף")).toBe(false);
   });
 
+  // Regression coverage for the surname-collision bug (session bb87e58d,
+  // 2026-08-10): the mother ("לילית זיסמן") shares the student's family name
+  // ("הדר זיסמן"). Any-token matching read her as the student, so the
+  // attribution trust gate demoted every utterance she aimed at her daughter
+  // to ambient hearsay — no yellow caption, no board rebuild, all session.
+  it("does NOT match a family member on the shared surname alone", () => {
+    expect(isUserTarget("לילית זיסמן", "הדר זיסמן", "הדר")).toBe(false);
+    expect(isUserTarget("זיסמן", "הדר זיסמן", "הדר")).toBe(false);
+  });
+
+  it("does NOT match a different person who shares only the given name", () => {
+    expect(isUserTarget("הדר לוי", "הדר זיסמן")).toBe(false);
+  });
+
+  it("still matches the student with the shared-surname family present", () => {
+    expect(isUserTarget("הדר", "הדר זיסמן", "הדר")).toBe(true);
+    expect(isUserTarget("הדר זיסמן", "הדר זיסמן", "הדר")).toBe(true);
+    expect(isUserTarget("הדר!", "הדר זיסמן", "הדר")).toBe(true);
+  });
+
   it("returns false with no value or no names", () => {
     expect(isUserTarget(undefined, "שחף")).toBe(false);
     expect(isUserTarget("שחף סוחמי")).toBe(false);

@@ -163,8 +163,12 @@ describe("surfaceNext — the verb pre-loads its property group", () => {
     expect(surfaceNext(["you", "eat"], { nouns: NOUNS }).subTab).toBe("food");
     expect(surfaceNext(["you", "play"], { nouns: NOUNS }).subTab).toBe("toy");
     expect(surfaceNext(["you", "open"], { nouns: NOUNS }).subTab).toBe("openable");
-    // A verb with no property group leaves the tab alone.
-    expect(surfaceNext(["you", "sleep"], { nouns: NOUNS }).subTab).toBeUndefined();
+    // MOVED (arc L, step L3a): `sleep` used to be the example of a verb with no
+    // property group. It has one — the RESTING POSES take a station, so sit /
+    // sleep / rest open on furniture ("sleep + bed" is the sentence). `talk`
+    // stands in as the verb that genuinely wants no class of thing.
+    expect(surfaceNext(["you", "sleep"], { nouns: NOUNS }).subTab).toBe("furniture");
+    expect(surfaceNext(["you", "talk"], { nouns: NOUNS }).subTab).toBeUndefined();
   });
 
   it("ranks the property group ABOVE the noun's own affordance list", () => {

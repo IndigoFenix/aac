@@ -96,6 +96,13 @@ export const PROPERTY_FOR_VERB: Readonly<Record<string, ObjectProperty>> = {
   put: "container",
   throw: "container",
   build: "structure",
+  // THE RESTING POSES take a STATION, not a thing: you sit on a chair, sleep in
+  // a bed, rest on a bench. The furniture IS the argument (compileAction binds
+  // it as the `rest` goal's place), so the board opens on it — the same rule as
+  // "eat → food", read for a verb whose object happens to be a piece of the room.
+  sit: "furniture",
+  sleep: "furniture",
+  rest: "furniture",
 };
 
 // ---------------------------------------------------------------------------

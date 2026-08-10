@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { studentService } from "../services";
 import { instituteRepository } from "../repositories";
 import { activityLogService } from "../services/activityLogService";
+import { changeDetails, type ChangeMap } from "../services/activityChanges";
 
 export class StudentController {
   /**
@@ -197,7 +198,10 @@ export class StudentController {
         return;
       }
 
-      const updatedStudent = await studentService.updateStudent(studentId, req.body);
+      let changes: ChangeMap = {};
+      const updatedStudent = await studentService.updateStudent(studentId, req.body, {
+        onChanges: (c) => { changes = c; },
+      });
 
       if (updatedStudent) {
         res.json({
@@ -209,11 +213,15 @@ export class StudentController {
           },
         });
 
+        // This one endpoint covers both the student record and its AAC settings,
+        // so without the diff the row can't tell a birthdate fix from an AI-name
+        // change. `details` is null when the save changed nothing.
         activityLogService.log({
           userId: currentUser.id,
           eventType: "update",
           subjectType1: "student",
           subjectId1: studentId,
+          details: changeDetails(changes),
         });
       } else {
         res.status(404).json({ success: false, message: "student not found" });

@@ -485,11 +485,22 @@ describe("placement destinations — the relation band a furniture object opens"
     expect(w("next_to")).toBeGreaterThan(w("near"));
   });
 
-  it("a non-furniture object keeps the plain containment band (put + apple)", () => {
+  // MOVED (arc L, step L2): a movable object used to get containment ONLY —
+  // `next_to`/`near`/`on` were reserved for furniture. But an apple goes on the
+  // table and under the bed as readily as a chair goes beside one, and with the
+  // anchors withheld the composer had nothing to say but "in". Every object now
+  // opens the whole spatial band; what the OBJECT decides is which link LEADS —
+  // containment for a thing a hand carries, adjacency for a thing that stands.
+  it("a movable object leads with containment, the anchors behind it (put + apple)", () => {
     const s = surfaceNext(["you", "put", "apple"], { nouns: NOUNS_P });
     const dest = s.buttons.filter((b) => b.role === "destination").map((b) => b.symbol);
     expect(dest).toContain("in");
-    expect(dest).not.toContain("next_to");
+    expect(dest).toContain("next_to");
+    expect(dest.indexOf("in")).toBeLessThan(dest.indexOf("next_to"));
+    // …the exact reverse of the furniture case in the test above.
+    const chair = surfaceNext(["you", "put", "chair"], { nouns: NOUNS_P })
+      .buttons.filter((b) => b.role === "destination").map((b) => b.symbol);
+    expect(chair.indexOf("next_to")).toBeLessThan(chair.indexOf("in"));
   });
 
   it("a dangling relation forces the anchor noun (the relation-noun slot)", () => {

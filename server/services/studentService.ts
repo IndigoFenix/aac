@@ -47,6 +47,7 @@ import type { PersistedBaseline } from "@shared/aac/seizure-config";
 import { ADMIN_ONLY_AAC_FIELDS } from "@shared/aac/admin-budget-fields";
 import { eq, inArray } from "drizzle-orm";
 import { deleteExternalData, type EntityRef } from "../external-storage";
+import { summarizeChanges, mergeChanges, type ChangeMap } from "./activityChanges";
 import { findAccountLink } from "./smart-home/account-link-service";
 import { homeGraphClient } from "./smart-home/google/homegraph-client";
 
@@ -229,7 +230,15 @@ export class StudentService {
   async updateStudent(
     studentId: string,
     updates: Record<string, any>,
-    opts: { allowAdminOnlyAacFields?: boolean } = {}
+    opts: {
+      allowAdminOnlyAacFields?: boolean;
+      /**
+       * Receives the field-level diff of what this call actually changed, for
+       * the caller's activity-log entry. Opt-in: supplying it costs one extra
+       * read (the before-snapshot), so update paths that don't audit don't pay.
+       */
+      onChanges?: (changes: ChangeMap) => void;
+    } = {}
   ): Promise<StudentWithAacSettings | undefined> {
     const parsedNames = this.parseStudentNames(updates);
     const merged = { ...parsedNames, ...updates };
@@ -241,6 +250,12 @@ export class StudentService {
     if (!opts.allowAdminOnlyAacFields) {
       for (const field of ADMIN_ONLY_AAC_FIELDS) delete aacUpdates[field];
     }
+
+    // Snapshot before the writes — the diff is what makes the resulting
+    // activity-log row say WHICH field moved rather than just "student updated".
+    const before = opts.onChanges
+      ? await studentRepository.getStudentWithAacSettings(studentId)
+      : undefined;
 
     // Update student fields if any
     if (Object.keys(studentUpdates).length > 0) {
@@ -269,6 +284,18 @@ export class StudentService {
           console.error("[studentService] smart-home requestSync failed:", err);
         }
       }
+    }
+
+    // Diff against the merged/coerced payloads, not the raw body, so the log
+    // reflects what was actually written (seizureDetection merge, admin-only
+    // fields already stripped).
+    if (opts.onChanges) {
+      opts.onChanges(
+        mergeChanges(
+          summarizeChanges("students", before ?? null, studentUpdates),
+          summarizeChanges("aac_settings", (before?.aacSettings as any) ?? null, aacUpdates),
+        ),
+      );
     }
 
     // Return the full updated student with settings

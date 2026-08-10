@@ -28,12 +28,21 @@ function nameTokens(s: string): string[] {
 }
 
 /** True when `value` refers to the same party as any of `names`. Matches
- *  if the whole token sequences are equal OR any single name token appears
- *  as a standalone token in `value`. This makes a first-name config match a
- *  full-name target (and vice-versa): the Observer routinely tags speech
- *  with the student's FULL name while the system caches only the first
- *  name. Token-level matching avoids the exact-string mismatch that
- *  silently dropped board rebuilds for facilitator questions. */
+ *  if the whole token sequences are equal, OR the name's GIVEN name (first
+ *  token) appears in `value` and one side's tokens are a subset of the
+ *  other's. This makes a first-name config match a full-name target (and
+ *  vice-versa): the Observer routinely tags speech with the student's FULL
+ *  name while the system caches only the first name. Token-level matching
+ *  avoids the exact-string mismatch that silently dropped board rebuilds
+ *  for facilitator questions.
+ *
+ *  A shared SURNAME alone must never match: a caretaker usually carries
+ *  the student's family name, and any-token matching made the attribution
+ *  trust gate read the mother ("לילית זיסמן") as the non-verbal student
+ *  ("הדר זיסמן") — every utterance she aimed at her daughter was demoted
+ *  to ambient hearsay (no caption, no board rebuild). Likewise two full
+ *  names that share a given name but differ in surname ("הדר לוי" vs
+ *  "הדר זיסמן") are different people and do not match. */
 function matchesAnyName(value: string, names: (string | undefined)[]): boolean {
   const valTokens = nameTokens(value);
   if (valTokens.length === 0) return false;
@@ -43,7 +52,10 @@ function matchesAnyName(value: string, names: (string | undefined)[]): boolean {
     const nTokens = nameTokens(n);
     if (nTokens.length === 0) continue;
     if (valJoined === nTokens.join(" ")) return true;
-    if (nTokens.some((t) => valTokens.includes(t))) return true;
+    if (!valTokens.includes(nTokens[0])) continue;
+    const [shorter, longer] =
+      valTokens.length <= nTokens.length ? [valTokens, nTokens] : [nTokens, valTokens];
+    if (shorter.every((t) => longer.includes(t))) return true;
   }
   return false;
 }

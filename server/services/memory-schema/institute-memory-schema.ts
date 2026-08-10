@@ -45,6 +45,7 @@ import {
   import { classroomService } from "../classroomService";
   import { studentService } from "../studentService";
   import { activityLogService } from "../activityLogService";
+  import { summarizeChanges, changeDetails, type ChangeMap } from "../activityChanges";
   import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
   import { instituteRepository } from "../../repositories/instituteRepository";
   import { licenseRepository } from "../../repositories/licenseRepository";
@@ -1101,7 +1102,10 @@ import {
     },
 
     update: async (ctx, key, value) => {
-      const student = await studentService.updateStudent(String(key), value);
+      let changes: ChangeMap = {};
+      const student = await studentService.updateStudent(String(key), value, {
+        onChanges: (c) => { changes = c; },
+      });
       if (!student) throw new Error("Failed to update student");
 
       activityLogService.log({
@@ -1111,6 +1115,7 @@ import {
         subjectType1: "student",
         subjectId1: String(key),
         isAiInitiated: true,
+        details: changeDetails(changes),
       });
 
       return toMemoryValue(student);
@@ -1949,20 +1954,49 @@ import {
       return settings ? toMemoryValue(settings, aacSettingsExclude) : undefined;
     },
 
+    // Both ops below are AI writes to a student's AAC settings, so both leave an
+    // audit row. Before this they wrote silently: a settings change made by the
+    // assistant left no trace in the activity log at all.
     write: async (ctx, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
+      const before = await aacSettingsRepository.getByStudentId(studentId);
       const updated = await aacSettingsRepository.upsert(studentId, value);
+      logAacSettingsWrite(ctx, studentId, before, value);
       return toMemoryValue(updated, aacSettingsExclude);
     },
 
     update: async (ctx, _key, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
+      const before = await aacSettingsRepository.getByStudentId(studentId);
       const updated = await aacSettingsRepository.upsert(studentId, value);
+      logAacSettingsWrite(ctx, studentId, before, value);
       return toMemoryValue(updated, aacSettingsExclude);
     },
   };
+
+  function logAacSettingsWrite(
+    ctx: any,
+    studentId: string,
+    before: Record<string, any> | null | undefined,
+    value: Record<string, any>,
+  ): void {
+    const details = changeDetails(
+      summarizeChanges("aac_settings", before ?? null, value),
+      { via: "aac_settings" },
+    );
+    if (!details) return;
+    activityLogService.log({
+      instituteId: ctx.all.instituteId,
+      userId: getUserId(ctx),
+      eventType: "update",
+      subjectType1: "student",
+      subjectId1: studentId,
+      isAiInitiated: true,
+      details,
+    });
+  }
 
   // Attach DB ops to the schema
   (aacSettingsSchema as any).db = aacSettingsOps;

@@ -495,6 +495,26 @@ const LEADING_TAG_CORRECTION =
   `did NOT see or hear it; do not apologize for it or refer to it. Going ` +
   `forward, speak in plain words with NO bracketed prefix — just your reply.`;
 
+/** Corrective injected after the Speaker produced speech while the user had
+ *  it muted. The audio was dropped by the server-side mute gate — reassure
+ *  the model nothing reached the user (so it doesn't re-say it after
+ *  unmute) and restate the muted contract. */
+const MUTED_SPEECH_CORRECTION =
+  `[SYSTEM CORRECTION] You produced speech while MUTED. It was suppressed — ` +
+  `the user did NOT hear it, so do not repeat it or refer to it. You are ` +
+  `still muted: stay silent and produce no audio output until the user ` +
+  `unmutes you. The board keeps updating so the user can still communicate.`;
+
+/** Injected into a freshly-(re)built Speaker when the session is muted. A
+ *  rebuilt Speaker reuses the system prompt cached at session start, and the
+ *  [MUTE TOGGLED] context died with the torn-down agent — without this it
+ *  reverts to session-start mute behavior (spoke aloud while muted,
+ *  2026-08-10 incident). */
+const SPEAKER_MUTED_RESTORE_NOTE =
+  `[MUTE TOGGLED] now muted (restored) — the user has muted you. Stay ` +
+  `silent and produce no audio output. The board still updates so the user ` +
+  `can communicate. You cannot unmute — only the user can.`;
+
 /** Convert a raw 16-bit-LE mono PCM buffer to a WAV buffer by prepending
  *  a 44-byte header. Mirrors LiveRelay.pcmToWav so the new path produces
  *  the same `avatar_audio` payload shape the client already decodes. */
@@ -1039,8 +1059,9 @@ export class AgentCoordinator {
    *  across sessions, bounds MONTHLY spend, and its binding (tightest) window %
    *  is both the level the AI sees (as [ENERGY]) and what drives the throttle
    *  ladder. Loaded from students.budgetMeters at init, charged via the universal
-   *  ledger hook, and persisted (debounced + on close). Active whenever
-   *  economizing. See planning-docs/aac-budget-tiers-spec.md. */
+   *  ledger hook, and persisted (debounced + on close). TRACKED for every
+   *  session (full-attention included); the guidance/throttle layers that act
+   *  on it are economize-only. See planning-docs/aac-budget-tiers-spec.md. */
   private budgetTier: BudgetTier = tierByKey(undefined);
   /** Standing Observer economy constraints (default backend / live permission /
    *  always-conservative). Resolved at init from the budget tier's DEFAULTS +
@@ -1112,20 +1133,31 @@ export class AgentCoordinator {
    *  cheap HTTP backend + the budget-scaled sleep timer + a tired Speaker. */
   private static readonly BUDGET_SPEAKER_SLEEP_PERCENT = 10;
   private static readonly BUDGET_SHUTDOWN_PERCENT = 0;
-  /** The meter ACCUMULATES + PERSISTS whenever economizing — harmless, and it
-   *  builds the real per-student spend curve we validate tiers against before
-   *  enabling the throttle fleet-wide. */
-  private get budgetMeterEnabled(): boolean {
+  /** The meter ACCUMULATES + PERSISTS for EVERY session — full-attention
+   *  included (recordBudgetDrain / maybePersistBudget / maybePushBudget carry
+   *  no mode gate). Full attention changes what the system DOES about the
+   *  number (nothing that reduces attention — see budgetGuidanceEnabled /
+   *  budgetThrottleEnabled), not whether the number is kept honest: when
+   *  tracking was economize-only, a full-attention student's meter froze at
+   *  its last economize level and the panel read "not draining" while credits
+   *  burned (2026-08-10). */
+  /** Agent-facing energy FEEDBACK ([ENERGY] notes, the <energy_budget> prompt
+   *  block, per-transcript energy tags) — the channel that asks the Observer
+   *  to manage its own attention down. Economize-only: a full-attention
+   *  session tracks the budget but never nudges the agents to reduce
+   *  attention. */
+  private get budgetGuidanceEnabled(): boolean {
     return this.economize;
   }
-  /** The THROTTLE effects (idle→sleep tightening, economy-backend force, and the
-   *  [BUDGET] Observer notes) are gated behind a master flag separate from
-   *  accumulation. DEFAULT ON for an economizing session — set AAC_BUDGET_METER
-   *  ="false" (also accepts "0"/"off") to keep tracking/persisting the budget
-   *  while disabling the throttle effects. Still requires `budgetMeterEnabled`
-   *  (economize); a full-attention session never throttles on budget. */
+  /** The THROTTLE effects (idle→sleep tightening, economy-backend force, tired
+   *  Speaker, board-only / all-stop floors) are gated behind a master flag
+   *  separate from accumulation. DEFAULT ON for an economizing session — set
+   *  AAC_BUDGET_METER="false" (also accepts "0"/"off") to keep
+   *  tracking/persisting the budget while disabling the throttle effects.
+   *  Requires economize: a full-attention session never throttles on budget,
+   *  no matter how drained the meter is. */
   private get budgetThrottleEnabled(): boolean {
-    if (!this.budgetMeterEnabled) return false;
+    if (!this.economize) return false;
     const v = process.env.AAC_BUDGET_METER?.toLowerCase();
     return !(v === "false" || v === "0" || v === "off");
   }
@@ -1405,6 +1437,16 @@ export class AgentCoordinator {
    *  Set by onSpeakerSuppressAudio(), cleared when the turn resolves to a
    *  thought_leak event. While set, Speaker PCM chunks are dropped. */
   private suppressSpeakerAudio = false;
+  /** Whether the session was muted when the current Speaker turn started.
+   *  A turn that BEGAN muted never reached the user at all (every chunk was
+   *  dropped by the mute gate), so its speech_end skips the echo/log side
+   *  effects and injects a corrective instead. A turn that started unmuted
+   *  and was muted mid-stream was partially heard — it keeps the normal
+   *  side effects; only its remaining audio is cut. */
+  private speakerTurnBeganMuted = false;
+  /** One-per-turn flow-log latch for the mute gate (chunks arrive many times
+   *  a second). Reset at speech_end. */
+  private mutedAudioDropNoted = false;
 
   /** Cancellation handle for the in-flight student-voice TTS stream.
    *  A new press / interpret aborts the previous and tells the client
@@ -1599,6 +1641,11 @@ export class AgentCoordinator {
   // don't have to walk back through buildPromptInputs on every switch.
   private observerPrompt = "";
   private speakerPrompt = "";
+  /** Whether the cached speakerPrompt was built with the <muted> block (the
+   *  session started muted). A rebuild reuses that prompt verbatim, so when
+   *  the CURRENT mute state disagrees, primeFreshSpeaker must inject the
+   *  live state on top — in both directions. */
+  private speakerPromptBuiltMuted = false;
   /** Full composed BoardManager prompt — debug/logging only. The live prompt is
    *  assembled per-invocation by composeBoardManagerPrompt from the parts below. */
   private boardManagerPrompt = "";
@@ -2926,6 +2973,7 @@ export class AgentCoordinator {
     state.boardManagerPrompt = boardManagerPrompt;
     this.observerPrompt = observerPrompt;
     this.speakerPrompt = speakerPrompt;
+    this.speakerPromptBuiltMuted = promptInputs.speaker.muteState === "muted";
     this.boardManagerPrompt = boardManagerPrompt;
 
     // Cache symbol settings so the post-rebuild generation pass can apply
@@ -4192,6 +4240,14 @@ export class AgentCoordinator {
 
   private handleMuteToggled(state: AACMuteState): void {
     this.muteState = state;
+    if (state === "muted") {
+      // Muting must silence the AI NOW, not at the next turn boundary: cut
+      // the client's avatar-tag queue, drop buffered native-audio PCM, and
+      // abort any in-flight AI TTS. Tag-scoped — the student's own
+      // utterance voice is untouched.
+      this.interruptAiSpeech();
+      flowNote("COORDINATOR", "Muted — in-flight avatar audio cut.");
+    }
     this.emitClientEvent({
       type: "mute_toggled",
       source: "client",
@@ -6468,6 +6524,19 @@ export class AgentCoordinator {
     if (this.budgetSpeakerTiredActive) {
       this.speaker.sendContextInjection(AgentCoordinator.SPEAKER_TIRED_NOTE);
     }
+    // 5. Mute state. The system prompt reflects session-START mute and the
+    //    [MUTE TOGGLED] context died with the old Speaker — without this, a
+    //    rebuilt Speaker reverts to start-time behavior in BOTH directions
+    //    (spoke aloud while muted after a sleep→wake, 2026-08-10 incident;
+    //    or stays needlessly silent when the prompt has the <muted> block
+    //    but the user has since unmuted).
+    if (this.muteState === "muted") {
+      flowNote("COORDINATOR", "Re-broadcasting muted state to fresh Speaker");
+      this.speaker.sendContextInjection(SPEAKER_MUTED_RESTORE_NOTE);
+    } else if (this.speakerPromptBuiltMuted) {
+      flowNote("COORDINATOR", "Re-broadcasting unmuted state to fresh Speaker (prompt was built muted)");
+      this.speaker.sendContextInjection(`[MUTE TOGGLED] now unmuted (restored) — you may speak with the user again.`);
+    }
   }
 
   /**
@@ -6480,7 +6549,14 @@ export class AgentCoordinator {
    * primeFreshSpeaker. Cheap (0–2 short injections); skipped when healthy.
    */
   private primeFreshObserver(): void {
-    if (!this.observer || !this.budgetMeterEnabled) return;
+    if (!this.observer) return;
+    // Mute state — mirrors primeFreshSpeaker: the [MUTE TOGGLED] context died
+    // with the torn-down Observer, and it colors how the Observer reads the
+    // room (no AI replies are coming while muted).
+    if (this.muteState === "muted") {
+      this.observer.sendContextInjection(`[MUTE TOGGLED] now muted (restored)`);
+    }
+    if (!this.budgetGuidanceEnabled) return;
     const now = Date.now();
     const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
     if (b.band !== "high") {
@@ -7063,6 +7139,7 @@ export class AgentCoordinator {
     // BoardManager here; wait for speech_text_finalized which carries
     // the FULL transcript and arrives well before turnComplete.
     this.speakerSpeaking = true;
+    this.speakerTurnBeganMuted = this.muteState === "muted";
     void event;
   }
 
@@ -7075,6 +7152,15 @@ export class AgentCoordinator {
    *  turn, the speech is the other side's turn). */
   private onSpeakerSpeechTextFinalized(event: SpeechTextFinalizedEvent): void {
     this.noteEngagementActivity();
+    // A turn fully suppressed by the mute gate: the user heard NOTHING, so
+    // don't build reply-buttons to speech that never happened for them.
+    // Deliberately does NOT take the deferred press/user-speech trigger —
+    // its timer fires normally and BM builds from the user's side alone,
+    // exactly the standard muted flow ("Speaker didn't reply within 4s").
+    if (this.speakerTurnBeganMuted && this.muteState === "muted") {
+      flowNote("BOARD_MGR", "Speaker turn was mute-suppressed — no reply rebuild.");
+      return;
+    }
     // Speaker replied — supersede any deferred press-triggered BM
     // invocation. REPLIES (built from this event) is more current than
     // FOLLOW-UPS (built from the press) for an AI-targeted press.
@@ -7113,6 +7199,23 @@ export class AgentCoordinator {
     // appended to the previous instead of replacing it. Mirrors the
     // legacy LiveRelay.processTurnEnd's `complete` send.
     this.send({ type: "complete", data: {} });
+
+    // A turn the mute gate suppressed end-to-end: close it out like a
+    // thought leak — no echo into Speaker/Observer context, no
+    // conversationLog entry (the log replays to fresh Speakers and feeds
+    // the session summary; recording unheard "speech" would teach the
+    // model that talking while muted works). Supervisor channels keep the
+    // attempt, and a corrective restates the muted contract.
+    if (this.speakerTurnBeganMuted && this.muteState === "muted") {
+      this.mutedAudioDropNoted = false;
+      if (event.transcript) {
+        this.writeSupervisorOnly(`[SPEAKER muted — speech suppressed] ${event.transcript}`);
+        this.speaker?.sendContextInjection(MUTED_SPEECH_CORRECTION);
+        flowNote("SPEAKER", `mute-suppressed turn closed + corrective injected: "${event.transcript.slice(0, 80)}"`);
+      }
+      return;
+    }
+    this.mutedAudioDropNoted = false;
 
     // Speaker addressed `target` (default USER). Mirror the unified
     // `[<speaker> to <target>] "..."` shape used everywhere else.
@@ -8627,6 +8730,16 @@ export class AgentCoordinator {
     // Turn is being suppressed (leaked private reasoning) — drop the PCM
     // so the leaked speech never reaches the child.
     if (this.suppressSpeakerAudio) return;
+    // MUTE GATE: while muted the AI's voice must never reach the client,
+    // regardless of what the model does. Prompt-side mute is advisory —
+    // this is the guarantee.
+    if (this.muteState === "muted") {
+      if (!this.mutedAudioDropNoted) {
+        this.mutedAudioDropNoted = true;
+        flowNote("SPEAKER", "Muted — dropping Speaker audio for this turn.");
+      }
+      return;
+    }
     // Speaker emits raw PCM chunks. The client expects WAV (with a 44-byte
     // header). Buffer chunks for ~250ms, then flush as a single WAV — the
     // same pattern legacy LiveRelay uses for smoother playback.
@@ -8642,6 +8755,8 @@ export class AgentCoordinator {
   /** Forward Gemini's outputAudioTranscription deltas to the client as
    *  `text` so the subtitle line + avatar mouth animate alongside audio. */
   private onSpeakerTranscriptionDelta(text: string): void {
+    // MUTE GATE: no subtitle/mouth animation for audio that was dropped.
+    if (this.muteState === "muted") return;
     this.send({ type: "text", data: text, noAudioClear: true });
   }
 
@@ -8667,6 +8782,11 @@ export class AgentCoordinator {
     if (this.speakerAudioFlushTimer) {
       clearTimeout(this.speakerAudioFlushTimer);
       this.speakerAudioFlushTimer = null;
+    }
+    // MUTE GATE: chunks buffered before the toggle landed must not flush.
+    if (this.muteState === "muted") {
+      this.speakerAudioChunks = [];
+      return;
     }
     if (this.speakerAudioChunks.length === 0) return;
     try {
@@ -8739,6 +8859,13 @@ export class AgentCoordinator {
   private aiSpeakPending = 0;
 
   private onSpeakerSpeakText(text: string): void {
+    // MUTE GATE: the HTTP/peer voice path. Skipping here also covers the
+    // client_tts / client_local_tts AI fallbacks (dispatched below) and
+    // spends no TTS credits on audio that would be dropped.
+    if (this.muteState === "muted") {
+      flowNote("SPEAKER", `Muted — speak text not synthesized: "${text.slice(0, 80)}"`);
+      return;
+    }
     // During a social session the Speaker slot holds the peer persona,
     // which speaks with its own (session-random) voice.
     const voice = this.socialPeer?.voice ?? this.aiVoice;
@@ -10416,7 +10543,7 @@ export class AgentCoordinator {
    * cost spike doesn't wait for the next tick).
    */
   private recordBudgetDrain(credits: number): void {
-    if (!this.budgetMeterEnabled || !(credits > 0)) return;
+    if (!(credits > 0)) return;
     const now = Date.now();
     this.budgetState = applyBudgetCharge(this.budgetState, this.budgetWindows, credits, now);
     this.budgetDirty = true;
@@ -10434,19 +10561,18 @@ export class AgentCoordinator {
    * re-report the level, re-push the bar, and re-drive the throttle. Lets the
    * debug panel exercise the whole throttle ladder (avatar eyes, bar, forced-HTTP
    * Observer, tired Speaker, sleep timer, board-only, all-stop) live — without
-   * DB edits or waiting out the 30-min session cache. Gated on debugMode; no-op
-   * outside an economizing session (no budget tracked). NOTE: real charges keep
-   * flowing, so the forced level drifts as the session spends — set it again to
-   * re-pin. It also persists on the next debounce, so a live session will
-   * overwrite the DB with the forced value.
+   * DB edits or waiting out the 30-min session cache. Gated on debugMode.
+   * NOTE: real charges keep flowing, so the forced level drifts as the session
+   * spends — set it again to re-pin. It also persists on the next debounce, so
+   * a live session will overwrite the DB with the forced value.
    */
   private debugSetBudgetPercent(percent: number): void {
     if (!this.debugMode) {
       flowNote("COORDINATOR", "debug_set_budget ignored — not in debug mode");
       return;
     }
-    if (!this.budgetMeterEnabled || this.budgetWindows.length === 0) {
-      flowNote("COORDINATOR", "debug_set_budget ignored — no budget tracked (full-attention session)");
+    if (this.budgetWindows.length === 0) {
+      flowNote("COORDINATOR", "debug_set_budget ignored — session has no budget windows");
       return;
     }
     const now = Date.now();
@@ -10469,11 +10595,12 @@ export class AgentCoordinator {
 
   /** Push the binding (tightest) window % + band to the client's energy bar,
    *  but only when the integer % changed since the last push (charges are
-   *  frequent; the bar is approximate). Sent whenever economizing — it's an
-   *  informational display, independent of the AAC_BUDGET_METER throttle gate.
-   *  A non-economizing session never tracks a budget, so it gets no bar. */
+   *  frequent; the bar is approximate). Sent for EVERY session — an
+   *  informational display, independent of the AAC_BUDGET_METER throttle gate
+   *  and of full-attention mode (a full-attention session drains the same
+   *  meter; the bar is how anyone notices). */
   private maybePushBudget(now: number): void {
-    if (!this.budgetMeterEnabled) return;
+    if (this.budgetWindows.length === 0) return;
     const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
     if (b.percent === this.lastSentBudgetPercent) return;
     this.lastSentBudgetPercent = b.percent;
@@ -10513,7 +10640,9 @@ export class AgentCoordinator {
    * a freshly-rebuilt Observer is re-seeded via primeFreshObserver.
    */
   private reportEnergy(now: number, opts: { fromCharge: boolean }): void {
-    if (!this.budgetMeterEnabled) return;
+    // Guidance + throttle both live here; neither runs for a full-attention
+    // session (tracking — accumulate/persist/bar — happens at the call sites).
+    if (!this.budgetGuidanceEnabled) return;
     const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
     const pct = b.percent;
     const band = b.band;
@@ -10605,12 +10734,13 @@ export class AgentCoordinator {
 
   private startEnergyTimer(): void {
     this.stopEnergyTimer();
-    if (!this.budgetMeterEnabled) return;
     this.energyTimer = setInterval(
       () => {
         const now = Date.now();
         // Passive regen can cross a band during a quiet stretch with no charge
         // to trigger it — recompute the level + throttle and refresh the bar.
+        // reportEnergy self-gates (guidance/throttle are economize-only); the
+        // bar refresh runs for every session.
         this.reportEnergy(now, { fromCharge: false });
         this.maybePushBudget(now);
       },
@@ -10671,7 +10801,7 @@ export class AgentCoordinator {
    * Observer also learns empirically from its [ENERGY] notes.
    */
   private buildEnergyBudgetText(provider: string): string {
-    if (!this.budgetMeterEnabled) return "";
+    if (!this.budgetGuidanceEnabled) return "";
     // Rates are expressed against the binding (tightest) budget window, so they
     // track the same % the [ENERGY] note shows. Rough by design.
     const cfg = this.bindingWindowCfg(Date.now());
@@ -10734,7 +10864,7 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
    *  cost as a % of that window, with the Speaker's share called out (the
    *  Observer never "sees" the Speaker spend otherwise). Resets the accumulator. */
   private buildTranscriptEnergyNote(): string {
-    if (!this.budgetMeterEnabled) return "";
+    if (!this.budgetGuidanceEnabled) return "";
     const now = Date.now();
     const cfg = this.bindingWindowCfg(now);
     const pct = bindingEnergy(this.budgetState, this.budgetWindows, now).percent;
