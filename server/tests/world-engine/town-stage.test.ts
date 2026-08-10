@@ -9,7 +9,8 @@ import { describe, it, expect } from "@jest/globals";
 import { compileEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { createTownWorld } from "@shared/world-engine/kernel/town/town-world.js";
 import { townPlan } from "@shared/world-engine/kernel/town/plan.js";
-import { houseDoorstep } from "@shared/world-engine/kernel/town/goods.js";
+import { HOUSEHOLD, houseDoorstep } from "@shared/world-engine/kernel/town/goods.js";
+import { exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
 import {
   IDLE_EMBODY_R, PEOPLE_EVICT_MIN, STREET_NPCS, residentId,
 } from "@shared/world-engine/kernel/town/residents.js";
@@ -464,6 +465,24 @@ describe("intercity trade v1 — the abstract-partner caravan (trade.ts)", () =>
     }
     expect(resets).toBe(1); // one departure per day
     expect(Math.max(prev, tr.exportPile(500))).toBeGreaterThan(0);
+  });
+
+  // ⚖️ batch 2 · G2 — the stage's export scale, wired to the goods layer.
+  it("🚨 the pile is scaled by what the town can SPARE, read off its own goods", () => {
+    const { plan, stage } = setup();
+    const tr = stage.trade!;
+    const food = stage.goods.find((g) => g.good.key === "food")!;
+    // THE PREMISE, measured on the shipped fixture: this town is FED, so the
+    // slope sits at 1 and every export number is exactly what it was pre-G2.
+    // (Same on the shipped dollhouse — food shortage 0 at every age probed.)
+    expect(food.fill()).toBe(1);
+    expect(exportSpareScale(1 - food.fill())).toBe(1);
+    // The pile still peaks at one whole day's authored surplus, undamped.
+    const daily = plan.houses.length * HOUSEHOLD * food.good.perCapitaDaily * 0.3;
+    let peak = 0;
+    for (let t = 0; t < 240; t += 2) peak = Math.max(peak, tr.exportPile(500 + t));
+    expect(peak).toBeGreaterThan(daily * 0.9);
+    expect(peak).toBeLessThanOrEqual(daily);
   });
 });
 

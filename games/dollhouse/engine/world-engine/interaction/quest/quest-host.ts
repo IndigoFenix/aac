@@ -366,8 +366,10 @@ import {
   costTotalS,
   handsFree,
   stackRoom,
+  townHandPool as townHandPoolOf,
   type BagRef,
   type BodyCarry,
+  type ScopeHands,
   type VerbCost,
 } from "@shared/world-engine/kernel/town/scope-shape.js";
 import {
@@ -612,7 +614,15 @@ import {
 } from "@shared/world-engine/interaction/dialogue/respond.js";
 import { planGoal, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
 import { needPursuitGoals, tasteBonusS } from "@shared/world-engine/interaction/behavior/need-goals.js";
-import { driveValueS, goodsValueS, journeyTimeS, netValueS, priceOf } from "@shared/world-engine/kernel/town/pricing.js";
+import {
+  driveValueS,
+  goodsValueS,
+  journeyTimeS,
+  netValueS,
+  priceOf,
+  shiftForgoneS,
+  townFillS,
+} from "@shared/world-engine/kernel/town/pricing.js";
 import { probesOn } from "@shared/world-engine/perf-probes.js";
 import {
   objectMotive,
@@ -6624,14 +6634,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
-  /** ONE work's attendance factor at `day` (yesterday's absence; 1 when the
-   *  work is unstaffed — nobody assigned means nobody missing). */
-  function workAttendanceFactor(session: QuestSession, w: number, day: number): number {
+  /** ONE work's SHIFT as the roster dealt it: how many souls are scheduled on
+   *  it and how long their window is. Named once (batch 2, L2) because two
+   *  readings now depend on the same rows — the attendance CONTROLLER behind
+   *  it and the labour PRICE that reads the same model forward. */
+  function workShiftOf(session: QuestSession, w: number): { staff: number; windowLen: number } {
     const jobs = ensureTownJobs(session);
-    if (!jobs) return 1;
     let staff = 0;
     let windowLen = 0;
-    for (const js of jobs.values()) {
+    for (const js of jobs?.values() ?? []) {
       for (const j of js) {
         if (j.work === w) {
           staff++;
@@ -6639,6 +6650,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       }
     }
+    return { staff, windowLen };
+  }
+
+  /** ONE work's attendance factor at `day` (yesterday's absence; 1 when the
+   *  work is unstaffed — nobody assigned means nobody missing). */
+  function workAttendanceFactor(session: QuestSession, w: number, day: number): number {
+    const jobs = ensureTownJobs(session);
+    if (!jobs) return 1;
+    const { staff, windowLen } = workShiftOf(session, w);
     if (staff === 0) return 1;
     return attendanceFactor(session.workAbsence.get(w), day, staff * windowLen * FOOD_DAY_SEC);
   }
@@ -6661,6 +6681,165 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       n++;
     });
     return n > 0 ? sum / n : 1;
+  }
+
+  // ── THE HANDS (economy arc batch 2, L3) ───────────────────────────────────
+  // ONE definition of FREE, and one producer of `ScopeHands` at the town rung.
+  // What stood here before: `reflowHandFor`'s "no queued errand" and
+  // `availableCrew`'s "union of willing bodies" — two live definitions that
+  // disagreed, neither of which noticed a body mid-shift or mid-pursuit.
+
+  /**
+   * ⚖️ IS THIS HAND FREE? Every schedule that can own a body, asked once.
+   *
+   * A body is free when NOBODY ELSE IS ALREADY SPENDING IT: no queued errand,
+   * no live need pursuit, no pooled claim, not in the party or an escort, not
+   * the one the player is riding — and NOT INSIDE ITS JOB SHIFT, which is the
+   * clause the shipped predicates were missing and the reason a town could
+   * conscript its own farmhands for free.
+   *
+   * ⚠️ "Not free" is not "may never be claimed". The pool still lets a shift
+   * worker volunteer — it just makes the claim PAY for the output it destroys
+   * (`shiftForgoneS`). This predicate is for the seats that need a body they
+   * can simply take: the furniture reflow's carrier and the town's labour
+   * census.
+   */
+  function handIsFree(session: QuestSession, cid: string): boolean {
+    if (isPlayerCid(cid) || cid === possession.creatureId) return false;
+    if (session.party.has(cid) || session.escorting.has(cid)) return false;
+    const body = avatarIdOf(cid);
+    if ((session.npcTasks.get(body)?.length ?? 0) > 0) return false;
+    if (session.liveNeedBodies.has(cid) || session.liveNeedBodies.has(body)) return false;
+    if (session.taskPool.claimedBy(cid)) return false;
+    if (session.town && cid.startsWith("resident_")) {
+      const jd = residentJobDuty(session, houseIndexOfCid(cid), Number(cid.split("_")[2]));
+      if (jd && inShiftWindow(jd.window, session.townClock, FOOD_DAY_SEC)) return false;
+    }
+    return true;
+  }
+
+  /** The census is a whole-town sweep of the roster's rows; the sites that
+   *  read it read it once per site per tick. Memoized on the town clock. */
+  let handPoolMemo: { at: number; hands: ScopeHands } | null = null;
+
+  /**
+   * ⚖️ THE TOWN'S LABOUR POOL as a READING (scope-shape `townHandPool`) — the
+   * organ `ScopeHands` was declared for, finally produced.
+   *
+   * Every number comes off the roster the town already deals:
+   *   · EMPLOYABLE   — the souls in its houses (`membersOfHouse`, so a
+   *                    mode-"all" family's ungenerated members don't count).
+   *   · SHOP DUTY    — `rosterOf`'s dealing rule: good of role r lands on the
+   *                    (r+1)-th non-excluded member, so a house holds
+   *                    `min(goods, members)` shop duties and the goods clock
+   *                    owns those bodies (`assignTownJobs` refuses to hire
+   *                    them for exactly this reason).
+   *   · ON SHIFT     — job rows whose window contains NOW.
+   *   · COMMITTED    — pooled claimants and live-need bodies (the two sets the
+   *                    host already tracks per body).
+   */
+  function townHandPool(session: QuestSession): ScopeHands {
+    const town = session.town;
+    if (!town) return { total: 0, free: 0 };
+    if (handPoolMemo && handPoolMemo.at === session.townClock) return handPoolMemo.hands;
+    const goodsCount = town.stage.goods.length;
+    let employable = 0;
+    let shopDuty = 0;
+    for (const h of town.plan.houses) {
+      const members = membersOfHouse(session, h.index);
+      employable += members;
+      shopDuty += Math.min(goodsCount, members);
+    }
+    let onShift = 0;
+    for (const js of ensureTownJobs(session)?.values() ?? []) {
+      for (const j of js) {
+        if (inShiftWindow(j.window, session.townClock, FOOD_DAY_SEC)) onShift++;
+      }
+    }
+    // The claimed set and the live set overlap by construction (a pooled claim
+    // clears the need step), so union them rather than adding two counts.
+    const busy = new Set<string>(session.liveNeedBodies);
+    for (const t of session.taskPool.claimed()) {
+      if (t.claimedBy) busy.add(avatarIdOf(t.claimedBy));
+    }
+    const hands = townHandPoolOf({ employable, shopDuty, onShift, committed: busy.size });
+    handPoolMemo = { at: session.townClock, hands };
+    return hands;
+  }
+
+  /**
+   * ⚖️ WHAT A POOLED CLAIM WOULD DESTROY (batch 2, L2) — `VerbCost.forgoneS`
+   * for one candidate, and the whole of "idle hands first".
+   *
+   * Three arms, and the pool loop used to run all three at price ZERO — it
+   * deleted the winner's `needStep` and its `npcTasks` queue (the claim's own
+   * two lines) without ever asking what was in them:
+   *
+   *   ON SHIFT   the attendance model read forward (`shiftForgoneS`): the
+   *              units this work will not put out while the body is away,
+   *              priced at what the town's shortage says a unit is worth.
+   *   LIVE NEED  the drive the body is CURRENTLY pursuing, at the shipped
+   *              value form (`rowValueS`'s drive arm, the same one
+   *              `inPlaceWants` charges a housemate's boredom with). Not
+   *              scaled by the claim's duration: the claim does not pause the
+   *              pursuit, it DELETES it.
+   *   IDLE       zero. Nothing is being spent, so nothing is destroyed.
+   */
+  function claimForgoneS(session: QuestSession, cid: string, occupiedS: number): number {
+    if (session.town && cid.startsWith("resident_")) {
+      const houseIndex = houseIndexOfCid(cid);
+      const member = Number(cid.split("_")[2]);
+      const jd = residentJobDuty(session, houseIndex, member);
+      if (jd && inShiftWindow(jd.window, session.townClock, FOOD_DAY_SEC)) {
+        return shiftOutputForgoneS(session, jd.work, occupiedS);
+      }
+    }
+    if (session.liveNeedBodies.has(cid)) return liveNeedForgoneS(session, cid);
+    return 0;
+  }
+
+  /** The ON-SHIFT arm: `occupiedS` seconds away from work `w`, priced through
+   *  the attendance chain. Zero for an unstaffed work, a work that produces
+   *  nothing, or a good the town is not short of. */
+  function shiftOutputForgoneS(session: QuestSession, w: number, occupiedS: number): number {
+    const town = session.town;
+    if (!town || !(occupiedS > 0)) return 0;
+    const type = town.plan.works[w]?.type;
+    if (!type) return 0;
+    const g = town.stage.goods.find((x) => x.good.producers.includes(type));
+    if (!g) return 0; // the work makes nothing the books count — nothing to lose
+    const { staff, windowLen } = workShiftOf(session, w);
+    return shiftForgoneS({
+      unitsPerDay: g.producerDaily(w),
+      staff,
+      windowLen,
+      daySec: FOOD_DAY_SEC,
+      occupiedS,
+      unitValueS: goodsValueS(1, townShortage(session, g.good.key), townFillS(session.scale), 1),
+    });
+  }
+
+  /** The LIVE-NEED arm: the value of the drive this body is on right now,
+   *  by the SAME arithmetic `rowValueS` gives that row (needs.ts) — pressure ×
+   *  the ladder weight × `NEED_PRESSURE_S`, under the drive's own fill clock. */
+  function liveNeedForgoneS(session: QuestSession, cid: string): number {
+    const tplKey = session.needStep.get(cid)?.tplKey ?? session.pursuits.get(cid)?.tplKey;
+    if (!tplKey) return 0; // live, but between steps — nothing named to destroy
+    const houseIndex = houseIndexOfCid(cid);
+    const member = Number(cid.split("_")[2]);
+    const house = residentTownCtx(session, houseIndex)?.house;
+    const templates = isPetCid(cid)
+      ? petNeedTemplates(session)
+      : house
+        ? residentNeedTemplates(session, houseIndex, house, member)
+        : [];
+    const tpl = templates.find((t) => t.key === tplKey);
+    if (!tpl) return 0;
+    const threshold = tpl.drive.kind === "meter" ? tpl.drive.threshold : 1;
+    const fillS = needFillS(session.scale, needClockKeyOf(tpl.key));
+    const meter = session.needMeters.get(`${cid}|${tpl.key}`) ?? 0;
+    const pressure = threshold > 0 ? meter / threshold : 1;
+    return driveValueS((pressure * tpl.priority * NEED_PRESSURE_S) / fillS, fillS);
   }
 
   /** SLICE 3 — clock↔need RECONCILIATION (npc-behavior-and-town-economy.md §8.3). Keep
@@ -22516,9 +22695,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     issuer: string,
     focus: TaskFocus,
     sourceGlyph: string,
+    /** ⚖️ WHAT THE POSTER THINKS THIS IS WORTH, hand-seconds (batch 2, L1) —
+     *  see `PooledTask.valueS`. Omitted stays omitted. */
+    valueS?: number,
   ) {
     if (!session.creatures) return null;
-    return session.taskPool.post({ goal, issuer, focus, now: session.taskClock, sourceGlyph });
+    return session.taskPool.post({
+      goal,
+      issuer,
+      focus,
+      now: session.taskClock,
+      sourceGlyph,
+      ...(valueS !== undefined ? { valueS } : {}),
+    });
   }
 
   /** The world's symbol resolvers for the intent-announcement line. `deixis`
@@ -22931,6 +23120,44 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
         return buildworkPrepMemo;
       };
+      // ⚖️ WHERE THE CLAIM'S FIRST LEG GOES (batch 2, L1) — the point a
+      // candidate would actually have to walk to. `build`/`transfer`/
+      // `buildwork` goals never compile to a body errand (that is why the
+      // capability arms above are hand-written), so `compileGoal(…).cost` has
+      // no leg to price for them; the PREP knows the geometry, so the prep is
+      // what prices it. Chord, not street: this runs per candidate per task
+      // per sweep, and W1's road measure is a route solve. The pool's own
+      // eligibility radius is already a chord, so the two agree.
+      let priceTargetMemo: { x: number; y: number } | null | undefined;
+      const priceTarget = (): { x: number; y: number } | null => {
+        if (priceTargetMemo !== undefined) return priceTargetMemo;
+        priceTargetMemo = null;
+        if (task.goal.kind === "buildwork") priceTargetMemo = buildworkPrep();
+        else if (task.goal.kind === "build") {
+          const prep = buildPrep();
+          if (prep && bctx) {
+            priceTargetMemo = {
+              x: bctx.center.x + prep.candidate.dx + prep.candidate.w / 2,
+              y: bctx.center.y + prep.candidate.dy + prep.candidate.h / 2,
+            };
+          }
+        } else if (task.goal.kind === "transfer") {
+          // The haul's FIRST leg is to the SOURCE — the crate, not the site.
+          const a = session.transfers.get(task.goal.agreementId);
+          priceTargetMemo = (a && stockEndpointOf(session, a.from)?.at) ?? null;
+        }
+        return priceTargetMemo;
+      };
+      const claimWalkMps = walkSpeedMps(session.scale);
+      /** The candidate's own priced claim: its plan's legs and hands, plus
+       *  what the claim would destroy (`claimForgoneS`). */
+      const claimCost = (cid: string, at: { x: number; y: number }, plan: GoalPlan | null): VerbCost => {
+        const tgt = priceTarget();
+        const base =
+          plan?.cost ??
+          priceOf(tgt ? { journeyS: journeyTimeS(Math.hypot(at.x - tgt.x, at.y - tgt.y), claimWalkMps) } : {});
+        return { ...base, forgoneS: claimForgoneS(session, cid, base.journeyS + base.handsS) };
+      };
       const civicTask =
         task.goal.kind === "build" ||
         task.goal.kind === "buildwork" ||
@@ -22960,6 +23187,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const compliant =
           compliance(relationToward(session, cid, task.issuer), creatureMood(cid)) >=
           VOLUNTEER_COMPLIANCE;
+        // ⚖️ THE PLAN IS COMPILED ONCE AND ITS PRICE IS KEPT (batch 2, L1).
+        // This call used to be spent on a `!== null` and the `cost` it carries
+        // — the whole point of `compileGoal` being a wrapper over the step
+        // compiler — thrown away on the same line.
+        const plan =
+          task.goal.kind === "build" || task.goal.kind === "buildwork" || task.goal.kind === "transfer"
+            ? null
+            : compileGoal(task.goal, cid, resolver);
         candidates.push({
           id: cid,
           pos: { x: body.x, y: body.y },
@@ -22970,10 +23205,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                 ? buildworkPrep() !== null
                 : task.goal.kind === "transfer"
                   ? transferPrep() && canGrasp(mind)
-                  : compileGoal(task.goal, cid, resolver) !== null,
+                  : plan !== null,
           willing: civicTask
             ? cid.startsWith("resident_") || session.bondedCreatures.has(cid) || compliant
             : compliant,
+          cost: claimCost(cid, body, plan),
         });
       }
       // ⑥ AMBIENT RECRUITMENT: civic work recruits BEYOND the registered
@@ -23004,6 +23240,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                   ? buildworkPrep() !== null
                   : transferPrep(),
             willing: true, // a street resident treats civic work as its town's business
+            // ⚖️ THE SAME PRICE AS A REGISTERED BODY, and deliberately so
+            // (batch 2 §4 residual, narrowed). The chapter's residual reads
+            // "ambient bodies claim at forgone 0 — no mind to read", and the
+            // LIVE-NEED arm honestly cannot be read here (the branch above
+            // skips `liveNeedBodies`, and an unmaterialized body has no
+            // meters). But the SHIFT arm needs no mind at all — it is a
+            // roster row — and pricing it only for streamed-in bodies would
+            // make the town's labour cost depend on where the CAMERA is,
+            // which is the exact bug class civic-labor-and-polish §1 exists
+            // to kill. So the leg and the shift are priced; the drive is the
+            // part that stays at zero until the street materializes.
+            cost: claimCost(bodyId, body, null),
           });
         }
       }
@@ -24493,9 +24741,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!will.ok) {
       speak(barterRefusalLine(will.reason, give, take));
       presenter.toast(
+        // ⚖️ G1: three verdicts now, and the third is OURS — a famine on the
+        // give-good refuses from this side, so the toast must not blame the
+        // neighbour for our own empty granary.
         will.reason === "wont-part"
           ? `💬 ${partner.key} won't part with ${take}`
-          : `💬 ${partner.key} has enough ${give}`,
+          : will.reason === "we-wont-part"
+            ? `💬 we won't part with ${give} — we need it here`
+            : `💬 ${partner.key} has enough ${give}`,
         "feedback",
       );
       return true;
@@ -24695,7 +24948,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const fromDay = now / dayS;
     let dueAt = 0;
     const atDay = partner?.signalsAtDay ?? null;
-    if (atDay && why !== "short") {
+    // ⚖️ G1: `we-wont-part` joins `short` on the NO-DERIVED-WAKE side. Both are
+    // statements about OUR OWN books, and ours are a live simulation rather
+    // than a closed form — sampling the partner's season forward would answer
+    // a question nobody asked. The epoch + backstop carry them, exactly as
+    // they carry a real neighbour's refusal.
+    if (atDay && why !== "short" && why !== "we-wont-part") {
       const day =
         why === "wont-part"
           ? nextShortageBelow(atDay, b.takeGood, BARTER_FAMINE_MAX, fromDay)
@@ -24704,7 +24962,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     parkTown(session, `agreement|${a.id}`, {
       scope: "agreement",
-      why: why === "short" ? "our own yard is short of the give-goods" : `partner refused: ${why}`,
+      why:
+        why === "short"
+          ? "our own yard is short of the give-goods"
+          : why === "we-wont-part"
+            ? `our own famine: we won't part with ${b.giveGood}`
+            : `partner refused: ${why}`,
       now,
       staleAfterS: BARTER_RETRY_SEC,
       ...(dueAt > now ? { dueAt } : {}),
@@ -24720,9 +24983,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (r.status === "suspended") {
       if (r.newlySuspended) {
         presenter.toast(
+          // ⚖️ G1: OUR famine suspends a standing route too, and says so in
+          // our own name — the same pause, honestly attributed.
           r.reason === "wont-part"
             ? `⏸ ${r.partnerKey} won't part with theirs — trade paused`
-            : `⏸ ${r.partnerKey} has enough — trade paused`,
+            : r.reason === "we-wont-part"
+              ? `⏸ we can't spare ours — trade with ${r.partnerKey} paused`
+              : `⏸ ${r.partnerKey} has enough — trade paused`,
           "feedback",
         );
       }
@@ -25542,6 +25809,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     gazeCreature, fireCarryGesture, fellIfConsumed, dropFromStack,
     takeIntoHands, setDownFromHands, bodyCarryOf, takeUnitsFromBody,
     creatureMood,
+    // ⚖️ batch 2 L3/L4 — the ONE freeness and the ONE labour pool.
+    handIsFree, townHandPool,
     questViewOf: () => questView,
     invalidateTownJobs: () => { townJobsMemo = null; },
     convoNodeId: () => convo?.nodeId ?? null,

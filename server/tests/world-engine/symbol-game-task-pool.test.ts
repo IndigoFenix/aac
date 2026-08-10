@@ -15,6 +15,7 @@ import {
   type TaskCandidate,
 } from "@shared/world-engine/interaction/behavior/task-pool.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
+import type { VerbCost } from "@shared/world-engine/kernel/town/scope-shape.js";
 
 const FETCH_WOOD: GoalSpec = { kind: "fetch", item: { match: { kind: "wood" } } };
 const FOCUS = { x: 0, y: 0, radius: 10 };
@@ -112,6 +113,121 @@ describe("claim choice — deterministic, no RNG", () => {
     const cs = [cand("b", 1, 1), cand("a", 1, 1), cand("c", 0, 5)];
     const first = chooseClaimant(t, cs);
     for (let i = 0; i < 50; i++) expect(chooseClaimant(t, cs)).toBe(first);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// THE PRICED CLAIM (economy arc batch 2, L1) — argmax(value − cost), with the
+// shipped geometry as the tie rule. Pinned BOTH WAYS, the
+// `need-costs-and-claims` discipline: every case is stated unpriced (what the
+// shipped rule answers) and priced (what the arithmetic answers), so the
+// reduction is a measurement rather than a claim.
+// ─────────────────────────────────────────────────────────────────────────
+
+const price = (over: Partial<VerbCost>): VerbCost => ({
+  journeyS: 0,
+  handsS: 0,
+  spoilageS: 0,
+  forgoneS: 0,
+  ...over,
+});
+
+describe("chooseClaimant — the priced claim", () => {
+  const task = (valueS?: number): PooledTask => ({
+    id: "task_0",
+    goal: FETCH_WOOD,
+    issuer: "__player__",
+    focus: FOCUS,
+    createdAt: 0,
+    expiresAt: 45,
+    status: "open",
+    ...(valueS !== undefined ? { valueS } : {}),
+  });
+
+  it("UNPRICED is byte-identical to the shipped rule — every net ties, geometry decides", () => {
+    const t = task();
+    // The same three assertions the distance pin above makes, restated here
+    // as the kill-switch arm: with no cost on any candidate and no value on
+    // the task, the argmax cannot separate anybody.
+    expect(chooseClaimant(t, [cand("far", 8, 0), cand("near", 2, 0)])).toBe("near");
+    expect(chooseClaimant(t, [cand("zeta", 3, 0), cand("alpha", 3, 0)])).toBe("alpha");
+    // A task WITH a value and candidates without costs is still geometry: the
+    // value is the same for every row of one task, so it cancels out.
+    expect(chooseClaimant(task(500), [cand("far", 8, 0), cand("near", 2, 0)])).toBe("near");
+  });
+
+  it("🚨 THE POINT OF THE BATCH: an idle hand beats a nearer body that is mid-shift", () => {
+    const t = task(400);
+    const onShift = cand("a_farmhand", 1, 0, { cost: price({ journeyS: 2, forgoneS: 180 }) });
+    const idle = cand("z_idler", 6, 0, { cost: price({ journeyS: 12 }) });
+    expect(chooseClaimant(t, [onShift, idle])).toBe("z_idler");
+    // …and the SAME pair unpriced elects the farmhand, by being nearer. That
+    // difference IS the change; nothing else about the function moved.
+    expect(chooseClaimant(task(), [cand("a_farmhand", 1, 0), cand("z_idler", 6, 0)])).toBe("a_farmhand");
+  });
+
+  it("a shift worker IS pulled when the claim's value clears the output it destroys", () => {
+    // Same two bodies, same forgone — but the idle hand is now a long walk
+    // away, and the walk costs more than the shift does.
+    const t = task(400);
+    const onShift = cand("a_farmhand", 1, 0, { cost: price({ journeyS: 2, forgoneS: 60 }) });
+    const idle = cand("z_idler", 9, 0, { cost: price({ journeyS: 90 }) });
+    expect(chooseClaimant(t, [onShift, idle])).toBe("a_farmhand");
+  });
+
+  it("EQUAL forgone ⇒ nearest still wins — journeyS is monotone in distance", () => {
+    // The locality law survives the price: among candidates the world values
+    // the same, the cheapest leg IS the shortest one.
+    const t = task(100);
+    const near = cand("near", 2, 0, { cost: price({ journeyS: 2, forgoneS: 40 }) });
+    const far = cand("far", 8, 0, { cost: price({ journeyS: 8, forgoneS: 40 }) });
+    expect(chooseClaimant(t, [far, near])).toBe("near");
+  });
+
+  it("NET ties fall through to distance, then to the lexicographic id", () => {
+    const t = task(50);
+    // Same net (−10), different distance ⇒ nearer wins.
+    expect(
+      chooseClaimant(t, [
+        cand("far", 8, 0, { cost: price({ journeyS: 10 }) }),
+        cand("near", 2, 0, { cost: price({ forgoneS: 10 }) }),
+      ]),
+    ).toBe("near");
+    // Same net AND same distance ⇒ the shipped id rule.
+    expect(
+      chooseClaimant(t, [
+        cand("zeta", 3, 0, { cost: price({ journeyS: 4 }) }),
+        cand("alpha", 3, 0, { cost: price({ handsS: 4 }) }),
+      ]),
+    ).toBe("alpha");
+  });
+
+  it("NO SIGN GATE — a claim worth less than it costs is still claimed", () => {
+    // Deliberate: `netValueS`'s sign is the WORTHWHILE question and this is
+    // the WHO question. A gate here would silently stop every posted task the
+    // moment anyone attached a price to it.
+    const t = task(1);
+    expect(chooseClaimant(t, [cand("only", 2, 0, { cost: price({ forgoneS: 9999 }) })])).toBe("only");
+  });
+
+  it("stays pure and eligibility still gates first — an out-of-area bargain never claims", () => {
+    const t = task(100);
+    const cs = [
+      cand("outside", 30, 0, { cost: price({}) }),
+      cand("inside", 5, 0, { cost: price({ forgoneS: 90 }) }),
+    ];
+    const first = chooseClaimant(t, cs);
+    expect(first).toBe("inside");
+    for (let i = 0; i < 20; i++) expect(chooseClaimant(t, cs)).toBe(first);
+  });
+
+  it("valueS rides the pool row and survives the round trip, absent stays absent", () => {
+    const pool = createTaskPool();
+    const priced = pool.post({ goal: FETCH_WOOD, issuer: "__player__", focus: FOCUS, now: 0, valueS: 42 });
+    const bare = pool.post({ goal: FETCH_WOOD, issuer: "__player__", focus: FOCUS, now: 0 });
+    expect(priced.valueS).toBe(42);
+    expect("valueS" in bare).toBe(false);
+    expect(createTaskPool(pool.toJSON()).toJSON()).toEqual(pool.toJSON());
   });
 });
 

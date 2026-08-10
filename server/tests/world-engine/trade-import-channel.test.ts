@@ -38,11 +38,13 @@ import {
 } from "@shared/world-engine/kernel/town/goods.js";
 import { goodSourceEndpointId } from "@shared/world-engine/kernel/town/transfer.js";
 import {
+  allotmentSplit,
   createTownTrade,
   IMPORT_ALLOTMENT,
   RARE_IMPORT_KIND,
   TRADE_IMPORT_KINDS,
 } from "@shared/world-engine/kernel/town/trade.js";
+import { exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
 import { BARTER_WANT_MIN, stubPartnerSignals } from "@shared/world-engine/kernel/town/barter.js";
 import { activeTradePairs } from "@shared/world-engine/kernel/town/money.js";
 import { hinterlandJobs, cityLicense } from "@shared/world-engine/kernel/civ/jobs.js";
@@ -200,6 +202,76 @@ describe("T3 — the cargo list is a READING, and the bind is only when it start
     expect([...tr.route.exports]).toEqual(["clothing"]);
   });
 
+  // ── batch 2 · G3 — the hold is BID FOR, not divided by headcount ──────────
+  //
+  // economy-arc-opening.md batch 2, G3. `complementaryTrade` ranked the cargo
+  // by how badly we wanted each good and then `importUnitsPerVisit` dealt the
+  // allotment EVENLY, which threw the ranking away at the one place it could
+  // have mattered. The split is now largest-remainder over those same wants.
+
+  it("🔒 EQUAL WANTS reproduce the flat split, byte for byte (the shipped 3-kind line)", () => {
+    const tr = line();
+    // Measured against the formula the module used to run, not asserted.
+    const flat = Math.floor(IMPORT_ALLOTMENT / TRADE_IMPORT_KINDS.length);
+    for (const k of TRADE_IMPORT_KINDS) expect(tr.importUnitsPerVisit(k)).toBe(flat);
+    // An unbound line has no ranking behind it at all, so every kind weighs
+    // the same and the shipped arithmetic is what runs.
+    expect(TRADE_IMPORT_KINDS.reduce((n, k) => n + tr.importUnitsPerVisit(k), 0))
+      .toBe(IMPORT_ALLOTMENT);
+  });
+
+  it("🚨 THE WORST SHORTAGE GETS THE LARGEST SHARE — and Σ is the allotment exactly", () => {
+    const tr = line();
+    const c = center();
+    tr.bindPartner({ key: "hamlet", at: { x: c.x + 600, y: c.y }, distanceM: 600 });
+    // They can spare all three; our own books rank them 1.0 / 0.5 / 0.2.
+    const them = { shortage: () => 0 };
+    const us = {
+      shortage: (g: string) =>
+        ({ cloth: 1, clothing: 0.5, wood: 0.2 } as Record<string, number>)[g] ?? 0,
+    };
+    tr.refreshCargo({ us, them, goods: ["cloth", "clothing", "wood"] });
+    expect([...tr.route.imports]).toEqual(["cloth", "clothing", "wood"]); // ranked
+    const units = tr.route.imports.map((k) => tr.importUnitsPerVisit(k));
+    // 6 units weighted 1 / 0.5 / 0.2 (Σ 1.7) = 3.529 / 1.765 / 0.706 → floors
+    // 3 / 1 / 0, and the two left over go to the largest remainders.
+    expect(units).toEqual([3, 2, 1]);
+    expect(units.reduce((a, b) => a + b, 0)).toBe(IMPORT_ALLOTMENT); // conserved
+    // Strictly ordered by need — the flat split gave all three 2 apiece.
+    expect(units[0]!).toBeGreaterThan(units[1]!);
+    expect(units[1]!).toBeGreaterThan(units[2]!);
+    // A good the line does not carry still lands nothing.
+    expect(tr.importUnitsPerVisit("food")).toBe(0);
+    // …and the RARE treat still rides BESIDE the allotment, untouched by any
+    // of this (it is the one payload already priced by distance).
+    expect(tr.importUnitsPerVisit(RARE_IMPORT_KIND)).toBe(tr.route.rare.perVisit);
+  });
+
+  it("🔒 a ONE-GOOD cargo still lands the whole allotment (the live dollhouse case)", () => {
+    const tr = line();
+    const c = center();
+    tr.bindPartner({ key: "hamlet", at: { x: c.x + 600, y: c.y }, distanceM: 600 });
+    tr.refreshCargo({
+      us: books(["food"]), them: books(["clothing"]), goods: ["food", "clothing"],
+    });
+    expect([...tr.route.imports]).toEqual(["clothing"]);
+    expect(tr.importUnitsPerVisit("clothing")).toBe(IMPORT_ALLOTMENT);
+  });
+
+  it("the split FOLLOWS the books: re-derive, and the hold is re-dealt", () => {
+    const tr = line();
+    const c = center();
+    tr.bindPartner({ key: "hamlet", at: { x: c.x + 600, y: c.y }, distanceM: 600 });
+    const them = { shortage: () => 0 };
+    const goods = ["cloth", "clothing"];
+    tr.refreshCargo({ us: { shortage: (g) => (g === "cloth" ? 1 : 0.2) }, them, goods });
+    expect(tr.route.imports.map((k) => tr.importUnitsPerVisit(k))).toEqual([5, 1]);
+    // Cloth arrives, the tailor is still idle: the SAME line re-deals the hold.
+    tr.refreshCargo({ us: { shortage: (g) => (g === "cloth" ? 0.2 : 1) }, them, goods });
+    expect([...tr.route.imports]).toEqual(["clothing", "cloth"]);
+    expect(tr.route.imports.map((k) => tr.importUnitsPerVisit(k))).toEqual([5, 1]);
+  });
+
   it("`dayPhase` is the CARAVAN's own day: 0 where `tradeDay` ticks over, and rises within it", () => {
     const tr = line();
     let flip = -1;
@@ -210,6 +282,126 @@ describe("T3 — the cargo list is a READING, and the bind is only when it start
     expect(tr.dayPhase(flip)).toBeLessThan(0.5 / FOOD_DAY_SEC + 1e-9); // just past 0
     expect(tr.dayPhase(flip - 0.5)).toBeGreaterThan(0.99); // just short of 1
     expect(tr.dayPhase(flip + FOOD_DAY_SEC / 2)).toBeCloseTo(0.5, 2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// ②b BATCH 2 · G3 — `allotmentSplit`, the conserving allocator at the hold
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("allotmentSplit — largest remainder over the cargo's own wants", () => {
+  it("🚨 CONSERVES EXACTLY, for every weighting and every total", () => {
+    const weightings = [
+      [1, 1, 1], [1, 0.5, 0.2], [0.15, 0.16, 0.99], [3, 1], [1], [7, 7, 7, 7, 7],
+      [0.9, 0.9, 0.9, 0.9], [1, 0, 0],
+    ];
+    for (const w of weightings) {
+      for (const total of [0, 1, 2, 6, 7, 13, 100]) {
+        const out = allotmentSplit(w, total);
+        expect(out).toHaveLength(w.length);
+        expect(out.reduce((a, b) => a + b, 0)).toBe(total);
+        for (const n of out) expect(Number.isInteger(n) && n >= 0).toBe(true);
+      }
+    }
+  });
+
+  it("🚨 the bigger bid takes the bigger share, ties to the CALLER's order", () => {
+    expect(allotmentSplit([1, 0.5, 0.2], 6)).toEqual([3, 2, 1]);
+    expect(allotmentSplit([0.2, 0.5, 1], 6)).toEqual([1, 2, 3]); // weights, not slots
+    // Equal weights, an allotment that does not divide: the remainder goes to
+    // the head of the caller's order and NOTHING is dropped. (The flat split
+    // this replaces silently lost those units at the depot gate.)
+    expect(allotmentSplit([1, 1, 1, 1], 6)).toEqual([2, 2, 1, 1]);
+    expect(allotmentSplit([1, 1, 1], 6)).toEqual([2, 2, 2]); // the shipped line
+  });
+
+  it("🔒 degenerate inputs never mint, never NaN, never throw", () => {
+    expect(allotmentSplit([], 6)).toEqual([]);
+    expect(allotmentSplit([0, 0, 0], 6)).toEqual([2, 2, 2]); // no opinion ⇒ share alike
+    expect(allotmentSplit([NaN, 1], 6)).toEqual([0, 6]);
+    expect(allotmentSplit([-3, 1], 6)).toEqual([0, 6]);
+    expect(allotmentSplit([1, 1], -5)).toEqual([0, 0]);
+    expect(allotmentSplit([1, 1], 5.9)).toEqual([3, 2]); // whole units only
+  });
+
+  it("🔒 PURE — same inputs, same output, and the inputs are untouched", () => {
+    const w = [1, 0.5, 0.2];
+    const a = allotmentSplit(w, 6);
+    const b = allotmentSplit(w, 6);
+    expect(a).toEqual(b);
+    expect(w).toEqual([1, 0.5, 0.2]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// ②c BATCH 2 · G2 — the export cliff becomes a margin
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("exportPile — a town ships only what it can spare", () => {
+  let play: TownPlay;
+  const center = () => ({ x: play.plan.radius + 40, y: play.plan.radius + 40 });
+  const lineAt = (exportScale?: () => number) =>
+    createTownTrade(center(), play.plan, play.plan.streets, SEED, {
+      exportGood: "food",
+      exportDaily: 10,
+      ...(exportScale ? { exportScale } : {}),
+    })!;
+  /** The whole visit cycle, sampled — one number per case, comparable. */
+  const pileOver = (tr: ReturnType<typeof lineAt>) => {
+    const out: number[] = [];
+    for (let t = 0; t < FOOD_DAY_SEC; t += FOOD_DAY_SEC / 24) out.push(tr.exportPile(t));
+    return out;
+  };
+
+  beforeAll(() => {
+    play = buildTownPlay({ seed: SEED, days: YOUNG_DAYS });
+  });
+
+  it("🔒 NO READER ⇒ the pile is bit-for-bit what it always was", () => {
+    // Measured against the same line built without the seat — not asserted.
+    expect(pileOver(lineAt())).toEqual(pileOver(lineAt(() => 1)));
+    expect(Math.max(...pileOver(lineAt()))).toBeGreaterThan(0);
+  });
+
+  it("🚨 a town at the WANT GATE for its own export good ships NOTHING", () => {
+    const starved = lineAt(() => exportSpareScale(BARTER_WANT_MIN));
+    expect(pileOver(starved).every((v) => v === 0)).toBe(true);
+  });
+
+  it("🚨 …and THINS on the way there — the cliff is a slope now", () => {
+    const peakAt = (shortage: number) =>
+      Math.max(...pileOver(lineAt(() => exportSpareScale(shortage))));
+    const peaks = [0, 0.03, 0.06, 0.09, 0.12, BARTER_WANT_MIN].map(peakAt);
+    for (let i = 1; i < peaks.length; i++) expect(peaks[i]!).toBeLessThan(peaks[i - 1]!);
+    expect(peaks[peaks.length - 1]!).toBe(0);
+    // Half-way to the gate, half the surplus — the ramp is the SAME sawtooth,
+    // scaled, not a different curve (the shape is what a player watches).
+    const full = pileOver(lineAt());
+    const half = pileOver(lineAt(() => exportSpareScale(BARTER_WANT_MIN / 2)));
+    full.forEach((v, i) => expect(half[i]!).toBeCloseTo(v * 0.5, 9));
+  });
+
+  it("🔒 the scale is read LIVE, and clamped at the boundary", () => {
+    // `exportDaily` is fixed at construction; scarcity is not. One line, two
+    // readings, and the crate follows the books between them.
+    let shortage = 0;
+    const tr = lineAt(() => exportSpareScale(shortage));
+    const fed = tr.exportPile(500);
+    shortage = BARTER_WANT_MIN / 2;
+    expect(tr.exportPile(500)).toBeCloseTo(fed * 0.5, 9);
+    // A reader that misbehaves can neither mint surplus nor invert the pile.
+    const wild = createTownTrade(center(), play.plan, play.plan.streets, SEED, {
+      exportGood: "food", exportDaily: 10, exportScale: () => 9,
+    })!;
+    expect(wild.exportPile(500)).toBeCloseTo(lineAt().exportPile(500), 9);
+    const negative = createTownTrade(center(), play.plan, play.plan.streets, SEED, {
+      exportGood: "food", exportDaily: 10, exportScale: () => -2,
+    })!;
+    expect(negative.exportPile(500)).toBe(0);
+    const nan = createTownTrade(center(), play.plan, play.plan.streets, SEED, {
+      exportGood: "food", exportDaily: 10, exportScale: () => NaN,
+    })!;
+    expect(nan.exportPile(500)).toBeCloseTo(lineAt().exportPile(500), 9);
   });
 });
 

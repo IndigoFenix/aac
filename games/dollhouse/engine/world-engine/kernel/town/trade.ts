@@ -36,7 +36,7 @@ import { DOLLHOUSE_SCALE, type WorldScale } from "../../scale";
 // barter.ts precisely so this call can exist — barter.ts itself reads
 // transfer.ts, which reads this module, and a value edge into it would be a
 // cycle. `BarterSignals`/`PartnerGeography` are TYPE ONLY (erased).
-import { complementaryTrade } from "./complementary";
+import { complementaryRanking } from "./complementary";
 import type { BarterSignals, PartnerGeography } from "./barter";
 
 export interface TradeRoute {
@@ -107,7 +107,12 @@ export interface TownTrade {
    *  visit allotment split across whatever the line actually carries, and the
    *  rare treat's own distance-scaled count. 0 for a good this line does not
    *  carry. Read by the crate the player opens AND by the depot shelf the
-   *  households shop — the same caravan cannot land two different amounts. */
+   *  households shop — the same caravan cannot land two different amounts.
+   *
+   *  ⚖️ G3 — the split is WEIGHTED by the cargo ranking's own `want` (the
+   *  worse the shortage, the bigger the share) and conserves the allotment
+   *  exactly. An authored list, or any list whose wants are equal, deals the
+   *  even share it always did. */
   importUnitsPerVisit(good: string): number;
   /** ⚖️ R&T ⑤ (T3) — RE-DERIVE THE CARGO off TODAY's books, without touching
    *  the geometry. `bindPartner` is a ONE-SHOT at boot; scarcity is not, and a
@@ -116,8 +121,11 @@ export interface TownTrade {
    *  before a partner is bound (an abstract line carries the authored kinds). */
   refreshCargo(scarcity: { us: BarterSignals; them: BarterSignals; goods: readonly string[] }): void;
   /** Export units piled at `t`: fills from the last departure toward the next
-   *  (the caravan takes the pile with it). UN-damped — the host multiplies by
-   *  producer attendance so absent crews truthfully thin the load. */
+   *  (the caravan takes the pile with it). UN-damped by ATTENDANCE — the host
+   *  multiplies by producer attendance so absent crews truthfully thin the
+   *  load — but ⚖️ G2-SCALED BY SPARENESS: a town short of its own export good
+   *  piles proportionally less, reaching zero at the want gate that already
+   *  decides whether the good is on the export list at all. */
   exportPile(t: number): number;
   /** Bind the line to a REAL partner (a cluster hamlet; later a
    *  hierarchical-cells neighbor): re-aims the gate toward it, rebuilds the
@@ -220,6 +228,47 @@ export const TRADE_DWELL_SEC = 36;
  *  when there is no partner to read. */
 export const TRADE_IMPORT_KINDS: readonly string[] = ["ball", "teddy", "blocks"];
 
+/**
+ * ⚖️ G3 — THE PAYLOAD IS A CAPACITY MANY GOODS BID FOR: split `total` whole
+ * units across `weights` by LARGEST REMAINDER, conserving exactly.
+ *
+ * The integer sibling of `allocateDistrictFill` (city-districts.ts) and
+ * `allocateHands` (scope-shape.ts) — the same law at the hold's rung: floor
+ * every share, then deal the remainder to the largest fractional parts, ties
+ * by the CALLER's order (which is the cargo ranking's own, i.e. worst
+ * shortage first). Pure; Σ output === floor(total) for any finite input.
+ *
+ * EQUAL WEIGHTS reproduce the even share the flat split dealt — and, where
+ * the allotment does not divide evenly, they also deal the remainder the flat
+ * split silently DROPPED (6 units across 4 kinds: 2/2/1/1, not 1/1/1/1 with
+ * two units vanishing at the depot gate). Conservation is the point of the
+ * shape; the shipped 3-kind line divides evenly and is untouched.
+ */
+export function allotmentSplit(weights: readonly number[], total: number): number[] {
+  const n = weights.length;
+  if (n === 0) return [];
+  const units = Math.max(0, Math.floor(total));
+  const w = weights.map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
+  let sum = w.reduce((a, b) => a + b, 0);
+  // No opinion anywhere (an authored list carries no wants) ⇒ share alike.
+  if (!(sum > 0)) {
+    w.fill(1);
+    sum = n;
+  }
+  const exact = w.map((x) => (units * x) / sum);
+  const out = exact.map((x) => Math.floor(x));
+  let left = units - out.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const o of order) {
+    if (left <= 0) break;
+    out[o.i]! += 1;
+    left--;
+  }
+  return out;
+}
+
 function hashSeed(seed: number, key: string): number {
   let h = 0x811c9dc5 ^ seed;
   for (let i = 0; i < key.length; i++) {
@@ -248,6 +297,17 @@ export function createTownTrade(
      *  schedules are already paced to, so a caller that never declared a scale
      *  keeps exactly the numbers it had. */
     scale?: WorldScale;
+    /**
+     * ⚖️ G2 — HOW MUCH OF THE DAILY SURPLUS THIS TOWN ACTUALLY LETS OUT, 0..1,
+     * read LIVE (a thunk, not a number: `exportDaily` is fixed at construction
+     * and scarcity is the one thing about a town that moves).
+     *
+     * The town rung supplies `exportSpareScale(ourShortage(exportGood))` —
+     * complementary.ts's want gate as a slope. ABSENT ⇒ 1 ⇒ every number this
+     * module produces is bit-for-bit what it produced before the seat existed,
+     * which is what a caller with no books to read must get.
+     */
+    exportScale?: () => number;
   },
 ): TownTrade | null {
   const scale = opts.scale ?? DOLLHOUSE_SCALE;
@@ -368,6 +428,36 @@ export function createTownTrade(
     return { ...base, phase: "leaving", pos, walkTo: g.route.slice(0, Math.max(1, idx)).reverse() };
   };
 
+  /** ⚖️ G2 — the live export scale, clamped to [0,1] at the boundary so a
+   *  misbehaving reader can neither mint surplus nor invert the pile. Absent
+   *  reader ⇒ EXACTLY 1 (not a clamp of 1 — the same literal), so an unscaled
+   *  line's arithmetic is untouched. */
+  const exportScaleNow = (): number => {
+    const s = opts.exportScale?.();
+    if (s === undefined) return 1;
+    return Number.isFinite(s) ? Math.max(0, Math.min(1, s)) : 1;
+  };
+
+  /** ⚖️ G3 — the ranking's own wants for the CURRENT import list, or null for
+   *  an authored (unbound) list, which has no reading behind it and therefore
+   *  shares the hold alike — exactly what the flat split did. */
+  let importWants: Map<string, number> | null = null;
+  /** Memo of the weighted split, keyed on the cargo array's IDENTITY: the one
+   *  thing that replaces it is `deriveCargo`, which mints a new array. */
+  let splitOf: readonly string[] | null = null;
+  let splitUnits = new Map<string, number>();
+  const importSplit = (): Map<string, number> => {
+    if (splitOf === route.imports) return splitUnits;
+    const kinds = route.imports;
+    const shares = allotmentSplit(
+      kinds.map((k) => importWants?.get(k) ?? 1),
+      IMPORT_ALLOTMENT,
+    );
+    splitUnits = new Map(kinds.map((k, i) => [k, shares[i]!]));
+    splitOf = kinds;
+    return splitUnits;
+  };
+
   /** ⚖️ THE CARGO, DERIVED (R&T ⑤ T2) — ONE definition, called by the bind
    *  (which has the pair's books in hand) and by the host's per-visit refresh
    *  (which has today's). Both sides' reads ⇒ the lists are this pair's
@@ -378,15 +468,18 @@ export function createTownTrade(
     them: BarterSignals;
     goods: readonly string[];
   }): void => {
-    const pair = complementaryTrade(
+    const pair = complementaryRanking(
       scarcity.us,
       scarcity.them,
       scarcity.goods,
       route.distanceM,
       scale,
     );
-    route.imports = pair.imports;
-    route.exports = pair.exports;
+    route.imports = pair.imports.map((r) => r.good);
+    route.exports = pair.exports.map((r) => r.good);
+    // ⚖️ G3 — KEEP THE EVIDENCE. The ranking's `want` per import good is what
+    // weights the hold; it was computed and discarded on this very line.
+    importWants = new Map(pair.imports.map((r) => [r.good, r.want]));
   };
 
   return {
@@ -404,7 +497,10 @@ export function createTownTrade(
       // line happens to list it as ordinary cargo too.
       if (good === route.rare.kind) return Math.max(0, route.rare.perVisit);
       if (!route.imports.includes(good)) return 0;
-      return Math.floor(IMPORT_ALLOTMENT / route.imports.length);
+      // ⚖️ G3: the hold is bid for, not divided by headcount. The share is the
+      // ranking's own `want` through `allotmentSplit` — worst shortage, biggest
+      // share, Σ exactly IMPORT_ALLOTMENT.
+      return importSplit().get(good) ?? 0;
     },
     refreshCargo: (scarcity) => {
       if (!route.partnerAt) return; // nobody real to read — the authored list stands
@@ -413,7 +509,12 @@ export function createTownTrade(
     exportPile: (t) => {
       const departFrac = arriveFrac + (geo!.walk * 2 + TRADE_DWELL_SEC) / FOOD_DAY_SEC;
       const since = (((t / FOOD_DAY_SEC - departFrac) % 1) + 1) % 1;
-      return opts.exportDaily * since;
+      // ⚖️ G2: SPARENESS, read live. `exportDaily` was fixed at construction —
+      // a town could be starving and still pile the same third of its draw at
+      // the depot every day, because nothing between the books and the crate
+      // ever asked. The thunk is absent for every caller with no books, and
+      // then this line is `exportDaily * since` bit for bit.
+      return opts.exportDaily * since * exportScaleNow();
     },
     bindPartner: (partner) => {
       const g2 = buildGeo(pickGate({ x: partner.at.x - center.x, y: partner.at.y - center.y }));

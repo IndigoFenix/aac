@@ -48,6 +48,73 @@ export interface ScopeHands {
   free: number;
 }
 
+/**
+ * ⚖️ THE TOWN'S HANDS, COUNTED (economy arc batch 2, L3) — the first
+ * non-body producer of {@link ScopeHands}, and the reason the organ stopped
+ * being inert.
+ *
+ * A town's labour pool is not a decree, it is a CENSUS of the roster's own
+ * rows: every employable resident, minus the ones another schedule already
+ * owns. `total` is what the town could field if nothing else were happening
+ * to it; `free` is what it can field RIGHT NOW.
+ *
+ * ⚠️ SHOP DUTIES ARE SUBTRACTED WHOLE, not by trip phase. `assignTownJobs`
+ * already refuses to hire a member that holds one ("v1 keeps duties disjoint
+ * — the shop clock and a shift can't contest one body"), so the goods clock
+ * owns that body all day whether or not it happens to be walking right now.
+ * Counting mid-trip shoppers instead would mean routing every household's
+ * errand every sweep, which is a pathfinding sweep, not a reading.
+ */
+export interface TownHandCensus {
+  /** Employable residents the roster deals duties to. */
+  employable: number;
+  /** Members holding a SHOP duty (the goods clock owns them). */
+  shopDuty: number;
+  /** Members inside a JOB shift window right now. */
+  onShift: number;
+  /** Bodies a pooled claim or the live-need loop has taken over. */
+  committed: number;
+}
+
+export function townHandPool(c: TownHandCensus): ScopeHands {
+  const total = Math.max(0, c.employable - Math.max(0, c.shopDuty) - Math.max(0, c.onShift));
+  return { total, free: Math.max(0, total - Math.max(0, c.committed)) };
+}
+
+/**
+ * ⚖️ ONE POOL, N CLAIMS — the conserving split (economy arc batch 2, L4).
+ *
+ * `allocateDistrictFill`'s shape (city-districts.ts) at the hands rung: an
+ * even FLOOR first so no claim is starved by being late in the order, then
+ * the remainder poured in the caller's own deterministic order (founding
+ * order, for building sites), every claim capped, and Σ EXACTLY the supply
+ * when the supply is the binding constraint.
+ *
+ * The property that matters: `free ≥ Σ caps` returns `caps` verbatim, so a
+ * town with one site and hands to spare allocates exactly what the old
+ * per-site constant did — the whole point being that ten sites can no longer
+ * each mint a full crew out of twelve residents.
+ */
+export function allocateHands(caps: readonly number[], free: number): number[] {
+  const n = caps.length;
+  if (n === 0) return [];
+  const want = caps.map((c) => Math.max(0, c));
+  const supply = Math.max(0, free);
+  const demand = want.reduce((a, b) => a + b, 0);
+  if (supply >= demand) return want;
+  const even = supply / n;
+  const out = want.map((c) => Math.min(c, even));
+  let remaining = supply - out.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < n && remaining > 1e-12; i++) {
+    const take = Math.min(want[i]! - out[i]!, remaining);
+    if (take > 0) {
+      out[i]! += take;
+      remaining -= take;
+    }
+  }
+  return out;
+}
+
 /** §3.3 — present ⇒ the scope can move. A caravan is a house with legs; a
  *  house is a caravan that stopped (`bands.ts`: settling when
  *  store > carryCapacity is the master transition). */

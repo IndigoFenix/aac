@@ -21,7 +21,11 @@
  *   • BOUNDED — no deal ever goes infinite or free (the clamp).
  *   • DETERMINISTIC — pure arithmetic of the signals; no RNG anywhere.
  * Both sides' desperation counts: a town in famine gets WORSE terms for the
- * food it buys — bargaining position is part of the lesson.
+ * food it buys — bargaining position is part of the lesson. ⚖️ AND SO DOES
+ * OURS ON THE VOLUME (G1): the famine that refuses to sell is a law of TOWNS,
+ * not of partners, so it reads on both sides of every deal — the refusal
+ * (`barterWillingness`'s mirror) and the batch bound (`barterSpareUnits`,
+ * which thins a route continuously as we approach our own gate).
  *
  * THE SPOKEN QUOTE. Ratios surface as small integer pairs ("3 wood for
  * 2 food") built from the speakable quantity words (one/two/three), and
@@ -191,17 +195,63 @@ export function barterQuote(
 // Willingness — the partner accepts only when the deal relieves ITS needs
 // ---------------------------------------------------------------------------
 
-export type BarterRefusal = "has-enough" | "wont-part";
+export type BarterRefusal = "has-enough" | "wont-part" | "we-wont-part";
 
 /**
- * Would the PARTNER accept this deal? Derived from the same signals the
- * ratio reads: it must WANT what we give more than what it gives up.
- *   • its own famine on the take-good refuses "wont-part"
+ * ⚖️ G1 — HOW MUCH OF A GOOD WE MAY SPARE, as a fraction of what we hold: the
+ * famine refusal below, read as a SLOPE instead of a wall.
+ *
+ *   spare = clamp01((BARTER_FAMINE_MAX − ourShortage) / BARTER_FAMINE_MAX)
+ *
+ * 1 while we are fed, 0 exactly AT the famine gate, linear between — so the
+ * approach to a suspension is continuous and a route thins before it stops.
+ * The gate itself is unchanged: at/above `BARTER_FAMINE_MAX` this is 0 AND
+ * `barterWillingness` refuses, which is the same fact said twice on purpose
+ * (a volume the willingness disagreed with would be the old free lunch back
+ * in a new place).
+ *
+ * `ourShortage = 0` returns EXACTLY 1 (x/x in IEEE-754), so a fed town's
+ * shipment arithmetic is bit-for-bit what it was before this existed.
+ *
+ * The want-side twin, one gate up, is complementary.ts's `exportSpareScale` —
+ * identical formula over `BARTER_WANT_MIN`. One shape, two gates.
+ */
+export function barterSpareFraction(ourShortage: number): number {
+  return clamp01((BARTER_FAMINE_MAX - clamp01(ourShortage)) / BARTER_FAMINE_MAX);
+}
+
+/** ⚖️ G1 — UNITS OF `good` A STACK MAY SPARE at our own shortage of it: the
+ *  stock above the local-need reserve the famine law implies. `runDueBarters`
+ *  bounds every batch by THIS, never by raw `stackUnits` — a town in famine
+ *  shipping its last grain was the trade tier's largest free lunch. */
+export function barterSpareUnits(
+  stack: Record<string, number>,
+  good: string,
+  ourShortage: number,
+): number {
+  return stackUnits(stack, good) * barterSpareFraction(ourShortage);
+}
+
+/**
+ * Would this deal happen? Derived from the same signals the ratio reads: the
+ * partner must WANT what we give more than what it gives up, and NEITHER side
+ * may be starving for what it is being asked to hand over.
+ *   • their famine on the take-good refuses "wont-part"
  *     ("they won't part with food") — checked first: famine dominates.
+ *   • ⚖️ G1 THE MIRROR: OUR famine on the give-good refuses "we-wont-part",
+ *     by the same constant and the same comparison. The reading used to be
+ *     `void us` — "the partner judges by ITS OWN books alone" — which made
+ *     the law one-sided: their famine suspended a route, ours shipped the
+ *     last of the harvest. Symmetry is the pin: swap (give, us) with
+ *     (take, them) and the famine half of this predicate is unchanged.
+ *     The REASON is not swapped, because the player must be told WHO
+ *     refused; a shared "wont-part" would have every toast blaming the
+ *     neighbour for our own hunger.
  *   • too little need for the give-good — or no more need for it than for
  *     what it surrenders — refuses "has-enough" ("they have enough wood").
- * Our own side's refusal (can we COVER the give-goods) is the caller's
- * stock check — honesty about our shelves isn't the partner's business.
+ * Our ability to COVER the give-goods is still the caller's stock check —
+ * how full our shelves are is a different question from whether we dare
+ * empty them.
  */
 export function barterWillingness(
   give: string,
@@ -209,10 +259,12 @@ export function barterWillingness(
   us: BarterSignals,
   them: BarterSignals,
 ): { ok: true } | { ok: false; reason: BarterRefusal } {
-  void us; // the partner judges by ITS OWN books alone (honest refusals)
   const wantGive = clamp01(them.shortage(give));
   const partTake = clamp01(them.shortage(take));
   if (partTake >= BARTER_FAMINE_MAX) return { ok: false, reason: "wont-part" };
+  if (clamp01(us.shortage(give)) >= BARTER_FAMINE_MAX) {
+    return { ok: false, reason: "we-wont-part" };
+  }
   if (wantGive < BARTER_WANT_MIN || wantGive <= partTake) {
     return { ok: false, reason: "has-enough" };
   }
@@ -433,6 +485,10 @@ export function nextShortageBelow(
  * partTake` is a statement about TWO of their shortages at once). Evaluates the
  * REAL predicate — `barterWillingness` itself — forward on the same grid, so
  * the wake can never disagree with the refusal that produced it.
+ *
+ * ⚖️ G1: `us` is held FIXED across the sample (our own books are a live sim,
+ * not a closed form), so a `we-wont-part` refusal correctly yields NO derived
+ * wake here — the honest answer, and the park's backstop carries it.
  */
 export function nextBarterWillingAt(
   give: string,
@@ -509,9 +565,10 @@ export interface RunBartersOpts {
  *      (standing routes retry next period, visibly; one-shots wait too —
  *      the caravan simply doesn't go). Acceptance after a suspension
  *      reports "resumed".
- *   3. SHIP in whole quote batches, bounded by our stock, the ordered
- *      amount, AND the partner's own shelf (a real partner can run short) —
- *      goods move BOTH WAYS between the live endpoints via transferStock.
+ *   3. SHIP in whole quote batches, bounded by our SPARE (⚖️ G1 — the stock
+ *      above the reserve our own famine law implies, never the raw shelf),
+ *      the ordered amount, AND the partner's own shelf (a real partner can
+ *      run short) — goods move BOTH WAYS via transferStock.
  * One-shots complete after their shipment; standing rows advance their
  * clock. Endpoints the resolver can't produce fail the row NAMED.
  */
@@ -595,9 +652,15 @@ export function runDueBarters(
       a.every !== undefined
         ? Math.max(1, Math.floor(ordered / quote.give))
         : Math.floor(ordered / quote.give);
+    //    ⚖️ G1: OUR bound is the SPARE, not the shelf. `stackUnits` counted
+    //    every unit in the yard as shippable, so a hungry town emptied itself
+    //    on a standing route while the SAME famine on the partner's side
+    //    suspended one — the two trade paths disagreed about whether a town
+    //    may starve itself, and only the ungated one moved stock. At shortage
+    //    0 the fraction is exactly 1 and this line is the shipped one.
     const batches = Math.min(
       wantBatches,
-      Math.floor(stackUnits(us.stack, b.giveGood) / quote.give),
+      Math.floor(barterSpareUnits(us.stack, b.giveGood, opts.us.shortage(b.giveGood)) / quote.give),
       Math.floor(stackUnits(them.stack, b.takeGood) / quote.take),
     );
     if (batches <= 0) {

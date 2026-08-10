@@ -65,7 +65,7 @@ from the secret.
 | `aivota.ai` | TXT | `v=spf1 include:_spf.google.com ~all` | Workspace |
 | `google._domainkey` | TXT | key from Google Admin (`google_workspace_dkim_value`) | Workspace |
 | `_dmarc` | TXT | `v=DMARC1; p=…; rua=…; adkim=r; aspf=r` | both |
-| `<token>._domainkey` ×3 | CNAME | `<token>.dkim.amazonses.com` (auto) | SES |
+| `<token>._domainkey` ×3 | CNAME | `<token>.dkim.il-central-1.amazonses.com` (auto) | SES |
 | `send.aivota.ai` | MX | `10 feedback-smtp.il-central-1.amazonses.com` | SES |
 | `send.aivota.ai` | TXT | `v=spf1 include:amazonses.com ~all` | SES |
 
@@ -82,6 +82,11 @@ Gotchas encoded in the terraform:
   so it's split with an embedded `""`; resolvers rejoin it.
 - The SES DKIM records use `count = 3` (static) because Easy DKIM always
   returns exactly 3 tokens and a computed count would fail to plan.
+- The DKIM CNAME target is **region-specific** (`dkim.<region>.amazonses.com`).
+  Newer regions (il-central-1 included) publish keys only there; the legacy
+  global `dkim.amazonses.com` form most tutorials show does not exist for
+  them, and using it strands verification at PENDING with a "DNS server could
+  not find the specified domain name" error in the console.
 
 ## Go-live checklist
 

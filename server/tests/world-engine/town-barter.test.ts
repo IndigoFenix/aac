@@ -24,6 +24,8 @@ import {
   GEO_FARMLAND_REF,
   barterQuote,
   barterRatio,
+  barterSpareFraction,
+  barterSpareUnits,
   barterWillingness,
   barterWorth,
   defaultTakeGood,
@@ -37,7 +39,9 @@ import {
   type PartnerGeography,
 } from "@shared/world-engine/kernel/town/barter.js";
 import {
+  complementaryRanking,
   complementaryTrade,
+  exportSpareScale,
   freightSurvivesLeg,
 } from "@shared/world-engine/kernel/town/complementary.js";
 import { carryReachM, freightOf } from "@shared/world-engine/freight.js";
@@ -209,10 +213,61 @@ describe("barterWillingness — the deal must relieve THEIR worst shortages", ()
     expect(w).toEqual({ ok: false, reason: "wont-part" });
   });
 
-  it("judges by THEIR books alone — our desperation never flips their answer", () => {
+  // ⚖️ RE-PINNED (G1, 2026-08-09). The shipped title was "judges by THEIR books
+  // alone — our desperation never flips their answer", and its second line
+  // asserted that a town starving for BOTH goods still shipped. That was the
+  // one-sided famine law: `barterWillingness` opened with `void us`, so their
+  // hunger suspended a route and ours shipped the last of the harvest. The
+  // claim the pin was REALLY making — hunger for what we are BUYING is not
+  // the partner's business, and never sweetens or sours their verdict — is
+  // unchanged and pinned below; what moved is that a famine on what we are
+  // SELLING now refuses from our side, by the same constant.
+  it("our hunger for what we BUY never flips their answer (their books judge their side)", () => {
     const them = sig({ wood: 0.8, food: 0.1 });
     expect(barterWillingness("wood", "food", sig({}), them).ok).toBe(true);
-    expect(barterWillingness("wood", "food", sig({ food: 1, wood: 1 }), them).ok).toBe(true);
+    // Desperate for the take-good, right up to the extreme: still a deal.
+    expect(barterWillingness("wood", "food", sig({ food: 1 }), them).ok).toBe(true);
+    expect(barterWillingness("wood", "food", sig({ food: BARTER_FAMINE_MAX }), them).ok).toBe(true);
+    // …and a shortage of the GIVE-good short of our own famine changes nothing.
+    const nearly = sig({ wood: BARTER_FAMINE_MAX - 1e-9, food: 1 });
+    expect(barterWillingness("wood", "food", nearly, them).ok).toBe(true);
+  });
+
+  it("🚨 G1 THE MIRROR — OUR famine on the give-good refuses, by the same constant", () => {
+    const them = sig({ wood: 0.8, food: 0.1 }); // they would happily take it
+    const starving = sig({ wood: BARTER_FAMINE_MAX });
+    expect(barterWillingness("wood", "food", starving, them)).toEqual({
+      ok: false,
+      reason: "we-wont-part",
+    });
+    // The gate is theirs, exactly: a hair under it and the deal stands.
+    expect(barterWillingness("wood", "food", sig({ wood: BARTER_FAMINE_MAX - 1e-9 }), them).ok)
+      .toBe(true);
+    // THEIR famine still dominates — the shipped precedence is untouched, so a
+    // deal where both sides are starving still names the partner first.
+    const bothStarved = barterWillingness(
+      "wood", "food", sig({ wood: 1 }), sig({ wood: 0.8, food: 1 }),
+    );
+    expect(bothStarved).toEqual({ ok: false, reason: "wont-part" });
+  });
+
+  it("🔒 G1 SYMMETRY — the famine half of the predicate survives the swap", () => {
+    // The pair's OWN law, read from either end: swap (give, us) with
+    // (take, them) and whether a famine blocks the deal cannot change — only
+    // WHICH side is named. This is the property the `void us` line broke.
+    const famineCases: Array<[Record<string, number>, Record<string, number>]> = [
+      [{ wood: 0.9 }, { wood: 0.8, food: 0.1 }],
+      [{ wood: 0 }, { wood: 0.8, food: 0.95 }],
+      [{ wood: 0.75 }, { wood: 0.8, food: 0.9 }],
+      [{ wood: 0.2 }, { wood: 0.8, food: 0.2 }],
+    ];
+    const blockedByFamine = (r: ReturnType<typeof barterWillingness>) =>
+      !r.ok && (r.reason === "wont-part" || r.reason === "we-wont-part");
+    for (const [u, t] of famineCases) {
+      const ours = barterWillingness("wood", "food", sig(u), sig(t));
+      const theirs = barterWillingness("food", "wood", sig(t), sig(u));
+      expect(blockedByFamine(ours)).toBe(blockedByFamine(theirs));
+    }
   });
 });
 
@@ -408,6 +463,79 @@ describe("complementaryTrade — their surplus ∩ our shortage, over a real roa
     // Nudge their own need up to the line and they no longer have it spare.
     const holding = sig({ cloth: BARTER_WANT_MIN });
     expect(complementaryTrade(need, holding, ["cloth"], 100, SCALE).imports).toEqual([]);
+  });
+
+  // ⚖️ G3 — the ranking's own evidence, kept instead of discarded.
+  it("🔒 `complementaryTrade` IS `complementaryRanking`'s names — one rule, two shapes", () => {
+    const rank = complementaryRanking(us, them, GOODS, 300, SCALE);
+    const names = complementaryTrade(us, them, GOODS, 300, SCALE);
+    expect(rank.imports.map((r) => r.good)).toEqual(names.imports);
+    expect(rank.exports.map((r) => r.good)).toEqual(names.exports);
+    // The names-only shape is UNCHANGED — no field crept onto it.
+    expect(Object.keys(names).sort()).toEqual(["exports", "imports"]);
+  });
+
+  it("🚨 the `want` carried is the NEEDING side's own shortage, in ranked order", () => {
+    const rank = complementaryRanking(us, them, GOODS, 300, SCALE);
+    expect(rank.imports).toEqual([
+      { good: "cloth", want: 0.9 },
+      { good: "clothing", want: 0.4 },
+    ]);
+    // Descending, and never below the want gate that admitted the row.
+    for (const r of [...rank.imports, ...rank.exports]) {
+      expect(r.want).toBeGreaterThanOrEqual(BARTER_WANT_MIN);
+    }
+    // The mirror reads THEIR shortages, not ours.
+    expect(rank.exports).toEqual([
+      { good: "food", want: 0.8 },
+      { good: "wood", want: 0.3 },
+    ]);
+  });
+});
+
+// ── 3d. G2 — the export cliff, converted to a margin ────────────────────────
+
+describe("exportSpareScale — the want gate as a slope", () => {
+  it("🔒 a fully fed town exports everything, to the bit", () => {
+    expect(exportSpareScale(0)).toBe(1);
+    expect(exportSpareScale(-1)).toBe(1); // clamped — never over 1
+  });
+
+  it("🚨 hits ZERO exactly at BARTER_WANT_MIN — the same line the list draws", () => {
+    expect(exportSpareScale(BARTER_WANT_MIN)).toBe(0);
+    expect(exportSpareScale(0.5)).toBe(0);
+    expect(exportSpareScale(1)).toBe(0);
+    // The gate is shared with the derived list, so the volume can never
+    // disagree with whether the good is listed at all: at the exact shortage
+    // where a good stops being spare, its scale is already 0.
+    const need = sig({ cloth: 0.9 });
+    const atGate = sig({ cloth: BARTER_WANT_MIN });
+    expect(complementaryTrade(need, atGate, ["cloth"], 100, DOLLHOUSE_SCALE).imports).toEqual([]);
+    expect(exportSpareScale(BARTER_WANT_MIN)).toBe(0);
+  });
+
+  it("🚨 the approach is CONTINUOUS — a margin, not a cliff", () => {
+    const step = 0.0005;
+    let prev = exportSpareScale(0);
+    let biggestDrop = 0;
+    for (let s = step; s <= 1 + 1e-9; s += step) {
+      const v = exportSpareScale(s);
+      expect(v).toBeLessThanOrEqual(prev + 1e-12);
+      biggestDrop = Math.max(biggestDrop, prev - v);
+      prev = v;
+    }
+    expect(biggestDrop).toBeLessThan(step / BARTER_WANT_MIN + 1e-9);
+    expect(exportSpareScale(BARTER_WANT_MIN / 2)).toBeCloseTo(0.5, 12);
+  });
+
+  it("🔒 it is the FAMINE slope's twin — one shape, two gates", () => {
+    // Both are `(gate − shortage) / gate`; only the constant differs, which is
+    // the whole claim (a want gate governs the surplus, a famine gate the
+    // shelf). Checked at the same FRACTION of each gate, where they agree.
+    for (const frac of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(exportSpareScale(BARTER_WANT_MIN * frac))
+        .toBeCloseTo(barterSpareFraction(BARTER_FAMINE_MAX * frac), 12);
+    }
   });
 });
 
@@ -645,5 +773,131 @@ describe("runDueBarters — the shipment executor", () => {
     const first = run(build());
     const revived = createTransferLedger(JSON.parse(JSON.stringify(build().toJSON())));
     expect(run(revived)).toBe(first);
+  });
+});
+
+// ── 6. G1 — THE SPARE (the famine law as a volume, not only a verdict) ──────
+//
+// economy-arc-opening.md batch 2, G1. `runDueBarters` used to bound a shipment
+// by raw `stackUnits`, so the executor and the willingness predicate disagreed
+// about whether a town may starve itself — and only the ungated one moved
+// stock. The bound is now the SPARE: the shelf above the reserve the same
+// famine constant implies, which reaches zero exactly where the refusal fires.
+
+describe("barterSpareFraction — the famine wall, read as a slope", () => {
+  it("🔒 a FED town spares everything, to the bit", () => {
+    // Not "close to 1" — EXACTLY 1, which is what makes every shipped
+    // shipment's arithmetic byte-identical to the pre-G1 line.
+    expect(barterSpareFraction(0)).toBe(1);
+    expect(barterSpareFraction(-5)).toBe(1); // clamped, never over-spared
+    expect(barterSpareUnits({ wood: 7 }, "wood", 0)).toBe(7);
+    expect(barterSpareUnits({}, "wood", 0)).toBe(0);
+  });
+
+  it("🚨 reaches ZERO exactly AT the gate the refusal fires at — and stays there", () => {
+    expect(barterSpareFraction(BARTER_FAMINE_MAX)).toBe(0);
+    expect(barterSpareFraction(0.9)).toBe(0);
+    expect(barterSpareFraction(1)).toBe(0);
+    expect(barterSpareUnits({ wood: 40 }, "wood", BARTER_FAMINE_MAX)).toBe(0);
+  });
+
+  it("🚨 THE APPROACH IS CONTINUOUS — no cliff anywhere on the way to the gate", () => {
+    // Sampled finely across the whole range: strictly decreasing before the
+    // gate, and no single step ever drops more than the step size warrants
+    // (the shipped behaviour was a 1 → 0 cliff AT the gate with a flat 1
+    // everywhere below it).
+    const step = 0.001;
+    let prev = barterSpareFraction(0);
+    let biggestDrop = 0;
+    for (let s = step; s <= 1 + 1e-9; s += step) {
+      const v = barterSpareFraction(s);
+      expect(v).toBeLessThanOrEqual(prev + 1e-12);
+      biggestDrop = Math.max(biggestDrop, prev - v);
+      prev = v;
+    }
+    // One step of shortage can only cost one step's worth of spare.
+    expect(biggestDrop).toBeLessThan(step / BARTER_FAMINE_MAX + 1e-9);
+    // Halfway to famine, half the shelf stays home.
+    expect(barterSpareFraction(BARTER_FAMINE_MAX / 2)).toBeCloseTo(0.5, 12);
+  });
+});
+
+describe("runDueBarters — batches are bounded by the SPARE, not the shelf", () => {
+  const resolver = (yard: StockEndpoint, partner: StockEndpoint) => (id: string) =>
+    id === "town:yard" ? yard : id === partner.id ? partner : null;
+  /** They want wood badly and have food to spare — willing at every step, so
+   *  the only thing that moves below is OUR side's hunger. */
+  const THEM = sig({ wood: 0.8, food: 0 });
+  const ship = (ourShortage: number, stock = 12) => {
+    const led = createTransferLedger();
+    const yard = ep("town:yard", { wood: stock });
+    const partner = ep(townEndpointId("hamlet-1"), { food: 99 });
+    led.post(
+      barterInput({
+        give: "wood", take: "food", giveN: stock, quote: { give: 1, take: 1 },
+        partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+      }),
+    );
+    const us = sig({ wood: ourShortage });
+    const [r] = runDueBarters(led, resolver(yard, partner), 0, { us, themOf: () => THEM });
+    return { report: r!, quote: barterQuote("wood", "food", us, THEM) };
+  };
+
+  it("🔒 a FED town's shipment is EXACTLY the pre-G1 raw-shelf arithmetic", () => {
+    const { report, quote } = ship(0);
+    // Measured against the formula the module used to run, not asserted.
+    expect(report.status).toBe("shipped");
+    expect(report.sent.wood).toBe(Math.floor(12 / quote.give) * quote.give);
+  });
+
+  it("🚨 A TOWN AT FAMINE ON G SHIPS ZERO G ON A STANDING ROUTE", () => {
+    const { report } = ship(BARTER_FAMINE_MAX);
+    expect(report.status).toBe("suspended");
+    expect(report.reason).toBe("we-wont-part");
+    expect(report.sent).toEqual({});
+    expect(report.received).toEqual({});
+  });
+
+  it("🚨 and it THINS on the way down — the standing route never jumps full → nothing", () => {
+    // The same shelf, the same partner, the same order: only our own hunger
+    // moves. The volume falls step by step instead of surviving intact until
+    // the gate and vanishing there (which is what the raw-shelf bound did).
+    const sent: number[] = [];
+    for (const s of [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]) {
+      const { report } = ship(s, 20);
+      expect(report.status).toBe("shipped");
+      sent.push(report.sent.wood ?? 0);
+    }
+    expect(sent).toEqual([20, 17, 14, 11, 8, 5, 2]); // measured, not asserted
+    for (let i = 1; i < sent.length; i++) expect(sent[i]!).toBeLessThan(sent[i - 1]!);
+    // Nearer still, the spare can no longer cover one whole batch and the
+    // route pauses VISIBLY — the shipped "whole batches only" law, met on the
+    // way down rather than at a wall.
+    const nearly = ship(BARTER_FAMINE_MAX - 0.01, 20);
+    expect(nearly.report.status).toBe("short");
+    expect(nearly.report.sent).toEqual({});
+  });
+
+  it("the SPARE, not the order, is what binds — a hungry town under-ships a full order", () => {
+    // Half-starved: the yard holds 20 and the order asks for all 20, but only
+    // the spare half may go. Nothing is minted and nothing vanishes.
+    const led = createTransferLedger();
+    const yard = ep("town:yard", { wood: 20 });
+    const partner = ep(townEndpointId("hamlet-1"), { food: 99 });
+    led.post(
+      barterInput({
+        give: "wood", take: "food", giveN: 20, quote: { give: 1, take: 1 },
+        partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+      }),
+    );
+    const us = sig({ wood: BARTER_FAMINE_MAX / 2 });
+    // Read the bound BEFORE the shipment drains the very shelf it is read off.
+    const q = barterQuote("wood", "food", us, THEM);
+    const spare = barterSpareUnits({ ...yard.stack }, "wood", BARTER_FAMINE_MAX / 2);
+    expect(spare).toBeCloseTo(10, 9); // half-starved ⇒ half the shelf stays home
+    const [r] = runDueBarters(led, resolver(yard, partner), 0, { us, themOf: () => THEM });
+    expect(r!.sent.wood).toBe(Math.floor(spare / q.give) * q.give);
+    expect(r!.sent.wood).toBeLessThan(20);
+    expect((yard.stack.wood ?? 0) + (partner.stack.wood ?? 0)).toBe(20); // conserved
   });
 });

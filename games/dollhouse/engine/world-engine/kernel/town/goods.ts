@@ -281,6 +281,10 @@ export interface TownGoods {
   stallDaily(src: FoodSource): number;
   /** Plan indices of this good's PRODUCER works (farms for food…). */
   producerWorks(): number[];
+  /** Units of this good ONE producer work puts out in a street day (the
+   *  town's daily draw split across its producers) — the number `produceAt`
+   *  ramps and the labour price reads forward. 0 for a non-producer. */
+  producerDaily(workIdx: number): number;
   /** Units piled up at producer work `w` at time `t`: production ACCUMULATES
    *  across the street day and the dawn cart takes it — the inverse sawtooth of
    *  the shelf. The visible "the farm made this" box. */
@@ -771,11 +775,19 @@ export function createTownGoods(
     return out;
   };
 
-  const produceAt = (workIdx: number, t: number): number => {
+  /** The town's whole daily draw, split across its producers — what ONE
+   *  producer work puts out in a street day. Named (batch 2, L2) because the
+   *  labour price reads it FORWARD: pulling a scheduled hand off this work
+   *  costs a share of exactly this number. 0 for a non-producer. */
+  const producerDaily = (workIdx: number): number => {
     const producers = producerWorksList();
     if (!producers.includes(workIdx)) return 0;
-    // The town's whole daily draw, split across its producers.
-    const daily = (served * HOUSEHOLD * good.perCapitaDaily * fill()) / Math.max(1, producers.length);
+    return (served * HOUSEHOLD * good.perCapitaDaily * fill()) / Math.max(1, producers.length);
+  };
+
+  const produceAt = (workIdx: number, t: number): number => {
+    const daily = producerDaily(workIdx);
+    if (daily === 0) return 0;
     const dawn = hashSeed(seed, `${key}:pile:${workIdx}`) / 4294967296;
     const dayFrac = (((t / FOOD_DAY_SEC + dawn) % 1) + 1) % 1;
     return daily * dayFrac;
@@ -958,6 +970,7 @@ export function createTownGoods(
     errand,
     reanchor,
     producerWorks: producerWorksList,
+    producerDaily,
     produceAt,
     haul,
     stockOf,

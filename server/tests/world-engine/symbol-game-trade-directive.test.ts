@@ -13,6 +13,7 @@ import {
   barterHasEnoughLine,
   barterRefusalLine,
   barterTermsLine,
+  barterWeWontPartLine,
   barterWontPartLine,
   quantityGlyph,
 } from "@shared/world-engine/interaction/dialogue/barter-lines.js";
@@ -149,8 +150,23 @@ describe("barter lines — the confirmation speaks the ratio", () => {
     expect(line.c).toContain("give.not + food");
   });
 
+  it('🚨 "we won\'t part with wood" — G1\'s mirror, said in OUR name', () => {
+    // economy-arc-opening batch 2, G1: our own famine on the GIVE-good now
+    // refuses too, and a shared "wont-part" would have every toast blaming
+    // the neighbour for our empty granary. Same verb, subject swapped — and
+    // unlike the partner's line the subject survives into level b, because
+    // WHO is hungry is the whole content of the correction.
+    const line = barterWeWontPartLine("wood");
+    expect(line.a).toBe("no");
+    expect(line.b).toBe("we + give.not + wood");
+    expect(line.c).toContain("we + give.not + wood");
+    // It names the GIVE good — theirs names the take good; never confused.
+    expect(line.c).not.toContain("food");
+  });
+
   it("one dispatcher over the willingness verdict", () => {
     expect(barterRefusalLine("has-enough", "wood", "food").b).toBe("they + have + wood");
     expect(barterRefusalLine("wont-part", "wood", "food").b).toBe("give.not + food");
+    expect(barterRefusalLine("we-wont-part", "wood", "food").b).toBe("we + give.not + wood");
   });
 });

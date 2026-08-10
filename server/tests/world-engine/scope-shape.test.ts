@@ -12,11 +12,13 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   activeBag,
+  allocateHands,
   bodyCarryView,
   costTotalS,
   handsFree,
   stackRoom,
   sumContainerStacks,
+  townHandPool,
   type BagRef,
   type BodyCarry,
 } from "@shared/world-engine/kernel/town/scope-shape.js";
@@ -130,5 +132,68 @@ describe("the fold — inventory is the sum of the containers", () => {
 describe("the cost shape", () => {
   it("totals its four terms — the seat step ④ fills", () => {
     expect(costTotalS({ journeyS: 10, handsS: 4, spoilageS: 1, forgoneS: 5 })).toBe(20);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// ScopeHands — the organ that was declared and never produced (economy arc
+// batch 2, L3/L4). `§3.2 … a town's labour pool` is now a reading and a
+// conserving split, and this is where they are pinned.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("townHandPool — the town's hands, counted off the roster's own rows", () => {
+  it("total is employable minus the schedules that already own bodies", () => {
+    // 20 houses × 4 souls, 2 shop duties each (the goods clock owns those),
+    // 6 members inside a shift window right now.
+    const h = townHandPool({ employable: 80, shopDuty: 40, onShift: 6, committed: 0 });
+    expect(h.total).toBe(34);
+    expect(h.free).toBe(34);
+  });
+
+  it("free subtracts the bodies a claim or a live need has taken over", () => {
+    const h = townHandPool({ employable: 80, shopDuty: 40, onShift: 6, committed: 9 });
+    expect(h.total).toBe(34); // the town still HAS them, they are just spoken for
+    expect(h.free).toBe(25);
+  });
+
+  it("never goes negative — an over-committed town reads zero, not a debt", () => {
+    expect(townHandPool({ employable: 4, shopDuty: 4, onShift: 4, committed: 4 })).toEqual({
+      total: 0,
+      free: 0,
+    });
+  });
+});
+
+describe("allocateHands — one pool, N sites, conserved exactly", () => {
+  it("hands to spare ⇒ every claim gets its full cap (the byte-identity arm)", () => {
+    // THE ACCEPTANCE CASE of L4: one site, a normal town. It still fields 3.
+    expect(allocateHands([3], 20)).toEqual([3]);
+    expect(allocateHands([3, 3, 3], 20)).toEqual([3, 3, 3]);
+  });
+
+  it("a pool smaller than the demand is SHARED, never minted per site", () => {
+    // Ten sites out of a twelve-hand town: the free lunch, closed. Σ = 12,
+    // not 30 — and no site is starved to zero by being late in the order.
+    const out = allocateHands([3, 3, 3, 3, 3, 3, 3, 3, 3, 3], 12);
+    expect(out.reduce((a, b) => a + b, 0)).toBeCloseTo(12, 9);
+    expect(out.every((n) => n >= 1.2 - 1e-9)).toBe(true);
+    expect(Math.max(...out)).toBeLessThanOrEqual(3);
+  });
+
+  it("caps below the even share release their slack down the order", () => {
+    // A mill bench takes ONE hand however many volunteer (REFINE_CREW_CAP);
+    // the two building sites split what it did not want, earliest first.
+    expect(allocateHands([1, 3, 3], 6)).toEqual([1, 3, 2]);
+  });
+
+  it("conserves exactly and stays deterministic", () => {
+    for (const free of [0, 1, 2.5, 7, 100]) {
+      const caps = [3, 1, 3, 2];
+      const out = allocateHands(caps, free);
+      const demand = caps.reduce((a, b) => a + b, 0);
+      expect(out.reduce((a, b) => a + b, 0)).toBeCloseTo(Math.min(free, demand), 9);
+      expect(allocateHands(caps, free)).toEqual(out); // pure
+    }
+    expect(allocateHands([], 5)).toEqual([]);
   });
 });

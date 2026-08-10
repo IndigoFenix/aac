@@ -57,10 +57,25 @@ describe("the political voice renders in every shipped ruleset", () => {
     expect(translateGlyph(wontPart, "he")).toBe("הם לא נותנים את האוכל.");
   });
 
+  it("🚨 OUR OWN refusal speaks in all four too (economy-arc G1's mirror)", () => {
+    // A famine on the give-good refuses from THIS side now, and a sentence
+    // that cannot be said is not legible (P6): the mirror is the partner's
+    // own verb with our own subject, so every shipped ruleset already has it.
+    const weWont = barterRefusalLine("we-wont-part", "wood", "food").c;
+    expect(weWont).toBe("we + give.not + wood");
+    expect(translateGlyph(weWont, "en")).toBe("We don't give the wood.");
+    for (const locale of ["es", "pt", "he"]) {
+      const text = translateGlyph(weWont, locale);
+      expect({ locale, leaked: leaks(text) }).toEqual({ locale, leaked: [] });
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+
   it("no political glyph leaks untranslated into a non-English locale", () => {
     const lines = [
       tabooRefusalLine("fight"),
       barterRefusalLine("wont-part", "wood", "food"),
+      barterRefusalLine("we-wont-part", "wood", "food"),
       embargoRemarkLine("food"),
       unionLine("food"),
       warLine("food"),

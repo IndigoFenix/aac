@@ -5,8 +5,9 @@
  * DIFFERENT terms as scarcities shift IS the economics lesson. Refusals are
  * honest and named in the established vocabulary:
  *
- *   has-enough — "they have many wood"   (the partner doesn't want it)
- *   wont-part  — "they don't give food"  (the partner's own famine)
+ *   has-enough   — "they have many wood"  (the partner doesn't want it)
+ *   wont-part    — "they don't give food" (the partner's own famine)
+ *   we-wont-part — "we don't give wood"   (OUR own famine — G1's mirror)
  *
  * Built entirely on EXISTING glyphs (ok/they/have/give.not/for + the
  * quantity words one/two/three) so every lang ruleset renders each locale —
@@ -67,11 +68,29 @@ export function barterWontPartLine(takeGlyph: string): LeveledGlyphs {
   });
 }
 
+/** ⚖️ G1 — Refusal: WE won't part with the give-good (OUR own famine) —
+ *  "we + give.not + wood". The same sentence as the partner's refusal with
+ *  the subject swapped, because it is the same law read from our side; the
+ *  subject is what tells the child who is hungry, so unlike the partner's
+ *  line it survives into level b. Built on shipped glyphs only (`we` is a
+ *  registered person glyph, `give.not` the verb the mirror already speaks). */
+export function barterWeWontPartLine(giveGlyph: string): LeveledGlyphs {
+  return phrase({
+    subject: "we",
+    verb: "give.not",
+    object: giveGlyph,
+    key: "no",
+    b: `we + give.not + ${giveGlyph}`,
+  });
+}
+
 /** One dispatcher for the willingness verdict → the refusal line. */
 export function barterRefusalLine(
-  reason: "has-enough" | "wont-part",
+  reason: "has-enough" | "wont-part" | "we-wont-part",
   giveGlyph: string,
   takeGlyph: string,
 ): LeveledGlyphs {
-  return reason === "wont-part" ? barterWontPartLine(takeGlyph) : barterHasEnoughLine(giveGlyph);
+  if (reason === "wont-part") return barterWontPartLine(takeGlyph);
+  if (reason === "we-wont-part") return barterWeWontPartLine(giveGlyph);
+  return barterHasEnoughLine(giveGlyph);
 }

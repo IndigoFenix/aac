@@ -613,6 +613,13 @@ function harness() {
     questViewOf: () => null,
     spiritFocusOf: () => null,
     convoNodeId: () => null,
+    // ⚖️ batch 2 L3/L4 — the host's two hand readings, reduced to what this
+    // harness models: no jobs, no live needs and no pooled claims, so FREE is
+    // exactly the shipped "no queued errand", and the pool is one hand per
+    // household (the fixture's own workforce, far above any site's cap — so
+    // the shared-pool split allocates every site its full crew, as before).
+    handIsFree: (s: QuestSession, id: string) => !s.npcTasks?.get(id)?.length,
+    townHandPool: () => ({ total: play.plan.houses.length, free: play.plan.houses.length }),
   } as unknown as ConstructionDirectorCtx;
   return { play, session, toasts, at, director: createConstructionDirector(ctx) };
 }

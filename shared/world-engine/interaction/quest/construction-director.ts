@@ -207,10 +207,12 @@ import {
   type ResolveLocation,
 } from "@shared/world-engine/kernel/town/item-move.js";
 import {
+  allocateHands,
   bodyCarryView,
   type BodyCarry,
+  type ScopeHands,
 } from "@shared/world-engine/kernel/town/scope-shape.js";
-import { priceOf } from "@shared/world-engine/kernel/town/pricing.js";
+import { goodsValueS, priceOf, townFillS } from "@shared/world-engine/kernel/town/pricing.js";
 import {
   BARTER_LEG_DAY_FRAC,
   barterQuote,
@@ -779,7 +781,23 @@ export interface ConstructionDirectorCtx {
     where: "stored" | "anywhere",
   ): number;
   stockEndpointOf(session: QuestSession, id: string): StockEndpoint | null;
-  postPooledTask(session: QuestSession, goal: GoalSpec, issuer: string, focus: TaskFocus, sourceGlyph: string): void;
+  postPooledTask(
+    session: QuestSession,
+    goal: GoalSpec,
+    issuer: string,
+    focus: TaskFocus,
+    sourceGlyph: string,
+    /** ⚖️ batch 2 L1 — hand-seconds this task is worth, when the poster has
+     *  the number in hand (see `PooledTask.valueS`). */
+    valueS?: number,
+  ): void;
+  /** ⚖️ batch 2 L3 — THE one freeness predicate (quest-host `handIsFree`):
+   *  no errand queue, no live pursuit, no pooled claim, no party/escort/
+   *  possession, and NOT inside a job shift. */
+  handIsFree(session: QuestSession, cid: string): boolean;
+  /** ⚖️ batch 2 L3/L4 — the town's labour pool as a reading (quest-host
+   *  `townHandPool`). Sites SHARE it; none of them mints its own crew. */
+  townHandPool(session: QuestSession): ScopeHands;
   playerWorldPos(session: QuestSession): { x: number; y: number } | null;
   familyOf(session: QuestSession): { house: number; mode: "some" | "all"; members: TownFamilyMember[] } | null;
   playerFocusArea(session: QuestSession): TaskFocus | null;
@@ -895,7 +913,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, fellIfConsumed, dropFromStack,
     takeIntoHands, setDownFromHands, bodyCarryOf, takeUnitsFromBody,
-    creatureMood,
+    creatureMood, handIsFree, townHandPool,
     // Host MUTABLE state, reached through accessors (the four places the
     // verbatim bodies were edited to call these are marked "phase 1a").
     questViewOf, invalidateTownJobs, convoNodeId, spiritFocusOf,
@@ -2435,14 +2453,24 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     );
   }
 
-  /** The ABSTRACT CREW an unobserved site works with: a settled town
-   *  always fields a full crew (its workforce dwarfs the cap; whether any
-   *  of it is streamed in right now is exactly what observation must not
-   *  matter for); off a town it is the hands ambient recruitment would
-   *  enlist — registered residents/bonded creatures, WILLING volunteers
-   *  (the pool's compliance gate), and ambient resident bodies. */
+  /**
+   * The ABSTRACT CREW an unobserved site works with.
+   *
+   * ⚖️ IN TOWN IT IS THE TOWN'S POOL, AND IT IS FINITE (economy arc batch 2,
+   * L4). What stood here was `if (session.town) return BUILDERS_CAP` — every
+   * site told three builders unconditionally, so ten open sites banked thirty
+   * builder-equivalents out of twelve residents. That is free lunch #1: a
+   * town could out-build its own population by opening more sites, which is
+   * the opposite of what a labour constraint means. The pool is now a
+   * READING (`townHandPool`), and {@link allocateHands} splits it across the
+   * sites that are actually working — see `crewShareOf` in the order loop.
+   *
+   * Off a town it is unchanged: the hands ambient recruitment would enlist —
+   * registered residents/bonded creatures, WILLING volunteers (the pool's
+   * compliance gate), and ambient resident bodies.
+   */
   function availableCrew(session: QuestSession, issuer: string = LOCAL_PLAYER_CID): number {
-    if (session.town) return BUILDERS_CAP;
+    if (session.town) return townHandPool(session).free;
     const crew = new Set<string>();
     for (const cid of session.creatures?.nodeByCreature.keys() ?? []) {
       if (willingHand(session, cid, issuer)) crew.add(cid);
@@ -3056,6 +3084,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         issuer,
         { x: opts.at.x, y: opts.at.y, radius: civicRecruitRadius(session) },
         `bring ${d.take} ${d.glyph}`,
+        // ⚖️ batch 2 L1 — the number was already in the poster's hand.
+        // A SITE PILE is short by definition (the bill is what `pileShortfall`
+        // just answered and every unit of it is missing), so the shortage
+        // term is 1 and the haul is worth its units at the town's own fill
+        // clock. Nothing invented: `d.take` is the load being posted.
+        goodsValueS(d.take, 1, townFillS(session.scale), 1),
       );
     }
     led.release(tmp);
@@ -3402,6 +3436,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           issuer,
           { x: store.x, y: store.y, radius: civicRecruitRadius(session) },
           `bring ${d.take} ${d.glyph}`,
+          // ⚖️ batch 2 L1 — `wantN` was computed one line up and thrown away.
+          // THE SHORTAGE IS THE PAR SHORTFALL, which is law ②'s inventory-
+          // manager reading applied at the town rung: a stocking row's want IS
+          // the shelf's shortfall (`needShortageOf`), so a yard one unit under
+          // par is worth almost nothing and an empty one is worth a full load.
+          // Not `townShortage`: the raws have no `eco.fills` row, so it answers
+          // 0 for every one of them and would price the whole par loop at zero.
+          goodsValueS(
+            d.take,
+            Math.max(0, Math.min(1, wantN / STOREHOUSE_RAW_PAR)),
+            townFillS(session.scale),
+            1,
+          ),
         );
       }
       led.release(tmp);
@@ -3765,6 +3812,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             issuer,
             { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
             `bring ${k}`,
+            // ⚖️ batch 2 L1 — ONE piece, and the shell has none (the two lines
+            // above are exactly that test), so the shortage term is 1.
+            goodsValueS(1, 1, townFillS(session.scale), 1),
           );
           return "done";
         }
@@ -4087,38 +4137,68 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * is your own business — and anyone standing about a work shell will do,
    * which is the same "everyone works together" rule the civic tasks run on.
    * Null = nobody free right now, and the sweep simply waits.
+   *
+   * ⚖️ ONE FREENESS, AND IT IS THE HOST'S (economy arc batch 2, L3). This used
+   * to read `!npcTasks.length` and nothing else, so a body mid-pursuit, a body
+   * already holding a pooled claim, and a farmhand inside its own shift all
+   * read "free" and got a chest to carry. `handIsFree` is the one predicate;
+   * the seats that need a body they can simply take all ask it.
+   *
+   * ⚖️ AND BOTH BRANCHES MEASURE (L3). The work branch hand-rolled
+   * nearest-free; the household branch took the first free member BY INDEX, so
+   * a house rearranged itself using whoever happened to be listed first rather
+   * than whoever was standing next to the chest. Same law, both branches: the
+   * NEAREST free body wins, ties by id.
    */
   function reflowHandFor(session: QuestSession, buildingKey: string): string | null {
     if (!world) return null;
-    const free = (id: string): boolean => !session.npcTasks.get(id)?.length;
+    /** Nearest free body to `at` within `reach`, ties by id. */
+    const nearestFree = (
+      ids: Iterable<string>,
+      at: { x: number; y: number },
+      reach: number,
+    ): string | null => {
+      let best: string | null = null;
+      let bestD = reach;
+      for (const id of ids) {
+        const av = world!.state.avatars[id];
+        if (!av || av.canOpen === false) continue;
+        if (!handIsFree(session, id)) continue;
+        const d = Math.hypot(av.x - at.x, av.y - at.y);
+        if (d < bestD || (d === bestD && best !== null && id < best)) {
+          bestD = d;
+          best = id;
+        }
+      }
+      return best;
+    };
     const hm = /^h_(\d+)$/.exec(buildingKey);
     if (hm) {
-      // ANY member of the household, in order — not just member 0, who is as
-      // likely as anyone to be out at the well. A house with everybody busy
-      // simply waits for the next sweep.
-      for (let m = 0; m < HOUSEHOLD; m++) {
-        const id = avatarIdOf(`resident_${hm[1]}_${m}`);
-        if (world.state.avatars[id] && free(id)) return id;
+      const houseIndex = Number(hm[1]);
+      const t = session.town;
+      const h = t?.plan.houses.find((q) => q.index === houseIndex);
+      const at = h && t
+        ? { x: t.stage.center.x + h.dx + h.w / 2, y: t.stage.center.y + h.dy + h.h / 2 }
+        : null;
+      const ids: string[] = [];
+      for (let m = 0; m < HOUSEHOLD; m++) ids.push(avatarIdOf(`resident_${houseIndex}_${m}`));
+      // No town geometry to measure against (a founded-site session) ⇒ the
+      // shipped index order, which is all there ever was to go on.
+      if (!at) {
+        for (const id of ids) if (world.state.avatars[id] && handIsFree(session, id)) return id;
+        return null;
       }
-      return null;
+      return nearestFree(ids, at, Infinity);
     }
     const b = pendingBuildingOf(session, buildingKey);
     if (!b || !session.town) return null;
     const c = session.town.stage.center;
     const at = { x: c.x + b.shape.dx + b.shape.w / 2, y: c.y + b.shape.dy + b.shape.h / 2 };
-    const reach = civicRecruitRadius(session);
-    let best: string | null = null;
-    let bestD = reach;
-    for (const [id, av] of Object.entries(world.state.avatars)) {
-      if (!id.startsWith("resident_") || av.canOpen === false || !free(id)) continue;
-      const d = Math.hypot(av.x - at.x, av.y - at.y);
-      // Ties by id so the same shell picks the same body every time.
-      if (d < bestD || (d === bestD && best && id < best)) {
-        bestD = d;
-        best = id;
-      }
+    const streetBodies: string[] = [];
+    for (const id of Object.keys(world.state.avatars)) {
+      if (id.startsWith("resident_")) streetBodies.push(id);
     }
-    return best;
+    return nearestFree(streetBodies, at, civicRecruitRadius(session));
   }
 
   /**
@@ -4493,6 +4573,15 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           issuer,
           { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
           a.sourceGlyph ?? "bring materials",
+          // ⚖️ batch 2 L1 — the RE-POST of a haul that lost its task carries
+          // the same value the original post did: a pile short of its bill is
+          // fully short, and the load is the agreement's own goods.
+          goodsValueS(
+            Object.values(a.goods).reduce((s, n) => s + n, 0),
+            1,
+            townFillS(session.scale),
+            1,
+          ),
         );
       } else if (a.status === "moving" && a.executor && world) {
         const body = avatarIdOf(a.executor);
@@ -4512,18 +4601,59 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // build-day credit in the session's own day unit, crew-capped. The
     // clock arm below uses the same function × CLOCK_SCHEDULE_RATE, so the
     // two drivers can only ever differ by the schedule factor.
-    const clockArm = (row: { labor?: number }, cap: number = BUILDERS_CAP) => {
-      const banked =
-        elapsedS *
-        CLOCK_SCHEDULE_RATE *
-        laborRatePerS(session, Math.min(cap, availableCrew(session, issuer)));
+    //
+    // ⚖️ AND THE CREW IS SHARED (economy arc batch 2, L4). `crewShareOf`
+    // answers what THIS site got out of the town's pool; off a town there is
+    // no pool to share and the old union-of-willing-bodies count stands.
+    //
+    // WHAT SHARES IT: every order in its LABOR phase this tick — the sites
+    // that would each have minted a full crew a moment ago. Order = the
+    // deltas' own row order, which is founding order (ordinals are monotone
+    // and never reused), so the split is deterministic across peers. Per-site
+    // cap is the site's own (`REFINE_CREW_CAP` for a mill bench, otherwise
+    // `BUILDERS_CAP`), and `allocateHands` conserves exactly: Σ crews is the
+    // pool, never a multiple of it.
+    //
+    // ⚠️ THE POSTED SLOT COUNT IS NOT TOUCHED. A site still calls for
+    // `BUILDERS_CAP` hands, because a REAL body that answers is conserved
+    // already (one task per body) and a site that stopped calling could never
+    // be found by a passer-by. The pool bounds the ABSTRACT crew — the one
+    // that was being minted out of nothing.
+    const crewCapOf = (o: ConstructionOrder): number =>
+      o.kind === "refine" ? REFINE_CREW_CAP : BUILDERS_CAP;
+    const inLaborPhase = (o: ConstructionOrder): boolean => {
+      switch (o.kind) {
+        case "found":
+          return !o.completed && o.laborStartDay !== undefined && (o.labor ?? 0) < o.buildDays - 1e-9;
+        case "refine":
+          return o.laborStartDay !== undefined && (o.labor ?? 0) < o.buildDays - 1e-9;
+        case "demolish":
+          return !demolitionLaborDone(o);
+        default:
+          return !pendingLaborDone(o);
+      }
+    };
+    let crewShares: Map<number, number> | null = null;
+    const crewShareOf = (ord: number | undefined): number => {
+      if (!crewShares) {
+        const open = [...deltas.orders()].filter(inLaborPhase);
+        const share = allocateHands(open.map(crewCapOf), townHandPool(session).free);
+        crewShares = new Map(open.map((o, i) => [o.ord, share[i] ?? 0]));
+      }
+      return ord === undefined ? 0 : (crewShares.get(ord) ?? 0);
+    };
+    const clockArm = (row: { labor?: number; ord?: number }, cap: number = BUILDERS_CAP) => {
+      const crew = session.town
+        ? crewShareOf(row.ord)
+        : Math.min(cap, availableCrew(session, issuer));
+      const banked = elapsedS * CLOCK_SCHEDULE_RATE * laborRatePerS(session, crew);
       bankLabor(row, banked);
       if (banked > 0) deltas.version++;
     };
     const workSite = (
       siteId: string,
       at: { x: number; y: number },
-      row: { labor?: number },
+      row: { labor?: number; buildDays?: number; ord?: number },
       rect?: { x: number; y: number; w: number; h: number },
       cap: number = BUILDERS_CAP,
     ) => {
@@ -4549,6 +4679,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // take it, and the moment one does the observed arm resumes) — but not
       // `cap` of them, which would be three expiries a window for a site whose
       // labor is already accounted for.
+      // ⚖️ batch 2 L1 — WHAT A BUILD-WORK SLOT IS WORTH: the labour still owed,
+      // in the currency labour is already measured in. `laborRatePerS` says ONE
+      // builder banks `1 / dayLengthS` build-days per second, so the build-days
+      // remaining on this row ARE `remaining × dayLengthS` hand-seconds — the
+      // rate function inverted, not a new constant. The number was sitting on
+      // `row.labor` and being discarded.
+      const laborLeftS =
+        row.buildDays !== undefined
+          ? Math.max(0, row.buildDays - (row.labor ?? 0)) * session.scale.dayLengthS
+          : undefined;
       for (let n = tasks.length; n < (unstaffed ? 1 : cap); n++) {
         session.taskPool.post({
           goal: { kind: "buildwork", site: siteId },
@@ -4556,6 +4696,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           focus: { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
           now: session.taskClock,
           sourceGlyph: "build",
+          ...(laborLeftS !== undefined ? { valueS: laborLeftS } : {}),
         });
       }
       let present = 0;

@@ -62,6 +62,9 @@ import {
   type StructureSpec,
 } from "@shared/world-engine/kernel/town/structures.js";
 import { createTownTrade, type TownTrade } from "@shared/world-engine/kernel/town/trade.js";
+// ⚖️ G2: the want gate as a slope — ONE definition, shared with the derived
+// cargo list that draws the same line as a boolean (complementary.ts).
+import { exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
 import { createResidentModel, STREET_NPCS } from "@shared/world-engine/kernel/town/residents.js";
 import type { TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
 import type { TownDeltas } from "@shared/world-engine/kernel/town/construction.js";
@@ -441,10 +444,33 @@ export function* createTownStageSteps(
   const foodSpec = eco.goods.find(
     (g) => g.key === "food" && (g.slot === 0 || hasLedger(town, g)),
   );
+  /**
+   * ⚖️ G2 — WHAT THE TOWN CAN SPARE, read LIVE off the goods layer.
+   *
+   * `TownGoods.fill()` IS the town's own reading of "how fed are we on this
+   * good" (`got / need`, clamped) — the same books `townShortage` reads, and
+   * the ONE definition already in the street layer, so nothing here restates
+   * the fill arithmetic. Its complement is our shortage, and
+   * `exportSpareScale` turns that into the share of the daily surplus we let
+   * out: 1 while fed, 0 at `BARTER_WANT_MIN`, the exact line the derived
+   * export LIST already draws as a boolean.
+   *
+   * A LATE READ ON PURPOSE. The street goods are built AFTER the line (the
+   * lane's allotment is one of their inputs), so the thunk closes over a ref
+   * that fills in below — and it is only ever called by `exportPile`, i.e.
+   * after the stage is standing. No goods yet, or no food row, reads 1: an
+   * unmeasured town exports exactly what it always did.
+   */
+  let streetGoodsRef: TownGoods[] | null = null;
+  const exportScaleNow = (): number => {
+    const g = streetGoodsRef?.find((x) => x.good.key === "food");
+    return g ? exportSpareScale(1 - g.fill()) : 1;
+  };
   const trade = foodSpec
     ? createTownTrade(center, plan, plan.streets, opts.seed, {
         exportGood: "food",
         exportDaily: plan.houses.length * HOUSEHOLD * foodSpec.perCapitaDaily * 0.3,
+        exportScale: exportScaleNow,
       })
     : null;
   /**
@@ -502,6 +528,7 @@ export function* createTownStageSteps(
   const goods: TownGoods[] = streetGoods(
     town, eco, { key: siteKey, center, plan }, opts.seed, undefined, importsOf,
   );
+  streetGoodsRef = goods; // ⚖️ G2: the export scale's books, now that they exist
   // The cast holds its NPC-budget share whether it ships in the spec or
   // the host embodies it itself.
   // RESIDENTS: the shared model owns the mechanics (who exists where,

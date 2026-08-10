@@ -44,6 +44,13 @@ resource "aws_sesv2_email_identity_mail_from_attributes" "main" {
 # Easy DKIM: SES hands back exactly 3 tokens, each published as a CNAME.
 # count is the static 3 (not length of the computed list) so the plan works
 # before the identity exists.
+#
+# The CNAME target is REGION-SPECIFIC (dkim.<region>.amazonses.com). Newer
+# regions like il-central-1 publish the keys ONLY there — the legacy global
+# form (<token>.dkim.amazonses.com) does not exist for them, so pointing at it
+# leaves the identity stuck in PENDING with the console reporting "the DNS
+# server could not find the specified domain name" (verified empirically
+# 2026-08-10: global target NXDOMAIN, regional target serves the key).
 resource "aws_route53_record" "ses_dkim" {
   count = var.domain_name != "" ? 3 : 0
 
@@ -51,7 +58,7 @@ resource "aws_route53_record" "ses_dkim" {
   name    = "${aws_sesv2_email_identity.main[0].dkim_signing_attributes[0].tokens[count.index]}._domainkey.${var.domain_name}"
   type    = "CNAME"
   ttl     = 3600
-  records = ["${aws_sesv2_email_identity.main[0].dkim_signing_attributes[0].tokens[count.index]}.dkim.amazonses.com"]
+  records = ["${aws_sesv2_email_identity.main[0].dkim_signing_attributes[0].tokens[count.index]}.dkim.${var.aws_region}.amazonses.com"]
 }
 
 resource "aws_route53_record" "ses_mail_from_mx" {

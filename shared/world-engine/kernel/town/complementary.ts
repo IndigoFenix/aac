@@ -43,6 +43,32 @@ import type { BarterSignals } from "./barter.js";
  *  Re-exported by barter.ts as `BARTER_WANT_MIN` — its public name. */
 export const BARTER_WANT_MIN = 0.15;
 
+/**
+ * ⚖️ G2 — HOW MUCH OF ITS SURPLUS A TOWN ACTUALLY SHIPS, 0..1: the want gate
+ * above, converted from a CLIFF into a SLOPE.
+ *
+ * `rank()` below asks a boolean of the SPARING side ("is its own shortage
+ * under `BARTER_WANT_MIN`?"), so a town at shortage 0.149 exported its whole
+ * surplus and one at 0.151 exported nothing — a step function on the one
+ * quantity a player can watch. The economy-arc §0 law is that a claim on a
+ * committed resource is priced against what its holder could otherwise do
+ * with it, and that price is continuous: the hungrier we are, the less of our
+ * own surplus we let out, reaching zero exactly AT the gate the boolean
+ * already draws.
+ *
+ *   scale = clamp01((BARTER_WANT_MIN − ourShortage) / BARTER_WANT_MIN)
+ *
+ * 1 when fully fed, 0 at the gate, linear between — the SAME constant, so the
+ * list and the volume can never disagree about where exporting stops. Pure;
+ * the caller supplies its own books' reading.
+ *
+ * (Its famine-side twin is barter.ts's `barterSpareFraction`, which converts
+ * `BARTER_FAMINE_MAX`'s wall by the identical formula — one shape, two gates.)
+ */
+export function exportSpareScale(ourShortage: number): number {
+  return clamp01((BARTER_WANT_MIN - clamp01(ourShortage)) / BARTER_WANT_MIN);
+}
+
 /** Fraction of a load that must still ARRIVE for the good to be worth listing
  *  (the rest is what the road ate). Half: below that the caravan is hauling
  *  mostly air, and the pair should be trading something else. */
@@ -80,6 +106,19 @@ export interface ComplementaryTrade {
   exports: string[];
 }
 
+/** ⚖️ G3 — ONE ROW of the ranking: the good AND the `want` it was ranked by
+ *  (the needing side's own shortage, 0..1, at/above `BARTER_WANT_MIN`). */
+export interface ComplementaryRow {
+  good: string;
+  want: number;
+}
+
+/** The ranking BEFORE it is flattened to two name lists. */
+export interface ComplementaryRanking {
+  imports: ComplementaryRow[];
+  exports: ComplementaryRow[];
+}
+
 /**
  * ⚖️ THE PAIR'S COMPLEMENTARY SCARCITY — their surplus ∩ our shortage, and the
  * mirror, each filtered by what survives `legM` of road.
@@ -102,7 +141,29 @@ export function complementaryTrade(
   legM: number,
   scale: WorldScale,
 ): ComplementaryTrade {
-  const rank = (need: BarterSignals, spare: BarterSignals): string[] => {
+  const r = complementaryRanking(us, them, goods, legM, scale);
+  return { imports: r.imports.map((x) => x.good), exports: r.exports.map((x) => x.good) };
+}
+
+/**
+ * ⚖️ G3 — THE SAME READ, WITH ITS OWN EVIDENCE KEPT. `complementaryTrade`
+ * above is this function's names-only projection, so there is exactly ONE
+ * ranking rule and the two can never disagree about order.
+ *
+ * The `want` was always computed here and thrown away on the last line, and
+ * the caravan then split its payload EVENLY across the survivors — a hold
+ * that ignores which shortage is worse. A payload is finite capacity many
+ * goods bid for (§0's third pressure), so the bid needs its number; keeping
+ * it costs nothing and is the whole of `importUnitsPerVisit`'s weighting.
+ */
+export function complementaryRanking(
+  us: BarterSignals,
+  them: BarterSignals,
+  goods: readonly string[],
+  legM: number,
+  scale: WorldScale,
+): ComplementaryRanking {
+  const rank = (need: BarterSignals, spare: BarterSignals): ComplementaryRow[] => {
     const rows: Array<{ good: string; want: number; i: number }> = [];
     const seen = new Set<string>();
     goods.forEach((good, i) => {
@@ -115,7 +176,7 @@ export function complementaryTrade(
       rows.push({ good, want, i });
     });
     rows.sort((a, b) => b.want - a.want || a.i - b.i);
-    return rows.map((r) => r.good);
+    return rows.map((r) => ({ good: r.good, want: r.want }));
   };
   return { imports: rank(us, them), exports: rank(them, us) };
 }

@@ -394,6 +394,45 @@ describe("intercity bridge — trade.ts route legs as standing agreements (bindP
     expect(exp!.goods.food).toBe(12);
   });
 
+  // ── batch 2 · G2 — the export leg splits, and follows the books ──────────
+  //
+  // economy-arc-opening.md batch 2, G2. The import line above divides ONE
+  // allotment across the kinds the route carries; the export line handed
+  // EVERY export good the whole `exportDaily`, so the moment
+  // `complementaryTrade` derived a second export good the row claimed twice
+  // the town's daily surplus. Latent (no callers) — pinned now so the on-ramp
+  // cannot land on it.
+
+  it("🚨 ONE DAY'S SURPLUS IS ONE DAY'S SURPLUS, however many crates it packs into", () => {
+    const two = { ...route("away:21", 3000), exports: ["food", "cloth"] };
+    const exp = tradeRouteAgreementInputs(two, "brookmill", { exportDaily: 12 })[1]!;
+    expect(exp.goods).toEqual({ food: 6, cloth: 6 });
+    expect(Object.values(exp.goods).reduce((a, b) => a + b, 0)).toBe(12);
+    // A SINGLE export good is byte-identical to the shipped row (measured).
+    expect(tradeRouteAgreementInputs(route("away:21", 3000), "brookmill", { exportDaily: 12 })[1]!
+      .goods).toEqual({ food: 12 });
+    // …and an empty export list still produces the leg, carrying nothing.
+    const none = { ...route("away:21", 3000), exports: [] as string[] };
+    expect(tradeRouteAgreementInputs(none, "brookmill", { exportDaily: 12 })[1]!.goods).toEqual({});
+  });
+
+  it("🔒 the export SCALE rides the same opts — absent ⇒ 1 ⇒ the shipped number", () => {
+    const base = route("away:21", 3000);
+    const plain = tradeRouteAgreementInputs(base, "brookmill", { exportDaily: 12 })[1]!;
+    expect(tradeRouteAgreementInputs(base, "brookmill", { exportDaily: 12, exportScale: 1 })[1]!
+      .goods).toEqual(plain.goods);
+    // A town short of its own export good ships proportionally less…
+    expect(tradeRouteAgreementInputs(base, "brookmill", { exportDaily: 12, exportScale: 0.5 })[1]!
+      .goods).toEqual({ food: 6 });
+    // …and nothing at all at the gate. Out-of-range readings are clamped.
+    expect(tradeRouteAgreementInputs(base, "brookmill", { exportDaily: 12, exportScale: 0 })[1]!
+      .goods).toEqual({ food: 0 });
+    expect(tradeRouteAgreementInputs(base, "brookmill", { exportDaily: 12, exportScale: 4 })[1]!
+      .goods).toEqual({ food: 12 });
+    expect(tradeRouteAgreementInputs(base, "brookmill", { exportDaily: 12, exportScale: -1 })[1]!
+      .goods).toEqual({ food: 0 });
+  });
+
   it("re-derives after bindPartner — the partner endpoint follows the bound key and distance", () => {
     const before = tradeRouteAgreementInputs(route("away:21", 3000), "brookmill")[0]!;
     // bindPartner re-aims the route at a REAL near neighbor (trade.ts seam).

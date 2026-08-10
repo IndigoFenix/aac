@@ -23,6 +23,7 @@
 // a caravan and dear for a thirst.
 
 import { costTotalS, type VerbCost } from "./scope-shape.js";
+import type { WorldScale } from "../../scale.js";
 
 /** Walking time for a leg. Zero/negative speed prices the leg unreachable. */
 export function journeyTimeS(distM: number, speedMps: number): number {
@@ -79,4 +80,74 @@ export function goodsValueS(
  *  PREFER primitive, and the sign is the WORTHWHILE gate. */
 export function netValueS(valueS: number, cost: VerbCost): number {
   return valueS - costTotalS(cost);
+}
+
+/**
+ * ⚖️ THE TOWN RUNG'S FILL CLOCK (economy arc batch 2) — the STREET DAY.
+ *
+ * `goodsValueS` needs a fill clock to price a unit, and at the BODY rung that
+ * clock is the drive's own (`needFillS`: one ration serves one hunger cycle).
+ * A town has no hunger meter; what it has is a DAY — every stock number the
+ * town rung owns is quoted per street day (`GoodSpec.perCapitaDaily` is
+ * "units one person draws per street day", `FoundedBuilding.buildDays` is
+ * street-days of work, the dawn shelf refills once a day). So one unit of a
+ * good the town is completely out of is worth one day of a hand's time, and
+ * everything else is that scaled by shortage. Named once here so a poster, a
+ * shift price and a build-work value cannot drift apart.
+ */
+export function townFillS(scale: WorldScale): number {
+  return Math.max(1, scale.dayLengthS);
+}
+
+/**
+ * ⚖️ WHAT PULLING A SCHEDULED WORKER OFF SHIFT WOULD DESTROY, in hand-seconds
+ * — the ATTENDANCE MODEL READ FORWARD (economy arc batch 2, L2).
+ *
+ * THE DERIVATION, end to end, and every step of it is already shipped:
+ *
+ *   1. `noteAbsence` (roster.ts) tallies the SECONDS a scheduled body spends
+ *      away from its shift. A claim that occupies the body for `occupiedS`
+ *      seconds of its window adds exactly `occupiedS` to that tally.
+ *   2. `attendanceFactor` turns the tally into a multiplier:
+ *      `1 − absent / (staff × windowLen × daySec)`. So one absent second
+ *      costs the work `1 / (staff × windowLen × daySec)` of its output.
+ *   3. `producerAttendance` multiplies the work's good onto tomorrow's dawn
+ *      shelf by that factor, so the units that never appear are
+ *      `unitsPerDay × occupiedS / (staff × windowLen × daySec)`.
+ *   4. `goodsValueS` prices one of those units at the town's own fill clock
+ *      ({@link townFillS}), weighted by how short the town already is.
+ *
+ * ⚠️ ORACLE, NEVER DECIDER (scope-behaviors §6): nothing here writes an
+ * absence. The attendance controller stays a controller — this only ASKS it
+ * what a claim would cost before the claim is made, so the decision and the
+ * consequence are the same arithmetic instead of two guesses.
+ *
+ * ⚠️ THE FLOOR IS DELIBERATELY NOT APPLIED. `attendanceFactor` clamps at
+ * `ATTENDANCE_FLOOR`, so a work already abandoned all day loses nothing more
+ * from one more absence; charging the linear rate anyway prices the MARGINAL
+ * claim as if the crew were whole, which errs toward protecting the shift.
+ * Reading the live tally here would make the price depend on who was pulled
+ * earlier today — a decision that remembers grudges. It stays memoryless.
+ *
+ * Zero whenever the shift is not real (no staff, no window, no output) or the
+ * good is not short — a town in surplus does not protect a worker whose
+ * marginal unit is worth nothing, which is the honest reading.
+ */
+export function shiftForgoneS(p: {
+  /** Units of its good this ONE work puts out in a street day. */
+  unitsPerDay: number;
+  /** Souls scheduled on the work's shift (`assignTownJobs` rows). */
+  staff: number;
+  /** Shift length in street-day fractions (`Duty.window.len`). */
+  windowLen: number;
+  /** Seconds in the street day the attendance model buckets by. */
+  daySec: number;
+  /** Seconds the claim would hold the body (its plan's journey + hands). */
+  occupiedS: number;
+  /** Hand-seconds one unit of the good is worth — `goodsValueS(1, …)`. */
+  unitValueS: number;
+}): number {
+  const scheduledSec = Math.max(0, p.staff) * Math.max(0, p.windowLen) * Math.max(0, p.daySec);
+  if (!(scheduledSec > 0) || !(p.unitsPerDay > 0) || !(p.occupiedS > 0)) return 0;
+  return (p.unitsPerDay / scheduledSec) * p.occupiedS * Math.max(0, p.unitValueS);
 }

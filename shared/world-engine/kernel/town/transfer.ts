@@ -648,7 +648,14 @@ export function dawnCartAgreementInput(opts: {
 export function tradeRouteAgreementInputs(
   route: Pick<TradeRoute, "partnerKey" | "imports" | "exports" | "rare">,
   townKey: string,
-  opts?: { exportDaily?: number; issuer?: string; now?: number },
+  opts?: {
+    exportDaily?: number;
+    /** ⚖️ G2 — the town's live export scale (0..1, `exportSpareScale` off its
+     *  own books). Absent ⇒ 1 ⇒ the row is exactly what it was. */
+    exportScale?: number;
+    issuer?: string;
+    now?: number;
+  },
 ): PostTransferInput[] {
   // ⚖️ The allotment splits across the kinds THIS ROUTE carries — the authored
   // list is only what an unbound line brings (R&T ⑤ T2), so reading its length
@@ -657,8 +664,20 @@ export function tradeRouteAgreementInputs(
   const imports: Record<string, number> = {};
   for (const k of route.imports) imports[k] = per;
   imports[route.rare.kind] = (imports[route.rare.kind] ?? 0) + route.rare.perVisit;
+  // ⚖️ G2 — THE EXPORT LEG SPLITS TOO (the latent this row shipped with): the
+  // import line above divides ONE allotment across the kinds it carries, and
+  // the export line handed EVERY export good the whole `exportDaily`, so a
+  // two-good cargo doubled the town's daily surplus on paper the moment
+  // `complementaryTrade` derived a second export. One day's surplus is one
+  // day's surplus however many crates it is packed into.
+  const scale = Number.isFinite(opts?.exportScale as number)
+    ? Math.max(0, Math.min(1, opts!.exportScale!))
+    : 1;
+  const outDaily = Math.max(0, opts?.exportDaily ?? 0) * scale;
   const exports: Record<string, number> = {};
-  for (const k of route.exports) exports[k] = Math.max(0, Math.round(opts?.exportDaily ?? 0));
+  for (const k of route.exports) {
+    exports[k] = Math.max(0, Math.round(outDaily / Math.max(1, route.exports.length)));
+  }
   const base = {
     issuer: opts?.issuer ?? townKey,
     mode: "scheduled" as const,

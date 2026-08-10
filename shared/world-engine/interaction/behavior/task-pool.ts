@@ -24,6 +24,7 @@
 
 import type { CreatureId } from "@shared/world-engine/interaction/behavior/creatures.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
+import { costTotalS, type VerbCost } from "@shared/world-engine/kernel/town/scope-shape.js";
 
 /** The issuer's attention area at issue time — claims are scoped to it. */
 export interface TaskFocus {
@@ -47,6 +48,16 @@ export interface PooledTask {
   claimedBy?: CreatureId;
   /** The spoken sentence that posted it — for the "no one can do that" report. */
   sourceGlyph?: string;
+  /**
+   * ⚖️ WHAT DOING THIS IS WORTH, in hand-seconds (economy arc batch 2, L1).
+   *
+   * The POSTER answers it, because it is a world question — how short the
+   * storehouse is, how much of the bill is left — exactly as `forgoneOf`'s
+   * division of labour has the caller resolve "what does this serve where it
+   * lies" and carry the answer on the candidate (needs.ts). Absent = the
+   * poster had no number in hand, and the claim falls back to geometry.
+   */
+  valueS?: number;
 }
 
 export interface SerializedTaskPool {
@@ -72,6 +83,8 @@ export interface TaskPool {
     now: number;
     ttlS?: number;
     sourceGlyph?: string;
+    /** See {@link PooledTask.valueS} — omitted stays omitted. */
+    valueS?: number;
   }): PooledTask;
   get(id: string): PooledTask | undefined;
   /** Open tasks in CREATION ORDER (the deterministic processing order). */
@@ -112,6 +125,7 @@ export function createTaskPool(json?: SerializedTaskPool): TaskPool {
         expiresAt: input.now + (input.ttlS ?? DEFAULT_TASK_TTL_S),
         status: "open",
         ...(input.sourceGlyph !== undefined ? { sourceGlyph: input.sourceGlyph } : {}),
+        ...(input.valueS !== undefined ? { valueS: input.valueS } : {}),
       };
       tasks.push(task);
       byId.set(task.id, task);
@@ -164,6 +178,17 @@ export interface TaskCandidate {
   pos: { x: number; y: number };
   capable: boolean;
   willing: boolean;
+  /**
+   * ⚖️ WHAT THIS CLAIM WOULD COST THIS BODY (economy arc batch 2, L1) — the
+   * plan's own legs and hands (`compileGoal(…).cost`, which the pool loop
+   * used to compute and throw away) plus `forgoneS`: what the claim
+   * DESTROYS. A body mid-shift is producing; a body mid-pursuit is serving a
+   * drive; an idle body is doing neither and costs nothing.
+   *
+   * Absent = unpriced, exactly like an unpriced `NeedCtx`: the claim falls
+   * back to geometry and the choice is byte-identical to the shipped rule.
+   */
+  cost?: VerbCost;
 }
 
 /** Is this candidate allowed to claim the task at all? */
@@ -173,21 +198,47 @@ export function eligibleForTask(task: PooledTask, c: TaskCandidate): boolean {
 }
 
 /**
- * PURE, DETERMINISTIC claim resolution: among the eligible candidates, the one
- * NEAREST the focus centre wins; distance ties break toward the LEXICOGRAPHIC
- * lower id. No RNG — the same (task, candidates) always picks the same
- * claimant, so multiplayer replay holds. Null when nobody may take it.
+ * PURE, DETERMINISTIC claim resolution: among the eligible candidates, the
+ * one whose claim is worth the most — `argmax(task.valueS − costTotalS(cost))`
+ * — wins; NET ties fall back to the shipped rule, NEAREST the focus centre,
+ * then the LEXICOGRAPHIC lower id. No RNG — the same (task, candidates)
+ * always picks the same claimant, so multiplayer replay holds. Null when
+ * nobody may take it.
+ *
+ * ⚖️ BYTE-IDENTICAL WHEN NOTHING IS PRICED (economy arc batch 2, L1). With no
+ * `cost` on any candidate and no `valueS` on the task every net is 0, every
+ * row ties, and the function reduces EXACTLY to "nearest, ties by id" — which
+ * is why every distance and purity pin written before the price still holds
+ * verbatim. Among candidates with EQUAL forgone the ordering is preserved too:
+ * `journeyS` is monotone in distance, so cheapest is nearest.
+ *
+ * ⚠️ NO SIGN GATE. `netValueS`'s sign is the WORTHWHILE question and this is
+ * the WHO question; a negative net still claims, because refusing here would
+ * silently stop a posted task from ever being taken the moment anyone attached
+ * a price to it. The gate belongs to the poster, with a pin of its own.
+ *
+ * ⚠️ `valueS` is the SAME for every candidate of one task, so it cancels out
+ * of this argmax by construction. It rides the comparison anyway because the
+ * decision grammar is `value − cost` at every rung, and the seat that will
+ * rank COMPETING TASKS for one body needs the term already carried, not
+ * retro-fitted.
  */
 export function chooseClaimant(
   task: PooledTask,
   candidates: readonly TaskCandidate[],
 ): CreatureId | null {
   let best: TaskCandidate | null = null;
+  let bestNet = -Infinity;
   let bestD = Infinity;
   for (const c of candidates) {
     if (!eligibleForTask(task, c)) continue;
     const d = Math.hypot(c.pos.x - task.focus.x, c.pos.y - task.focus.y);
-    if (d < bestD || (d === bestD && best !== null && c.id < best.id)) {
+    const net = (task.valueS ?? 0) - (c.cost ? costTotalS(c.cost) : 0);
+    const better =
+      net > bestNet ||
+      (net === bestNet && (d < bestD || (d === bestD && best !== null && c.id < best.id)));
+    if (better) {
+      bestNet = net;
       bestD = d;
       best = c;
     }
