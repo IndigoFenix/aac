@@ -9,8 +9,10 @@
 // only goal shape that carries a companion).
 //
 // L8: `share` joins give/bring — one frame, one primitive, and the sentence
-// stops answering "I don't understand". `show`/`teach` deliberately stay
-// unbound: no goal in the closed set means them, and this engine never guesses.
+// stops answering "I don't understand". `teach` deliberately stays unbound: no
+// goal in the closed set means it, and this engine never guesses. (`show` was
+// unbound here too until L11 gave it one — an ATTENTION act on `socialAct`,
+// pinned in `show-item.test.ts`; the pin below moved with it.)
 //
 // Pure — no DOM/GL/DB.
 
@@ -266,17 +268,25 @@ describe("`share` compiles like the give family (L8)", () => {
   });
 });
 
-describe("`show` and `teach` stay UNBOUND — no primitive means them", () => {
-  it("'show + ball + mara' is the explicit not-understood, never a guessed give", () => {
-    // Showing is holding a thing up for someone to SEE — an attention act with
-    // no goal in the closed set. Compiling it to `give` would hand the ball
-    // over, which is a different act with a different outcome, so it stays
-    // unbound until the set gains a shape for it.
-    const c = compile("show + ball + mara");
-    expect(c.kind).toBe("unbound");
+describe("`teach` stays UNBOUND — no primitive means it", () => {
+  it("'teach + mara' is the explicit not-understood, never a guess", () => {
+    expect(compile("teach + mara").kind).toBe("unbound");
   });
 
-  it("'teach + mara' likewise", () => {
-    expect(compile("teach + mara").kind).toBe("unbound");
+  // ⤳ MOVED PIN (L11, 2026-08-10). "show + ball + mara" used to sit beside
+  // `teach` as an explicit not-understood, on the reasoning that no goal in the
+  // closed set meant it. L11 gave it one — `socialAct` with an optional item,
+  // an ATTENTION act that holds the thing up and NEVER hands it over — so the
+  // sentence now compiles. What must NOT drift is the thing that pin was really
+  // protecting: it is still not a `give`.
+  it("'show + ball + mara' compiles to the attention act, and STILL never a give", () => {
+    const goal = goalOf("show + ball + mara");
+    expect(goal).toEqual({
+      kind: "socialAct",
+      target: "mara",
+      act: "show",
+      item: { match: { kind: "ball" } },
+    });
+    expect(goal.kind).not.toBe("give");
   });
 });

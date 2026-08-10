@@ -2049,8 +2049,11 @@ export function qualityPairsFor(pos: GlyphPos): Array<{ pos: VocabularyItem; neg
   return out;
 }
 
-/** All CONNECTOR/SPATIAL join SYMBOLs (forward-binding joins). For the builder's
- *  join picker; logical connectors first, then spatial relations. */
+/** All CONNECTOR-pos SYMBOLs, logical connectors first, then spatial relations.
+ *  The builders' join pickers filter this to the compositor's live JOINS set —
+ *  with arrow notation off (SPATIAL_JOIN_NOTATION, glyph-compositor.ts) the
+ *  spatial relations are ordinary slot words and only the logical connectors
+ *  remain armable. */
 export function listConnectors(): VocabularyItem[] {
   return VOCAB.filter((v) => v.pos === "connector");
 }

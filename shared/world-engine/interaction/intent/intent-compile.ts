@@ -492,6 +492,40 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
       const to = binder.creature(frame.target) ?? binder.creature(frame.object);
       return to ? { kind: "socialAct", target: to, act: "hug" } : null;
     }
+    case "show": {
+      // SHOW IS AN ATTENTION ACT, NOT A TRANSFER (build order L11). The board
+      // has offered this word since `attention-worthy` existed (concepts.ts) and
+      // the world answered "I don't understand" — a surfaced word the engine
+      // refused. It rides `socialAct`'s shape (walk to the person, one beat on
+      // arrival) with the thing as an act ARGUMENT: held up, looked at, and
+      // still in the shower's hands afterwards. Compiling it to `give` was the
+      // tempting shortcut and is exactly the bug — `give` is one board press
+      // away and hands the ball over, which is the opposite of what the child
+      // asked for. A bare `converse` would be the other bug: a second model of
+      // an act the engine already runs one model of.
+      //
+      // THE ROLES ARE POSITIONAL, exactly as `give`'s are: the OBJECT is the
+      // thing, the "to"-bound (or implied) TARGET is the audience. With no
+      // audience named the speaker is it — "show + ball" is "show ME the ball",
+      // the same no-recipient law `give` states above, and the right one here
+      // because a subject-less imperative already makes the LISTENER the actor
+      // (compileIntent), so the listener cannot also be the audience.
+      const audience = binder.creature(frame.target);
+      // An audience that is not a creature is no audience: "show + ball + to +
+      // box" stays not-understood rather than quietly becoming "show it to me".
+      if (frame.target && !audience) return null;
+      // ONE NOUN, TWO POSSIBLE ROLES — and this verb may not guess. The board
+      // only offers `show` off an attention-worthy THING, so a lone noun is
+      // normally the thing; but a lone noun the world knows to be a PERSON names
+      // the audience and leaves nothing to hold up ("show + mara"), so it stays
+      // not-understood. The classifier-backed `creature` channel (§3.3: a spoken
+      // place/item never binds as a creature) is what tells the two apart — with
+      // a binder that has no classifier every bare noun reads as a person, and
+      // `show` is the one verb that cannot see past that.
+      if (!frame.target && binder.creature(frame.object)) return null;
+      const it = item();
+      return it ? { kind: "socialAct", target: audience ?? binder.player, act: "show", item: it } : null;
+    }
     case "help": {
       // Adopt the target's surfaced need — the general on-behalf rule; the
       // host holds the order open until the want clears.

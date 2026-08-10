@@ -200,7 +200,25 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       // The station is the teaching point (level a); the sentence speaks the
       // ACT the station serves (the attention-action vocabulary): a sleep pose
       // or a bed = "I'll sleep", a bath = "I'll wash", a toilet = the bathroom
-      // trip ("I'll go to the bathroom"); anything else stays the plain rest.
+      // trip ("I'll go to the bathroom").
+      //
+      // ⚖️ EVERY OTHER STATION SPEAKS THE WALK. `rest` and `sit` are English-
+      // only words in this engine — no shipped ruleset outside `en` carries a
+      // lexeme for either — and where `rest` does render it renders TRANSITIVE,
+      // so `rest + <station>` said "I will rest the chair" in English and left
+      // the verb raw in he/es/pt. The trip the goal opens with is the one shape
+      // every locale can say ("I'm going to the chair" / "אני הולך לכיסא" /
+      // "Voy a la silla"), and it is the toilet fork's own shape — honest for
+      // the same reason that fork is: a rest at a NAMED station IS walk-there-
+      // then-occupy, and the announcement is made before the walk.
+      //
+      // A POINT is the one rest with no walk inside it — `restHere` dwells
+      // where the body already stands (need-goals) — so it keeps the plain
+      // rest, and keeps it OBJECTLESS: its twin `goalActivity` reads that cell
+      // as a bare `{verb:"rest"}`, and two readings of one fact must name the
+      // same slots. That cell alone is still English-only; what it wants is a
+      // `rest` lexeme in the other rulesets, not a sentence shape bent around
+      // the gap.
       const where = syms.place(goal.place);
       if (goal.pose === "sleep" || where === "bed") {
         return { a: where, b: "i_me + sleep", c: "i_me + sleep" };
@@ -209,7 +227,10 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       if (where === "toilet" || where === "bathroom") {
         return { a: where, b: "go + to + bathroom", c: "i_me + go + to + bathroom" };
       }
-      return { a: where, b: `rest + ${where}`, c: `i_me + rest + ${where}` };
+      if (goal.place.kind !== "point") {
+        return { a: where, b: `go + to + ${where}`, c: `i_me + go + to + ${where}` };
+      }
+      return { a: where, b: "i_me + rest", c: "i_me + rest" };
     }
     case "setOpen": {
       // "I'll open the chest" — the container is the teaching point (level a).
@@ -504,10 +525,24 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
       //
       // No new lexicon (law ④): the toilet word IS `NEED_ACTIVITY.waste`, read
       // from the one table rather than re-spelled here.
+      //
+      // ⚖️ …and ANY OTHER STATION is the walk to it, the same reading
+      // `goalIntentLine` speaks (`go + to + <station>`) — `rest` has no lexeme
+      // outside English, so a station dwell that answered "rest" answered in a
+      // word three of the four rulesets cannot say. `phrase()` supplies the
+      // "to" from the going frame ("the dog is going to the chair"), exactly as
+      // it does for the `goTo`/`goHome` arms above, so every reader of this
+      // pair already knows the shape. The cost is the toilet fork's own, taken
+      // knowingly in §4.2: a body already settled at the station still reads as
+      // going to it — the goal names the trip, and one goal gets one reading.
       const where = syms.place(goal.place);
       if (goal.pose === "sleep" || where === "bed") return { verb: "sleep" };
       if (where === "bath") return { verb: "wash" };
       if (where === "toilet" || where === "bathroom") return NEED_ACTIVITY.waste!;
+      if (goal.place.kind !== "point") return { verb: "go", object: where };
+      // A dwell at a bare POINT walks nowhere and names no station: `restHere`
+      // settles the body where it stands, so the plain rest is the true word
+      // even where it is the untranslated one.
       return { verb: "rest" };
     }
     case "setOpen":

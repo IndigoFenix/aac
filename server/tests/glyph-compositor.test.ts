@@ -23,6 +23,7 @@ import {
   expandAlias,
   withSlotJoin,
   SPATIAL_RELATIONS,
+  SPATIAL_JOIN_NOTATION,
   setPayload,
   clearPayload,
   setToneTags,
@@ -500,12 +501,23 @@ describe("connectors (forward-binding joins)", () => {
     expect(serializeGlyph(trail)).toBe("apple");
   });
 
-  it("parses a spatial relation as a forward-binding join", () => {
+  it("a spatial relation parses as an ORDINARY SLOT (arrow notation off)", () => {
+    // SPATIAL_JOIN_NOTATION (user decision 2026-08-10): a spatial word wears
+    // its own registry art, so it must be a content slot — the join-consumed
+    // reading parsed a lone "in" to zero slots and rendered a blank button
+    // face, exactly when the builder's link bands began surfacing these words.
+    expect(SPATIAL_JOIN_NOTATION).toBe(false);
     const g = parseGlyph("go+to+school");
-    expect(g.slots.map((s) => s.key)).toEqual(["go", "school"]);
-    expect(g.slots[1].join).toBe("to");
-    expect(SPATIAL_RELATIONS.has("to")).toBe(true);
+    expect(g.slots.map((s) => s.key)).toEqual(["go", "to", "school"]);
+    expect(g.slots.every((s) => s.join === undefined)).toBe(true);
     expect(serializeGlyph(g)).toBe("go+to+school");
+    // The classification set itself stays intact (the AI memory-schema and the
+    // dormant arrow renderer still read it).
+    expect(SPATIAL_RELATIONS.has("to")).toBe(true);
+    // A LONE spatial word is a real slot — the button face renders its art.
+    const lone = parseGlyph("under");
+    expect(lone.slots.map((s) => s.key)).toEqual(["under"]);
+    expect(serializeGlyph(lone)).toBe("under");
   });
 
   it("withSlotJoin sets/clears a join (builder pending-join), ignoring slot 0", () => {
@@ -704,9 +716,15 @@ describe("place art (drawnSlot)", () => {
   });
 
   it("modifiers and joins survive the substitution", () => {
+    // Spatial words are slots now (arrow notation off), so the place word sits
+    // at index 2; a CONNECTOR join still rides the substituted slot.
     const g = parseGlyph("go+to+bedroom.big");
-    const slot = drawnSlot(g.slots[1]);
-    expect(slot).toMatchObject({ key: "room", payload: "bed", modifiers: ["big"], join: "to" });
+    const slot = drawnSlot(g.slots[2]);
+    expect(slot).toMatchObject({ key: "room", payload: "bed", modifiers: ["big"] });
+    const g2 = parseGlyph("sad+because+bedroom.big");
+    expect(drawnSlot(g2.slots[1])).toMatchObject({
+      key: "room", payload: "bed", modifiers: ["big"], join: "because",
+    });
   });
 
   it("makes a place word RESOLVABLE, so no surface swaps it for a fallback", () => {

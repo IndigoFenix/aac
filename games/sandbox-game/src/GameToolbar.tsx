@@ -23,12 +23,9 @@ interface Props {
   onSelectTool: (tool: ToolId) => void;
   gazeRef: React.MutableRefObject<GazeState>;
   dwellMs: number;
-  /** Dwell-to-select is only active when the platform has an eyegaze/cursor-control
-   *  dwell control enabled. With plain mouse/touch the buttons use real clicks. */
-  dwellEnabled: boolean;
 }
 
-export default function GameToolbar({ selectedTool, onSelectTool, gazeRef, dwellMs, dwellEnabled }: Props) {
+export default function GameToolbar({ selectedTool, onSelectTool, gazeRef, dwellMs }: Props) {
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // Which button the gaze is dwelling on, and how far along (0..1).
   const [dwell, setDwell] = useState<{ index: number; progress: number } | null>(null);
@@ -42,9 +39,8 @@ export default function GameToolbar({ selectedTool, onSelectTool, gazeRef, dwell
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       const gaze = gazeRef.current;
-      // No dwell unless the platform has a dwell control enabled — otherwise a
-      // plain mouse press-drag over a button would select it. Buttons use onClick.
-      if (!dwellEnabled || gaze.mode === 'off' || gaze.x < 0) {
+      // The aim point is the only gate: no position, no dwell.
+      if (gaze.mode === 'off' || gaze.x < 0) {
         if (hoverIndex !== -1) { hoverIndex = -1; setDwell(null); }
         return;
       }
@@ -76,7 +72,7 @@ export default function GameToolbar({ selectedTool, onSelectTool, gazeRef, dwell
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [gazeRef, dwellMs, onSelectTool, dwellEnabled]);
+  }, [gazeRef, dwellMs, onSelectTool]);
 
   return (
     <div className="flex flex-col gap-3 p-2">

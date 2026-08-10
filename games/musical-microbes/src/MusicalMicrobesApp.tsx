@@ -84,12 +84,14 @@ export default function MusicalMicrobesApp() {
   const isEmbedded = typeof window !== 'undefined' && window.parent !== window;
 
   const stateRef = useRef<GameState>(createState(1, 1));
+  // THE aim point, in iframe-local pixels — the game's single source of "where
+  // is the user pointing", whatever is driving it. Two feeds write to it: the
+  // platform's forwarded eyegaze, and this iframe's own pointer. Never gate
+  // either on a platform MODE flag: the AAC reports mode "off" unless its
+  // camera currently sees a face, which has nothing to do with whether a mouse
+  // or tracker is producing a position. Gating on it is what broke this game
+  // (and sandbox) — every other game reads the position and ignores the mode.
   const gazeRef = useRef<GazeState>({ x: -1, y: -1, mode: 'off' });
-  // Whether the platform has a dwell control enabled (the student's eyegaze /
-  // cursor-control SETTINGS), encoded by the host in the gaze `mode`. 'off' means
-  // plain mouse/touch — no dwell-to-select; placement is by click. 'eyegaze' or
-  // 'mouse' (cursor-control) enables dwell. Gates the palette dwell loop below.
-  const controlModeRef = useRef<'off' | 'eyegaze' | 'mouse'>('off');
   const historyRef = useRef<Snapshot[]>([]);
   // Dwell time (ms) to commit a gaze placement — overridden by the platform's
   // eyegaze setting via `init` when embedded.
@@ -183,18 +185,15 @@ export default function MusicalMicrobesApp() {
     sendToParent({ type: 'ready', gameId: GAME_ID, version: '0.1.0' });
     const off = onPlatformMessage(msg => {
       if (msg.type === 'gaze') {
-        // `mode` reflects the student's eyegaze/cursor-control SETTINGS: 'off' =
-        // disabled (plain mouse/touch — placement by click, no dwell), 'eyegaze'
-        // or 'mouse' = a dwell control is on. Track it as the dwell gate.
-        controlModeRef.current = msg.mode;
-        // Eyegaze position can ONLY come from the platform (the iframe can't
-        // sense a camera / hardware tracker). Cursor-control position is read
-        // from our own window pointer below — the platform's forwarded position
-        // freezes once the cursor is over the iframe. When disabled, clear so
-        // nothing acts on hover.
+        // Eyegaze can ONLY come from the platform (an iframe can't sense a
+        // camera or a hardware tracker), and it always wins. Anything else the
+        // platform sends carries no position (-1,-1), so it must never wipe the
+        // point our own pointer feed is tracking — the platform emits "off"
+        // ~30x/sec whenever it has no gaze, and a still cursor IS the dwell
+        // gesture. Only clear when the platform is the one that owned the aim.
         if (msg.mode === 'eyegaze') {
           gazeRef.current = { x: msg.x, y: msg.y, mode: 'eyegaze' };
-        } else if (msg.mode === 'off') {
+        } else if (gazeRef.current.mode === 'eyegaze') {
           gazeRef.current = { x: -1, y: -1, mode: 'off' };
         }
       } else if (msg.type === 'init') {
@@ -355,20 +354,19 @@ export default function MusicalMicrobesApp() {
     [activateAt],
   );
 
-  // Cursor-control pointer feed (window-level, inside this iframe so it covers the
-  // WHOLE game incl. the side palette — a canvas-scoped listener froze gazeRef the
-  // moment the cursor moved onto the palette). Only active when the platform has
-  // CURSOR-CONTROL dwell enabled ('mouse'); with eyegaze the platform owns the
-  // position, and with controls off we leave gazeRef cleared so a plain mouse user
-  // gets no hover-dwell (they place by click). The platform's own forwarded mouse
-  // position is unusable here — it freezes once the cursor is over the iframe.
+  // This iframe's own pointer feed. Window-level so it covers the WHOLE game
+  // including the side palette — a canvas-scoped listener froze gazeRef the
+  // moment the cursor moved onto the palette. It always runs and simply defers
+  // to a live tracker; the platform's own forwarded mouse position is unusable
+  // here because it freezes once the cursor is over the iframe.
   useEffect(() => {
     const onMove = (e: PointerEvent | MouseEvent) => {
-      if (controlModeRef.current !== 'mouse') return;
+      if (gazeRef.current.mode === 'eyegaze') return;
       gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
     };
     const onLeave = () => {
-      if (controlModeRef.current === 'mouse') gazeRef.current = { x: -1, y: -1, mode: 'off' };
+      if (gazeRef.current.mode === 'eyegaze') return;
+      gazeRef.current = { x: -1, y: -1, mode: 'off' };
     };
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('mousemove', onMove, { passive: true });
@@ -427,7 +425,7 @@ export default function MusicalMicrobesApp() {
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       const gaze = gazeRef.current;
-      if (controlModeRef.current === 'off' || gaze.mode === 'off' || gaze.x < 0) { hoverEl = null; fired = false; hideRing(); return; }
+      if (gaze.mode === 'off' || gaze.x < 0) { hoverEl = null; fired = false; hideRing(); return; }
       const hit = document.elementFromPoint(gaze.x, gaze.y) as HTMLElement | null;
       const dwellEl = hit ? (hit.closest('[data-dwell]') as HTMLElement | null) : null;
       if (dwellEl !== hoverEl) { hoverEl = dwellEl; hoverStart = now; fired = false; }

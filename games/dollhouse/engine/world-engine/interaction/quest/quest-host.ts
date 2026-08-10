@@ -13188,9 +13188,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  waypoints; these are the things the creature DOES on arriving. */
   /** A SOCIAL act lands (a hug — commanded or rule-fired): warmth BOTH ways,
    *  both loneliness meters ease, hearts over both heads. The one place hug
-   *  semantics live — spirit hugs and walked-over hugs share it. */
-  function applySocialAct(session: QuestSession, from: string, to: string, act: string) {
+   *  semantics live — spirit hugs and walked-over hugs share it.
+   *
+   *  ALSO THE ONE DOOR for `show` (L11), which is a different beat entirely and
+   *  says so on the first line: same dispatch, so a spirit's show and a
+   *  walked-over show stay one implementation exactly as the hugs do. */
+  function applySocialAct(session: QuestSession, from: string, to: string, act: string, itemEntityId?: string) {
     if (!world) return;
+    // SHOWING is not a contact act — it is an ATTENTION act, and it has its own
+    // beat (below). Everything after this line is the warmth family.
+    if (act === "show") {
+      applyShowAct(session, from, to, itemEntityId ?? null);
+      return;
+    }
     // The act eases the MOTIVE it serves — playing together fills fun, a
     // hug/chat fills social. Both warm the relation the same way.
     const meter = act === "play" ? "fun" : "social";
@@ -13206,6 +13216,88 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       showWorldBubble(world.state, `${act}:${c}`, { anchor: { kind: "avatar", id: avatarIdOf(c) }, text: "💗", ttl: 2.5 });
     }
     console.log(`[social] ${from} ${act} ${to}`);
+  }
+
+  /** How long a SHOWN thing hangs over the shower's head — long enough to read
+   *  the glyph and look up, short enough to stay a BEAT and not a state. */
+  const SHOW_BUBBLE_TTL_S = 4;
+  /** Warmth a `show` carries. Deliberately well under a hug's 0.08/0.03: being
+   *  shown something is a shared moment, not an embrace. */
+  const SHOW_WARMTH = { affinity: 0.03, trust: 0.01 } as const;
+
+  /**
+   * SHOW — the ATTENTION beat (build order L11), the one place `show` semantics
+   * live (the spirit's show and the walked-over show share it, exactly as
+   * `applySocialAct` is shared by both hugs).
+   *
+   * Three things land, and only three: the thing is HELD UP (a glyph bubble over
+   * the SHOWER — the world's way of saying "look at this"), the target's
+   * ATTENTION snaps onto the shower through the ordinary spark engagement (no
+   * second attention model — `engageCreature`, the same call a conversation and
+   * a board directive make), and ONE knowledge beat lands: `to` now knows `from`
+   * is holding this thing, written through the one fact channel a sighting
+   * writes (facts.ts), because being shown a thing IS seeing it.
+   *
+   * ⚖️ THE SHOWN THING IS PRESENTED, NEVER TRANSFERRED (rules.ts). Nothing here
+   * touches ownership, carry or the transfer ledger — the item is in the same
+   * hand afterwards as before, which is the whole difference from `give`. And no
+   * need meter is cleared: something to look at is not company.
+   */
+  function applyShowAct(session: QuestSession, from: string, to: string, planned: string | null) {
+    if (!world) return;
+    const showerBody = avatarIdOf(from);
+    // WHAT IS ACTUALLY IN THE HAND — resolved exactly as the give/place step
+    // resolves it, and for the same reason: a `stock:` reference MATERIALIZES
+    // into a fresh prop when the pickup leg draws it out of the pantry, so the
+    // id the plan carried names nothing by the time the body arrives. The
+    // pursuit walked this body here specifically to hold something up, so what
+    // it is holding is the answer; an EMPTY hand is the only reason not to.
+    let objId = planned ? objIdOfEntity(session, planned) : null;
+    if (!objId || world.state.objects[objId]?.carriedBy !== showerBody) {
+      objId = null;
+      for (const [id] of session.smallProps) {
+        if (world.state.objects[id]?.carriedBy === showerBody) {
+          objId = id;
+          break;
+        }
+      }
+    }
+    if (!objId) {
+      // Empty-handed. An empty hand held up is the silent success this engine
+      // forbids, so the SHOWER says so ("I don't have the ball") — the shape a
+      // blocked pursuit speaks. A shower with no mouth (the spirit) leaves the
+      // adult-facing toast, per saySystem's own fallback law.
+      const missing = planned ? spokenWord(liveItemGlyph(session, planned)) : null;
+      const line = missing ? `i_me + have.not + ${missing}` : NOT_UNDERSTOOD_LINE;
+      saySystem(session, line, `💬 nothing to show`, from);
+      return;
+    }
+    const entityId = session.smallProps.get(objId)?.entityId ?? session.convItems.get(objId)?.entityId ?? planned;
+    if (!entityId) return;
+    const glyph = liveItemGlyph(session, entityId);
+    // HELD UP: a glyph-only bubble over the shower (the symbol-first caption —
+    // showWorldBubble renders a bare glyph without a text row).
+    showWorldBubble(world.state, `show:${from}`, {
+      anchor: { kind: "avatar", id: showerBody },
+      text: "",
+      glyph,
+      ttl: SHOW_BUBBLE_TTL_S,
+    });
+    // LOOK AT IT: the shower now holds the target's attention, on the shower's
+    // OWN author row (the per-author pairing law — a show is the shower's act,
+    // never a rewrite of somebody else's engagement).
+    engageCreature(session, to, ENGAGE_DIRECT_HOLD_S, from);
+    // AND NOW YOU KNOW: one fact — the shower has this thing. Register the
+    // viewer first, the same conditional ensure the give/converse steps make.
+    if (to.startsWith("resident_")) ensureResidentCreature(session, to);
+    if (isPetCid(to)) ensurePetCreature(session, to);
+    const cworld = session.creatures?.world;
+    if (cworld?.creatures[to]) {
+      perceiveFact(cworld, to, { kind: "location", item: entityId, where: { kind: "held", by: from } });
+    }
+    warmRelations(session, to, from, SHOW_WARMTH);
+    if (!isPlayerCid(from)) warmRelations(session, from, to, SHOW_WARMTH);
+    console.log(`[social] ${from} showed ${glyph} to ${to}`);
   }
 
   /** Fire the reach rig on an NPC body: PICKUP on taking (reach → grasp →
@@ -13869,7 +13961,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world) return;
     const npcId = avatarIdOf(cid); // residents wear their bare cid — never `npc_resident_*`
     if (step.kind === "socialAct") {
-      applySocialAct(session, cid, step.target, step.act);
+      // `itemId` rides only a `show` (the thing held up) — the hug path passes
+      // undefined and is untouched.
+      applySocialAct(session, cid, step.target, step.act, step.itemId);
       return;
     }
     if (step.kind === "address") {
@@ -26851,9 +26945,40 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return;
       }
 
-      // A hug FROM THE SPIRIT (the player is formless — no walk): warmth lands
-      // directly; a member/pet actor walks over instead (compileGoal socialAct).
+      // A hug (or a show) FROM THE SPIRIT — the player is formless, so there is
+      // no walk: the beat lands directly. A member/pet actor walks over instead
+      // (compileGoal socialAct).
       if (goal.kind === "socialAct" && actor === speaker) {
+        // A SPIRIT CANNOT SHOW WHAT IT IS NOT HOLDING (L11). A hug needs only a
+        // heart, but a show needs a HAND: the beat is "hold this up", and the
+        // formless speaker has one thing it can honestly hold up — whatever its
+        // body is actually carrying right now (the pocket the gaze auto-take
+        // fills). So the item is resolved against the SPEAKER and required to be
+        // in the speaker's own hand; anything else is the ordinary refusal, not
+        // a mimed presentation of nothing.
+        if (goal.item) {
+          if (goal.target === speaker) {
+            // Nobody was named and nobody is addressed, so the compiled audience
+            // came out as the speaker: "show it to whom?" — the addressee
+            // question, the same one every other arm here asks.
+            saySystem(s, WHO_DO_YOU_MEAN, `💬 look at someone, then "show …"`);
+            return;
+          }
+          const r = makeGoalResolver(s);
+          const id = r.resolveItem(goal.item, speaker);
+          if (!id || (r.carrierOf?.(id) ?? null) !== speaker) {
+            // NOT the shower's own "I don't have it" line: the one who doesn't
+            // have it is the SPIRIT, and the only mouth in earshot belongs to
+            // the person being shown — who would be saying something false
+            // about themselves. So it is the ordinary can't-here verdict, which
+            // is true whoever speaks it.
+            saySystem(s, CANT_HERE, `💬 "${sentence}" — not in hand`, goal.target);
+            return;
+          }
+          applySocialAct(s, speaker, goal.target, goal.act, id);
+          presenter.toast(`▶ ${sentence}`, "feedback");
+          return;
+        }
         applySocialAct(s, speaker, goal.target, goal.act);
         presenter.toast(`▶ ${sentence}`, "feedback");
         return;

@@ -11,6 +11,13 @@
 //      on → surfaces, from → sources, to → bodies, and places for a transport
 //      verb's "to")
 //
+// Wave 2 sharpens the second half: for three links the class is not the
+// preposition's alone but the FRAME's — a transport verb's `to` may end at a
+// place, and a trade borrows `with`/`for` for a partner and a counter-good,
+// which are not the company and the beneficiary those words name everywhere
+// else. Both readings are pinned against each other below, because a rule that
+// fixed the swap by breaking "eat with mara" would be no fix at all.
+//
 // Every pin below is also checked to PARSE: a surfaced word that the parser
 // cannot bind would be a button that promises a sentence and delivers
 // "I don't understand".
@@ -25,12 +32,15 @@ import {
 
 /** A library with one member of each class the links care about: something that
  *  HOLDS (box), something with a SURFACE (table), something that stands in a
- *  room (chair, bed), rooms (kitchen, yard), a body (mara), and plain movable
- *  goods (ball, cup, wood). */
+ *  room (chair, bed), rooms (kitchen, yard), a body (mara), plain movable
+ *  goods (ball, cup, wood), and — for the swap links — something a town would
+ *  actually ask for BACK (bread: the stock half of a trade, as wood is the
+ *  timber half). */
 const NOUNS: SurfaceNoun[] = [
   { symbol: "ball", kind: "item", affords: ["get", "give", "play", "throw", "put", "want"], properties: ["toy"] },
   { symbol: "cup", kind: "item", affords: ["get", "put", "fill"], properties: ["tableware"] },
   { symbol: "wood", kind: "item", affords: ["get", "carry", "trade"], properties: ["material"] },
+  { symbol: "bread", kind: "item", affords: ["eat", "get", "give", "trade"], properties: ["food"] },
   { symbol: "box", kind: "item", affords: ["open", "shut", "put"], properties: ["container", "openable"] },
   { symbol: "chair", kind: "item", affords: ["get", "put", "sit"], properties: ["furniture"] },
   { symbol: "table", kind: "place", affords: ["go", "put"], properties: ["furniture"] },
@@ -229,6 +239,85 @@ describe("trade — the partner link and the counter-good link", () => {
     binds("you + trade + wood + with + mara", "with", "mara");
     binds("you + trade + wood + for + ball", "for", "ball");
   });
+
+  // ── wave 2: the swap's OWN links, once one of them is pressed ──────────────
+
+  it("a dangling `with` after a trade wants a PARTNER — the settlement comes too", () => {
+    // Wave 1 left `with` creature-only in the dangling-link stage, so the town
+    // half of the pair the band above offers (creatures then places) vanished at
+    // the very press that needed it: the board said "trade wood with…" and then
+    // showed nobody to trade with but the people standing in the room. Bodies
+    // still lead — the order the trade band itself uses, so the board does not
+    // change its mind between two presses.
+    const k = syms(["you", "trade", "wood", "with"]);
+    expect(k[0]).toBe("mara");
+    expect(k.indexOf("yard")).toBeLessThan(k.indexOf("ball"));
+    expect(k.indexOf("mara")).toBeLessThan(k.indexOf("yard"));
+    binds("you + trade + wood + with + yard", "with", "yard");
+  });
+
+  it("a dangling `for` after a trade wants the TAKE-GOOD, never a body", () => {
+    // "trade + wood + for + …" names what we want BACK — compileAction reads it
+    // as trade{give, take, partner}, and a person is not a take-good. Stock
+    // leads (bread), any other carryable follows, and the people fall to the
+    // universal band underneath.
+    const k = syms(["you", "trade", "wood", "for"]);
+    expect(k[0]).toBe("bread");
+    expect(k.indexOf("ball")).toBeLessThan(k.indexOf("mara"));
+    expect(k.indexOf("cup")).toBeLessThan(k.indexOf("mara"));
+    binds("you + trade + wood + for + bread", "for", "bread");
+  });
+
+  it("the two links do NOT swap classes: the partner is not a good, nor the good a partner", () => {
+    // The whole point of splitting them: one press apart, the same board must
+    // answer two different questions.
+    const withK = syms(["you", "trade", "wood", "with"]);
+    const forK = syms(["you", "trade", "wood", "for"]);
+    expect(withK.indexOf("mara")).toBeLessThan(withK.indexOf("bread"));
+    expect(forK.indexOf("bread")).toBeLessThan(forK.indexOf("mara"));
+  });
+});
+
+// ── wave 2: `with` and `for` keep their SOCIAL readings everywhere else ──────
+
+describe("company and beneficiary — the readings the trade rule must not break", () => {
+  it("`eat + with` is COMPANY: creatures lead and the goods are not lifted", () => {
+    // The joint-act reading (parse-intent's animacy test) — "eat with mara" is
+    // one shared meal. A food word here would be an instrument at best, so the
+    // swap's goods tier must not reach this board.
+    const k = syms(["you", "eat", "with"]);
+    expect(k[0]).toBe("mara");
+    expect(k.indexOf("mara")).toBeLessThan(k.indexOf("bread"));
+    expect(k.indexOf("ball")).toBeLessThan(k.indexOf("bread")); // plain rank order — no food boost
+  });
+
+  it("`get + apple + for` is a BENEFICIARY: the person still leads", () => {
+    const k = syms(["you", "get", "ball", "for"]);
+    expect(k[0]).toBe("mara");
+    expect(k.indexOf("mara")).toBeLessThan(k.indexOf("bread"));
+  });
+});
+
+// ── wave 2 (L3a follow-up): drop is a placement, same as put ─────────────────
+
+describe("drop — the put family pre-loads one group, not two-and-a-half", () => {
+  it("`drop + <thing>` opens on containers, exactly as `put` does", () => {
+    // All three of put/drop/throw carry `implied: "in"` in the LEXICON, so all
+    // three ask the same question. `drop` simply had no PROPERTY_FOR_VERB row.
+    for (const verb of ["put", "drop", "throw"]) {
+      const s = board(["you", verb, "ball"]);
+      expect({ verb, subTab: s.subTab }).toEqual({ verb, subTab: "container" });
+      const dest = s.buttons.filter((b) => b.role === "destination").map((b) => b.symbol);
+      expect({ verb, first: dest[0] }).toEqual({ verb, first: "box" });
+    }
+  });
+
+  it("the spatial band survives the pre-load — a drop still lands somewhere named", () => {
+    const k = syms(["you", "drop", "ball"]);
+    expect(k.indexOf("box")).toBeLessThan(k.indexOf("in"));
+    expect(k.indexOf("in")).toBeLessThan(k.indexOf("on"));
+    binds("you + drop + ball + in + box", "in", "box");
+  });
 });
 
 // ── L3a: the resting poses pre-load the furniture group ──────────────────────
@@ -262,6 +351,11 @@ describe("the link bands stay pure", () => {
     ["you", "carry", "wood", "to"],
     ["you", "stay"],
     ["you", "trade", "wood"],
+    ["you", "trade", "wood", "with"],
+    ["you", "trade", "wood", "for"],
+    ["you", "eat", "with"],
+    ["you", "get", "ball", "for"],
+    ["you", "drop", "ball"],
     ["you", "sit"],
   ];
 

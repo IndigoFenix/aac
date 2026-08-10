@@ -304,6 +304,31 @@ const LINK_TARGETS: Readonly<Record<string, readonly (readonly NounClass[])[]>> 
   for: [["creature"]],
 };
 
+/**
+ * WHAT A SWAP'S LINKS POINT AT. `with` and `for` are the two words whose second
+ * argument is not decided by the preposition alone: a trade borrows them for
+ * terms that are not social at all. After `trade`, `with` names the PARTNER —
+ * a body OR a settlement, since a town trades as readily as a person does — and
+ * `for` names the counter-GOOD, which is stock and never anybody. Everywhere
+ * else they keep their social readings ("eat + with + mara" is company, "get +
+ * apple + for + mara" is a beneficiary), so this REPLACES those two entries
+ * after a trade instead of adding a rung to them.
+ *
+ * Read off `frame.verb` exactly as the transport `to` rung is — frame
+ * semantics, never the scene, and never a phrase list. It still only RANKS: the
+ * universal band underneath offers every noun regardless.
+ */
+const TRADE_LINK_TARGETS: Readonly<Record<string, readonly (readonly NounClass[])[]>> = {
+  // Bodies lead, settlements behind them — the same order the trade band itself
+  // uses once the give-good is named (creatures +4, places +3), so the board
+  // does not change its mind about who a partner is between two presses.
+  with: [["creature"], ["place"]],
+  // The take-good: the stock a town actually asks for (grain, timber) first,
+  // then anything else a hand can carry. Creatures fall to the universal band —
+  // you trade wood FOR bread, never for the baker.
+  for: [["food", "material"], ["item"]],
+};
+
 /** THE SPATIAL LINK BAND for the put family (`implied: "in"`), best first.
  *  WHICH link leads is the OBJECT's business: a piece of furniture is placed
  *  RELATIVE to what already stands there and never dropped inside it, so the
@@ -556,13 +581,16 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     // A dangling relation binds the NEXT noun — nothing else is legal. WHICH
     // noun is the link's own business (LINK_TARGETS): "in" asks for a box
     // before a bedroom, "on" for a table before a kitchen, "from" for the
-    // container or the person a thing came out of. One extra rung is the
-    // FRAME's: a transport verb's "to" ends at a place as readily as at a body
-    // ("bring + wood + to + yard"), so its endpoint classes join the band.
-    // Beyond that the surfacer stays context-blind — the verb is read off the
-    // partial parse it already has, never off the scene.
+    // container or the person a thing came out of. Two rungs are the FRAME's,
+    // both read off the partial parse and never off the scene: a transport
+    // verb's "to" ends at a place as readily as at a body ("bring + wood + to +
+    // yard"), so its endpoint classes JOIN the band; and a trade's `with`/`for`
+    // name a partner and a counter-good rather than company and a beneficiary,
+    // so TRADE_LINK_TARGETS REPLACES those two entries. Beyond that the
+    // surfacer stays context-blind.
     const rel = (lastLex as { rel: string }).rel;
-    const tiers = [...(LINK_TARGETS[rel] ?? [])];
+    const trading = !!frame?.verb && canonicalVerb(frame.verb) === "trade";
+    const tiers = [...((trading ? TRADE_LINK_TARGETS[rel] : undefined) ?? LINK_TARGETS[rel] ?? [])];
     if (rel === "to" && frame?.verb && TRANSPORT_VERBS.has(frame.verb)) tiers.push(["container", "place"]);
     tiers.forEach((classes, i) => {
       addNouns("relation-noun", (n) => classes.some((c) => isClass(n, c)), Math.max(1, 5 - 2 * i));

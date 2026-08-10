@@ -56,16 +56,15 @@ export default function SandboxGameApp() {
     sysToolRef.current = sysTools.find(t => t.id === selectedSysTool) ?? null;
   }, [selectedSysTool, sysTools]);
 
+  // THE aim point, in iframe-local pixels — the game's single source of "where
+  // is the user pointing", whatever is driving it. Two feeds write to it: the
+  // platform's forwarded eyegaze, and this iframe's own pointer. Never gate
+  // either on a platform MODE flag: the AAC reports mode "off" unless its
+  // camera currently sees a face, which has nothing to do with whether a mouse
+  // or tracker is producing a position. Gating on it is what broke this game
+  // (and musical-microbes) — every other game reads the position, not the mode.
   const gazeRef = useRef<GazeState>({ x: -1, y: -1, mode: 'off' });
   const [dwellMs, setDwellMs] = useState(DEFAULT_DWELL_MS);
-  // Whether the platform has a dwell control enabled (the student's eyegaze /
-  // cursor-control SETTINGS). The host encodes it in the gaze `mode`: 'off' means
-  // those controls are disabled, so the game must NOT dwell-select or act on a
-  // bare hover — it behaves as an ordinary click/drag app. 'eyegaze' or 'mouse'
-  // (cursor-control) means a dwell control is on. controlModeRef is the live value
-  // read by the pointer handlers; dwellEnabled drives the toolbar dwell.
-  const controlModeRef = useRef<'off' | 'eyegaze' | 'mouse'>('off');
-  const [dwellEnabled, setDwellEnabled] = useState(false);
 
   const [showDebug, setShowDebug] = useState(false);
   const [showParams, setShowParams] = useState(false);
@@ -94,21 +93,15 @@ export default function SandboxGameApp() {
         if (typeof msg.dwellMs === 'number' && msg.dwellMs > 0) setDwellMs(msg.dwellMs);
       }
       if (msg.type === 'gaze') {
-        // `mode` reflects the student's eyegaze/cursor-control SETTINGS: 'off' =
-        // disabled (plain mouse/touch — no dwell, no hover-action), 'eyegaze' or
-        // 'mouse' = a dwell control is on. Track it as the gate for everything.
-        if (controlModeRef.current !== msg.mode) {
-          controlModeRef.current = msg.mode;
-          setDwellEnabled(msg.mode !== 'off');
-        }
-        // Eyegaze position can ONLY come from the platform (the iframe can't
-        // sense a camera / hardware tracker). Cursor-control position is read
-        // from our own window pointer below — the platform's forwarded position
-        // freezes once the cursor is over the iframe (its window pointer events
-        // stop firing there). When disabled, clear so nothing acts on hover.
+        // Eyegaze can ONLY come from the platform (an iframe can't sense a
+        // camera or a hardware tracker), and it always wins. Anything else the
+        // platform sends carries no position (-1,-1), so it must never wipe the
+        // point our own pointer feed is tracking — the platform emits "off"
+        // ~30x/sec whenever it has no gaze, and a still cursor IS the dwell
+        // gesture. Only clear when the platform is the one that owned the aim.
         if (msg.mode === 'eyegaze') {
           gazeRef.current = { x: msg.x, y: msg.y, mode: 'eyegaze' };
-        } else if (msg.mode === 'off') {
+        } else if (gazeRef.current.mode === 'eyegaze') {
           gazeRef.current = { x: -1, y: -1, mode: 'off' };
         }
       }
@@ -121,36 +114,27 @@ export default function SandboxGameApp() {
 
   // ── Pointer feed (window-level, inside this iframe so it covers the WHOLE
   // game incl. the side toolbar) ────
-  // We move the gaze cursor from the mouse only when the platform actually has a
-  // dwell control enabled:
-  //   • cursor-control ('mouse'): track the cursor on hover (the platform's own
-  //     forwarded position freezes over the iframe, so we read it locally here).
-  //   • disabled ('off') / plain mouse: act ONLY while a button is held (a direct
-  //     press-drag), so the sandbox stays sculptable by mouse/touch but nothing
-  //     happens on a bare hover and the toolbar never dwell-selects.
-  //   • eyegaze: the platform owns the position; never override it.
+  // Always running; it simply defers to a live tracker. The platform's own
+  // forwarded mouse position is unusable here because it freezes once the
+  // cursor is over the iframe, which is why we read it locally.
   useEffect(() => {
     const onMove = (e: PointerEvent | MouseEvent) => {
-      if (controlModeRef.current === 'eyegaze') return;
-      const held = e.buttons !== 0;
-      if (controlModeRef.current === 'mouse' || held) {
-        gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
-      } else {
-        gazeRef.current = { x: -1, y: -1, mode: 'off' };
-      }
+      if (gazeRef.current.mode === 'eyegaze') return;
+      gazeRef.current = { x: e.clientX, y: e.clientY, mode: 'mouse' };
     };
     const clear = () => {
-      if (controlModeRef.current === 'eyegaze') return;
-      if (controlModeRef.current !== 'mouse') gazeRef.current = { x: -1, y: -1, mode: 'off' };
+      if (gazeRef.current.mode === 'eyegaze') return;
+      gazeRef.current = { x: -1, y: -1, mode: 'off' };
     };
+    // Only a cursor that genuinely LEFT clears the aim. Releasing a button must
+    // not: a resting cursor is the dwell gesture, and clearing on pointerup
+    // would blank the aim until the next movement.
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('mousemove', onMove, { passive: true });
-    window.addEventListener('pointerup', clear, { passive: true });
     document.addEventListener('mouseleave', clear);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('pointerup', clear);
       document.removeEventListener('mouseleave', clear);
     };
   }, []);
@@ -306,7 +290,6 @@ export default function SandboxGameApp() {
                 onSelect={setSelectedSysTool}
                 gazeRef={gazeRef}
                 dwellMs={dwellMs}
-                dwellEnabled={dwellEnabled}
               />
             ) : (
               <GameToolbar
@@ -314,7 +297,6 @@ export default function SandboxGameApp() {
                 onSelectTool={setSelectedTool}
                 gazeRef={gazeRef}
                 dwellMs={dwellMs}
-                dwellEnabled={dwellEnabled}
               />
             )}
           </div>

@@ -200,8 +200,16 @@ describe("§4.2 the waste row is a trip to the bathroom, not a nap", () => {
     expect(goalActivity(restAt("bed"), syms)).toEqual(NEED_ACTIVITY.energy);
   });
 
-  it("anything else is STILL a rest — the fork adds cells, it replaces nothing", () => {
-    expect(goalActivity(restAt("chair"), syms)).toEqual({ verb: "rest" });
+  it("any OTHER station is the walk to it, and only a bare point is still a rest", () => {
+    // ⚖️ L13 MOVED THIS PIN. It used to read `restAt("chair") → {verb:"rest"}`.
+    // `rest` is an English-only word here — no ruleset but `en` has a lexeme
+    // for it, and in `en` it renders transitive ("I will rest the chair") — so
+    // the generic-station cell now speaks the trip the goal opens with, the
+    // shape the toilet fork above already uses and the only one every locale
+    // says. Rendering per ruleset is pinned in rest-echo-walk.test.ts.
+    expect(goalActivity(restAt("chair"), syms)).toEqual({ verb: "go", object: "chair" });
+    // A POINT keeps the plain rest: `restHere` settles the body where it
+    // stands, so there is no walk to speak and no station to name.
     expect(goalActivity({ kind: "rest", place: { kind: "point", x: 1, y: 2 } }, syms)).toEqual({
       verb: "rest",
     });
@@ -209,6 +217,22 @@ describe("§4.2 the waste row is a trip to the bathroom, not a nap", () => {
     expect(
       goalActivity({ kind: "rest", place: { kind: "point", x: 1, y: 2 }, pose: "sleep" }, syms),
     ).toEqual({ verb: "sleep" });
+  });
+
+  it("the generic station agrees across the twins — one station word, both channels", () => {
+    // The §4.2 law applied to the cell L13 fixed: the announcement and the
+    // activity are one fact read twice. Whatever word the station resolves to,
+    // BOTH channels must carry it and neither may name a second thing.
+    for (const station of ["chair", "bench", "workbench", "tree"]) {
+      const said = goalIntentLine(restAt(station), syms)!;
+      const doing = goalActivity(restAt(station), syms)!;
+      expect(said.c).toBe(`i_me + go + to + ${station}`);
+      expect(doing).toEqual({ verb: "go", object: station });
+      expect(said.c).toContain(doing.verb);
+      expect(said.c).toContain(doing.object!);
+      // Level a stays the STATION — the teaching slot the fork never moved.
+      expect(said.a).toBe(station);
+    }
   });
 });
 

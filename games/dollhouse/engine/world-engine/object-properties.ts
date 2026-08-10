@@ -93,9 +93,21 @@ export const PROPERTY_FOR_VERB: Readonly<Record<string, ObjectProperty>> = {
   play: "toy",
   open: "openable",
   shut: "openable",
+  // THE PUT FAMILY all imply "in" (the LEXICON says so for all three), so all
+  // three ask the same question — what does it go INTO — and the board opens on
+  // the same group. `drop` is no weaker a placement than `put`: "drop the ball
+  // in the box" is the sentence a child reaches for when the toy is in hand.
   put: "container",
+  drop: "container",
   throw: "container",
   build: "structure",
+  // THE RESTING POSES take a STATION, not a thing: you sit on a chair, sleep in
+  // a bed, rest on a bench. The furniture IS the argument (compileAction binds
+  // it as the `rest` goal's place), so the board opens on it — the same rule as
+  // "eat → food", read for a verb whose object happens to be a piece of the room.
+  sit: "furniture",
+  sleep: "furniture",
+  rest: "furniture",
 };
 
 // ---------------------------------------------------------------------------

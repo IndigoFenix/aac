@@ -40,7 +40,7 @@ import {
   serializeGlyph,
   setPayload,
   setToneTags,
-  SPATIAL_RELATIONS,
+  JOINS,
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
@@ -717,7 +717,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
   // Forward pending-join (connectors + spatial). Selecting one arms it; the
   // next pushed slot consumes it as its `join`. Available once a slot exists.
-  const joinOptions = useMemo(() => listConnectors(), []);
+  // Only words the compositor actually CONSUMES as joins belong in the arm
+  // picker — with arrow notation off, spatial relations are ordinary board
+  // words (they push slots and wear their own art), not armable joins.
+  const joinOptions = useMemo(() => listConnectors().filter((j) => JOINS.has(j.key)), []);
   const [joinPickerOpen, setJoinPickerOpen] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<string | null>(null);
   const canJoin = displayedGlyph.slots.length > 0 && displayedGlyph.slots.length < MAX_SLOTS;

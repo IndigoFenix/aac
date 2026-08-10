@@ -204,7 +204,18 @@ export type GoalSpec =
   // The single-item `consume` can't express this: it plans toward an item the
   // resolver can SEE in the world, and a body's own carry is not on that list.
   | { kind: "consumeUnits"; category: string; at?: readonly string[]; tplKey?: string }
-  | { kind: "socialAct"; target: CreatureId; act: string } // hug — walk to the target, warmth on arrival
+  // A ONE-SHOT CONTACT/ATTENTION act at another body: walk to the target, and
+  // the act lands on arrival. `hug` is the warmth beat; `show` is the ATTENTION
+  // beat, and it is the reason this variant carries an optional `item`.
+  //
+  // ⚖️ THE LAW OF THE SHOWN THING: A SHOWN THING IS PRESENTED, NEVER
+  // TRANSFERRED. `show` holds the item UP — it stays in the shower's hands, the
+  // target's attention snaps to it, and one knowledge beat lands ("you have
+  // that"). The moment it changes hands it is `give`, which is a different word
+  // one board press away and a different outcome (the child loses the ball).
+  // So this field is an act ARGUMENT, never a transfer endpoint: no arm of the
+  // executor may move it, and `give` may never be reached from here.
+  | { kind: "socialAct"; target: CreatureId; act: string; item?: ItemRef }
   | { kind: "help"; target: CreatureId } // adopt the target's surfaced need (the general on-behalf rule)
   // PLACE furniture (construction v1): stand `item` at a spot the world's
   // placement search picks near/in `at` — GUIDANCE, not coordinates: the

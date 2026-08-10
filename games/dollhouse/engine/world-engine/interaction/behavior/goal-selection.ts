@@ -385,7 +385,11 @@ export type GoalStep =
   | { kind: "consumeStack"; goodKey: string; at?: readonly string[]; tplKey?: string }
   | { kind: "selfAct"; need: string } // eat / rest / sleep
   | { kind: "eat"; itemId: ItemId } // consume a SPECIFIC item on arrival (use it up)
-  | { kind: "socialAct"; target: CreatureId; act: string }; // hug (…comfort/greet later) — on arrival, at the target
+  // hug (…comfort/greet later) — on arrival, at the target. `itemId` is the
+  // thing HELD UP for a `show`: an act argument, never a hand-over (see the
+  // shown-thing law on GoalSpec.socialAct). The step compiler only ever fills
+  // it with something the actor is already carrying.
+  | { kind: "socialAct"; target: CreatureId; act: string; itemId?: ItemId };
 
 export interface GoalPlan {
   steps: GoalStep[];
@@ -546,6 +550,21 @@ function compileSteps(goal: PursuitGoal, self: CreatureId, r: WorldResolver): Go
     case "socialAct": {
       // Walk to the target and perform the social act there (a hug). The host's
       // step handler applies the warmth — relations, meters, hearts.
+      if (goal.item) {
+        // SHOWING SOMETHING: you cannot hold up what you are not holding, so the
+        // plan regresses the SAME pickup leg give/putIn use — fetch first, then
+        // carry it over and hold it up. `pickupLeg` refuses an item in somebody
+        // ELSE's hands (never snatchable) and `resolveItem` refuses one that
+        // isn't here, and either refusal returns a null plan: the host answers
+        // out loud rather than miming an empty hand. The pickup is the ONLY
+        // transfer in this plan — nothing hands the thing on at the far end.
+        if (goal.target === self) return null; // …and nobody shows a thing to themselves
+        const id = r.resolveItem(goal.item, self);
+        if (!id || !pickupLeg(id)) return null;
+        if (!move(r.positionOf(goal.target))) return null;
+        steps.push({ kind: "socialAct", target: goal.target, act: goal.act, itemId: id });
+        return steps;
+      }
       if (!move(r.positionOf(goal.target))) return null;
       steps.push({ kind: "socialAct", target: goal.target, act: goal.act });
       return steps;

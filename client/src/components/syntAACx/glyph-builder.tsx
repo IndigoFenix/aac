@@ -35,6 +35,7 @@ import {
   applyRelationalModifier,
   setToneTags,
   MAX_SLOTS,
+  JOINS,
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
@@ -126,7 +127,9 @@ export function GlyphBuilder({ value, onChange, studentId, open, onOpenChange }:
   const activeEmotionMods = activeItem ? emotionModifiersFor(activeItem.pos) : [];
   const activeAmountMods = activeItem ? gaugeModifiersFor(activeItem.pos) : [];
   const activeQualityPairs = activeItem ? qualityPairsFor(activeItem.pos) : [];
-  const joinOptions = listConnectors();
+  // Only compositor-consumed joins are armable — with arrow notation off,
+  // spatial relations are ordinary slot words, not joins (SPATIAL_JOIN_NOTATION).
+  const joinOptions = listConnectors().filter((j) => JOINS.has(j.key));
   const canJoin = parsed.slots.length > 0 && parsed.slots.length < MAX_SLOTS;
   const activeSlotModifiers = activeSlot != null ? parsed.slots[activeSlot]?.modifiers ?? [] : [];
 

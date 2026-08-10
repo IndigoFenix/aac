@@ -59,10 +59,28 @@ export const SPATIAL_RELATIONS: ReadonlySet<string> = new Set<SpatialRelation>([
   "to", "from", "in", "out", "on", "under", "over", "through",
 ]);
 
+/**
+ * ARROW-NOTATION SWITCH (user decision, 2026-08-10): OFF — a spatial relation
+ * parses as an ORDINARY SLOT wearing its own registry art
+ * (places/relational/*), instead of being consumed as a join and drawn as a
+ * trajectory arrow. A join-consumed word can never show a face: a lone "in"
+ * parsed to zero slots and rendered blank, exactly when the builder's link
+ * bands began surfacing these words prominently. Everything arrow-shaped is
+ * kept intact for a later re-enable — the Join type, `slot.join`, the .tsx
+ * arrow renderer, and SPATIAL_RELATIONS itself (the AI memory-schema still
+ * classifies by it) — flipping this back on restores the old parse.
+ */
+export const SPATIAL_JOIN_NOTATION: boolean = false;
+
 /** Any forward-binding join — a logical connector or a spatial relation. */
 export type Join = Connector | SpatialRelation;
-/** Every keyword recognized in a `+` position as a forward-binding join. */
-export const JOINS: ReadonlySet<string> = new Set<string>([...CONNECTORS, ...SPATIAL_RELATIONS]);
+/** Every keyword CONSUMED in a `+` position as a forward-binding join. With
+ *  arrow notation off, this is the logical connectors alone — spatial words
+ *  fall through and parse as ordinary content slots. */
+export const JOINS: ReadonlySet<string> = new Set<string>([
+  ...CONNECTORS,
+  ...(SPATIAL_JOIN_NOTATION ? SPATIAL_RELATIONS : []),
+]);
 
 /**
  * Image resolver passed to the React renderer. Receives the registry item

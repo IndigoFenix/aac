@@ -12,10 +12,9 @@ interface Props {
   onSelect: (id: string) => void;
   gazeRef: React.MutableRefObject<GazeState>;
   dwellMs: number;
-  dwellEnabled: boolean;
 }
 
-export default function SystemToolbar({ tools, selectedId, onSelect, gazeRef, dwellMs, dwellEnabled }: Props) {
+export default function SystemToolbar({ tools, selectedId, onSelect, gazeRef, dwellMs }: Props) {
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [dwell, setDwell] = useState<{ index: number; progress: number } | null>(null);
 
@@ -24,7 +23,7 @@ export default function SystemToolbar({ tools, selectedId, onSelect, gazeRef, dw
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       const gaze = gazeRef.current;
-      if (!dwellEnabled || gaze.mode === 'off' || gaze.x < 0) {
+      if (gaze.mode === 'off' || gaze.x < 0) {
         if (hoverIndex !== -1) { hoverIndex = -1; setDwell(null); }
         return;
       }
@@ -43,7 +42,7 @@ export default function SystemToolbar({ tools, selectedId, onSelect, gazeRef, dw
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [gazeRef, dwellMs, onSelect, dwellEnabled, tools]);
+  }, [gazeRef, dwellMs, onSelect, tools]);
 
   return (
     <div className="flex flex-col gap-3 p-2">
