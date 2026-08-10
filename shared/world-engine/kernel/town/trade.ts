@@ -127,6 +127,13 @@ export interface TownTrade {
    *  piles proportionally less, reaching zero at the want gate that already
    *  decides whether the good is on the export list at all. */
   exportPile(t: number): number;
+  /** ⚖️ BATCH 3 · B5 — THE DAY'S WHOLE SHIPMENT, at today's spare scale:
+   *  `exportDaily × exportScale()`, i.e. the LIMIT the sawtooth above ramps to
+   *  between two departures. The pile is 0 at the instant the caravan leaves
+   *  (it just took it), so a caller settling the departure cannot read the
+   *  load off `exportPile` — this is the same number, named. Un-damped by
+   *  attendance, exactly like `exportPile`. */
+  exportDailyUnits(): number;
   /** Bind the line to a REAL partner (a cluster hamlet; later a
    *  hierarchical-cells neighbor): re-aims the gate toward it, rebuilds the
    *  entry route, and re-scales the rare allotment by the true distance.
@@ -516,6 +523,9 @@ export function createTownTrade(
       // then this line is `exportDaily * since` bit for bit.
       return opts.exportDaily * since * exportScaleNow();
     },
+    // ⚖️ B5: the pile's own ceiling — `since` at its supremum of 1. ONE
+    // definition of "what this line ships in a day", shared with the ramp.
+    exportDailyUnits: () => opts.exportDaily * exportScaleNow(),
     bindPartner: (partner) => {
       const g2 = buildGeo(pickGate({ x: partner.at.x - center.x, y: partner.at.y - center.y }));
       if (g2) geo = g2;

@@ -256,6 +256,26 @@ class LicenseController {
     }
   }
 
+  /** GET /api/admin/licenses/:id/invite-link — the recipient's invite
+   *  ("verification") link, so an admin can pass it on by other means when the
+   *  invite email fails to arrive. Sends no mail and does not invalidate a
+   *  link that is still live. */
+  async getInviteLink(req: Request, res: Response): Promise<void> {
+    try {
+      const baseUrl = getBaseUrl(req);
+      const currentUser = req.user as any;
+      const result = await licenseService.getInviteLink(req.params.id, baseUrl, currentUser.id);
+      if (!result.success) {
+        res.status(400).json({ message: result.error });
+        return;
+      }
+      res.json({ inviteLink: result.inviteLink, expiresAt: result.expiresAt ?? null });
+    } catch (error: any) {
+      console.error("Error building license invite link:", error);
+      res.status(500).json({ message: "Failed to build invite link" });
+    }
+  }
+
   async resendInvite(req: Request, res: Response): Promise<void> {
     try {
       const baseUrl = getBaseUrl(req);

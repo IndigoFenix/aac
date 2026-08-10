@@ -3306,6 +3306,12 @@ export const fr = {
       // Actions
       resendInvite: "Renvoyer l'invitation",
       inviteResent: "Invitation renvoyée avec succès",
+      copyInviteLink: "Copier le lien de vérification",
+      inviteLinkCopied: "Lien de vérification copié dans le presse-papiers",
+      inviteLinkCopyFailed: "Copie automatique impossible — sélectionnez le lien et copiez-le manuellement",
+      inviteLinkTitle: "Lien de vérification",
+      inviteLinkDescription: "Envoyez ce lien au destinataire si l'e-mail d'invitation n'est pas arrivé. Il ouvre la même page de création de compte que l'invitation envoyée par e-mail.",
+      inviteLinkExpires: "Expire le :",
       created: "Licence créée avec succès",
       updated: "Licence mise à jour avec succès",
       deleted: "Licence désactivée avec succès",

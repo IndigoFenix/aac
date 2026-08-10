@@ -45,6 +45,7 @@ import {
   TRADE_IMPORT_KINDS,
 } from "@shared/world-engine/kernel/town/trade.js";
 import { exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
+import { bookUnitsPerStreetUnit } from "@shared/world-engine/interaction/town/town-quests.js";
 import { BARTER_WANT_MIN, stubPartnerSignals } from "@shared/world-engine/kernel/town/barter.js";
 import { activeTradePairs } from "@shared/world-engine/kernel/town/money.js";
 import { hinterlandJobs, cityLicense } from "@shared/world-engine/kernel/civ/jobs.js";
@@ -441,6 +442,32 @@ describe("T4a — an unlicensed town with a licensed partner sees its shortage F
     expect(host().shortageProbe("clothing")).toBe(1);
   });
 
+  // ⚖️ batch 3 · B3 — the read side's other new term, on the STAPLE's lane.
+  it("🚨 B3 THE OWED TERM: a town that ships a third of its draw is not as fed as `got` says", () => {
+    const t = run.session.town!;
+    const tr = t.stage.trade!;
+    const food = t.stage.goods.find((g) => g.good.key === "food")!;
+    // THE PREMISE: the farms cover the town exactly — `got === need` — so the
+    // street layer's own reading is a perfect 1 and stays that way. `fill()`
+    // is UNTOUCHED by any of this: it is the street's bank-blind read, and B3
+    // lands on the BOOKS' read alone.
+    expect(scalar("food_got")).toBeCloseTo(scalar("food_need"), 12);
+    expect(food.fill()).toBe(1);
+    // …and yet a caravan takes a share of that supply out of town every single
+    // day. Before B3 the books never heard about it and answered 0 forever
+    // (free lunch #3). Now the committed export rate is subtracted, rate
+    // against rate: shortage = clamp01(1 − (got + fed − owed)/need).
+    expect([...tr.route.exports]).toEqual(["food"]);
+    const owed = tr.exportDailyUnits() * bookUnitsPerStreetUnit(t.eco, "food");
+    expect(owed).toBeGreaterThan(0);
+    const shortage = host().shortageProbe("food");
+    expect(shortage).toBeCloseTo(owed / scalar("food_need"), 9);
+    // The equilibrium B4 solves for: about a tenth, and under the want gate
+    // that decides whether food is on the export list at all.
+    expect(shortage).toBeCloseTo(0.1005, 4);
+    expect(shortage).toBeLessThan(BARTER_WANT_MIN);
+  });
+
   it("T3a LIVE: the depot is clothing's supply — an empty shelf, not an absent one", () => {
     const g = clothing();
     // ⚖️ RE-PINNED (2026-08-09, the clothing-shopper flood): clothing now rides
@@ -528,31 +555,186 @@ describe("T4a — an unlicensed town with a licensed partner sees its shortage F
     // the drapery, once, and the shortage fell with it.
     const landed = tr.importUnitsPerVisit("clothing");
     expect(landed).toBeGreaterThan(0);
-    expect(scalar("drapery")).toBeCloseTo(landed, 9);
-    expect(run.session.town!.deltas.driftBank.drapery).toBeCloseTo(landed, 9);
+    // ⚖️ RE-PINNED (batch 3 · B1). Both lines used to read `landed` — the raw
+    // STREET count — against a books scalar, i.e. they asserted that six
+    // garments off a cart are six person-days of clothing on the aggregate's
+    // ledger. `bookUnitsPerStreetUnit` is the compiler's own inverse
+    // (`perPersonDaily / perCapitaDaily`), and it measures 0.001 here: six
+    // garments bank 0.006 book units. Same claim, honest units.
+    const bridge = bookUnitsPerStreetUnit(run.session.town!.eco, "clothing");
+    expect(bridge).toBeCloseTo(0.001, 12);
+    expect(scalar("drapery")).toBeCloseTo(landed * bridge, 12);
+    expect(run.session.town!.deltas.driftBank.drapery).toBeCloseTo(landed * bridge, 12);
     const after = host().shortageProbe("clothing");
     expect(after).toBeLessThan(before);
-    // One caravan covers this town's WHOLE clothing need: a landed unit is
-    // worth `RATION_VALUE` (1) on books whose clothing need is a fraction —
-    // the delivery convention `creditDelivery` has always used, not something
-    // the lane introduced. The relief is still capped at the real shortfall.
+    // One caravan still covers this town's WHOLE clothing need the day it
+    // lands, and the relief is capped at the real shortfall — UNCHANGED.
     expect(after).toBe(0);
-    expect(landed).toBeGreaterThan(scalar("clothing_need"));
+    // ⚖️ RE-PINNED (batch 3 · B1): the same inequality, both sides in BOOK
+    // units. It is the honest form of what this line always meant — one visit
+    // brings more than the town wants in a day — and it is now a statement
+    // about a comparable pair rather than a units mismatch that happened to
+    // point the right way. What CHANGED is the margin: 0.006 against 7.66e-4
+    // is eight days of cover, where 6 against 7.66e-4 was twenty-one years.
+    expect(landed * bridge).toBeGreaterThan(scalar("clothing_need"));
+    const daysOfCover = (landed * bridge) / scalar("clothing_need");
+    expect(daysOfCover).toBeGreaterThan(7);
+    expect(daysOfCover).toBeLessThan(9);
   });
 
   it("🔒 T3b DURABILITY: the bank rides TownDeltas, and a reboot re-injects it", () => {
     const banked = run.session.town!.deltas.driftBank.drapery;
     expect(banked).toBeGreaterThan(0);
     const saved = JSON.parse(JSON.stringify(run.session.town!.deltas.toJSON()));
-    expect(saved.driftBank.drapery).toBeCloseTo(banked, 9);
+    expect(saved.driftBank.drapery).toBeCloseTo(banked, 12);
     // A town rebuilt from those deltas has the credit back in its books —
     // injected AFTER the fast-forward, exactly where a founded producer
     // re-injects its count scalar.
     const reborn = buildTownPlay({ seed: SEED, days: YOUNG_DAYS, deltas: saved });
     expect(reborn.town.scalar("drapery")).toBeGreaterThanOrEqual(banked);
+    // ⚖️ EXTENDED (batch 3 · B2/B5): the bank is SIGNED now — the day's eating
+    // and the caravan's outbound load both write it — and town-play's replay
+    // was dropping every negative entry (`units > 0`). A durable ledger that
+    // only ever rounds up is not durable, so the negative half must survive the
+    // same round trip. The granary row is the live proof: this run's caravans
+    // have already debited it (nothing here constructs the number).
+    expect(saved.driftBank.granary).toBeLessThan(0);
+    expect(saved.driftBank.granary).toBeCloseTo(
+      run.session.town!.deltas.driftBank.granary,
+      12,
+    );
+    const debited = buildTownPlay({ seed: SEED, days: YOUNG_DAYS, deltas: saved });
+    const fresh = buildTownPlay({ seed: SEED, days: YOUNG_DAYS });
+    expect(debited.town.scalar("granary")).toBeCloseTo(
+      fresh.town.scalar("granary") + saved.driftBank.granary,
+      9,
+    );
     // …and a save with no bank at all still loads (absent-tolerant).
     delete saved.driftBank;
     expect(() => buildTownPlay({ seed: SEED, days: YOUNG_DAYS, deltas: saved })).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// ③b B2 — THE BANK IS A STOCK THAT EMPTIES AS IT FEEDS (the honest sawtooth)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// The other half of the same lane. `townShortage`'s feed term (T3b-i above)
+// mirrors the flow net's own law — `fed = min(stock, demand − satisfied)` —
+// but the kernel's law has a SECOND clause the read side could not have: the
+// fed amount IS the drain (cells/entities.ts, granary-feed.test.ts). A town
+// world steps only in the boot fast-forward, so live that clause never ran and
+// any bank ≥ one day's shortfall pinned the shortage at 0 forever. One caravan
+// bought permanent relief; that is what this describe is the test of.
+//
+// ⚠️ THE CLOCK IS DRIVEN, NOT WALKED. The host clamps its own frame dt at 0.05
+// (world-host.ts), so eight sim-days is 38,400 frames — twenty-odd minutes of
+// wall time for one pin. The drain is a DAY-EDGE EVENT, so the pin puts the
+// town clock on the eve of each edge and steps the real sweep across it: the
+// same edge the loop produces, reached the way a test clock reaches things.
+describe("B2 — one caravan relieves for eight days, then the shortage climbs back", () => {
+  let run: TextQuestRun;
+  const host = () => run.host as unknown as { shortageProbe(good: string): number };
+  const scalar = (n: string) => run.session.town!.town.scalar(n);
+  /** Put the clock a breath before day `d`'s edge and step the sweep over it.
+   *  2.5 s guarantees at least one sweep lands AFTER the crossing whatever
+   *  phase the throttle (`TASK_CLAIM_INTERVAL_S` = 1 s) happens to be in. */
+  const crossInto = (d: number) => {
+    run.session.townClock = d * FOOD_DAY_SEC - 0.4;
+    run.advanceS(2.5);
+  };
+
+  beforeAll(() => {
+    run = bootTextQuest({ world: youngDoc(), seed: SEED, dt: 1 / 20 });
+    run.advanceS(4);
+  });
+  afterAll(() => run?.dispose());
+
+  it("🚨 THE DRAIN IS THE KERNEL'S OWN LAW, run live on the day edge", () => {
+    const t = run.session.town!;
+    const bridge = bookUnitsPerStreetUnit(t.eco, "clothing");
+    const need = scalar("clothing_need");
+    expect(scalar("clothing_got")).toBe(0); // no tailor: the whole need is a shortfall
+    // ONE caravan's landing, banked (6 street garments at the books' own rate).
+    t.town.inject("drapery", IMPORT_ALLOTMENT * bridge);
+    expect(scalar("drapery")).toBeCloseTo(0.006, 12);
+    expect(host().shortageProbe("clothing")).toBe(0); // relieved, today
+    // One economy day later the stockpile is down by EXACTLY what it fed —
+    // `min(bank, need − got)`, the flow net's formula, no more.
+    crossInto(1);
+    expect(scalar("drapery")).toBeCloseTo(0.006 - need, 12);
+    // …and the durable mirror moved with it, negative (B5's replay depends on
+    // this surviving `TownDeltas`).
+    expect(t.deltas.driftBank.drapery).toBeCloseTo(-need, 12);
+  });
+
+  it("🚨 THE SAWTOOTH: full relief for ~8 days, then the honest climb back", () => {
+    const need = scalar("clothing_need");
+    const relief = IMPORT_ALLOTMENT * bookUnitsPerStreetUnit(run.session.town!.eco, "clothing");
+    // 0.006 book units against 7.66e-4/day — the caravan bought eight days.
+    expect(relief / need).toBeGreaterThan(7);
+    expect(relief / need).toBeLessThan(8);
+    const curve: Array<{ day: number; bank: number; shortage: number }> = [];
+    for (let d = 2; d <= 10; d++) {
+      crossInto(d);
+      curve.push({
+        day: d,
+        bank: scalar("drapery"),
+        shortage: host().shortageProbe("clothing"),
+      });
+    }
+    // The bank only ever falls, and the drained total is exactly d × the
+    // shortfall until it runs dry (the cumulative law — a sweep that lands
+    // just BEFORE an edge defers to the next one, which then drains both).
+    for (const row of curve) {
+      expect(row.bank).toBeCloseTo(Math.max(0, relief - row.day * need), 12);
+    }
+    // FULL RELIEF while the bank covers a day's shortfall…
+    expect(curve.find((r) => r.day === 6)!.shortage).toBe(0);
+    // …a PARTIAL day as it runs out (the last of the bank still feeds)…
+    const seventh = curve.find((r) => r.day === 7)!;
+    expect(seventh.shortage).toBeGreaterThan(0);
+    expect(seventh.shortage).toBeCloseTo(1 - seventh.bank / need, 9);
+    // …and then the town is exactly as short as it was before the caravan
+    // came. The eternal 0 is gone.
+    expect(curve.find((r) => r.day === 8)!.bank).toBe(0);
+    expect(curve.find((r) => r.day === 8)!.shortage).toBe(1);
+    expect(curve.find((r) => r.day === 10)!.shortage).toBe(1);
+  });
+
+  it("🔒 the multi-day skip is a MULTIPLIER, never a lost day", () => {
+    const t = run.session.town!;
+    const need = scalar("clothing_need");
+    t.town.inject("drapery", 20 * need); // twenty days of cover
+    const before = scalar("drapery");
+    const mirrorBefore = t.deltas.driftBank.drapery!;
+    const day = Math.floor(run.session.townClock / FOOD_DAY_SEC);
+    crossInto(day + 5); // five economy days pass between two sweeps
+    expect(scalar("drapery")).toBeCloseTo(before - 5 * need, 12);
+    expect(t.deltas.driftBank.drapery).toBeCloseTo(mirrorBefore - 5 * need, 12);
+  });
+
+  it("🚨 B5 THE CARAVAN DEBIT: what leaves on the cart leaves the books", () => {
+    // The staple's own lane, live: this town exports food, and until now the
+    // granary never felt a single shipment (free lunch #3). The debit is the
+    // day's whole load at today's spare scale, damped by producer attendance,
+    // converted at the same bridge — and it rides the durable bank NEGATIVE.
+    const t = run.session.town!;
+    const tr = t.stage.trade!;
+    expect([...tr.route.exports]).toEqual(["food"]);
+    const bridge = bookUnitsPerStreetUnit(t.eco, "food");
+    const before = scalar("granary");
+    const mirrorBefore = t.deltas.driftBank.granary ?? 0;
+    expect(mirrorBefore).toBeLessThan(0); // earlier days already charged it
+    const bucket = tr.tradeDay(run.session.townClock);
+    const day = Math.floor(run.session.townClock / FOOD_DAY_SEC);
+    crossInto(day + 1);
+    expect(tr.tradeDay(run.session.townClock)).toBeGreaterThan(bucket);
+    const charged = before - scalar("granary");
+    expect(charged).toBeGreaterThan(0);
+    // ONE visit's load, in book units — read off the line itself, not typed.
+    expect(charged).toBeCloseTo(tr.exportDailyUnits() * bridge, 9);
+    expect(t.deltas.driftBank.granary).toBeCloseTo(mirrorBefore - charged, 9);
   });
 });
 

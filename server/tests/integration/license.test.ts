@@ -14,6 +14,7 @@ import {
   makeLicense,
   licenseService,
   licenseRepository,
+  instituteRepository,
 } from '../helpers/factories.js';
 
 describe('License integration', () => {
@@ -210,6 +211,101 @@ describe('License integration', () => {
       expect(info.licenseType).toBe('enterprise');
       expect(info.permissions.maxStudents).toBe(-1);
       expect(info.permissions.aacEnabled).toBe(true);
+    });
+  });
+
+  describe('getInviteLink', () => {
+    // The admin "copy verification link" fallback: hands over the same link the
+    // invite email carries, without sending mail and without invalidating a
+    // link that is already in the recipient's inbox.
+
+    it('mints and persists a token for a standalone license that has none', async () => {
+      const license = await makeLicense({ inviteEmail: 'nolink@test.local' });
+      expect(license.inviteToken).toBeNull();
+
+      const owner = await makeUser({ isSystemAdmin: true });
+      const result = await licenseService.getInviteLink(license.id, 'http://localhost', owner.id);
+
+      expect(result.success).toBe(true);
+      const stored = await licenseRepository.getLicenseById(license.id);
+      expect(stored!.inviteToken).toBeTruthy();
+      expect(result.inviteLink).toBe(`http://localhost/invite/${stored!.inviteToken}`);
+    });
+
+    it('returns the same standalone link on repeat calls', async () => {
+      const license = await makeLicense({ inviteEmail: 'stable@test.local' });
+      const owner = await makeUser({ isSystemAdmin: true });
+
+      const first = await licenseService.getInviteLink(license.id, 'http://localhost', owner.id);
+      const second = await licenseService.getInviteLink(license.id, 'http://localhost', owner.id);
+
+      expect(first.inviteLink).toBe(second.inviteLink);
+    });
+
+    it('reuses a live pending institute invite instead of rotating it', async () => {
+      const owner = await makeUser({ isSystemAdmin: true });
+      const { institute } = await makeInstitute(owner.id, { type: 'school' });
+      const license = await makeLicense({
+        inviteEmail: 'principal@school.local',
+        instituteId: institute.id,
+      });
+
+      const existing = await instituteRepository.createInvite(
+        institute.id,
+        'principal@school.local',
+        owner.id,
+        { role: 'admin', grantAdmin: true, expiresInDays: 30 },
+      );
+
+      const result = await licenseService.getInviteLink(license.id, 'http://localhost', owner.id);
+
+      // Same token → the link already emailed still works.
+      expect(result.inviteLink).toBe(`http://localhost/invite/${existing.token}`);
+      const pending = await instituteRepository.getPendingInviteByEmail(
+        institute.id,
+        'principal@school.local',
+      );
+      expect(pending!.id).toBe(existing.id);
+      expect(result.expiresAt).toBeInstanceOf(Date);
+    });
+
+    it('creates an institute invite when none is pending', async () => {
+      const owner = await makeUser({ isSystemAdmin: true });
+      const { institute } = await makeInstitute(owner.id, { type: 'school' });
+      const license = await makeLicense({
+        inviteEmail: 'fresh@school.local',
+        instituteId: institute.id,
+      });
+
+      const result = await licenseService.getInviteLink(license.id, 'http://localhost', owner.id);
+
+      expect(result.success).toBe(true);
+      const pending = await instituteRepository.getPendingInviteByEmail(
+        institute.id,
+        'fresh@school.local',
+      );
+      expect(pending).toBeDefined();
+      expect(result.inviteLink).toBe(`http://localhost/invite/${pending!.token}`);
+    });
+
+    it('fails for an unknown license', async () => {
+      const owner = await makeUser({ isSystemAdmin: true });
+      const result = await licenseService.getInviteLink(
+        '00000000-0000-4000-8000-000000000000',
+        'http://localhost',
+        owner.id,
+      );
+      expect(result.success).toBe(false);
+      expect(result.inviteLink).toBeUndefined();
+    });
+
+    it('fails when the license carries no invite email', async () => {
+      const license = await makeLicense();
+      await licenseRepository.updateLicense(license.id, { inviteEmail: null } as any);
+      const owner = await makeUser({ isSystemAdmin: true });
+
+      const result = await licenseService.getInviteLink(license.id, 'http://localhost', owner.id);
+      expect(result.success).toBe(false);
     });
   });
 

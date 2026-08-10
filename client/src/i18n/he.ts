@@ -3306,6 +3306,12 @@ export const he = {
       // Actions
       resendInvite: "שליחת הזמנה מחדש",
       inviteResent: "ההזמנה נשלחה בהצלחה",
+      copyInviteLink: "העתקת קישור אימות",
+      inviteLinkCopied: "קישור האימות הועתק ללוח",
+      inviteLinkCopyFailed: "ההעתקה האוטומטית נכשלה — סמנו את הקישור והעתיקו אותו ידנית",
+      inviteLinkTitle: "קישור אימות",
+      inviteLinkDescription: "שלחו את הקישור הזה לנמען אם הודעת ההזמנה לא הגיעה. הוא פותח את אותו עמוד הקמת חשבון כמו ההזמנה שנשלחה בדוא\"ל.",
+      inviteLinkExpires: "בתוקף עד:",
       created: "הרישיון נוצר בהצלחה",
       updated: "הרישיון עודכן בהצלחה",
       deleted: "הרישיון הושבת בהצלחה",

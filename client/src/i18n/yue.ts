@@ -3306,6 +3306,12 @@ export const yue = {
       // Actions
       resendInvite: "重新傳送邀請",
       inviteResent: "邀請已成功重新傳送",
+      copyInviteLink: "複製驗證連結",
+      inviteLinkCopied: "驗證連結已複製到剪貼簿",
+      inviteLinkCopyFailed: "無法自動複製 — 請選取連結並手動複製",
+      inviteLinkTitle: "驗證連結",
+      inviteLinkDescription: "如果邀請電郵冇送到，可以將呢條連結發畀收件人。佢會開啟同電郵邀請一樣嘅帳戶設定頁面。",
+      inviteLinkExpires: "有效期至：",
       created: "許可證建立成功",
       updated: "許可證更新成功",
       deleted: "許可證已成功停用",

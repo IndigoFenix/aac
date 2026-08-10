@@ -784,11 +784,22 @@ export function useLicenseMutations() {
     },
   });
 
+  // Fetch the invite ("verification") link without sending mail, so it can be
+  // passed on another way when the invite email doesn't arrive.
+  const getInviteLink = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest('GET', `/api/admin/licenses/${id}/invite-link`);
+      const data = await res.json();
+      return data as { inviteLink: string; expiresAt: string | null };
+    },
+  });
+
   return {
     createLicense,
     updateLicense,
     deleteLicense,
     resendInvite,
+    getInviteLink,
   };
 }
 

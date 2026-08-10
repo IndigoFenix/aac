@@ -3306,6 +3306,12 @@ export const es = {
       // Actions
       resendInvite: "Reenviar invitación",
       inviteResent: "Invitación reenviada correctamente",
+      copyInviteLink: "Copiar enlace de verificación",
+      inviteLinkCopied: "Enlace de verificación copiado al portapapeles",
+      inviteLinkCopyFailed: "No se pudo copiar automáticamente: selecciona el enlace y cópialo manualmente",
+      inviteLinkTitle: "Enlace de verificación",
+      inviteLinkDescription: "Envía este enlace al destinatario si el correo de invitación no llegó. Abre la misma página de configuración de cuenta que la invitación por correo.",
+      inviteLinkExpires: "Vence:",
       created: "Licencia creada correctamente",
       updated: "Licencia actualizada correctamente",
       deleted: "Licencia desactivada correctamente",

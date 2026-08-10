@@ -299,9 +299,45 @@ export function buildTownQuestGame(
 
 /* ------------------------------- the outcome ------------------------------- */
 
-/** Book units one delivered item is worth (the aggregate face of a
- *  consumed delivery — see the DELIVERY contract above). */
+/** Book units one delivered item is worth when the books say NOTHING about
+ *  the good (the aggregate face of a consumed delivery — see the DELIVERY
+ *  contract above). The GROUNDED value is `bookUnitsPerStreetUnit` below;
+ *  this is what a good with no demand row falls back to, so a quest reward
+ *  on something the aggregate never metabolizes keeps its old meaning. */
 export const RATION_VALUE = 1;
+
+/**
+ * ⚖️ BATCH 3 · B1 — BOOK UNITS ONE STREET UNIT IS WORTH, DERIVED.
+ *
+ * The street and the books count the same good in DIFFERENT UNITS and the
+ * delivery join used to pretend they didn't: one landed garment credited
+ * `RATION_VALUE` (1) into a drapery whose whole town wants 7.7e-4 per day, so
+ * a single caravan banked twenty years of clothing. The exchange rate is not
+ * a new number — the compiler already computes its inverse:
+ *
+ *   economy.ts:  perCapitaDaily = perPersonDaily / stapleDaily
+ *   therefore:   perPersonDaily / perCapitaDaily = stapleDaily
+ *
+ * i.e. this returns the STAPLE's own daily draw (0.001 in the shipped doc)
+ * for every street good, by construction — the ration IS the street unit, and
+ * one ration is one person-day of the staple on the books. Pinned as an
+ * identity, not as a literal, so a doc that re-anchors its metabolism moves
+ * both sides together.
+ *
+ * ⚖️ NOT the freight `valueDensity` bridge (clothing = 8 rations-worth). That
+ * one measures EXCHANGE VALUE for barter and haulage; this one measures
+ * DEMAND. Different dimensions, declared rather than reconciled.
+ *
+ * Falls back to `RATION_VALUE` when either half is missing (no `perPersonDaily`
+ * demand row, or no street `perCapitaDaily`): with no books row for the good
+ * there is nothing to be wrong about, and the pre-B1 convention stands.
+ */
+export function bookUnitsPerStreetUnit(eco: CompiledEconomy, good: string): number {
+  const perHead = eco.traitDemands.find(d => d.resource === good)?.value;
+  const perCapita = eco.goods.find(g => g.key === good)?.perCapitaDaily;
+  if (perHead === undefined || perCapita === undefined || !(perCapita > 0)) return RATION_VALUE;
+  return perHead / perCapita;
+}
 
 export interface TownDelivery {
   good: string;
@@ -324,7 +360,11 @@ export interface TownOutcome {
  *  The per-event form of `applyTownOutcome` — call it as needs fulfill
  *  in an OPEN-ENDED session (no session end to batch at). `units`
  *  defaults to the ONE item every fulfillment is; a landed caravan (R&T ⑤
- *  T3b) credits its whole load through the same one rule. */
+ *  T3b) credits its whole load through the same one rule.
+ *
+ *  ⚖️ B1: `units` is STREET units (items, garments, rations); the books are
+ *  kept in BOOK units, and `bookUnitsPerStreetUnit` is the conversion. Every
+ *  writer of the books goes through this one door. */
 export function creditDelivery(
   town: { inject(scalar: string, delta: number): void },
   eco: CompiledEconomy,
@@ -332,8 +372,46 @@ export function creditDelivery(
   units = 1,
 ): string | null {
   const drift = eco.flownets.find(f => f.source === `${good}_out`)?.drift ?? null;
-  if (drift && units > 0) town.inject(drift, RATION_VALUE * units);
+  if (drift && units > 0) town.inject(drift, bookUnitsPerStreetUnit(eco, good) * units);
   return drift;
+}
+
+/** What a books DEBIT actually moved: the stockpile it came out of (null =
+ *  the economy banks nothing for this good) and the BOOK units taken, which
+ *  is 0 for an empty bank and is what a durable mirror must record. */
+export interface TownDebit {
+  scalar: string | null;
+  units: number;
+}
+
+/**
+ * ⚖️ BATCH 3 (B5/B6) — `creditDelivery`'s EXACT MIRROR: units of a good that
+ * LEAVE the settlement leave its books too.
+ *
+ * The pairwise transfer's near half (the tribe-mode scope test: debit here,
+ * credit there, conserved). Imports credited a stockpile that exports never
+ * debited, so a town could ship a third of its draw down the road every day
+ * and its aggregate never noticed — the caravan minted supply out of nothing
+ * at the town boundary.
+ *
+ * BOUNDED BY THE BANK, not by `inject`'s floor: a stock cannot go below empty
+ * and it cannot ship what it never had, so the returned `units` is exactly
+ * what moved and a caller mirroring it into durable state can never disagree
+ * with the books it mirrors.
+ */
+export function debitDelivery(
+  town: { inject(scalar: string, delta: number): void; scalar(name: string): number },
+  eco: CompiledEconomy,
+  good: string,
+  units = 1,
+): TownDebit {
+  const drift = eco.flownets.find(f => f.source === `${good}_out`)?.drift ?? null;
+  if (!drift || !(units > 0)) return { scalar: drift, units: 0 };
+  const bank = Math.max(0, town.scalar(drift));
+  const take = Math.min(bank, bookUnitsPerStreetUnit(eco, good) * units);
+  if (!(take > 0)) return { scalar: drift, units: 0 };
+  town.inject(drift, -take);
+  return { scalar: drift, units: take };
 }
 
 /**
@@ -342,6 +420,10 @@ export function creditDelivery(
  * already banks overproduction into), found by the ONE-VOCABULARY rule —
  * the net whose source is `{good}_out`. Idempotent per call site: pass
  * the live CreatureWorld once, at session end.
+ *
+ * ⚖️ B1: the count is in STREET items and the credit is in BOOK units —
+ * the same `bookUnitsPerStreetUnit` bridge `creditDelivery` uses, because a
+ * batched session end and a live event must value one delivery alike.
  */
 export function applyTownOutcome(
   town: { inject(scalar: string, delta: number): void },
@@ -360,7 +442,7 @@ export function applyTownOutcome(
   const deliveries: TownDelivery[] = [];
   for (const [good, count] of counts) {
     const drift = eco.flownets.find(f => f.source === `${good}_out`)?.drift ?? null;
-    if (drift) town.inject(drift, RATION_VALUE * count);
+    if (drift) town.inject(drift, bookUnitsPerStreetUnit(eco, good) * count);
     deliveries.push({ good, count, scalar: drift });
   }
   return { deliveries };

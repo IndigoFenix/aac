@@ -64,8 +64,13 @@ import {
 import { createTownTrade, type TownTrade } from "@shared/world-engine/kernel/town/trade.js";
 // ⚖️ G2: the want gate as a slope — ONE definition, shared with the derived
 // cargo list that draws the same line as a boolean (complementary.ts).
-import { exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
+// ⚖️ B4: …and the same slope at its FIXED POINT, once the lane's own volume
+// feeds back into the shortage the slope reads.
+import { equilibriumExportScale } from "@shared/world-engine/kernel/town/complementary.js";
 import { createResidentModel, STREET_NPCS } from "@shared/world-engine/kernel/town/residents.js";
+// ⚖️ B1: the street↔books exchange rate, so the export BURDEN can be measured
+// against the town's own daily need (the two are quoted in different units).
+import { bookUnitsPerStreetUnit } from "@shared/world-engine/interaction/town/town-quests.js";
 import type { TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
 import type { TownDeltas } from "@shared/world-engine/kernel/town/construction.js";
 
@@ -444,32 +449,52 @@ export function* createTownStageSteps(
   const foodSpec = eco.goods.find(
     (g) => g.key === "food" && (g.slot === 0 || hasLedger(town, g)),
   );
+  /** The AUTHORED daily shipment (street units): a third of what the town's
+   *  households draw. Fixed at construction — hoisted out of the
+   *  `createTownTrade` opts below because the export VALVE now has to weigh it
+   *  against the books' own daily need. ⚖️ ONE definition, two readers. */
+  const exportDaily = foodSpec
+    ? plan.houses.length * HOUSEHOLD * foodSpec.perCapitaDaily * 0.3
+    : 0;
   /**
-   * ⚖️ G2 — WHAT THE TOWN CAN SPARE, read LIVE off the goods layer.
+   * ⚖️ G2 (batch 2) → ⚖️ B4 (batch 3) — WHAT THE TOWN CAN SPARE, read LIVE off
+   * the goods layer, AT THE FIXED POINT.
    *
    * `TownGoods.fill()` IS the town's own reading of "how fed are we on this
    * good" (`got / need`, clamped) — the same books `townShortage` reads, and
    * the ONE definition already in the street layer, so nothing here restates
-   * the fill arithmetic. Its complement is our shortage, and
-   * `exportSpareScale` turns that into the share of the daily surplus we let
-   * out: 1 while fed, 0 at `BARTER_WANT_MIN`, the exact line the derived
-   * export LIST already draws as a boolean.
+   * the fill arithmetic. Its complement is our PRE-EXPORT shortage S₀.
+   *
+   * B3 made the export rate BITE the books, so the shortage the valve reads is
+   * now partly caused by the valve's own answer. `equilibriumExportScale`
+   * solves that loop in closed form instead of chasing it: it takes S₀ and the
+   * BURDEN — the whole authored shipment measured against the town's own daily
+   * need, both in book units, which is what makes the two comparable at all
+   * (`bookUnitsPerStreetUnit`, B1). A town that exports nothing has burden 0
+   * and the expression collapses to batch 2's slope exactly.
    *
    * A LATE READ ON PURPOSE. The street goods are built AFTER the line (the
    * lane's allotment is one of their inputs), so the thunk closes over a ref
-   * that fills in below — and it is only ever called by `exportPile`, i.e.
-   * after the stage is standing. No goods yet, or no food row, reads 1: an
-   * unmeasured town exports exactly what it always did.
+   * that fills in below — and it is only ever called by `exportPile` /
+   * `exportDailyUnits`, i.e. after the stage is standing. No goods yet, or no
+   * food row, reads 1: an unmeasured town exports exactly what it always did.
    */
   let streetGoodsRef: TownGoods[] | null = null;
   const exportScaleNow = (): number => {
     const g = streetGoodsRef?.find((x) => x.good.key === "food");
-    return g ? exportSpareScale(1 - g.fill()) : 1;
+    if (!g) return 1;
+    // The books' own daily draw of the good. 0 (a town whose ledger has no
+    // need) ⇒ burden 0 ⇒ the pure G2 slope, which is the honest answer when
+    // there is nothing for the shipment to be a fraction OF.
+    const need = town.dual.settlementScalar(siteKey, g.good.needScalar);
+    const burden =
+      need > 0 ? (exportDaily * bookUnitsPerStreetUnit(eco, g.good.key)) / need : 0;
+    return equilibriumExportScale(1 - g.fill(), burden);
   };
   const trade = foodSpec
     ? createTownTrade(center, plan, plan.streets, opts.seed, {
         exportGood: "food",
-        exportDaily: plan.houses.length * HOUSEHOLD * foodSpec.perCapitaDaily * 0.3,
+        exportDaily,
         exportScale: exportScaleNow,
       })
     : null;

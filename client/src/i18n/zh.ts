@@ -3306,6 +3306,12 @@ export const zh = {
       // Actions
       resendInvite: "重新发送邀请",
       inviteResent: "邀请已成功重新发送",
+      copyInviteLink: "复制验证链接",
+      inviteLinkCopied: "验证链接已复制到剪贴板",
+      inviteLinkCopyFailed: "无法自动复制 — 请选中链接并手动复制",
+      inviteLinkTitle: "验证链接",
+      inviteLinkDescription: "如果邀请邮件未送达，请把此链接发送给收件人。它会打开与邮件邀请相同的账户设置页面。",
+      inviteLinkExpires: "有效期至：",
       created: "许可证创建成功",
       updated: "许可证更新成功",
       deleted: "许可证已成功停用",

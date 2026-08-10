@@ -3306,6 +3306,12 @@ export const pt = {
       // Actions
       resendInvite: "Reenviar convite",
       inviteResent: "Convite reenviado com sucesso",
+      copyInviteLink: "Copiar link de verificação",
+      inviteLinkCopied: "Link de verificação copiado para a área de transferência",
+      inviteLinkCopyFailed: "Não foi possível copiar automaticamente — selecione o link e copie manualmente",
+      inviteLinkTitle: "Link de verificação",
+      inviteLinkDescription: "Envie este link ao destinatário se o e-mail de convite não chegou. Ele abre a mesma página de configuração de conta que o convite enviado por e-mail.",
+      inviteLinkExpires: "Expira em:",
       created: "Licença criada com sucesso",
       updated: "Licença atualizada com sucesso",
       deleted: "Licença desativada com sucesso",

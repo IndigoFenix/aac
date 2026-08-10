@@ -69,6 +69,37 @@ export function exportSpareScale(ourShortage: number): number {
   return clamp01((BARTER_WANT_MIN - clamp01(ourShortage)) / BARTER_WANT_MIN);
 }
 
+/**
+ * ⚖️ BATCH 3 · B4 — THE SAME VALVE AT ITS FIXED POINT, closed form.
+ *
+ * `exportSpareScale` above answers "how much may we spare, given a shortage".
+ * Once the books DEBIT what the lane carries away (B3's `owed` term), the
+ * shortage it reads is itself a function of how much we ship — feed the slope
+ * its own output and a naive loop oscillates or crawls. The interior algebra
+ * of the loop has one solution and it can just be written down:
+ *
+ *   s = (WANT_MIN − S) / WANT_MIN   with   S = S₀ + s·burden
+ *   ⇒ s·WANT_MIN = WANT_MIN − S₀ − s·burden
+ *   ⇒ s* = (WANT_MIN − S₀) / (WANT_MIN + burden)
+ *
+ *  • `preShortage` (S₀) — what we would be short of the good if the lane
+ *    carried nothing today (the bank-blind `1 − fill()` reading, as shipped).
+ *  • `burden` — the whole authored export rate expressed against the town's
+ *    own daily need, in the books' units (`exportDaily_book / need`). 0.3 for
+ *    an authored exporter, whose surplus is a third of its draw.
+ *
+ * The equilibrium the caller lands on is `S₀ + s*·burden`: at S₀ = 0 and
+ * burden 0.3 that is s* = 1/3 and a 10% pinch — a fed exporter ships a third
+ * of the authored volume and its own households feel the rest, just under the
+ * want gate. S₀ ≥ WANT_MIN ⇒ 0 (a famine town does not export, G1/G2 intact).
+ * burden 0 ⇒ the expression IS `exportSpareScale`'s, term for term, so a town
+ * that exports nothing is byte-identical to the batch-2 slope.
+ */
+export function equilibriumExportScale(preShortage: number, burden: number): number {
+  const b = Number.isFinite(burden) ? Math.max(0, burden) : 0;
+  return clamp01((BARTER_WANT_MIN - clamp01(preShortage)) / (BARTER_WANT_MIN + b));
+}
+
 /** Fraction of a load that must still ARRIVE for the good to be worth listing
  *  (the rest is what the road ate). Half: below that the caravan is hauling
  *  mostly air, and the pair should be trading something else. */

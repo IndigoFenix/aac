@@ -819,8 +819,16 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   // after the fast-forward and the plan, so a reloaded town's books still show
   // the cloth its partner sent. Same shape, same place, same reason as the
   // founded producers directly above.
+  //
+  // ⚖️ BATCH 3 (B2/B5) — THE BANK IS SIGNED NOW, and the replay must be too.
+  // `> 0` silently dropped every negative entry, which was harmless while the
+  // only writer was a landing credit and is a LIE the moment the books also
+  // record the day's eating (`stepDriftDrain`) and the caravan's outbound load
+  // (`debitExport`): a reload would have restored relief the town had already
+  // consumed. `inject` clamps at the scalar's own floor, so a stock still
+  // cannot go below empty — the replay just stops rounding one direction up.
   for (const [scalar, units] of Object.entries(deltas.driftBank)) {
-    if (units > 0) town.inject(scalar, units);
+    if (units !== 0) town.inject(scalar, units);
   }
   yield "meeting residents";
   const bundle = buildTownQuestGame(town, eco, plan, key, {

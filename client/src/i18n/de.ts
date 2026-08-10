@@ -3306,6 +3306,12 @@ export const de = {
       // Actions
       resendInvite: "Einladung erneut senden",
       inviteResent: "Einladung erfolgreich erneut gesendet",
+      copyInviteLink: "Bestätigungslink kopieren",
+      inviteLinkCopied: "Bestätigungslink in die Zwischenablage kopiert",
+      inviteLinkCopyFailed: "Automatisches Kopieren nicht möglich – Link markieren und manuell kopieren",
+      inviteLinkTitle: "Bestätigungslink",
+      inviteLinkDescription: "Senden Sie diesen Link an die eingeladene Person, falls die Einladungs-E-Mail nicht angekommen ist. Er öffnet dieselbe Seite zur Kontoeinrichtung wie die E-Mail-Einladung.",
+      inviteLinkExpires: "Läuft ab am:",
       created: "Lizenz erfolgreich erstellt",
       updated: "Lizenz erfolgreich aktualisiert",
       deleted: "Lizenz erfolgreich deaktiviert",

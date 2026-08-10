@@ -641,7 +641,7 @@ import {
   type SparkFocus,
 } from "@shared/world-engine/interaction/behavior/spark-attention.js";
 import { glyphLabel, isRtlLocale, languageFor, speakDirections, speakerGender, translateGlyph, type Gender } from "@shared/world-engine/interaction/lang/index.js";
-import { creditDelivery, RATION_VALUE } from "@shared/world-engine/interaction/town/town-quests.js";
+import { bookUnitsPerStreetUnit, creditDelivery, debitDelivery } from "@shared/world-engine/interaction/town/town-quests.js";
 import { buildTownPlay, foundedHouseRow, TOWN_PLAY_STRUCTURES, type TownFamilyMember, type TownFamilyPet, type TownPlay } from "@shared/world-engine/interaction/town/town-play.js";
 import {
   cohortEndpoint,
@@ -1636,6 +1636,13 @@ export interface QuestSession {
    *  observes a bucket: the edge INTO a bucket is a caravan landing, and
    *  "the session just started looking" is not one. */
   tradeCargoDay: number | null;
+  /** ⚖️ BATCH 3 · B2 — the ECONOMY DAY the fed stockpiles were last drained
+   *  for. `TownWorld.step` runs only in the boot fast-forward, so the kernel's
+   *  own drain law (`fed` decrements the stock, cells/entities.ts) never fires
+   *  live and a bank ≥ the shortfall pinned every shortage at 0 forever. Null
+   *  until the first sweep observes a day: the edge INTO a day is a day's
+   *  eating, and "the session just started looking" is not one. */
+  driftDrainDay: number | null;
   /** TEMP: one-shot debug log keys (hand-over diagnostics). */
   dlogged: Set<string>;
   /** WILDERNESS session (founding flow): the deterministic resource/creature
@@ -3020,6 +3027,7 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     tradeImportTaken: null,
     tradeExportConsumed: null,
     tradeCargoDay: null,
+    driftDrainDay: null,
     dlogged: new Set(),
     wilderness: null,
     foundedSite: null,
@@ -23022,6 +23030,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
     runDueTransfers(session.transfers, (id) => stockEndpointOf(session, id), session.taskClock);
+    // ⚖️ BATCH 3 (B2): THE DAY'S EATING, before the day's trading — the fed
+    // stockpiles drain by exactly what they fed, the kernel law the frozen
+    // town world never gets to run. First, so every trade decision this tick
+    // reads a bank that has already paid for the days that passed.
+    stepDriftDrain(session);
     // ⚖️ R&T ⑤ (T3): the DAILY CARAVAN's own settlement — this visit's cargo
     // list re-derived off today's books, and its load credited to the town's
     // stockpile. Before the barter sweep, so a shipment quoted this tick reads
@@ -24468,6 +24481,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     real: boolean;
     signals: BarterSignals;
     stack: Record<string, number>;
+    /** ⚖️ BATCH 3 · B6 — THE PARTNER'S OWN LEDGER, when one is loaded (a
+     *  cluster neighbour): the far half of a pairwise transfer, so what we ship
+     *  out is credited THERE instead of vanishing. Null for a stub, whose
+     *  ledger is not running — its shelf mint is that town's condensed twin.
+     *  The seat is what lets a real ledger slot in where the stub stands. */
+    books: { town: TownWorld; eco: CompiledEconomy } | null;
     /** ⚖️ HOW FAR THE ROAD RUNS (world metres), for `barterLegSeconds`. Null =
      *  NO REAL GEOMETRY: a stub's `at` is the town's own gate, not the
      *  partner's place, so measuring it would price a fiction. Nulls take the
@@ -24489,14 +24508,67 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return s;
   }
 
+  /**
+   * ⚖️ BATCH 3 · B3 — THE ONE READ-SIDE FORMULA the town books answer with,
+   * so `townShortage` and `shortageOfBooks` cannot drift apart.
+   *
+   *   shortage = clamp01(1 − (got + fed − owed) / need)
+   *
+   * All four terms are RATES in book units per aggregate day: `need` and `got`
+   * are derived fresh each step (town-world.ts), `fed` is the flow net's own
+   * feed law read live (T3b-i), and `owed` is the export rate already promised
+   * away. Rate against rate — the read-side-feed pattern in reverse. `fill()`
+   * (goods.ts) keeps its own bank-blind reading for the street layer; this is
+   * the books' reading, and only the books'.
+   */
+  function booksShortage(need: number, got: number, fed: number, owed: number): number {
+    if (!(need > 0)) return 0;
+    return Math.max(0, Math.min(1, 1 - (got + fed - owed) / need));
+  }
+
+  /**
+   * ⚖️ BATCH 3 · B3 — BOOK UNITS/DAY OF `good` THIS TOWN HAS ALREADY PROMISED
+   * AWAY: the standing export lane's committed rate.
+   *
+   * A town that ships a third of its food draw down the road every day is not
+   * as fed as its `got` says — the caravan's share was counted as supply and
+   * then left town. Same shape as the caravan debit (B5) writes, one rung up:
+   * `exportDaily × s* × producerAttendance × bridge`, i.e. the daily shipment
+   * at today's spare scale, damped by who actually turned up to make it, in
+   * book units. 0 when the town exports nothing of the good.
+   *
+   * ⚠️ NO CYCLE: the spare scale reads `TownGoods.fill()` (the street layer's
+   * bank-blind got/need), NEVER this function — imports deliberately do not
+   * loosen the export valve (a recorded deferral, not an oversight).
+   */
+  function exportOwedBooks(session: QuestSession, good: string): number {
+    const t = session.town;
+    const tr = t?.stage.trade;
+    if (!t || !tr || !tr.route.exports.includes(good)) return 0;
+    const streetUnits = tr.exportDailyUnits() * producerAttendance(session, good);
+    if (!(streetUnits > 0)) return 0;
+    return streetUnits * bookUnitsPerStreetUnit(t.eco, good);
+  }
+
   /** A commodity shortage off ARBITRARY town books (the townShortage math,
-   *  aimed at a partner's own fills/scalars). */
-  function shortageOfBooks(eco: CompiledEconomy, tw: TownWorld, good: string): number {
+   *  aimed at a partner's own fills/scalars). NO feed term — a partner's
+   *  stockpile is read through their own books, not topped up by ours.
+   *
+   *  ⚖️ B3: `owed` is the twin of `townShortage`'s export debit, and it is a
+   *  PARAMETER because a cluster neighbour's export commitments live on a
+   *  stage this session does not hold (their `books` are a TownWorld + eco,
+   *  not a trade line). 0 ⇒ the shipped reading, byte-identical; the seat is
+   *  what lets a real ledger's own lane slot in. Both twins answer through
+   *  ONE `booksShortage`, so the pair can never disagree about the formula. */
+  function shortageOfBooks(
+    eco: CompiledEconomy,
+    tw: TownWorld,
+    good: string,
+    owed = 0,
+  ): number {
     const fill = eco.fills.find((f) => f.good === good);
     if (!fill) return 0;
-    const need = tw.scalar(fill.need);
-    if (need <= 0) return 0;
-    return Math.max(0, Math.min(1, 1 - tw.scalar(fill.got) / need));
+    return booksShortage(tw.scalar(fill.need), tw.scalar(fill.got), 0, owed);
   }
 
   /**
@@ -24534,6 +24606,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         real: false,
         signals: stubPartnerSignals(key, Math.floor(day), geo),
         stack: abstractPartnerStack(session, key),
+        books: null, // ⚖️ B6: nothing to credit — this town's ledger is not loaded
         // A stub with no bound place has none — see `TradePartner.distanceM`.
         distanceM: opts.distanceM ?? null,
         signalsAtDay: (d) => stubPartnerSignals(key, Math.floor(d), geo),
@@ -24550,6 +24623,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           real: true,
           signals: { shortage: (g) => shortageOfBooks(books.eco, books.town, g) },
           stack: books.stock,
+          // ⚖️ B6: a REAL ledger — the far half of the pairwise transfer.
+          books: { town: books.town, eco: books.eco },
           distanceM:
             center && cp.at ? Math.hypot(cp.at.x - center.x, cp.at.y - center.y) : null,
           // A live sim's books are not a closed form: no derived wake exists,
@@ -24813,13 +24888,93 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * The same units also ride `TownDeltas.driftBank`, because the town world
    * stops stepping after the boot fast-forward: the bank is what re-injects
    * them on the next reload (town-play.ts, beside the founded producers).
+   *
+   * ⚖️ B1 — `units` is STREET units and the bank is BOOK units, so the mirror
+   * converts with the SAME bridge `creditDelivery` just used. Reading the rate
+   * twice (rather than having `creditDelivery` hand it back) keeps the join's
+   * signature alone; it is a two-field lookup on a compiled registry.
    */
   function creditImport(session: QuestSession, good: string, units: number) {
     const t = session.town;
     if (!t || !(units > 0)) return;
     const drift = creditDelivery(t.town, t.eco, good, units);
     if (!drift) return;
-    t.deltas.driftBank[drift] = (t.deltas.driftBank[drift] ?? 0) + RATION_VALUE * units;
+    const books = bookUnitsPerStreetUnit(t.eco, good) * units;
+    t.deltas.driftBank[drift] = (t.deltas.driftBank[drift] ?? 0) + books;
+  }
+
+  /**
+   * ⚖️ BATCH 3 · B5/B6 — THE LANE'S OTHER HALF: what leaves the town leaves
+   * the BOOKS.
+   *
+   * `creditImport`'s exact mirror, and the only writer that takes book units
+   * OUT. Imports credited a stockpile that exports never debited — free lunch
+   * #3 — so a food exporter's aggregate never felt the third of its draw it
+   * ships away every single day.
+   *
+   * `debitDelivery` (town-quests.ts, beside `creditDelivery`) owns the
+   * arithmetic and reports the book units it actually moved — bounded by the
+   * bank rather than left to `town.inject`'s floor, so the durable `driftBank`
+   * mirror can never disagree with the books it mirrors. This adds only the
+   * mirror, exactly as `creditImport` does on the other side.
+   */
+  function debitExport(session: QuestSession, good: string, streetUnits: number) {
+    const t = session.town;
+    if (!t || !(streetUnits > 0)) return;
+    const { scalar, units } = debitDelivery(t.town, t.eco, good, streetUnits);
+    if (!scalar || !(units > 0)) return;
+    t.deltas.driftBank[scalar] = (t.deltas.driftBank[scalar] ?? 0) - units;
+  }
+
+  /**
+   * ⚖️ BATCH 3 · B2 — THE BANK IS A STOCK THAT EMPTIES AS IT FEEDS.
+   *
+   * The LIVE twin of the kernel's own drain law (cells/entities.ts, the
+   * granary feedback pinned by granary-feed.test.ts): a fed flow net tops up
+   * its shortfall out of the drift stockpile — `fed = min(stock, demand −
+   * satisfied)` — and *that fed amount IS the drain*. The kernel runs it once
+   * per stepped day, and a town's world steps ONLY in the boot fast-forward,
+   * so live the eating never happened: `townShortage`'s read-side feed term
+   * (T3b-i) reported relief out of a stockpile that never went down, and any
+   * bank ≥ one day's shortfall pinned the shortage at 0 forever. One caravan
+   * bought eternal relief.
+   *
+   * EVENT-DRIVEN, on economy-day edges — the same `FOOD_DAY_SEC` day the rest
+   * of the town host counts in (`producerAttendance`, `TownTrade.tradeDay`) —
+   * so the READ formula in `townShortage` is untouched and every immediate
+   * probe still answers what it always did. Multiple elapsed days drain
+   * multiplicatively: the shortfall is a derived RATE that does not move while
+   * the world is frozen, so N days of it is N × one day's.
+   *
+   * Mirrored into `TownDeltas.driftBank` (now signed both ways — town-play
+   * replays `units !== 0`), because a drain nobody recorded would be undone by
+   * the next reload, which is the very hole this closes.
+   */
+  function stepDriftDrain(session: QuestSession) {
+    const t = session.town;
+    if (!t) return;
+    const day = Math.floor(session.townClock / FOOD_DAY_SEC);
+    const last = session.driftDrainDay;
+    if (last === null || day < last) {
+      session.driftDrainDay = day; // first sight (or a rewound clock): nothing ELAPSED
+      return;
+    }
+    if (day === last) return;
+    const days = day - last;
+    session.driftDrainDay = day;
+    for (const fill of t.eco.fills) {
+      const net = t.eco.flownets.find((f) => f.source === `${fill.good}_out`);
+      if (!net?.feed || !net.drift) continue; // an unfed bank feeds nobody, so it eats nothing
+      const bank = Math.max(0, t.town.scalar(net.drift));
+      if (!(bank > 0)) continue;
+      const need = t.town.scalar(fill.need);
+      if (!(need > 0)) continue;
+      const shortfall = Math.max(0, need - t.town.scalar(fill.got));
+      const drained = Math.min(bank, shortfall * days);
+      if (!(drained > 0)) continue;
+      t.town.inject(net.drift, -drained);
+      t.deltas.driftBank[net.drift] = (t.deltas.driftBank[net.drift] ?? 0) - drained;
+    }
   }
 
   /**
@@ -24854,6 +25009,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
     }
     if (!landing) return;
+    // ⚖️ BATCH 3 · B5 — THE CARAVAN TAKES BEFORE IT GIVES. The load that leaves
+    // is the ramp's own limit at departure (`exportPile(t_depart)` is 0 by
+    // construction — the pile just went out the gate), damped by producer
+    // attendance exactly as the visible crate is (`tradeExportUnits`). DEBIT
+    // THEN CREDIT, one deterministic order inside the edge; a multi-bucket skip
+    // (several days elapsed between sweeps) collapses to ONE visit for both
+    // halves alike, which is the pre-existing behaviour inherited symmetrically
+    // rather than a new asymmetry.
+    for (const good of tr.route.exports) {
+      debitExport(session, good, tr.exportDailyUnits() * producerAttendance(session, good));
+    }
     for (const good of tr.route.imports) creditImport(session, good, tr.importUnitsPerVisit(good));
   }
 
@@ -24876,6 +25042,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (a.every === undefined && townParked(session, `agreement|${a.id}`, now)) continue;
       const p = byKey.get(b.partnerKey);
       if (p && !p.real) {
+        // ⚖️ BATCH 3 · B6 — THE STUB'S MINT IS THE CONDENSED TWIN OF AN
+        // UNLOADED LEDGER, not an exception to conservation. A real neighbour's
+        // shelf is stocked by a sim we are not running; a stub stands in for
+        // that whole town with a closed form, and this mint is what its
+        // unsimulated production would have put on the shelf. The pairwise
+        // transfer below is written so a real ledger slots straight in: when
+        // `p.real`, the partner's OWN books take the credit and nothing is
+        // minted at all.
         const minted = stockAbstractPartner(
           p.stack,
           b.takeGood,
@@ -24903,6 +25077,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // ⏸️ The executor's outbound leg CREDITED THEIR SHELF (transferStock us →
       // them). The second of the two events that move a partner's stock.
       if (Object.values(r.sent).some((n) => n > 0)) bumpPartnerStockEpoch(session);
+      // ⚖️ BATCH 3 · B6 — AND IT DEBITED OURS. The give side moved REAL yard
+      // units out of town; the books had never heard about it, so a standing
+      // route could ship its whole granary away without the aggregate noticing.
+      // THE MECHANISM IS PAIRWISE (the tribe-mode scope test): debit HERE,
+      // credit THERE, conserved — so where the partner is a real sim we write
+      // its OWN books with the same bridge, and the two ledgers move together.
+      // A stub has no ledger to credit: our debit stands alone and its shelf
+      // mint above is the condensed twin of the town we are not running.
+      const them = byKey.get(r.partnerKey) ?? null;
+      for (const [good, n] of Object.entries(r.sent)) {
+        debitExport(session, good, n);
+        if (them?.books) creditDelivery(them.books.town, them.books.eco, good, n);
+      }
       // ⚖️ T3b: …and the INBOUND leg landed real units in our yard. That is the
       // moment the town's books learn the lane exists — the crate the shipment
       // filled is the visible half, this is the aggregate one.
@@ -25383,6 +25570,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * on the read side, so a live session sees exactly the relief the next step
    * would compute — and a town whose good declares no `driftFeeds` reads the
    * bare fill, byte-identical.
+   *
+   * ⚖️ BATCH 3 (B2/B3) — AND THE TWO HONEST SUBTRACTIONS. The bank that feeds
+   * now DRAINS by what it fed (`stepDriftDrain`), so relief is a stock being
+   * spent rather than a permanent discount; and `owed` takes off the export
+   * rate the town has already promised down the road, because supply that
+   * leaves on a caravan never fed anybody here. Rate against rate, through the
+   * one `booksShortage` the partner twin also answers with.
    */
   function townShortage(session: QuestSession, good: string): number {
     const t = session.town;
@@ -25394,7 +25588,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const got = t.town.scalar(fill.got);
     const bank = driftBankOf(session, good);
     const fed = bank > 0 ? Math.min(bank, Math.max(0, need - got)) : 0;
-    return Math.max(0, Math.min(1, 1 - (got + fed) / need));
+    return booksShortage(need, got, fed, exportOwedBooks(session, good));
   }
 
   /** Souls a household counts (HOUSEHOLD minus a mode-"all" family's

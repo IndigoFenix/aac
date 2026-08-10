@@ -55,11 +55,81 @@ import {
   type StockEndpoint,
 } from "@shared/world-engine/kernel/town/transfer.js";
 import { FOOD_DAY_SEC } from "@shared/world-engine/kernel/town/goods.js";
+import { compileEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
+import { createTownWorld } from "@shared/world-engine/kernel/town/town-world.js";
+import {
+  bookUnitsPerStreetUnit,
+  creditDelivery,
+  debitDelivery,
+} from "@shared/world-engine/interaction/town/town-quests.js";
 
 /** Fixed per-good signals (the test's "town books"). */
 const sig = (m: Record<string, number>): BarterSignals => ({
   shortage: (g) => m[g] ?? 0,
 });
+
+/** ⚖️ batch 3 · B6 — a two-good village with a REAL granary, so the pairwise
+ *  transfer below has two actual ledgers to move book units between (food
+ *  banks; cloth banks nothing — the null-leg case). The same minimal document
+ *  town-quests.test.ts uses, and for the same reason: the bridge must work for
+ *  any compiled content. */
+const BOOKS_DOC: EconomyDoc = {
+  stockpiles: [{ key: "granary", max: 400, construction: true }],
+  commodities: [
+    {
+      key: "food", scalarMax: 200, perPersonDaily: 0.001,
+      transport: { drift: "granary", driftRequiresConstruction: true },
+      street: {
+        capDays: 3, shopSec: 18, cartRations: 25, unit: "rations", producers: ["farm"], market: true,
+        stockColor: "#e0b25c", boxLabel: "Pantry", errandName: "shopping",
+      },
+    },
+    {
+      key: "cloth", scalarMax: 50, perPersonDaily: 0.0003,
+      transport: {},
+      street: {
+        capDays: 12, shopSec: 20, cartRations: 12, unit: "bolts", producers: ["weaver"],
+        stockColor: "#b8c4de", boxLabel: "Linen chest", errandName: "linens",
+      },
+    },
+  ],
+  buildings: [
+    {
+      key: "farm", countScalar: "farms", cap: { by: "farmland", rate: 1 / 60 },
+      processes: [
+        { id: "farm", input: "farmland", output: "grain_out", efficiency: 0.08, capacityRate: 5 },
+        { id: "mill", input: "grain_out", output: "food_out", efficiency: 1 },
+      ],
+      vars: [{ name: "grain_out", max: 200 }],
+      construction: { tier: "base", costs: [{ stockpile: "granary", amount: 20 }] },
+      sells: ["food"], leansToward: "fertility", mapCap: 8, district: "farm",
+      style: { color: "#7d9c53", w: 18, h: 12 }, vignette: { w: 5, h: 4 },
+      glyph: "🌾", title: "🌾 Farmstead", info: ["{farms} farms."],
+    },
+    {
+      key: "weaver", countScalar: "weavers", cap: { by: "population", rate: 0.002 },
+      processes: [{ id: "weave", input: "farmland", output: "cloth_out", efficiency: 0.001, capacityRate: 2 }],
+      construction: { tier: "industry", costs: [{ stockpile: "granary", amount: 25 }] },
+      sells: ["cloth"], shelved: true, leansToward: null, mapCap: 2, district: "craft",
+      style: { color: "#8a7fae", w: 14, h: 10 }, vignette: { w: 4, h: 4 },
+      glyph: "🧵", title: "🧵 Weaver", info: ["{weavers} weavers."],
+    },
+  ],
+};
+const BOOKS_ECO = compileEconomy([BOOKS_DOC], { construction: true });
+/** A stepped town with a stocked granary (its farms banked the overproduction
+ *  the flow net drifts — nothing here injects a number by hand). */
+const booksTown = (startPop: number) => {
+  const town = createTownWorld({
+    economy: BOOKS_ECO,
+    charter: { farmland: 420, ore_access: 0 },
+    startPop,
+    seedScalars: { farms: 1 },
+    key: `books-${startPop}`,
+  });
+  town.step(120);
+  return town;
+};
 
 const ep = (id: string, stack: Record<string, number>): StockEndpoint => ({
   id,
@@ -899,5 +969,79 @@ describe("runDueBarters — batches are bounded by the SPARE, not the shelf", ()
     expect(r!.sent.wood).toBe(Math.floor(spare / q.give) * q.give);
     expect(r!.sent.wood).toBeLessThan(20);
     expect((yard.stack.wood ?? 0) + (partner.stack.wood ?? 0)).toBe(20); // conserved
+  });
+
+  // ⚖️ batch 3 · B6 — THE CONSERVATION PIN GROWS A BOOKS LEG.
+  //
+  // The pin above conserves the YARDS. Until B6 the BOOKS were a one-way
+  // valve beside them: an arriving shipment credited our stockpile
+  // (`creditDelivery`, batch 1) and a departing one debited nothing at all,
+  // anywhere. So a standing route could ship the granary away all season while
+  // the aggregate reported the same supply — free lunch #3, at the barter
+  // rung. The mechanism is PAIRWISE (the tribe-mode scope test): debit our
+  // ledger, credit theirs, conserved. Both towns here are REAL `TownWorld`s,
+  // so nothing is stubbed and nothing is minted.
+  it("🚨 B6 THE PAIRWISE LEG: yard + partner yard + BOTH books, conserved end to end", () => {
+    const ourTown = booksTown(80);
+    const theirTown = booksTown(60);
+    theirTown.inject("granary", -50); // room below the stockpile cap to receive into
+    const bridge = bookUnitsPerStreetUnit(BOOKS_ECO, "food");
+    const led = createTransferLedger();
+    const yard = ep("town:yard", { food: 12 });
+    const partner = ep(townEndpointId("hamlet-1"), { cloth: 99 });
+    led.post(
+      barterInput({
+        give: "food", take: "cloth", giveN: 12, quote: { give: 1, take: 1 },
+        partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+      }),
+    );
+    // They are short of food and have cloth to spare; we are fed, so our own
+    // spare law lets the whole order go.
+    const us = sig({ food: 0, cloth: 0.5 });
+    const them = sig({ food: 0.8, cloth: 0 });
+    const yard0 = yard.stack.food ?? 0;
+    const ourBooks0 = ourTown.scalar("granary");
+    const theirBooks0 = theirTown.scalar("granary");
+    expect(ourBooks0).toBeGreaterThan(0); // a real bank to ship out of
+    const [r] = runDueBarters(led, resolver(yard, partner), 0, { us, themOf: () => them });
+    const sent = r!.sent.food ?? 0;
+    expect(sent).toBeGreaterThan(0);
+    // THE TWO WRITES the host performs on the report's `sent` leg, in order.
+    const debit = debitDelivery(ourTown, BOOKS_ECO, "food", sent);
+    const credited = creditDelivery(theirTown, BOOKS_ECO, "food", sent);
+    expect(debit.scalar).toBe("granary");
+    expect(credited).toBe("granary");
+    // ① THE YARDS — the shipped law, unchanged.
+    expect((yard.stack.food ?? 0) + (partner.stack.food ?? 0)).toBe(yard0);
+    // ② THE BOOKS — the same units, at the books' own rate, out of one ledger
+    // and into the other. Nothing minted, nothing lost.
+    expect(debit.units).toBeCloseTo(sent * bridge, 12);
+    expect(ourTown.scalar("granary")).toBeCloseTo(ourBooks0 - sent * bridge, 12);
+    expect(theirTown.scalar("granary")).toBeCloseTo(theirBooks0 + sent * bridge, 12);
+    expect(ourTown.scalar("granary") + theirTown.scalar("granary")).toBeCloseTo(
+      ourBooks0 + theirBooks0,
+      12,
+    );
+  });
+
+  it("🔒 B6 a debit can never overdraw: an empty bank ships its yard and says so", () => {
+    // The books are bounded by the books. A town whose stockpile is dry still
+    // has a yard and may still trade out of it — the aggregate simply has
+    // nothing left to charge, and the debit reports the 0 rather than driving
+    // the scalar negative (which `inject` would clamp away silently, leaving
+    // the durable mirror disagreeing with the books it mirrors).
+    const town = booksTown(80);
+    town.inject("granary", -town.scalar("granary"));
+    expect(town.scalar("granary")).toBe(0);
+    expect(debitDelivery(town, BOOKS_ECO, "food", 5)).toEqual({ scalar: "granary", units: 0 });
+    expect(town.scalar("granary")).toBe(0);
+    // A partial bank gives what it has and no more.
+    const partial = booksTown(80);
+    const bank = partial.scalar("granary");
+    const huge = (bank / bookUnitsPerStreetUnit(BOOKS_ECO, "food")) * 2;
+    expect(debitDelivery(partial, BOOKS_ECO, "food", huge).units).toBeCloseTo(bank, 12);
+    expect(partial.scalar("granary")).toBe(0);
+    // A good the books bank nothing for is not an error — it is a null leg.
+    expect(debitDelivery(partial, BOOKS_ECO, "cloth", 5)).toEqual({ scalar: null, units: 0 });
   });
 });

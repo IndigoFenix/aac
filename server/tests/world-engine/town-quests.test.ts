@@ -20,7 +20,9 @@ import { LOCAL_PLAYER_CID } from "@shared/world-engine/interaction/quest/player-
 import { concludeTransfer, giveItem, openNeeds, requestItem } from "@shared/world-engine/interaction/behavior/creatures.js";
 import {
   applyTownOutcome,
+  bookUnitsPerStreetUnit,
   buildTownQuestGame,
+  RATION_VALUE,
   sampleTownNeeds,
 } from "@shared/world-engine/interaction/town/town-quests.js";
 
@@ -180,6 +182,32 @@ describe("town-quests: a session's deliveries credit the books", () => {
     const byGood = new Map(outcome.deliveries.map(d => [d.good, d] as const));
     expect(byGood.get("food")).toEqual({ good: "food", count: 1, scalar: "granary" });
     expect(byGood.get("cloth")).toEqual({ good: "cloth", count: 1, scalar: null });
-    expect(town.scalar("granary")).toBe(before + 1);
+    // ⚖️ RE-PINNED (batch 3 · B1). This used to read `before + 1`: one
+    // delivered ITEM credited one BOOK unit, which quietly asserted that a
+    // street item and an aggregate person-day are the same quantity. They are
+    // not — this town's whole population draws 0.08 book units of food a day,
+    // so a single quest reward used to bank a year of dinners. The credit is
+    // now the STREET item converted at the books' own rate, and the claim the
+    // line makes is unchanged: one fulfilled need, one delivery, credited once.
+    expect(town.scalar("granary")).toBe(before + bookUnitsPerStreetUnit(ECO, "food"));
+  });
+
+  // ⚖️ batch 3 · B1 — the bridge itself, on this file's own inline economy.
+  it("🚨 B1 THE BRIDGE IS THE COMPILER'S OWN INVERSE — and it is the staple's day", () => {
+    // `perCapitaDaily = perPersonDaily / stapleDaily` (economy.ts), so the
+    // ratio back is the STAPLE's daily draw for every street good — an
+    // IDENTITY, not a literal. Food is the staple (slot 0) and cloth is priced
+    // at 0.3 of it; both must come back with the same number.
+    const staple = 0.001; // this doc's own `food.perPersonDaily`
+    for (const good of ["food", "cloth"]) {
+      const spec = ECO.goods.find(g => g.key === good)!;
+      const demand = ECO.traitDemands.find(d => d.resource === good)!;
+      expect(bookUnitsPerStreetUnit(ECO, good)).toBeCloseTo(demand.value / spec.perCapitaDaily, 12);
+      expect(bookUnitsPerStreetUnit(ECO, good)).toBeCloseTo(staple, 12);
+    }
+    // …and a good the books never metabolize keeps the pre-B1 convention, so a
+    // quest reward on something with no demand row still means one unit.
+    expect(bookUnitsPerStreetUnit(ECO, "grain_out")).toBe(RATION_VALUE);
+    expect(bookUnitsPerStreetUnit(ECO, "nothing-like-this")).toBe(RATION_VALUE);
   });
 });

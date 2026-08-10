@@ -10,12 +10,12 @@ import { compileEconomy, type EconomyDoc } from "@shared/world-engine/kernel/mod
 import { createTownWorld } from "@shared/world-engine/kernel/town/town-world.js";
 import { townPlan } from "@shared/world-engine/kernel/town/plan.js";
 import { HOUSEHOLD, houseDoorstep } from "@shared/world-engine/kernel/town/goods.js";
-import { exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
+import { equilibriumExportScale, exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
 import {
   IDLE_EMBODY_R, PEOPLE_EVICT_MIN, STREET_NPCS, residentId,
 } from "@shared/world-engine/kernel/town/residents.js";
 import { houseRoomPlan, livingRect } from "@shared/world-engine/kernel/town/rooms.js";
-import { buildTownQuestGame } from "@shared/world-engine/interaction/town/town-quests.js";
+import { bookUnitsPerStreetUnit, buildTownQuestGame } from "@shared/world-engine/interaction/town/town-quests.js";
 import {
   INTERIOR_LOAD_R, createTownStage,
 } from "@shared/world-engine/interaction/town/town-stage.js";
@@ -467,22 +467,44 @@ describe("intercity trade v1 — the abstract-partner caravan (trade.ts)", () =>
     expect(Math.max(prev, tr.exportPile(500))).toBeGreaterThan(0);
   });
 
-  // ⚖️ batch 2 · G2 — the stage's export scale, wired to the goods layer.
+  // ⚖️ batch 2 · G2 → batch 3 · B4 — the stage's export scale, wired to the
+  // goods layer, AT ITS FIXED POINT.
   it("🚨 the pile is scaled by what the town can SPARE, read off its own goods", () => {
-    const { plan, stage } = setup();
+    const { town, plan, stage } = setup();
     const tr = stage.trade!;
     const food = stage.goods.find((g) => g.good.key === "food")!;
-    // THE PREMISE, measured on the shipped fixture: this town is FED, so the
-    // slope sits at 1 and every export number is exactly what it was pre-G2.
+    // THE PREMISE, unchanged and re-measured: this town is FED, so the town's
+    // PRE-EXPORT shortage S₀ is 0 and batch 2's slope reads exactly 1.
     // (Same on the shipped dollhouse — food shortage 0 at every age probed.)
     expect(food.fill()).toBe(1);
     expect(exportSpareScale(1 - food.fill())).toBe(1);
-    // The pile still peaks at one whole day's authored surplus, undamped.
+    // ⚖️ RE-PINNED (batch 3 · B4). The peak used to be one WHOLE day's authored
+    // surplus, because the lane's own load was invisible to the books it was
+    // drawn from: the town shipped a third of its draw away every day and its
+    // shortage read 0 forever (free lunch #3). B3 makes that shipment an `owed`
+    // term on the books, so the shortage the valve reads is partly caused by
+    // the valve's own answer — and `equilibriumExportScale` solves the loop
+    // instead of chasing it. THE PIN IS THE FIXED POINT, measured off this
+    // fixture's own books, not a typed constant.
     const daily = plan.houses.length * HOUSEHOLD * food.good.perCapitaDaily * 0.3;
+    const burden = (daily * bookUnitsPerStreetUnit(ECO, "food")) / town.scalar("food_need");
+    // A fed exporter's burden is 0.3 × (houses × HOUSEHOLD) / pop — 0.3 exactly
+    // where the plan's beds and the books' souls agree, and this town has grown
+    // past its houses (1430 souls in 277 houses), so it comes out a little under.
+    expect(burden).toBeCloseTo(0.2906, 4);
+    const sStar = equilibriumExportScale(1 - food.fill(), burden);
+    expect(sStar).toBeCloseTo(0.3404, 4);
+    // …and the equilibrium the town settles at is just under the want gate:
+    // S₀ + s*·burden ≈ 0.099 against BARTER_WANT_MIN 0.15. It ships a third and
+    // feels a tenth — neither the old free lunch nor a cliff.
+    expect(1 - food.fill() + sStar * burden).toBeCloseTo(0.0989, 4);
     let peak = 0;
     for (let t = 0; t < 240; t += 2) peak = Math.max(peak, tr.exportPile(500 + t));
-    expect(peak).toBeGreaterThan(daily * 0.9);
-    expect(peak).toBeLessThanOrEqual(daily);
+    expect(peak).toBeGreaterThan(sStar * daily * 0.9);
+    expect(peak).toBeLessThanOrEqual(sStar * daily);
+    // ONE definition: `exportDailyUnits` is the ramp's own ceiling, and it is
+    // what the caravan debit (B5) charges the books.
+    expect(tr.exportDailyUnits()).toBeCloseTo(sStar * daily, 9);
   });
 });
 

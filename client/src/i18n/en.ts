@@ -3306,6 +3306,12 @@ export const en = {
       // Actions
       resendInvite: "Resend Invite",
       inviteResent: "Invite resent successfully",
+      copyInviteLink: "Copy Verification Link",
+      inviteLinkCopied: "Verification link copied to clipboard",
+      inviteLinkCopyFailed: "Couldn't copy automatically — select the link and copy it manually",
+      inviteLinkTitle: "Verification Link",
+      inviteLinkDescription: "Send this link to the recipient if the invitation email didn't arrive. It opens the same account setup page as the emailed invitation.",
+      inviteLinkExpires: "Expires:",
       created: "License created successfully",
       updated: "License updated successfully",
       deleted: "License deactivated successfully",

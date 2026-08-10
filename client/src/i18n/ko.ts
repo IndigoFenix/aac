@@ -3306,6 +3306,12 @@ export const ko = {
       // Actions
       resendInvite: "초대 재전송",
       inviteResent: "초대가 성공적으로 재전송되었습니다",
+      copyInviteLink: "인증 링크 복사",
+      inviteLinkCopied: "인증 링크를 클립보드에 복사했습니다",
+      inviteLinkCopyFailed: "자동으로 복사하지 못했습니다 — 링크를 선택해 직접 복사하세요",
+      inviteLinkTitle: "인증 링크",
+      inviteLinkDescription: "초대 이메일이 도착하지 않았다면 이 링크를 수신자에게 보내세요. 이메일 초대와 같은 계정 설정 페이지가 열립니다.",
+      inviteLinkExpires: "만료:",
       created: "라이선스가 성공적으로 생성되었습니다",
       updated: "라이선스가 성공적으로 업데이트되었습니다",
       deleted: "라이선스가 성공적으로 비활성화되었습니다",

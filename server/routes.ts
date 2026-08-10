@@ -2450,6 +2450,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/licenses/:id/resend-invite", requireAuth, requireAdminSection("licenses"), (req, res) =>
     licenseController.resendInvite(req, res)
   );
+  // Fallback for a bounced invite email: hand the admin the link to deliver
+  // out-of-band. Read-only with respect to any link already in flight.
+  app.get("/api/admin/licenses/:id/invite-link", requireAuth, requireAdminSection("licenses"), (req, res) =>
+    licenseController.getInviteLink(req, res)
+  );
   // Admin-managed AAC token-budget settings, reached via the Licenses panel:
   // a license → its institute's students → each student's budget + usage.
   app.get("/api/admin/licenses/:id/students", requireAuth, requireAdminSection("licenses"), (req, res) =>

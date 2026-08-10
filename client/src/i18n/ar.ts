@@ -3306,6 +3306,12 @@ export const ar = {
       // Actions
       resendInvite: "إعادة إرسال الدعوة",
       inviteResent: "تم إعادة إرسال الدعوة بنجاح",
+      copyInviteLink: "نسخ رابط التحقق",
+      inviteLinkCopied: "تم نسخ رابط التحقق إلى الحافظة",
+      inviteLinkCopyFailed: "تعذّر النسخ تلقائيًا — حدّد الرابط وانسخه يدويًا",
+      inviteLinkTitle: "رابط التحقق",
+      inviteLinkDescription: "أرسل هذا الرابط إلى المستلم إذا لم تصل رسالة الدعوة. يفتح الرابط نفس صفحة إعداد الحساب التي تفتحها الدعوة المُرسلة بالبريد.",
+      inviteLinkExpires: "ينتهي في:",
       created: "تم إنشاء الترخيص بنجاح",
       updated: "تم تحديث الترخيص بنجاح",
       deleted: "تم إلغاء تفعيل الترخيص بنجاح",

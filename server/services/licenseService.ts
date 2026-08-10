@@ -251,6 +251,55 @@ class LicenseService {
   }
 
   /**
+   * Resolve the recipient's invite ("verification") link WITHOUT sending mail,
+   * so an admin can hand it over out-of-band when the invite email bounces or
+   * lands in a spam trap.
+   *
+   * Unlike resendInvite this never rotates a token that is still live: a link
+   * already sitting in the recipient's inbox has to keep working. A new invite
+   * is minted only when none exists or the existing one has expired.
+   */
+  async getInviteLink(
+    licenseId: string,
+    baseUrl: string,
+    adminUserId: string,
+  ): Promise<{ success: boolean; inviteLink?: string; expiresAt?: Date | null; error?: string }> {
+    const license = await licenseRepository.getLicenseById(licenseId);
+    if (!license) return { success: false, error: "License not found" };
+    if (!license.inviteEmail) return { success: false, error: "No invite email on this license" };
+
+    if (license.instituteId) {
+      const pending = await instituteRepository.getPendingInviteByEmail(
+        license.instituteId,
+        license.inviteEmail,
+      );
+      const invite =
+        pending && pending.expiresAt > new Date()
+          ? pending
+          : await instituteRepository.createInvite(
+              license.instituteId,
+              license.inviteEmail,
+              adminUserId,
+              { role: "admin", grantAdmin: true, expiresInDays: 30 },
+            );
+      return {
+        success: true,
+        inviteLink: `${baseUrl}/invite/${invite.token}`,
+        expiresAt: invite.expiresAt,
+      };
+    }
+
+    // Non-institute licenses carry the token on the license row itself, with no
+    // stored expiry — regenerate only if it is missing or was consumed.
+    let token = license.inviteToken;
+    if (!token) {
+      token = crypto.randomBytes(32).toString("hex");
+      await licenseRepository.updateLicense(license.id, { inviteToken: token });
+    }
+    return { success: true, inviteLink: `${baseUrl}/invite/${token}`, expiresAt: null };
+  }
+
+  /**
    * Link a license to a user by email.
    * Call this after user registration to auto-link pending licenses.
    */
