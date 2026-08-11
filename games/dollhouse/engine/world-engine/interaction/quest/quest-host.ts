@@ -63,7 +63,7 @@ import {
   type StoreConsumption,
 } from "@shared/world-engine/kernel/town/goods.js";
 import {
-  FOUNDING_AGE_DAYS, PLAZA_WELL, wellVergePoint, type TownHouse,
+  FOUNDING_AGE_DAYS, townPlaza, wellVergePoint, type TownHouse,
 } from "@shared/world-engine/kernel/town/plan.js";
 import {
   ANNEX_ROOM_KIND,
@@ -667,7 +667,10 @@ import { cityHudView, type CityHudChip } from "@shared/world-engine/interaction/
 export type { CityHudChip } from "@shared/world-engine/interaction/quest/city-hud.js";
 import { familyStateOf, type FamilyHudEntry } from "@shared/world-engine/interaction/quest/family-hud.js";
 export type { FamilyHudEntry } from "@shared/world-engine/interaction/quest/family-hud.js";
-import type { ClusterHouseCtx, ConstructionSite } from "@shared/world-engine/interaction/town/town-stage.js";
+import {
+  townArrival,
+  type ClusterHouseCtx, type ConstructionSite,
+} from "@shared/world-engine/interaction/town/town-stage.js";
 import {
   buildSpots,
   spotAt,
@@ -1920,6 +1923,14 @@ export interface QuestHostDeps {
    *  settlement seed (a planet boot derives the site's registry key from it —
    *  nations P0 planet-scale founding). */
   onSiteFounded?: (site: { key: string; seed: number; at: { x: number; y: number }; stock: Record<string, number> }) => void;
+  /** THE STANDING CIRCULATION near a founding point (growth phase C §3.2),
+   *  in SESSION coords: the neighbouring homesteads' ground, the track the
+   *  founder walked in on — whatever the HOST knows and the session cannot.
+   *  `foundSite` records the chord from the site's door to the nearest of
+   *  them as its access lane, which becomes the SPINE seed its town grows
+   *  its baseline along. Omit (or return nothing) and a lone founder in
+   *  trackless wilderness records no lane, which is the honest answer. */
+  siteNetworkAt?: (at: { x: number; y: number }) => Array<{ x: number; y: number }>;
   /** ABANDONMENT: the player left the site while it was still EMPTY (see
    *  founding.ts siteIsEmpty) — it was cleared, its materials spilled. */
   onSiteAbandoned?: (key: string) => void;
@@ -2484,9 +2495,13 @@ function townEmbedding(world: LogicalWorld, layout: Layout2D, town: TownPlay): W
     delta.set(z.zoneId, { dx, dy });
     zones.push({ ...z, rect: { ...z.rect, x: z.rect.x + dx, y: z.rect.y + dy } });
   }
-  // Plaza CENTER — matches the stage's spawn (the open band between the
-  // hall and the market hall; +8 used to land ON the market's north wall).
-  const spawn = { x: town.stage.center.x, y: town.stage.center.y };
+  // THE ARRIVAL POINT — the stage's own spawn, read through the one
+  // definition (town-stage `townArrival`): the primary port for a route
+  // town, the first founded doorstep for a founded site, the plaza
+  // otherwise. The frame origin is not the middle of anything since
+  // growth-phase-B retired the plaza ring.
+  const at = townArrival(town.plan, town.deltas.founded());
+  const spawn = { x: town.stage.center.x + at.x, y: town.stage.center.y + at.y };
   const figures = layout.figures.flatMap((f) => {
     const anchor = anchors.get(f.nodeId);
     return anchor ? [{ ...f, pos: anchor }] : []; // the star marker drops
@@ -7540,6 +7555,95 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return kind ? `i_me + have.not + ${kind}` : NOT_UNDERSTOOD_LINE;
   }
 
+  // ── ⛓️ THE SPOKEN TAIL — "go home THEN sleep" (build order S1) ────────────
+  //
+  // A sequence is TWO clauses (the parser splits at the FIRST joiner, so never
+  // more), and two ORDERS mean one thing: do the first, and when it is DONE, do
+  // the second. So the head runs through the ordinary ladder now and the tail
+  // is parked on the body that took it, to be SPOKEN AGAIN through that same
+  // ladder the moment the head reports done — which is what buys it the law
+  // gate, the echo line and every refusal for free, instead of a second
+  // half-executor nobody would maintain.
+  //
+  // THREE LAWS, and they are why this is a park rather than a baked two-step
+  // plan: (1) at most ONE tail per body — a sentence is two clauses, not a
+  // program; (2) a FRESH ORDER SUPERSEDES IT, because the newest word wins,
+  // exactly as it already does for the errand a command replaces; (3) a head
+  // that FAILED takes its tail with it — never step 2 of a plan whose step 1
+  // never happened.
+  const spokenTails = new Map<string, { sentence: string; speaker: string }>();
+  /** The tail the sentence being dispatched RIGHT NOW wants handed to whichever
+   *  bodies take its head. Read once, in the member loop of `applySpokenSentence`
+   *  — the only rung that knows who actually obeyed. */
+  let pendingTail: { sentence: string; speaker: string } | null = null;
+  /** Bodies whose head finished — spoken at the top of the NEXT frame, never
+   *  inside the pursuit loop or the errand callback that reported it (both are
+   *  mid-iteration over state a fresh command rewrites). */
+  const tailsDue: string[] = [];
+
+  /** The head order this body was given is over: its tail runs next frame. */
+  function armSpokenTail(cid: string): void {
+    if (spokenTails.has(cid) && !tailsDue.includes(cid)) tailsDue.push(cid);
+  }
+  /** The head is gone — superseded, blocked, given up, or never plannable. The
+   *  tail dies with it. */
+  function dropSpokenTail(cid: string): void {
+    spokenTails.delete(cid);
+    const i = tailsDue.indexOf(cid);
+    if (i >= 0) tailsDue.splice(i, 1);
+  }
+  /**
+   * ⛓️ MAY THIS GOAL BE THE HEAD OF A SPOKEN SEQUENCE?
+   *
+   * Only if the ladder hands it to the per-member dispatch, because that is
+   * where both completion seams live: a PURSUED goal reports `done` through
+   * `stepPursuit`, a baked one through its errand's `onDone`. Every arm ABOVE
+   * that rung — satisfy, help, place, the spirit's own social act, follow/stay,
+   * area, trade, build, craft, demolish, breakPiece — ends the sentence where
+   * it stands and reports no end at all, and a `match`-shaped give/putIn may be
+   * claimed on the way down by the tribute or transfer arm (a standing haul,
+   * which likewise never "finishes"). A sequence headed by one of those is
+   * refused WHOLE, up front: half a plan is worse than an honest refusal.
+   */
+  function canHeadASequence(goal: GoalSpec): boolean {
+    switch (goal.kind) {
+      case "satisfy":
+      case "help":
+      case "place":
+      case "socialAct":
+      case "follow":
+      case "stay":
+      case "area":
+      case "trade":
+      case "build":
+      case "craft":
+      case "demolish":
+      case "emptyRoom":
+      case "breakPiece":
+      case "transfer":
+        return false;
+      case "give":
+      case "putIn":
+        return !("match" in goal.item);
+      default:
+        return true;
+    }
+  }
+
+  /** Speak the parked second clauses whose heads finished last frame. */
+  function stepSpokenTails(session: QuestSession): void {
+    if (!tailsDue.length) return;
+    for (const cid of tailsDue.splice(0, tailsDue.length)) {
+      const tail = spokenTails.get(cid);
+      if (!tail) continue;
+      spokenTails.delete(cid);
+      // The body that was going to do it is gone (evicted, streamed out) —
+      // there is nobody left to hand the rest of the sentence to.
+      if (!session.creatures?.world.creatures[cid]) continue;
+      api.applySpokenSentence(tail.sentence, { targetId: cid, speakerCid: tail.speaker });
+    }
+  }
+
   /** THE ONE PURSUIT DRIVER (concept-parser.md §10): every body in
    *  `session.pursuits` — commanded today, need-born after S2 — re-derives its
    *  next step from the LIVE world each tick (`pursue`) and drives itself: walk
@@ -7601,6 +7705,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // A need-born pursuit parts SILENTLY — nobody ordered it, so there is
           // no one to answer; the want re-surfaces through the needs walker.
           if (pur.source === "command") {
+            dropSpokenTail(cid); // ⛓️ the head never finished — no tail runs
             saySystem(session, pursuitBlockLine(pur.goal), `💬 "${pur.glyph}" — can't finish`, cid);
           } else {
             parkRoute();
@@ -7616,6 +7721,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const body = state.avatars[avatarIdOf(cid)];
       if (!body) {
         clear();
+        dropSpokenTail(cid); // ⛓️ no body left to do the rest of the sentence
         continue;
       }
       const from = { x: body.x, y: body.y };
@@ -7692,6 +7798,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const next = pursue(pur.goal, cid, r);
       if (next.kind === "done") {
         clear();
+        // ⛓️ …AND THEN B (S1). THE completion seam for a spoken order: the head
+        // of a sequence is over, so whatever tail this body is holding is
+        // spoken at the top of the next frame. Source-gated because only a
+        // COMMAND can carry one — a need finishing is nobody's second clause.
+        if (pur.source === "command") armSpokenTail(cid);
         continue;
       }
       if (next.kind === "blocked") {
@@ -7700,6 +7811,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // next needs decide re-evaluates fresh (and its own BLOCKED machinery
         // surfaces the want for adoption when nothing can serve it).
         if (pur.source === "command") {
+          dropSpokenTail(cid); // ⛓️ the head failed — the tail goes with it
           saySystem(session, pursuitBlockLine(pur.goal), `💬 "${pur.glyph}" — can't do that`, cid);
         } else {
           parkRoute();
@@ -14726,7 +14838,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** GoalPlan (goal-selection.ts) → an NpcErrand, then queue it: moveTo steps are the
    *  waypoints; action steps attach to the last waypoint's onArrive. Reuses the door-
    *  routing + one-task-at-a-time queue via `enqueueNpcErrand`. */
-  function issueGoalPlan(session: QuestSession, cid: string, plan: GoalPlan) {
+  function issueGoalPlan(
+    session: QuestSession,
+    cid: string,
+    plan: GoalPlan,
+    /** ⛓️ Fired when the baked errand runs out — the completion seam a spoken
+     *  sequence's TAIL waits on for the goals that don't ride a pursuit
+     *  (goTo/goHome/drop/toggle/…). Only the spoken-command call site passes
+     *  one; every other caller is unchanged. */
+    onDone?: () => void,
+  ) {
     if (!world) return;
     const points: NpcErrandPoint[] = [];
     const actionsAt = new Map<number, GoalStep[]>();
@@ -14775,6 +14896,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       onArrive: (i) => {
         for (const step of actionsAt.get(i) ?? []) applyGoalStep(session, cid, step);
       },
+      ...(onDone ? { onDone } : {}),
     });
   }
 
@@ -16970,7 +17092,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // every town digs, plus one per NEIGHBORHOOD the plan founded past the
     // thirst-cycle walk radius (needs-aware construction, plan.ts wells).
     const wellSpots: Array<{ id: string; x: number; y: number }> = [
-      { id: "well", x: town.stage.center.x + PLAZA_WELL.x, y: town.stage.center.y + PLAZA_WELL.y },
+      { id: "well", x: town.stage.center.x + townPlaza(town.plan).x, y: town.stage.center.y + townPlaza(town.plan).y },
       ...(town.plan.wells ?? []).map((wp, wi) => ({
         id: `well_${wi + 1}`,
         x: town.stage.center.x + wp.x,
@@ -21829,6 +21951,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           }
           _sp.spark = descendNow() - _sm; _sm = descendNow();
           stepActionHolds(session, dt); // advance discrete-action crouches; land effects at mid-beat
+          stepSpokenTails(session); // ⛓️ heads that finished last frame hand over to their tails
           stepPursuit(session, state, dt); // per-tick goal pursuits (owns its bodies before needs sweep)
           stepContainerLids(session, state); // auto-close access-opened lids once the taker has left
           _sp.pursuit = descendNow() - _sm; _sm = descendNow();
@@ -25785,7 +25908,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function digServiceWells(session: QuestSession) {
     const t = session.town;
     if (!t || !t.plan.wells || !world) return;
-    const lots = foundServicePoints(t.plan.houses, [PLAZA_WELL, ...t.plan.wells], t.plan.streets, {
+    const lots = foundServicePoints(t.plan.houses, [townPlaza(t.plan), ...t.plan.wells], t.plan.streets, {
       convenientM: serviceRadiusM(session.scale, "thirst"),
       foundMass: WELL_FOUND_MASS,
     });
@@ -26863,9 +26986,81 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         speakNotUnderstood(s, target ?? null, sentence);
         return;
       }
+      // ── ⛓️ A SEQUENCE — "A then B" / "A and B" (build order S1) ──────────
+      //
+      // The board has always marked these SAYABLE (`isComplete` lights on one
+      // clause) and the world has always answered "I don't understand": the
+      // compiler produced the pair and the ladder dropped it. Two shapes are
+      // honest to execute, and they are the two a child actually builds:
+      //
+      //   TWO ORDERS    — do this, and when it is done, do that.
+      //   TWO REQUESTS  — "apple + and + banana", two turns at one listener.
+      //
+      // Everything else (a rule or a law inside a joiner, a mixed pair) keeps
+      // the honest refusal. A sequence NEVER touches the rule tray or the law
+      // book: an item that would have installed alone does not get to install
+      // as somebody's second clause.
+      if (compiled.kind === "sequence") {
+        const items = compiled.items;
+        const clauses = frame.clauses ?? [];
+        const bothAre = (k: "dialogue" | "goal") =>
+          items.length === 2 && clauses.length === 2 && items.every((i) => i.kind === k);
+
+        // TWO REQUESTS, ONE LISTENER. Both acts run against the SAME addressee,
+        // in the order they were said, through the ordinary conversation
+        // machinery — two turns, not one merged wish. (The reply BUBBLE is a
+        // single slot, so the second answer overwrites the first on screen; the
+        // voice queue speaks both, which is the channel the child is on.)
+        if (bothAre("dialogue") && target && s.creatures?.nodeByCreature.has(target)) {
+          const node = s.creatures.nodeByCreature.get(target);
+          const acts = clauses.map((c) =>
+            intentToAct(
+              c,
+              s.creatures!.world,
+              { speakerId: speaker, addresseeId: target },
+              creatureProjectionOpts(s, node?.announce),
+            ),
+          );
+          // ALL OR NOTHING — an unmappable half would leave the child with one
+          // answer and no word about the other.
+          if (acts.every((a) => a)) {
+            if (speakerIsLocal) openCreatureConvo(target, { present: false });
+            for (const act of acts) {
+              withConversationTurn(target, speaker, () => runCreatureAct(act!, speaker, target));
+            }
+            return;
+          }
+        }
+
+        // TWO ORDERS. The head is spoken again on its OWN tokens — the whole
+        // ladder, law gate and echo included — and the tail is parked on
+        // whichever bodies take it (`pendingTail`, adopted in the member loop
+        // below). The head must be one whose END the host can see; see
+        // `canHeadASequence` for why the answer is sometimes no.
+        //
+        // Re-entry is safe because `frame.clauses[i].raw` IS the token slice the
+        // compiler just read: the head re-parses to the same clause frame, so
+        // its shape cannot drift between the check here and the dispatch. And a
+        // clause holds no joiner, so the recursion is exactly one level deep.
+        if (
+          bothAre("goal") &&
+          items[0]!.kind === "goal" &&
+          canHeadASequence(items[0]!.goal)
+        ) {
+          pendingTail = { sentence: clauses[1]!.raw.join(" + "), speaker };
+          try {
+            api.applySpokenSentence(clauses[0]!.raw.join(" + "), opts);
+          } finally {
+            pendingTail = null; // never leaks past the head it belongs to
+          }
+          return;
+        }
+        speakNotUnderstood(s, target ?? null, sentence);
+        return;
+      }
       if (compiled.kind !== "goal") {
-        // unbound / sequence — no responder caught it: the EXPLICIT terminal
-        // fallback (never silence, never a misleading "okay").
+        // unbound — no responder caught it: the EXPLICIT terminal fallback
+        // (never silence, never a misleading "okay").
         speakNotUnderstood(s, target ?? null, sentence);
         return;
       }
@@ -26873,6 +27068,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // WHO acts: the compiled actor (a named subject — "Mara + eat" — or the
       // listener), so a name beats the gaze for every command below.
       const actor = compiled.actor;
+      // ⛓️ A FRESH ORDER SUPERSEDES THE TAIL OF AN OLD ONE (S1 law 2). The
+      // newest word wins — exactly as it already does for the errand a command
+      // replaces — so "go home then sleep", countermanded by "come here", does
+      // not ambush the child with a nap ten seconds later. Placed at the top of
+      // the goal ladder so EVERY arm supersedes, not only the member loop.
+      dropSpokenTail(actor);
 
       // "you eat" / "you sleep" / "you play" / "you talk" → drive the member's
       // own need machinery (commandSatisfy): the body walks to the table/bed/
@@ -27206,6 +27407,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         : addressed && s.creatures?.nodeByCreature.has(addressed) ? [addressed]
         : [];
       if (!members.length) {
+        // ⛓️ A TAIL NEEDS A BODY TO WAIT ON. A pooled task is claimed later by
+        // whoever is willing and free, so there is nobody here to hand "…and
+        // then B" to — refuse the whole sentence rather than post half of it.
+        if (pendingTail) {
+          speakNotUnderstood(s, target ?? null, sentence);
+          return;
+        }
         // UNTARGETED ORDER → the TASK POOL (phase ①a §2): the compiled goal +
         // issuer + the player's focus area at issue time. Any APPROPRIATE
         // creature inside the area may claim it (stepTaskPool); unclaimable
@@ -27222,6 +27430,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       let moved = 0;
       for (const m of members) {
+        dropSpokenTail(m); // ⛓️ this body's old tail dies with the order it followed
         // "Go home" DISMISSES a party guest — otherwise the follow loop would
         // drag it right back. Dismiss BEFORE issuing (leaveParty clears errands).
         if (goal.kind === "goHome" && s.party.has(m)) leaveParty(s, m);
@@ -27236,8 +27445,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             clearNeedStep(s, m);
             s.walk.delete(m); // drop any stale need-walk state — the pursuit starts fresh
             s.pursuits.set(m, { source: "command", goal, glyph: sentence });
+            if (pendingTail) spokenTails.set(m, pendingTail); // ⛓️ …and then B
             npcChatBubble(s, m, commandEchoLine(s, frame, goal, m)); // the echo — or the earned ok
           } else {
+            // The head refused: `pendingTail` is simply never adopted, so the
+            // second clause is dropped with it (S1 law 3).
             saySystem(s, pursuitBlockLine(goal), `💬 "${sentence}" — can't do that here`, m);
           }
           moved++; // handled either way (obeyed or refused aloud) — never the silent toast
@@ -27246,9 +27458,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const plan = compileGoal(goal, m, makeGoalResolver(s));
         if (plan) {
           s.npcTasks.delete(avatarIdOf(m)); // a command overrides the current errand
-          issueGoalPlan(s, m, plan);
+          // Parked BEFORE the errand is issued — `armSpokenTail` only fires for
+          // a body that is already holding one.
+          if (pendingTail) spokenTails.set(m, pendingTail);
+          issueGoalPlan(s, m, plan, pendingTail ? () => armSpokenTail(m) : undefined);
           npcChatBubble(s, m, commandEchoLine(s, frame, goal, m)); // the echo — or the earned ok
           moved++;
+        } else if (goal.kind === "socialAct") {
+          // ── S9 — THE ONE RUNG THAT DIDN'T SPEAK ─────────────────────────
+          // A hug or a show whose plan won't compile (the thing is in somebody
+          // else's hands, there is nothing of that kind here, the audience is
+          // the actor itself) fell through to the adult-facing `moved === 0`
+          // toast while every other rung answered ALOUD — the design law is
+          // never silence, and this was the hole in it. Same treatment as the
+          // PURSUED branch above; CANT_HERE rather than `pursuitBlockLine`,
+          // because a social act names no item for the have-not line to fill.
+          saySystem(s, CANT_HERE, `💬 "${sentence}" — can't do that here`, m);
+          moved++; // answered aloud — never the silent toast
         }
       }
       presenter.toast(moved ? `▶ party (${moved}): ${sentence}` : `💬 "${sentence}" — can't do that here`, "feedback");

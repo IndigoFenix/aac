@@ -22,7 +22,7 @@ import { AACSettingsPackages } from '@/components/AACSettingsPackages';
 import { CollapsibleSection, CollapsibleSubSection } from '@/components/ui/collapsible-section';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
 import type { DefinedGesture, HomeAction, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { normalizeHomeActions } from '@shared/home-actions';
@@ -231,17 +231,53 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     return () => clearTimeout(debounceTimerRef.current);
   }, [elevenlabsApiKey]);
 
-  const { data: elevenlabsVoices, isLoading: elevenlabsLoading, isError: elevenlabsError } = useQuery({
+  const { data: elevenlabsVoices, isLoading: elevenlabsLoading, isError: elevenlabsError, error: elevenlabsErrorObj } = useQuery({
     queryKey: ['/api/voices/elevenlabs-list', debouncedApiKey],
     queryFn: async () => {
-      const res = await apiRequest('POST', '/api/voices/elevenlabs-list', { apiKey: debouncedApiKey });
-      const data = await res.json();
-      return data.voices as Array<{ voice_id: string; name: string; category: string; labels: Record<string, string> }>;
+      try {
+        const res = await apiRequest('POST', '/api/voices/elevenlabs-list', { apiKey: debouncedApiKey });
+        const data = await res.json();
+        return data.voices as Array<{ voice_id: string; name: string; category: string; labels: Record<string, string> }>;
+      } catch (e: any) {
+        // The server passes through ElevenLabs' machine code for key mistakes
+        // (e.g. "api_key_id_used_as_api_key" — the dashboard's 64-hex key ID
+        // pasted where the once-shown "sk_" secret belongs). apiRequest buries
+        // the body in the error message as "400: {json}" — dig the code out so
+        // the UI can name the actual mistake instead of "invalid key".
+        const err = e instanceof Error ? (e as Error & { keyErrorCode?: string }) : new Error(String(e));
+        if (e instanceof ServiceUnavailableError) {
+          (err as any).keyErrorCode = 'upstream_error';
+        } else {
+          try {
+            (err as any).keyErrorCode = JSON.parse(e.message.replace(/^\d+:\s*/, '')).code;
+          } catch {
+            // no machine code in the body — the generic message will show
+          }
+        }
+        throw err;
+      }
     },
     enabled: debouncedApiKey.length > 0,
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
+  // Each recognized code gets a message that says what was pasted and how to
+  // fix it — the generic "invalid key" reads as a false alarm to a clinician
+  // who just copied "the key" from the ElevenLabs dashboard.
+  const elevenlabsErrorKey = (() => {
+    switch ((elevenlabsErrorObj as { keyErrorCode?: string } | null)?.keyErrorCode) {
+      case 'api_key_id_used_as_api_key': return 'aacSettings.elevenlabsKeyIdHint';
+      case 'invalid_api_key_prefix': return 'aacSettings.elevenlabsKeyFormatHint';
+      case 'upstream_error': return 'aacSettings.elevenlabsUnreachable';
+      default: return 'aacSettings.elevenlabsInvalidKey';
+    }
+  })();
+  // ElevenLabs only actually speaks when the section is enabled AND a key
+  // ElevenLabs itself accepted is in hand: the server's student-level path
+  // needs key + voice ID together, so an ID on its own is config that does
+  // nothing. This gates the voice-ID rows and decides whether the Google
+  // pickers are the real voice or only the fallback behind ElevenLabs.
+  const elevenlabsActive = elevenlabsEnabled && !!debouncedApiKey && !elevenlabsError;
 
   // Voice preview state
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
@@ -337,25 +373,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const effectiveGeminiAiVoice = geminiAiVoice || 'Zephyr';
   const effectiveGeminiStudentVoice = geminiStudentVoice || (studentGender === 'female' ? 'Leda' : 'Puck');
 
-  // One ElevenLabs voice picker row, reused by the AI and student sub-sections
-  // (same states as before the sections split: manual ID entry without a key,
-  // voice list + preview with a valid key, hidden while the key is invalid).
+  // One ElevenLabs voice picker row, reused by the AI and student sub-sections.
+  // Rendered only while ElevenLabs is live (see `elevenlabsActive`) — with no
+  // usable key there is nothing to pick from and nothing the ID would reach.
   const renderElevenlabsVoicePicker = (labelKey: string, value: string, setValue: (v: string) => void, pitchSemitones = 0) => {
-    if (debouncedApiKey && elevenlabsError) return null;
+    if (!elevenlabsActive) return null;
     return (
-      <div className={`flex items-center justify-between ${elevenlabsEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
+      <div className="flex items-center justify-between">
         <div className="space-y-0.5">
           <Label className="text-sm text-muted-foreground">{t(labelKey)}</Label>
         </div>
-        {!debouncedApiKey ? (
-          <Input
-            type="text"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-            className="w-full md:w-[280px] font-mono"
-          />
-        ) : elevenlabsLoading ? (
+        {elevenlabsLoading ? (
           <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
         ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
           <div className="flex gap-2 items-center">
@@ -630,17 +658,19 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: {
-      aiName?: string;
+      // Required, not optional: these must always be present in the payload so
+      // a cleared field reaches the server as '' instead of vanishing.
+      aiName: string;
       chatAgentPrompt: string[];
       autoAacPrompt: string[];
       liveAudioSpeaker?: boolean;
       seizureDetection?: { config: SeizureConfig };
       elevenlabsEnabled?: boolean;
-      elevenlabsApiKey?: string;
-      elevenlabsAiVoiceId?: string;
-      elevenlabsStudentVoiceId?: string;
-      geminiAiVoice?: string;
-      geminiStudentVoice?: string;
+      elevenlabsApiKey: string;
+      elevenlabsAiVoiceId: string;
+      elevenlabsStudentVoiceId: string;
+      geminiAiVoice: string;
+      geminiStudentVoice: string;
       aiVoicePitch?: number;
       studentVoicePitch?: number;
       useLocalTts?: boolean;
@@ -683,9 +713,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setHasChanges(false);
     },
     onError: (error: Error) => {
+      // A validation rejection arrives as "400: {json}" whose body carries the
+      // "error:CODE" convention (e.g. a pasted ElevenLabs key ID) — translate
+      // the code so the toast says what was actually wrong with the save.
+      const code = error.message.match(/error:([A-Z_]+)/)?.[1];
       toast({
         title: t('common.error'),
-        description: error.message || t('aacSettings.updateError'),
+        description: code ? t(`errors.${code}`) : (error.message || t('aacSettings.updateError')),
         variant: 'destructive',
       });
     },
@@ -721,17 +755,24 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const handleSave = () => {
     if (!student) return;
     updateMutation.mutate({
-      aiName: aiName.trim() || undefined,
+      // Cleared text/voice fields go out as '' — NEVER `|| undefined`.
+      // JSON.stringify drops undefined keys, PATCH /api/students/:id merges
+      // only the keys it receives, and the panel then re-seeds its state from
+      // the refetched student — so a dropped key reads to the clinician as
+      // "I deleted the AI name and it came back". Empty string is the clear.
+      aiName: aiName.trim(),
       chatAgentPrompt,
       autoAacPrompt,
       liveAudioSpeaker,
       seizureDetection: { config: seizureDetection },
       elevenlabsEnabled,
-      elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
-      elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
-      elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
-      geminiAiVoice: geminiAiVoice || undefined,
-      geminiStudentVoice: geminiStudentVoice || undefined,
+      elevenlabsApiKey: elevenlabsApiKey.trim(),
+      elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim(),
+      elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim(),
+      // '' is reachable from the UI here too: the Gemini pickers' `_default`
+      // row and the ElevenLabs pickers' `_none` row both set state to ''.
+      geminiAiVoice,
+      geminiStudentVoice,
       aiVoicePitch,
       studentVoicePitch,
       useLocalTts,
@@ -1291,7 +1332,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
 
                   {elevenlabsError && debouncedApiKey && (
-                    <p className="text-sm text-destructive">{t('aacSettings.elevenlabsInvalidKey')}</p>
+                    <p className="text-sm text-destructive">{t(elevenlabsErrorKey)}</p>
                   )}
                 </div>
               </div>
@@ -1318,8 +1359,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   <Switch checked={liveAudioSpeaker} onCheckedChange={setLiveAudioSpeaker} />
                 </div>
 
+                {/* ElevenLabs leads when it's live — it IS the AI's voice then,
+                    and the Google picker below only speaks if it fails. Live
+                    native audio bypasses TTS entirely: no ElevenLabs voice
+                    applies, and Google is the real voice, not a fallback. */}
+                {!liveAudioSpeaker && renderElevenlabsVoicePicker('aacSettings.elevenlabsAiVoiceId', elevenlabsAiVoiceId, setElevenlabsAiVoiceId, aiVoicePitch)}
+
                 {renderGeminiVoiceRow(
-                  'aacSettings.aiVoice',
+                  elevenlabsActive && !liveAudioSpeaker ? 'aacSettings.aiVoiceFallback' : 'aacSettings.aiVoice',
                   geminiAiVoice,
                   effectiveGeminiAiVoice,
                   'g:ai',
@@ -1328,8 +1375,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 )}
 
                 {geminiAiVoice && renderPitchRow(aiVoicePitch, setAiVoicePitch)}
-
-                {!liveAudioSpeaker && renderElevenlabsVoicePicker('aacSettings.elevenlabsAiVoiceId', elevenlabsAiVoiceId, setElevenlabsAiVoiceId, aiVoicePitch)}
               </div>
 
               {/* Student voice settings — how the student's OWN words sound
@@ -1342,8 +1387,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
 
+                {/* Same order as the AI section. Live native audio never speaks
+                    the student's own words, so it doesn't apply here. */}
+                {renderElevenlabsVoicePicker('aacSettings.elevenlabsStudentVoiceId', elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId, studentVoicePitch)}
+
                 {renderGeminiVoiceRow(
-                  'aacSettings.studentVoice',
+                  elevenlabsActive ? 'aacSettings.studentVoiceFallback' : 'aacSettings.studentVoice',
                   geminiStudentVoice,
                   effectiveGeminiStudentVoice,
                   'g:student',
@@ -1352,8 +1401,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 )}
 
                 {geminiStudentVoice && renderPitchRow(studentVoicePitch, setStudentVoicePitch)}
-
-                {renderElevenlabsVoicePicker('aacSettings.elevenlabsStudentVoiceId', elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId, studentVoicePitch)}
               </div>
 
               {/* Local Browser TTS — applies to both voices */}

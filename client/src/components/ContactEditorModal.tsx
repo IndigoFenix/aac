@@ -117,16 +117,21 @@ function contactToForm(c: StudentContact): FormState {
   };
 }
 
+// Cleared fields carry an explicit null, matching the linked* fields below.
+// This payload feeds the edit PATCH as well as the create POST, and a PATCH
+// merges by key — JSON.stringify drops undefined, so `undefined` here would
+// mean "leave the stored value alone" and a deleted phone number or note would
+// reappear the next time the contact is opened.
 function formToPayload(form: FormState) {
   return {
     name: form.name.trim(),
-    relationship: form.relationship.trim() || undefined,
-    role: form.role || undefined,
-    customRole: form.customRole.trim() || undefined,
-    organization: form.organization.trim() || undefined,
-    contactEmail: form.contactEmail.trim() || undefined,
-    contactPhone: form.contactPhone.trim() || undefined,
-    contextNotes: form.contextNotes.trim() || undefined,
+    relationship: form.relationship.trim() || null,
+    role: form.role || null,
+    customRole: form.customRole.trim() || null,
+    organization: form.organization.trim() || null,
+    contactEmail: form.contactEmail.trim() || null,
+    contactPhone: form.contactPhone.trim() || null,
+    contextNotes: form.contextNotes.trim() || null,
     linkedUserId: form.linkedUserId.trim() || null,
     linkedStudentId: form.linkedStudentId.trim() || null,
     // Only linked contacts can be callable; never send true for an unlinked one.

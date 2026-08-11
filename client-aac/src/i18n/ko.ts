@@ -348,6 +348,14 @@ export const ko: Translations = {
       connective: "이어주는 말",
       social: "인사말",
     },
+    typeChips: {
+      request: "원해요",
+      ask: "질문",
+      state: "말하기",
+      command: "행동",
+      rule: "규칙",
+      greet: "인사말",
+    },
     chips: {
       all: "전체",
       people: "사람들",

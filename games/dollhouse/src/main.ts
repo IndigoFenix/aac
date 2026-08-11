@@ -27,7 +27,7 @@ import { parseWorldCommand } from "@shared/world-engine/net";
 import { ECONOMY_MODULE } from "@shared/world-engine/kernel/modules/economy/index";
 import type { CityHudChip, FamilyHudEntry, PocketEntry, QuestBoardView } from "@shared/world-engine/interaction/quest/quest-host";
 import { familyStateGlyph } from "@shared/world-engine/interaction/quest/family-hud";
-import { parseSentence } from "@shared/world-engine/interaction/intent/parse-intent";
+import { parseSentence, type IntentKind } from "@shared/world-engine/interaction/intent/parse-intent";
 import { builderSurfaceFor, type BuilderNounEntry, type BuilderSurfaceOpts } from "@shared/world-engine/interaction/intent/builder-surface";
 import { languageFor, translateGlyph } from "@shared/world-engine/interaction/lang/index";
 import { baseWord } from "@shared/world-engine/interaction/lang/core";
@@ -433,6 +433,16 @@ onPlatformMessage((msg: PlatformMessage) => {
         // older surfacer simply ignores the extra opt; the final engine
         // re-sync makes it live).
         ...(msg.group !== undefined ? { group: msg.group } : {}),
+        // THE CLIENT'S GRID BUDGET, never ours. Dropping it left the surfacer
+        // on its own default of 16, so the platform's board could never page —
+        // the same sentence offered three pages of words out-of-game and one
+        // in it. The in-iframe Speak menu keeps its own 16; this is the
+        // PLATFORM's board asking.
+        ...(msg.capacity !== undefined ? { capacity: msg.capacity } : {}),
+        // The student's learned layer + a tapped sentence-type chip: platform-
+        // owned, passed straight through, never stored here.
+        ...(msg.recency ? { recency: msg.recency } : {}),
+        ...(msg.seedKind ? { seedKind: msg.seedKind as IntentKind } : {}),
         // ⑫ — in a crowd the builder opens an ADDRESSEE slot so a request can
         // name whom it is for. Same forward-compatibility note as `group`: an
         // older vendored surfacer ignores the extra opt.

@@ -1944,7 +1944,28 @@ import {
     },
   };
 
-  const aacSettingsExclude = ["id", "studentId", "createdAt", "updatedAt", "knownPeople"];
+  const aacSettingsExclude = [
+    "id", "studentId", "createdAt", "updatedAt", "knownPeople",
+    // Secrets must never enter the assistant's context — and excluding them
+    // from the read also keeps round-trip whole-object writes from carrying
+    // them back.
+    "elevenlabsApiKey", "localStorageEncryptionKey",
+  ];
+
+  /**
+   * The assistant may write ONLY the fields this schema declares. The raw
+   * upsert accepts any aac_settings column, so an unfiltered whole-object
+   * write could set fields the schema never offered — secrets like
+   * elevenlabsApiKey, or the admin-only budget fields that the clinician
+   * PATCH path deliberately strips.
+   */
+  const pickDeclaredAacFields = (value: Record<string, any>): Record<string, any> => {
+    const out: Record<string, any> = {};
+    for (const k of Object.keys(value ?? {})) {
+      if (k in aacSettingsSchema.properties) out[k] = value[k];
+    }
+    return out;
+  };
 
   const aacSettingsOps: MemoryDBOperations<any> = {
     read: async (ctx) => {
@@ -1960,18 +1981,20 @@ import {
     write: async (ctx, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
+      const safe = pickDeclaredAacFields(value);
       const before = await aacSettingsRepository.getByStudentId(studentId);
-      const updated = await aacSettingsRepository.upsert(studentId, value);
-      logAacSettingsWrite(ctx, studentId, before, value);
+      const updated = await aacSettingsRepository.upsert(studentId, safe);
+      logAacSettingsWrite(ctx, studentId, before, safe);
       return toMemoryValue(updated, aacSettingsExclude);
     },
 
     update: async (ctx, _key, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
+      const safe = pickDeclaredAacFields(value);
       const before = await aacSettingsRepository.getByStudentId(studentId);
-      const updated = await aacSettingsRepository.upsert(studentId, value);
-      logAacSettingsWrite(ctx, studentId, before, value);
+      const updated = await aacSettingsRepository.upsert(studentId, safe);
+      logAacSettingsWrite(ctx, studentId, before, safe);
       return toMemoryValue(updated, aacSettingsExclude);
     },
   };

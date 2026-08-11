@@ -183,8 +183,18 @@ describe("established towns are untouched by the zero floor", () => {
     const play = buildTownPlay({ seed: 5, days: 10, questCount: 0, key: "smalltown", startPop: 20 });
     expect(play.plan.houses.length).toBeGreaterThanOrEqual(6);
     expect(play.plan.works.some((w) => w.type === "hall")).toBe(true);
-    // Base houses keep slot === index (no founded claims — legacy identity).
-    for (const h of play.plan.houses) expect(h.slot).toBe(h.index);
+    // Base houses fill the slot sequence IN ORDER, skipping only what the
+    // civic buildings claimed. RE-PINNED (growth-phase-B §1.6): the hall
+    // is an ordinary building on the frontage now, not a berth inside a
+    // plaza, so slot === index no longer holds — but the mapping is still
+    // monotone and never re-orders (that is the prefix-stability the
+    // identity was standing in for).
+    let last = -1;
+    for (const h of play.plan.houses) {
+      expect(h.slot).toBeGreaterThan(last);
+      expect(h.slot).toBeGreaterThanOrEqual(h.index);
+      last = h.slot!;
+    }
     // The fresh overlay seeded the builder's yard.
     expect(play.deltas.stock.wood).toBeGreaterThan(0);
   });

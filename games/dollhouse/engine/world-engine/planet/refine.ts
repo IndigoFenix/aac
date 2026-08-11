@@ -39,16 +39,16 @@ import {
   hubRoutes, leastCostRoute, trafficFromRoutes, commitRoads, type RoadSegment,
 } from "../kernel/civ/travel.js";
 import { findFoundingSites, type FoundingOpts } from "../kernel/cells/index.js";
+import { foundingScan } from "../kernel/civ/bands.js";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
-import { foundCitiesFromSites, type PlanetCity } from "./cities.js";
+import { foundCitiesFromSites, REGION_FOUND_POP, type PlanetCity } from "./cities.js";
 import { RIVER_MIN_ACCUM, traceRiverPolylines, type RiverPolyline } from "./rivers.js";
 import {
   chaikinSphere, portTerminateRoute, routeFromDirs, routePointAt,
   type PlanetRoute, type RouteTerminal,
 } from "./routes.js";
-import { TOWN_DIMS } from "../kernel/town/dimensions.js";
 import { borderTowns, chebyshevDistance, type BorderTown } from "./border.js";
-import { REAL_TOWN_SPACING_M } from "../scale.js";
+import { REAL_SCALE, townExtentM, townSpacingM, type WorldScale } from "../scale.js";
 
 export interface RegionFrame {
   regionCell: number;
@@ -71,10 +71,21 @@ export interface RefineOpts {
   founding?: Partial<FoundingOpts>;
   /** Villages' farmland floor (foundCitiesFromSites). */
   minFarmland?: number;
+  /** The world's space-time compression — sets village spacing
+   *  (`townSpacingM`) and, through the clip law, the extent their lanes port
+   *  at (`townExtentM`). Absent = realism, which reproduces the historical
+   *  day's-walk spacing exactly. */
+  scale?: WorldScale;
 }
 
 export interface RefinedRegion {
   frame: RegionFrame;
+  /** THE DERIVED EXTENT this region's towns build out to, and therefore the
+   *  radius its lanes PORT at (scale.ts `townExtentM`, growth phase C §1.2).
+   *  Carried on the region rather than re-derived per consumer so the
+   *  village lanes, the cross-border stitches and anything that later reads
+   *  a village's edge all name the same circle. */
+  townExtentM: number;
   /** The child substrate (rivers, fertility, crowds — the region's truth). */
   prep: TriPrep;
   /** The villages, in the demo pipeline's city shape. `cell` is the
@@ -280,11 +291,30 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   // cross-region reads. Both go INSIDE the candidate scan (FoundingOpts.
   // eligible), never as a post-filter: a phantom sliver site accepted then
   // dropped would still consume a spacing slot and skew the traffic hubs.
+  // DAY'S-WALK SPACING, derived (growth phase C §1.1): the world's own town
+  // spacing in chart cells. `townSpacingM(REAL_SCALE)` IS the 25 km anchor,
+  // so a world that declares no compression founds exactly where it always
+  // did. The floor of 4 cells is a CHART limit, not a spacing choice — which
+  // is why the extent below reads the spacing the floor actually imposes.
+  // THE WHOLE SCAN IS GATE A's CLOSED FORM NOW (growth phase C §3.1): the
+  // threshold is the crowd density at which a hamlet of REGION_FOUND_POP
+  // banks past its own backs, the spacing is the world's day's walk, and the
+  // harvest cap is the take those two are stated about. Authored `founding`
+  // still wins — content outranks derivation.
+  const scale = opts.scale ?? REAL_SCALE;
+  // The chart CAP is the floor's other half (`border.ts` states the case that
+  // forced it): a region chart `cols × rows` cells wide cannot impose a gap
+  // wider than itself, and a world that asks for one is saying its regions
+  // hold a single settlement — which the setback then delivers, without any
+  // tier having to reason about an 18 000-cell number.
+  const derivedScan = foundingScan({
+    scale, foundPop: REGION_FOUND_POP, cellSizeM,
+    minSpacingFloorCells: 4, minSpacingCapCells: Math.min(cols, rows),
+  });
+  const villageSpacingCells = derivedScan.minSpacing;
+  const villageExtentM = townExtentM(scale, villageSpacingCells * cellSizeM);
   const foundingBase: FoundingOpts = {
-    threshold: 25,
-    radius: 2,
-    minSpacing: Math.max(4, Math.round(REAL_TOWN_SPACING_M / cellSizeM)),
-    maxHarvest: 600,
+    ...derivedScan,
     ...opts.founding,
   };
   const owned = new Uint8Array(cols * rows);
@@ -551,7 +581,7 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   const terminalOfTile = (tile: number): RouteTerminal => ({
     id: keyOfTile(tile),
     dir: hubDirs.get(tile) ?? dirs[tile]!,
-    extentM: TOWN_DIMS.townRMax,
+    extentM: villageExtentM,
   });
   const roadRoutes: PlanetRoute[] = [];
   for (const cells of routes) {
@@ -618,7 +648,10 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     }
   }
 
-  return { frame, prep, villages, borderTowns: edgeTowns, capitalCells, roads, roadRoutes, rivers, riverCrossings };
+  return {
+    frame, townExtentM: villageExtentM, prep, villages, borderTowns: edgeTowns,
+    capitalCells, roads, roadRoutes, rivers, riverCrossings,
+  };
 }
 
 // ── TIER-1 HIGHWAY REFINEMENT (the interstates get physical) ───────────────
@@ -655,8 +688,12 @@ export function refineHighways(
   built: BuiltPlanet,
   refined: RefinedRegion,
   routes: readonly PlanetRoute[],
+  opts: { scale?: WorldScale } = {},
 ): HighwayRefinement[] {
   const { frame, prep } = refined;
+  /** The TIER-0 extent: a parent route's pins are CITY ports, so the cells
+   *  this drops are the ones inside a city, not inside a village. */
+  const cityExtentM = townExtentM(opts.scale ?? REAL_SCALE);
   const R = built.spec.radius;
   const { cols, cellSizeM, regionCell } = frame;
   const topo = built.topo;
@@ -719,7 +756,7 @@ export function refineHighways(
         d: readonly [number, number, number], pin: readonly [number, number, number],
       ): boolean =>
         Math.acos(Math.max(-1, Math.min(1, d[0] * pin[0] + d[1] * pin[1] + d[2] * pin[2]))) * R
-          < TOWN_DIMS.townRMax * 2;
+          < cityExtentM * 2;
       const cells = (atPort0 || atPort1)
         ? solved.cells.filter(c => {
             const d = dirAt(c);
@@ -862,8 +899,8 @@ export function stitchRegions(
     // ends at their extents like every other one.
     out.push(portTerminateRoute(
       route, R,
-      { id: va.cell, dir: va.dir, extentM: TOWN_DIMS.townRMax },
-      { id: vb.cell, dir: vb.dir, extentM: TOWN_DIMS.townRMax },
+      { id: va.cell, dir: va.dir, extentM: a.townExtentM },
+      { id: vb.cell, dir: vb.dir, extentM: b.townExtentM },
     ));
   }
   return out;

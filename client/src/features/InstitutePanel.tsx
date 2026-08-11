@@ -704,13 +704,16 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
 
     setIsSubmitting(true);
     try {
+      // null, not undefined: this is a PATCH that merges by key, and
+      // JSON.stringify drops undefined — a cleared field would never be sent
+      // and the old value would come back on the next load.
       await updateClassroom(editingClassroom.id, {
         name: classroomForm.name,
-        grade: classroomForm.grade || undefined,
-        description: classroomForm.description || undefined,
-        capacity: classroomForm.capacity ? parseInt(classroomForm.capacity) : undefined,
-        roomNumber: classroomForm.roomNumber || undefined,
-        academicYear: classroomForm.academicYear || undefined,
+        grade: classroomForm.grade || null,
+        description: classroomForm.description || null,
+        capacity: classroomForm.capacity ? parseInt(classroomForm.capacity) : null,
+        roomNumber: classroomForm.roomNumber || null,
+        academicYear: classroomForm.academicYear || null,
       });
       
       setShowClassroomDialog(false);
@@ -903,9 +906,11 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
 
     setIsSubmitting(true);
     try {
+      // null, not undefined — a PATCH merge drops undefined keys, so a cleared
+      // grade / ID number would silently keep its previous value.
       await updateInstituteStudent(currentInstitute.id, selectedInstituteStudent.id, {
-        grade: instituteStudentForm.grade || undefined,
-        idNumber: instituteStudentForm.idNumber || undefined,
+        grade: instituteStudentForm.grade || null,
+        idNumber: instituteStudentForm.idNumber || null,
       });
       await loadInstituteStudents();
       setShowEditInstituteStudentDialog(false);

@@ -97,7 +97,18 @@ function cachePut(db: IDBDatabase | null, key: string, value: CachedBake): void 
   }
 }
 
-export function createGeologyBaker(): GeologyBaker {
+export interface GeologyBakerOpts {
+  /** THE DOCUMENT'S DECLARED SPACE-TIME SCALE (`game.scale`, raw spec). The
+   *  founding scan's spacing derives from it (growth phase C §3.1
+   *  `planetFoundingOpts`), so it is part of the bake's IDENTITY: it rides
+   *  the worker message AND the cache key, or a world that declares a
+   *  compressed settlement gap would be served the real-scale site set
+   *  forever. Read as a function because the document loads after the baker
+   *  is built. */
+  scale?: () => Record<string, unknown> | null;
+}
+
+export function createGeologyBaker(opts: GeologyBakerOpts = {}): GeologyBaker {
   const worker = new Worker(new URL("./geology-worker.ts", import.meta.url), { type: "module" });
   let nextId = 1;
   const waiting = new Map<number, { resolve: (r: GeologyBakeResponse) => void }>();
@@ -165,7 +176,19 @@ export function createGeologyBaker(): GeologyBaker {
       // fill + rain-fed flow sources + riverDown drainage pointers.
       // bake7: the `people` field is `forage` (settlement-emergence §③ —
       // a stale grid's crowds would be invisible to the renamed readers).
-      const key = `bake7:${JSON.stringify(world)}`;
+      // bake8: growth phase C §1.1 — the founding scan's `minSpacing` is now
+      // DERIVED (scale.ts `townSpacingM`) rather than read off the raw
+      // REAL_TOWN_SPACING_M constant. The derivation reproduces 25 km at real
+      // scale, so today's sites are unchanged; the key moves because a
+      // compressed world now founds a DIFFERENT SITE SET from the same params,
+      // and a stale bake would hand it the real-scale one forever.
+      // …and growth phase C §3.1 made the whole SCAN derive, spacing
+      // included, from the world's declared settlement gap — which lives in
+      // `game.scale`, not in these params. It joins the key (and the request
+      // below) rather than moving it: an undeclared world stringifies `null`
+      // and keeps the `bake8` entry it already has.
+      const scaleSpec = opts.scale?.() ?? null;
+      const key = `bake8:${JSON.stringify(world)}${scaleSpec ? `:${JSON.stringify(scaleSpec)}` : ""}`;
       const db = await dbPromise;
       const hit = await cacheGet(db, key);
       console.info(`geology cache ${hit ? "HIT" : "miss"} for ${resolved.body.id} (db ${db ? "open" : "unavailable"})`);
@@ -174,7 +197,10 @@ export function createGeologyBaker(): GeologyBaker {
         const built = rebuiltPlanetWorld(hit.spec as PlanetWorldSpec, hit.gridJson, hit.sites as FoundingSite[]);
         return { built, radiusM, hasOcean };
       }
-      const res = await ask({ op: "bake", world, label: `body:${resolved.body.id}` });
+      const res = await ask({
+        op: "bake", world, label: `body:${resolved.body.id}`,
+        ...(scaleSpec ? { scale: scaleSpec } : {}),
+      });
       if (!res.ok) throw new Error(`geology bake for ${resolved.body.id} failed: ${res.error}`);
       if (res.op !== "bake") throw new Error("geology worker answered the wrong op");
       console.info(`geology cache PUT for ${resolved.body.id} (${res.gridJson.length} chars, bake ${res.ms}ms)`);
@@ -195,7 +221,11 @@ export function createGeologyBaker(): GeologyBaker {
       // village lanes port-terminate at town extents and refined highway
       // spans drop solved cells near a port — a stale grid keeps painting
       // roads through towns.
-      const cacheKey = `refine7:${baked.key}:${regionCell}`;
+      // "refine8" = growth phase C §1.2: the extent those lanes port at is
+      // DERIVED (scale.ts `townExtentM`) and BAKED INTO `roadRoutes`, which is
+      // this entry's payload — a stale entry would replay roads clipped at the
+      // old literal while the live town grows to the new circle.
+      const cacheKey = `refine8:${baked.key}:${regionCell}`;
       const hit = await cacheGet(db, cacheKey);
       if (hit) {
         // Villages ride the sites slot; roads/highways/rivers ride their own.
@@ -213,6 +243,7 @@ export function createGeologyBaker(): GeologyBaker {
         sites: baked.payload.sites,
         regionCell,
         key: baked.key,
+        ...(opts.scale?.() ? { scale: opts.scale()! } : {}),
       });
       if (!res.ok) throw new Error(`region refine for ${bodyId}:${regionCell} failed: ${res.error}`);
       if (res.op !== "refine") throw new Error("geology worker answered the wrong op");
@@ -241,7 +272,11 @@ export function createGeologyBaker(): GeologyBaker {
       // asymmetry; see refine.ts stitchRegionStreams).
       // "stitch9": growth phase A — cross-border village roads
       // port-terminate at both villages' extents.
-      const cacheKey = `stitch9:${baked.key}:${lo}:${hi}`;
+      // "stitch10": growth phase C §1.2 — those extents are now the DERIVED
+      // number each region carries (`RefinedRegion.townExtentM`), so the
+      // stitched polylines in this payload move whenever the derivation does.
+      // Same law as refine8: the clipped geometry IS the cached value.
+      const cacheKey = `stitch10:${baked.key}:${lo}:${hi}`;
       const hit = await cacheGet(db, cacheKey);
       if (hit) {
         return {
@@ -257,6 +292,7 @@ export function createGeologyBaker(): GeologyBaker {
         cellA: lo,
         cellB: hi,
         key: baked.key,
+        ...(opts.scale?.() ? { scale: opts.scale()! } : {}),
       });
       if (!res.ok) throw new Error(`stitch for ${bodyId}:${lo}:${hi} failed: ${res.error}`);
       if (res.op !== "stitch") throw new Error("geology worker answered the wrong op");

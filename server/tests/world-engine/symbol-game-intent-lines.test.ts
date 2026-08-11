@@ -159,6 +159,9 @@ describe("goalIntentLine — GoalSpec → the announcement glyphs", () => {
       { kind: "transform", item: { match: { kind: "apple" } }, state: "hot" },
       { kind: "satisfy", need: "eat" },
       { kind: "socialAct", target: "bear", act: "hug" },
+      // …and the ITEM-CARRYING social act (L11's `show`), which takes the other
+      // fork of that arm — listed here so the no-silent-arm sweep covers both.
+      { kind: "socialAct", target: "bear", act: "show", item: { match: { kind: "ball" } } },
       { kind: "help", target: "bear" },
       { kind: "build", structure: "town", cap: 1 },
     ];

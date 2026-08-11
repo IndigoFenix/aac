@@ -1,0 +1,73 @@
+# world-text v1   proto=1
+# world=route-town.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=07d6694a+dirty
+# started=2026-08-11T05:52:52.019Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    biscuit: "🥺"  [apple]
+EXIT   mara went out of the blue house.
+SAY    pip: [sit]
+TICK   waited 10.0s.
+> scene
+SCENE  house-1 — 15 thing(s) in view, 47 place(s) around you.
+  pip (person), here west.
+  biscuit (person), here west.
+  orrin (person), there north, get food.
+  table-1 (table), here west.
+  ball-1 (ball), here south.
+  bin-1 (bin), here north.
+  2 chairs, here west.
+  a bowl, here west.
+  a basket, there west.
+  a chest, there south.
+  a refrigerator, there north.
+  a barrel, there north.
+  an oven, there north.
+  a cupboard, there north.
+  house-1 (house), here west, blue, door open, you can see inside.
+  house-2 (house), here east, blue, shut to you.
+  house-3 (house), here east, blue, shut to you.
+  house-5 (house), there north, blue, door open, you can see inside.
+  22 houses, there north, all shut.
+  21 houses, close north, all shut.
+NOTE   about 1008 more people live in this city (1 district).
+EXIT   orrin left view there north.
+TICK   quiet after 1.3s.
+> look self
+ERR    nothing here called "self".
+SAY    pip: [sit]
+ENTER  orrin came into view there north.
+SAY    biscuit: "🥺"  [apple]
+SAY    pip: [sit]
+TICK   quiet after 4.3s.
+> go house-2
+OK     walking to house-2.
+SAY    pip: [sit]
+SAY    orrin: [banana]
+SAY    biscuit: "bye-bye"  [goodbye]
+EXIT   biscuit left view there north.
+EXIT   pip left view there west.
+EXIT   orrin left view here west.
+TICK   arrived after 5.4s.
+> wait 45
+TICK   waited 45.0s.
+> scene
+SCENE  house-2 — 3 thing(s) in view, 50 place(s) around you.
+  bed-2 (bed), here east.
+  box-1 (box), here east.
+  box-2 (box), here east.
+  house-2 (house), here north, blue, you can see inside.
+  house-3 (house), here south, blue, shut to you.
+  26 houses, there north, all shut.
+  22 houses, close north, all shut.
+NOTE   about 1008 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> look self
+ERR    nothing here called "self".
+TICK   quiet after 1.5s.
+# ─────────────────────────────────────────
+# commands=7  presses=0  screens=1  sim=68.3s
+# events: SAY 8  TICK 7  EXIT 5  NOTE 3  SCENE 2  ERR 2  BOARD 1  ENTER 1  OK 1

@@ -10,6 +10,8 @@
  * it as an explicit parameter beside the host.
  */
 
+import type { GrowSeed } from "./streets";
+
 /** A settlement's live books + map presence, as the town layer reads them. */
 export interface TownHost {
   /** City sites (world tiles). Structurally a subset of richer city
@@ -34,6 +36,15 @@ export interface TownHost {
    *  straight lines); [] = a verified roadless town. Must be
    *  deterministic in (world, site): changed bearings re-lay the town. */
   roadBearings?(siteKey: string): readonly number[] | null;
+  /** WHAT THE TOWN GREW AROUND (growth phase B §2.1) — the incident roads
+   *  themselves, as town-local growth seeds (kernel/town/approach.ts
+   *  `townRoadSeeds`): a through-road SPAN plus a spur per remaining gate.
+   *  Supersedes `roadBearings` where a host can produce it, because a
+   *  bearing throws the road's geometry away and the baseline IS the road.
+   *  null/absent = unknown (fall back to bearings); [] = a verified site
+   *  with no PORTED road (the overlap rule), which also falls back — a span
+   *  is optional by construction. Must be deterministic in (world, site). */
+  roadSeeds?(siteKey: string): readonly GrowSeed[] | null;
 }
 
 // ── The road-bearing HANDOFF ───────────────────────────────────────────
@@ -56,4 +67,22 @@ export function provideTownRoadBearings(key: string, bearings: readonly number[]
 /** The registered bearings for a settlement key (null = none known). */
 export function townRoadBearingsOf(key: string): readonly number[] | null {
   return roadBearingsByKey.get(key) ?? null;
+}
+
+// ── The road-SEED handoff (growth phase B §2.1) ────────────────────────
+// The same transport, carrying the roads themselves rather than a bearing
+// apiece. A host that can produce seeds registers them beside (and in
+// preference to) the bearings; the town layer trusts seeds whole.
+
+const roadSeedsByKey = new Map<string, readonly GrowSeed[]>();
+
+/** Register (or clear, with null) a settlement's road growth seeds. */
+export function provideTownRoadSeeds(key: string, seeds: readonly GrowSeed[] | null): void {
+  if (seeds) roadSeedsByKey.set(key, JSON.parse(JSON.stringify(seeds)) as GrowSeed[]);
+  else roadSeedsByKey.delete(key);
+}
+
+/** The registered seeds for a settlement key (null = none known). */
+export function townRoadSeedsOf(key: string): readonly GrowSeed[] | null {
+  return roadSeedsByKey.get(key) ?? null;
 }

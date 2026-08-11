@@ -348,6 +348,14 @@ export const zh: Translations = {
       connective: "连接词",
       social: "社交",
     },
+    typeChips: {
+      request: "想要",
+      ask: "提问",
+      state: "说",
+      command: "做",
+      rule: "规则",
+      greet: "社交",
+    },
     chips: {
       all: "全部",
       people: "人物",

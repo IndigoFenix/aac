@@ -18,8 +18,11 @@ import {
   REAL_PLANET_RADIUS_M,
   REAL_SCALE,
   REAL_SLEEP_FRACTION,
+  REAL_TOWN_EXTENT_M,
   REAL_TOWN_SPACING_M,
   REST_DWELL_S,
+  townExtentM,
+  townSpacingM,
   TIME_COMPRESSION,
   TOWN_SESSION_DAY_S,
   constructionGameDays,
@@ -65,6 +68,7 @@ import {
   yearGameDays,
 } from "@shared/world-engine/scale.js";
 import { FOOD_DAY_SEC, ERRAND_WALK } from "@shared/world-engine/kernel/town/goods.js";
+import { TOWN_DIMS } from "@shared/world-engine/kernel/town/dimensions.js";
 import { HUNGER_RATE } from "@shared/world-engine/kernel/town/activity.js";
 import { DEFAULT_TOWN_DAY_LENGTH } from "@shared/world-engine/interaction/behavior/creature-goal-runtime.js";
 import { DEFAULT_WORLD_CLOCK_CONFIG } from "@shared/world-engine/world-clock.js";
@@ -239,6 +243,71 @@ describe("compression scales EVERY body in the universe (relative scales preserv
   });
 });
 
+// ── THE SETTLED MAP (growth phase C §1.1) ─────────────────────────────────
+// `gap_compression` and the two derivations it drives. The identities below
+// are the phase's own guardrail: real scale must reproduce the historical
+// anchors EXACTLY, so shipping the dial re-lays nothing that already exists.
+describe("gap_compression and the settled map's two distances", () => {
+  it("REAL reproduces both anchors EXACTLY — the identity pins", () => {
+    expect(townSpacingM(REAL_SCALE)).toBe(REAL_TOWN_SPACING_M); // 25 000 m
+    expect(townExtentM(REAL_SCALE)).toBe(REAL_TOWN_EXTENT_M); // 450 m
+    // ...and the town dimensions read the SAME anchor (one definition).
+    expect(TOWN_DIMS.townRMax).toBe(REAL_TOWN_EXTENT_M);
+  });
+
+  it("every SHIPPED profile is untouched — the street clock does not crowd towns", () => {
+    // The clock is deliberately absent from the derivation (the walking
+    // trilemma: a 240 s day with real legs would stand towns 91 m apart while
+    // their own houses are 10 m wide). Only the SPACE dial moves them.
+    for (const s of [REAL_SCALE, DOLLHOUSE_SCALE, SEASONAL_SCALE]) {
+      expect(townSpacingM(s)).toBe(REAL_TOWN_SPACING_M);
+      expect(townExtentM(s)).toBe(REAL_TOWN_EXTENT_M);
+    }
+  });
+
+  it("the dial defaults to the BODY dial, like the two sky dials", () => {
+    expect(resolveWorldScale({ planet_compression: 25 }).gapCompression).toBe(25);
+    // ...and is separable: a real-radius world may still crowd its towns.
+    expect(resolveWorldScale({ gap_compression: 40 }).gapCompression).toBe(40);
+    expect(resolveWorldScale({ planet_compression: 25, gap_compression: 4 }).gapCompression).toBe(4);
+  });
+
+  it("a compressed world crowds its towns and shrinks their extents with them", () => {
+    const mini = resolveWorldScale({ gap_compression: 32 });
+    expect(townSpacingM(mini)).toBeCloseTo(781.25, 6);
+    expect(townExtentM(mini)).toBeCloseTo(195.3125, 6);
+  });
+
+  it("gait moves the spacing — a day's walk is longer on longer legs", () => {
+    expect(townSpacingM(resolveWorldScale({ locomotion: 2 }))).toBe(2 * REAL_TOWN_SPACING_M);
+  });
+
+  it("THE CLIP LAW holds at every gap: the road always outlives the two towns", () => {
+    // 2·extent + MIN_PORT_ROUTE_M < the shortest route, for any world whose
+    // towns are more than 20 m apart. Swept rather than argued.
+    for (const gap of [25_000, 5_000, 1_200, 867, 500, 200, 100, 50, 21]) {
+      const e = townExtentM(REAL_SCALE, gap);
+      expect(2 * e + 10).toBeLessThan(gap);
+    }
+    // ...and the declared extent still caps it wherever the world is roomy.
+    expect(townExtentM(REAL_SCALE, 1e9)).toBe(REAL_TOWN_EXTENT_M);
+  });
+
+  it("the dial round-trips and is gated path-exact", () => {
+    expect(scaleSpecOf(resolveWorldScale({ gap_compression: 32 }))).toMatchObject({ gap_compression: 32 });
+    expect(() => parseWorldScaleSpec({ gap_compression: 0 }, "g.scale")).toThrow(/g\.scale\.gap_compression/);
+    expect(() => parseWorldScaleSpec({ gap_compression: 10_001 }, "g.scale")).toThrow(/g\.scale\.gap_compression/);
+  });
+
+  it("a gap compressed past the point of towns REPORTS, never throws", () => {
+    const absurd = resolveWorldScale({ gap_compression: 5_000 });
+    expect(townExtentM(absurd)).toBeLessThan(2);
+    expect(scaleWarnings(absurd).join(" ")).toMatch(/gap: towns stand/);
+    // The shipped profiles say nothing about gaps.
+    expect(scaleWarnings(REAL_SCALE).join(" ")).not.toMatch(/gap:/);
+  });
+});
+
 describe("metabolism is a dial of its own (the eating period is not the day)", () => {
   it("at metabolism 1 every shipped need time is byte-identical", () => {
     for (const key of ["hunger", "energy", "social", "fun", "thirst", "waste", "hygiene", "dirt"] as const) {
@@ -299,7 +368,12 @@ describe("the settlement ratios (§4b)", () => {
         "apparentSizeGain", "apparentStarGain", "dependencyRatio", "forageRadiusM",
         "growthGameDays", "leanSeasonMeals", "lifespanGameYears", "mealsPerLifetime",
         "mealsPerYear", "realHoursForRatchet", "realHoursPerLifespan",
-        "realMinutesPerYear", "yearGameDays",
+        "realMinutesPerYear",
+        // MOVED (growth phase C §1.1): the settled map's two derived
+        // distances joined the diagnostics when `gap_compression` gave a
+        // world a way to move them.
+        "townSpacingM", "townExtentM",
+        "yearGameDays",
       ].sort(),
     );
   });

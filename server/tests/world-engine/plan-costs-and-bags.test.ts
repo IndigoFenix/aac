@@ -174,11 +174,18 @@ describe("③ pricePlan — a plan's cost is its legs plus its hands", () => {
   // ── W1 (economy-arc-opening.md) — PAY WHAT YOU PRICE ────────────────────
   //
   // The diagnosed defect: the pursuit priced a leg by CHORD while the body
-  // paid STREET. A town's street tree routes through the plaza ring, so two
-  // points on different arterial subtrees are 68 m apart and 400 m of walking
-  // away — and nothing in the calculus could tell, because `pricePlan` used
-  // `Math.hypot`. The fix is a resolver-supplied journey measure threaded
-  // through the price board; the planner itself stays engine-agnostic.
+  // paid STREET. Two points on different arterial subtrees could be 68 m
+  // apart and 400 m of walking away — and nothing in the calculus could
+  // tell, because `pricePlan` used `Math.hypot`. The fix is a
+  // resolver-supplied journey measure threaded through the price board; the
+  // planner itself stays engine-agnostic.
+  //
+  // (The "plaza ring" that used to be named here died in growth phase B —
+  // towns grow around an open BASELINE now — and phase C's loops have since
+  // cut the worst of the remaining detours down: the ≥3× tail fell from
+  // 7–10 % of legs to 1.3–2.9 %. THE DEFECT IS UNCHANGED: a tree with
+  // shortcuts is still not a straight line, so a chord is still the wrong
+  // price for a walk, and this seam is still the thing that says so.)
 
   it("W1: with no journey measure the price is the CHORD — the byte-identical default", () => {
     const r = world({ places: { box: at(4) }, items: { apple1: at(10) } });

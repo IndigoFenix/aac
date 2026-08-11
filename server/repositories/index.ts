@@ -1,7 +1,7 @@
 export { userRepository, UserRepository } from "./userRepository";
 export { adminUserRepository } from "./adminUserRepository";
 export { studentRepository, StudentRepository } from "./studentRepository";
-export { aacSettingsRepository, AacSettingsRepository } from "./aacSettingsRepository";
+export { aacSettingsRepository, AacSettingsRepository, InvalidAacSettingError } from "./aacSettingsRepository";
 export { interpretationRepository, InterpretationRepository } from "./interpretationRepository";
 export { creditRepository, CreditRepository } from "./creditRepository";
 export { inviteCodeRepository, InviteCodeRepository } from "./inviteCodeRepository";

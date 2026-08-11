@@ -100,11 +100,14 @@ export interface Classroom {
   id: string;
   instituteId: string;
   name: string;
-  grade?: string;
-  description?: string;
-  capacity?: number;
-  roomNumber?: string;
-  academicYear?: string;
+  // Nullable, not merely optional: these columns come back as null from the
+  // server, and an update must be able to SEND null to clear one (undefined is
+  // dropped by JSON.stringify, so the PATCH would keep the old value).
+  grade?: string | null;
+  description?: string | null;
+  capacity?: number | null;
+  roomNumber?: string | null;
+  academicYear?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -232,7 +235,9 @@ interface InstituteContextType {
   // Institute student operations
   getInstituteStudents: (instituteId: string) => Promise<InstituteStudent[]>;
   addStudentToInstitute: (instituteId: string, studentId: string, options?: { enrollmentDate?: string; idNumber?: string; grade?: string }) => Promise<void>;
-  updateInstituteStudent: (instituteId: string, studentId: string, data: { idNumber?: string; grade?: string }) => Promise<void>;
+  // null clears the field — undefined would be dropped by JSON.stringify and
+  // the server's merge would keep the old value.
+  updateInstituteStudent: (instituteId: string, studentId: string, data: { idNumber?: string | null; grade?: string | null }) => Promise<void>;
   removeStudentFromInstitute: (instituteId: string, studentId: string, exitReason?: string) => Promise<void>;
 
   // Student's institutes
@@ -764,7 +769,7 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
   const updateInstituteStudent = useCallback(async (
     instituteId: string,
     studentId: string,
-    data: { idNumber?: string; grade?: string }
+    data: { idNumber?: string | null; grade?: string | null }
   ): Promise<void> => {
     const response = await apiRequest('PATCH', `/api/institutes/${instituteId}/students/${studentId}`, data);
     const result = await response.json();

@@ -62,6 +62,39 @@ export interface BuilderGroup {
   glyphs?: string[];
 }
 
+/**
+ * A SENTENCE-TYPE control chip: "want" / "question" / "tell" / "do" / "rule" /
+ * "social". NOT a word — pressing it composes nothing, it re-asks the engine
+ * for the openers of ONE communicative move (`builder_state.seedKind`). Offered
+ * only while the sentence is empty. `kind` is the invariant handle (the
+ * platform translates off it); `label` is the engine's own English name, a
+ * fallback for a client with no string of its own.
+ */
+export interface BuilderTypeChip {
+  kind: string;
+  label: string;
+}
+
+/**
+ * THE STUDENT'S OWN HABIT, as the engine's surfacer consumes it (its
+ * `RecencyMemory`): the nouns they recently mentioned, how often they use each
+ * word, and which words they say next to each other. Counter-based, never
+ * wall-clock, so it survives save/restore without changing what the board
+ * predicts.
+ *
+ * The PLATFORM owns it — it is the child's history, not world state, so it
+ * outlives any one game session and never becomes something the game stores
+ * about a person. It rides down on every `builder_state`; a game passes it
+ * straight into its surfacer and forgets it. Absent ⇒ an unpersonalized board,
+ * which is exactly what a client that never sends it keeps getting.
+ */
+export interface BuilderRecency {
+  mentioned: { symbol: string; at: number }[];
+  utterances: number;
+  uses?: { key: string; n: number }[];
+  pairs?: { key: string; n: number }[];
+}
+
 /** The engine's answer to a `builder_state`: what the sentence builder should
  *  offer for the current partial sentence. */
 export interface BuilderSurface {
@@ -78,6 +111,10 @@ export interface BuilderSurface {
   groups?: BuilderGroup[];
   /** True when the current sentence already parses as complete/sayable. */
   complete?: boolean;
+  /** Sentence-type control chips — sent only while the sentence is EMPTY (the
+   *  engine's own rule). A client echoes the pressed `kind` back as
+   *  `builder_state.seedKind`; one that ignores them loses nothing. */
+  typeChips?: BuilderTypeChip[];
 }
 
 // ── Platform → Game ─────────────────────────────────────────────────────────
@@ -162,8 +199,25 @@ export type PlatformMessage = BridgeMessageBase & (
    * `BuilderSurface.categories`). The game answers with a correlated
    * `builder_surface`. Fired per builder change — games should answer from the
    * pure surfacer, no world mutation.
+   *
+   * `capacity` is the CLIENT's grid budget (how many ranked words its board can
+   * page through) — the game must not substitute its own, or the platform's
+   * paging silently disappears. `recency` is the student's learned layer and
+   * `seedKind` the tapped sentence-type chip; both are pass-through to the
+   * surfacer. Every one of the three is optional and additive: a game that
+   * ignores them answers exactly as it did before they existed, and a client
+   * that never sends them gets exactly the board it always got.
    */
-  | { type: "builder_state"; requestId: string; glyph: string; category?: string; group?: string }
+  | {
+      type: "builder_state";
+      requestId: string;
+      glyph: string;
+      category?: string;
+      group?: string;
+      capacity?: number;
+      recency?: BuilderRecency;
+      seedKind?: string;
+    }
   /**
    * Multiplayer session identity for a world-engine game running inside a call.
    * `selfId` is this participant's stable network id (personId); `role` is

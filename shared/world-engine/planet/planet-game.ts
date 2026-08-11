@@ -23,6 +23,9 @@ import { runSphereTectonics, type SphereTectonicWorld, type TectonicFrame } from
 import { bakeCellAuthors } from "../kernel/geology/sphere-tectonics";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics";
 import { prepareSubstrateOn } from "../kernel/civ/tri";
+import { foundingScan } from "../kernel/civ/bands";
+import { REAL_SCALE, resolveWorldScale, type WorldScaleSpec } from "../scale";
+import type { FoundingOpts } from "../kernel/cells/worldgen";
 import { climateFields, applyClimate, type ClimateFields } from "./climate";
 import { applyEcology, biomePalette, DEFAULT_BIOSPHERE } from "./ecology";
 import { substrateSurface, type PlanetSurface, type PlanetPalette, type RGB } from "./surface";
@@ -82,10 +85,49 @@ function num(v: unknown, path: string, min: number, max: number): number {
   return v;
 }
 
-/** Founding scan used for the candidate readout (and, later, town-focus
- *  resolution) — the acceptance worlds' proportions. Declared ABOVE the
- *  descriptor that cites its numbers (const TDZ). */
-const PLANET_FOUNDING = { threshold: 100, radius: 2, minSpacing: 6, maxHarvest: 600 };
+/** GRID PERSONS one tier-0 founding raises — the FOUND-SMALL take
+ *  (grand-dream civilization-emergence §2a). THE tier's one content
+ *  declaration about founding; everything else in the scan derives from it
+ *  through Gate A (growth phase C §3.1, `kernel/civ/bands.ts foundingScan`). */
+const PLANET_FOUND_POP = 100;
+
+/** The founding scan at REALISM — the candidate readout's defaults, and what
+ *  a world that declares nothing about its settlement gap gets.
+ *
+ *  `minSpacing` stays a CHART number here, deliberately: a tier-0 cell IS the
+ *  capital lattice (417 km wide on a real planet), so the day's-walk law that
+ *  `townSpacingM` states is a TIER-1 fact — `planet/refine.ts` and
+ *  `planet/border.ts` are where it binds. A world that DECLARES its own gap
+ *  (`scale.gap_compression`, or `planet_compression` uniformly) is making a
+ *  claim about tier 0 too, and `planetFoundingOpts` derives the spacing for it.
+ *
+ *  Declared ABOVE the descriptor that cites its numbers (const TDZ). */
+const PLANET_FOUNDING = foundingScan({
+  scale: REAL_SCALE, foundPop: PLANET_FOUND_POP, minSpacing: 6,
+});
+
+/** True when the world SAYS something about how far apart its towns stand —
+ *  the declaration that lets tier-0 spacing derive rather than sit in the
+ *  chart's own units. */
+function declaresSettlementGap(spec: WorldScaleSpec | null): boolean {
+  return !!spec && ("gap_compression" in spec || "planet_compression" in spec);
+}
+
+/** THE SCAN THIS PLANET FOUNDS BY. Authored `world.founding` wins (content
+ *  outranks derivation); otherwise Gate A's closed form, with the spacing
+ *  derived when — and only when — the world declared a gap to derive it from. */
+export function planetFoundingOpts(
+  spec: PlanetWorldSpec, scale: WorldScaleSpec | null = null,
+): FoundingOpts {
+  if (spec.founding) return spec.founding;
+  if (!declaresSettlementGap(scale)) return PLANET_FOUNDING;
+  // Chart pitch: a cube-sphere face spans a quarter turn in `faceN` cells.
+  const cellSizeM = ((Math.PI / 2) * spec.radius) / spec.topology.faceN;
+  return foundingScan({
+    scale: resolveWorldScale(scale), foundPop: PLANET_FOUND_POP, cellSizeM,
+    minSpacingFloorCells: 1,
+  });
+}
 
 const PLANET_TOPOLOGY_FIELDS: readonly FieldSpec[] = [
   // kind is required-and-fixed: a planet is a curved lattice. Same message
@@ -106,7 +148,7 @@ const PLANET_FOUNDING_FIELDS: readonly FieldSpec[] = [
   { key: "threshold", kind: "number", min: 0, max: 1e6, default: PLANET_FOUNDING.threshold, facet: "interior", label: "Threshold" },
   { key: "radius", kind: "number", min: 1, max: 8, default: PLANET_FOUNDING.radius, facet: "interior", label: "Radius" },
   { key: "minSpacing", kind: "number", min: 1, max: 64, default: PLANET_FOUNDING.minSpacing, facet: "interior", label: "Min spacing" },
-  { key: "maxHarvest", kind: "number", min: 1, max: 1e6, default: PLANET_FOUNDING.maxHarvest, facet: "interior", label: "Max harvest" },
+  { key: "maxHarvest", kind: "number", min: 1, max: 1e6, default: PLANET_FOUND_POP, facet: "interior", label: "Max harvest" },
 ];
 
 /** The planet scope's `world` descriptor. `geology` is the SHARED sub-spec —
@@ -301,11 +343,14 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
     }
   }
 
+  // THE SCAN IS DERIVED (§3.1) — Gate A's closed form, not a per-caller
+  // aesthetic. One object, read by the settle pass and by every rescan below.
+  const founding = planetFoundingOpts(spec, game.scale);
   const prep = prepareSubstrateOn({
     topology: { kind: "cube-sphere", faceN: spec.topology.faceN },
     height: authors.height,
     ore: authors.ore,
-    founding: spec.founding ?? PLANET_FOUNDING,
+    founding,
     settle: spec.settle,
     rain: spec.rain,
     runoff: runoffAt,
@@ -321,7 +366,7 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
     // climated AND biomed substrate.
     applyEcology(prep.grid, { species: DEFAULT_BIOSPHERE, seaHeight: SEA_HEIGHT });
     const ice = prep.grid.fields.ice;
-    prep.sites = findFoundingSites(prep.grid, spec.founding ?? PLANET_FOUNDING)
+    prep.sites = findFoundingSites(prep.grid, founding)
       .filter(s => ice[s.cell] < 1);
   }
 

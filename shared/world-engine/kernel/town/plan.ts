@@ -15,11 +15,15 @@ import type { CompiledEconomy } from "../modules/economy/economy";
 import type { TownHost } from "./host";
 import type { BuildingProgram, StationKind } from "./stations";
 import { quantB } from "./approach";
-import { HOUSEHOLD, houseDoorstep } from "./goods";
+import { HOUSEHOLD, houseDoorstep, workDoorstep } from "./goods";
 import { TOWN_DIMS } from "./dimensions";
-import { foundNeighborhoodMarkets, foundServicePoints, WELL_FOUND_MASS } from "./districts";
-import { growStreets, type TownStreets, type Vec2 } from "./streets";
-import { serviceRadiusM, type WorldScale } from "../../scale";
+import { foundServicePoints, NEIGH_CONVENIENT, NEIGH_FOUND_MASS, WELL_FOUND_MASS } from "./districts";
+import type { ServicePoint } from "./construction";
+import {
+  growStreets, networkJunctions, roadDistance, stubSeedsOf,
+  type GrowSeed, type TownStreets, type Vec2,
+} from "./streets";
+import { REAL_SCALE, serviceRadiusM, townExtentM, type WorldScale } from "../../scale";
 
 /** Meters per substrate tile — a tile is a square kilometer. */
 export const WORLD_TILE = 1000;
@@ -138,7 +142,10 @@ export interface TownPlan {
   key: string;
   biome: "farmland" | "mining";
   groundColor: string;
-  /** Edge of the built-up area, meters from center. */
+  /** Edge of the built-up area, meters from center — an OUTPUT of what
+   *  actually grew (growth-phase-B §1.5), never a promise: street growth
+   *  holds `builtMargin` back from the declared extent, so this can never
+   *  exceed `TOWN_DIMS.townRMax`. */
   radius: number;
   /** Lots the population asked for (houses may be fewer if the town is
    *  full) — the cheap growth check TownManager compares against. */
@@ -154,6 +161,15 @@ export interface TownPlan {
   /** The town's CONSTRUCTING SPECIES — stamped on every house/work row (and
    *  the default for its residents' bodies). Absent = the people default. */
   species?: string;
+  /** THE PLAZA — town-local, an OUTPUT of the network (growth-phase-B
+   *  §1.6, re-derived in phase C §1.3): the junction CLOSEST to the founding
+   *  generation's frontage, widened into a clearing the civic buildings front
+   *  and the town well stands on. There is no hub input any more; closeness
+   *  peaks near the middle on any roughly-convex network, so the plaza lands
+   *  near the middle BECAUSE the walking does. Absent only on a hand-built
+   *  plan — read it through `townPlaza`, which falls back to the frame
+   *  origin. */
+  plaza?: Vec2;
   /** Cultivated patches beyond the houses (farmland biome). */
   fields: TownField[];
   /** NEIGHBORHOOD WELLS (needs-aware construction): town-local verge
@@ -161,13 +177,92 @@ export interface TownPlan {
    *  well the host always digs. Only a scale-aware plan lays any —
    *  absent/empty = the clock-blind legacy town (one well on the square). */
   wells?: Vec2[];
+  /** THE FOUNDED SERVICE POINTS this plan stands on (growth phase C §3.2),
+   *  in founding order: the recorded history first, verbatim, then whatever
+   *  the demand pass still had to append. The host writes the appended ones
+   *  back into the overlay (`TownDeltas.addService`), which is what makes a
+   *  town's civic set HISTORY rather than a re-derivation — see the
+   *  `ServicePoint` doc for the loops regression this closes. Absent on a
+   *  clock-blind plan (it founds no wells and records no stalls). */
+  services?: ServicePoint[];
+  /** FRONTAGE SLOTS THE CIVIC BUILDINGS TOOK (the hall and the plaza
+   *  market are ordinary lots since growth-phase-B §1.6, and each covers a
+   *  few of its neighbours). Base houses already skip them; this publishes
+   *  them so a FOUNDING enumeration can skip them too — `foundingOptions`
+   *  only knows the footprint rects otherwise, which lets a small
+   *  structure squeeze onto a lot the plan has already spent. */
+  civicSlots?: number[];
   /** The organic street tree the whole plan hangs off (streets.ts). */
   streets: TownStreets;
 }
 
-/** Where the PLAZA WELL stands, town-local (the host places the world
- *  object; the service pass anchors its thirst catchments here). */
-export const PLAZA_WELL = { x: 2.5, y: 2.5 } as const;
+/** THE PLAZA, town-local — the widened junction the town's well stands on
+ *  and the civic buildings front. An OUTPUT of the network (see
+ *  `TownPlan.plaza`); the frame origin is the fallback for a hand-built
+ *  plan that never grew one (any point does — it is a frame, not a hub). */
+export function townPlaza(plan: Pick<TownPlan, "plaza">): Vec2 {
+  return plan.plaza ?? { x: 0, y: 0 };
+}
+
+/** THE FOUNDING GENERATION whose trips fixed the town's centre. The civic
+ *  ranking reads the FIRST lots, never today's population, which is what
+ *  keeps the plaza put as the town grows — prefix stability at the civic
+ *  rung, the same discipline the slot sequence itself keeps. */
+const CIVIC_SETTLE_SLOTS = 48;
+
+/** How far a civic building's street-facing edge stands off its own
+ *  centerline — a hair inside the house frontage line, so the hall reads
+ *  as fronting the square rather than standing in the road. */
+const CIVIC_FRONT = 6;
+
+/** Extra frontage the tree is grown for, because the hall and the market
+ *  now take lots of their own (a 20 m footprint covers two or three). */
+const CIVIC_SLOT_RESERVE = 12;
+
+/**
+ * THE PLAZA: the junction CLOSEST to the founding generation — argmin over
+ * junctions of Σ `roadDistance` to the first `CIVIC_SETTLE_SLOTS` frontage
+ * anchors. Falls back to the frame origin for a tree with no junction at all
+ * (a one-street hamlet).
+ *
+ * CLOSENESS, not traffic (growth phase B residual B-3). Traffic counts trips
+ * per STREET ID, and on a SPAN baseline — which is now the normal shape, since
+ * the town grows around the road that passes through it — every junction is a
+ * child of that one baseline, so every junction ties at the same count and the
+ * ranking's tie-break (street id, then arc) silently decides: the plaza lands
+ * at whichever end the port happens to be, and the civic core sits on the edge
+ * of town. Closeness has a real gradient along the baseline and puts the
+ * square where the walking actually converges. MEASURED: offset from the
+ * built-mass median fell from 388 m to ~136 m at a port, and the answer is
+ * byte-stable across 4.5x growth (the prefix is prefix-stable by construction,
+ * so a town that doubles does not move the square its people know).
+ *
+ * `rankJunctions`-by-traffic stays in streets.ts for consumers with a real
+ * economy behind them, where trips per street mean what they say.
+ *
+ * DETERMINISM: `networkJunctions` is already ordered by street then arc, and
+ * this takes STRICT improvements only (travel.ts's heap discipline), so ties
+ * resolve to the earliest street, then the earliest arc.
+ */
+function plazaOf(net: TownStreets): Vec2 {
+  const junctions = networkJunctions(net);
+  if (junctions.length === 0) return { x: 0, y: 0 };
+  const n = Math.min(net.slots.length, CIVIC_SETTLE_SLOTS);
+  let best = junctions[0];
+  let bestSum = Infinity;
+  for (const j of junctions) {
+    let sum = 0;
+    for (let k = 0; k < n; k++) {
+      const s = net.slots[k];
+      sum += roadDistance(net, { x: s.ax, y: s.ay }, { x: j.x, y: j.y });
+    }
+    if (sum < bestSum) {
+      bestSum = sum;
+      best = j;
+    }
+  }
+  return { x: best.x, y: best.y };
+}
 
 /** A founded well's spot for its chosen lot: street furniture on the
  *  verge past the lot's far corner — clear of the doorway and the
@@ -201,6 +296,65 @@ function doorToward(cx: number, cy: number, tx: number, ty: number): TownHouse["
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "east" : "west") : (dy > 0 ? "south" : "north");
 }
 
+/** Do two footprints (one padded) overlap? */
+function rectsClash(a: { dx: number; dy: number; w: number; h: number }, r: Rect, pad: number): boolean {
+  return (
+    a.dx < r.x + r.w + pad && a.dx + a.w > r.x - pad &&
+    a.dy < r.y + r.h + pad && a.dy + a.h > r.y - pad
+  );
+}
+
+interface Rect { x: number; y: number; w: number; h: number }
+
+/**
+ * A CIVIC BUILDING IS JUST A BUILDING (growth-unification §3): the hall
+ * and the market take STREET FRONTAGE SLOTS like every other structure,
+ * on the lot nearest the plaza junction that their footprint fits. They
+ * front their own street, their door faces it, and the lots the footprint
+ * covers are claimed so no house is laid inside them.
+ *
+ * Returns the row plus the slots it consumed; null when nothing fits.
+ */
+function placeCivic(
+  net: TownStreets, at: Vec2, style: { color: string; w: number; h: number }, type: string,
+  claimed: ReadonlySet<number>, standing: ReadonlyArray<TownWork>, bound: number,
+): { work: TownWork; slots: number[] } | null {
+  const order = net.slots
+    .map((s, k) => ({ k, s, d: Math.hypot(s.x - at.x, s.y - at.y) }))
+    .filter(e => !claimed.has(e.k))
+    .sort((a, b) => a.d - b.d || a.k - b.k);
+  for (const { k, s } of order) {
+    const door = doorToward(s.x, s.y, s.ax, s.ay);
+    const sideways = door === "east" || door === "west";
+    const w = sideways ? style.h : style.w;
+    const h = sideways ? style.w : style.h;
+    // Set back off the centerline like a house, not centred on the lot —
+    // a 15 m-deep hall on a 10.5 m setback would stand in the road.
+    const off = Math.hypot(s.x - s.ax, s.y - s.ay) || 1;
+    const nx = (s.x - s.ax) / off;
+    const ny = (s.y - s.ay) / off;
+    const reach = CIVIC_FRONT + (sideways ? w : h) / 2;
+    const cx = s.ax + nx * reach;
+    const cy = s.ay + ny * reach;
+    const rect: Rect = { x: cx - w / 2, y: cy - h / 2, w, h };
+    // Inside the declared extent, clear of what already stands.
+    if (Math.hypot(cx, cy) + Math.hypot(w, h) / 2 > bound) continue;
+    if (standing.some(o => rectsClash(o, rect, 1))) continue;
+    // Every lot the footprint covers becomes part of the civic ground.
+    const slots: number[] = [];
+    for (let j = 0; j < net.slots.length; j++) {
+      const o = net.slots[j];
+      if (Math.abs(o.x - cx) < w / 2 + 8 && Math.abs(o.y - cy) < h / 2 + 8) slots.push(j);
+    }
+    if (!slots.includes(k)) slots.push(k);
+    return {
+      work: { type, dx: rect.x, dy: rect.y, w, h, door, color: style.color },
+      slots,
+    };
+  }
+  return null;
+}
+
 /* ---------------- typed growth bias (city-development §2b) ------------ */
 // A town turns toward what feeds it: its arterials aim at its trade
 // partners and its resource sides, and its works cap the tips that point
@@ -214,7 +368,15 @@ function doorToward(cx: number, cy: number, tx: number, ty: number): TownHouse["
 // derived here and for the true approach bearings hosts hand in.
 
 export interface TownBias {
-  /** Arterial bearings, most important first (roads, then resources). */
+  /** WHAT THE TOWN GROWS AROUND (phase B §2.1) — the growth seeds, in the
+   *  order the street layer reads them: the host's ROAD SEEDS first (a
+   *  through-road span and its spurs, real geometry) then the substrate's
+   *  leanings as bare stubs. A host with no seed geometry contributes only
+   *  stubs, which is exactly what `bearings` used to say. */
+  seeds: GrowSeed[];
+  /** LEGACY VIEW of the same answer: the bare bearings among `seeds`, plus
+   *  the road bearings a seedless host handed in. Kept while the fixtures
+   *  still speak it (phase B stage 3 sweeps it). */
   bearings: number[];
   /** Direction of the fertile side (radians), if the surroundings lean. */
   fertile: number | null;
@@ -258,6 +420,11 @@ function fieldBearing(
   return quantB(Math.atan2(vy, vx));
 }
 
+/** How many incident roads a town seeds arterials for — `approachBearings`'
+ *  own cap (approach.ts, default 6). Beyond it a hub is pathological, and
+ *  growStreets' compass dedup collapses roads sharing a bucket anyway. */
+const ROAD_BEARING_CAP = 6;
+
 const biasMemo = new WeakMap<TownHost, Map<string, TownBias>>();
 
 /** The typed growth bias for a town (session-memoized — see above). */
@@ -288,19 +455,24 @@ export function townBias(tri: TownHost, eco: CompiledEconomy, siteKey: string): 
   // town edge, kernel/town/approach.ts; a least-cost road curves around
   // hills, so this rarely matches the straight line to the neighbor).
   // That answer is trusted whole, empty included (a verified roadless
-  // town). Without it, fall back to straight-line bearings toward up to
-  // two route-connected neighbor cities (the high street is the highway).
+  // town). Without it, fall back to straight-line bearings toward the
+  // route-connected neighbor cities (the high street is the highway).
+  //
+  // PORTS ARE PLURAL (phase B §1.7 — defect B-1): the old cap of TWO threw
+  // away phase A's plural ports before they ever reached growStreets, so a
+  // five-road crossroads still grew two road-aimed arterials. The cap is
+  // now the approach cap: one seed per incident road.
   const bearings: number[] = [];
   const road = tri.roadBearings?.(siteKey) ?? null;
   if (road) {
     for (const b of road) {
-      if (bearings.length >= 2) break;
+      if (bearings.length >= ROAD_BEARING_CAP) break;
       bearings.push(quantB(b));
     }
   } else if (city) {
     const routes = (tri.dual as { routes?: () => Array<{ site_a: { key: string } | null; site_b: { key: string } | null }> }).routes?.() ?? [];
     for (const r of routes) {
-      if (bearings.length >= 2) break;
+      if (bearings.length >= ROAD_BEARING_CAP) break;
       const otherKey = r.site_a?.key === siteKey ? r.site_b?.key
         : r.site_b?.key === siteKey ? r.site_a?.key : null;
       if (!otherKey) continue;
@@ -312,7 +484,23 @@ export function townBias(tri: TownHost, eco: CompiledEconomy, siteKey: string): 
   if (fertile !== null) bearings.push(fertile);
   if (ore !== null) bearings.push(ore);
 
-  const bias: TownBias = { bearings, fertile, ore, timber, toward };
+  // THE SEAM (§2.1): a host that knows its incident road POLYLINES hands
+  // the ROADS THEMSELVES, not a bearing apiece — the town's baseline then
+  // IS the through road rather than a guess aimed along it. Trusted whole;
+  // an empty answer (the overlap rule left every route unclipped, so there
+  // is no port-to-port span) falls back to the stub compile, which is what
+  // this function has always produced.
+  const roadSeeds = tri.roadSeeds?.(siteKey) ?? null;
+  // The substrate's leanings ride along as bare stubs either way: "there is
+  // good land that way" is a direction and nothing more.
+  const leanings: number[] = [];
+  if (fertile !== null) leanings.push(fertile);
+  if (ore !== null) leanings.push(ore);
+  const seeds: GrowSeed[] = roadSeeds?.length
+    ? [...roadSeeds, ...stubSeedsOf(leanings)]
+    : stubSeedsOf(bearings);
+
+  const bias: TownBias = { seeds, bearings, fertile, ore, timber, toward };
   memo.set(siteKey, bias);
   return bias;
 }
@@ -339,10 +527,15 @@ export function townPlan(
   species?: string,
   ageDays?: number,
   scale?: WorldScale,
+  services: readonly ServicePoint[] = [],
+  obstacles: readonly Rect[] = [],
 ): TownPlan {
   // The generator IS the implementation; the sync path just drains it, so
   // the two can never drift (staged output is byte-identical by construction).
-  const gen = townPlanSteps(tri, eco, siteKey, seed, buildUp, housePalette, foundedSlots, species, ageDays, scale);
+  const gen = townPlanSteps(
+    tri, eco, siteKey, seed, buildUp, housePalette, foundedSlots, species, ageDays,
+    scale, services, obstacles,
+  );
   for (;;) {
     const r = gen.next();
     if (r.done) return r.value;
@@ -379,6 +572,18 @@ export function* townPlanSteps(
    *  smaller districts). Absent = the clock-blind legacy literals,
    *  byte-identical output, no neighborhood wells. */
   scale?: WorldScale,
+  /** 🔴 THE TOWN'S FOUNDED SERVICE POINTS (growth phase C §3.2, the
+   *  `ServicePoint` doc): stalls and wells this town ALREADY founded, as
+   *  history. They stand verbatim and anchor the demand pass, which then
+   *  only appends. Empty = re-derive, byte-identical legacy output. */
+  services: readonly ServicePoint[] = [],
+  /** STANDING GROUND the tree must bend around (growth-unification §3
+   *  "Streets respect buildings"; the annexed homesteads of phase C §3.3 are
+   *  the something that finally needed it). Read off the overlay with
+   *  `construction.ts groundObstacles`, and the FOUNDING ENUMERATION must be
+   *  handed the identical list or the two lattices disagree. Empty = the
+   *  unfed `GrowOpts.obstacles` seat, byte-identical legacy growth. */
+  obstacles: readonly Rect[] = [],
 ): Generator<string, TownPlan> {
   const city = tri.cities.find(c => c.key === siteKey);
   if (!city) throw new Error(`townPlan: unknown city "${siteKey}"`);
@@ -413,7 +618,53 @@ export function* townPlanSteps(
   const claimed = new Set(foundedSlots);
   let slotNeed = houseCount + claimed.size;
   for (const s of claimed) slotNeed = Math.max(slotNeed, s + 1);
-  const net = growStreets(seed, siteKey, slotNeed, { bearings: bias.bearings });
+  // The civic buildings take frontage of their own (below), so the tree is
+  // asked for a few lots more than the households need. Growth is
+  // prefix-stable, so over-asking never moves a lot.
+  /** THE DERIVED EXTENT (growth phase C §1.2) — the declared town size
+   *  capped by what this world can hold (`scale.ts townExtentM`: a town may
+   *  not build so far out that it swallows the road to its neighbour). ONE
+   *  derivation, read identically by the street gate below, the planet's
+   *  route ports and the road-seed seam, so the tree, the buildings and the
+   *  roads all stop at the same circle. A plan with no declared scale gets
+   *  the real-scale answer, which IS `dimensions.townRMax`.
+   *
+   *  Street growth holds its built margin back from this, so `radius` below
+   *  is an OUTPUT that fits inside. */
+  const extentM = townExtentM(scale ?? REAL_SCALE);
+  const net = growStreets(
+    seed, siteKey, slotNeed + CIVIC_SLOT_RESERVE,
+    { seeds: bias.seeds, extentM, ...(obstacles.length ? { obstacles } : {}) },
+  );
+
+  // THE CENTRE IS AN OUTPUT (growth-phase-B §1.6, phase C §1.3): the plaza is
+  // whichever junction the founding generation's walks are SHORTEST to, and
+  // the hall and market are ordinary buildings on the frontage nearest it.
+  // There is no plaza berth and no PLAZA_WELL — closeness peaks near the
+  // middle on a roughly-convex network, so the civic core lands near the
+  // middle BECAUSE the walking does.
+  const plaza = plazaOf(net);
+  const mkStyle = WORK_STYLE.market;
+  // Read the WANT, not the placed count: the market's lot has to be
+  // reserved before the households fill the frontage.
+  const hasPlazaMarket = houseCount >= MARKET_MIN_HOUSES;
+  const civic: TownWork[] = [];
+  const civicSlots: number[] = [];
+  if (houseCount > 0) {
+    const civicBound = extentM - TOWN_DIMS.workPad;
+    const market = hasPlazaMarket
+      ? placeCivic(net, plaza, mkStyle, "market", claimed, [], civicBound)
+      : null;
+    for (const s of market?.slots ?? []) { claimed.add(s); civicSlots.push(s); }
+    const hall = placeCivic(
+      net, plaza, WORK_STYLE.hall, "hall", claimed, market ? [market.work] : [], civicBound,
+    );
+    for (const s of hall?.slots ?? []) { claimed.add(s); civicSlots.push(s); }
+    // Hall first: `works.find(type === "market")` must stay the plaza one.
+    if (hall) civic.push(hall.work);
+    if (market) civic.push(market.work);
+  }
+
   yield "framing houses";
   const houses: TownHouse[] = [];
   let radius = TOWN_DIMS.plazaR + 15;
@@ -448,7 +699,7 @@ export function* townPlanSteps(
       arm: slot.arm,
       slot: k,
     });
-    const rr = Math.hypot(cx, cy) + 12;
+    const rr = Math.hypot(cx, cy) + TOWN_DIMS.housePad;
     if (rr > radius) radius = rr;
   }
   const count = houses.length;
@@ -456,51 +707,86 @@ export function* townPlanSteps(
   // STEP 1 of the city fractal (city-development.md §7): neighborhood
   // market stalls founded by unserved demand, each a CONVERTED house lot
   // (same footprint and door, so it stays on its street frontage).
-  // The founding anchor is the town's central source — the plaza market
-  // when the town rates one, else the hall (both at fixed plaza spots,
-  // so founding stays prefix-stable as the town grows).
-  const hasPlazaMarket = houses.length >= MARKET_MIN_HOUSES;
-  const mkStyle = WORK_STYLE.market;
-  const clear = TOWN_DIMS.plazaClear;
-  const anchor = hasPlazaMarket
-    ? { x: 0, y: clear + mkStyle.h + 1.5 } // plaza market doorstep (south)
-    : { x: 0, y: -clear - WORK_STYLE.hall.h - 1.5 }; // hall doorstep (north)
+  // The founding anchor is the town's central source — the plaza market's
+  // doorstep when the town rates one, else the hall's. Both sit on lots the
+  // prefix-stable slot sequence chose, so founding stays prefix-stable too.
+  const central = civic.find(w => w.type === "market") ?? civic[0];
+  const anchor = central ? workDoorstep({ x: 0, y: 0 }, central) : plaza;
+  // 🔴 SLOTS ARE HISTORY (growth phase C §3.2). The RECORDED service points
+  // stand first and unconditionally — a stall that opened does not un-open
+  // because a loop cut later made somebody else's walk shorter (§2's measured
+  // regression: the argmin legitimately moves once a link shortens a walk
+  // between two lots the town already had). They then join the ANCHOR SET, so
+  // the demand pass below only ever APPENDS what history still leaves
+  // unserved: self-limitation intact, prefix stability restored by record
+  // rather than by luck.
+  const bySlot = new Map(houses.filter(h => h.slot !== undefined).map(h => [h.slot!, h] as const));
+  const historyStalls: TownHouse[] = [];
+  const historyWells: TownHouse[] = [];
+  for (const s of services) {
+    const h = bySlot.get(s.slot);
+    if (!h) continue; // a slot beyond today's lots: the town shrank in a replay
+    (s.kind === "stall" ? historyStalls : historyWells).push(h);
+  }
+  const historyStallIdx = new Set(historyStalls.map(h => h.index));
   // NEEDS-AWARE DISTRICT SIZING: with a declared scale the convenience
   // radius derives from the served need's fill cycle (the intercity
   // "day's walk apart" law one rung down) — the street clock shrinks it,
   // realism grows it past the whole town (one central market, the
   // historical village). Without a scale: the clock-blind legacy literal.
-  const stalls = scale
-    ? foundNeighborhoodMarkets(houses, anchor, net, serviceRadiusM(scale, "hunger"))
-    : foundNeighborhoodMarkets(houses, anchor, net);
+  const newStalls = foundServicePoints(
+    historyStallIdx.size ? houses.filter(h => !historyStallIdx.has(h.index)) : houses,
+    [anchor, ...historyStalls.map(h => houseDoorstep({ x: 0, y: 0 }, h))],
+    net,
+    {
+      convenientM: scale ? serviceRadiusM(scale, "hunger") : NEIGH_CONVENIENT,
+      foundMass: NEIGH_FOUND_MASS,
+    },
+  );
+  const stalls = [...historyStalls, ...newStalls];
   const stallIdx = new Set(stalls.map(s => s.index));
   const homes = stallIdx.size ? houses.filter(h => !stallIdx.has(h.index)) : houses;
 
   // WELLS on the thirst radius — same pass, civic founding bar, anchored
-  // at the plaza well every town digs. The chosen lot STAYS a home: its
-  // well is street furniture on the verge past the lot's far corner
-  // (clear of the doorway and the neighbor's frontage).
+  // at THE PLAZA: the widened junction gets the town well, founded like
+  // every other service point instead of decreed at a fixed berth. The
+  // chosen lot STAYS a home: its well is street furniture on the verge
+  // past the lot's far corner (clear of the doorway and the neighbor's).
   const wells: Vec2[] = [];
+  const wellLots: TownHouse[] = [];
   if (scale) {
-    const wellLots = foundServicePoints(homes, [PLAZA_WELL], net, {
+    // History first here too, and the recorded wells anchor the pass.
+    for (const h of historyWells) { wellLots.push(h); wells.push(wellVergePoint(h)); }
+    const more = foundServicePoints(homes, [plaza, ...wells], net, {
       convenientM: serviceRadiusM(scale, "thirst"),
       foundMass: WELL_FOUND_MASS,
     });
-    for (const h of wellLots) wells.push(wellVergePoint(h));
+    for (const h of more) { wellLots.push(h); wells.push(wellVergePoint(h)); }
   }
+  // What this plan STANDS ON, in founding order — history verbatim, then the
+  // appended answers. The host writes the new ones back into the overlay.
+  // A lot with no `slot` has no positional identity to record (a hand-built
+  // plan) — it stands, but it cannot become history.
+  const servicePoints: ServicePoint[] = [
+    ...stalls.map(h => ({ kind: "stall" as const, slot: h.slot })),
+    ...wellLots.map(h => ({ kind: "well" as const, slot: h.slot })),
+  ].filter((s): s is ServicePoint => s.slot !== undefined);
 
   // BUILD UP: households the streets couldn't lot become UPPER STOREYS,
-  // center-out (land nearest the plaza rises first), up to the knob's
-  // level and the engine's storey cap. Monotone in pressure and in the
-  // knob: growth only ever raises floors, never moves a house.
+  // the most ACCESSIBLE land first — shortest street walk to the plaza,
+  // which is the historical gradient re-read off the network instead of
+  // off a hard-coded origin. Monotone in pressure and in the knob: growth
+  // only ever raises floors, never moves a house.
   let extraFloors = 0;
   if (buildUp > 0) {
     let overflow = houseCount - count;
     const maxFloors = Math.min(1 + Math.max(0, Math.floor(buildUp)), TOWN_DIMS.maxHouseFloors);
     if (overflow > 0 && maxFloors > 1) {
+      const reach = new Map<number, number>();
+      for (const h of homes) reach.set(h.index, roadDistance(net, houseDoorstep({ x: 0, y: 0 }, h), plaza));
       const ranked = [...homes].sort((a, b) => {
-        const ra = Math.hypot(a.dx + a.w / 2, a.dy + a.h / 2);
-        const rb = Math.hypot(b.dx + b.w / 2, b.dy + b.h / 2);
+        const ra = reach.get(a.index) ?? Infinity;
+        const rb = reach.get(b.index) ?? Infinity;
         return ra - rb || a.index - b.index;
       });
       for (let level = 2; level <= maxFloors && overflow > 0; level++) {
@@ -516,41 +802,26 @@ export function* townPlanSteps(
   }
 
   yield "raising works";
-  // Civic buildings hold the plaza; production works cap the street TIPS
-  // (the town's edge, where the lanes peter out into fields and pits) —
-  // one building per counted unit (capped: landmarks, not the ledger).
-  const works: TownWork[] = [];
-  // ZERO-BUILDING GROWTH (①b): a town with no households raises no civic
-  // structures either — a founded site starts as bare ground + streets.
-  if (count > 0) {
-    works.push({
-      // The hall stands INSIDE the plaza, door fronting north.
-      type: "hall", dx: -WORK_STYLE.hall.w / 2, dy: -clear - WORK_STYLE.hall.h,
-      w: WORK_STYLE.hall.w, h: WORK_STYLE.hall.h, door: "north", color: WORK_STYLE.hall.color,
-    });
-  }
-  if (hasPlazaMarket) {
-    // The market backs onto the hall across the plaza center.
-    works.push({
-      type: "market", dx: -mkStyle.w / 2, dy: clear,
-      w: mkStyle.w, h: mkStyle.h, door: "south", color: mkStyle.color,
-    });
-  }
+  // The civic rows lead (hall, then plaza market — see above); production
+  // works cap the street TIPS (the town's edge, where the lanes peter out
+  // into fields and pits) — one building per counted unit (capped:
+  // landmarks, not the ledger).
+  const works: TownWork[] = count > 0 ? [...civic] : [];
 
   // Street tips — where the works go. Each type prefers the tips that
   // POINT THE RIGHT WAY (typed placement, city-development §2b): farm
   // gates toward the fertile side, mine/smelter toward the ore side,
-  // outskirts-ness as the tiebreak (and the whole rule when the
-  // surroundings are symmetric).
+  // OUTSKIRTS-NESS as the tiebreak — measured from the PLAZA, the town's
+  // own centre of gravity, not from the frame origin.
   const tips: Array<{ p: Vec2; dir: { x: number; y: number } }> = [];
   let maxTipR = 1;
   for (const s of net.streets) {
-    if (s.ring || s.pts.length < 3) continue;
+    if (s.baseline || s.pts.length < 3) continue;
     const p = s.pts[s.pts.length - 1];
     const q = s.pts[s.pts.length - 2];
     const len = Math.hypot(p.x - q.x, p.y - q.y) || 1;
     tips.push({ p, dir: { x: (p.x - q.x) / len, y: (p.y - q.y) / len } });
-    maxTipR = Math.max(maxTipR, Math.hypot(p.x, p.y));
+    maxTipR = Math.max(maxTipR, Math.hypot(p.x - plaza.x, p.y - plaza.y));
   }
   const usedTips = new Set<number>();
   const bestTip = (toward: number | null): number => {
@@ -559,8 +830,10 @@ export function* townPlanSteps(
     for (let i = 0; i < tips.length; i++) {
       if (usedTips.has(i)) continue;
       const t = tips[i];
-      const r = Math.hypot(t.p.x, t.p.y);
-      const align = toward === null ? 0 : Math.cos(Math.atan2(t.p.y, t.p.x) - toward);
+      const r = Math.hypot(t.p.x - plaza.x, t.p.y - plaza.y);
+      const align = toward === null
+        ? 0
+        : Math.cos(Math.atan2(t.p.y - plaza.y, t.p.x - plaza.x) - toward);
       const score = align * 0.75 + (r / maxTipR) * 0.45;
       if (score > bestScore) { bestScore = score; best = i; }
     }
@@ -594,21 +867,28 @@ export function* townPlanSteps(
         const door = doorToward(x, y, t.p.x, t.p.y); // door faces back up the street
         works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
         if (type === "farm") farmSpots.push({ x, y });
-        const rr = Math.hypot(x, y) + 18;
+        const rr = Math.hypot(x, y) + TOWN_DIMS.workPad;
         if (rr > radius) radius = rr;
         placed = true;
         break;
       }
       if (!placed) {
         // Tips ran out (tiny towns): fall back to the town edge, still
-        // leaning the typed way when there is one.
+        // leaning the typed way when there is one. DEFECT B-2: this arm
+        // used to place without widening `radius` (contrast the tip arm
+        // above), so the plan under-reported its own built area. It now
+        // widens like every other placement AND is clamped inside the
+        // declared extent, which is what makes `radius ≤ extentM` true.
         const a = toward ?? (works.length / 6) * Math.PI * 2 + 0.7;
         const spread = toward === null ? 0 : (k - (n - 1) / 2) * 0.5;
-        const x = Math.cos(a + spread) * (radius + TOWN_DIMS.workTipOut);
-        const y = Math.sin(a + spread) * (radius + TOWN_DIMS.workTipOut);
-        const door = doorToward(x, y, 0, 0);
+        const out = Math.min(radius + TOWN_DIMS.workTipOut, extentM - TOWN_DIMS.workPad);
+        const x = plaza.x + Math.cos(a + spread) * out;
+        const y = plaza.y + Math.sin(a + spread) * out;
+        const door = doorToward(x, y, plaza.x, plaza.y);
         works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
         if (type === "farm") farmSpots.push({ x, y });
+        const rr = Math.hypot(x, y) + TOWN_DIMS.workPad;
+        if (rr > radius) radius = rr;
       }
     }
   }
@@ -625,14 +905,17 @@ export function* townPlanSteps(
     const anchors = farmSpots.length
       ? farmSpots
       : tips.slice(0, 2).map(t => ({ x: t.p.x, y: t.p.y }));
-    if (anchors.length === 0) anchors.push({ x: radius, y: 0 });
+    if (anchors.length === 0) anchors.push({ x: plaza.x + radius, y: plaza.y });
     const patches = Math.min(14, 2 + Math.round(dual.settlementScalar(siteKey, "farms")) * 2);
     for (let k = 0; k < patches; k++) {
       const rng = mulberry32(hashSeed(seed, `${siteKey}:field:${k}`));
       const at = anchors[k % anchors.length];
-      const rr = Math.hypot(at.x, at.y) || 1;
-      const ux = at.x / rr;
-      const uy = at.y / rr;
+      // Fields fan OUTWARD from the town's own centre (the plaza), which
+      // is where "past the farm gate" points once the origin stops being
+      // the middle of anything.
+      const rr = Math.hypot(at.x - plaza.x, at.y - plaza.y) || 1;
+      const ux = (at.x - plaza.x) / rr;
+      const uy = (at.y - plaza.y) / rr;
       const out = TOWN_DIMS.fieldOutMin + rng() * TOWN_DIMS.fieldOutJit;
       const side = (rng() - 0.5) * TOWN_DIMS.fieldSideSpread;
       const w = TOWN_DIMS.fieldWMin + rng() * TOWN_DIMS.fieldWJit;
@@ -654,11 +937,18 @@ export function* townPlanSteps(
     for (const w of works) w.species = species;
   }
   return {
-    key: siteKey, biome, groundColor, radius: radius + 10,
+    key: siteKey, biome, groundColor,
+    // EXTENT IS AN OUTPUT (§1.5): the radius is what actually got built,
+    // and street growth already held `builtMargin` back from the declared
+    // extent, so it fits inside by construction (the old plan reported
+    // 495 against a 450 port extent).
+    radius: Math.min(radius + TOWN_DIMS.planPad, extentM),
     // `built` = household capacity PROVIDED: placed lots plus the upper
     // storeys — the growth governor's "can a replan change anything".
-    want: houseCount, built: count + extraFloors, houses: homes, works, fields, streets: net,
+    want: houseCount, built: count + extraFloors, houses: homes, works, plaza, fields, streets: net,
+    ...(civicSlots.length ? { civicSlots: civicSlots.slice().sort((a, b) => a - b) } : {}),
     ...(scale ? { wells } : {}),
+    ...(servicePoints.length ? { services: servicePoints } : {}),
     ...(species ? { species } : {}),
   };
 }

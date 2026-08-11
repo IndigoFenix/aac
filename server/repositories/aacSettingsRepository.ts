@@ -13,6 +13,22 @@ import {
   deleteExternalData,
   type EntityRef,
 } from "../external-storage";
+import { elevenLabsKeyProblem } from "@shared/elevenlabs-key";
+
+/**
+ * Thrown when a write carries a value that cannot be what the column means —
+ * e.g. an ElevenLabs key ID or an autofilled password where the "sk_" secret
+ * belongs. `message` is the client-translatable "error:CODE" convention.
+ */
+export class InvalidAacSettingError extends Error {
+  constructor(
+    public readonly field: string,
+    public readonly code: string,
+  ) {
+    super(`error:${code}`);
+    this.name = "InvalidAacSettingError";
+  }
+}
 
 export class AacSettingsRepository {
   private ref(studentId: string): EntityRef {
@@ -62,9 +78,24 @@ export class AacSettingsRepository {
   }
 
   /**
+   * Every write path funnels through here (clinician PATCH, AAC device,
+   * assistant memory-schema edits), so this is the one place a nonsense value
+   * can be stopped before it reaches the database. Returns a copy — callers'
+   * objects are not mutated.
+   */
+  private sanitizeUpdates(updates: UpdateAacSettings): UpdateAacSettings {
+    const key = (updates as Record<string, unknown>).elevenlabsApiKey;
+    if (typeof key !== "string") return updates;
+    const problem = elevenLabsKeyProblem(key);
+    if (problem) throw new InvalidAacSettingError("elevenlabsApiKey", problem);
+    return { ...updates, elevenlabsApiKey: key.trim() };
+  }
+
+  /**
    * Update AAC settings for a student (upsert: creates if missing)
    */
   async upsert(studentId: string, updates: UpdateAacSettings): Promise<AacSettings> {
+    updates = this.sanitizeUpdates(updates);
     const existing = await this.getByStudentId(studentId);
     if (existing) {
       const ref = this.ref(studentId);

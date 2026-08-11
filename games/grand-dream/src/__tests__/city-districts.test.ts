@@ -68,10 +68,15 @@ describe("districts over a real town (tier B via food.ts)", () => {
       .map((w, i) => ({ w, i }))
       .filter(({ w }) => w.type === "farm" || w.type === "mine" || w.type === "smelter");
     expect(workIdx.sort((a, b) => a - b)).toEqual(production.map(p => p.i));
-    // Kinds exist and follow the works: some district holds the mines.
-    const mining = districts.find(d => d.kind === "mining");
-    expect(mining).toBeDefined();
-    expect(mining!.works.some(wi => plan.works[wi].type === "mine")).toBe(true);
+    // Kinds exist and follow the works: SOME mining district holds the
+    // mines. RE-PINNED (growth-phase-B): the town re-laid, so which
+    // mining quarter comes first in the catchment order moved (a
+    // smelter-only quarter now leads) — the property was never about
+    // that order, so it is stated order-independently.
+    expect(districts.some(d => d.kind === "mining")).toBe(true);
+    expect(districts.some(
+      d => d.kind === "mining" && d.works.some(wi => plan.works[wi].type === "mine"),
+    )).toBe(true);
   });
 
   it("at plenty every district is full; under scarcity the far quarter runs lean and shops harder", () => {

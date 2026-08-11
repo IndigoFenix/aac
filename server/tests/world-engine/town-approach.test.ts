@@ -28,6 +28,7 @@ import {
   toPlanetDir,
   toTownLocal,
   BEARING_QUANT,
+  type ArterialTip,
   type TownFrame,
 } from "@shared/world-engine/kernel/town/approach.js";
 import {
@@ -194,21 +195,36 @@ describe("townBias — host approach bearings beat the straight line", () => {
 
 /* ------------------- the splice at the town edge (fix D) ------------------ */
 
-/** Two gen-0 arterials (east and north), the plaza ring, and a lane. */
-function testStreets(): Array<Pick<Street, "id" | "gen" | "ring" | "pts">> {
+/** Two gen-0 arterials (east and north), the BASELINE, and a lane.
+ *  (growth-phase-B stage 2 §2.2: street 0 is a real road now, so its two
+ *  ENDS are gates like any other gen-0 tip — the exclusion belonged to the
+ *  plaza ring, which was topology and never pavement.) */
+function testStreets(): Array<Pick<Street, "id" | "gen" | "baseline" | "pts">> {
   return [
-    { id: 0, gen: -1, ring: true, pts: [{ x: 30, y: 0 }, { x: 0, y: 30 }, { x: -30, y: 0 }] },
+    { id: 0, gen: 0, baseline: true, pts: [{ x: 30, y: 0 }, { x: 0, y: 30 }, { x: -30, y: 0 }] },
     { id: 1, gen: 0, pts: [{ x: 30, y: 0 }, { x: 150, y: 10 }, { x: 290, y: 24 }] },
     { id: 2, gen: 0, pts: [{ x: 0, y: 30 }, { x: -14, y: 160 }, { x: -20, y: 300 }] },
     { id: 3, gen: 1, pts: [{ x: 150, y: 10 }, { x: 170, y: 90 }] },
   ];
 }
 
+/** The eastern arterial's tip — the gate the splice cases below aim at. */
+function eastGate(): ArterialTip {
+  return arterialTips(testStreets()).find(t => t.street === 1)!;
+}
+
 describe("arterial tips and the splice connector", () => {
-  it("collects gen-0 tips only (ring and lanes excluded)", () => {
+  it("collects every gen-0 outer end, the BASELINE'S TWO included; lanes excluded", () => {
     const tips = arterialTips(testStreets());
-    expect(tips.map(t => t.street)).toEqual([1, 2]);
-    expect(tips[0]!.tip).toEqual({ x: 290, y: 24 });
+    expect(tips.map(t => `${t.street}:${t.end}`)).toEqual(["0:0", "0:1", "1:1", "2:1"]);
+    expect(tips[0]!.tip).toEqual({ x: 30, y: 0 });   // the baseline's own east end
+    expect(tips[2]!.tip).toEqual({ x: 290, y: 24 }); // the east arterial
+  });
+
+  it("THE GATE IS THE PORT: declared ports replace the tip hunt entirely", () => {
+    const tips = arterialTips(testStreets(), [{ street: 2, end: 1 }, { street: 0, end: 1 }]);
+    expect(tips.map(t => `${t.street}:${t.end}`)).toEqual(["2:1", "0:1"]);
+    expect(tips[1]!.tip).toEqual({ x: -30, y: 0 });
   });
 
   it("picks the bearing-nearest gen-0 street", () => {
@@ -218,15 +234,17 @@ describe("arterial tips and the splice connector", () => {
   });
 
   it("refuses a gate more than a right angle away (no cross-town chord)", () => {
-    const tips = arterialTips(testStreets()); // gates ~east and ~north only
+    // With the baseline's two ends counted, this fixture's four gates ring
+    // the town and nothing is ever a right angle from all of them — so the
+    // guard is probed on a town that DECLARES one gate, facing east.
+    const tips = arterialTips(testStreets(), [{ street: 1, end: 1 }]);
     expect(nearestArterialTip(tips, -2.4)).toBeNull(); // a road from the SW
     expect(nearestArterialTip(tips, -2.4, Math.PI)).not.toBeNull(); // opt-out
   });
 
   it("bridges clip point to tip exactly (endpoints pinned through smoothing)", () => {
-    const tips = arterialTips(testStreets());
     const clip = { x: 460, y: 40 };
-    const pts = spliceConnector(clip, { x: -1, y: 0 }, tips[0]!);
+    const pts = spliceConnector(clip, { x: -1, y: 0 }, eastGate());
     expect(pts[0]).toEqual(clip);
     expect(pts[pts.length - 1]!.x).toBeCloseTo(290, 9);
     expect(pts[pts.length - 1]!.y).toBeCloseTo(24, 9);
@@ -296,10 +314,30 @@ describe("spliceRouteAtTown — the render-only PORT → GATE refinement", () =>
   });
 
   it("refuses when no gate faces the road (the cross-town chord guard)", () => {
-    // A road porting from the south-west; the test town's only gates face
-    // east and north — chording across it would cut through the edge lots.
+    // A road porting from the south-west, into a town that declares ONE
+    // gate, facing east — chording across it would cut through the edge
+    // lots. (Against the full gate ring the same road would legitimately
+    // meet the baseline's own western end, which §2.2 made a gate.)
+    const oneGate = arterialTips(testStreets(), [{ street: 1, end: 1 }]);
     const sw = portedThrough([[-9000, -9000], [-4000, -4000], [-900, -900], [0, 0]], "b");
-    expect(spliceRouteAtTown(sw, "b", FRAME, PORT_EXTENT_M, tips, R)).toBeNull();
+    expect(spliceRouteAtTown(sw, "b", FRAME, PORT_EXTENT_M, oneGate, R)).toBeNull();
+  });
+
+  it("THE GATE IS THE PORT: a town whose street reaches the port gets NO connector", () => {
+    // The route ports 450 m due east; give the town a gate at exactly that
+    // point and the splice has nothing left to do — the road has arrived.
+    const route = portedThrough(CURVED, "b");
+    const port = toTownLocal(FRAME, R, routePointAt(route, route.lengthM))!;
+    const atPort: ArterialTip[] = [{
+      street: 0, end: 1, bearing: Math.atan2(port.y, port.x),
+      tip: port, out: { x: 1, y: 0 },
+    }];
+    expect(spliceRouteAtTown(route, "b", FRAME, PORT_EXTENT_M, atPort, R)).toBeNull();
+    // …and a gate a real distance inside it still splices (the stub path).
+    const inside: ArterialTip[] = [{
+      ...atPort[0]!, tip: { x: port.x - 80, y: port.y },
+    }];
+    expect(spliceRouteAtTown(route, "b", FRAME, PORT_EXTENT_M, inside, R)).not.toBeNull();
   });
 
   it("is deterministic: double-call byte-equal", () => {

@@ -34,7 +34,7 @@ import type { WorldScale } from "../../scale";
 import { bootDual, type DualWorld, type DualSpec, type DualNode, type DualEdge } from "./dual";
 import {
   gatherBand, settleBand, disperseBandFully, stepBandDay, bandPressure,
-  gateASettles, PRESSURE_FLOOR_DEFAULT,
+  gateASettles, gateAThreshold, PRESSURE_FLOOR_DEFAULT,
   type Band, type CapacityField, type WildSpecies,
 } from "./bands";
 import {
@@ -743,10 +743,18 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
   const bestCrowdSite = (occupied: Array<[number, number]>): FoundingSite | null => {
     const auto = opts.autoFound!;
     let at: FoundingSite | null = null;
+    // ONE GATE, TWO ARMS (growth phase C §3.1). With bands declared, the
+    // scan that picks where a band GATHERS reads the same threshold Gate A
+    // will read when that band decides to STAY — the closed form of the very
+    // loop below (`gateAThreshold`), so the two arms cannot disagree about
+    // which land is worth settling. The census path (no `bandFounding`)
+    // keeps the caller's authored scan, byte for byte.
+    const threshold = scanThreshold();
     for (const w of wilds) {
       if (!grid.fields[w.field]) continue;
       const candidates = findFoundingSites(grid, {
         ...prep.founding,
+        ...(threshold !== null ? { threshold } : {}),
         score: auto.score,
         forageField: w.field,
         occupied,
@@ -833,6 +841,29 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
       ? { field: w.habitat.field, scale: w.habitat.scale ?? 1 }
       : w.field,
   );
+
+  /** The FOUND-SMALL take a gather here would actually lift: the scan's own
+   *  cap and the band cap, whichever binds (tri.ts's own rule below). */
+  const bandTake = (): number | null => {
+    const caps = [prep.founding.maxHarvest, bf?.maxBand].filter((c): c is number => c !== undefined);
+    return caps.length ? Math.min(...caps) : null;
+  };
+
+  /**
+   * THE SCAN'S THRESHOLD, CLOSED FORM (growth phase C §3.1) — null when this
+   * world declares no bands, in which case nothing here speaks and the
+   * caller's authored scan stands untouched.
+   *
+   * Declared beside the band machinery it reads (`bf`, `bandStaple`) rather
+   * than beside its one caller: `bestCrowdSite` is a closure the day loop
+   * calls, long after this line has run.
+   */
+  const scanThreshold = (): number | null => {
+    if (!bf) return null;
+    const take = bandTake();
+    if (take === null) return null;
+    return gateAThreshold(bf.scale, bandStaple, take, { portableBulk: bf.portableBulk });
+  };
 
   /** Land already spoken for, from `self`'s point of view: living cities'
    *  charter boxes and other bands' working boxes. */
@@ -978,10 +1009,10 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
     ];
     const at = bestCrowdSite(occupied);
     if (!at) return;
-    const caps = [prep.founding.maxHarvest, bf.maxBand].filter((c): c is number => c !== undefined);
+    const take = bandTake();
     const band = gatherBand(grid, wilds, at, {
       radius: prep.founding.radius,
-      ...(caps.length ? { maxHarvest: Math.min(...caps) } : {}),
+      ...(take !== null ? { maxHarvest: take } : {}),
     });
     if (band.size > 0) bands.push(band);
   };

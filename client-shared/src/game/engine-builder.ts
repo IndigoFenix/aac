@@ -19,6 +19,7 @@
 // client-aac/src/lib/engine-builder.ts.
 
 import type {
+  BuilderRecency,
   BuilderSurface,
   GameMessage,
   PlatformMessageInput,
@@ -33,12 +34,37 @@ export interface EnginePlayResult {
   spokenText?: string;
 }
 
+/**
+ * What the CALLING BOARD knows that the engine cannot: how many ranked words
+ * its grid can page through, what this student has said before, and which
+ * sentence-type chip they just pressed. All optional — a caller that passes
+ * none gets the surfacer's own defaults (a 16-word unpersonalized board), which
+ * is exactly the behavior every caller had before this shape existed.
+ */
+export interface BuilderSurfaceRequestOpts {
+  /** Main-grid budget. The BOARD owns this number: it is a display budget
+   *  (rows × columns × pages), not something the engine can know. */
+  capacity?: number;
+  /** The student's learned layer (see `BuilderRecency`) — platform-owned,
+   *  passed down per request, never stored by the game. */
+  recency?: BuilderRecency;
+  /** A tapped sentence-type chip (`BuilderSurface.typeChips[].kind`). */
+  seedKind?: string;
+}
+
 export interface EngineBuilderBackend {
   /** What should the builder offer for this partial sentence? `category`
    *  filters to one advertised `BuilderSurface.categories` tab; `group` to one
-   *  of the active view's `BuilderSurface.groups` chips. null = no engine
-   *  answer (timeout / error) — caller falls back to registry content. */
-  requestSurface(glyph: string, category?: string, group?: string): Promise<BuilderSurface | null>;
+   *  of the active view's `BuilderSurface.groups` chips; `opts` carries the
+   *  caller's grid budget + the student's learned layer + a type-chip seed.
+   *  null = no engine answer (timeout / error) — caller falls back to registry
+   *  content. */
+  requestSurface(
+    glyph: string,
+    category?: string,
+    group?: string,
+    opts?: BuilderSurfaceRequestOpts,
+  ): Promise<BuilderSurface | null>;
   /** Execute a composed sentence in the engine. null = no engine to execute
    *  in (or no answer in time) — caller falls back to the LLM interpret path. */
   play(glyph: string): Promise<EnginePlayResult | null>;
@@ -88,7 +114,7 @@ export function createBridgeBuilderBackend(
   };
 
   return {
-    requestSurface(glyph, category, group) {
+    requestSurface(glyph, category, group, opts) {
       return new Promise<BuilderSurface | null>((resolve) => {
         const requestId = nextRequestId("bsurf");
         const timer = setTimeout(() => settle(pendingSurfaces, requestId, null), SURFACE_TIMEOUT_MS);
@@ -100,6 +126,13 @@ export function createBridgeBuilderBackend(
             glyph,
             ...(category ? { category } : {}),
             ...(group ? { group } : {}),
+            // The caller's own three: its grid budget, the student's learned
+            // layer, the tapped type chip. Each omitted when absent, so the
+            // message a caller that passes no opts sends is byte-identical to
+            // the pre-existing one.
+            ...(opts?.capacity !== undefined ? { capacity: opts.capacity } : {}),
+            ...(opts?.recency ? { recency: opts.recency } : {}),
+            ...(opts?.seedKind ? { seedKind: opts.seedKind } : {}),
           });
         } catch {
           settle(pendingSurfaces, requestId, null);

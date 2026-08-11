@@ -2973,22 +2973,26 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   toast({ title: t('common.error'), description: t('goal.statementRequired'), variant: 'destructive' });
                   return;
                 }
+                // null, not undefined: this payload is reused for the PATCH
+                // below, and JSON.stringify drops undefined keys — a cleared
+                // field would simply not be sent, and the old value would
+                // survive the server-side merge and reappear on refetch.
                 const rating = goalForm.clientImportanceRating.trim()
                   ? Math.min(5, Math.max(1, parseInt(goalForm.clientImportanceRating)))
-                  : undefined;
+                  : null;
                 const goalData: InsertGoal = {
                   programId: program.id,
                   goalStatement: goalForm.goalStatement,
-                  criteria: goalForm.criteria || undefined,
-                  methods: goalForm.methods || undefined,
-                  targetDate: goalForm.targetDate || undefined,
+                  criteria: goalForm.criteria || null,
+                  methods: goalForm.methods || null,
+                  targetDate: goalForm.targetDate || null,
                   useGas: goalForm.useGas,
                   gasVaryingVariable: goalForm.useGas && goalForm.gasVaryingVariable ? goalForm.gasVaryingVariable : null,
                   gasBaselineLevel: goalForm.useGas && goalForm.gasBaselineLevel ? goalForm.gasBaselineLevel : null,
                   gasLevels: goalForm.useGas ? goalForm.gasLevels : {},
                   clientImportanceRating: rating,
                   setJointlyWithFamily: goalForm.setJointlyWithFamily,
-                  familyInput: goalForm.familyInput || undefined,
+                  familyInput: goalForm.familyInput || null,
                 };
                 if (editingGoal) {
                   updateGoalMutation.mutate({ goalId: editingGoal.id, updates: goalData });
@@ -3138,13 +3142,16 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   return;
                 }
                 
+                // null, not undefined — see the goal payload above: this object
+                // is reused for the PATCH, and an undefined key never reaches
+                // the server, so the cleared field keeps its old value.
                 const objectiveData = {
                   goalId: selectedGoalForObjective!,
                   objectiveStatement: objectiveForm.objectiveStatement,
-                  profileDomainId: objectiveForm.profileDomainId && objectiveForm.profileDomainId !== 'none' ? objectiveForm.profileDomainId : undefined,
-                  criteria: objectiveForm.criteria || undefined,
-                  methods: objectiveForm.methods || undefined,
-                  targetDate: objectiveForm.targetDate || undefined,
+                  profileDomainId: objectiveForm.profileDomainId && objectiveForm.profileDomainId !== 'none' ? objectiveForm.profileDomainId : null,
+                  criteria: objectiveForm.criteria || null,
+                  methods: objectiveForm.methods || null,
+                  targetDate: objectiveForm.targetDate || null,
                   gasTargetLevel: objectiveForm.gasTargetLevel || null,
                 };
                 
@@ -3355,14 +3362,16 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   toast({ title: t('common.error'), description: t('service.nameRequired'), variant: 'destructive' });
                   return;
                 }
+                // null, not undefined — reused for the PATCH below, where an
+                // undefined key would be dropped and leave the old value.
                 const serviceData: InsertService = {
                   programId: program.id,
                   serviceType: serviceForm.serviceType,
                   customServiceName: serviceForm.customServiceName,
-                  description: serviceForm.description || undefined,
+                  description: serviceForm.description || null,
                   setting: serviceForm.setting,
                   deliveryModel: serviceForm.deliveryModel,
-                  providerName: serviceForm.providerName || undefined,
+                  providerName: serviceForm.providerName || null,
                 };
                 if (editingService) {
                   updateServiceMutation.mutate({ serviceId: editingService.id, updates: { ...serviceData, isActive: true } });

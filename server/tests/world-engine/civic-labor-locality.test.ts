@@ -49,7 +49,15 @@ import { foundedBuildingDone, type FoundingCandidate } from "@shared/world-engin
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
 import { DOLLHOUSE_SCALE, serviceRadiusM } from "@shared/world-engine/scale.js";
 
-const CONFIG = { seed: 5, days: 30, questCount: 0, key: "smalltown", startPop: 20 };
+// startPop 80 (was 20) — growth phase B re-pin. The fixture needs a town with
+// an ACROSS-TOWN: ③ asserts the furthest household is out of recruiting reach
+// before checking that the chooser skips them. Under the seeded baseline the
+// through road emits its own frontage FIRST, so a 20-household village is now
+// one 62 m high street — every door within the 76.8 m reach, and the
+// precondition (not the property) became unsatisfiable. MEASURED at seed 5:
+// pop 20 → 6 houses spanning 61.6 m; pop 60 → 16 spanning 94.0 m; pop 80 → 21
+// spanning 125.3 m, 13 of them inside the reach. 80 keeps a decisive margin.
+const CONFIG = { seed: 5, days: 30, questCount: 0, key: "smalltown", startPop: 80 };
 
 // ─────────────────────────────────────────────────────────────────────────
 // ① THE RADIUS — derived, and it is a NEIGHBOURHOOD

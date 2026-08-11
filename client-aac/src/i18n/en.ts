@@ -348,6 +348,14 @@ export const en = {
       connective: "Joiners",
       social: "Social",
     },
+    typeChips: {
+      request: "Want",
+      ask: "Ask",
+      state: "Tell",
+      command: "Do",
+      rule: "Rule",
+      greet: "Social",
+    },
     chips: {
       all: "All",
       people: "People",

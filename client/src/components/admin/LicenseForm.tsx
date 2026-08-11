@@ -259,12 +259,17 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   async function handleSubmit() {
     try {
       if (isEdit) {
+        // Cleared fields must be sent explicitly — this is a PATCH that merges
+        // by key, and JSON.stringify drops undefined, so `undefined` would
+        // leave the old name / trial expiry in place. '' for the name because
+        // the server's updateLicenseSchema types it z.string() (not nullable);
+        // null for trialExpiresAt, which the schema does accept.
         const data: UpdateLicenseData = {
-          name: name || undefined,
+          name,
           licenseType,
           subscriptionType,
           isTrial,
-          trialExpiresAt: isTrial && trialExpiresAt ? trialExpiresAt : undefined,
+          trialExpiresAt: isTrial && trialExpiresAt ? trialExpiresAt : null,
           permissions: buildPermissions(),
         };
         await updateLicense.mutateAsync({ id: license!.id, data });

@@ -266,6 +266,21 @@ const L: Record<string, Lexeme> = {
   eat: { w: "אוכל", f: "אוכלת", vmpl: "אוכלים", vfpl: "אוכלות", inf: "לאכול" },
   drink: { w: "שותה", f: "שותה", vmpl: "שותים", vfpl: "שותות", inf: "לשתות" },
   sleep: { w: "ישן", f: "ישנה", vmpl: "ישנים", vfpl: "ישנות", inf: "לישון" },
+  // THE POSTURE PAIR (build order L15). Both shipped as live glyphs with no
+  // lexeme here, so a Hebrew creature said "אני rest." — the raw English token
+  // sitting in the verb slot, the same failure the construction words had, and
+  // English only ever LOOKED right because the fallback spells the glyph id.
+  // Reached by the open-ground dwell (`restHere` — the one rest with no walk in
+  // it) and by the bare self-needs ("you rest", "you sit").
+  //
+  // נח is the INTRANSITIVE rest — the body at ease, never English's transitive
+  // "rest a thing", which is the second half of what was wrong with the old
+  // line. The feminine is נחה: the regular ת suffix would synthesise "נחת",
+  // which is a different word, so the card carries it. יושב is the seated
+  // posture, and takes the regular suffixes. Both carry the infinitive the
+  // intent periphrasis reads ("אני הולך לנוח").
+  rest: { w: "נח", f: "נחה", vmpl: "נחים", vfpl: "נחות", inf: "לנוח" },
+  sit: { w: "יושב", f: "יושבת", vmpl: "יושבים", vfpl: "יושבות", inf: "לשבת" },
   wash: { w: "רוחץ", f: "רוחצת", vmpl: "רוחצים", vfpl: "רוחצות", inf: "לרחוץ" },
   tidy: { w: "מסדר", f: "מסדרת", vmpl: "מסדרים", vfpl: "מסדרות", inf: "לסדר" },
   heat: { w: "מחמם", f: "מחממת", vmpl: "מחממים", vfpl: "מחממות", inf: "לחמם" },

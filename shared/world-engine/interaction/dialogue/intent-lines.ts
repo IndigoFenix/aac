@@ -293,6 +293,32 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       return { a: thing, b: `eat + ${thing}`, c: `i_me + eat + ${thing}` };
     }
     case "socialAct":
+      // AN ACT WITH A THING IN IT NAMES THE THING (build order L11's recorded
+      // follow-up wish). `socialAct` gained an optional `item` when `show`
+      // landed, and this arm went on speaking the itemless shape — so a
+      // commanded "show + basket + to + orrin" echoed "I will show Orrin",
+      // which is not the order that was given and, as the ECHO, is the child's
+      // only evidence the engine heard the basket at all.
+      //
+      // The shape is GIVE'S, deliberately: `phrase` with the thing as the
+      // object and the person on a `to`-tail is how every other act that has
+      // both a theme and a body already speaks ("give + apple + to + mara"),
+      // and this act is the same sentence with a different verb. Nothing new
+      // is invented for it, and `asIntent`'s `.will` marker lands on the verb
+      // exactly as it does there ("I will show the basket to Orrin").
+      //
+      // ITEMLESS ACTS ARE UNTOUCHED — a hug has nothing to name, so it keeps
+      // the person in the object slot and the byte-identical line it always
+      // had. The fork is on the FIELD, never on the act word: an act that
+      // gains an item speaks it, and this arm needs no edit the day one does.
+      if (goal.item) {
+        return phrase({
+          subject: "i_me",
+          verb: goal.act,
+          object: syms.item(goal.item),
+          tail: { join: "to", symbol: syms.creature(goal.target) },
+        });
+      }
       return phrase({ subject: "i_me", verb: goal.act, object: syms.creature(goal.target) });
     case "help":
       return phrase({ subject: "i_me", verb: "help", object: syms.creature(goal.target) });
@@ -556,6 +582,19 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
     case "converse":
       return { verb: "talk", object: syms.creature(goal.target) };
     case "socialAct":
+      // ⚖️ ONE FACT READ TWICE (the L13 law, restated for the item): the
+      // announcement above and this activity answer are two readings of one
+      // goal and may not name different things, so the fork is the same
+      // `goal.item` fork, in the same order.
+      //
+      // WHICH slot the item takes is `give`'s own answer (its arm, at the head
+      // of this switch, and its announcement in the twin above): the
+      // announcement names the theme AND the endpoint, the activity has room
+      // for one object and spends it on the THEME ("the dog is giving the
+      // apple"). A show reads the same way — "she is showing the basket" is
+      // what a watcher sees, and the person is already the walk's destination
+      // (`goalDestination`, which still answers with the target).
+      if (goal.item) return { verb: goal.act, object: syms.item(goal.item) };
       return { verb: goal.act, object: syms.creature(goal.target) };
     case "help":
       return { verb: "help", object: syms.creature(goal.target) };

@@ -32,7 +32,8 @@ import { createWorld, stepWorld, worldFastForward, type EntityWorld } from "../c
 import type { WorldSpec } from "../cells/spec";
 import { validateWorldSpec } from "../cells/world-validate";
 import type { CompiledEconomy, VitalsSpec } from "../modules/economy/economy";
-import { townRoadBearingsOf, type TownHost } from "./host";
+import { townRoadBearingsOf, townRoadSeedsOf, type TownHost } from "./host";
+import type { GrowSeed } from "./streets";
 
 export interface TownWorldOpts {
   economy: CompiledEconomy;
@@ -49,6 +50,11 @@ export interface TownWorldOpts {
    *  seam). Absent = whatever provideTownRoadBearings registered under
    *  `key` (the handoff for hosts built from a plain config). */
   roadBearings?: readonly number[];
+  /** WHAT THE TOWN GREW AROUND (growth phase B §2.1) — the incident roads
+   *  as town-local growth seeds (TownHost seam; supersedes `roadBearings`
+   *  where the host has the geometry). Absent = whatever
+   *  provideTownRoadSeeds registered under `key`. */
+  roadSeeds?: readonly GrowSeed[];
 }
 
 export interface TownWorld extends TownHost {
@@ -105,6 +111,7 @@ export function createTownWorld(opts: TownWorldOpts): TownWorld {
   // Snapshot at construction: the registry is a handoff, not live state —
   // a later (re)registration must never re-lay a running town's streets.
   const roadBearings = opts.roadBearings ?? townRoadBearingsOf(key);
+  const roadSeeds = opts.roadSeeds ?? townRoadSeedsOf(key);
 
   const spec = settlementSpec(eco);
   const valid = validateWorldSpec(spec);
@@ -199,6 +206,7 @@ export function createTownWorld(opts: TownWorldOpts): TownWorld {
     },
     grid: undefined,
     roadBearings: siteKey => (siteKey === key ? roadBearings : null),
+    roadSeeds: siteKey => (siteKey === key ? roadSeeds : null),
     dual: {
       settlementScalar: (siteKey, scalar) => (siteKey === key ? read(scalar) : 0),
       entityWorld: ew,

@@ -130,9 +130,6 @@ function kindOf(
   if (mines > farms && mines >= craft) return "mining";
   if (craft > farms) return "craft";
   if (farms > 0) return "farm";
-  // The plaza market's own catchment is the town core.
-  const wk = source.work !== undefined ? plan.works[source.work] : undefined;
-  if (wk && wk.type === "market" && Math.hypot(wk.dx + wk.w / 2, wk.dy + wk.h / 2) < 30) return "core";
   return "residential";
 }
 
@@ -210,6 +207,20 @@ export function deriveDistricts(
     districts[best].works.push(wi);
   });
   for (const d of districts) d.kind = kindOf(d.source, d.works, plan, classOf);
+  // THE CORE IS THE BUSIEST QUARTER (growth-phase-B §1.6): the old test
+  // was "the market within 30 m of the origin" — a hub assumption, and
+  // the plaza is not at the origin any more. A town whose imports land at
+  // the hall already has its core; otherwise the market district carrying
+  // the most people IS downtown, which is what the test was reaching for.
+  if (!districts.some(d => d.kind === "core")) {
+    let core = -1;
+    let busiest = 0;
+    for (const d of districts) {
+      if (d.source.kind !== "market") continue;
+      if (d.need > busiest || core < 0) { busiest = d.need; core = d.index; }
+    }
+    if (core >= 0) districts[core].kind = "core";
+  }
 
   // The tier-B allocation: fill varies by supply order, conserving.
   const fills = allocateDistrictFill(

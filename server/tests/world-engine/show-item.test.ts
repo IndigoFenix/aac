@@ -13,12 +13,15 @@
 // ball) and a bare `converse` (a second model of an act the engine already runs
 // one model of).
 //
-// Four layers, cheapest first:
+// Five layers, cheapest first:
 //   A. COMPILE — the frame → GoalSpec table, both roles positional.
 //   B. THE PLAN — compileGoal: fetch-first regression, and the refusals.
 //   C. THE KNOWLEDGE BEAT — what the one fact writes, read back through the
 //      same channel a sighting writes (facts.ts), and what it does NOT touch.
-//   D. LIVE, on the real dollhouse — the whole ladder through the real host:
+//   D. THE ECHO — what the commanded creature says back (wave 3): the line
+//      names the THING, because an echo that drops it is the child's only
+//      evidence the engine misheard.
+//   E. LIVE, on the real dollhouse — the whole ladder through the real host:
 //      the walk, the held-up glyph, the attention snap, the fact, and the
 //      basket still in the same hands.
 //
@@ -38,6 +41,15 @@ import {
   type WorldResolver,
 } from "@shared/world-engine/interaction/behavior/goal-selection.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
+import {
+  asIntent,
+  commandEcho,
+  goalActivity,
+  goalDestination,
+  goalIntentLine,
+  type IntentLineSyms,
+} from "@shared/world-engine/interaction/dialogue/intent-lines.js";
+import { translateGlyph } from "@shared/world-engine/interaction/lang/index.js";
 import { createCreatureWorld } from "@shared/world-engine/interaction/behavior/creatures.js";
 import { knowsFact, perceiveFact } from "@shared/world-engine/interaction/behavior/facts.js";
 import { attentivenessOf } from "@shared/world-engine/interaction/behavior/spark-attention.js";
@@ -278,7 +290,103 @@ describe("the knowledge beat — being shown a thing IS seeing it", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// D. LIVE — the whole ladder, on the real dollhouse
+// D. THE ECHO — the order spoken back, with the thing in it
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// L11 shipped with a recorded wish: the `socialAct` echo arm spoke `i_me +
+// <act> + <target>`, so a commanded show announced "I will show Orrin" — the
+// audience without the thing. The echo is a re-render of what COMPILED, which
+// makes it the child's ONLY evidence that the basket was heard at all; an echo
+// that silently drops the item is indistinguishable from a parse that did.
+//
+// The shape is GIVE'S — object + `to`-tail — because this act has the same two
+// arguments give does and the lang layer already speaks that sentence in every
+// ruleset. The pins below are therefore as much about the ITEMLESS act staying
+// untouched as about the new slot: a hug has nothing to name and must keep the
+// byte-identical line it always had.
+
+describe("the echo — a shown thing is SAID, not just carried", () => {
+  const syms: IntentLineSyms = {
+    item: (ref) => ("id" in ref ? ref.id : (ref.match.kind ?? "thing")),
+    place: (p) => (p.kind === "named" ? p.id : p.kind === "home" ? "home" : "there"),
+    creature: (id) => id,
+  };
+  const showBall: GoalSpec = {
+    kind: "socialAct",
+    target: "bear",
+    act: "show",
+    item: { match: { kind: "ball" } },
+  };
+  const hug: GoalSpec = { kind: "socialAct", target: "bear", act: "hug" };
+
+  it("names the THING and the person — give's shape, one verb apart", () => {
+    const line = goalIntentLine(showBall, syms)!;
+    expect(line.c).toBe("show + ball + to + bear");
+    expect(line.b).toBe("show + ball + to + bear");
+    // The teaching slot moves to the ITEM: what is new in "show the ball to the
+    // bear" is the ball, and the audience is already where the walk ends.
+    expect(line.a).toBe("ball");
+    // …byte-identical to what `give` builds off the same two arguments.
+    const given = goalIntentLine({ kind: "give", item: { match: { kind: "ball" } }, to: "bear" }, syms)!;
+    expect(line.c).toBe(given.c.replace("give", "show"));
+  });
+
+  it("…and it SPEAKS, in every shipped ruleset, without falling to the gloss", () => {
+    const intent = asIntent(goalIntentLine(showBall, syms)!);
+    expect(intent.c).toBe("show.will + ball + to + bear");
+    expect(translateGlyph(intent.c, "en")).toBe("I will show the ball to the bear.");
+    expect(translateGlyph(intent.c, "he")).toBe("אני הולך להראות את הכדור לדוב.");
+    expect(translateGlyph(intent.c, "he", { speaker: "f" })).toBe("אני הולכת להראות את הכדור לדוב.");
+    expect(translateGlyph(intent.c, "es")).toBe("Voy a mostrar la pelota al oso.");
+    expect(translateGlyph(intent.c, "pt")).toBe("Eu vou mostrar a bola para o urso.");
+  });
+
+  it("the OLD line is gone: the audience no longer stands where the thing goes", () => {
+    // The recorded bug, stated as the inequality it was — "I will show Orrin".
+    expect(goalIntentLine(showBall, syms)!.c).not.toBe("i_me + show + bear");
+  });
+
+  it("HUG IS UNTOUCHED — an itemless act keeps the line it always had", () => {
+    const line = goalIntentLine(hug, syms)!;
+    expect([line.a, line.b, line.c]).toEqual(["bear", "hug + bear", "i_me + hug + bear"]);
+    expect(translateGlyph(asIntent(line).c, "en")).toBe("I will hug the bear.");
+  });
+
+  // ⚖️ ONE FACT READ TWICE (the L13 law): the announcement and the "what is she
+  // doing?" answer are two readings of ONE goal and may not name different
+  // things, so the twin forks on the same field in the same order.
+  it("the twin agrees — the activity answer names the item too", () => {
+    expect(goalActivity(showBall, syms)).toEqual({ verb: "show", object: "ball" });
+    // …which is `give`'s own split: the announcement names theme AND endpoint,
+    // the activity has room for one object and spends it on the THEME.
+    expect(goalActivity({ kind: "give", item: { match: { kind: "ball" } }, to: "bear" }, syms)).toEqual({
+      verb: "give",
+      object: "ball",
+    });
+    // The itemless act still answers with the person — nothing else to name.
+    expect(goalActivity(hug, syms)).toEqual({ verb: "hug", object: "bear" });
+  });
+
+  it("…and the WALK still ends at the person — the third channel is unmoved", () => {
+    // `goalDestination` answers "where are you going?". The item took the
+    // object slot, not the destination: you still walk to the body.
+    expect(goalDestination(showBall, syms)).toEqual({ kind: "place", place: "bear" });
+    expect(goalDestination(hug, syms)).toEqual({ kind: "place", place: "bear" });
+  });
+
+  it("a commanded show echoes the whole order back (commandEcho, end to end)", () => {
+    const goal = goalOf("show + ball + to + mara");
+    const { line, perfect } = commandEcho({ raw: ["show", "ball", "to", "mara"] }, goal, syms);
+    expect(line).not.toBeNull();
+    // The canonical line is the child's own glyphs with the deixis flipped —
+    // heads in order — so the reserved bare "ok" IS earned here.
+    expect(perfect).toBe(true);
+    expect(asIntent(line!).b).toBe("show.will + ball + to + mara");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// E. LIVE — the whole ladder, on the real dollhouse
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // ONE BOOT, three sentences — deliberately. A dollhouse boot plus its first

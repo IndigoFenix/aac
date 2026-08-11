@@ -20,7 +20,10 @@ import {
   certifyCreatureQuestWorld, type CreatureCertification,
 } from "@shared/world-engine/interaction/quest/creature-quests";
 import { grownDays, grownBuildUp } from "@shared/world-engine/planet/growth";
-import { provideTownRoadBearings } from "@shared/world-engine/kernel/town/host";
+import {
+  provideTownRoadBearings, provideTownRoadSeeds,
+} from "@shared/world-engine/kernel/town/host";
+import type { GrowSeed } from "@shared/world-engine/kernel/town/streets";
 import type { FlightCity } from "./space-fly";
 
 /** Founding population cap for a VISIT: Malthus regrows the town to its
@@ -69,6 +72,16 @@ export interface CityTownLoaderOpts {
    *  tree is prefix-stable per (seed, key, bearings). null = unknown
    *  (townBias falls back); [] = a verified roadless town. */
   roadBearings?: (fc: FlightCity) => readonly number[] | null;
+  /** THE SEAM (growth phase B §2.1) — the city's incident roads themselves,
+   *  as town-local growth seeds (kernel/town/approach.ts `townRoadSeeds`).
+   *  A bearing says only "a road leaves that way"; a seed carries the road,
+   *  so the town's BASELINE can be the through road instead of a guess aimed
+   *  along it. Same determinism contract as `roadBearings` — a function of
+   *  (planet, city) alone. Registered before founding, preferred over the
+   *  bearings when it comes back non-empty; `[]` (the overlap rule left every
+   *  incident route unclipped, so there is no port-to-port span) falls back
+   *  to the bearings exactly as before the seam existed. */
+  roadSeeds?: (fc: FlightCity) => readonly GrowSeed[] | null;
 }
 
 /** The settlement key a city's town builds under (street-plan identity). */
@@ -144,10 +157,14 @@ export function createCityTownLoader(opts: CityTownLoaderOpts = {}): CityTownLoa
     approach(fc) {
       let e = cache.get(fc.city.cell);
       if (!e) {
-        // The roads' true approach bearings register under the town's key
-        // BEFORE the build starts — createTownWorld snapshots them at
-        // chartering and townBias aims the arterials along them.
-        provideTownRoadBearings(cityTownKey(fc), opts.roadBearings?.(fc) ?? null);
+        // The roads register under the town's key BEFORE the build starts —
+        // createTownWorld snapshots them at chartering. SEEDS are the roads
+        // themselves (the baseline grows AS the through road); the bearings
+        // stay registered beside them as the fallback for a city whose
+        // routes the overlap rule left unclipped.
+        const key = cityTownKey(fc);
+        provideTownRoadBearings(key, opts.roadBearings?.(fc) ?? null);
+        provideTownRoadSeeds(key, opts.roadSeeds?.(fc) ?? null);
         e = { state: "founding", note: "chartering" };
         cache.set(fc.city.cell, e);
         void found(fc, e);

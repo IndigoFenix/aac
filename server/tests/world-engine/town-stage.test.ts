@@ -8,7 +8,8 @@
 import { describe, it, expect } from "@jest/globals";
 import { compileEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { createTownWorld } from "@shared/world-engine/kernel/town/town-world.js";
-import { townPlan } from "@shared/world-engine/kernel/town/plan.js";
+import { townPlan, townPlaza, type TownHouse } from "@shared/world-engine/kernel/town/plan.js";
+import { roadDistance } from "@shared/world-engine/kernel/town/streets.js";
 import { HOUSEHOLD, houseDoorstep } from "@shared/world-engine/kernel/town/goods.js";
 import { equilibriumExportScale, exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
 import {
@@ -91,26 +92,28 @@ describe("town-stage: the open town", () => {
     expect(stage.castSpawns.get(wanter.nodeId)).toEqual(door);
   });
 
-  it("exposes the street tree as ground-ribbon roads in world coords — the plaza ring is topology, never pavement", () => {
+  it("exposes the street tree as ground-ribbon roads in world coords — the BASELINE is pavement like every other street", () => {
     const { plan, stage } = setup();
-    // One ribbon per non-trivial street EXCEPT the plaza ring (user,
-    // 2026-07-22: a painted circle at every town's heart reads artificial —
-    // the ring stays the arterials' topological root, but the plaza is open
-    // ground they converge on).
-    const drawn = plan.streets.streets.filter(s => s.pts.length >= 2 && !s.ring);
+    // RE-PINNED (growth-phase-B): the plaza RING died. It was the one
+    // street excluded from the ribbons, because a painted circle at every
+    // town's heart read as artificial (user, 2026-07-22). Street 0 is now
+    // the BASELINE — the real road the town formed around — so it is drawn
+    // like the road it is, and NOTHING is excluded.
+    const drawn = plan.streets.streets.filter(s => s.pts.length >= 2);
     expect(stage.roads).toHaveLength(drawn.length);
     expect(stage.roads.length).toBeGreaterThan(0);
     for (const r of stage.roads) {
       expect(r.points.length).toBeGreaterThanOrEqual(2);
       expect(r.width).toBeGreaterThan(0);
     }
-    // The ring's ribbon is NOT among them.
-    const ring = plan.streets.streets.find(s => s.ring)!;
-    const want = { x: stage.center.x + ring.pts[0].x, y: stage.center.y + ring.pts[0].y };
-    const ringRoad = stage.roads.find(
+    // The baseline's OWN ribbon is among them, at arterial width.
+    const base = plan.streets.streets.find(s => s.baseline)!;
+    const want = { x: stage.center.x + base.pts[0].x, y: stage.center.y + base.pts[0].y };
+    const baseRoad = stage.roads.find(
       r => Math.abs(r.points[0].x - want.x) < 1e-6 && Math.abs(r.points[0].y - want.y) < 1e-6,
     );
-    expect(ringRoad).toBeUndefined();
+    expect(baseRoad).toBeDefined();
+    expect(baseRoad!.width).toBe(3.4);
   });
 
   it("streams by the SHARED mechanics: homebodies indoors, budgeted, no churn", () => {
@@ -309,11 +312,14 @@ describe("build-up: overflow housing becomes storeys, by the knob", () => {
     expect(tall.built).toBe(flat.built + extra);
     expect(tall.houses.every(h => h.floors >= 1 && h.floors <= 3)).toBe(true); // knob 2 ⇒ ≤ 3 storeys
 
-    // The historical gradient: the town rises from the center outward —
+    // The historical gradient: the town rises from its CENTRE outward —
     // every multi-storey house is nearer the plaza than the farthest
-    // single-storey one.
-    const r = (h: { dx: number; dy: number; w: number; h: number }) =>
-      Math.hypot(h.dx + h.w / 2, h.dy + h.h / 2);
+    // single-storey one. RE-PINNED (growth-phase-B): "nearer" is now the
+    // STREET WALK to the plaza the network founded, not the radius from
+    // the frame origin — accessibility is what the ranking reads, and the
+    // origin stopped being the middle of anything when the ring died.
+    const sq = townPlaza(tall);
+    const r = (h: TownHouse) => roadDistance(tall.streets, houseDoorstep({ x: 0, y: 0 }, h), sq);
     const tallest = Math.max(...tall.houses.map(h => h.floors));
     const outermostTall = Math.max(...tall.houses.filter(h => h.floors === tallest).map(r));
     const outermostFlat = Math.max(...tall.houses.filter(h => h.floors === 1).map(r));
@@ -490,14 +496,22 @@ describe("intercity trade v1 — the abstract-partner caravan (trade.ts)", () =>
     const burden = (daily * bookUnitsPerStreetUnit(ECO, "food")) / town.scalar("food_need");
     // A fed exporter's burden is 0.3 × (houses × HOUSEHOLD) / pop — 0.3 exactly
     // where the plan's beds and the books' souls agree, and this town has grown
-    // past its houses (1430 souls in 277 houses), so it comes out a little under.
-    expect(burden).toBeCloseTo(0.2906, 4);
+    // past its houses (1430 souls in 278 houses), so it comes out a little under.
+    // RE-PINNED (growth-phase-B): the town re-laid, so its bed count moved
+    // 277 → 278 and every number below moved with it. The SHAPE of the pin —
+    // a fixed point measured off this fixture's own books — is untouched.
+    // RE-PINNED AGAIN (growth phase C §1.4): the district pass now sites a
+    // service point where it costs its quarter the fewest STREET metres
+    // instead of nearest a chord centroid, and on this fixture that founds one
+    // stall fewer. A stall CONVERTS a house, so two beds came back and the
+    // bed count moved 278 → 280. Same shape, same fixture, one more house.
+    expect(burden).toBeCloseTo(0.2938, 4);
     const sStar = equilibriumExportScale(1 - food.fill(), burden);
-    expect(sStar).toBeCloseTo(0.3404, 4);
+    expect(sStar).toBeCloseTo(0.338, 4);
     // …and the equilibrium the town settles at is just under the want gate:
     // S₀ + s*·burden ≈ 0.099 against BARTER_WANT_MIN 0.15. It ships a third and
     // feels a tenth — neither the old free lunch nor a cliff.
-    expect(1 - food.fill() + sStar * burden).toBeCloseTo(0.0989, 4);
+    expect(1 - food.fill() + sStar * burden).toBeCloseTo(0.0993, 4);
     let peak = 0;
     for (let t = 0; t < 240; t += 2) peak = Math.max(peak, tr.exportPile(500 + t));
     expect(peak).toBeGreaterThan(sStar * daily * 0.9);

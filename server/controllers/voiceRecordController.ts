@@ -155,13 +155,25 @@ export class VoiceRecordController {
 
       if (!response.ok) {
         const status = response.status;
-        // Note: an upstream 401 means the ElevenLabs *API key* is bad, NOT that
-        // the user's own session expired. Relaying a raw 401 here makes the
-        // client's global auth handler bounce the user to the login page. Map
-        // it to 400 (bad input) so it surfaces as an "invalid key" message.
-        res.status(status === 401 ? 400 : 502).json({
+        // ElevenLabs names the exact key mistake in detail.status — e.g.
+        // "api_key_id_used_as_api_key" when someone pastes the 64-hex key ID
+        // from the dashboard list (the "sk_" secret is only revealed once, at
+        // creation). Pass the code through so the client can say what was
+        // actually pasted instead of a generic "invalid key".
+        let code: string | undefined;
+        try {
+          code = (await response.json())?.detail?.status;
+        } catch {
+          // non-JSON upstream body — fall through to the generic mapping
+        }
+        // Upstream 400/401 on this endpoint always means the KEY is bad. Never
+        // relay a raw 401: the client's global auth handler would read it as
+        // an expired session and bounce the user to the login page.
+        const isKeyProblem = status === 401 || status === 400;
+        res.status(isKeyProblem ? 400 : 502).json({
           success: false,
-          message: status === 401 ? "Invalid ElevenLabs API key" : "Failed to fetch voices from ElevenLabs",
+          code: isKeyProblem ? code || "invalid_api_key" : "upstream_error",
+          message: isKeyProblem ? "Invalid ElevenLabs API key" : "Failed to fetch voices from ElevenLabs",
         });
         return;
       }

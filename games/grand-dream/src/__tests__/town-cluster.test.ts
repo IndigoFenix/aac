@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play";
 import { clusterStages, widenSpecWindow } from "@shared/world-engine/interaction/town/town-cluster";
-import { creditDelivery } from "@shared/world-engine/interaction/town/town-quests";
+import { bookUnitsPerStreetUnit, creditDelivery } from "@shared/world-engine/interaction/town/town-quests";
 
 describe("town-cluster — beyond one town", () => {
   const a = buildTownPlay({ seed: 7, days: 160, questCount: 1, key: "alpha", startPop: 80 });
@@ -137,7 +137,17 @@ describe("cluster resolver — a neighbor resident's OWN town", () => {
     const before = b.town.scalar(drift!);
     const beforePrimary = a.town.scalar(drift!);
     expect(creditDelivery(ctx.town, ctx.eco, "food")).toBe(drift);
-    expect(b.town.scalar(drift!)).toBeCloseTo(before + 1, 6);
+    // ONE STREET UNIT credits one street unit's WORTH OF BOOKS, not one book
+    // unit. The `+ 1` this pin used to carry predates the batch-3 B1 grounding
+    // (economy-arc-opening.md §BATCH 3 B1): food's book rate is the caloric
+    // anchor `FOOD_PER_PERSON_DAILY` = 0.001, so a delivery moves the ledger by
+    // 0.001, and `creditDelivery` has been doing exactly that ever since.
+    // Reading the rate from the same function the code uses keeps this pin
+    // about the ROUTING (whose books were touched) — which is what the test is
+    // named for — instead of re-freezing a magnitude that lives elsewhere.
+    const perUnit = bookUnitsPerStreetUnit(ctx.eco, "food");
+    expect(perUnit).toBeCloseTo(0.001, 9);
+    expect(b.town.scalar(drift!)).toBeCloseTo(before + perUnit, 6);
     expect(a.town.scalar(drift!)).toBeCloseTo(beforePrimary, 6); // primary untouched
   });
 });

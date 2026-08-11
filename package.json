@@ -36,6 +36,7 @@
     "test:institute": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=institute.test.ts",
     "test:reports": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=reports.test.ts",
     "test:integration": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=integration",
+    "test:monitor-history": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=monitor-history-ownership.test.ts",
     "test:engine": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.engine.js",
     "test:unit": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.unit.js",
     "test:llm": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathIgnorePatterns='/node_modules/|/dist/' --testPathPatterns=server/tests/llm/ --runInBand",

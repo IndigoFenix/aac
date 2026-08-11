@@ -313,6 +313,12 @@ describe("the seamless world (one scale, no village boundary)", () => {
     const a = await buildAcceptanceTri(42);
     const rc = a.tri.cities.find(c => c.key === "riverton")!;
     const home = worldPos(rc.x, rc.y);
+    // RE-PINNED (growth-phase-B): the seeded network fits ~50 % more lots
+    // on riverton's ground (900 against ~600), so the shipped population
+    // no longer overflows it — the town has to grow another two months
+    // before "full" is what is being tested. That growth is the premise,
+    // not the subject.
+    await a.tri.advanceDays(60);
     const mgr = createTownManager(a.tri, 7, () => 6);
     mgr.update(home, undefined, 0);
     const before = mgr.loaded().find(t => t.key === "riverton")!.plan;

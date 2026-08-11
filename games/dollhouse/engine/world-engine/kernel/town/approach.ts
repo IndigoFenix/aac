@@ -10,13 +10,23 @@
  *     at the town radius, in the town's local frame. Hosts feed these to
  *     townBias (TownHost.roadBearings) so the street tree grows its
  *     arterials where the ribbons really come in.
- *   • spliceRouteAtTown — PORT → GATE. Routes now END at the town's extent
- *     (planet/routes.ts portTerminateRoute: the PORT LAW at generation), so
- *     the mount-time seam is no longer a clip but the EXPANDED VIEW of that
- *     port: a short connector bending the road's last stretch onto the
- *     street tree's nearest arterial tip (the refineHighways law — route
- *     data, lengths and caravan arcs never change; carts project onto the
- *     spliced geometry per client).
+ *   • townRoadSeeds — THE SEAM (growth phase B §2.1). A bearing is all the
+ *     old street layer could hear; what a town actually grows around is the
+ *     ROAD ITSELF. This turns a city's incident routes into `GrowSeed`s in
+ *     the town's own metres: the most-opposed pair of PORTS becomes one
+ *     through-road SPAN (the baseline the town forms along), every other
+ *     port a spur running in to meet it. Routes the overlap rule left
+ *     UNCLIPPED (portTerminateRoute: neighbours closer than their own
+ *     extents have no open country between them, so no port) yield nothing
+ *     — spans are optional by construction and the stub fallback stands.
+ *   • spliceRouteAtTown — PORT → GATE. Routes END at the town's extent
+ *     (planet/routes.ts portTerminateRoute: the PORT LAW at generation).
+ *     When the town's own baseline reaches that port — a span-seeded town —
+ *     THE GATE IS THE PORT and there is nothing to splice. Only a town whose
+ *     streets stop short (the stub fallback) still needs the connector that
+ *     bends the road's last stretch onto its nearest gate (the refineHighways
+ *     law — route data, lengths and caravan arcs never change; carts project
+ *     onto the spliced geometry per client).
  *
  * Geometry in, geometry out — deterministic, THREE-free, no state.
  */
@@ -24,7 +34,7 @@
 import {
   routeFromDirs, routePointAt, type PlanetRoute,
 } from "../../planet/routes.js";
-import type { Street, Vec2 } from "./streets";
+import type { GrowSeed, Street, TownPort, Vec2 } from "./streets";
 
 export type Vec3 = readonly [number, number, number];
 
@@ -122,42 +132,252 @@ export function approachBearings(
   return out;
 }
 
+/* ---------------- THE SEAM: incident routes → growth seeds --------------- */
+
+/** One end of one incident road, read in the town's own metres. */
+export interface RoadPort {
+  /** The port itself — where the route stops, town-local metres. */
+  at: Vec2;
+  /** Unit direction of travel INTO town at the port. */
+  inward: Vec2;
+  /** Bearing of the port from the town frame's origin. */
+  bearing: number;
+  /** The road's port-to-port length (its importance, and the canonical
+   *  sort key — an interstate outranks a village lane). */
+  lengthM: number;
+  /** Endpoint-identity key, order-independent — the sort's tiebreak. */
+  key: string;
+}
+
+/** How far back along the road the inward tangent is sampled. Short enough
+ *  that a bend near the gate still reads, long enough that the polyline's
+ *  own chaikin wobble doesn't. */
+const PORT_TANGENT_M = 60;
+
+/** How far apart two gates must stand, in bearing, before the road between
+ *  them reads as passing THROUGH the town rather than doubling back around
+ *  it. Below this the pair is two roads out of the same side, and each gets
+ *  its own spur instead of a hairpin "through road". */
+export const THROUGH_MIN_SEP = 1.9;
+
+/** Below this the road's port and a declared town gate are THE SAME POINT
+ *  and no connector exists between them (§2.2 — the gate IS the port). */
+export const PORT_MEET_M = 12;
+
+/**
+ * A route end read as a PORT, or null when it isn't one.
+ *
+ * THE OVERLAP RULE (planet/routes.ts): where two towns' extents swallow the
+ * whole road, `portTerminateRoute` hands the route back UNCLIPPED and its
+ * endpoint is still the city cell's own centre. That is not a port — there
+ * is no boundary crossing into open country — so it seeds nothing. The test
+ * is the endpoint's own radius: a port sits ON the extent, an unclipped
+ * endpoint sits at the origin, and nothing lands between.
+ */
+export function roadPortOf(
+  route: PlanetRoute, end: "a" | "b", frame: TownFrame,
+  planetRadius: number, extentM: number,
+): RoadPort | null {
+  const sPort = end === "a" ? 0 : route.lengthM;
+  const at = toTownLocal(frame, planetRadius, routePointAt(route, sPort));
+  if (!at) return null;
+  const r = Math.hypot(at.x, at.y);
+  if (r < extentM * 0.5 || r > extentM * 1.5) return null;
+  // A sample further ALONG the road (i.e. outside the town): port − sample
+  // is the direction a traveller faces walking in.
+  const back = Math.min(PORT_TANGENT_M, route.lengthM / 2);
+  const outside = toTownLocal(
+    frame, planetRadius, routePointAt(route, end === "a" ? back : route.lengthM - back),
+  );
+  if (!outside) return null;
+  const dx = at.x - outside.x;
+  const dy = at.y - outside.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1e-6) return null;
+  const lo = Math.min(route.a, route.b);
+  const hi = Math.max(route.a, route.b);
+  return {
+    at,
+    inward: { x: dx / d, y: dy / d },
+    bearing: Math.atan2(at.y, at.x),
+    lengthM: route.lengthM,
+    key: `${lo}:${hi}:${end}`,
+  };
+}
+
+/** A smooth in-town path leaving `a` along `da` and arriving at `b` along
+ *  `db` (both unit, both pointing the way travel goes). Endpoints are
+ *  EXACT through the smoothing — the port the kernel lays its baseline to
+ *  is the same point the route ends at, to the float. */
+function bendPath(a: Vec2, da: Vec2, b: Vec2, db: Vec2): Vec2[] {
+  const k = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y) / 3);
+  let pts: Vec2[] = [
+    a,
+    { x: a.x + da.x * k, y: a.y + da.y * k },
+    { x: b.x - db.x * k, y: b.y - db.y * k },
+    b,
+  ];
+  for (let i = 0; i < 3; i++) pts = chaikin2(pts);
+  return pts;
+}
+
+/**
+ * THE SEAM (§2.1): a city's incident roads → the seed set its street tree
+ * grows around, in town-local metres.
+ *
+ * The most-opposed pair of ports is the road that PASSES THROUGH — one
+ * `span` seed carrying both ports, which the kernel lays whole as street 0
+ * (the baseline). Every other port becomes its own one-ended span running
+ * from the town's middle out to its gate; the kernel attaches those by an
+ * access lane, so the tree stays a tree and only the FAR end is a port.
+ *
+ * DETERMINISTIC IN (planet, city): ports are sorted by road length then by
+ * endpoint identity, so the caller's incident ORDER — which depends on which
+ * regions happen to be streamed — cannot change the answer. Stitch-pair
+ * roads are excluded upstream (the caller's own law) and inherited here.
+ *
+ * Returns [] when no incident route ports at this town (the overlap rule on
+ * a compressed planet, or a genuinely roadless site): the caller falls back
+ * to bearings → stub seeds, exactly as before the seam existed.
+ */
+export function townRoadSeeds(
+  incident: ReadonlyArray<{ route: PlanetRoute; end: "a" | "b" }>,
+  frame: TownFrame, planetRadius: number, extentM: number, max = 6,
+): GrowSeed[] {
+  const found: RoadPort[] = [];
+  for (const { route, end } of incident) {
+    const p = roadPortOf(route, end, frame, planetRadius, extentM);
+    if (p) found.push(p);
+  }
+  found.sort((a, b) => b.lengthM - a.lengthM || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  // One gate per compass bucket — growStreets' own dedup law, applied here
+  // so two roads arriving together share a gate instead of crowding two.
+  const gates: RoadPort[] = [];
+  for (const p of found) {
+    if (gates.length >= max) break;
+    if (gates.some(g => angSep(g.bearing, p.bearing) < 0.5)) continue;
+    gates.push(p);
+  }
+  if (!gates.length) return [];
+
+  // The THROUGH road: the most-opposed pair (ties keep canonical order).
+  let ia = -1;
+  let ib = -1;
+  let bestSep = -1;
+  for (let i = 0; i < gates.length; i++) {
+    for (let j = i + 1; j < gates.length; j++) {
+      const sep = angSep(gates[i]!.bearing, gates[j]!.bearing);
+      if (sep > bestSep + 1e-9) { bestSep = sep; ia = i; ib = j; }
+    }
+  }
+  const seeds: GrowSeed[] = [];
+  const spent = new Set<number>();
+  if (bestSep >= THROUGH_MIN_SEP) {
+    const a = gates[ia]!;
+    const b = gates[ib]!;
+    seeds.push({
+      kind: "span",
+      pts: bendPath(a.at, a.inward, b.at, { x: -b.inward.x, y: -b.inward.y }),
+      portA: true,
+      portB: true,
+    });
+    spent.add(ia);
+    spent.add(ib);
+  }
+  // Every remaining road ENDS here: a spur from the town's middle out to
+  // its gate. The kernel joins its near end to the nearest network point,
+  // so the near end is never a port — only the gate is.
+  for (let i = 0; i < gates.length; i++) {
+    if (spent.has(i)) continue;
+    const g = gates[i]!;
+    const inLen = Math.hypot(g.at.x, g.at.y) || 1;
+    const away = { x: g.at.x / inLen, y: g.at.y / inLen };
+    seeds.push({
+      kind: "span",
+      pts: bendPath({ x: 0, y: 0 }, away, g.at, { x: -g.inward.x, y: -g.inward.y }),
+      portB: true,
+    });
+  }
+  return seeds;
+}
+
 /* ------------------- the render splice at the town edge ------------------- */
 
-/** A gen-0 street's outer end — where an incident ribbon can join. */
+/** A GATE: where an incident ribbon can join the street tree. */
 export interface ArterialTip {
   street: number;
-  /** Bearing of the tip from the plaza (town frame). */
+  /** Which end of that street (0 = origin, 1 = far tip). */
+  end: 0 | 1;
+  /** Bearing of the gate from the town frame's origin. */
   bearing: number;
-  /** The street polyline's last point (town-local metres). */
+  /** The gate point (town-local metres). */
   tip: Vec2;
-  /** Unit outward direction of the street's last segment. */
+  /** Unit outward direction of the street's last segment at that end. */
   out: Vec2;
 }
 
-/** The street tree's arterial tips (gen 0, plaza ring excluded). */
+/** The gate at one end of a street, or null when the street is a point. */
+function gateAt(s: Pick<Street, "id" | "pts">, end: 0 | 1): ArterialTip | null {
+  const n = s.pts.length;
+  if (n < 2) return null;
+  const p = end === 0 ? s.pts[0]! : s.pts[n - 1]!;
+  const q = end === 0 ? s.pts[1]! : s.pts[n - 2]!;
+  const len = Math.hypot(p.x - q.x, p.y - q.y) || 1;
+  return {
+    street: s.id,
+    end,
+    bearing: Math.atan2(p.y, p.x),
+    tip: { x: p.x, y: p.y },
+    out: { x: (p.x - q.x) / len, y: (p.y - q.y) / len },
+  };
+}
+
+/**
+ * THE TOWN'S GATES.
+ *
+ * Given the street tree's DECLARED ports (`TownStreets.ports` — the road out
+ * of town is an output of growth now, growth-phase-B §1.2/§1.3), those ARE
+ * the gates: the baseline's own span ends for a route town, the outer tips
+ * of the arterials that continue it for a stub town.
+ *
+ * Without them — a hand-built net, a legacy payload — the fallback re-reads
+ * gen-0 semantics: every gen-0 street's outer tip AND the baseline's two
+ * ends. The baseline used to be excluded because the plaza ring was topology
+ * and not pavement; street 0 is a real road now, so its ends are real gates.
+ */
 export function arterialTips(
-  streets: ReadonlyArray<Pick<Street, "id" | "gen" | "ring" | "pts">>,
+  streets: ReadonlyArray<Pick<Street, "id" | "gen" | "baseline" | "pts">>,
+  ports?: readonly TownPort[],
 ): ArterialTip[] {
   const tips: ArterialTip[] = [];
+  if (ports?.length) {
+    for (const p of ports) {
+      const byIndex = streets[p.street];
+      const s = byIndex?.id === p.street ? byIndex : streets.find(x => x.id === p.street);
+      const gate = s ? gateAt(s, p.end) : null;
+      if (gate) tips.push(gate);
+    }
+    return tips;
+  }
   for (const s of streets) {
-    if (s.gen !== 0 || s.ring || s.pts.length < 2) continue;
-    const p = s.pts[s.pts.length - 1]!;
-    const q = s.pts[s.pts.length - 2]!;
-    const len = Math.hypot(p.x - q.x, p.y - q.y) || 1;
-    tips.push({
-      street: s.id,
-      bearing: Math.atan2(p.y, p.x),
-      tip: { x: p.x, y: p.y },
-      out: { x: (p.x - q.x) / len, y: (p.y - q.y) / len },
-    });
+    if (s.gen !== 0 || s.pts.length < 2) continue;
+    if (s.baseline) {
+      const a = gateAt(s, 0);
+      if (a) tips.push(a);
+    }
+    const b = gateAt(s, 1);
+    if (b) tips.push(b);
   }
   return tips;
 }
 
 /** Widest angle a road may be bent through to reach a gate. Past a right
  *  angle the "nearest" tip is on the far side of town and the connector
- *  would chord straight across the edge lots — no gate at all. */
+ *  would chord straight across the edge lots — no gate at all.
+ *
+ *  STUB-TOWN LAW ONLY (§2.2): a span-seeded town's baseline already ENDS at
+ *  the port, so nothing is bent anywhere. This governs the fallback, where
+ *  the streets stop short of the boundary and the road has to reach in. */
 export const MAX_GATE_SEP = Math.PI / 2;
 
 /** The tip whose bearing is nearest `bearing` (ties keep list order), or
@@ -220,8 +440,11 @@ export interface RouteTownSplice {
   route: PlanetRoute;
   /** The same connector oriented clip → tip, for ribbon drawing. */
   draw: PlanetRoute;
-  /** The arterial street joined (draw-dedupe key for shared tips). */
+  /** The street joined, and which of its ends — together the draw-dedupe
+   *  key for shared gates (one street can carry two: an open baseline's
+   *  own two ends are two different gates). */
   street: number;
+  end: 0 | 1;
 }
 
 /** Below this the port and the gate are effectively the same point and a
@@ -245,6 +468,11 @@ const MIN_CONNECTOR_M = 60;
  * angle of the road, a route shorter than its own connector, an endpoint
  * that is not this town's port) — callers keep the plain ribbon there.
  *
+ * ALSO NULL — and this is the phase-B case, not a failure — when the nearest
+ * gate IS the port (§2.2): a span-seeded town laid its baseline to this very
+ * point, so the road runs onto the high street with no connector, no bend
+ * and no paint of its own. There is nothing to refine when the two agree.
+ *
  * `portExtentM` is the SAME extent the routes were clipped at, so an
  * endpoint that is not really this town's port can be told apart from one
  * that is.
@@ -266,6 +494,10 @@ export function spliceRouteAtTown(
   if (portR < 1 || portR > portExtentM * 2) return null;
   const tip = nearestArterialTip(tips, bearing);
   if (!tip) return null;
+  // THE GATE IS THE PORT (§2.2): the town's own baseline reaches this point,
+  // so the road and the street already meet. A connector here would be a
+  // 60 m ghost lane doubling the last stretch of a road that has arrived.
+  if (Math.hypot(tip.tip.x - port.x, tip.tip.y - port.y) < PORT_MEET_M) return null;
   // The connector spans the port→gate gap, and the parent lends it exactly
   // that much arc — so the drawn ribbon and the cart projection are both
   // continuous where the span begins.
@@ -286,6 +518,6 @@ export function spliceRouteAtTown(
   // Parent arc grows a→b, so the town-at-`a` span [0, sEdge] must map its
   // LOW arc to the tip (the town end) — the reversed connector.
   return end === "a"
-    ? { s0: 0, s1: sEdge, route: rev, draw: fwd, street: tip.street }
-    : { s0: sEdge, s1: route.lengthM, route: fwd, draw: fwd, street: tip.street };
+    ? { s0: 0, s1: sEdge, route: rev, draw: fwd, street: tip.street, end: tip.end }
+    : { s0: sEdge, s1: route.lengthM, route: fwd, draw: fwd, street: tip.street, end: tip.end };
 }

@@ -116,7 +116,16 @@ export const TEST_WORLDS: NamedWorld[] = [
           { kind: "body", params: { orbitAU: 1.6, mass: 0.3, radius: 1400, geology: { seed: 7 } } },
         ],
       },
-      session: { avatar: "spirit" },
+      // ⚖️ A 2 km PLANET DECLARES ITS SETTLEMENT GAP (growth phase C §1.1/§3.1).
+      // Earth's day's walk is 25 km; a body this size has a 131 m chart cell
+      // and founds its cities ~790 m apart, so its towns really do stand 1/32
+      // of a real gap from one another. Declaring it is what lets
+      // `townSpacingM`/`townExtentM` derive: the founding spacing comes back as
+      // the same 6 cells the map already used, and the town extent falls from
+      // 450 m to 195 m — at which the interstate roads END AT PORTS instead of
+      // running through the buildings (measured on this exact planet: 18 of 34
+      // road ends unclipped → 0).
+      session: { avatar: "spirit", scale: { gap_compression: 32 } },
     },
   },
   {

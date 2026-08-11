@@ -21,6 +21,16 @@ export const REAL_DAY_S = 86_400;
 export const REAL_SLEEP_FRACTION = 1 / 3;
 /** Historical market-town spacing — literally "a day's walk apart". */
 export const REAL_TOWN_SPACING_M = 25_000;
+/**
+ * A market town's DECLARED BUILT EXTENT at real scale — how far out its
+ * buildings may reach. The town-side twin of `REAL_TOWN_SPACING_M`, and THE
+ * one definition of the number (`kernel/town/dimensions.ts` `townRMax` reads
+ * it, so "how big is a town" is said once).
+ *
+ * Content, not physics: it is the size a town is ALLOWED to grow to, which
+ * `townExtentM` then caps by the size the world can actually hold.
+ */
+export const REAL_TOWN_EXTENT_M = 450;
 /** A real house takes roughly half a year to raise — the construction
  *  factor's anchor (a structure's relative buildDays are multiples of it). */
 export const REAL_HOUSE_BUILD_DAYS = 180;
@@ -157,6 +167,27 @@ export interface WorldScale {
    *  Defaults to `planetCompression`, same law — a miniature universe brings
    *  its neighbours in too, so the night sky keeps its proportions. */
   interstellar: number;
+  /**
+   * SETTLEMENT-GAP compression: the distance between neighbouring towns ÷
+   * this (`townSpacingM`), and through the CLIP LAW the extent each town may
+   * build out to (`townExtentM`). Defaults to `planetCompression`, the same
+   * uniform-shrink law the two sky dials follow: miniaturize a world and its
+   * settled map comes in with it, so the whole thing keeps its proportions.
+   *
+   * This is the dial a MINIATURE PLANET needs and nothing else provides. A
+   * 2 km test world founds its towns a few hundred metres apart; at the real
+   * 25 km spacing every road between them is shorter than the two towns'
+   * own extents put together, so the port law finds no open country to cross
+   * and hands every road back unclipped — roads through buildings, by
+   * arithmetic. Declaring the gap compression is how such a world says the
+   * true size of its towns instead of pretending to be Earth.
+   *
+   * Its own dial rather than a read of `planetCompression` because the two
+   * are genuinely separable: a real-radius world may still want crowded
+   * settlements (a dense medieval province), and a miniature world that
+   * hosts exactly one town does not care at all.
+   */
+  gapCompression: number;
 
   // ---- the independently-moving clocks (settlement-emergence.md §4a) ----
   // Each is its own declaration: a world may see sunrise every four minutes,
@@ -229,6 +260,7 @@ export const REAL_SCALE: WorldScale = {
   planetCompression: 1,
   interplanetary: 1,
   interstellar: 1,
+  gapCompression: 1,
   leanFraction: REAL_LEAN_FRACTION,
   metabolism: 1,
   locomotion: 1,
@@ -262,6 +294,7 @@ export const DOLLHOUSE_SCALE: WorldScale = {
   planetCompression: 1,
   interplanetary: 1,
   interstellar: 1,
+  gapCompression: 1,
   leanFraction: REAL_LEAN_FRACTION,
   metabolism: 1,
   locomotion: 1,
@@ -296,6 +329,7 @@ export const SEASONAL_SCALE: WorldScale = {
   planetCompression: 1,
   interplanetary: 1,
   interstellar: 1,
+  gapCompression: 1,
   leanFraction: REAL_LEAN_FRACTION,
   metabolism: 3, // a meal every 80 s ⇒ 36 meals/year, lean share 14.4
   locomotion: 1,
@@ -390,6 +424,8 @@ export interface WorldScaleSpec {
   interplanetary?: number;
   /** Star separations ÷ this. Absent ⇒ `planet_compression` (uniform). */
   interstellar?: number;
+  /** Town-to-town spacing ÷ this. Absent ⇒ `planet_compression` (uniform). */
+  gap_compression?: number;
   lean_fraction?: number;
   metabolism?: number;
   locomotion?: number;
@@ -415,7 +451,7 @@ export function parseWorldScaleSpec(raw: unknown, path: string): WorldScaleSpec 
   if (!isObj(raw)) fail(path, "expected an object (the space-time compression declaration)");
   const allowed = [
     "rotation", "revolution", "sleep_fraction", "construction", "planet_compression",
-    "interplanetary", "interstellar",
+    "interplanetary", "interstellar", "gap_compression",
     "lean_fraction", "metabolism", "locomotion", "generation", "growth_fraction",
   ];
   for (const k of Object.keys(raw)) {
@@ -440,6 +476,7 @@ export function parseWorldScaleSpec(raw: unknown, path: string): WorldScaleSpec 
   }
   if ("interplanetary" in raw) out.interplanetary = num(raw.interplanetary, `${path}.interplanetary`, 1, 10_000_000);
   if ("interstellar" in raw) out.interstellar = num(raw.interstellar, `${path}.interstellar`, 1, 10_000_000);
+  if ("gap_compression" in raw) out.gap_compression = num(raw.gap_compression, `${path}.gap_compression`, 1, 10_000);
   // The independently-moving clocks. `rotation`/`revolution`/`planet_compression`
   // floor at 1 (the celestial dials only ever speed a world up, as the shipped
   // day length already did); the creature dials may go below 1, because a
@@ -469,6 +506,7 @@ export function resolveWorldScale(spec?: WorldScaleSpec | null): WorldScale {
     planetCompression,
     interplanetary: spec?.interplanetary ?? planetCompression,
     interstellar: spec?.interstellar ?? planetCompression,
+    gapCompression: spec?.gap_compression ?? planetCompression,
     leanFraction: spec?.lean_fraction ?? REAL_SCALE.leanFraction,
     metabolism: spec?.metabolism ?? REAL_SCALE.metabolism,
     locomotion: spec?.locomotion ?? REAL_SCALE.locomotion,
@@ -489,6 +527,7 @@ export function scaleSpecOf(scale: WorldScale): Required<WorldScaleSpec> {
     planet_compression: scale.planetCompression,
     interplanetary: scale.interplanetary,
     interstellar: scale.interstellar,
+    gap_compression: scale.gapCompression,
     lean_fraction: scale.leanFraction,
     metabolism: scale.metabolism,
     locomotion: scale.locomotion,
@@ -565,6 +604,93 @@ export function serviceRadiusM(
   walkMps: number = walkSpeedMps(scale),
 ): number {
   return (walkMps * needFillS(scale, need) * ERRAND_SHARE) / 2;
+}
+
+// ---------------------------------------------------- the settled map's scale
+//
+// The rung ABOVE serviceRadiusM: how far apart towns stand, and how big each
+// one may get. Both are ANCHOR + NAMED DERIVATION — the shape this file uses
+// everywhere (REAL_HOUSE_BUILD_DAYS/constructionGameDays,
+// REAL_CLOTHING_DAYS/clothingFillDays) — so "a day's walk apart" stays a real
+// fact about Earth and every world states its own departure as a multiplier.
+
+/**
+ * THE TOWN SPACING: metres between neighbouring settlements on this world.
+ *
+ * `REAL_TOWN_SPACING_M × locomotion ÷ gapCompression` — the historical
+ * day's-walk anchor, carried by this world's legs, divided by its declared
+ * settlement-gap compression. REAL reproduces 25 000 m EXACTLY (the identity
+ * `townSpacingM(REAL_SCALE) === REAL_TOWN_SPACING_M`).
+ *
+ * `locomotion` is the one dial in it: gait is where space and time meet
+ * (see `walkSpeedMps`), so a world with twice the legs really does put its
+ * market towns twice as far apart.
+ *
+ * THE CLOCK IS DELIBERATELY ABSENT, and this is the load-bearing decision.
+ * Reading the spacing off the world's own day (`dailyTravelM × ERRAND_SHARE`,
+ * which lands within 8% of the anchor at REAL) is arithmetically tempting and
+ * physically wrong here, because the shipped street clock compresses the day
+ * 360× while keeping REAL legs and REAL houses — the walking trilemma this
+ * file documents. A clock-derived spacing would stand a dollhouse town 91 m
+ * from its neighbour while its own houses are 10 m wide and its extent is
+ * 450: the town would swallow four of its neighbours. Distance compression is
+ * `gapCompression`'s job, and time compression must not do it by the back
+ * door.
+ */
+export function townSpacingM(scale: WorldScale): number {
+  return (REAL_TOWN_SPACING_M * scale.locomotion) / scale.gapCompression;
+}
+
+/**
+ * Share of the road between two neighbouring towns that must stay OPEN
+ * COUNTRY. At ½ the road divides evenly — a town's extent at each end, and as
+ * much country between them as the two towns take together.
+ *
+ * This is what makes a PORT mean something. `planet/routes.ts` clips a road
+ * at each town's extent, and a port is by definition "the crossing of a
+ * boundary into open country"; where the two extents swallow the whole road
+ * there is no country to cross, so the road comes back unclipped and runs
+ * through the buildings. Declaring how much of the gap belongs to the country
+ * is how the extent learns to stay out of the way.
+ */
+export const OPEN_COUNTRY_SHARE = 0.5;
+
+/**
+ * THE TOWN EXTENT: how far out a town on this world may build.
+ *
+ *   `min(REAL_TOWN_EXTENT_M, spacing × (1 − OPEN_COUNTRY_SHARE) / 2)`
+ *
+ * Two terms, two kinds of truth. The first is CONTENT — the size a town is
+ * allowed to grow to at all (dimensions.ts's declared extent). The second is
+ * PHYSICS — the size this particular world can hold without its towns eating
+ * the roads between them.
+ *
+ * THE CLIP LAW, which the second term exists to satisfy:
+ *
+ *   `2 × extent + MIN_PORT_ROUTE_M < the shortest route on the world served`
+ *
+ * It holds by construction for any spacing above 20 m, since
+ * `2 × spacing/4 + 10 = spacing/2 + 10 < spacing`, and a route is never
+ * shorter than the spacing that founded its endpoints. There is deliberately
+ * NO floor under the result: a floor would be a licence to swallow the road,
+ * and `growStreets` already clamps its own gate for a town too small to grow.
+ *
+ * REAL reproduces 450 m EXACTLY (25 km of spacing puts the clip ceiling at
+ * 6 250 m, so the declared extent is what binds) — the identity
+ * `townExtentM(REAL_SCALE) === REAL_TOWN_EXTENT_M`.
+ *
+ * `spacingM` overrides the declared spacing for a caller that knows the gap
+ * its OWN tier actually enforces — the village tiers of `planet/refine.ts`
+ * and `planet/border.ts` round the spacing to a whole number of chart cells
+ * and floor it at 4, so on a small world the gap they really impose can be
+ * narrower than the world declares, and the extent must follow the gap that
+ * exists rather than the one that was asked for.
+ */
+export function townExtentM(
+  scale: WorldScale,
+  spacingM: number = townSpacingM(scale),
+): number {
+  return Math.min(REAL_TOWN_EXTENT_M, (spacingM * (1 - OPEN_COUNTRY_SHARE)) / 2);
 }
 
 // --------------------------------------------------------------------- space
@@ -725,6 +851,10 @@ export const GRANARY_MEALS_MAX = 400;
 export const SESSION_YEAR_MIN_MINUTES = 20;
 /** ...above this a sitting never sees the cycle close. */
 export const SESSION_YEAR_MAX_MINUTES = 60;
+/** Built extent below which a town is not a town: it cannot hold a plaza and
+ *  the ring of frontage around it, so `gap_compression` has been declared
+ *  past the point where settlements exist. Reported, never enforced. */
+export const TOWN_EXTENT_VIABLE_M = 60;
 /** Generations over which coercion turns net-negative on state capacity
  *  (exploitation-economics.md §Q4) — the arc a world must be able to SHOW,
  *  whether by living it or by scrubbing it. */
@@ -743,6 +873,8 @@ export function scaleRatios(scale: WorldScale) {
     lifespanGameYears: lifespanGameYears(scale),
     growthGameDays: growthGameDays(scale),
     forageRadiusM: forageRadiusM(scale),
+    townSpacingM: townSpacingM(scale),
+    townExtentM: townExtentM(scale),
     apparentSizeGain: apparentSizeGain(scale),
     apparentStarGain: apparentStarGain(scale),
     realMinutesPerYear: realMinutesPerYear(scale),
@@ -777,6 +909,17 @@ export function scaleWarnings(scale: WorldScale): string[] {
     out.push(`session: a year passes in ${yr.toFixed(1)} real minutes — seasons flicker past unread`);
   } else if (yr > SESSION_YEAR_MAX_MINUTES) {
     out.push(`session: a year takes ${yr.toFixed(1)} real minutes — a sitting never sees the cycle close`);
+  }
+  // THE SETTLED MAP: a gap so compressed that a town cannot hold its own
+  // buildings. `townExtentM` will honour it (the clip law has no floor —
+  // that is the point), so the world should hear about it out loud.
+  const extent = townExtentM(scale);
+  if (extent < TOWN_EXTENT_VIABLE_M) {
+    out.push(
+      `gap: towns stand ${Math.round(townSpacingM(scale))} m apart, so each may build ` +
+        `only ${Math.round(extent)} m out (< ${TOWN_EXTENT_VIABLE_M}) — ` +
+        `smaller than a plaza, and the settled map cannot hold buildings`,
+    );
   }
   if (scale.growthFraction <= 0) {
     out.push(`growth: no childhood — nothing is inherited, taught, or transmitted`);

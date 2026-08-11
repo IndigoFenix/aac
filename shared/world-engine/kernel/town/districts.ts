@@ -10,9 +10,9 @@
  * actually walk). Households too far accumulate FOUNDING MASS per ARM of
  * town (the arterial subtree their street descends from — the natural
  * "quarter" of a grown town); when an arm's mass crosses the threshold,
- * the pending lot nearest the mass's centroid CONVERTS into a market
- * stall — a house becomes a shop, the way neighborhoods actually get
- * their corner market. The stall keeps the lot's exact footprint and
+ * the pending lot that minimizes the quarter's TOTAL WALKING CONVERTS into
+ * a market stall — a house becomes a shop, the way neighborhoods actually
+ * get their corner market. The stall keeps the lot's exact footprint and
  * door, so it stays on its street frontage untouched.
  *
  * Founding is self-limiting: a new stall immediately joins the sources,
@@ -30,6 +30,7 @@
 
 import { houseDoorstep } from "./goods";
 import { roadDistance, type TownStreets } from "./streets";
+import { ERRAND_WALK_MPS } from "../../scale";
 import type { TownHouse } from "./plan";
 
 /** Street meters beyond which a household counts as UNSERVED — the
@@ -47,8 +48,23 @@ export const NEIGH_FOUND_MASS = 18;
  *  a handful of households past the thirst-cycle walk get their corner
  *  well long before they'd rate a shop. */
 export const WELL_FOUND_MASS = 6;
-/** Mass cap per household: remoteness makes founding likelier, but a
- *  handful of far-flung stragglers can't open a shop alone. */
+/**
+ * PRICE CEILING on one household's founding mass — the cap SURVIVES the
+ * conversion to an honest time tax (growth phase C §1.4), with its reason
+ * restated rather than inherited.
+ *
+ * It is NOT a claim that walking stops costing time past two budgets; the tax
+ * below is linear and honest all the way out. It is a claim about what the
+ * mass MEASURES: a stall opens because a CLIENTELE exists, and one household
+ * stranded ten radii out is not a clientele however much time it loses. The
+ * ceiling is the price a single household may bid, so founding stays a
+ * statement about how many people are underserved and only secondarily about
+ * how badly.
+ *
+ * Without it, one remote lot could out-bid nine ordinary ones and open a shop
+ * with nobody to sell to — the "far-flung stragglers" failure the pass was
+ * written to avoid.
+ */
 const MASS_CAP = 2;
 
 /** What a service pass founds: how far its clientele may walk (one-way
@@ -56,6 +72,30 @@ const MASS_CAP = 2;
 export interface ServiceFacility {
   convenientM: number;
   foundMass: number;
+  /** Round trips a household makes here per game-day — the RECURRING term of
+   *  the travel tax (`scale.ts`: `dayLengthS / needFillS(scale, need)`, one
+   *  trip per fill cycle). Absent = one a day, the hunger anchor. */
+  tripsPerDay?: number;
+  /** Walking pace, m/s (`scale.ts walkSpeedMps`). Absent = the real villager
+   *  pace, the same anchor `serviceRadiusM` draws the radius with. */
+  paceMps?: number;
+}
+
+/**
+ * THE TRAVEL TAX, in HAND-SECONDS PER DAY: what a household `d` street metres
+ * from its source really pays — the round trip, at this need's frequency,
+ * every day for as long as it lives there.
+ *
+ * The unit is deliberately a duration and not a distance. A distance is a
+ * one-off; the thing placement is spending is its residents' TIME, repeatedly
+ * (the user's time-elasticity law), and the only honest way to compare a
+ * far well against a near market is to price both in the same seconds.
+ */
+export function dailyTripTaxS(
+  d: number,
+  facility: Pick<ServiceFacility, "tripsPerDay" | "paceMps">,
+): number {
+  return ((facility.tripsPerDay ?? 1) * 2 * d) / (facility.paceMps ?? ERRAND_WALK_MPS);
 }
 
 interface Pending {
@@ -69,12 +109,16 @@ interface Pending {
 const centerOf = (h: TownHouse): { x: number; y: number } => ({ x: h.dx + h.w / 2, y: h.dy + h.h / 2 });
 
 /** Which arm of town a house belongs to: the arterial subtree its street
- *  descends from (carried on the lot), with a bearing-quadrant fallback
- *  for houses that never learned theirs. */
-function armOf(h: TownHouse): number {
+ *  descends from (carried on the lot), with a quadrant fallback for houses
+ *  that never learned theirs — taken about the pass's OWN anchor (the
+ *  town's central source), not about the frame origin, which stopped
+ *  being the middle of anything when the plaza ring died. */
+function armOf(h: TownHouse, about: { x: number; y: number }): number {
   if (h.arm !== undefined && h.arm >= 0) return h.arm;
   const c = centerOf(h);
-  return Math.abs(c.x) >= Math.abs(c.y) ? (c.x >= 0 ? 100 : 102) : (c.y >= 0 ? 101 : 103);
+  const dx = c.x - about.x;
+  const dy = c.y - about.y;
+  return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 100 : 102) : (dy >= 0 ? 101 : 103);
 }
 
 /**
@@ -99,8 +143,8 @@ export function foundNeighborhoodMarkets(
  * THE GENERAL SERVICE PASS — the same demand-founding walk for ANY
  * facility a need is served at (market stalls on the hunger radius, wells
  * on the thirst radius): lot order in, per-arm founding mass, the point
- * lands at the pending lot nearest the mass centroid, and every founded
- * point immediately serves — self-limiting, prefix-stable, one point per
+ * lands at the pending lot that costs its quarter the fewest street metres
+ * of recurring walking, and every founded point immediately serves — self-limiting, prefix-stable, one point per
  * walk-ball of unserved households. The caller decides what the chosen
  * lot BECOMES (a stall converts the house; a well stands on its verge).
  */
@@ -111,8 +155,36 @@ export function foundServicePoints(
   facility: ServiceFacility,
 ): TownHouse[] {
   const dist = (a: { x: number; y: number }, b: { x: number; y: number }): number => roadDistance(net, a, b);
+  /** The town-local FRAME (doorsteps are measured in it) — a coordinate
+   *  convention, never a hub. */
   const origin = { x: 0, y: 0 };
-  const massOf = (d: number): number => Math.min(MASS_CAP, d / facility.convenientM - 1);
+  /** What the arm fallback measures quadrants about: the town's central
+   *  source, or the frame origin when the caller gave none. */
+  const about = anchors[0] ?? origin;
+  /**
+   * THE RECURRING TRAVEL TAX (user law: time elasticity — placement pays the
+   * residents' repeated trips, not a one-off distance).
+   *
+   * A household `d` street metres from its source pays `trips/day × 2d/pace`
+   * HAND-SECONDS PER DAY, forever. The convenience radius is the budget that
+   * tax was allowed to reach (`scale.ts serviceRadiusM` derives it from
+   * exactly this arithmetic: half a fill cycle, there and back), so a
+   * household's founding mass is its tax as a MULTIPLE of that budget, less
+   * the one budget it was granted.
+   *
+   * MEASURED CONSEQUENCE, worth stating because it is easy to mistake for an
+   * omission: within one facility's bucket the frequency and the pace CANCEL
+   * — every household in it walks to the same kind of place at the same rate,
+   * so `(trips × 2d/pace) / (trips × 2R/pace) = d/R`. The tax is real and the
+   * ratio is frequency-invariant, which is why this line looks unchanged and
+   * why the pass never needed a clock to be honest. The frequency bites
+   * WHERE IT SHOULD: across facilities, where a thirst cycle and a hunger
+   * cycle set different radii (and the bars above price the shopkeeper's
+   * livelihood on top).
+   */
+  const budgetS = dailyTripTaxS(facility.convenientM, facility);
+  const massOf = (d: number): number =>
+    Math.min(MASS_CAP, dailyTripTaxS(d, facility) / budgetS - 1);
   const sources = [...anchors];
   const stalls: TownHouse[] = [];
   // Mass gathers per ARM (arterial subtree) so opposite edges of town
@@ -124,7 +196,7 @@ export function foundServicePoints(
     let d = Infinity;
     for (const s of sources) d = Math.min(d, dist(hd, s));
     if (d <= facility.convenientM) continue;
-    const arm = armOf(h);
+    const arm = armOf(h, about);
     let bucket = buckets.get(arm);
     if (!bucket) {
       bucket = [];
@@ -133,21 +205,31 @@ export function foundServicePoints(
     bucket.push({ house: h, d, w: massOf(d) });
     if (bucket.reduce((a, p) => a + p.w, 0) < facility.foundMass) continue;
 
-    // Found: convert the pending lot nearest the mass-weighted centroid.
-    let sx = 0, sy = 0, sw = 0;
-    for (const p of bucket) {
-      const pc = centerOf(p.house);
-      sx += pc.x * p.w;
-      sy += pc.y * p.w;
-      sw += p.w;
-    }
-    const cx = sx / sw, cy = sy / sw;
+    // FOUND WHERE THE WALKING IS CHEAPEST (growth phase C §1.4): the pending
+    // lot that minimizes the bucket's TOTAL RECURRING TAX — Σ over the
+    // stranded households of (their mass × the street metres they would walk
+    // to this lot). Not the lot nearest a chord centroid, which is what this
+    // used to be and which prices a straight line nobody can walk: on an
+    // organic tree the centroid of two arms lands in the fields between them,
+    // and the "nearest" lot to it is whichever arm's houses happen to bulge,
+    // not the one the walking converges on.
+    //
+    // Mass-weighted because the tax is per household and the remoter ones are
+    // the reason the point is being founded at all.
+    //
+    // DETERMINISTIC: the bucket is in lot order (prefix-stable) and only
+    // STRICT improvements move the winner, so ties fall to the earliest lot.
+    const doors = bucket.map(p => houseDoorstep(origin, p.house));
     let lot = bucket[0];
     let best = Infinity;
-    for (const p of bucket) {
-      const pc = centerOf(p.house);
-      const dd = Math.hypot(pc.x - cx, pc.y - cy);
-      if (dd < best) { best = dd; lot = p; }
+    for (let i = 0; i < bucket.length; i++) {
+      const here = doors[i];
+      let cost = 0;
+      for (let j = 0; j < bucket.length; j++) {
+        if (j === i) continue;
+        cost += bucket[j].w * dist(doors[j], here);
+      }
+      if (cost < best) { best = cost; lot = bucket[i]; }
     }
     stalls.push(lot.house);
     const stallDoor = houseDoorstep(origin, lot.house);

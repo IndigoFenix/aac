@@ -348,6 +348,14 @@ export const he: Translations = {
       connective: "מילות חיבור",
       social: "חברתי",
     },
+    typeChips: {
+      request: "רוצה",
+      ask: "שאלה",
+      state: "לספר",
+      command: "לעשות",
+      rule: "כלל",
+      greet: "חברתי",
+    },
     chips: {
       all: "הכל",
       people: "אנשים",

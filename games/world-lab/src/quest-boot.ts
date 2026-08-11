@@ -691,8 +691,10 @@ export function bootLivingTown(
  *  world at REAL radius, chart its most fertile founding site (walk-chart's
  *  tangent frame), and stand the town on it — sim (x, y) is the chart, the
  *  height is the planet's own render sampler. Deterministic in the seed.
- *  The town plaza sits at the chart anchor (the site cell), so spawn = the
- *  real site. */
+ *  The town's stage ORIGIN sits at the chart anchor (the site cell), so the
+ *  town stands on the real site. (Its plaza is an OUTPUT of the street tree
+ *  now — growth-phase-B — landing wherever the walks made a junction
+ *  busiest, near the middle but never decreed there.) */
 function planetSiteGround(seed: number): {
   groundAt: (x: number, y: number) => number;
   waterAt: (x: number, y: number) => boolean;

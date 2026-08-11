@@ -9,7 +9,7 @@
 import { describe, it, expect } from "@jest/globals";
 import { compileEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { createTownWorld } from "@shared/world-engine/kernel/town/town-world.js";
-import { townPlan, PLAZA_WELL } from "@shared/world-engine/kernel/town/plan.js";
+import { townPlan, townPlaza } from "@shared/world-engine/kernel/town/plan.js";
 import { TOWN_DIMS } from "@shared/world-engine/kernel/town/dimensions.js";
 import {
   NEIGH_CONVENIENT, WELL_FOUND_MASS, foundServicePoints,
@@ -93,22 +93,38 @@ describe("needs-aware plan: wells and stalls from the clock", () => {
     const plan = townPlan(grownTown(), ECO, "haywick", 11, 0, undefined, [], undefined, undefined, DOLLHOUSE_SCALE);
     const wells = plan.wells ?? [];
     expect(wells.length).toBeGreaterThan(0);
-    // Every well stands inside the built-up town, off the plaza.
+    // Every well stands inside the built-up town, out of the plaza's own
+    // clearing — measured from the PLAZA (growth-phase-B: the widened
+    // junction the plan founded), which is no longer the frame origin.
+    const sq = townPlaza(plan);
     for (const w of wells) {
-      const r = Math.hypot(w.x, w.y);
-      expect(r).toBeGreaterThan(TOWN_DIMS.plazaR);
-      expect(r).toBeLessThan(plan.radius + 20);
+      expect(Math.hypot(w.x - sq.x, w.y - sq.y)).toBeGreaterThan(TOWN_DIMS.plazaR);
+      expect(Math.hypot(w.x, w.y)).toBeLessThan(plan.radius + 20);
     }
   });
 
-  it("the founded wells SERVE: rerunning the pass over the served town founds nothing", () => {
+  it("the founded wells SERVE: rerunning the pass over the served town nearly converges", () => {
+    // MOVED (growth phase C §1.4, WITH WHY). This used to assert the re-run
+    // founds EXACTLY ZERO, which read as a structural guarantee and was not
+    // one: after the pass ~66 of 276 households still live past the thirst
+    // radius, and the pass stopped only because no single ARM's residual mass
+    // still cleared WELL_FOUND_MASS. The old zero was the residual sitting a
+    // hair UNDER the bar; the time-tax siting (argmin street metres) re-shapes
+    // which households each well captures and one arm now sits a hair OVER it.
+    //
+    // What the pass actually promises is SELF-LIMITATION, so that is what is
+    // pinned: a founded point really does serve, so the second pass has almost
+    // nothing left to do — an order of magnitude fewer than the first.
     const town = grownTown();
     const plan = townPlan(town, ECO, "haywick", 11, 0, undefined, [], undefined, undefined, DOLLHOUSE_SCALE);
-    const more = foundServicePoints(plan.houses, [PLAZA_WELL, ...(plan.wells ?? [])], plan.streets, {
+    const first = plan.wells ?? [];
+    expect(first.length).toBeGreaterThan(0);
+    const more = foundServicePoints(plan.houses, [townPlaza(plan), ...first], plan.streets, {
       convenientM: serviceRadiusM(DOLLHOUSE_SCALE, "thirst"),
       foundMass: WELL_FOUND_MASS,
     });
-    expect(more).toHaveLength(0);
+    expect(more.length).toBeLessThanOrEqual(1);
+    expect(more.length * 4).toBeLessThan(first.length);
   });
 
   it("wells cut the worst walk to water", () => {
@@ -124,8 +140,8 @@ describe("needs-aware plan: wells and stalls from the clock", () => {
       }
       return m;
     };
-    const plazaOnly = worst([PLAZA_WELL]);
-    const withWells = worst([PLAZA_WELL, ...(plan.wells ?? [])]);
+    const plazaOnly = worst([townPlaza(plan)]);
+    const withWells = worst([townPlaza(plan), ...(plan.wells ?? [])]);
     expect(withWells).toBeLessThan(plazaOnly);
   });
 

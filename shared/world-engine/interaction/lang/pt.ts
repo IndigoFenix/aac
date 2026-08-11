@@ -205,6 +205,16 @@ const L: Record<string, Lexeme> = {
   eat: { w: "como", v2: "comes", v3: "come", v3p: "comem", v1p: "comemos", inf: "comer" },
   drink: { w: "bebo", v2: "bebes", v3: "bebe", v3p: "bebem", v1p: "bebemos", inf: "beber" },
   sleep: { w: "durmo", v2: "dormes", v3: "dorme", v3p: "dormem", v1p: "dormimos", inf: "dormir" },
+  // THE POSTURE PAIR (build order L15) — live glyphs with no lexeme here, so
+  // the open-ground dwell said "Eu rest." and the bare self-need "Eu sit."
+  //
+  // `sentar` takes no clitic in the Brazilian usage this ruleset is written in
+  // ("eu sento na cadeira"), so unlike Spanish's sentarse it declines like any
+  // other -ar verb; `você` conjugates 3rd person, which the `youIsThird` flag
+  // already routes. Both carry the infinitive the going-to future reads
+  // ("Eu vou descansar").
+  rest: { w: "descanso", v2: "descansas", v3: "descansa", v3p: "descansam", v1p: "descansamos", inf: "descansar" },
+  sit: { w: "sento", v2: "sentas", v3: "senta", v3p: "sentam", v1p: "sentamos", inf: "sentar" },
   wash: { w: "lavo", v2: "lavas", v3: "lava", v3p: "lavam", v1p: "lavamos", inf: "lavar" },
   tidy: { w: "arrumo", v2: "arrumas", v3: "arruma", v3p: "arrumam", inf: "arrumar" },
   heat: { w: "aqueço", v2: "aqueces", v3: "aquece", v3p: "aquecem", inf: "aquecer" },

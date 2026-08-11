@@ -467,27 +467,48 @@ export function parseIntent(tokens: string[], ctx: ParseContext = {}): IntentFra
 
   const ops = new Set(lexed.flatMap((l) => l.tok.ops));
 
-  // Stage 2 — structural split. Sequence (and/then) at the top level, then a rule
-  // (when/if/until). A causal `because` stays inside a single clause (narration).
+  // Stage 2 — structural split (at most one, at the top level). A causal
+  // `because` stays inside a single clause (narration).
+  //
+  // ⚖️ THE CONDITION SPLIT WINS OVER THE SEQUENCE SPLIT. `then` is a SEQUENCE
+  // connective, so asking the sequence question first swallowed the whole
+  // conditional shape: "if + night + then + go + home" came out as
+  // sequence[state(night), command(go home)] and the `if` was dropped by
+  // `parseClause`, which has no use for a connective. Worse, "if + you + give +
+  // wood + then + i_me + give + food" split into a DIRECT ORDER plus an
+  // immediate unconditional OFFER — both halves executed, neither contingent
+  // (contracts-and-promises.md §2a, measured against the live parser).
+  //
+  // So: a condition connective plus a verb ANYWHERE is a RULE, and a sequence
+  // connective inside the rule's own clauses is the clause BOUNDARY (buildRule
+  // below), never a second reading. With no verb to do there is nothing to
+  // trigger, and today's non-rule reading stands — which is also what keeps
+  // `isComplete`'s dangling "when + night" guard true.
+  const condIdx = lexed.findIndex((l) => l.lex?.cat === "connective" && l.lex.role === "condition");
+  if (condIdx >= 0 && lexed.some((l) => l.lex?.cat === "verb")) {
+    return buildRule(lexed, condIdx, ops, ctx, raw);
+  }
+
   const seqIdx = lexed.findIndex((l) => l.lex?.cat === "connective" && l.lex.role === "sequence");
   if (seqIdx > 0 && seqIdx < lexed.length - 1) {
     const conn = (lexed[seqIdx]!.lex as { conn: string }).conn;
+    const head = lexed.slice(0, seqIdx);
+    const tail = lexed.slice(seqIdx + 1);
     return {
       kind: "sequence",
       connective: conn,
       clauses: [
-        parseClause(lexed.slice(0, seqIdx), ops, ctx, raw),
-        parseClause(lexed.slice(seqIdx + 1), ops, ctx, raw),
+        // EACH CLAUSE CARRIES ITS OWN TOKENS. `raw` is what every consumer
+        // reads back as "the sentence this frame is" — the dialogue layer
+        // quotes it (`intentToAct`), and the host re-speaks a queued second
+        // clause from it (S1). Handing both clauses the WHOLE sentence made
+        // each of them claim to be the other one too.
+        parseClause(head, ops, ctx, head.map((l) => l.tok.raw)),
+        parseClause(tail, ops, ctx, tail.map((l) => l.tok.raw)),
       ],
       modifiers: [],
       raw,
     };
-  }
-
-  const condIdx = lexed.findIndex((l) => l.lex?.cat === "connective" && l.lex.role === "condition");
-  // A condition connective makes a RULE only when there's an action verb somewhere.
-  if (condIdx >= 0 && lexed.some((l) => l.lex?.cat === "verb")) {
-    return buildRule(lexed, condIdx, ops, ctx, raw);
   }
 
   return parseClause(lexed, ops, ctx, raw);
@@ -508,7 +529,19 @@ function buildRule(lexed: Lexed[], condIdx: number, ops: Set<string>, ctx: Parse
 
   let actionToks: Lexed[];
   let condToks: Lexed[];
-  if (hasVerb(left) && !hasVerb(right)) {
+  // ⛓️ "IF <trigger> THEN <action>" — a SEQUENCE connective standing after the
+  // condition connective IS the clause boundary (contracts-and-promises §4c).
+  // It is the only splitter that can separate TWO VERBS: the `left.length === 0`
+  // arm below cuts the trailing clause at its FIRST verb, which read "if you
+  // give wood then i_me give food" as one action frame ("you give wood to me")
+  // and lost the food entirely (§2b). Gated on the ACTION side actually
+  // carrying a verb, so a stray joiner never re-cuts a shape the arms below
+  // already read correctly.
+  const seqAt = right.findIndex((l) => l.lex?.cat === "connective" && l.lex.role === "sequence");
+  if (seqAt >= 0 && !hasVerb(left) && hasVerb(right.slice(seqAt + 1))) {
+    condToks = [...left, ...right.slice(0, seqAt)];
+    actionToks = right.slice(seqAt + 1);
+  } else if (hasVerb(left) && !hasVerb(right)) {
     actionToks = left; // "go home WHEN night" / "build house UNTIL town"
     condToks = right;
   } else if (!hasVerb(left) && hasVerb(right)) {

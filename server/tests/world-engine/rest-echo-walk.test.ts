@@ -14,6 +14,12 @@
 // speaker's gender, and carries the `.will` future without dropping to the
 // telegraphic gloss.
 //
+// L15 (2026-08-10) closed the other half: `rest` and `sit` now have lexemes in
+// he/es/pt, so the ONE cell this shape deliberately left alone — the bare-point
+// dwell, which has no walk in it to speak — renders properly too. The standing
+// debt pin at the foot of this file was deleted per its own note and replaced
+// by the positive renders.
+//
 // ⚖️ ONE FACT READ TWICE. `goalIntentLine` (what the creature SAYS it will do)
 // and `goalActivity` (what it answers while doing it) are two readings of one
 // goal and may never disagree, so both arms fork identically and this file pins
@@ -194,17 +200,74 @@ describe("a dwell at a bare POINT has no walk in it", () => {
     expect(goalIntentLine(restHere("sit"), syms)!.c).toBe("i_me + rest");
   });
 
-  it("🚨 and is the ONE cell still English-only — `rest` has no lexeme elsewhere", () => {
-    // Pinned as a standing debt, not as a desired behaviour: the fix is a
-    // `rest` lexeme in he/es/pt, which lives in files this arm may not reach
-    // around. Delete this pin the day the word lands — the point cell is
-    // then free to read like every other.
+  // ⤳ REPLACED PIN (L15, 2026-08-10). What stood here was a STANDING DEBT with
+  // a delete-when-landed note: the point cell rendered "אני rest." / "Eu rest."
+  // because `rest` had no lexeme outside English, and the pin asserted the leak
+  // so nobody could mistake it for working. The word has now landed in
+  // he/es/pt (and `sit` with it), so the debt is discharged and the four pins
+  // below are its positive replacement — the same cell, pinned as it reads.
+  it("…and now SPEAKS in every ruleset — the L15 lexemes landed", () => {
     const c = goalIntentLine(restHere(), syms)!.c;
+    expect(c).toBe("i_me + rest");
     expect(translateGlyph(c, "en")).toBe("I rest.");
-    for (const lang of ["he", "es", "pt"] as const) {
-      // Lowercased because a verb-first ruleset capitalises the leaked token
-      // into the sentence slot it never earned ("Rest.", "Eu rest.").
-      expect(`${lang}: ${translateGlyph(c, lang).toLowerCase()}`).toContain("rest");
+    expect(translateGlyph(c, "he")).toBe("אני נח.");
+    // Hebrew inflects the SPEAKER — the thing an untranslated token could not
+    // do at all, because a raw glyph has no gender to agree with.
+    expect(translateGlyph(c, "he", { speaker: "f" })).toBe("אני נחה.");
+    expect(translateGlyph(c, "es")).toBe("Descanso."); // pro-drop
+    expect(translateGlyph(c, "pt")).toBe("Eu descanso.");
+    // A deferred locale still falls back to English, never to the raw glyph.
+    expect(translateGlyph(c, "fr")).toBe("I rest.");
+  });
+
+  it("…and the ANNOUNCEMENT (.will) takes each ruleset's own future", () => {
+    // The `.will` marker is what proves the lexeme is a real verb card and not
+    // a bare word: the periphrasis reads the INFINITIVE (Hebrew "הולך ל…",
+    // romance "voy a …"), which a fallback token never carries.
+    const intent = asIntent(goalIntentLine(restHere(), syms)!);
+    expect(intent.c).toBe("i_me + rest.will");
+    expect(translateGlyph(intent.c, "en")).toBe("I will rest.");
+    expect(translateGlyph(intent.c, "he")).toBe("אני הולך לנוח.");
+    expect(translateGlyph(intent.c, "he", { speaker: "f" })).toBe("אני הולכת לנוח.");
+    expect(translateGlyph(intent.c, "es")).toBe("Voy a descansar.");
+    expect(translateGlyph(intent.c, "pt")).toBe("Eu vou descansar.");
+  });
+
+  it("`sit` landed with it — the posture pair the point cell's verb belongs to", () => {
+    // `sit` never reaches the point cell (the dwell primitive is `rest`), but
+    // it is the SAME gap on the SAME family: a bare "you sit" compiles to
+    // `{satisfy, need:"sit"}`, whose line is the objectless `i_me + sit`, and
+    // that leaked the English token in exactly the same three rulesets.
+    const line = goalIntentLine({ kind: "satisfy", need: "sit" }, syms)!;
+    expect(line.c).toBe("i_me + sit");
+    expect(translateGlyph(line.c, "en")).toBe("I sit.");
+    expect(translateGlyph(line.c, "he")).toBe("אני יושב.");
+    expect(translateGlyph(line.c, "he", { speaker: "f" })).toBe("אני יושבת.");
+    // Spanish `sentarse` is REFLEXIVE; the clitic rides the authored forms the
+    // way `wear`'s ("me visto") already does, so the going-to future takes the
+    // enclitic infinitive with no new machinery in the romance layer.
+    expect(translateGlyph(line.c, "es")).toBe("Me siento.");
+    expect(translateGlyph(line.c, "pt")).toBe("Eu sento.");
+    expect(translateGlyph(asIntent(line).c, "es")).toBe("Voy a sentarme.");
+    expect(translateGlyph(asIntent(line).c, "he")).toBe("אני הולך לשבת.");
+    expect(translateGlyph(asIntent(line).c, "pt")).toBe("Eu vou sentar.");
+  });
+
+  it("NO ruleset leaks a raw `rest`/`sit` token any more — the L15 sweep", () => {
+    // The mirror of the L13 guard above, aimed at the two words that USED to
+    // leak: the untranslated verb shows up as its own Latin-script glyph id
+    // inside a sentence, so a rendered line containing it never reached a
+    // lexeme. (English is excluded — there the word IS the lexeme.)
+    for (const glyph of ["i_me + rest", "i_me + sit", "i_me + rest.will", "i_me + sit.will"]) {
+      for (const lang of ["he", "es", "pt"] as const) {
+        for (const speaker of ["m", "f"] as const) {
+          const said = translateGlyph(glyph, lang, { speaker });
+          // "+" rides the list too: a surviving joiner means the sentence fell
+          // all the way to the telegraphic gloss.
+          const leaks = ["rest", "sit", "+"].filter((w) => said.includes(w));
+          expect({ lang, speaker, glyph, said, leaks }).toEqual({ lang, speaker, glyph, said, leaks: [] });
+        }
+      }
     }
   });
 });

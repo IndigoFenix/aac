@@ -66,6 +66,18 @@ interface StudentFormData {
   birthDate: string;
 }
 
+/**
+ * Wire payload for create/update. Distinct from the form state above because a
+ * field the clinician cleared must travel as an explicit null — see
+ * handleSubmit.
+ */
+interface StudentSubmitData {
+  firstName: string;
+  lastName: string | null;
+  gender: string | null;
+  birthDate: string | null;
+}
+
 const INITIAL_FORM_STATE: StudentFormData = {
   firstName: '',
   lastName: '',
@@ -100,7 +112,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   // ==========================================================================
 
   const createStudentMutation = useMutation({
-    mutationFn: async (studentData: Partial<StudentFormData> & { instituteIds: string[]; primaryLanguage: string }) => {
+    mutationFn: async (studentData: StudentSubmitData & { instituteIds: string[]; primaryLanguage: string }) => {
       const res = await apiRequest('POST', '/api/students', studentData);
       return res.json();
     },
@@ -136,7 +148,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   });
 
   const updateStudentMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<StudentFormData> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: StudentSubmitData }) => {
       const res = await apiRequest('PATCH', `/api/students/${id}`, data);
       return res.json();
     },
@@ -209,11 +221,16 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       return;
     }
 
+    // Cleared fields go out as null, not undefined: the edit path is a PATCH
+    // that merges by key, and JSON.stringify drops undefined — so clearing a
+    // surname or birth date would never reach the server and the old value
+    // would be back in the form on the next open. null is also required rather
+    // than '' because birthDate is a date column.
     const submitData = {
       firstName: formData.firstName,
-      lastName: formData.lastName || undefined,
-      gender: formData.gender || undefined,
-      birthDate: formData.birthDate || undefined,
+      lastName: formData.lastName || null,
+      gender: formData.gender || null,
+      birthDate: formData.birthDate || null,
     };
 
     if (editingStudent) {

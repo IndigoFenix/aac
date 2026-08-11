@@ -20,7 +20,13 @@ import {
   programOverridesOf,
   resolveRoomPrograms,
 } from "@shared/world-engine/kernel/town/programs.js";
-import { tokenizeSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
+import { parseSentence, tokenizeSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
+import {
+  emptyRecency,
+  noteUtterance,
+  TYPE_CHIPS,
+  type RecencyMemory,
+} from "@shared/world-engine/interaction/intent/surface-next.js";
 import { canResolveGlyph, parseGlyph } from "@shared/glyph-compositor.js";
 
 const NOUNS: BuilderNounEntry[] = [
@@ -419,5 +425,142 @@ describe("placeBuilderNouns — every room and building the spec knows", () => {
     const s = builderSurfaceFor("", { nouns: defaultBuilderNouns(), category: "things" });
     const ids = (s.groups ?? []).map((g) => g.id);
     expect(ids).toContain("places");
+  });
+});
+
+// THE PLATFORM PATH GETS WHAT THE IN-GAME BOARD ALWAYS HAD (§5 seams 3/9).
+//
+// Three things the wire adapter used to drop on the floor: the student's own
+// LEARNED LAYER (`recency`), the caller's GRID BUDGET (`capacity`), and the
+// SENTENCE-TYPE chips (`typeChips` out, `seedKind` back in). Each is optional,
+// each is pass-through, and none of them may change a board that doesn't use
+// them — the AAC is the one surface most students see, so a regression here is
+// a regression for everybody.
+describe("builderSurfaceFor — the learned layer, the budget and the type chips", () => {
+  /** What the memory looks like after the student really said something —
+   *  built the way the live path builds it, never hand-authored. */
+  const afterSaying = (sentences: string[]): RecencyMemory => {
+    let mem = emptyRecency();
+    for (const s of sentences) mem = noteUtterance(mem, parseSentence(s));
+    return mem;
+  };
+
+  it("recency PERSONALIZES: a word the student uses outranks an unused peer", () => {
+    // apple and ball are the same kind of thing at the same role tier, so the
+    // frequency prior alone decides between them...
+    const cold = builderSurfaceFor("i_me + want", { nouns: NOUNS });
+    const ck = keys(cold);
+    expect(ck.indexOf("apple")).toBeLessThan(ck.indexOf("ball"));
+    // ...until this child turns out to be a child who asks for the ball.
+    const mem = afterSaying(["i_me + want + ball", "i_me + want + ball"]);
+    const warm = builderSurfaceFor("i_me + want", { nouns: NOUNS, recency: mem });
+    const wk = keys(warm);
+    expect(wk.indexOf("ball")).toBeLessThan(wk.indexOf("apple"));
+    // The board is still the same board — personalization RANKS, never filters.
+    expect(new Set(wk)).toEqual(new Set(ck));
+  });
+
+  it("recency is the SURFACER's own contract — the adapter only carries it", () => {
+    // Same memory, same tokens ⇒ the wire answer and a direct surfacer call
+    // agree about the order. (Determinism holds with the memory in play.)
+    const mem = afterSaying(["i_me + want + ball"]);
+    const a = builderSurfaceFor("i_me + want", { nouns: NOUNS, recency: mem });
+    const b = builderSurfaceFor("i_me + want", { nouns: NOUNS, recency: mem });
+    expect(b).toEqual(a);
+    expect(JSON.parse(JSON.stringify(a))).toEqual(a); // still plain JSON
+  });
+
+  it("an EMPTY memory costs nothing — the board is byte-identical to no memory", () => {
+    // The client always has a memory object (it persists one per student), so
+    // a brand-new student must get exactly today's board, not a subtly
+    // different one.
+    for (const glyph of ["", "i_me + want", "you + go"]) {
+      expect(builderSurfaceFor(glyph, { nouns: NOUNS, recency: emptyRecency() }))
+        .toEqual(builderSurfaceFor(glyph, { nouns: NOUNS }));
+    }
+  });
+
+  it("capacity is HONORED — the caller's grid budget, not the surfacer's default", () => {
+    // The seam this closes: the bridge sent no capacity, so an in-game board
+    // silently got 16 words and could never page while the same sentence
+    // out-of-game got 54.
+    const small = builderSurfaceFor("", { nouns: defaultBuilderNouns(), capacity: 3 });
+    expect(small.buttons.length).toBeLessThanOrEqual(3);
+    const dflt = builderSurfaceFor("", { nouns: defaultBuilderNouns() });
+    expect(dflt.buttons.length).toBeLessThanOrEqual(16);
+    const board = builderSurfaceFor("", { nouns: defaultBuilderNouns(), capacity: 54 });
+    expect(board.buttons.length).toBeGreaterThan(dflt.buttons.length);
+    expect(board.buttons.length).toBeLessThanOrEqual(54);
+    // A bigger budget only ADDS: the ranked head of the board is unchanged, so
+    // paging never reshuffles the first page under the student.
+    expect(keys(board).slice(0, dflt.buttons.length)).toEqual(keys(dflt));
+  });
+
+  it("typeChips ride the wire — on the EMPTY board only, exactly as the surfacer says", () => {
+    const empty = builderSurfaceFor("", { nouns: NOUNS });
+    expect(empty.typeChips).toBeDefined();
+    expect(empty.typeChips!.map((c) => c.kind)).toEqual(TYPE_CHIPS.map((c) => c.kind));
+    for (const c of empty.typeChips!) {
+      expect(typeof c.kind).toBe("string");
+      expect(c.label.length).toBeGreaterThan(0);
+    }
+    // Composition underway ⇒ the controls are gone, and the KEY is gone with
+    // them (a client that never learned about them sees no new field at all).
+    for (const glyph of ["i_me", "i_me + want", "i_me + want + apple"]) {
+      const s = builderSurfaceFor(glyph, { nouns: NOUNS });
+      expect(s.typeChips).toBeUndefined();
+      expect(Object.keys(s)).not.toContain("typeChips");
+    }
+  });
+
+  it("seedKind echoes back and FILTERS the openers to one move", () => {
+    const ask = builderSurfaceFor("", { nouns: NOUNS, seedKind: "ask" });
+    const ak = keys(ask);
+    expect(ak).toContain("who");
+    expect(ak).toContain("where");
+    // The other moves' openers stand down — that IS the narrowing.
+    expect(ak).not.toContain("hi");
+    expect(ak).not.toContain("want");
+    const greet = builderSurfaceFor("", { nouns: NOUNS, seedKind: "greet" });
+    const gk = keys(greet);
+    expect(gk).toContain("hi");
+    expect(gk).not.toContain("want");
+    // A seed changes WHICH words open, never whether the sentence is sayable.
+    expect(ask.complete).toBe(false);
+  });
+
+  it("seedKind is inert once a word has landed (the empty board owns it)", () => {
+    for (const glyph of ["i_me", "i_me + want"]) {
+      expect(builderSurfaceFor(glyph, { nouns: NOUNS, seedKind: "ask" }))
+        .toEqual(builderSurfaceFor(glyph, { nouns: NOUNS }));
+    }
+  });
+
+  it("BACKWARD COMPAT: without the new opts every old field is byte-identical", () => {
+    // An older client sends none of the three; an older game answers with no
+    // typeChips. Both must keep working. Everything the wire carried before is
+    // unchanged — the only difference anywhere is the additive `typeChips` key
+    // on the empty board.
+    for (const glyph of ["", "i_me + want", "i_me + want + apple", "hi"]) {
+      for (const opts of [
+        { nouns: NOUNS },
+        { nouns: NOUNS, category: "things" },
+        { nouns: NOUNS, capacity: 4, group: "creatures" },
+        { nouns: NOUNS, locale: "he-IL" },
+      ]) {
+        const s = builderSurfaceFor(glyph, opts) as Record<string, unknown>;
+        const { typeChips: _chips, ...legacy } = s;
+        const withNew = builderSurfaceFor(glyph, {
+          ...opts,
+          recency: emptyRecency(),
+        }) as Record<string, unknown>;
+        const { typeChips: _chips2, ...legacyWithNew } = withNew;
+        expect(legacyWithNew).toEqual(legacy);
+        // And the legacy half is exactly the fields the contract always had.
+        for (const k of Object.keys(legacy)) {
+          expect(["buttons", "modifiers", "categories", "groups", "complete"]).toContain(k);
+        }
+      }
+    }
   });
 });

@@ -30,11 +30,11 @@
 // cities (pressure fails — walk away and forage), and a fragile staple
 // never fills a store past its own carry (pastoralists stay mobile).
 
-import { injectTile, type CellGrid, type FoundingSite } from "../cells/index";
+import { injectTile, type CellGrid, type FoundingOpts, type FoundingSite } from "../cells/index";
 import {
-  REAL_PORTER_BULK, storedFraction, type Freight,
+  REAL_PORTER_BULK, freightOf, storedFraction, type Freight,
 } from "../../freight";
-import { needFillDays, type WorldScale } from "../../scale";
+import { needFillDays, townSpacingM, type WorldScale } from "../../scale";
 
 /** One wild species' presence on the grid: its key, and the capacity
  *  field its crowds are read off (the base `forage` for humans; a
@@ -372,4 +372,136 @@ export function gateASettles(
     band.store > bandCarryCapacity(band, freight, opts) &&
     pressure.pressure >= (opts.pressureFloor ?? PRESSURE_FLOOR_DEFAULT)
   );
+}
+
+// ------------------------------------- THE CLOSED-FORM TWIN OF GATE A (§3.1)
+//
+// growth-unification.md §4: `findFoundingSites` stops being an independent
+// static aesthetic and becomes the CLOSED FORM of the same gate — "the scan
+// places settlements where bands would have settled". Same doctrine as the
+// construction director's clock twin: the observed arm iterates, the
+// unobserved arm solves, and the two agree on WHERE, never byte-for-byte
+// (growth-unification §8, "the scan can't be a perfect twin").
+//
+// THE ALGEBRA, read straight off the loop above. A band standing on a box
+// gathers the FOUND-SMALL take (`GatherOpts.maxHarvest` — the residue stays
+// wild) and then lives there:
+//
+//   yield/day   = boxCapacity / needFillDays(hunger)      (stepBandDay)
+//   need/day    = size        / needFillDays(hunger)
+//   store*      = (yield − need) / (1 − storedFraction(1 day))
+//                 ── the geometric plateau band-gate-a.test.ts already pins
+//                    ("banked/(1 − dailyKeep)"): the pile rots before it feeds
+//   carry       = size × portableBulk × valueDensity      (bandCarryCapacity)
+//
+// so Gate A's left half, `store* > carry`, is
+//
+//   boxCapacity > size × (1 + needFillDays × (1 − dailyKeep) × bulk × vd)
+//                        └──────────── 1 + CARRY RATIO ────────────┘
+//
+// and at rest the settled `forage` field IS the box capacity the scan sums
+// (`FoundingSite.density`). So the scan's `threshold` and its `maxHarvest`
+// are ONE relationship rather than two independent literals — which is
+// exactly the incoherence the survey found (every shipped tier authored
+// `maxHarvest: 600` beside thresholds of 25–100, a cap that can never bind
+// and therefore a Gate A that could never fire).
+//
+// THE CONTENT SIDE IS THE TAKE. `foundPop` — how many grid persons one
+// founding raises — is a statement about PEOPLE, which is what a tier
+// genuinely declares; the density that keeps them is then Gate A's answer,
+// not an aesthetic. The inverse (`gateAFoundPop`) exists because a world may
+// legitimately declare the land instead.
+//
+// The negative cases come free, exactly as they do in the loop: a DURABLE
+// staple has `dailyKeep === 1`, so the ratio is 0 and any surplus at all
+// settles; a FRAGILE one (milk, keepDays 1) puts the ratio above 10, so a
+// pastoral band needs an order of magnitude more crowd before its store can
+// out-run its backs — and mostly never settles.
+
+/**
+ * THE CARRY RATIO: how many times its own size a band's box must feed before
+ * the plateau store out-runs the backs that could carry it away.
+ * Dimensionless, and a pure function of the declared dials (metabolism
+ * through `needFillDays`, the staple's keeping, the pack, the staple's worth).
+ */
+export function gateACarryRatio(
+  scale: WorldScale, freight: Freight, opts: CarryOpts = {},
+): number {
+  const fill = needFillDays(scale, "hunger");
+  const dailyKeep = storedFraction(scale, freight, 1);
+  return fill * (1 - dailyKeep) * (opts.portableBulk ?? REAL_PORTER_BULK) * freight.valueDensity;
+}
+
+/** Gate A read forward: the box capacity (= the settled `forage` sum the
+ *  scan calls `density`) at which a founding of `foundPop` grid persons
+ *  banks past its own carry. */
+export function gateAThreshold(
+  scale: WorldScale, freight: Freight, foundPop: number, opts: CarryOpts = {},
+): number {
+  return foundPop * (1 + gateACarryRatio(scale, freight, opts));
+}
+
+/** Gate A read back: the founding a declared density would settle. Exactly
+ *  inverts `gateAThreshold` (pinned). */
+export function gateAFoundPop(
+  scale: WorldScale, freight: Freight, threshold: number, opts: CarryOpts = {},
+): number {
+  return threshold / (1 + gateACarryRatio(scale, freight, opts));
+}
+
+export interface FoundingScanOpts extends CarryOpts {
+  scale: WorldScale;
+  /** GRID PERSONS one founding raises — the FOUND-SMALL take (grand-dream
+   *  civilization-emergence §2a). The tier's one content declaration. */
+  foundPop: number;
+  /** Metres per chart cell at this tier — the unit `minSpacing` is in.
+   *  Omitted = the tier measures spacing in cells of its own and keeps the
+   *  `minSpacing` it declares (a tier-0 chart cell IS the settlement
+   *  lattice; the day's-walk law is a tier-1 fact). */
+  cellSizeM?: number;
+  /** The staple a band banks here (default the registry's `food`). */
+  freight?: Freight;
+  /** Box radius in cells (default 2 — every shipped tier's). */
+  radius?: number;
+  /** The narrowest gap this tier's CHART can express, in cells. A chart
+   *  limit, never a spacing choice — which is why the extent that rides it
+   *  reads the gap the floor actually imposes (`townExtentM(scale, spacing)`). */
+  minSpacingFloorCells?: number;
+  /** The WIDEST gap this tier's chart can express, in cells — the other
+   *  half of the same chart limit, and load-bearing on a small world: a
+   *  border band 86 cells long cannot hold a 18 000-cell gap, and asking it
+   *  to sizes a grid past its own key stride (MEASURED: `borderTowns: band
+   *  grid exceeds its key stride` on the 2 km test planet, whose band cell
+   *  is 1.36 m against a real 25 km day's walk). Capped, the tier says the
+   *  honest thing instead — the gap is wider than this chart, so at most one
+   *  settlement fits in it. Absent = no cap. */
+  minSpacingCapCells?: number;
+  /** Kept when the tier declares no `cellSizeM` (see above). */
+  minSpacing?: number;
+}
+
+/**
+ * The scan's options, DERIVED: threshold from Gate A, spacing from the
+ * settled map's own distance (`scale.ts townSpacingM`), harvest from the
+ * declared take. `score`/`eligible`/`occupied` stay the caller's — the
+ * ranking is what a tier is genuinely free to author (world-content §5's
+ * supply/demand weights), the GATE is not.
+ */
+export function foundingScan(opts: FoundingScanOpts): FoundingOpts {
+  const freight = opts.freight ?? freightOf("food");
+  const spacing = opts.cellSizeM
+    ? Math.min(
+        opts.minSpacingCapCells ?? Infinity,
+        Math.max(
+          opts.minSpacingFloorCells ?? 1,
+          Math.round(townSpacingM(opts.scale) / opts.cellSizeM),
+        ),
+      )
+    : (opts.minSpacing ?? 1);
+  return {
+    threshold: gateAThreshold(opts.scale, freight, opts.foundPop, opts),
+    radius: opts.radius ?? 2,
+    minSpacing: spacing,
+    maxHarvest: opts.foundPop,
+  };
 }

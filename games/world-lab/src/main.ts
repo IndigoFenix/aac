@@ -21,7 +21,10 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { avatarKind, loadWorldManifest, type GameSettings, type LoadedWorld , focusLevel } from "@shared/world-engine/kernel/manifest";
-import { resolveWorldScale, type WorldScale, type WorldScaleSpec } from "@shared/world-engine/scale";
+import {
+  REAL_SCALE, resolveWorldScale, townExtentM,
+  type WorldScale, type WorldScaleSpec,
+} from "@shared/world-engine/scale";
 import { getShadingMode, setShadingMode } from "@shared/world-engine/materials";
 import { ECONOMY_MODULE } from "@shared/world-engine/kernel/modules/economy/index";
 import { createSpaceFlight, type SpaceFlight, type FlightCity } from "./space-fly";
@@ -43,16 +46,20 @@ import { makeFeature, wildFeatureContainerId } from "@shared/world-engine/intera
 import { createTradeRoads, type TradeRoads, type TownSpliceSpec } from "./trade-roads";
 import { createRiverRibbons, type RiverRibbons } from "./river-ribbons";
 import {
-  approachBearings, arterialTips, type TownFrame,
+  approachBearings, arterialTips, townRoadSeeds,
+  type ArterialTip, type TownFrame,
 } from "@shared/world-engine/kernel/town/approach";
-import { TOWN_DIMS } from "@shared/world-engine/kernel/town/dimensions";
+import type { GrowSeed, TownStreets } from "@shared/world-engine/kernel/town/streets";
 import type { PlanetRoute } from "@shared/world-engine/planet/routes";
 import { regionFrame, type HighwayRefinement } from "@shared/world-engine/planet/refine";
 import {
   WORLD_EPOCH_MS, worldGrowthDays, conurbations, conurbationName,
 } from "@shared/world-engine/planet/growth";
 import type { TownPlay } from "@shared/world-engine/interaction/town/town-play";
-import { siteTownConfig, type FoundedSite } from "@shared/world-engine/interaction/town/founding";
+import {
+  siteTownConfig, clusterSites, clusterRadiusM, mergeSites, CLUSTER_MIN_SITES,
+  type FoundedSite,
+} from "@shared/world-engine/interaction/town/founding";
 import type { PlanetCity } from "@shared/world-engine/planet/cities";
 import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
 import { mountBoardIsland } from "./board-island";
@@ -475,13 +482,17 @@ let grounded = false;
  *  wilderness chunk). Ground is ground — same walker, camera, board. */
 let groundedIn: "town" | "wild" | null = null;
 let liveViz: CityViz | null = null;
-const liveCenter = { x: 0, y: 0 }; // town-sim (stage) plaza of the mounted town
+// The mounted town's stage ORIGIN in sim coords. It was called the plaza
+// while the ring decreed one there; growth-phase-B made the plaza an OUTPUT
+// that lands wherever the walks are busiest, so this is now purely the town's
+// coordinate FRAME (§0's triage: frames keep an origin, growth inputs die).
+const liveCenter = { x: 0, y: 0 };
 /** The live town's render anchor: a child of the city group offset by
- *  (-plaza.x, 0, -plaza.y), so the town's PLAZA (stage centre) sits exactly on
- *  the city anchor — the same registration the static plan uses. Its LOCAL
+ *  (-center.x, 0, -center.y), so the town's stage ORIGIN sits exactly on the
+ *  city anchor — the same registration the static plan uses. Its LOCAL
  *  coords ARE town-sim coords (walk↔fly mappings go through this, unshifted). */
 let liveAnchor: THREE.Group | null = null;
-/** Terrain height at town-SIM (x, y) — viz.ground re-centred on the plaza. */
+/** Terrain height at town-SIM (x, y) — viz.ground re-centred on the origin. */
 let liveGround: ((x: number, y: number) => number) | null = null;
 
 /** The mounted live town's stage — its streamer's `loadedLots()` is THE
@@ -568,7 +579,17 @@ function groundCtx(): GroundCtx | null {
 /** Founded-site cell namespace — disjoint from capitals (< nCells), village
  *  keys (region*16384+child, ≲2.3e8) and border towns (negative). */
 const FOUNDED_CELL_BASE = 1_000_000_000;
-const foundedPlanetSites = new Map<string, { cell: number; bodyId: string }>();
+/** Every site this session has founded on a planet. `dir`/`surfaceR` are its
+ *  BODY-LOCAL address — the one frame two sites founded in different
+ *  wilderness sessions can be compared in (growth phase C §3.2/§3.3: the
+ *  access lane and the homestead cluster both need "how far is that one from
+ *  this one" across sessions). `record` is the site itself when we have it,
+ *  which is what a cluster merges. */
+const foundedPlanetSites = new Map<string, {
+  cell: number; bodyId: string;
+  dir: [number, number, number]; surfaceR: number;
+  record?: FoundedSite;
+}>();
 
 /** The wild session's QUEST host, when the unified-ground boot owns the
  *  chunk (the legacy sandbox boot has no session — narrow by its
@@ -608,10 +629,105 @@ function registerFoundedPlanetSite(site: {
     startPop: 0, // zero-building growth: settlers raise everything (①b)
   };
   flight.addCities(body.id, [pc]);
-  foundedPlanetSites.set(site.key, { cell, bodyId: body.id });
   const live = wildQuestSession()?.foundedSite;
+  foundedPlanetSites.set(site.key, {
+    cell, bodyId: body.id, dir, surfaceR: r,
+    ...(live && live.key === site.key ? { record: live } : {}),
+  });
   if (live && live.key === site.key) cityTowns.registerFounded(cell, siteTownConfig(live));
   traceWalk(`founded site registered on planet: ${site.key} (cell ${cell})`);
+  // THE FOUNDING CADENCE (growth phase C §3.3): a new homestead is the only
+  // thing that can complete a cluster, so the check rides the founding.
+  maybeFoundTownOverCluster(body.id);
+}
+
+/** SESSION COORDS of every OTHER site standing on this body — the standing
+ *  circulation a new founding's access lane may reach (growth phase C §3.2,
+ *  `QuestHostDeps.siteNetworkAt`). Body-local dir → world → the wilderness
+ *  anchor's frame, the exact inverse of the projection above. */
+function foundedSiteNetwork(): Array<{ x: number; y: number }> {
+  if (!wildPoint || !wildAnchor) return [];
+  const bodyId = wildPoint.body.id;
+  const liveKey = wildQuestSession()?.foundedSite?.key;
+  const out: Array<{ x: number; y: number }> = [];
+  for (const [key, rec] of foundedPlanetSites) {
+    if (rec.bodyId !== bodyId || key === liveKey) continue;
+    const world = wildPoint.body.group.localToWorld(
+      new THREE.Vector3(rec.dir[0], rec.dir[1], rec.dir[2]).multiplyScalar(rec.surfaceR),
+    );
+    const localPt = wildAnchor.worldToLocal(world);
+    out.push({ x: localPt.x, y: localPt.z });
+  }
+  return out;
+}
+
+/** Town-local METRES of `dir` about `about` — the tangent chart a cluster is
+ *  merged in. Sites founded in different wilderness sessions share no sim
+ *  frame; the body does. */
+function siteOffsetM(
+  about: readonly [number, number, number], dir: readonly [number, number, number], radius: number,
+): { x: number; y: number } {
+  const a = new THREE.Vector3(about[0], about[1], about[2]);
+  const d = new THREE.Vector3(dir[0], dir[1], dir[2]);
+  const up = Math.abs(a.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const east = new THREE.Vector3().crossVectors(up, a).normalize();
+  const north = new THREE.Vector3().crossVectors(a, east).normalize();
+  // Gnomonic: the chord is metres at the reach a cluster is measured over.
+  const w = d.dot(a) || 1e-9;
+  return { x: (d.dot(east) / w) * radius, y: (d.dot(north) / w) * radius };
+}
+
+/**
+ * HOMESTEAD CLUSTERING (growth phase C §3.3): N founded sites standing
+ * within one camp's reach of each other stop being farms and become a TOWN,
+ * by RE-PARENTING — the eldest's cell keeps the address, the rest unregister
+ * into it, and the merged overlay (stock conserved, buildings annexed, lanes
+ * turned into spine seeds) is what the approach ladder rebuilds from.
+ *
+ * The live session's OWN site is left out: the wilderness sim still owns that
+ * ground (`liveFoundedSiteCell`), and a town may not mount under the player's
+ * feet. It joins on the next founding after this session lets go.
+ */
+function maybeFoundTownOverCluster(bodyId: string): void {
+  if (!cityTowns || !flight) return;
+  const liveKey = wildQuestSession()?.foundedSite?.key;
+  const here = [...foundedPlanetSites.entries()]
+    .filter(([key, r]) => r.bodyId === bodyId && r.record && key !== liveKey);
+  if (here.length < CLUSTER_MIN_SITES) return;
+  const radius = wildPoint?.body.radius ?? 0;
+  if (!(radius > 0)) return;
+  // One chart for the whole body's sites, about the first — good enough to
+  // measure neighbourhood in; the merge re-charts about the cluster's eldest.
+  const about = here[0]![1].dir;
+  const flat = here.map(([key, r]) => ({
+    key, rec: r,
+    site: { ...r.record!, at: siteOffsetM(about, r.dir, radius) } as FoundedSite,
+  }));
+  const byKey = new Map(flat.map(f => [f.site.key, f]));
+  const reach = clusterRadiusM(docSessionScale() ?? REAL_SCALE, radius * 2);
+  for (const group of clusterSites(flat.map(f => f.site), reach)) {
+    const members = group.map(s => byKey.get(s.key)!).filter(Boolean);
+    if (members.length < CLUSTER_MIN_SITES) continue;
+    // Re-chart about the ELDEST — the town's frame origin and its address.
+    const head = members[0]!;
+    const merged = mergeSites(members.map(m => ({
+      ...m.rec.record!,
+      at: siteOffsetM(head.rec.dir, m.rec.dir, radius),
+    } as FoundedSite)));
+    cityTowns.registerFounded(head.rec.cell, siteTownConfig(merged));
+    // The absorbed sites UNREGISTER into the town (snapshotLive's precedent:
+    // a ground-owned thing acquires a new parent identity and its
+    // construction record travels — it is already inside `merged`).
+    for (const m of members.slice(1)) {
+      flight.removeCities([m.rec.cell]);
+      cityTowns.dropFounded(m.rec.cell);
+      foundedPlanetSites.delete(m.key);
+    }
+    foundedPlanetSites.set(head.key, { ...head.rec, record: merged });
+    traceWalk(
+      `homestead cluster founded a town: ${members.map(m => m.key).join(" + ")} → ${head.key} (cell ${head.rec.cell})`,
+    );
+  }
 }
 
 function unregisterFoundedPlanetSite(key: string): void {
@@ -629,7 +745,14 @@ function snapshotLiveFoundedSite(): void {
   const live: FoundedSite | null | undefined = wildQuestSession()?.foundedSite;
   if (!live) return;
   const rec = foundedPlanetSites.get(live.key);
-  if (rec) cityTowns?.registerFounded(rec.cell, siteTownConfig(live));
+  if (!rec) return;
+  cityTowns?.registerFounded(rec.cell, siteTownConfig(live));
+  // The record travels with the config — the site's own overlay is what a
+  // later cluster merges (§3.3), and this is the moment it stops being live.
+  foundedPlanetSites.set(live.key, { ...rec, record: live });
+  // The chunk is letting go, so this site is no longer under the player's
+  // feet: it may join a cluster now (the founding cadence's other moment).
+  maybeFoundTownOverCluster(rec.bodyId);
 }
 
 function disposeWilderness(): void {
@@ -763,6 +886,11 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
             // planet feature — beacon + approach-loader entry — not just a
             // chunk-local crate.
             onSiteFounded: (site) => registerFoundedPlanetSite(site),
+            // THE ACCESS LANE's other end (growth phase C §3.2): the standing
+            // homesteads this founder can already reach. The session cannot
+            // know them — they were founded in other sessions — so the boot
+            // answers, and the new site records its lane to the nearest.
+            siteNetworkAt: () => foundedSiteNetwork(),
             onSiteAbandoned: (key) => unregisterFoundedPlanetSite(key),
           },
         )
@@ -1327,9 +1455,10 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     liveViz = viz;
     liveCenter.x = play.stage.center.x;
     liveCenter.y = play.stage.center.y;
-    // REGISTRATION: town-sim coords put the plaza at stage.center, but the city
-    // anchor (and the static plan, which subtracts the centre) is the PLAZA —
-    // so the live layer hangs off a child group shifted by minus the plaza.
+    // REGISTRATION: town-sim coords put the frame ORIGIN at stage.center,
+    // while the city anchor (and the static plan, which subtracts the centre)
+    // IS that origin — so the live layer hangs off a child group shifted by
+    // minus the centre.
     // Its local frame IS sim coords; viz.ground (anchor-local) shifts to match.
     liveAnchor = new THREE.Group();
     liveAnchor.position.set(-liveCenter.x, 0, -liveCenter.y);
@@ -1341,7 +1470,7 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
       // host's gaze pick lands on the DRAWN world (streamed terrain chunks,
       // road ribbons, trees) exactly like the wilderness and the spirit
       // glide, instead of an analytic plane that drifts off the rendered
-      // ground away from the plaza.
+      // ground away from the town centre.
       { scene, camera, anchor: liveAnchor, castGroundRay: castDrawnGround },
       play,
       t => { baseStatus = t; setStatus(t); },
@@ -2172,20 +2301,43 @@ function townFrameOf(fc: FlightCity): TownFrame {
   return { center: [d.x, d.y, d.z], east: [e.x, e.y, e.z], north: [n.x, n.y, n.z] };
 }
 
+/** The town's gates, best first: every port the street tree DECLARED, then
+ *  every other gen-0 street end behind them (see townSpliceSpecOf). */
+function townGates(net: TownStreets): ArterialTip[] {
+  const gates = arterialTips(net.streets, net.ports);
+  for (const t of arterialTips(net.streets)) {
+    if (!gates.some(g => g.street === t.street && g.end === t.end)) gates.push(t);
+  }
+  return gates;
+}
+
 /** The trade-roads splice spec for a city whose street plan is built —
  *  null until the town is ready (no plan, nothing to join). The extent is
- *  TOWN_DIMS.townRMax, the SAME one planet/routes.ts ported the routes at
- *  (plan.radius is the BUILT-UP radius, which shrinks with the town and
- *  would no longer name the port). */
+ *  the DERIVED one (scale.ts `townExtentM`), the SAME number planet/routes.ts
+ *  ported the routes at and the SAME one the street tree grew to — plan.radius
+ *  is the BUILT-UP radius, which shrinks with the town and would no longer
+ *  name the port. */
 function townSpliceSpecOf(fc: FlightCity): TownSpliceSpec | null {
   const play = cityTowns?.entry(fc.city.cell)?.play;
   if (!play) return null;
+  const net = play.plan.streets;
   return {
     frame: townFrameOf(fc),
-    radiusM: TOWN_DIMS.townRMax,
-    tips: arterialTips(play.plan.streets.streets),
-    // The building line the connector's PAINT must stop at (the ribbon may
-    // still thread the lots to reach its gate).
+    radiusM: townExtentM(docSessionScale() ?? REAL_SCALE),
+    // THE GATE IS THE PORT (§2.2): the tree DECLARES where its roads leave,
+    // and those gates come FIRST — `nearestArterialTip` keeps list order on a
+    // tie, so a declared port always beats an ordinary tip at the same
+    // bearing. For a span-seeded town the port IS the road's own endpoint and
+    // `spliceRouteAtTown` returns null: nothing to bend, no connector.
+    // The remaining gen-0 ends stay on the list behind them as the reach for
+    // a road the town never knew about — a village lane from a region
+    // refined AFTER these streets were laid ports at an extent the tree made
+    // no gate for, and a plain ribbon stopping in the fields is worse than a
+    // connector to the nearest real street end.
+    tips: townGates(net),
+    // The building line a connector's PAINT must stop at (the ribbon may
+    // still thread the lots to reach its gate). STUB-TOWN PATH ONLY now:
+    // a town whose baseline reaches the port grows no connector to paint.
     houses: play.plan.houses.map(h => ({ dx: h.dx, dy: h.dy, w: h.w, h: h.h })),
   };
 }
@@ -2220,6 +2372,27 @@ function cityRoadBearings(fc: FlightCity): readonly number[] | null {
   if (!ensureRoadNet(fc.body) && !incident.length) return null;
   // Inset 0: the endpoint IS the port, so its bearing is the gate bearing.
   return approachBearings(incident, townFrameOf(fc), 0);
+}
+
+/** THE SEAM (growth phase B §2.1): the city's incident road POLYLINES → the
+ *  growth seeds its street tree forms around — the through road as one span
+ *  across the town, a spur per remaining gate, all in town-local metres.
+ *
+ *  The polylines were ALREADY port-terminated at `townRMax` (planet/routes.ts
+ *  — the port law at generation), so the span's ends are literally the points
+ *  where the ribbons stop: the baseline runs gate to gate and the road needs
+ *  no connector to reach it (§2.2).
+ *
+ *  Empty where the OVERLAP RULE bites — on a compressed test planet most
+ *  neighbours sit closer than their own extents, so their road comes back
+ *  unclipped and ports at neither end. That is not a failure: the town falls
+ *  back to the bearings and grows a stub baseline, as it did before. */
+function cityRoadSeeds(fc: FlightCity): readonly GrowSeed[] | null {
+  const incident = cityIncidentRoutes(fc);
+  if (!ensureRoadNet(fc.body) && !incident.length) return null;
+  return townRoadSeeds(
+    incident, townFrameOf(fc), fc.body.radius, townExtentM(docSessionScale() ?? REAL_SCALE),
+  );
 }
 const cityViz = new Map<number, CityViz>();
 const TOWN_REVEAL_M = 30_000; // beacon → street-plan handoff distance
@@ -2535,7 +2708,7 @@ function bootSolarFlight(game: GameSettings): void {
   // materialized system AND its sky — radii, orbits, star separations, spin
   // and orbital periods, relative scales preserved (space-time-compression.md
   // §5 + settlement-emergence.md §4a). Default: real scale.
-  geoBaker = createGeologyBaker();
+  geoBaker = createGeologyBaker({ scale: () => rootLoaded?.game?.scale ?? null });
   flight = createSpaceFlight(scene, galaxySeed, 48, geoBaker.bake, {
     canFly: game.canFly,
     species: game.avatarSpecies,
@@ -2547,7 +2720,8 @@ function bootSolarFlight(game: GameSettings): void {
   cityTowns = createCityTownLoader({
     certify: game => certifyBaker.certifyTown(game),
     questCount: w.questCount ?? 0,
-    roadBearings: cityRoadBearings, // arterials grow where the roads arrive
+    roadBearings: cityRoadBearings, // the fallback where no route ports
+    roadSeeds: cityRoadSeeds,        // the baseline IS the through road
   });
   spaceHud = createSpaceHud(viewEl);
   scene.add(flight.group);
@@ -3214,7 +3388,7 @@ function bootSpiritWorld(game: GameSettings): void {
   const galaxySeed = (ws.seed ?? 1337) >>> 0;
   // COMPRESSION rides the spirit route too (the miniature demo with
   // avatar: "spirit" boots here, not bootSolarFlight).
-  geoBaker = createGeologyBaker();
+  geoBaker = createGeologyBaker({ scale: () => rootLoaded?.game?.scale ?? null });
   flight = createSpaceFlight(scene, galaxySeed, 48, geoBaker.bake, {
     canFly: game.canFly, species: game.avatarSpecies,
     ...spaceScaleOpts(game.scale),
@@ -3223,7 +3397,8 @@ function bootSpiritWorld(game: GameSettings): void {
   cityTowns = createCityTownLoader({
     certify: g => certifyBaker.certifyTown(g),
     questCount: ws.questCount ?? 0,
-    roadBearings: cityRoadBearings, // arterials grow where the roads arrive
+    roadBearings: cityRoadBearings, // the fallback where no route ports
+    roadSeeds: cityRoadSeeds,        // the baseline IS the through road
   });
   spaceHud = createSpaceHud(viewEl);
   scene.add(flight.group);

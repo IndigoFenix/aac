@@ -17,6 +17,16 @@ import {
 } from "../kernel/cells/index.js";
 import { hinterlandJobs, cityLicense, type CityLicense } from "../kernel/civ/jobs.js";
 
+/** GRID PERSONS one TIER-1 founding raises — a hamlet's worth, against the
+ *  capital's hundred (`planet-game.ts PLANET_FOUND_POP`). The region and
+ *  border tiers' ONE content declaration about founding: Gate A's closed
+ *  form (`kernel/civ/bands.ts foundingScan`, growth phase C §3.1) derives
+ *  the crowd density that keeps them, `townSpacingM` the gap between them,
+ *  and the take itself is this number. Lives here rather than in
+ *  `refine.ts` because `border.ts` reads it too and refine already imports
+ *  border — one direction only. */
+export const REGION_FOUND_POP = 25;
+
 export interface PlanetCity {
   /** The substrate cell the city sits on — its identity AND its town seed. */
   cell: number;

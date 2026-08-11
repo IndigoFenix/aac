@@ -20,9 +20,10 @@ import type { BuiltPlanet } from "./planet-game.js";
 import { applyClimate, LAPSE_C_PER_M, THERMAL_M_PER_UNIT_CAP } from "./climate.js";
 import { prepareSubstrate } from "../kernel/civ/tri.js";
 import { findFoundingSites, type FoundingOpts } from "../kernel/cells/index.js";
+import { foundingScan } from "../kernel/civ/bands.js";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
-import { foundCitiesFromSites, type PlanetCity } from "./cities.js";
-import { REAL_TOWN_SPACING_M } from "../scale.js";
+import { foundCitiesFromSites, REGION_FOUND_POP, type PlanetCity } from "./cities.js";
+import { REAL_SCALE, townSpacingM, type WorldScale } from "../scale.js";
 
 export interface BorderTown extends PlanetCity {
   /** The tier-0 cell that OWNS this town: the cell containing its dir
@@ -37,6 +38,10 @@ export interface BorderTownOpts {
   minFarmland?: number;
   /** Towns per edge (default 2). */
   maxTowns?: number;
+  /** The world's space-time compression — sets the band's town spacing
+   *  (`townSpacingM`) exactly as the region tier's does. Absent = realism,
+   *  which reproduces the historical day's-walk spacing. */
+  scale?: WorldScale;
 }
 
 // ── Border-town KEY SPACE ───────────────────────────────────────────────────
@@ -200,11 +205,27 @@ export function borderTowns(
   // regions agree whatever options they refined with.
   const pairPitchM = pitch * R;
   const cellSizeM = pairPitchM / 96;
-  const minSpacing = Math.max(4, Math.round(REAL_TOWN_SPACING_M / cellSizeM));
-  const setback = Math.ceil(minSpacing / 2);
+  // Band metrics mirror the region tier's DERIVATION as well as its numbers:
+  // the SAME `foundingScan` (growth phase C §3.1), so a border town is the
+  // same kind of hamlet, gated by the same Gate A and spaced by the same
+  // day's walk as the interior villages it sits between.
   // Long along the border (stopped short of the corners), just wide enough
   // across for the two half-setback bands.
   const cols = Math.max(16, Math.round(96 * 0.9));
+  // 🚨 THE CHART CAP, and why it is not a fudge. A band is ONE pair pitch
+  // long: on the 2 km test planet that pitch is 131 m and its cell is 1.36 m,
+  // against a real 25 km day's walk — an 18 000-cell gap, which sized `rows`
+  // past `BAND_KEY_STRIDE` and THREW (measured at HEAD after stage 1 derived
+  // this spacing). A gap wider than the band is not a spacing this chart can
+  // express; capped at the band's own length, the tier says the honest thing
+  // — the setback swallows the strip, so this border holds no town at all —
+  // instead of asking for a grid it cannot key.
+  const derivedScan = foundingScan({
+    scale: opts.scale ?? REAL_SCALE, foundPop: REGION_FOUND_POP,
+    cellSizeM, minSpacingFloorCells: 4, minSpacingCapCells: cols,
+  });
+  const minSpacing = derivedScan.minSpacing;
+  const setback = Math.ceil(minSpacing / 2);
   const rows = Math.max(6, 2 * setback + 2);
   if (cols * rows > BAND_KEY_STRIDE) {
     throw new Error("borderTowns: band grid exceeds its key stride");
@@ -275,10 +296,7 @@ export function borderTowns(
   }
 
   const founding: FoundingOpts = {
-    threshold: 25,
-    radius: 2,
-    minSpacing,
-    maxHarvest: 600,
+    ...derivedScan,
     occupied,
     eligible,
   };

@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { studentService } from "../services";
-import { instituteRepository } from "../repositories";
+import { instituteRepository, InvalidAacSettingError } from "../repositories";
 import { activityLogService } from "../services/activityLogService";
 import { changeDetails, type ChangeMap } from "../services/activityChanges";
 
@@ -227,6 +227,13 @@ export class StudentController {
         res.status(404).json({ success: false, message: "student not found" });
       }
     } catch (error: any) {
+      if (error instanceof InvalidAacSettingError) {
+        // A value that cannot be real (e.g. a pasted ElevenLabs key ID) —
+        // rejected before it reached the database. message is "error:CODE",
+        // which the client translates via errors.<CODE>.
+        res.status(400).json({ success: false, error: error.message, message: error.message });
+        return;
+      }
       console.error("Error updating student:", error);
       res
         .status(500)

@@ -330,6 +330,21 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
     const p = binder.place(ref);
     return p ? { container: p } : null;
   };
+  /** WHO the act is FOR — the `for`-marked BENEFICIARY (build order L9).
+   *  Only an ANIMATE can be one: a person can be fetched for, a house cannot,
+   *  so a NAMED noun must clear the same animacy test COMPANY does
+   *  (`companionsOf` — "trade wood WITH the city" is a partner, "wash it WITH
+   *  water" an instrument, and neither is a body an act is done on behalf of).
+   *  The classifier-backed `creature` channel is the live gate (§3.3: a spoken
+   *  place/item never binds as a creature); `isCompanion` is the same second
+   *  opinion company asks for, so a binder carrying one answers both markers
+   *  alike. Null ⇒ nobody was named to benefit — never a guess. */
+  const beneficiaryOf = (): CreatureId | null => {
+    const ref = boundRef("for");
+    if (!ref) return null;
+    if (ref.kind === "entity" && binder.isCompanion?.(ref) === false) return null;
+    return binder.creature(ref);
+  };
   /** Deliver `it` to a resolved destination — the shared arm of every
    *  transport reading (give/bring/carry-to/take-to). */
   const deliver = (it: ItemRef, dest: { to?: CreatureId; container?: PlaceRef }): GoalSpec | null =>
@@ -401,6 +416,39 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
           const g = deliver(it, dest);
           if (g) return g;
         }
+      }
+      // THE BENEFICIARY ("get + apple + for + mara" — build order L9). A
+      // `for`-marked PERSON is who the fetch is FOR, and fetching for somebody
+      // else ENDS IN THEIR HANDS: the order is a DELIVERY, not an errand whose
+      // spoils the actor keeps. `give` is the goal that says so, and its plan
+      // already regresses the pickup, so "fetch, then hand over" costs no new
+      // machinery. Dropping the marker (the pre-L9 behaviour) was the worst of
+      // the readings available — the sentence compiled, the creature obeyed,
+      // and the one person the child named never got the apple.
+      //
+      // AN EXPLICIT `to` OUTRANKS IT ("take + ball + to + mara + for + pip"):
+      // `to` is the TRANSPORT endpoint the verb frame is built around and the
+      // goal set can carry, while `for` names a benefit it cannot — and `give`
+      // has no shape for two recipients. Delivering to the named DESTINATION
+      // keeps the child's own preposition; the benefit is what has nowhere to
+      // ride. Order of the arms IS the rule: the `to` branch returns first.
+      //
+      // A `for`-bound PLACE stays a PLAIN FETCH ("get + wood + for + house").
+      // `give`'s endpoint rule turns a non-creature TO into a stock `putIn`,
+      // but that rule is about a DESTINATION and this marker is not one: a
+      // house does not receive the wood, it is what the wood is FOR — a
+      // PURPOSE, and the goal vocabulary carries no such field. The fetch is
+      // exactly what was asked and invents nothing; stowing the wood inside
+      // the house would be a second act nobody ordered.
+      //
+      // A named SOURCE loses to a named BODY ("get + apple + from + box + for
+      // + mara"): `give` carries no `from`, and the box is a hint about where
+      // the apple IS — which the give plan's own pickup regression finds
+      // anyway — while Mara is a person the child chose. Same law the rest arm
+      // states: dropping a named body is the worse loss.
+      if (it) {
+        const beneficiary = beneficiaryOf();
+        if (beneficiary) return { kind: "give", item: it, to: beneficiary };
       }
       const from = sourceOf();
       if (it) return from ? { kind: "fetch", item: it, from } : { kind: "fetch", item: it };

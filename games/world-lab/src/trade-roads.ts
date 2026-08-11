@@ -39,6 +39,7 @@ import {
 } from "@shared/world-engine/planet/polities";
 import { simulateHistory, type PoliticalHistory } from "@shared/world-engine/planet/history";
 import type { HighwayRefinement } from "@shared/world-engine/planet/refine";
+import type { PaintPatch, RoutePaintEntry } from "@shared/world-engine/planet/route-paint";
 import {
   spliceRouteAtTown, toTownLocal, type ArterialTip, type TownFrame,
 } from "@shared/world-engine/kernel/town/approach";
@@ -120,12 +121,18 @@ export interface TownSpliceSpec {
    *  the port is where the road ends, and the built-up radius moves as the
    *  town grows. */
   radiusM: number;
+  /** THE TOWN'S GATES (kernel/town/approach.ts `arterialTips`) — resolved
+   *  from the street tree's DECLARED ports where it has any. A span-seeded
+   *  town's gates ARE its incident roads' ports, so its splices all come
+   *  back null and the ribbon simply runs onto the baseline. */
   tips: ArterialTip[];
-  /** House footprints in TOWN-LOCAL metres (plan.houses). The connector's
-   *  PAINT stops at the building line — see paintableConnector: a ribbon may
-   *  thread the lots to reach its gate, but ground paint that crossed a
-   *  footprint would re-open the very roads-through-buildings bug the port
-   *  law closed. */
+  /** House footprints in TOWN-LOCAL metres (plan.houses). STUB-TOWN PATH
+   *  ONLY (growth phase B §2.2): read solely when a connector exists, i.e.
+   *  when the town's streets stop short of the port and the road has to
+   *  reach in. The connector's PAINT then stops at the building line — see
+   *  paintableConnector: a ribbon may thread the lots to reach its gate, but
+   *  ground paint that crossed a footprint would re-open the very
+   *  roads-through-buildings bug the port law closed. */
   houses?: ReadonlyArray<{ dx: number; dy: number; w: number; h: number }>;
 }
 
@@ -187,8 +194,8 @@ export interface TradeRoads {
   dispose(): void;
 }
 
-/** Painted lane half-widths. The two `addRoutes` call sites' literals, named
- *  so a town connector paints at the SAME width as the road it continues. */
+/** Painted lane half-widths, named so a town connector — and a refined
+ *  highway span — paints at the SAME width as the road it continues. */
 const INTERSTATE_PAINT_HALF_W_M = 6;
 const LOCAL_PAINT_HALF_W_M = 3;
 
@@ -506,7 +513,7 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
       // like a road dead-ending in open ground. Terrain paint is what a
       // player reads as "road", so the connector paints too (truncated at the
       // building line — paintableConnector). Bucketed by (town, lane width)
-      // because addRoutes takes one width per key.
+      // because a paint key carries one width.
       const paintJobs = new Map<string, { cell: number; halfW: number; conns: PlanetRoute[] }>();
       for (const lr of snapshot) {
         const route = lr.route;
@@ -524,7 +531,7 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
             list.push({ s0: cut.s0, s1: cut.s1, route: cut.route, tag: `town:${cell}` });
             // A parent route AND its highway override both end at the town;
             // their connectors coincide — draw the first, project through both.
-            const dk = `${cell}:${cut.street}`;
+            const dk = `${cell}:${cut.street}:${cut.end}`;
             if (!drawn.has(dk)) {
               drawn.add(dk);
               live.push({
@@ -544,16 +551,19 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
           }
         }
       }
-      // Paint is GROWABLE and idempotent per key, so repeated rebuilds are
-      // free. It is also PERMANENT (no removal until the deferred repaint
-      // seam), so the key deliberately carries only the town and the width:
-      // a town RE-LAID inside one session would keep its first connectors
-      // rather than stack a ghost set over the new ones. Accepted — a
-      // re-lay mid-session is not a path the lab currently walks.
+      // THE KEY IS THE SLOT, THE CONTENT IS THE LAY (growth phase C §3.4).
+      // The key still carries only the town and the width, because that is
+      // what the paint OCCUPIES and `replaceRoutes` has to be able to find
+      // the standing connectors in order to take them back — a key that
+      // carried the lay's identity would name a fresh slot on a re-lay and
+      // leave the old connectors painted, which is the ghost it was meant to
+      // prevent. Identity rides the CONTENT instead: replaceRoutes matches
+      // the road asked for against the road standing, so a rebuild that
+      // reproduces the same connectors is free (the old addRoutes
+      // idempotency, only exact) and a town RE-LAID mid-session repaints.
       for (const [pk, job] of paintJobs) {
-        if (!built.routePaint.addRoutes(pk, job.conns, job.halfW)) continue;
-        const spec = townSpecs.get(job.cell);
-        if (spec) body.refreshTerrain?.(spec.frame.center, spec.radiusM * 4);
+        const patch = built.routePaint.replaceRoutes(pk, job.conns, job.halfW);
+        if (patch) body.refreshTerrain?.(patch.center, patch.radiusM);
       }
     }
     invalidateNear();
@@ -564,8 +574,51 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
   // ground and washed the map from altitude — the river-ribbon disease. The
   // net now paints into the terrain's own vertex colours at TRUE lane width
   // (fading below mesh resolution), and standing chunks re-sample once.
-  built.routePaint.addRoutes("interstates", routes, INTERSTATE_PAINT_HALF_W_M);
-  body.refreshTerrain?.(routes[0]!.dirs[0]!, radius * 4);
+
+  /** ARCS OF A PARENT INTERSTATE A REFINED HIGHWAY HAS TAKEN OVER, by parent
+   *  index — and it NEVER SHRINKS. `overrides` above is the near window's
+   *  bookkeeping and leaves with its region; this does not, because painted
+   *  road is world truth (route-paint's own law) and across a refined span
+   *  the refined geometry IS the road. The parent's line diverges from it by
+   *  a measured mean of 22.4 km, so painting both would put two roads on the
+   *  ground where the world has one. */
+  const paintedSpans = new Map<number, Array<{ s0: number; s1: number }>>();
+
+  /** One refresh ball covering two patches, anchored on the first (already a
+   *  unit direction, so no re-projection error creeps in). */
+  const coverBoth = (p: PaintPatch | null, q: PaintPatch | null): PaintPatch | null => {
+    if (!p) return q;
+    if (!q) return p;
+    const dx = (q.center[0] - p.center[0]) * radius;
+    const dy = (q.center[1] - p.center[1]) * radius;
+    const dz = (q.center[2] - p.center[2]) * radius;
+    return { center: p.center, radiusM: Math.max(p.radiusM, Math.hypot(dx, dy, dz) + q.radiusM) };
+  };
+
+  /** (Re)paint the interstate net as the arcs no refinement has taken over.
+   *  The span SET is order-independent (subtractSpans splits in place and
+   *  the result is always ascending), so two sessions that load the same
+   *  regions in different orders paint the same ground. */
+  const repaintInterstates = (): PaintPatch | null => {
+    const entries: RoutePaintEntry[] = [];
+    for (let i = 0; i < routes.length; i++) {
+      const route = routes[i]!;
+      const cover = paintedSpans.get(i);
+      if (!cover?.length) { entries.push(route); continue; }
+      for (const [s0, s1] of subtractSpans([[0, route.lengthM]], cover)) {
+        // The near window drops sub-20 m remnants too — a metre of parent
+        // sticking out past a refinement is a seam, not a road.
+        if (s1 - s0 > 20) entries.push({ route, s0, s1 });
+      }
+    }
+    return built.routePaint.replaceRoutes("interstates", entries, INTERSTATE_PAINT_HALF_W_M);
+  };
+  {
+    // Founding paint: nothing is refined yet, so this lays every route whole
+    // — byte-identical to the append-only call it replaces.
+    const patch = repaintInterstates();
+    if (patch) body.refreshTerrain?.(patch.center, patch.radiusM);
+  }
 
   // The far QUEUE remains for BORDER ink only — map information, not ground.
   const farQueue: FarJob[] = [];
@@ -1012,9 +1065,11 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
         live.push({ route: r, pts: chordPts(r), nearHalfW: LOCAL_NEAR_HALF_W_M, tag: key, carts: true });
       }
       // Village lanes paint like the interstates — narrower, same law. The
-      // paint persists after eviction (world truth, idempotent per key); the
-      // caller refreshes nearby chunks with the rest of the region's landing.
-      built.routePaint.addRoutes(key, data.roads, LOCAL_PAINT_HALF_W_M);
+      // paint persists after eviction (world truth); `replaceRoutes` keeps it
+      // free when a region re-lands with the same lanes and repaints it when
+      // the refinement really changed.
+      let patch = built.routePaint.replaceRoutes(key, data.roads, LOCAL_PAINT_HALF_W_M);
+      const refined: PlanetRoute[] = [];
       for (const hw of data.highways) {
         const ri = interstateIdx.get(`${hw.a}:${hw.b}`);
         if (ri === undefined) continue; // a route this net never derived
@@ -1025,7 +1080,29 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
         let list = overrides.get(ri);
         if (!list) { list = []; overrides.set(ri, list); }
         list.push({ s0: hw.s0, s1: hw.s1, route: hw.route, tag: key });
+        // AND THE REFINED SPAN NOW PAINTS (growth phase C §3.4). It could not
+        // before: the parent is painted end to end and diverges from the
+        // refinement, so the ground would have carried both lines. It can
+        // now, because the parent gives the span back.
+        refined.push(hw.route);
+        let cover = paintedSpans.get(ri);
+        if (!cover) { cover = []; paintedSpans.set(ri, cover); }
+        // A region that evicts and re-lands hands back the same spans; the
+        // ledger records each once so it cannot grow with the churn.
+        if (!cover.some(c => c.s0 === hw.s0 && c.s1 === hw.s1)) {
+          cover.push({ s0: hw.s0, s1: hw.s1 });
+        }
       }
+      if (refined.length) {
+        patch = coverBoth(patch, built.routePaint.replaceRoutes(
+          `${key}:highways`, refined, INTERSTATE_PAINT_HALF_W_M));
+        patch = coverBoth(patch, repaintInterstates());
+      }
+      // The region loader refreshes this same ground right after us on the
+      // normal path; this call is what covers the OTHER one — a region that
+      // refined before the net existed and sweeps in through ensureRoadNet,
+      // where nobody else re-samples the chunks its paint just changed.
+      if (patch) body.refreshTerrain?.(patch.center, patch.radiusM);
       if (data.roads.length || data.highways.length) {
         // New routes may end at an already-mounted town — re-derive cuts.
         if (townSpecs.size) rebuildTownSplices();
@@ -1052,6 +1129,11 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
           else overrides.delete(ri);
         }
       }
+      // `paintedSpans` is DELIBERATELY not swept here. The overrides above
+      // are render bookkeeping and belong to the region; the paint under
+      // them is ground, and ground does not leave with the streamer. Give
+      // the parent its span back and the world would grow a second road
+      // through the hills the refinement went round.
       for (let i = farQueue.length - 1; i >= 0; i--) {
         if (farQueue[i]!.sink === sink) farQueue.splice(i, 1);
       }

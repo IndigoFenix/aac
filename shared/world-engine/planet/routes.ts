@@ -18,7 +18,7 @@ import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
 // THE PORT LAW's one dimension: a town's extent. dimensions.ts is a
 // constants-only leaf (no imports at all), so reading it here keeps ONE
 // definition of "how far a town reaches" instead of a planet-side copy.
-import { TOWN_DIMS } from "../kernel/town/dimensions.js";
+import { REAL_SCALE, townExtentM, type WorldScale } from "../scale.js";
 import type { BuiltPlanet } from "./planet-game.js";
 import type { PlanetCity } from "./cities.js";
 
@@ -45,10 +45,16 @@ export interface PlanetRouteOpts {
   pairs?: ReadonlyArray<readonly [number, number]>;
   /** THE PORT LAW (growth-unification §1): every route ends at its town's
    *  EXTENT, never at the city cell's center — otherwise the terrain paint,
-   *  the ribbon and the carts all drive through the buildings. Default
-   *  TOWN_DIMS.townRMax; 0 keeps the raw centre-to-centre polyline (tests
-   *  that measure the substrate solve itself). */
+   *  the ribbon and the carts all drive through the buildings. Default: the
+   *  DERIVED extent for `scale` (scale.ts `townExtentM`, = townRMax at real
+   *  scale); 0 keeps the raw centre-to-centre polyline (tests that measure
+   *  the substrate solve itself). */
   townExtentM?: number;
+  /** The world's space-time compression, for the extent derivation above —
+   *  a planet that declares `gap_compression` crowds its towns and must
+   *  shrink their extents with them, or the ports have no open country to
+   *  cross. Absent = realism (the engine default). */
+  scale?: WorldScale;
 }
 
 const norm3 = (v: [number, number, number]): [number, number, number] => {
@@ -293,7 +299,7 @@ export function planetRoutes(
   // THE PORT LAW: every endpoint is a CITY, so every end ports at that
   // city's extent — the raw solve ends on the cell centre, i.e. inside the
   // town's buildings.
-  const extentM = opts.townExtentM ?? TOWN_DIMS.townRMax;
+  const extentM = opts.townExtentM ?? townExtentM(opts.scale ?? REAL_SCALE);
   const byCell = new Map<number, PlanetCity>();
   for (const c of cities) byCell.set(c.cell, c);
   const terminalOf = (cell: number): RouteTerminal | null => {

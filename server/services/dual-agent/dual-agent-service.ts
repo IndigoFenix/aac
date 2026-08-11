@@ -907,6 +907,17 @@ export class DualAgentService {
 
       // Extract state from session
       const chatState = session.state as any;
+
+      // The AAC conversation record is `log`. `state.history` belongs to the
+      // Monitor's chat-framework session, which shares this row (see
+      // saveSessionToDB) — it's a CULLED window, not the conversation. Rows
+      // written before that split have the conversation in both, so fall back
+      // to `state.history` when `log` is empty.
+      const loggedMessages = (session.log as ChatMessage[]) || [];
+      const conversation = loggedMessages.length > 0
+        ? loggedMessages
+        : ((chatState?.history as ChatMessage[]) || []);
+
       const state: DualAgentSessionState = {
         sessionId: session.id,
         studentId: session.studentId || "",
@@ -915,7 +926,7 @@ export class DualAgentService {
         interactivePrompt: session.interactivePrompt || "",
         monitorBusy,
         monitorBusySince,
-        messages: chatState?.history || [],
+        messages: conversation,
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
         muteState: (chatState as any)?.muteState || 'unmuted',
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null }, // Updated with appConfig below
@@ -1090,14 +1101,34 @@ export class DualAgentService {
     if (!state.remoteStorageEnabled) return;
     try {
       const existingSession = await db
-        .select({ id: chatSessions.id })
+        .select({ id: chatSessions.id, state: chatSessions.state })
         .from(chatSessions)
         .where(eq(chatSessions.id, state.sessionId))
         .limit(1);
 
+      // `state` is SHARED with the Monitor's chat-framework session — the same
+      // row is loaded by sessionService.onMessage → ChatMessageManager, which
+      // owns `history` and `conversationSummary`. Its `history` is the
+      // Monitor's own LLM conversation, culled to `cullMessagesTo` with a
+      // generated summary; `conversationSummary` holds that summary.
+      //
+      // Overwriting them here threw the cull away on every cycle, so the next
+      // Monitor call re-culled the whole conversation from scratch and paid a
+      // fresh summariser call to do it — with input that grew for the life of
+      // the session. Preserve both. The AAC conversation record is `log`
+      // (written below); loadSessionFromDB and loadHistoryForReconnect read
+      // that, not `state.history`.
+      //
+      // `openedTopics` / `memoryState` stay reset: the Monitor prompt assumes
+      // non-static memory mode (it tells the agent the writable fields are
+      // already rendered in the prompt), and persisting opened paths would
+      // grow that prompt cycle over cycle. Flipping to static mode is a
+      // deliberate, separate change — it needs the prompt updated too.
+      const priorState = (existingSession[0]?.state ?? {}) as Record<string, unknown>;
+
       const chatState = {
-        history: state.messages,
-        conversationSummary: state.sessionSummary ?? "",
+        history: priorState.history ?? [],
+        conversationSummary: priorState.conversationSummary ?? "",
         openedTopics: [],
         memoryState: {},
         muteState: state.muteState,
@@ -1427,32 +1458,39 @@ export class DualAgentService {
         console.log("[DualAgentService] doMonitorProcessing: starting with", dbPending.length, "pending messages (from DB)");
 
         // ------------------------------------------------------------------
-        // 4. Append pending messages to history + log (local vars)
+        // 4. Append pending messages to the conversation record (local var)
         // ------------------------------------------------------------------
-        const dbHistory = (dbState?.history || []) as ChatMessage[];
+        // The conversation lives in `log`. It used to be appended to
+        // `state.history` as well, but that field is the Monitor's own
+        // chat-framework history (see saveSessionToDB) — and onMessage appends
+        // the same pending turns to it again via persistMessages, so every
+        // turn reached the Monitor twice. Rows written before the split have
+        // the conversation in `state.history` only; seed from it once.
+        if (dbLog.length === 0 && ((dbState?.history as ChatMessage[] | undefined)?.length ?? 0) > 0) {
+          dbLog = [...(dbState.history as ChatMessage[])];
+        }
         pendingSnapshot = [...dbPending];
 
         for (const pending of pendingSnapshot) {
-          const chatMsg: ChatMessage = {
+          dbLog.push({
             role: pending.role,
             content: pending.content,
             timestamp: pending.timestamp,
-          };
-          dbHistory.push(chatMsg);
-          dbLog.push(chatMsg);
+          });
         }
 
         // Also update in-memory state.messages to match
-        state.messages = dbHistory;
+        state.messages = dbLog;
 
         // ------------------------------------------------------------------
-        // 5. Atomic DB write: save history+log, clear pendingMessages
+        // 5. Atomic DB write: save log, clear pendingMessages
         // ------------------------------------------------------------------
+        // Spread the existing blob so the Monitor's chat-framework fields
+        // (history / conversationSummary / memoryState) and our own
+        // sessionSummary / enhancedSections / memoryContext all survive — the
+        // old explicit object silently dropped the latter until step 9.
         const updatedChatState = {
-          history: dbHistory,
-          conversationSummary: dbState?.conversationSummary || "",
-          openedTopics: dbState?.openedTopics || [],
-          memoryState: dbState?.memoryState || {},
+          ...((dbState ?? {}) as Record<string, unknown>),
           muteState: state.muteState,
         };
 
@@ -1461,7 +1499,7 @@ export class DualAgentService {
           .set({
             state: updatedChatState,
             log: dbLog,
-            last: dbHistory.slice(-2),
+            last: dbLog.slice(-2),
             pendingMessages: [],
             updatedAt: new Date(),
           })
@@ -1515,8 +1553,10 @@ export class DualAgentService {
           "[CONTEXT]",
           response.contextInjection
         );
+        // One append only: on the DB path `state.messages` IS `dbLog` (step 4),
+        // and the row's `log` is rewritten from `state.messages` by the final
+        // save below — so a second push here would duplicate the injection.
         state.messages.push(contextMessage);
-        dbLog.push(contextMessage);
 
         // Live API hook: forward context injection to Gemini session
         console.log(`[DualAgentService] Injecting context (${response.contextInjection.length} chars): "${response.contextInjection.substring(0, 120)}..."`);
@@ -1869,6 +1909,7 @@ export class DualAgentService {
         const dbRow = await db
           .select({
             state: chatSessions.state,
+            log: chatSessions.log,
             pendingMessages: chatSessions.pendingMessages,
           })
           .from(chatSessions)
@@ -1877,8 +1918,12 @@ export class DualAgentService {
 
         if (!dbRow[0]) return [];
 
+        // Conversation record is `log`; `state.history` is the Monitor's
+        // culled chat-framework history (see saveSessionToDB). Fall back to it
+        // for rows written before that split.
         const dbState = dbRow[0].state as any;
-        history = (dbState?.history || []) as ChatMessage[];
+        const dbLog = (dbRow[0].log || []) as ChatMessage[];
+        history = dbLog.length > 0 ? dbLog : ((dbState?.history || []) as ChatMessage[]);
         pending = (dbRow[0].pendingMessages || []) as PendingMessage[];
       }
 

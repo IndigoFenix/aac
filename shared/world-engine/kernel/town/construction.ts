@@ -36,7 +36,7 @@ import {
 } from "./rooms";
 import { ANNEX_ROOM_KIND, CLUSTERS, type AnnexCluster, type StationKind } from "./stations";
 import { annexBill, blockCosts, partitionBill } from "./block-bill.js";
-import { growStreets, type TownStreets } from "./streets";
+import { growStreets, type GrowSeed, type TownStreets } from "./streets";
 import type { TownPlan } from "./plan";
 // Type-only by design (zoning.ts imports THIS module at runtime — the one
 // direction; the charter rows just live in the same serialized store).
@@ -630,6 +630,45 @@ export interface CraftJob {
  *  moment, and no stale reservations ride the queue. */
 export type QueuedCraft = Pick<CraftJob, "produces" | "consumes" | "at" | "label">;
 
+/** A persisted growth seed: the kernel's `GrowSeed` plus the ord that
+ *  makes the list append-only (the ZONES discipline). */
+export type SeedRecord = GrowSeed & { ord: number };
+
+/**
+ * A FOUNDED SERVICE POINT (growth phase C §3.2) — the neighbourhood market
+ * stall a lot became, or the lot whose verge got a well. Named by its
+ * street SLOT, which is the town's own position identity (`LotSlot`
+ * ordinal), so it survives a regrow the way a founded building's slot does.
+ *
+ * 🔴 WHY THIS EXISTS. `foundServicePoints` documented itself as
+ * "prefix-stable": a grown town kept its old stalls and appended, because
+ * tree routing was prefix-stable — a bigger town's extra streets are LEAVES,
+ * and a tree path between two lots both towns already had can never run
+ * through a leaf, so the founding walk replayed verbatim. Phase C §2's LOOPS
+ * broke that: **a link is not a leaf.** An appended link SHORTENS a walk
+ * between two lots both towns already had — the entire point of cutting it —
+ * so the argmin that chooses where a stall opens can legitimately move
+ * (MEASURED over 60 town × growth pairs: full positional prefix held 18/60,
+ * worst set survival 56.3%; the count never shrank).
+ *
+ * The durable fix is not routing's: it is the SLOTS-ARE-HISTORY law the rest
+ * of this file already lives by. A town's civic set is a RECORD of what its
+ * people built, not a re-derivation from today's street metres — so the pass
+ * runs once, its answer is written here, and every later plan honours it and
+ * only APPENDS what the recorded set still leaves unserved.
+ */
+export interface ServicePoint {
+  /** `stall` — the lot CONVERTS into a market stall (same footprint, same
+   *  door). `well` — the lot stays a home and gets a well on its verge. */
+  kind: "stall" | "well";
+  /** The frontage slot (`LotSlot` ordinal) the point stands on. */
+  slot: number;
+}
+
+/** A persisted service point: `ServicePoint` plus the ord that makes the
+ *  list append-only (the ZONES/SEEDS discipline). */
+export type ServiceRecord = ServicePoint & { ord: number };
+
 export interface SerializedTownDeltas {
   version: number;
   buildings: Record<string, BuildingDelta>;
@@ -651,6 +690,18 @@ export interface SerializedTownDeltas {
   stock?: Record<string, number>;
   /** ZONE CHARTERS (③), in charter (ord) order. Absent = none. */
   zones?: ZoneCharter[];
+  /** THE TOWN'S GROWTH SEEDS (growth-phase-B §1.1) — what the street tree
+   *  was grown around, in seed (ord) order, on the ZONES discipline:
+   *  ordinals are monotone, never reused, and rows are only ever appended,
+   *  so a replay lays byte-identical streets. Absent = the tree grew from
+   *  the legacy `bearings` echo (every pre-phase-B save). */
+  seeds?: SeedRecord[];
+  /** THE TOWN'S FOUNDED SERVICE POINTS (growth phase C §3.2) — the stalls
+   *  its demand founded and the lots its wells stand beside, in founding
+   *  (ord) order, on the same append-only discipline. Absent = the plan
+   *  re-derives them (every pre-phase-C save, and the byte-identical
+   *  legacy path for a town that never recorded any). */
+  services?: ServiceRecord[];
   /** Town-scope prosperity banked toward zone-steered FOUNDING (③).
    *  Absent = 0. */
   civicProsperity?: number;
@@ -761,6 +812,24 @@ export interface TownDeltas {
   /** Charter a zone (category null = clear the ground back to unzoned) —
    *  assigns its ordinal, bumps the version (the ground overlay re-tints). */
   addZone(c: Omit<ZoneCharter, "ord">): ZoneCharter;
+  /** THE GROWTH SEEDS (growth-phase-B §1.1) in seed (ord) order — what the
+   *  street tree grew around. Read-only view; the tree is regrown from
+   *  exactly this list, so a replay is byte-identical. Empty = the town
+   *  still grows from its legacy `bearings` echo. */
+  seeds(): readonly SeedRecord[];
+  /** Record a seed the town grew (or has just annexed) — assigns its
+   *  ordinal, bumps the version. APPEND-ONLY: an existing seed is never
+   *  rewritten, because the streets already grew around it. */
+  addSeed(s: GrowSeed): SeedRecord;
+  /** THE FOUNDED SERVICE POINTS (growth phase C §3.2) in founding (ord)
+   *  order — the town's civic set as HISTORY. Read-only view; the plan
+   *  honours these verbatim and only appends what they leave unserved.
+   *  Empty = the plan re-derives (byte-identical legacy behaviour). */
+  services(): readonly ServiceRecord[];
+  /** Record a service point the town founded — assigns its ordinal, bumps
+   *  the version. APPEND-ONLY: a stall that opened does not un-open
+   *  because a later shortcut made somebody else's walk shorter. */
+  addService(s: ServicePoint): ServiceRecord;
   /** The town-scope prosperity accumulator (③ zone-steered founding —
    *  the civic twin of each house delta's `prosperity`). Mutate in place;
    *  it serializes with the deltas. */
@@ -926,6 +995,10 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
   };
   const stock: Record<string, number> = { ...(json?.stock ?? {}) };
   const zones: ZoneCharter[] = (json?.zones ?? []).map((z) => ({ ...z }));
+  const seeds: SeedRecord[] = (json?.seeds ?? []).map(
+    (s) => JSON.parse(JSON.stringify(s)) as SeedRecord,
+  );
+  const services: ServiceRecord[] = (json?.services ?? []).map((s) => ({ ...s }));
   const civic = { prosperity: json?.civicProsperity ?? 0 };
   const cohorts: CohortRow[] = (json?.cohorts ?? []).map(
     (r) => JSON.parse(JSON.stringify(r)) as CohortRow,
@@ -1024,6 +1097,22 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       store.version++;
       return z;
     },
+    seeds: () => seeds,
+    addSeed: (s) => {
+      const ord = seeds.reduce((m, r) => Math.max(m, r.ord + 1), 0);
+      const row = { ord, ...JSON.parse(JSON.stringify(s)) } as SeedRecord;
+      seeds.push(row);
+      store.version++;
+      return row;
+    },
+    services: () => services,
+    addService: (s) => {
+      const ord = services.reduce((m, r) => Math.max(m, r.ord + 1), 0);
+      const row: ServiceRecord = { ord, kind: s.kind, slot: s.slot };
+      services.push(row);
+      store.version++;
+      return row;
+    },
     civic,
     cohorts,
     transfers,
@@ -1076,6 +1165,8 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       ordSeq,
       stock: { ...stock },
       zones: zones.map((z) => ({ ...z })),
+      seeds: seeds.map((s) => JSON.parse(JSON.stringify(s)) as SeedRecord),
+      services: services.map((s) => ({ ...s })),
       civicProsperity: civic.prosperity,
       cohorts: cohorts.map((r) => JSON.parse(JSON.stringify(r)) as CohortRow),
       transfers: transfers.toJSON(),
@@ -2011,9 +2102,13 @@ export interface FoundingOptionsInput {
   /** The town's seed + settlement key (street-tree identity). */
   seed: number;
   key: string;
-  /** Arterial bearings the town's tree was grown with (TownStreets.bearings)
-   *  — regrowing with the same triple (seed, key, bearings) is PREFIX-
-   *  CONSISTENT with the plan's own tree. */
+  /** What the town's tree was grown around (TownStreets.seeds) — regrowing
+   *  with the same triple (seed, key, seeds) is PREFIX-CONSISTENT with the
+   *  plan's own tree. Takes precedence over `bearings`. */
+  seeds?: readonly GrowSeed[];
+  /** LEGACY: arterial bearings the tree was grown with
+   *  (TownStreets.bearings), compiled to stub seeds by growStreets' one
+   *  adapter. Ignored when `seeds` is given. */
   bearings?: readonly number[];
   /** The structure's lot request: frontage (along street) × depth. */
   footprint: { w: number; d: number };
@@ -2024,6 +2119,11 @@ export interface FoundingOptionsInput {
   occupied: ReadonlyArray<Rect>;
   /** Street slots already claimed (base house lots + founded buildings). */
   claimedSlots: ReadonlySet<number>;
+  /** STANDING GROUND the regrown tree must bend around (`groundObstacles` —
+   *  annexed homesteads, growth phase C §3.3). MUST match what `plan.ts`
+   *  grew with, or the two lattices disagree. Absent = none, and the tree
+   *  is byte-identical to every pre-phase-C enumeration. */
+  obstacles?: readonly Rect[];
   /** Half-side bound (town-local): the lot must fit inside ±bound. Absent =
    *  unbounded (the replay town's manifold grows to cover founded lots). */
   bound?: number;
@@ -2036,6 +2136,17 @@ export interface FoundingOptionsInput {
    *  door and walkability guarantees hold. Zoning precedence is untouched
    *  (match still outranks open). Absent = byte-identical legacy order. */
   near?: { x: number; y: number };
+  /** HOW `near` MEASURES (growth phase C §1.4 — the time tax reaches the
+   *  steering). Metres between two TOWN-LOCAL points; the host passes its
+   *  `sourceDistanceM`, which walks the street tree where one exists and
+   *  falls back to the chord where it doesn't, so "near the stranded
+   *  quarter" stops meaning "near as the crow flies over the rooftops".
+   *
+   *  Absent = the chord, and BYTE-IDENTICAL to the legacy order: the default
+   *  path is the original squared-chord comparison, untouched (only the
+   *  ORDER is ever read, so squaring is free — and keeping the exact
+   *  expression means no float can reorder a tie). */
+  distM?(a: { x: number; y: number }, b: { x: number; y: number }): number;
   /** ZONING (③, zoning.ts slotZoningFn): classify a lot's CENTER —
    *  "match" (inside a zone that admits this structure), "open" (unzoned
    *  ground — always admitted), "blocked" (zoned for another category:
@@ -2093,12 +2204,35 @@ function streetsFor(
   key: string,
   minSlots: number,
   bearings: readonly number[] | undefined,
+  seeds: readonly GrowSeed[] | undefined,
+  obstacles: readonly Rect[] | undefined,
 ): TownStreets {
-  const memoKey = `${seed}|${key}|${minSlots}|${(bearings ?? []).join(",")}`;
+  const memoKey = `${seed}|${key}|${minSlots}|${
+    seeds?.length ? JSON.stringify(seeds) : (bearings ?? []).join(",")
+  }|${obstacles?.length ? JSON.stringify(obstacles) : ""}`;
   if (streetMemo && streetMemo.key === memoKey) return streetMemo.net;
-  const net = growStreets(seed, key, minSlots, { bearings: [...(bearings ?? [])] });
+  const obs = obstacles?.length ? { obstacles } : {};
+  const net = seeds?.length
+    ? growStreets(seed, key, minSlots, { seeds, ...obs })
+    : growStreets(seed, key, minSlots, { bearings: [...(bearings ?? [])], ...obs });
   streetMemo = { key: memoKey, net };
   return net;
+}
+
+/**
+ * THE STANDING GROUND a town's streets must bend around: the footprints of
+ * founded rows that stand on GROUND rather than on a frontage lot
+ * (`slot < 0` — annexed homesteads, growth phase C §3.3). Town-local.
+ *
+ * Read identically by `plan.ts`'s tree and by the founding enumeration's,
+ * because the two trees MUST agree: a lot the plan laid around a homestead
+ * and a lot the enumeration laid through it are different lattices, and a
+ * founded building would land on the wrong ground.
+ */
+export function groundObstacles(deltas: Pick<TownDeltas, "founded">): Rect[] {
+  return deltas.founded()
+    .filter(b => b.slot < 0)
+    .map(b => ({ x: b.dx, y: b.dy, w: b.w, h: b.h }));
 }
 
 /**
@@ -2112,7 +2246,9 @@ export function foundingOptions(input: FoundingOptionsInput): FoundingCandidate[
   let maxClaimed = -1;
   for (const s of input.claimedSlots) maxClaimed = Math.max(maxClaimed, s);
   const minSlots = Math.max(maxClaimed + 1, input.claimedSlots.size) + FOUNDING_LOOKAHEAD;
-  const net: TownStreets = streetsFor(input.seed, input.key, minSlots, input.bearings);
+  const net: TownStreets = streetsFor(
+    input.seed, input.key, minSlots, input.bearings, input.seeds, input.obstacles,
+  );
   // With zoning, feasible lots split MATCH (in a zone that wants this
   // structure) / OPEN (unzoned); matches lead the result. Without zoning
   // everything is "open" and the loop early-outs exactly as before.
@@ -2178,8 +2314,13 @@ export function foundingOptions(input: FoundingOptionsInput): FoundingCandidate[
   }
   if (input.near) {
     const n = input.near;
-    const d2 = (c: FoundingCandidate): number =>
-      (c.dx + c.w / 2 - n.x) ** 2 + (c.dy + c.h / 2 - n.y) ** 2;
+    const walk = input.distM;
+    const d2 = walk
+      // STREET METRES where the caller gave us a way to measure them.
+      ? (c: FoundingCandidate): number => walk({ x: c.dx + c.w / 2, y: c.dy + c.h / 2 }, n)
+      // ...the legacy squared chord otherwise, character for character.
+      : (c: FoundingCandidate): number =>
+        (c.dx + c.w / 2 - n.x) ** 2 + (c.dy + c.h / 2 - n.y) ** 2;
     const steer = (a: FoundingCandidate, b: FoundingCandidate): number =>
       d2(a) - d2(b) || a.slot - b.slot;
     matches.sort(steer);

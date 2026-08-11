@@ -1077,10 +1077,9 @@ function createWorldView(
           const townTraffics = town.goods.map(g => g.streetTraffic());
           const tripsOn = (id: number): number =>
             townTraffics.reduce((sum, tr) => sum + (tr.get(id) ?? 0), 0);
-          vctx.fillStyle = "rgba(203,183,142,0.35)";
-          vctx.beginPath();
-          vctx.arc(sx, sy, net.plazaR * cam.scale, 0, Math.PI * 2);
-          vctx.fill();
+          // NO PLAZA DISC (growth-phase-B stage 2): the plaza is a
+          // JUNCTION, and the streets that meet there are its pavement.
+          // The 3D stage paves no circle, so neither does the map.
           vctx.lineCap = "round";
           vctx.lineJoin = "round";
           for (const s of net.streets) {
@@ -1090,7 +1089,7 @@ function createWorldView(
             if (shown <= 0.5) continue;
             const wear = Math.min(1, Math.sqrt(tripsOn(s.id)) / 12);
             vctx.strokeStyle = `rgba(203,183,142,${(0.3 + 0.3 * wear).toFixed(3)})`;
-            vctx.lineWidth = Math.max(1, ((s.ring ? 2.8 : s.gen === 0 ? 3.4 : 2.4) + 2.8 * wear) * cam.scale);
+            vctx.lineWidth = Math.max(1, ((s.gen === 0 ? 3.4 : 2.4) + 2.8 * wear) * cam.scale);
             vctx.beginPath();
             vctx.moveTo(sx + s.pts[0].x * cam.scale, sy + s.pts[0].y * cam.scale);
             for (let i = 1; i < s.pts.length; i++) {

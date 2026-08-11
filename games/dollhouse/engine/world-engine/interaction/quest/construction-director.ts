@@ -51,7 +51,7 @@ import {
   type StoreConsumption,
 } from "@shared/world-engine/kernel/town/goods.js";
 import {
-  FOUNDING_AGE_DAYS, PLAZA_WELL, wellVergePoint, type TownHouse,
+  FOUNDING_AGE_DAYS, wellVergePoint, type TownHouse,
 } from "@shared/world-engine/kernel/town/plan.js";
 import {
   ANNEX_ROOM_KIND,
@@ -117,6 +117,7 @@ import {
   markDoorless,
   pendingLaborDone,
   foundingOptions,
+  groundObstacles,
   interiorOptions,
   foundedProgress,
   isInteriorCandidate,
@@ -279,7 +280,7 @@ import {
   type GhostPiece,
   type GhostPieceState,
 } from "@shared/world-engine/kernel/town/build-ghosts.js";
-import { roadDistance, roadRoute } from "@shared/world-engine/kernel/town/streets.js";
+import { roadDistance, roadRoute, type GrowSeed } from "@shared/world-engine/kernel/town/streets.js";
 import {
   NEIGH_FOUND_MASS, WELL_FOUND_MASS, foundServicePoints,
 } from "@shared/world-engine/kernel/town/districts.js";
@@ -764,7 +765,7 @@ export const STOREHOUSE_STOCK_RETRY_S = 60;
  *  wrap host MUTABLE state (their call sites are marked "phase 1a"). */
 export interface ConstructionDirectorCtx {
   presenter: QuestPresenter;
-  deps: Pick<QuestHostDeps, "onSiteFounded" | "onSiteAbandoned">;
+  deps: Pick<QuestHostDeps, "onSiteFounded" | "onSiteAbandoned" | "siteNetworkAt">;
   possession: Possession;
   avatarIdOf(cid: string): string;
   npcChatBubble(session: QuestSession, cid: string, glyph: string, preText?: string): void;
@@ -892,6 +893,13 @@ export interface BuildContext {
   center: { x: number; y: number };
   seed: number;
   key: string;
+  /** WHAT THE TOWN'S TREE GREW AROUND (`TownStreets.seeds`). Enumeration
+   *  regrows that tree, so it must re-enter growth with the SAME seeds or
+   *  the candidate lots belong to a town that doesn't exist. */
+  seeds: readonly GrowSeed[];
+  /** LEGACY companion (`TownStreets.bearings`) — only the bare directions,
+   *  so it cannot stand in for a route town's spans. Passed alongside for
+   *  the seedless case, where both are empty and growth invents. */
   bearings: readonly number[];
   occupied: Array<{ x: number; y: number; w: number; h: number }>;
   claimedSlots: Set<number>;
@@ -1857,7 +1865,17 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     if (!at) return false;
     const day = Math.floor(session.townClock / FOOD_DAY_SEC);
     const seed = (fnv1a(`${session.game.meta.seed ?? 0}|${Math.round(at.x)}|${Math.round(at.y)}`) % 100000) + 1;
-    const site = foundSite({ seed, at, day });
+    // THE ACCESS LANE (growth phase C §3.2): a homestead is a door and the
+    // track that reaches it. The SESSION cannot know what circulation stands
+    // out there — the wilderness has no roads and no memory of the last
+    // site — so the host answers, and `foundSite` records the chord to the
+    // nearest of it as a SPINE seed. Nothing near ⇒ no lane, and the town
+    // this site grows into invents its stub exactly as before.
+    const network = deps.siteNetworkAt?.({ x: at.x, y: at.y }) ?? [];
+    const site = foundSite({
+      seed, at, day,
+      ...(network.length ? { network } : {}),
+    });
     // WHAT THE FOUNDER IS CARRYING founds the stock — the goods in its bag and
     // the one thing in its hands (there is no abstract pocket to tip out any
     // more). The BAG itself stays on the body: founding a site is not giving
@@ -1996,6 +2014,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const plan = session.town.plan;
       const claimed = new Set<number>();
       for (const h of plan.houses) claimed.add(h.slot ?? h.index);
+      // The CIVIC lots too (growth-phase-B stage-1 handoff 10): the hall and
+      // the plaza market are ordinary frontage now and each covers a few of
+      // its neighbours, which the footprint rects below cannot express — a
+      // small structure would otherwise be offered a lot the plan spent.
+      for (const s of plan.civicSlots ?? []) claimed.add(s);
       for (const b of session.town.deltas.founded()) claimed.add(b.slot);
       return {
         catalog: structureCatalogOf(session),
@@ -2004,6 +2027,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         center: session.town.stage.center,
         seed: session.town.config.seed,
         key: plan.key,
+        seeds: plan.streets.seeds,
         bearings: plan.streets.bearings,
         occupied: [
           ...plan.houses.map((h) => ({ x: h.dx, y: h.dy, w: h.w, h: h.h })),
@@ -2027,6 +2051,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         center: site.at,
         seed: site.seed,
         key: site.key,
+        seeds: [],
         bearings: [],
         occupied: founded.map((b) => ({ x: b.dx, y: b.dy, w: b.w, h: b.h })),
         claimedSlots: new Set(founded.map((b) => b.slot)),
@@ -2046,19 +2071,46 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   function buildCandidates(
     ctx: BuildContext,
     spec: StructureSpec,
-    opts?: { ignoreZones?: boolean; near?: { x: number; y: number }; max?: number },
+    opts?: {
+      ignoreZones?: boolean;
+      near?: { x: number; y: number };
+      max?: number;
+      /** The session whose street tree `near` should be measured on (§1.4).
+       *  Absent = the chord, byte-identical to the legacy order. */
+      session?: QuestSession;
+    },
   ): FoundingCandidate[] {
     const useZones = !opts?.ignoreZones && ctx.zones.length > 0;
+    // ⚖️ ONE GEOMETRY FOR SOURCE WALKS, applied to STEERING too: a `near`
+    // point earned by counting street metres (the market deficit) must be
+    // approached by counting them as well, or the last step of the decision
+    // silently reverts to crow-flies. `sourceDistanceM` takes WORLD coords,
+    // and `near` is town-local, so both sides go back through the ctx centre.
+    const session = opts?.session;
+    const steerDist = session && opts?.near
+      ? (a: { x: number; y: number }, b: { x: number; y: number }): number => sourceDistanceM(
+        session,
+        { x: a.x + ctx.center.x, y: a.y + ctx.center.y },
+        { x: b.x + ctx.center.x, y: b.y + ctx.center.y },
+      )
+      : undefined;
+    const groundRects = groundObstacles(ctx.deltas);
     return foundingOptions({
       seed: ctx.seed,
       key: ctx.key,
+      seeds: ctx.seeds,
       bearings: ctx.bearings,
       footprint: spec.footprint,
       type: spec.type,
       occupied: ctx.occupied,
       claimedSlots: ctx.claimedSlots,
       bound: ctx.bound,
+      // The enumeration's tree must be the PLAN's tree (growth phase C §3.3):
+      // both bend around the same annexed homesteads or the slot lattices
+      // disagree and a founded building lands on ground the plan never laid.
+      ...(groundRects.length ? { obstacles: groundRects } : {}),
       ...(opts?.near ? { near: opts.near } : {}),
+      ...(steerDist ? { distM: steerDist } : {}),
       ...(opts?.max !== undefined ? { max: opts.max } : {}),
       ...(useZones ? { zoning: slotZoningFn(ctx.zones, specCategories(ctx, spec)) } : {}),
     });
@@ -5448,9 +5500,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * per household), normalized against the stall founding bar. Every
    * non-vacated market work anchors, INCLUDING one still scaffolding —
    * a quarter's market under construction already answers its deficit, so
-   * growth never stacks a second one while the first rises. Returns the
-   * mass centroid (world coords) so the candidate ranking steers the new
-   * market INTO the stranded quarter, not onto the plaza.
+   * growth never stacks a second one while the first rises.
+   *
+   * Returns (world coords) the stranded household whose doorstep costs the
+   * quarter the FEWEST street metres of recurring walking — the districts.ts
+   * twin (growth phase C §1.4), not a chord centroid. A centroid of two
+   * stranded arms lands in the fields between them and steers the new market
+   * at open ground nobody walks past; the argmin lands ON the arm that is
+   * actually short of a shop.
    */
   function marketServiceDeficit(
     session: QuestSession,
@@ -5464,8 +5521,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       .map((w) => workDoorstep(origin, w));
     if (anchors.length === 0) return null; // pre-market hamlet — farm-gate scale
     let mass = 0;
-    let sx = 0;
-    let sy = 0;
+    const stranded: Array<{ door: { x: number; y: number }; at: { x: number; y: number }; w: number }> = [];
     for (const h of t.plan.houses) {
       const d0 = houseDoorstep(origin, h);
       let d = Infinity;
@@ -5473,13 +5529,26 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (d <= R) continue;
       const w = Math.min(2, d / R - 1);
       mass += w;
-      sx += (h.dx + h.w / 2) * w;
-      sy += (h.dy + h.h / 2) * w;
+      stranded.push({ door: d0, at: { x: h.dx + h.w / 2, y: h.dy + h.h / 2 }, w });
     }
-    if (mass <= 0) return null;
+    if (mass <= 0 || stranded.length === 0) return null;
+    // THE TIME TAX (§1.4): steer at the stranded doorstep that minimizes the
+    // quarter's total mass-weighted STREET metres. House order is plan order
+    // (prefix-stable) and only strict improvements win, so ties fall to the
+    // earliest lot — deterministic, like every other placement read here.
+    let best = stranded[0]!;
+    let bestCost = Infinity;
+    for (const c of stranded) {
+      let cost = 0;
+      for (const q of stranded) {
+        if (q === c) continue;
+        cost += q.w * roadDistance(t.plan.streets, q.door, c.door);
+      }
+      if (cost < bestCost) { bestCost = cost; best = c; }
+    }
     return {
       deficit: Math.min(1, mass / NEIGH_FOUND_MASS),
-      at: { x: t.stage.center.x + sx / mass, y: t.stage.center.y + sy / mass },
+      at: { x: t.stage.center.x + best.at.x, y: t.stage.center.y + best.at.y },
     };
   }
 
@@ -5562,8 +5631,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // The service build stands IN the stranded quarter (the `near`
         // steer) — center-out enumeration would drop it by the plaza and
         // leave the quarter exactly as far from bread as before.
+        //
+        // Measured BY STREET (§1.4): the deficit point was earned by counting
+        // street metres, so the lots ranked against it are too. Passing the
+        // session is what turns `near` from a chord into a walk; the other
+        // callers steer at ground the PLAYER pointed at, which is a claim
+        // about a place and not about a journey, and they keep the chord.
         const near = spec.type === "market" && svc ? steeringNear(ctx, svc.at) : undefined;
-        const cands = buildCandidates(ctx, spec, near ? { near } : undefined);
+        const cands = buildCandidates(ctx, spec, near ? { near, session } : undefined);
         return zone === null ? cands : cands.filter((c) => candidateInZone(ctx.zones, zone, c));
       },
     });

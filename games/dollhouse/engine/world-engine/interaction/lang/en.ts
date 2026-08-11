@@ -268,6 +268,13 @@ const L: Record<string, Lexeme> = {
   eat: { w: "eat", inf: "eat" },
   drink: { w: "drink", inf: "drink" },
   sleep: { w: "sleep", inf: "sleep" },
+  // THE POSTURE PAIR (build order L15). English needed no entry to LOOK right —
+  // `baseWord` falls back to the glyph id, which is an English word — and that
+  // is precisely why the gap went unseen in the other three rulesets for as
+  // long as it did. Authored here for the same reason every verb above is: the
+  // conjugation table owns the word rather than inheriting it by accident.
+  rest: { w: "rest", inf: "rest" },
+  sit: { w: "sit", inf: "sit" },
   wash: { w: "wash", inf: "wash" },
   tidy: { w: "tidy", inf: "tidy" },
   heat: { w: "heat", inf: "heat" },

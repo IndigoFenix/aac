@@ -57,8 +57,17 @@ import type {
   ConstructionMemoryChipsClient,
 } from "@/hooks/dual-agent-types";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
-import type { BuilderSurface, BuilderWord } from "@shared/games-bridge";
-import type { EngineBuilderBackend } from "@/lib/engine-builder";
+import type { BuilderRecency, BuilderSurface, BuilderWord } from "@shared/games-bridge";
+import { BUILDER_SURFACE_CAPACITY, type EngineBuilderBackend } from "@/lib/engine-builder";
+// THE LEARNED LAYER, one call (the in-game SpeakMenu's own move —
+// board-island.tsx:416). ⚠ `parseSentence` is imported from `intent/parse-intent`
+// (sentence → IntentFrame) and aliased, because `lang/core.ts` exports an
+// unrelated function of the same name (sentence → render Tokens).
+import { parseSentence as parseIntentSentence } from "@shared/world-engine/interaction/intent/parse-intent";
+import { noteUtterance } from "@shared/world-engine/interaction/intent/surface-next";
+// The press rules that decide what a press MEANS — pure, and therefore tested
+// on their own (builder-rules.test.ts) rather than only through this component.
+import { autoComposeSlot, engineNounKind, loadRecency, saveRecency } from "@/lib/builder-rules";
 import { SentenceButton } from "@/components/SentenceButton";
 import { GlyphTriad } from "@client-shared/board/GlyphTriad";
 import { Glyph } from "@/components/Glyph";
@@ -146,6 +155,20 @@ const ENGINE_PHOTOS_CHIP = "photos";
 
 /** Cap on engine modifier-rail buttons so the band never overflows. */
 const ENGINE_MODIFIERS_SHOWN = 5;
+
+/** Icon per SENTENCE-TYPE chip kind (the engine's TYPE_CHIPS). Controls, not
+ *  words — they wear a plain pictogram, never a glyph, so they can never be
+ *  mistaken for something the sentence would contain. An unknown kind (a future
+ *  engine move) shows the generic one. */
+const TYPE_CHIP_ICON: Record<string, string> = {
+  request: "🙋",
+  ask: "❓",
+  state: "💬",
+  command: "🤲",
+  rule: "📏",
+  greet: "👋",
+};
+const TYPE_CHIP_FALLBACK_ICON = "🗨️";
 
 /**
  * The engine's descriptor axes (surface.modifiers) include words the AAC's
@@ -452,6 +475,18 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // key → engine label, remembered from every surface seen, so the Play
   // fallback text can speak engine words the registry doesn't know.
   const engineLabelsRef = useRef<Map<string, string>>(new Map());
+  // head → engine noun KIND, remembered the same way. It is the classifier the
+  // surfacer builds internally from its own noun library, and the only route
+  // the platform has to it: without it a bare noun the parser can't classify
+  // stays a "mention", so the frame the memory LEARNS from can disagree with
+  // the frame the board was built from (§5 seam 5, the same hazard in-game).
+  const engineKindsRef = useRef<Map<string, "place" | "item" | "creature" | "unknown">>(new Map());
+
+  // THE LEARNED LAYER — this student's own habit, loaded once per mount and
+  // written back after every successful Play. State (not just a ref) because
+  // every surface request carries it: a word the student uses outranks an
+  // unused peer of the same rank, which is the whole point.
+  const [recency, setRecency] = useState<BuilderRecency>(loadRecency);
 
   // Engine tab/chip selection: `engineCategory` null = the "all" tab (the
   // pure ranked surfaceNext output — the DEFAULT view after any selection);
@@ -460,6 +495,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const [engineCategory, setEngineCategory] = useState<string | null>(null);
   const [engineChip, setEngineChip] = useState<string | null>(null);
   const [engineTabPage, setEngineTabPage] = useState(0);
+  // A tapped SENTENCE-TYPE chip ("I want to ask something"), echoed back on the
+  // next request so the openers narrow to that move. Empty board only — the
+  // engine stops offering the chips the moment a word lands.
+  const [engineSeedKind, setEngineSeedKind] = useState<string | null>(null);
   const enginePhotos = engineCategory === "person" && engineChip === ENGINE_PHOTOS_CHIP;
 
   const serializedGlyph = useMemo(() => serializeGlyph(glyph), [glyph]);
@@ -477,21 +516,36 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     const category = enginePhotos ? "things" : engineCategory ?? undefined;
     const group = enginePhotos || engineChip == null ? undefined : engineChip;
     const timer = setTimeout(() => {
-      void engineBuilder.requestSurface(serializedGlyph, category, group).then((surface) => {
-        if (engineSeqRef.current !== seq) return; // stale answer
-        setEngineSurface(surface);
-        if (surface?.categories?.length) setEngineCategories(surface.categories);
-        if (surface) {
-          for (const w of [...surface.buttons, ...(surface.modifiers ?? [])]) {
-            if (w.label) engineLabelsRef.current.set(w.key, w.label);
+      void engineBuilder
+        .requestSurface(serializedGlyph, category, group, {
+          // ONE budget for both backends: the board's own three grid pages.
+          // Sent on every request, so the in-game answer pages exactly like the
+          // out-of-game one instead of quietly falling to the surfacer's 16.
+          capacity: BUILDER_SURFACE_CAPACITY,
+          recency,
+          ...(engineSeedKind ? { seedKind: engineSeedKind } : {}),
+        })
+        .then((surface) => {
+          if (engineSeqRef.current !== seq) return; // stale answer
+          setEngineSurface(surface);
+          if (surface?.categories?.length) setEngineCategories(surface.categories);
+          if (surface) {
+            for (const w of [...surface.buttons, ...(surface.modifiers ?? [])]) {
+              if (w.label) engineLabelsRef.current.set(w.key, w.label);
+              // Noun kinds ride only on nouns; remember them by HEAD (the form
+              // the parser classifies), so a composed key still teaches one.
+              if (w.kind) {
+                const head = w.key.split(".")[0] ?? w.key;
+                engineKindsRef.current.set(head, engineNounKind(w.kind));
+              }
+            }
           }
-        }
-      });
+        });
     }, 150);
     return () => clearTimeout(timer);
     // activeTab/modeChip: while in the legacy FALLBACK (a timed-out surface),
     // any tab/chip press re-asks the engine so it can win the board back.
-  }, [engineBuilder, guessingActive, enginePhotos, engineCategory, engineChip, serializedGlyph, activeTab, modeChip]);
+  }, [engineBuilder, guessingActive, enginePhotos, engineCategory, engineChip, engineSeedKind, recency, serializedGlyph, activeTab, modeChip]);
 
   // Engine chrome (tabs + chips + grid) renders while the engine ANSWERS; a
   // null surface (timeout / error) falls the whole builder back to the legacy
@@ -525,6 +579,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const engineGroupChips = useMemo(
     () => (engineUiActive && !enginePhotos ? engineSurface?.groups ?? [] : []),
     [engineUiActive, enginePhotos, engineSurface]
+  );
+
+  // Sentence-type CONTROL chips. The engine sends them on the empty board and
+  // only there, so the row appears when a sentence is about to start and
+  // disappears the moment one does — no client-side gating needed beyond
+  // "is the engine driving, and are we not word-finding".
+  const engineTypeChips = useMemo(
+    () => (engineUiActive && !guessingActive ? engineSurface?.typeChips ?? [] : []),
+    [engineUiActive, guessingActive, engineSurface]
   );
 
   const engineGridActive = engineUiActive && !guessingActive && !enginePhotos;
@@ -755,6 +818,14 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     setEngineChip((cur) => (cur === chipId ? null : chipId));
   }, [guessingActive, onExitGuessing]);
 
+  // Sentence-type chip: a CONTROL, not a word. It seeds the next surface
+  // request with one communicative move; pressing it again clears the seed
+  // (the in-game SpeakMenu's own toggle), as does pressing any word.
+  const handleEngineTypeChipPress = useCallback((kind: string) => {
+    if (guessingActive) onExitGuessing?.();
+    setEngineSeedKind((cur) => (cur === kind ? null : kind));
+  }, [guessingActive, onExitGuessing]);
+
   /** Localized engine tab label: client i18n for the engine's fixed ladder;
    *  an unknown id (a game's custom category) shows as itself. */
   const engineTabLabel = useCallback(
@@ -762,6 +833,18 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       const key = `construction.engineTabs.${id}`;
       const translated = t(key);
       return translated === key ? id : translated;
+    },
+    [t]
+  );
+
+  /** Localized sentence-type chip label. The engine's own `label` is an English
+   *  word ("want", "question"), so it is only the last resort for a move this
+   *  client has no string for — never what a Hebrew board shows. */
+  const engineTypeChipLabel = useCallback(
+    (kind: string, engineLabel: string) => {
+      const key = `construction.typeChips.${kind}`;
+      const translated = t(key);
+      return translated === key ? engineLabel : translated;
     },
     [t]
   );
@@ -802,10 +885,23 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             return setPayload(g, pending, selectionKey);
           }
         }
+        // A DESCRIPTOR joins the head it describes ("banana" + "hot" →
+        // "banana.hot"). An ARMED JOIN is the student saying "a new word,
+        // linked" — an explicit instruction, so it wins over the rule.
+        // The MODIFIER is stored under its registry KEY, never the emoji
+        // `slotKeyForSelection` would pick for a head: the compositor draws a
+        // badge by key, and `apple.🔥` is not a thing the parser reads.
+        if (pendingJoin == null) {
+          const compose = autoComposeSlot(g, item.key);
+          if (compose != null) return addModifier(g, compose, item.key);
+        }
         return pushSlotWithJoin(g, selectionKey, pendingJoin);
       });
       setActiveSlot(null);
       setPendingJoin(null);
+      // Any WORD press answers the sentence-type question — the move is
+      // whatever the words turn out to mean now.
+      setEngineSeedKind(null);
       // If we just placed a composable host with no payload, hop to the
       // first suggestCategory so the grid surfaces relevant fillers.
       // (Part of the argument affordance — gated with it.)
@@ -845,6 +941,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       // Same default-view rule as engine word presses (no-op outside engine mode).
       setEngineCategory(null);
       setEngineChip(null);
+      setEngineSeedKind(null);
     },
     [activeSlot, pendingJoin]
   );
@@ -871,15 +968,24 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             return setPayload(g, pending, selectionKey);
           }
         }
+        // The same descriptor rule the registry grid follows — an engine
+        // attribute ("hot", "big") composes onto the head it describes, so the
+        // AAC and the in-game menu build the SAME sentence from two presses.
+        if (pendingJoin == null) {
+          const compose = autoComposeSlot(g, selectionKey);
+          if (compose != null) return addModifier(g, compose, selectionKey);
+        }
         return pushSlotWithJoin(g, selectionKey, pendingJoin);
       });
       setActiveSlot(null);
       setPendingJoin(null);
       // Back to the DEFAULT view: after any selection the builder shows the
       // engine's pure ranked surface for the new partial sentence, never a
-      // lingering category/group filter (the SpeakMenu's own tap rule).
+      // lingering category/group filter (the SpeakMenu's own tap rule) — and
+      // the sentence-type seed goes with it.
       setEngineCategory(null);
       setEngineChip(null);
+      setEngineSeedKind(null);
     },
     [activeSlot, pendingJoin]
   );
@@ -919,8 +1025,26 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       })
       .filter(Boolean)
       .join(" ");
+    // LEARN FROM WHAT WAS SAID (the in-game board's own move, board-island.tsx:416).
+    // The TONE-FREE sentence is what gets parsed — the same string the surfacer
+    // was asked about — so the memory records words, never prosody. The engine's
+    // own noun kinds ride along as the classifier when a surface has taught us
+    // any, so a bare noun is learned in the role the board offered it in.
+    try {
+      const classifier = engineKindsRef.current;
+      const frame = parseIntentSentence(
+        serializedGlyph,
+        classifier.size ? { classifyEntity: (sym) => classifier.get(sym) ?? "unknown" } : {},
+      );
+      const next = noteUtterance(recency, frame);
+      setRecency(next);
+      saveRecency(next);
+    } catch (e) {
+      // The memory is an optimization; a sentence must always be sayable.
+      console.warn("[builder] recency update failed", e);
+    }
     onPlay?.(serializeGlyph(displayedGlyph), spokenFallback || undefined);
-  }, [displayedGlyph, onPlay, awaitingInterpret, getPersonName, t]);
+  }, [displayedGlyph, serializedGlyph, recency, onPlay, awaitingInterpret, getPersonName, t]);
 
   // Help button state machine (per planning-docs/glyph-system.md):
   //   - Slot selected → re-suggest for that slot (excludes current AI strip).
@@ -1553,11 +1677,18 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               along the reading direction so it reads as "forward / go". While
               the composed sentence is being interpreted, it shows a spinner and
               a "wait" label instead of closing instantly (the host closes the
-              board the moment the interpreted sentence starts being voiced). */}
+              board the moment the interpreted sentence starts being voiced).
+
+              READY (the in-game SpeakMenu's own cue): the engine says the
+              sentence already parses to something meaningful, so the button
+              lights. It NEVER gates the press — a partial sentence is still
+              the student's to say, and half a sentence said is worth more than
+              a whole one withheld. */}
           <ActionButton
             label={awaitingInterpret ? t("processing.interpreting") : t("construction.play")}
             icon={isRTL ? "◀" : "▶"}
             primary
+            ready={engineSurface?.complete === true && displayedGlyph.slots.length > 0}
             busy={awaitingInterpret}
             disabled={displayedGlyph.slots.length === 0}
             onPress={handlePlay}
@@ -1819,6 +1950,46 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onPress={() => handleJoinPick(j.key)}
               />
             ))}
+          </div>
+        )}
+
+        {/* Sentence-type chips — CONTROLS (what KIND of thing am I saying?),
+            never words: pressing one composes nothing, it re-asks the engine
+            for that move's openers. Deliberately the group-chip chrome in a
+            different accent (teal, not blue) so the row reads as "same kind of
+            control, different question" and can never be mistaken for the
+            words below. The engine offers them on the empty board only. */}
+        {engineTypeChips.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
+            data-testid="engine-type-chips"
+          >
+            {engineTypeChips.map((chip) => {
+              const active = chip.kind === engineSeedKind;
+              return (
+                <motion.button
+                  key={chip.kind}
+                  data-dwell
+                  data-testid={`engine-type-chip-${chip.kind}`}
+                  aria-pressed={active}
+                  onClick={() => handleEngineTypeChipPress(chip.kind)}
+                  whileTap={{ scale: 0.95 }}
+                  className={[
+                    "rounded-xl border-2 text-xs font-medium py-2 px-3 flex flex-col items-center justify-center gap-1 min-w-[4.5rem]",
+                    active
+                      ? "bg-teal-600 border-teal-700 text-white"
+                      : "bg-teal-50 dark:bg-teal-900/30 border-teal-300 dark:border-teal-700 text-teal-900 dark:text-teal-100",
+                  ].join(" ")}
+                >
+                  <span className="text-2xl leading-none" aria-hidden>
+                    {TYPE_CHIP_ICON[chip.kind] ?? TYPE_CHIP_FALLBACK_ICON}
+                  </span>
+                  <span className="truncate w-full text-center">
+                    {engineTypeChipLabel(chip.kind, chip.label)}
+                  </span>
+                </motion.button>
+              );
+            })}
           </div>
         )}
 
@@ -2094,6 +2265,9 @@ function ActionButton(props: {
   /** When true, render the active highlight (thicker border + ring). Used
    *  by the Word Finder button to show that guessing mode is currently on. */
   active?: boolean;
+  /** READY: the composition is already sayable. A quiet halo — an invitation,
+   *  not a gate; the button is pressable with or without it. */
+  ready?: boolean;
   testId?: string;
 }) {
   return (
@@ -2101,6 +2275,7 @@ function ActionButton(props: {
       data-dwell
       data-testid={props.testId}
       data-active={props.active ? "true" : undefined}
+      data-ready={props.ready ? "true" : undefined}
       onClick={props.onPress}
       disabled={props.disabled || props.busy}
       whileTap={{ scale: 0.95 }}
@@ -2113,6 +2288,9 @@ function ActionButton(props: {
           : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
         props.disabled ? "opacity-40 cursor-not-allowed" : "",
         props.active ? "ring-2 ring-violet-400 border-violet-600 dark:border-violet-300" : "",
+        props.ready && !props.disabled && !props.busy
+          ? "ring-4 ring-green-300 dark:ring-green-400/60"
+          : "",
       ].join(" ")}
       style={props.color ? { backgroundColor: props.active && props.color === "#EDE9FE" ? "#C4B5FD" : props.color, borderColor: props.borderColor ?? props.color } : undefined}
     >

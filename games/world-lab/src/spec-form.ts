@@ -37,6 +37,11 @@ const SCALE_FIELDS: GroupSpec = {
     { key: "sleep_fraction", kind: "number", min: 0, max: 0.9, default: 0.05, label: "Sleep fraction" },
     { key: "construction", kind: "number", min: 0.01, max: 100_000, default: 180, label: "Construction (s)" },
     { key: "planet_compression", kind: "number", min: 1, max: 10_000, default: 1, label: "Planet compression" },
+    // The settled map's own distance dial (growth phase C §1.1): town spacing
+    // ÷ this, and through the clip law the extent each town may build out to.
+    // A small planet MUST declare it or its towns swallow the roads between
+    // them — which is why the 2 km presets now do.
+    { key: "gap_compression", kind: "number", min: 1, max: 10_000, default: 1, label: "Settlement gap compression" },
     { key: "metabolism", kind: "number", min: 0.01, max: 10_000, default: 1, label: "Metabolism (× real)" },
     { key: "locomotion", kind: "number", min: 0.01, max: 1_000, default: 1, label: "Locomotion (× real gait)" },
     { key: "generation", kind: "number", min: 0.01, max: 100_000, default: 1, label: "Generation (× real life)" },

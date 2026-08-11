@@ -13,6 +13,15 @@
 // (clothing: 102 m vs 315 m) — so the family walked 2.3×/3.3× further than its
 // own catchment on every trip, and the return leg outlived the street day.
 //
+// 📐 RE-MEASURED for growth phase B (2026-08-11). The seeded-baseline re-lay
+// renumbered every house and every source, so the focus household is now 161
+// (was 99) and the ids below moved wholesale. The FORK ITSELF got wider, not
+// narrower: focus food 115.3 m own vs 258.5 m reference (0.45×), clothing
+// 49.6 m own vs 258.9 m reference (0.19×) — a town strung along a through road
+// is LONGER than a ring town was wide, so binding to the reference house saves
+// even less than it did. Every number in this file's ② is that re-measurement;
+// not one PROPERTY moved.
+//
 // What this file pins:
 //  ① THE RULE, pure (`goodSourceEndpointId`, kernel/town/transfer.ts): a
 //     SHELVED source is a market shelf `store:<good>:<srcIdx>` — the transfer
@@ -176,15 +185,15 @@ describe("the live needs ctx, on the real dollhouse (seed 12)", () => {
   let focus: number;
   /** The reference house's endpoints — where the ONE old stall per good stood
    *  (house 0's own binding, which is what the single store object was seeded
-   *  at). CLOTHING'S MOVED with the placement fix: its source list used to be
-   *  the two tailors alone, so house 0 bound to tailor #0 at `:0`; now the
-   *  radius's market stalls sell clothing too and the list is `plan.works`
-   *  order — market(w1), tailor(w11), tailor(w12), then the 13 neighbourhood
-   *  markets — so house 0 binds to the stall at `:3`, which is nearer than
-   *  either tailor. The `srcIdx` re-order is the whole point of the fix, not a
-   *  side effect: 2 sources became 16. */
-  const REF_FOOD = "store:food:8";
-  const REF_CLOTHING = "store:clothing:3";
+   *  at). Both are `:0` again after phase B's re-lay, and for a reason worth
+   *  keeping: source lists are in `plan.works` order and the FIRST work of a
+   *  seeded town is the one on the baseline's busiest junction — the plaza
+   *  market. House 0 leads the slot sequence along that same baseline, so the
+   *  reference household's nearest stall is the plaza's. (Pre-phase-B it was
+   *  `store:food:8` / `store:clothing:3`; the ids are layout, the binding rule
+   *  is not.) */
+  const REF_FOOD = "store:food:0";
+  const REF_CLOTHING = "store:clothing:0";
 
   beforeAll(() => {
     run = bootTextQuest({ world: doc, seed: SEED, dt: 1 / 20 });
@@ -204,15 +213,34 @@ describe("the live needs ctx, on the real dollhouse (seed 12)", () => {
     return Math.hypot(o.x - body.x, o.y - body.y);
   };
 
-  it("② names the FOCUS household's own food source — its farm gate, not the reference market", () => {
+  it("② names the FOCUS household's own food source, not the reference market", () => {
     const p = host().needSourceProbe(`resident_${focus}_0`, "food")!;
     expect(p).toBeDefined();
-    // Seed 12's house 99 binds to source #7, an unshelved FARM GATE, so its
-    // endpoint is that farm's own pile — the economy's stock where the economy
-    // put it. (The old code could only ever name the reference market.)
-    expect(p.id).toBe("produce:food:8");
+    // Phase B re-pin: seed 12's focus household is 161 (was 99) and binds a
+    // neighbourhood market shelf, where it used to bind an unshelved farm gate.
+    // WHICH CHANNEL a given house lands on is layout; that it lands on its OWN
+    // and not the reference house's is the unfork, and that is unmoved.
+    // Phase C stage 2 (LOOPS) re-pin, :10 → :13. `sourceOf` binds by
+    // `roadDistance`, and this town now closes 13 loops — so the nearest stall
+    // BY STREET is a different one for this household than it was when the
+    // walk had to go round. The index is layout; the two assertions under it
+    // are the unfork, and both still hold.
+    expect(p.id).toBe("store:food:13");
     expect(p.id).not.toBe(REF_FOOD);
     expect(run.state.objects[p.id]).toBeDefined();
+  });
+
+  it("② …and the PRODUCE arm is still live — some households do shop a farm gate", () => {
+    // The claim the line above used to carry incidentally, kept explicit so the
+    // re-pin does not quietly drop it: an unshelved producer sells from the
+    // pile that already stands there, for real households, in the shipped town.
+    // MEASURED at seed 12: 28 of 201 households bind one of 7 farm gates.
+    const g = run.session.town!.stage.goods.find((x) => x.good.key === "food")!;
+    const bound = run.session.town!.plan.houses.filter((h) =>
+      goodSourceEndpointId(g, g.sources.indexOf(g.sourceOf(h)))!.startsWith("produce:"),
+    );
+    expect(bound.length).toBeGreaterThan(0);
+    expect(new Set(bound.map((h) => g.sources.indexOf(g.sourceOf(h)))).size).toBeGreaterThan(1);
   });
 
   it("② …at ITS OWN distance: the metres on the row are its gate's, and they beat the reference market's", () => {
@@ -227,12 +255,16 @@ describe("the live needs ctx, on the real dollhouse (seed 12)", () => {
   it("② the same for CLOTHING — its own quarter's stall, not the far one", () => {
     const cid = `resident_${focus}_1`;
     const p = host().needSourceProbe(cid, "clothing")!;
-    // Was `store:clothing:1` (tailor #0) when the two tailors were the only
-    // sellers in town; with clothing on the market channel this household
-    // binds to the neighbourhood stall the service radius already founded for
-    // it. The endpoint is still ITS OWN — that is what ② pins — and the id
-    // moved only because the source list grew from 2 to 16.
-    expect(p.id).toBe("store:clothing:5");
+    // Phase B re-pin: was `store:clothing:1`, a TAILOR standing 49.6 m from
+    // this household's door against 258.9 m to the reference house's stall.
+    // That was the fix working, not a regression to the pre-fix state: the
+    // flood was households walking 539 m to a production-capped gate ACROSS
+    // TOWN, and ⑦'s invariant below is what actually holds that line (it is
+    // silent for this town).
+    // Phase C stage 2 (LOOPS) re-pin, :1 → :8 — same reason as the food row
+    // above: with the loops cut, a different stall is now the nearest ONE BY
+    // STREET. The metres moved with it; the ordering claim below is the pin.
+    expect(p.id).toBe("store:clothing:8");
     expect(p.id).not.toBe(REF_CLOTHING);
     // The MARGIN shrank on purpose: it used to be 102 m against the reference
     // house's 315 m (a third of the way), because the whole town shared two
@@ -240,10 +272,14 @@ describe("the live needs ctx, on the real dollhouse (seed 12)", () => {
     // on the service radius NEITHER household walks across town, so the pin is
     // the fact the fork was about — its own is nearer — not the old ratio.
     expect(p.d!).toBeLessThan(distFrom(cid, REF_CLOTHING));
-    // …and it is a MARKET stall, not a production-capped gate — the structural
-    // half of the claim, which survives any renumbering.
-    const src = run.session.town!.stage.goods.find((g) => g.good.key === "clothing")!.sources[5]!;
-    expect(src.kind).toBe("market");
+    // …and it is SHELVED, not a produce pile — the structural half of the
+    // claim, restated so it survives renumbering AND re-siting. "Clothing is on
+    // the market channel" means every clothing source racks a shelf, tailors
+    // included; a household can never be sent to shop off a clothing PILE.
+    const clothing = run.session.town!.stage.goods.find((g) => g.good.key === "clothing")!;
+    clothing.sources.forEach((_s, si) => {
+      expect(goodSourceEndpointId(clothing, si)!.startsWith("store:")).toBe(true);
+    });
   });
 
   it("② THE REFERENCE HOUSE binds to its own nearest source, as it always did", () => {
@@ -254,7 +290,7 @@ describe("the live needs ctx, on the real dollhouse (seed 12)", () => {
   it("② every member of the household is sent to the SAME endpoint (the house binds, not the body)", () => {
     const ids = [0, 1, 2].map((m) => host().needSourceProbe(`resident_${focus}_${m}`, "food")?.id);
     expect(new Set(ids).size).toBe(1);
-    expect(ids[0]).toBe("produce:food:8");
+    expect(ids[0]).toBe("store:food:13"); // phase B, then C-2 loops — with ② above
   });
 
   it("② a WELL is untouched — water was never routed through a stall", () => {
@@ -276,13 +312,29 @@ describe("the live needs ctx, on the real dollhouse (seed 12)", () => {
         else piles++;
       });
     }
-    // Seed 12: 14 shelved food markets, then 14 clothing shelves (the same 14
-    // stalls, now selling clothing too) + the 2 tailors; 7 farm gates shop off
-    // their own produce piles. The town had TWO stalls before the unfork, and
-    // 14 + 2 before clothing joined the market channel — every stall the
-    // service radius founded now carries both goods, which is the placement
-    // fix expressed as objects.
-    expect(shelves).toBe(30);
+    // Phase B re-pin, MEASURED at seed 12: food has 19 sources — 12 shelved
+    // markets + 7 farm gates that shop off their own produce piles — and
+    // clothing has 14, ALL shelved (the same 12 stalls + the 2 tailors). So
+    // 26 shelves, 7 piles. The stall count fell 14 → 12 with the re-lay and
+    // that is coverage, not loss: the service radius founds what it takes to
+    // reach every household, and a town strung along one through road needs
+    // fewer discs to cover than a town fanned around a ring. ⑦'s invariant
+    // below is the assertion that coverage actually held.
+    // RE-PINNED (growth phase C §1.4), MEASURED at seed 12 both ways. The
+    // district pass now founds a service point where it costs its quarter the
+    // fewest STREET metres, instead of at the lot nearest a chord centroid —
+    // and a better-placed stall serves more households, so the pass reaches
+    // coverage with FEWER of them: stalls 12 → 8, shelves 26 → 18 (8 food +
+    // 8 clothing + the 2 tailors), piles unchanged at 7 farm gates.
+    //
+    // Fewer shops is not less service, and the numbers say so: the WORST
+    // household's food trip fell 312.9 s → 245.6 s (−21.5%) and clothing's
+    // 314.9 s → 274.8 s, because the argmin pulls each stall onto the arm its
+    // stranded households actually live on instead of into the fields between
+    // two arms. The mean trip rose 112.3 s → 118.8 s (+5.8%) — the honest
+    // price of four fewer shops, paid by the median household so the
+    // worst-served one stops paying five minutes a trip forever.
+    expect(shelves).toBe(18);
     expect(piles).toBe(7);
     expect(run.session.marketStore.size).toBe(shelves);
   });

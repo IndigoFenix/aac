@@ -682,8 +682,11 @@ export class InstituteService {
     instituteId: string,
     studentId: string,
     updates: {
-      idNumber?: string;
-      grade?: GradeEnum;
+      // null is a real value here, not a placeholder for "unset": the panel
+      // sends it to CLEAR the field. undefined means "leave alone" (drizzle's
+      // .set() skips it), which is why the two can't be collapsed.
+      idNumber?: string | null;
+      grade?: GradeEnum | null;
     },
     requestingUserId: string
   ): Promise<{ success: boolean; enrollment?: InstituteStudent; error?: string }> {

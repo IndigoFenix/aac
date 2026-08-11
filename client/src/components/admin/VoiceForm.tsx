@@ -81,10 +81,13 @@ export function VoiceForm({ open, onClose, voice }: VoiceFormProps) {
     }
 
     try {
+      // null, not undefined — the edit path PATCHes and merges by key, so an
+      // undefined key is dropped by JSON.stringify and the cleared description
+      // or sample URL survives the save.
       const payload = {
         ...formData,
-        description: formData.description || undefined,
-        sampleUrl: formData.sampleUrl || undefined,
+        description: formData.description || null,
+        sampleUrl: formData.sampleUrl || null,
       };
 
       if (isEditing) {

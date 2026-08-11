@@ -21,7 +21,7 @@ import { substrateSurface, EARTHLIKE_PALETTE, type PlanetSurface, type Vec3 } fr
 import { buildChunkGeometry, PLANET_FACES, DETAIL_TILE_M } from "@shared/world-engine/planet/chunk";
 import { createPlanetLod, type PlanetLodHost } from "@shared/world-engine/planet/lod";
 import { createRoutePaint } from "@shared/world-engine/planet/route-paint";
-import { routeFromDirs } from "@shared/world-engine/planet/routes";
+import { routeFromDirs, routePointAt } from "@shared/world-engine/planet/routes";
 import * as THREE from "three";
 import { buildWaves } from "@shared/world-engine/planet/water-normals";
 import { applyTerrainShading, WATER_SAFETY, DETAIL_COMMON_GLSL, terrainPatchFor } from "@shared/world-engine/planet/terrain-shading";
@@ -1310,6 +1310,15 @@ describe("planet LOD", () => {
 
 // Roads painted into the terrain (route-paint.ts) — the river-paint law
 // applied to lanes: true width, coverage fade, growable and idempotent.
+//
+// THE REPAINT SEAM (growth phase C §3.4) is pinned here too. The index is no
+// longer append-only: segments are partitioned by key and `replaceRoutes`
+// swaps a key's paint for another, so a re-laid town repaints instead of
+// ghosting and a refined highway can erase the parent it re-draws. What must
+// hold is that taking paint back is EXACT (the ground reads bare again),
+// LOCAL (no other key moves), FREE when nothing moved, and honest about the
+// patch it disturbed — that patch is the host's refresh radius, so an
+// under-report leaves stale colour standing on the planet.
 describe("route paint", () => {
   const paint = createRoutePaint(RADIUS);
   // A short lane along the equator: vertices ~100 m apart at RADIUS 10 km.
@@ -1319,6 +1328,23 @@ describe("route paint", () => {
     laneDirs.push([Math.cos(a), Math.sin(a), 0]);
   }
   const lane = routeFromDirs(laneDirs, RADIUS, 1, 2)!;
+  // A second lane 200 m north of the first — far outside its band, so the
+  // two keys can only be confused by a bug, never by geometry.
+  const farDirs: Array<[number, number, number]> = laneDirs.map(([x, y]) => {
+    const t = 200 / RADIUS;
+    const m = Math.hypot(x, y, t);
+    return [x / m, y / m, t / m] as [number, number, number];
+  });
+  const far = routeFromDirs(farDirs, RADIUS, 3, 4)!;
+
+  /** How hard the paint pulls channel 0 at `dir` (0 = bare ground). */
+  const tintAt = (p: ReturnType<typeof createRoutePaint>, dir: readonly [number, number, number]): number => {
+    const rgb: [number, number, number] = [0.3, 0.5, 0.2];
+    p.tintAt(dir, 0, rgb);
+    return Math.abs(rgb[0] - 0.3);
+  };
+  const chordM = (a: readonly number[], b: readonly number[]): number =>
+    Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!) * RADIUS;
 
   it("adds once per key and paints ON the lane at true width", () => {
     expect(lane).toBeTruthy();
@@ -1350,6 +1376,82 @@ describe("route paint", () => {
     const dCoarse = Math.abs(coarse[0] - 0.3);
     expect(dCoarse).toBeGreaterThan(0);
     expect(dCoarse).toBeLessThan(dFine);
+  });
+
+  it("an arc-span entry paints exactly its span, and a whole-route one is the bare route", () => {
+    // Backwards compatibility is the load-bearing half: every shipped call
+    // site passes bare routes, and they must paint what they always did.
+    const bare = createRoutePaint(RADIUS);
+    const whole = createRoutePaint(RADIUS);
+    bare.addRoutes("k", [lane, far], 6);
+    whole.addRoutes("k", [{ route: lane }, { route: far, s0: 0, s1: far.lengthM }], 6);
+    expect(whole.segmentCount()).toBe(bare.segmentCount());
+    for (let i = 0; i <= 40; i++) {
+      const d = routePointAt(lane, (lane.lengthM * i) / 40);
+      expect(tintAt(whole, d)).toBe(tintAt(bare, d));
+    }
+
+    // And the span form paints ONLY its span — this is how a parent gives
+    // ground back to the refinement that re-drew it.
+    const half = createRoutePaint(RADIUS);
+    half.addRoutes("k", [{ route: lane, s0: 0, s1: lane.lengthM / 2 }], 6);
+    expect(tintAt(half, routePointAt(lane, lane.lengthM * 0.25))).toBeGreaterThan(0);
+    expect(tintAt(half, routePointAt(lane, lane.lengthM * 0.75))).toBe(0);
+    expect(half.segmentCount()).toBeLessThan(bare.segmentCount());
+  });
+
+  it("replaceRoutes takes a key's paint back and leaves every other key alone", () => {
+    const p = createRoutePaint(RADIUS);
+    expect(p.addRoutes("a", [lane], 6)).toBe(true);
+    const nA = p.segmentCount();
+    expect(p.addRoutes("b", [far], 6)).toBe(true);
+    const nAB = p.segmentCount();
+    expect(nA).toBeGreaterThan(0);
+    expect(nAB).toBeGreaterThan(nA);
+    expect(tintAt(p, laneDirs[2]!)).toBeGreaterThan(0);
+
+    expect(p.replaceRoutes("a", [], 6)).not.toBeNull();
+    // The ground under "a" reads bare — not faded, GONE.
+    for (const d of laneDirs) expect(tintAt(p, d)).toBe(0);
+    // "b" never moved.
+    for (const d of farDirs) expect(tintAt(p, d)).toBeGreaterThan(0);
+    // The count is live-only: a freed slot is a hole, not a segment.
+    expect(p.segmentCount()).toBe(nAB - nA);
+    // The key is still claimed — a replace owns what it painted.
+    expect(p.addRoutes("a", [lane], 6)).toBe(false);
+    // And laying it again through the seam brings it back.
+    expect(p.replaceRoutes("a", [lane], 6)).not.toBeNull();
+    expect(p.segmentCount()).toBe(nAB);
+    for (const d of laneDirs) expect(tintAt(p, d)).toBeGreaterThan(0);
+  });
+
+  it("a repaint is free when nothing moved, and its patch covers old ∪ new", () => {
+    const p = createRoutePaint(RADIUS);
+    p.addRoutes("k", [lane], 6);
+    // Idempotent BY CONTENT — stronger than addRoutes' by-key check, and
+    // what lets the town splice rebuild on every region landing for free.
+    expect(p.replaceRoutes("k", [lane], 6)).toBeNull();
+    expect(p.replaceRoutes("k", [{ route: lane, s0: 0, s1: lane.lengthM }], 6)).toBeNull();
+
+    const patch = p.replaceRoutes("k", [far], 6);
+    expect(patch).not.toBeNull();
+    // Everything that stopped being painted AND everything that started must
+    // sit inside the ball, or the host refreshes too little and the planet
+    // keeps a road nobody drives on.
+    for (const d of [...laneDirs, ...farDirs]) {
+      expect(chordM(d, patch!.center)).toBeLessThanOrEqual(patch!.radiusM);
+    }
+    for (const d of laneDirs) expect(tintAt(p, d)).toBe(0);
+    for (const d of farDirs) expect(tintAt(p, d)).toBeGreaterThan(0);
+
+    // A repaint that only gives back one END of a road disturbs that end,
+    // not the road: the untouched half's segments never move.
+    const q = createRoutePaint(RADIUS);
+    q.addRoutes("k", [lane], 6);
+    const whole = q.replaceRoutes("k", [], 6)!.radiusM;
+    q.replaceRoutes("k", [lane], 6);
+    const tail = q.replaceRoutes("k", [{ route: lane, s0: 0, s1: lane.lengthM / 2 }], 6)!;
+    expect(tail.radiusM).toBeLessThan(whole);
   });
 });
 

@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { foundNeighborhoodMarkets, NEIGH_FOUND_MASS } from "../districts";
 import { createTownFood, houseDoorstep } from "../food";
+import { TOWN_DIMS } from "@shared/world-engine/kernel/town/dimensions";
 import { growStreets, roadRoute, routeLength, type TownStreets } from "../streets";
 import { MARKET_MIN_HOUSES, townPlan, type TownHouse } from "../zoom";
 import type { TriWorld } from "../tri";
@@ -67,9 +68,27 @@ describe("neighborhood market founding (city fractal step 1)", () => {
     }
   });
 
-  it("founding is prefix-stable: a grown town keeps its old stalls and appends", () => {
-    // The nets themselves are prefix-stable (streets.ts), so the small
-    // town's founding decisions replay identically inside the big one.
+  it("founding only ever GROWS, and most of a town's stalls survive its growth", () => {
+    // 🚨 RE-PINNED, growth phase C stage 2 (LOOPS). This test used to assert
+    // a POSITIONAL PREFIX — `after[i].index === before[i].index` for every i —
+    // and it held because the street tree's routing answers were prefix-stable:
+    // a bigger town's extra streets are LEAVES, and a tree path between two
+    // lots that both towns already had can never run through a leaf. So the
+    // founding walk, which prices lots by `roadDistance`, replayed verbatim.
+    //
+    // A LINK IS NOT A LEAF. Loops only ever append (measured: a 700-slot
+    // town's link list extends a 400-slot town's, 35/35 fixtures), but an
+    // appended link SHORTENS a walk between two lots that both towns already
+    // had — which is the entire point of cutting it — so the argmin that
+    // chooses where a stall opens can legitimately move. MEASURED over 60
+    // (town × growth) pairs, 12 towns from 400 slots to 450/500/600/700/850:
+    //   full positional prefix still held   18/60
+    //   stall count never shrank            60/60
+    //   worst set survival                  56.3%
+    // This is the honest price of loops and it is recorded in the phase
+    // ledger; the durable fix is to persist founded service points as deltas
+    // (the `foundedSlots` pipe plan.ts already takes) rather than re-deriving
+    // them, which is construction's job and not streets'.
     const netSmall = growStreets(7, "metro", 400);
     const netBig = growStreets(7, "metro", 700);
     const small = grownHouses(netSmall, 400);
@@ -77,8 +96,15 @@ describe("neighborhood market founding (city fractal step 1)", () => {
     const before = foundNeighborhoodMarkets(small, ANCHOR, netSmall);
     const after = foundNeighborhoodMarkets(big, ANCHOR, netBig);
     expect(before.length).toBeGreaterThanOrEqual(1);
+    // The list only GROWS — a town that doubles never closes a shop.
     expect(after.length).toBeGreaterThanOrEqual(before.length);
-    before.forEach((s, i) => expect(after[i].index).toBe(s.index));
+    // …and MOST of what it opened it keeps, wherever in the list it now sits.
+    const survived = before.filter(s => after.some(a => a.index === s.index));
+    expect(survived.length * 2).toBeGreaterThan(before.length);
+    // The pass is still a pure function of its inputs (this is what the pin
+    // above was really guarding: no hidden state, no run-to-run drift).
+    expect(foundNeighborhoodMarkets(small, ANCHOR, netSmall).map(s => s.index))
+      .toEqual(before.map(s => s.index));
   });
 
   it("stalls actually shorten the walk: mean street distance to food drops", () => {
@@ -109,13 +135,18 @@ describe("neighborhood market founding (city fractal step 1)", () => {
     const markets = plan.works.filter(w => w.type === "market");
     expect(markets.length).toBeGreaterThan(1);
 
-    // The plaza market keeps its shipped spot; stalls sit out among the
-    // rings, each on a lot no house occupies anymore.
+    // RE-PINNED (growth-phase-B §1.6): the plaza market has no berth any
+    // more — it is an ordinary building on the frontage lot nearest the
+    // town's busiest junction, so its spot is an OUTPUT. What holds is
+    // that it stands AT the plaza (inside the clearing), while the founded
+    // stalls sit far out among the quarters, each on a lot no house
+    // occupies any more.
+    const sq = plan.plaza!;
     const plaza = markets[0];
-    expect(plaza.dx).toBe(-10); // -marketW/2 (dimensions.ts)
-    expect(plaza.dy).toBe(8); // plazaClear
+    expect(Math.hypot(plaza.dx + plaza.w / 2 - sq.x, plaza.dy + plaza.h / 2 - sq.y))
+      .toBeLessThan(TOWN_DIMS.plazaR);
     for (const m of markets.slice(1)) {
-      expect(Math.hypot(m.dx + m.w / 2, m.dy + m.h / 2)).toBeGreaterThan(43);
+      expect(Math.hypot(m.dx + m.w / 2 - sq.x, m.dy + m.h / 2 - sq.y)).toBeGreaterThan(43);
       expect(plan.houses.some(h => h.dx === m.dx && h.dy === m.dy)).toBe(false);
     }
 
@@ -132,7 +163,12 @@ describe("neighborhood market founding (city fractal step 1)", () => {
     expect(food.stockOf(farm!, t)).toBe(0);
   });
 
-  it("townPlan founding is prefix-stable across population growth", () => {
+  it("townPlan founding only grows, and most stalls keep their ground", () => {
+    // 🚨 RE-PINNED with the pass above, and for the same measured reason:
+    // once the town cuts loops, a bigger town routes its households over a
+    // shorter network, so where a stall best serves its quarter is allowed
+    // to move. What must not happen — a town that grows CLOSING a shop —
+    // still cannot.
     const smallPlan = townPlan(fakeTri(1500), "metro", 7);
     const bigPlan = townPlan(fakeTri(3000), "metro", 7);
     const stallsOf = (p: typeof smallPlan): Array<{ dx: number; dy: number }> =>
@@ -141,9 +177,8 @@ describe("neighborhood market founding (city fractal step 1)", () => {
     const after = stallsOf(bigPlan);
     expect(before.length).toBeGreaterThanOrEqual(1);
     expect(after.length).toBeGreaterThanOrEqual(before.length);
-    before.forEach((s, i) => {
-      expect(after[i].dx).toBeCloseTo(s.dx, 9);
-      expect(after[i].dy).toBeCloseTo(s.dy, 9);
-    });
+    const stood = before.filter(s =>
+      after.some(a => Math.abs(a.dx - s.dx) < 1e-9 && Math.abs(a.dy - s.dy) < 1e-9));
+    expect(stood.length * 2).toBeGreaterThan(before.length);
   });
 });

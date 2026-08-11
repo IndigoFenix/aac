@@ -58,6 +58,16 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
         settle: true,
         radius: 2000,
       },
+      // ⚖️ THIS WORLD DECLARES ITS SETTLEMENT GAP (growth phase C §1.1 handed
+      // this on; §3.1 made it defensible). A 2 km planet with a 131 m chart
+      // cell cannot hold Earth's 25 km day's walk — it founds its cities ~789 m
+      // apart, which is 25 km ÷ 32. Saying so is what lets `townSpacingM` and
+      // `townExtentM` derive honestly here: the founding scan's spacing comes
+      // back as the SAME 6 cells the map always used (site set byte-identical,
+      // pinned in founding-scan.test.ts), and the extent falls 450 → 195, at
+      // which every one of the 34 interstate road ends becomes a PORT instead
+      // of running to a town centre (measured: 18 unclipped → 0).
+      scale: { gap_compression: 32 },
       initial_focus: null, avatar: null, creative_mode: false,
     },
   },

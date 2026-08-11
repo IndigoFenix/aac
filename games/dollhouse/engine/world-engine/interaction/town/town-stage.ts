@@ -36,9 +36,11 @@ import { workProgram, type BuildingProgram } from "@shared/world-engine/kernel/t
 import type { WorkstationRegistry } from "@shared/world-engine/kernel/town/workstations.js";
 import type { TownHost } from "@shared/world-engine/kernel/town/host.js";
 import type { TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
-import type { TownHouse, TownPlan, TownWork } from "@shared/world-engine/kernel/town/plan.js";
+import { townPlaza, type TownHouse, type TownPlan, type TownWork } from "@shared/world-engine/kernel/town/plan.js";
+import { townPorts } from "@shared/world-engine/kernel/town/streets.js";
 import {
   ERRAND_WALK, FOOD_DAY_SEC, HOUSEHOLD, doorTransit, hasLedger, houseDoorstep, streetGoods,
+  workDoorstep,
   type ImportDepotReading, type TownGoods,
 } from "@shared/world-engine/kernel/town/goods.js";
 import {
@@ -353,6 +355,46 @@ export function createTownStage(
 }
 
 /**
+ * WHERE A TOWN IS ENTERED, in town-local metres (growth-phase-B §2.3).
+ *
+ * There is no decreed centre any more: the plaza ring died with phase B and
+ * `TownPlan.plaza` is an OUTPUT (the busiest junction), so the frame origin
+ * is just the coordinate zero — on a through-road town it can fall inside
+ * somebody's kitchen. The arrival point is read off what the town HAS,
+ * in the order a traveller would find it:
+ *
+ *   1. A FOUNDED SITE (its settlers built everything it has, no base
+ *      houses) is entered at the FIRST founded building's doorstep — the
+ *      wagon stopped where they raised the first roof.
+ *   2. A ROUTE TOWN — one whose tree grew around a real road (a `span`
+ *      seed came through the §2.1 seam) — is entered at its PRIMARY PORT:
+ *      the gate the biggest incident road comes in by, canonical-first in
+ *      the seed order. You arrive ON the road and walk the high street in,
+ *      which is exactly the shape this phase exists to make true.
+ *   3. Anything else — a scope world, a fixture, any town with no road to
+ *      arrive along — is entered at the PLAZA. Its ports are the outer tips
+ *      of arterials that peter out in the fields; landing a visitor 300 m
+ *      into the crops to walk in from nowhere would be arrival theatre with
+ *      no road to justify it.
+ *
+ * Deterministic in the plan (and, for case 1, in the delta ord).
+ */
+export function townArrival(
+  plan: TownPlan,
+  founded: ReadonlyArray<{ dx: number; dy: number; w: number; h: number; door: TownWork["door"] }> = [],
+): { x: number; y: number } {
+  if (!plan.houses.length && founded.length) {
+    const b = founded[0]!;
+    return workDoorstep({ x: 0, y: 0 }, b as TownWork);
+  }
+  if (plan.streets.seeds.some(s => s.kind === "span")) {
+    const ports = townPorts(plan.streets);
+    if (ports.length) return { x: ports[0]!.x, y: ports[0]!.y };
+  }
+  return townPlaza(plan);
+}
+
+/**
  * The stage raised in RESUMABLE STEPS: yields a progress note at each
  * natural boundary (spec certified, goods stocked, residents modeled,
  * furniture batches) so a live host can spread the founding's second-biggest
@@ -368,15 +410,16 @@ export function* createTownStageSteps(
   const side = plan.radius * 2 + 80;
   const center = { x: side / 2, y: side / 2 };
   const siteKey = plan.key;
+  const arrival = townArrival(plan, opts.deltas?.founded() ?? []);
 
   // Roads: the organic street tree (streets.ts), town-local points lifted into
   // world coords. Widths follow the 2D map's read — arterials broader than the
-  // branch lanes — so the same hierarchy shows underfoot. The PLAZA RING is
-  // topology only (the root the arterials gate on), NEVER pavement: a painted
-  // circle at every town's heart read as artificial (user, 2026-07-22). The
-  // plaza is open ground the arterials converge on.
+  // branch lanes — so the same hierarchy shows underfoot. EVERY street is
+  // pavement now: the artificial plaza ring that was topology-only (user,
+  // 2026-07-22) died with growth-phase-B; street 0 is the BASELINE, the real
+  // road the town formed around, and it is drawn like the road it is.
   const roads: RoadPath[] = plan.streets.streets
-    .filter(s => s.pts.length >= 2 && !s.ring)
+    .filter(s => s.pts.length >= 2)
     .map(s => ({
       points: s.pts.map(p => ({ x: center.x + p.x, y: center.y + p.y })),
       width: s.gen === 0 ? 3.4 : 2.4,
@@ -422,9 +465,11 @@ export function* createTownStageSteps(
     },
     manifold: { kind: "flat", width: side, height: side, ...(opts.onPlanet ? { bounded: false } : {}) },
     terrain: { kind: "flat", groundColor: plan.groundColor },
-    // Plaza CENTER — the open band between the hall (north side) and the
-    // market hall (south side); never inside either footprint.
-    spawns: [{ id: "plaza", x: center.x, y: center.y }],
+    // WHERE YOU ARRIVE (growth-phase-B §2.3). The frame origin used to be
+    // the plaza by decree; the ring is gone and the plaza is an OUTPUT that
+    // lands wherever the walks made a junction busiest, so `center` names
+    // nothing now — on a through-road town it can sit inside a lot.
+    spawns: [{ id: "plaza", x: center.x + arrival.x, y: center.y + arrival.y }],
     objects: [],
     npcs: opts.castNpcs === false ? [] : castNpcs,
     multiplayer: { maxPlayers: 4, authority: "distributed" },

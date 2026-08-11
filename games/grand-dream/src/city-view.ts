@@ -380,21 +380,21 @@ export function paintCityMap(
   ctx.fillStyle = "rgba(154,142,58,0.45)";
   for (const f of plan.fields) ctx.fillRect(X(f.dx), Y(f.dy), f.w * scale, f.h * scale);
 
-  // Streets: plaza disc + the organic tree, width worn by traffic (the
-  // same wear law the walkable view draws — §3b, arterials BECOME).
+  // Streets: the organic tree, width worn by traffic (the same wear law the
+  // walkable view draws — §3b, arterials BECOME). NO PLAZA DISC: the ring
+  // era paved a circle at the origin and stage 1 kept drawing one at the
+  // new plaza out of habit. The plaza is a JUNCTION — the streets meeting
+  // there ARE its pavement, and the 3D stage lays no disc, so a disc here
+  // was the map inventing ground the town does not have.
   const net = plan.streets;
   const traffics = [goods, ...(opts.extras ?? [])].map(g => g.streetTraffic());
-  ctx.fillStyle = "rgba(203,183,142,0.4)";
-  ctx.beginPath();
-  ctx.arc(ox, oy, net.plazaR * scale, 0, Math.PI * 2);
-  ctx.fill();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (const st of net.streets) {
     const trips = traffics.reduce((sum, tr) => sum + (tr.get(st.id) ?? 0), 0);
     const wear = Math.min(1, Math.sqrt(trips) / 12);
     ctx.strokeStyle = `rgba(203,183,142,${(0.35 + 0.35 * wear).toFixed(3)})`;
-    ctx.lineWidth = Math.max(1, ((st.ring ? 2.8 : st.gen === 0 ? 3.4 : 2.4) + 2.8 * wear) * scale);
+    ctx.lineWidth = Math.max(1, ((st.gen === 0 ? 3.4 : 2.4) + 2.8 * wear) * scale);
     ctx.beginPath();
     ctx.moveTo(X(st.pts[0].x), Y(st.pts[0].y));
     for (let i = 1; i < st.pts.length; i++) ctx.lineTo(X(st.pts[i].x), Y(st.pts[i].y));

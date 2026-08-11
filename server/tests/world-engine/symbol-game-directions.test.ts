@@ -27,12 +27,17 @@ import type { TownStreets } from "@shared/world-engine/kernel/town/streets.js";
 // (street 1) meeting it at the origin. Enough for project / roadDistance.
 function net(): TownStreets {
   return {
-    plazaR: 10,
     streets: [
-      { id: 0, gen: 0, parent: -1, parentArc: 0, arm: 0, pts: [{ x: 0, y: 0 }, { x: 0, y: 300 }], cum: [0, 300], capped: true },
+      { id: 0, gen: 0, parent: -1, parentArc: 0, arm: 0, baseline: true, pts: [{ x: 0, y: 0 }, { x: 0, y: 300 }], cum: [0, 300], capped: true },
       { id: 1, gen: 1, parent: 0, parentArc: 0, arm: 0, pts: [{ x: 0, y: 0 }, { x: 300, y: 0 }], cum: [0, 300], capped: true },
     ],
+    // No LOOPS (growth phase C §2): a hand-built net is a pure tree, so
+    // routing takes the parent climb and answers exactly as it always did.
+    links: [],
     slots: [],
+    seeds: [],
+    ports: [],
+    bearings: [],
   };
 }
 

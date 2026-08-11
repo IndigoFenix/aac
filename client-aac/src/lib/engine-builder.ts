@@ -20,18 +20,29 @@
 // Deep import ONLY — the world-engine barrel would pull the whole engine into
 // the AAC bundle. This module is the engine's pure, dependency-light surfacer.
 import { builderSurfaceFor, defaultBuilderNouns } from "@shared/world-engine/interaction/intent/builder-surface";
+import type { IntentKind } from "@shared/world-engine/interaction/intent/parse-intent";
 import type { EngineBuilderBackend } from "@client-shared/game/engine-builder";
 
 export {
   createBridgeBuilderBackend,
   type BridgeBuilderBackend,
+  type BuilderSurfaceRequestOpts,
   type EngineBuilderBackend,
   type EnginePlayResult,
 } from "@client-shared/game/engine-builder";
 
-/** How many ranked words to ask the local surfacer for — three builder grid
- *  pages' worth; the grid pages through them with its More button. */
-const LOCAL_SURFACE_CAPACITY = 54;
+/**
+ * HOW MANY RANKED WORDS THE AAC BUILDER ASKS FOR — three of its 9×2 grid
+ * pages' worth; the grid pages through them with its More button.
+ *
+ * ONE CONSTANT, ONE OWNER: the number is the BOARD's display budget, so both
+ * backends must be asked for the same thing or the same sentence pages
+ * out-of-game and doesn't in-game (the 54/16 seam). The board sends it on every
+ * request — the local surfacer takes it directly, the bridge puts it on
+ * `builder_state` — and this default only covers a caller that asks for
+ * nothing.
+ */
+export const BUILDER_SURFACE_CAPACITY = 54;
 
 /**
  * Out-of-game backend: the engine's pure surfacer over the DEFAULT game
@@ -42,7 +53,7 @@ const LOCAL_SURFACE_CAPACITY = 54;
 export function createLocalBuilderBackend(opts?: { locale?: string }): EngineBuilderBackend {
   const nouns = defaultBuilderNouns();
   return {
-    async requestSurface(glyph, category, group) {
+    async requestSurface(glyph, category, group, req) {
       try {
         return (
           builderSurfaceFor(glyph, {
@@ -50,7 +61,12 @@ export function createLocalBuilderBackend(opts?: { locale?: string }): EngineBui
             locale: opts?.locale,
             category,
             group,
-            capacity: LOCAL_SURFACE_CAPACITY,
+            capacity: req?.capacity ?? BUILDER_SURFACE_CAPACITY,
+            // The learned layer and the type-chip seed travel the same route
+            // in-game (over `builder_state`) and out — the caller keeps them,
+            // the surfacer reads them, this backend only hands them over.
+            ...(req?.recency ? { recency: req.recency } : {}),
+            ...(req?.seedKind ? { seedKind: req.seedKind as IntentKind } : {}),
           }) ?? null
         );
       } catch (e) {

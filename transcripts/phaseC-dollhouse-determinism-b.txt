@@ -1,0 +1,143 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=07d6694a+dirty
+# started=2026-08-11T17:12:05.603Z
+# ─────────────────────────────────────────
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 0.8s.
+> wait 60
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+ENTER  orrin came into view there south.
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view here south.
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   orrin left view there south.
+EXIT   mara left view there west.
+EXIT   biscuit left view here south.
+EXIT   pip left view here north.
+ENTER  pip came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there south.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 11 thing(s) in view, 86 place(s) around you.
+  pip (person), here west.
+  biscuit (person), here south.
+  mara (person), there west.
+  orrin (person), there south.
+  table-1 (table), here south.
+  chair-1 (chair), here south.
+  a bin, here east.
+  a basket, there south.
+  a chest, there south.
+  a cupboard, there west.
+  a bowl, there west.
+  house-1 (house), here north, blue, door open, you can see inside.
+  house-2 (house), here south, blue, door open, you can see inside.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+EXIT   mara left view there west.
+EXIT   orrin left view there south.
+TICK   quiet after 1.4s.
+> wait 60
+TICK   waited 60.0s.
+> wait 60
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> wait 60
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here south.
+ENTER  pip came into view here west.
+ENTER  mara came into view there south.
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   biscuit left view here south.
+EXIT   orrin left view here south.
+EXIT   mara left view there south.
+EXIT   pip left view here north.
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here west.
+ENTER  mara came into view here south.
+ENTER  pip came into view here north.
+SAY    mara: "play with I"  [play + with + i_me]
+SAY    biscuit: "okay"  [ok]
+EXIT   orrin left view here north.
+EXIT   mara left view here north.
+EXIT   pip left view there north.
+ENTER  mara came into view here north.
+ENTER  orrin came into view here north.
+ENTER  pip came into view here north.
+SAY    biscuit: "okay"  [ok]
+SAY    biscuit: "bye-bye"  [goodbye]
+EXIT   biscuit left view here north.
+EXIT   mara left view here north.
+EXIT   orrin left view here north.
+ENTER  biscuit came into view here north.
+ENTER  orrin came into view here north.
+ENTER  mara came into view here north.
+SAY    mara: [play]
+EXIT   pip left view here west.
+ENTER  pip came into view here south.
+EXIT   biscuit left view here north.
+TOAST  🏗️ the people stake out a market (feedback)
+EXIT   pip left view there east.
+TICK   waited 60.0s.
+> wait 30
+EXIT   orrin left view here south.
+EXIT   mara left view here west.
+TICK   waited 30.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, door open, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-5 (house), there east, blue, door open, shut to you.
+  43 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — floor laid, 0% worked, close north, 83 m
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=10  presses=0  screens=1  sim=274.5s
+# events: EXIT 27  ENTER 25  TICK 10  SAY 10  SCENE 4  NOTE 4  BOARD 1  TOAST 1  SITE 1  SELF 1

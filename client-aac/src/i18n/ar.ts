@@ -348,6 +348,14 @@ export const ar: Translations = {
       connective: "أدوات ربط",
       social: "اجتماعي",
     },
+    typeChips: {
+      request: "أريد",
+      ask: "سؤال",
+      state: "أخبر",
+      command: "افعل",
+      rule: "قاعدة",
+      greet: "اجتماعي",
+    },
     chips: {
       all: "الكل",
       people: "الناس",

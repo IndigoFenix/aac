@@ -29,13 +29,23 @@
 //                 FULL noun list. `opts.group` filters within the active view,
 //                 exactly like tapping a group cell in the SpeakMenu.
 //   complete    ← suggestion.complete
+//   typeChips   ← suggestion.typeChips (the SENTENCE-TYPE controls, offered on
+//                 the empty board only — exactly the surfacer's own verdict).
+//                 A client renders them distinct from words and echoes the
+//                 tapped kind back as `opts.seedKind`, the way `category` /
+//                 `group` echo the chips they came from.
 // DROPPED (no bridge field — the flat wire contract has no controls layer):
-//   typeChips (seedKind isn't in builder_state),
 //   open/subTab (debug/ranking detail already baked into button order),
 //   weights/roles (ordering carries them).
 
-import { LEXICON, tokenizeSentence } from "./parse-intent.js";
-import { exemplarOrder, GROUP_EXEMPLARS, surfaceNext, type SurfaceNoun } from "./surface-next.js";
+import { LEXICON, tokenizeSentence, type IntentKind } from "./parse-intent.js";
+import {
+  exemplarOrder,
+  GROUP_EXEMPLARS,
+  surfaceNext,
+  type RecencyMemory,
+  type SurfaceNoun,
+} from "./surface-next.js";
 import { AXIS_WORDS, descriptorAxesFor, type DescriptorAxis } from "../../object-properties.js";
 import { propertiesOf } from "../content/properties.js";
 import {
@@ -84,6 +94,18 @@ export interface BuilderGroupJson {
   glyphs?: string[];
 }
 
+/** A SENTENCE-TYPE control chip (wire shape — structurally the bridge's
+ *  BuilderTypeChip). Not a word: pressing it does not compose anything, it
+ *  re-asks for the openers of ONE communicative move (`opts.seedKind`).
+ *  `label` is the engine's own English name for the move — a client with its
+ *  own i18n should key off `kind` and translate. */
+export interface BuilderTypeChipJson {
+  /** The IntentKind this chip seeds ("request" | "ask" | "state" | …). */
+  kind: string;
+  /** The engine's plain-English name for the move (fallback label). */
+  label: string;
+}
+
 /** What the sentence builder should offer for the current partial sentence. */
 export interface BuilderSurfaceJson {
   /** Ranked main-grid words. */
@@ -98,6 +120,10 @@ export interface BuilderSurfaceJson {
   groups?: BuilderGroupJson[];
   /** True when the current sentence already parses as complete/sayable. */
   complete?: boolean;
+  /** Sentence-type CONTROL chips — present only while the board is empty (the
+   *  surfacer's own rule). Omitted entirely once composition is underway, so a
+   *  client that ignores them is unaffected. */
+  typeChips?: BuilderTypeChipJson[];
 }
 
 /** A noun the CALLER (the game host) knows about — the same knowledge the
@@ -145,6 +171,23 @@ export interface BuilderSurfaceOpts {
   group?: string;
   /** Main-grid budget (the surfacer default is 16). */
   capacity?: number;
+  /**
+   * THE LEARNED LAYER (surface-next `RecencyMemory`): what this speaker has
+   * actually said — recently-mentioned nouns, per-word use counts, adjacent
+   * word pairs. Owned and persisted by the CLIENT (it is the student's own
+   * habit, not world state), fed back in on every request and updated through
+   * `noteUtterance` after each successful speak. Absent ⇒ every use/pair/
+   * recency bonus is 0 and the board is byte-identical to an unpersonalized
+   * one, which is what an older client keeps getting.
+   */
+  recency?: RecencyMemory;
+  /**
+   * A SENTENCE-TYPE chip was tapped: constrain the openers to that
+   * communicative move. Echoes a `typeChips[].kind` from the previous surface
+   * back, exactly as `category`/`group` echo their own chips. Only the empty
+   * board reads it (the surfacer's own rule) — mid-sentence it is inert.
+   */
+  seedKind?: IntentKind;
   /** ⑫ — the fellow members of the speaker's own conversation, as spoken
    *  symbols. In a 3+ roster it opens the ADDRESSEE slot so a request can name
    *  whom it is for; absent or a dyad ⇒ today's board exactly
@@ -375,6 +418,12 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
   const suggestion = surfaceNext(tokens, {
     nouns: surfaceNouns,
     ...(opts.capacity !== undefined ? { capacity: opts.capacity } : {}),
+    // The learned layer and the type-chip seed ride straight through: the
+    // surfacer owns what they mean, the adapter only carries them. Both
+    // omitted when absent, so a caller that passes neither gets exactly the
+    // board it got before they existed.
+    ...(opts.recency ? { recency: opts.recency } : {}),
+    ...(opts.seedKind ? { seedKind: opts.seedKind } : {}),
     ...(opts.addressees?.length ? { parse: { addressees: opts.addressees } } : {}),
   });
 
@@ -438,6 +487,11 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
     categories: [...BUILDER_CATEGORIES],
     ...(groups && groups.length ? { groups } : {}),
     complete: suggestion.complete,
+    // The surfacer decides WHEN a type chip exists (empty board only); the
+    // adapter never second-guesses it, and omits the key entirely otherwise.
+    ...(suggestion.typeChips.length
+      ? { typeChips: suggestion.typeChips.map((c) => ({ kind: c.kind as string, label: c.label })) }
+      : {}),
   };
 }
 

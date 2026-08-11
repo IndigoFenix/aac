@@ -348,6 +348,14 @@ export const es: Translations = {
       connective: "Conectores",
       social: "Social",
     },
+    typeChips: {
+      request: "Quiero",
+      ask: "Preguntar",
+      state: "Contar",
+      command: "Hacer",
+      rule: "Regla",
+      greet: "Social",
+    },
     chips: {
       all: "Todo",
       people: "Personas",

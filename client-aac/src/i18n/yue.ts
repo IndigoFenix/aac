@@ -348,6 +348,14 @@ export const yue: Translations = {
       connective: "連接詞",
       social: "社交",
     },
+    typeChips: {
+      request: "想要",
+      ask: "問",
+      state: "講",
+      command: "做",
+      rule: "規則",
+      greet: "社交",
+    },
     chips: {
       all: "全部",
       people: "人物",

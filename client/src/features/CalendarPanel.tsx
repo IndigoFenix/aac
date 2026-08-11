@@ -491,17 +491,24 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
   }, [sharedState.pendingEventForServiceId, isOpen, setSharedState]);
 
   const handleSubmit = useCallback(() => {
+    // Cleared fields carry an explicit null. The PATCH merges by key and
+    // JSON.stringify drops undefined, so an undefined would leave the old
+    // description in place (or a stale repeat rule after the clinician
+    // switches the event to a new schedule). The POST is the opposite case:
+    // createEventSchema has server-side defaults (repeatInterval → 1) that an
+    // explicit null would overwrite, so the nulls are stripped for create,
+    // where an absent key already means "no value".
     const payload: any = {
       title: formData.title,
-      description: formData.description || undefined,
+      description: formData.description || null,
       startTime: new Date(formData.startTime).toISOString(),
       endTime: new Date(formData.endTime).toISOString(),
       allDay: formData.allDay,
       repeatType: formData.repeatType,
-      repeatInterval: formData.repeatType === 'weekly' ? formData.repeatInterval : undefined,
-      repeatDays: formData.repeatType === 'weekly' ? formData.repeatDays : undefined,
-      repeatMonthWeek: formData.repeatType === 'monthly_weekday' ? formData.repeatMonthWeek : undefined,
-      repeatEndDate: formData.repeatEndDate ? new Date(formData.repeatEndDate).toISOString() : undefined,
+      repeatInterval: formData.repeatType === 'weekly' ? formData.repeatInterval : null,
+      repeatDays: formData.repeatType === 'weekly' ? formData.repeatDays : null,
+      repeatMonthWeek: formData.repeatType === 'monthly_weekday' ? formData.repeatMonthWeek : null,
+      repeatEndDate: formData.repeatEndDate ? new Date(formData.repeatEndDate).toISOString() : null,
       serviceId: formData.serviceId || null,
       timezone: getClientTimezone(),
       attendees: formData.attendees
@@ -513,7 +520,9 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
     if (editingEvent) {
       updateEvent.mutate({ id: editingEvent.id, data: payload });
     } else {
-      createEvent.mutate(payload);
+      createEvent.mutate(
+        Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== null)),
+      );
     }
   }, [formData, editingEvent, createEvent, updateEvent, user]);
 

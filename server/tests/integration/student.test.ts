@@ -154,6 +154,33 @@ describe('Student integration', () => {
       expect(updated!.aacSettings?.enabled).toBe(true);
       expect(updated!.aacSettings?.voiceType).toBe('gemini');
     });
+
+    // The two halves of the "I deleted the AI name and it came back" bug: the
+    // update is a MERGE, so an omitted key preserves the stored value, and only
+    // an explicit '' clears it. The settings panel used to send
+    // `aiName.trim() || undefined` — JSON.stringify drops undefined keys, so
+    // the clear arrived as an omission and the old name survived.
+    it('clears a text AAC setting when sent as an empty string', async () => {
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+
+      await studentService.updateStudent(student.id, { aiName: 'Robbie' });
+      const cleared = await studentService.updateStudent(student.id, { aiName: '' });
+
+      expect(cleared!.aacSettings?.aiName ?? '').toBe('');
+    });
+
+    it('preserves an AAC setting whose key is absent from the update', async () => {
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+
+      await studentService.updateStudent(student.id, { aiName: 'Robbie' });
+      const untouched = await studentService.updateStudent(student.id, {
+        iconTextRatio: 4,
+      });
+
+      expect(untouched!.aacSettings?.aiName).toBe('Robbie');
+    });
   });
 
   describe('getStudentById', () => {

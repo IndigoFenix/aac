@@ -17,17 +17,31 @@ import { planetCities } from "@shared/world-engine/planet/cities";
 import { planetStates, statePairs } from "@shared/world-engine/planet/states";
 import { planetRoutes } from "@shared/world-engine/planet/routes";
 import { serializeGrid, type FoundingSite } from "@shared/world-engine/kernel/cells/index";
+import { resolveWorldScale, type WorldScale, type WorldScaleSpec } from "@shared/world-engine/scale";
 import type { GameSettings } from "@shared/world-engine/kernel/manifest";
 import {
   certifyCreatureQuestWorld, type CreatureCertification,
 } from "@shared/world-engine/interaction/quest/creature-quests";
 
 export type GeologyBakeRequest =
-  | { id: number; op: "bake"; world: Record<string, unknown>; label: string }
+  | {
+      id: number; op: "bake"; world: Record<string, unknown>; label: string;
+      /** THE WORLD'S DECLARED SPACE-TIME SCALE (`game.scale`) — the founding
+       *  scan's spacing DERIVES from it now (growth phase C §3.1
+       *  `planetFoundingOpts`), so a bake that dropped it would found the
+       *  real-scale site set on a world that declared a compressed gap. Part
+       *  of the bake's identity, and part of its cache key. */
+      scale?: Record<string, unknown> | null;
+    }
   | {
       id: number; op: "refine";
       spec: unknown; gridJson: string; sites: unknown[];
       regionCell: number;
+      /** The world's declared scale — the region tier derives its village
+       *  SPACING and its lanes' port EXTENT from it (growth phase C §1.2/
+       *  §3.1). Scoped by the bake key, which now carries the same
+       *  declaration. */
+      scale?: Record<string, unknown> | null;
       /** Bake identity (geo-bake's cache key) — scopes the refined-region
        *  LRU so two worlds' regions never cross. */
       key: string;
@@ -36,6 +50,10 @@ export type GeologyBakeRequest =
       id: number; op: "stitch";
       spec: unknown; gridJson: string; sites: unknown[];
       cellA: number; cellB: number; key: string;
+      /** The declared scale, for the same reason `refine` carries it: a
+       *  stitch that arrives before its regions' refines would otherwise
+       *  cache them at REAL scale under the scaled key. */
+      scale?: Record<string, unknown> | null;
     }
   | { id: number; op: "certifyTown"; game: unknown };
 
@@ -93,6 +111,7 @@ function refinedFor(
   built: ReturnType<typeof rebuiltPlanetWorld>,
   bakeKey: string,
   cell: number,
+  scale?: WorldScale,
 ): ReturnType<typeof refineRegion> {
   const k = `${bakeKey}:${cell}`;
   const hit = refinedLru.get(k);
@@ -101,7 +120,7 @@ function refinedFor(
     refinedLru.set(k, hit); // refresh LRU order
     return hit;
   }
-  const r = refineRegion(built, cell);
+  const r = refineRegion(built, cell, scale ? { scale } : {});
   refinedLru.set(k, r);
   while (refinedLru.size > REFINED_KEEP) {
     refinedLru.delete(refinedLru.keys().next().value!);
@@ -132,8 +151,9 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
       const built = builtFor(
         req.key, req.spec as PlanetWorldSpec, req.gridJson, req.sites as FoundingSite[],
       );
-      const a = refinedFor(built, req.key, req.cellA);
-      const b = refinedFor(built, req.key, req.cellB);
+      const stitchScale = req.scale ? resolveWorldScale(req.scale as WorldScaleSpec) : undefined;
+      const a = refinedFor(built, req.key, req.cellA, stitchScale);
+      const b = refinedFor(built, req.key, req.cellB, stitchScale);
       const res: GeologyBakeResponse = {
         id: req.id, ok: true, op: "stitch",
         routes: stitchRegions(built, a, b),
@@ -149,7 +169,8 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
       const built = builtFor(
         req.key, req.spec as PlanetWorldSpec, req.gridJson, req.sites as FoundingSite[],
       );
-      const refined = refinedFor(built, req.key, req.regionCell);
+      const scale = req.scale ? resolveWorldScale(req.scale as WorldScaleSpec) : undefined;
+      const refined = refinedFor(built, req.key, req.regionCell, scale);
       // The interstates crossing this region, re-solved on its child grid
       // (refine.ts). The tier-0 net re-derives here deterministically — the
       // same (built) the main thread's trade-roads sees yields the same
@@ -158,7 +179,7 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
       const states = planetStates(built, cities);
       const pairs = statePairs(states);
       const t0Routes = planetRoutes(built, cities, pairs.length ? { pairs } : {});
-      const highways = refineHighways(built, refined, t0Routes);
+      const highways = refineHighways(built, refined, t0Routes, scale ? { scale } : {});
       const res: GeologyBakeResponse = {
         id: req.id, ok: true, op: "refine",
         villages: refined.villages,
@@ -179,7 +200,7 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
       canFly: false,
       creativeMode: false,
       entities: null,
-      scale: null,
+      scale: (req.scale ?? null) as GameSettings["scale"],
       culture: null,
     };
     const built = buildPlanetWorld(game, req.label);

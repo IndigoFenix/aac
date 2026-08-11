@@ -203,6 +203,18 @@ const L: Record<string, Lexeme> = {
   eat: { w: "como", v2: "comes", v3: "come", v3p: "comen", v1p: "comemos", inf: "comer" },
   drink: { w: "bebo", v2: "bebes", v3: "bebe", v3p: "beben", v1p: "bebemos", inf: "beber" },
   sleep: { w: "duermo", v2: "duermes", v3: "duerme", v3p: "duermen", v1p: "dormimos", inf: "dormir" },
+  // THE POSTURE PAIR (build order L15) — live glyphs with no lexeme here, so
+  // the open-ground dwell said "Rest." and the bare self-need "Sit.": the raw
+  // English token capitalised into a sentence slot it never earned.
+  //
+  // `sit` is REFLEXIVE (sentarse), which this layer already knows how to say:
+  // `wear` above is the same shape ("me visto" / inf "vestirme"), because the
+  // clitic rides each authored form rather than needing a rule. Preverbal
+  // negation lands where Spanish wants it ("No me siento") and the going-to
+  // future takes the enclitic infinitive ("Voy a sentarme") — no new machinery
+  // for either, which is why this ships beside `rest` instead of behind it.
+  rest: { w: "descanso", v2: "descansas", v3: "descansa", v3p: "descansan", v1p: "descansamos", inf: "descansar" },
+  sit: { w: "me siento", v2: "te sientas", v3: "se sienta", v3p: "se sientan", v1p: "nos sentamos", inf: "sentarme" },
   wash: { w: "lavo", v2: "lavas", v3: "lava", v3p: "lavan", v1p: "lavamos", inf: "lavar" },
   tidy: { w: "ordeno", v2: "ordenas", v3: "ordena", v3p: "ordenan", inf: "ordenar" },
   heat: { w: "caliento", v2: "calientas", v3: "calienta", v3p: "calientan", inf: "calentar" },

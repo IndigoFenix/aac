@@ -24,8 +24,8 @@
  */
 
 import { FOOD_DAY_SEC, workDoorstep } from "./goods";
-import { roadRoute, type TownStreets } from "./streets";
-import type { TownPlan } from "./plan";
+import { roadRoute, townPorts, type TownStreets } from "./streets";
+import { townPlaza, type TownPlan } from "./plan";
 // ⚖️ §7 step 6: the town rung reads the REGION rung's arithmetic. The 2026-08-02
 // survey's whole indictment of freight.ts was "Real value−cost arithmetic. …
 // NOT IMPORTED BY ANY TOWN OR BODY MODULE" — this import is that sentence
@@ -318,13 +318,22 @@ export function createTownTrade(
   },
 ): TownTrade | null {
   const scale = opts.scale ?? DOLLHOUSE_SCALE;
-  // Candidate GATES: every street tip. Unbound, the farthest tip is the road
-  // out of town; bound to a real partner, the tip most ALIGNED with it wins
-  // (weighted by length, so a stub pointing the right way doesn't beat the
-  // arterial) — the caravan comes in from where the partner actually lies.
-  const tips: Array<{ x: number; y: number }> = [];
-  for (const st of streets.streets) {
-    for (const pt of st.pts) tips.push(pt);
+  // Candidate GATES: THE TOWN'S PORTS when the street tree declares any —
+  // growth-phase-B makes the road out of town a real output (the baseline's
+  // own ends and the arterials that continue it), so a caravan enters where
+  // the road actually is instead of at whichever tip happened to be
+  // farthest. Only a net with no ports at all falls back to every street
+  // point. Unbound, the farthest candidate is the road out of town; bound to
+  // a real partner, the one most ALIGNED with it wins (weighted by length,
+  // so a stub pointing the right way doesn't beat the arterial).
+  const declared = townPorts(streets);
+  const tips: Array<{ x: number; y: number }> = declared.length
+    ? declared.map(p => ({ x: p.x, y: p.y }))
+    : [];
+  if (!tips.length) {
+    for (const st of streets.streets) {
+      for (const pt of st.pts) tips.push(pt);
+    }
   }
   if (!tips.length) return null;
   const pickGate = (towardLocal: { x: number; y: number } | null): { x: number; y: number } => {
@@ -347,10 +356,13 @@ export function createTownTrade(
   };
 
   // The DEPOT: beside the hall's door (every town has a hall — the imports
-  // depot by design, goods.ts). Fallback: the plaza center.
+  // depot by design, goods.ts). Fallback: the town's PLAZA — the widened
+  // junction the civic buildings front, which is where a hall-less town's
+  // crates would stand anyway (growth-phase-B: no berth at the origin).
   const hallIdx = plan.works.findIndex((wk) => wk.type === "hall");
+  const sq = townPlaza(plan);
   const hallDoor =
-    hallIdx >= 0 ? workDoorstep(center, plan.works[hallIdx]!) : { x: center.x, y: center.y };
+    hallIdx >= 0 ? workDoorstep(center, plan.works[hallIdx]!) : { x: center.x + sq.x, y: center.y + sq.y };
   const depot = { x: hallDoor.x + 2.2, y: hallDoor.y + 1.2 };
 
   interface Geo {

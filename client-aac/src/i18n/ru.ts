@@ -348,6 +348,14 @@ export const ru: Translations = {
       connective: "Союзы",
       social: "Общение",
     },
+    typeChips: {
+      request: "Хочу",
+      ask: "Вопрос",
+      state: "Рассказать",
+      command: "Сделать",
+      rule: "Правило",
+      greet: "Общение",
+    },
     chips: {
       all: "Все",
       people: "Люди",

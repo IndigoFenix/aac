@@ -11,8 +11,9 @@
 import { compileEconomy, type CompiledEconomy, type EconomyDoc } from "@shared/world-engine/kernel/modules/economy/index.js";
 import { HOUSEHOLD, streetServiceWarnings } from "@shared/world-engine/kernel/town/goods.js";
 import { createTownWorld, type TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
+import type { GrowSeed } from "@shared/world-engine/kernel/town/streets.js";
 import {
-  FOUNDING_AGE_DAYS, PLAZA_WELL, townPlanSteps, wellVergePoint, type TownHouse, type TownPlan,
+  FOUNDING_AGE_DAYS, townPlanSteps, townPlaza, wellVergePoint, type TownHouse, type TownPlan,
 } from "@shared/world-engine/kernel/town/plan.js";
 import { WELL_FOUND_MASS, foundServicePoints } from "@shared/world-engine/kernel/town/districts.js";
 import { buildTownQuestGame, type TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
@@ -21,7 +22,8 @@ import { resolveWorkstationRegistry } from "@shared/world-engine/kernel/town/wor
 import type { WorldArchitectureSpec } from "@shared/world-engine/culture.js";
 import { TOWN_HOUSE_PALETTE } from "@shared/world-engine/interaction/dialogue/directions.js";
 import {
-  createTownDeltas, seedFoundingWorkshops, type FoundedBuilding, type SerializedTownDeltas, type TownDeltas,
+  createTownDeltas, groundObstacles, seedFoundingWorkshops,
+  type FoundedBuilding, type SerializedTownDeltas, type TownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
 import {
   resolveStructure,
@@ -734,6 +736,17 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   // fast-forward loop simply never runs and the clock starts at day 0.
   const days = Math.max(0, Math.min(5000, Math.floor(config.days ?? 220)));
   yield "chartering";
+  // The construction overlay is created BEFORE the world (it was already
+  // before the PLAN, ①b: founded buildings are generator input). It has to
+  // come first now because it also carries THE SEED SET the tree grew from
+  // (growth phase B §2.1) — a restored session must regrow the town it
+  // saved, not whatever the live road registry happens to hold this
+  // session. Pure construction from JSON; nothing else depends on the order.
+  const deltas = createTownDeltas(config.deltas);
+  const savedSeeds = deltas.seeds()
+    .slice()
+    .sort((a, b) => a.ord - b.ord)
+    .map(({ ord: _ord, ...seed }) => seed as GrowSeed);
   const town = createTownWorld({
     economy: eco,
     charter: config.charter ?? CHARTER,
@@ -744,6 +757,10 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     // farms are the ones its settlers raise through founded deltas.
     seedScalars: { farms: startPop > 0 && days > FOUNDING_AGE_DAYS ? 1 : 0 },
     key,
+    // A SAVE OUTRANKS THE REGISTRY: the seeds this town actually grew from
+    // are the ones it must regrow from, or a reload re-lays the streets
+    // under the founded buildings that were placed on them.
+    ...(savedSeeds.length ? { roadSeeds: savedSeeds } : {}),
   });
   // Slicing the fast-forward is exactly equivalent to one big step (the
   // byte-identical test pins it) — 15-day slices keep each under a frame.
@@ -753,11 +770,6 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     yield `day ${town.day}`;
   }
   yield "laying streets";
-  // The construction overlay is created BEFORE the plan (①b): founded
-  // buildings are generator INPUT — the street tree covers their slots and
-  // base houses skip them. Restored from the config's serialized deltas
-  // when a previous session accrued any.
-  const deltas = createTownDeltas(config.deltas);
   // A restored session's street clock starts at 0 — an UNFINISHED build
   // restarts its remaining time from now (only the serialized `completed`
   // fact survives reboots; a build never waits on a clock that's gone).
@@ -784,7 +796,27 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     config.species,
     days,
     config.scale,
+    // 🔴 THE CIVIC SET IS HISTORY (growth phase C §3.2): the stalls and wells
+    // this town already founded ride in as INPUT, so a regrown town keeps
+    // them positionally instead of re-deriving them over streets that have
+    // since gained a shortcut (§2's measured founding-prefix regression).
+    deltas.services().slice().sort((a, b) => a.ord - b.ord),
+    // ANNEXED HOMESTEADS ARE GROUND (growth phase C §3.3): a cluster's towns
+    // grow their lanes AROUND the farmsteads they formed between, and the
+    // founding enumeration reads the identical list so both trees agree.
+    groundObstacles(deltas),
   );
+  // RECORD WHAT IT GREW AROUND (growth phase B §2.1 / handoff 3). The seed
+  // set is the tree's identity: replayed verbatim it regrows the identical
+  // streets, which is what keeps a founded building's slot pointing at the
+  // lot it was founded on. Written ONCE, at founding — the zones ord
+  // discipline (monotone, never reused, append-only), so a reload restores
+  // it and this branch never fires again. A town that declared nothing
+  // records nothing: growth invents its stub off the event stream, and
+  // replaying an empty set re-invents the same one.
+  if (!deltas.seeds().length) {
+    for (const s of plan.streets.seeds) deltas.addSeed(s);
+  }
   // Founded buildings materialize as work rows (geometry exactly from the
   // deltas; program/jobs from the structure catalog).
   applyFoundedBuildings(plan, deltas.founded(), structures);
@@ -794,11 +826,31 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   // prefix-stable, founded quarters append theirs. The live session digs
   // the same wells at move-in (quest-host); this is the rebuild's half.
   if (config.scale && plan.wells) {
-    const more = foundServicePoints(plan.houses, [PLAZA_WELL, ...plan.wells], plan.streets, {
+    const more = foundServicePoints(plan.houses, [townPlaza(plan), ...plan.wells], plan.streets, {
       convenientM: serviceRadiusM(config.scale, "thirst"),
       foundMass: WELL_FOUND_MASS,
     });
-    for (const h of more) plan.wells.push(wellVergePoint(h));
+    for (const h of more) {
+      plan.wells.push(wellVergePoint(h));
+      if (h.slot !== undefined) (plan.services ??= []).push({ kind: "well", slot: h.slot });
+    }
+  }
+  // 🔴 THE CIVIC SET BECOMES HISTORY (growth phase C §3.2). Everything the
+  // plan (and the founded-household pass above) stands on is recorded, in
+  // founding order, minus what was already on the books — append-only, and
+  // matched by (kind, slot) rather than by count, because the plan reports
+  // stalls before wells while the record interleaves them by founding ord.
+  // From here a regrown town keeps its stalls and wells POSITIONALLY, which
+  // is what closes §2's founding-prefix regression: a link cut later cannot
+  // move a shop that is already standing.
+  {
+    const known = new Set(deltas.services().map((s) => `${s.kind}:${s.slot}`));
+    for (const s of plan.services ?? []) {
+      const id = `${s.kind}:${s.slot}`;
+      if (known.has(id)) continue;
+      known.add(id);
+      deltas.addService(s);
+    }
   }
   // FOUNDED PRODUCERS JOIN THE BOOKS (city-founding): a COMPLETED founded
   // building with an economy row raises its count scalar, exactly as live
