@@ -86,6 +86,17 @@ import {
 } from "@shared/world-engine/kernel/town/placement.js";
 import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/furniture.js";
 import {
+  registerContainer,
+  setContainerStock,
+  ensureContainerStock,
+  stockedEntries,
+  stockedIds,
+  hasStock,
+  deleteContainerRecord,
+  isLooseProp,
+  looseEntries,
+} from "@shared/world-engine/kernel/town/containers.js";
+import {
   blueprintDelta,
   blueprintSlots,
   hasDrift,
@@ -125,7 +136,6 @@ import {
   nextPlacedSerial,
   pendingRoomKindOf,
   placeFurniture,
-  PROSPERITY_DAILY_CAP,
   removePlacedPiece,
   removeProgram,
   requestAnnex,
@@ -152,6 +162,7 @@ import {
 } from "@shared/world-engine/kernel/town/construction.js";
 import {
   BLOCK_GLYPH,
+  effectiveInPerOut,
   rawsForRefined,
   refinedGlyphOf,
   withRefinableCredit,
@@ -160,6 +171,8 @@ import {
   createReservationLedger,
   freeUnits,
   resolveMaterials,
+  spareStock,
+  unreservedStock,
   type ReservationLedger,
 } from "@shared/world-engine/kernel/town/reservations.js";
 import {
@@ -170,8 +183,11 @@ import {
   type StructureFocus,
 } from "@shared/world-engine/interaction/town/structure-board.js";
 import {
+  costsMet,
   resolveStructure,
+  structureCosts,
   structureDisplayGlyph,
+  type CostBearing,
   type StructureSpec,
 } from "@shared/world-engine/kernel/town/structures.js";
 import {
@@ -303,6 +319,7 @@ import {
   wildAnimalBodyId,
   wildFeatureContainerId,
   wildFeatureEmbodied,
+  wildFeatureSizeRank,
   type WildernessContent,
   type WildernessCreature,
   type WildernessFeature,
@@ -394,7 +411,7 @@ import { claimMessage, sayMessage, type WorldCommand, type WorldNetMessage } fro
 import { resolveAddressee } from "./addressee.js";
 import type { WorldView } from "../../world-view.js";
 import type { NpcErrand, NpcErrandPoint } from "../../npc-controller.js";
-import { DEFAULT_TASK_TTL_S } from "../behavior/task-pool.js";
+import { DEFAULT_TASK_TTL_S, type PooledTask } from "../behavior/task-pool.js";
 import { CLOCK_SCHEDULE_RATE } from "../../npc-controller.js";
 import {
   carryObject,
@@ -602,13 +619,16 @@ import {
 import { answerPlaceDirections, houseGlyphForColor, type PlaceFact } from "@shared/world-engine/interaction/dialogue/directions.js";
 import { STREET_NPCS } from "../../kernel/town/residents.js";
 import {
+  CIVIC_SCOPES,
   TOWN_SCOPE,
   creatureScope,
   houseScope,
   isPrivateOwner,
   mayUse,
+  mayUseByScopes,
   ownerCidsOf,
 } from "../behavior/ownership.js";
+import { scopeIdReceivesGoods } from "@shared/world-engine/kernel/town/scope.js";
 import { GoalTreeOverlay3D } from "@shared/world-engine/interaction/quest/quest-overlay-3d.js";
 import { ZoneOverlay3D } from "@shared/world-engine/interaction/quest/zone-overlay-3d.js";
 import { BuildOverlay3D } from "@shared/world-engine/interaction/quest/build-overlay-3d.js";
@@ -753,10 +773,95 @@ export const REFINE_UNIT_BUILD_DAYS = 0.05;
 export const REFINE_CREW_CAP = 1;
 /** The storehouse's raw par level, PER RAW (wood, stone): free stored
  *  units under this post ambient gather hauls from the wild — logging as
- *  a standing town activity, storehouse-fed. */
+ *  a standing town activity, storehouse-fed. THE DIAL-1 ANCHOR — read it
+ *  through `storehouseRawParAt` wherever a live dial is in reach; the bare
+ *  constant is kept exported for `commonsReserveOf`'s own doc and any
+ *  reader that genuinely wants the real anchor, never the effective par. */
 export const STOREHOUSE_RAW_PAR = 12;
 /** The par-stock sweep's retry gate (seconds). */
 export const STOREHOUSE_STOCK_RETRY_S = 60;
+
+/**
+ * ⚖️ S&D S3 H1 — multiplier ④ of five, AND THE PAR≡RESERVE COUPLING'S OTHER
+ * HALF. `STOREHOUSE_RAW_PAR` is a BILL (how much raw stock the town buffers
+ * to cover its own build appetite), so the dial divides it — `bills ÷ dial`,
+ * same direction as `effectiveInPerOut`/`blockCosts`: a world whose
+ * buildings need less raw material per block also needs a smaller shelf
+ * buffer to cover the same construction pace. Floored at 1 (a par of 0
+ * would mean the ambient gather never fires at all). Default 1, byte-
+ * identical (`storehouseRawParAt(1) === STOREHOUSE_RAW_PAR`).
+ *
+ * `commonsReserveOf` calls THIS, never the bare constant — DECLARING THE
+ * PAR≡RESERVE COUPLING: moving the par with the dial moves the reserve
+ * floor by construction, because they are the same function call. There is
+ * no second number to keep in step.
+ */
+export function storehouseRawParAt(conversionDial = 1): number {
+  return Math.max(1, Math.round(STOREHOUSE_RAW_PAR / Math.max(1e-9, conversionDial)));
+}
+
+/**
+ * ⚖️ THE COMMONS RESERVE — units of a material head the town holds back from
+ * its OWN automated appetite, so a SPOKEN order always has something to draw.
+ *
+ * User addendum (2026-08-12): *"the fact that there aren't enough blocks to go
+ * around suggests that either the town isn't stockpiling a surplus or that the
+ * town's own demands are exceeding its capacity. This is probably patchable
+ * with a simple surplus control, with the actual machinery going into the
+ * detailed supply and demand economics."* This is that patch, and it is the
+ * G1/G2 SPARE pattern at a third rung: a creature keeps at least one of
+ * anything and gives only its surplus (`hasSurplus`); a town keeps its PAR and
+ * spends only above it.
+ *
+ * 🚨 DERIVED, NEVER A NEW NUMBER, and the derivation is the whole argument.
+ * The floor IS `STOREHOUSE_RAW_PAR`, for exactly the heads the par loop
+ * restocks (`rawsForRefined(BLOCK_GLYPH)` — the same call `stepStorehouseStock`
+ * makes). Three reasons that is the honest one:
+ *
+ *   · The town ALREADY declares this number to be what it wants on the shelf,
+ *     and already works to restore it (the wild gather hauls). A reserve above
+ *     par would be a stockpile the town never tries to reach; below par, a
+ *     shelf the par loop immediately refills into the same appetite.
+ *   · A head has a reserve exactly when it has a PAR. Nothing else needed a
+ *     number invented for it, and no head can now be reserved that the town
+ *     has no way to restock.
+ *   · The household `boxCap` family was the other candidate in reach and is
+ *     the WRONG rung: a box's capacity is what one family can store, not what
+ *     the settlement keeps back, and it would make the commons' floor a
+ *     function of furniture.
+ *
+ * NOT a claim, NOT a reordering: first-come reservations STAND (user ruling —
+ * no preemption of existing holds). The floor only bites on the NEXT automated
+ * draw. It is deliberately COARSE, exactly as the addendum asks; the real
+ * machinery is the supply-and-demand round.
+ *
+ * `conversionDial` — see `storehouseRawParAt`, which this reads exclusively
+ * (THE COUPLING). Default 1 keeps every caller that has not been updated to
+ * pass a live dial byte-identical; call sites that hold a `session` should
+ * pass `session.scale.resourceCompression`.
+ */
+export function commonsReserveOf(head: string, conversionDial = 1): number {
+  return rawsForRefined(BLOCK_GLYPH).some((p) => stackHead(p.glyph) === stackHead(head))
+    ? storehouseRawParAt(conversionDial)
+    : 0;
+}
+
+/**
+ * ⚖️ A DEMAND IS MET WITHIN THIS MUCH (S&D S1) — the noise floor on
+ * `townShortage` under which prosperity may accrue. Not a tolerance for
+ * hunger: the aggregate books hover by fractions of a percent around
+ * equilibrium, and gating on a literal `> 0` would mean no household on any
+ * map ever banked again. Past it, a demand is genuinely unmet and the day
+ * banks nothing.
+ */
+export const PROSPERITY_DEMAND_MET = 0.05;
+
+/** ⚖️ THE HOUSEHOLD'S KEEP-ONE FLOOR (S&D S1) — the G1/G2 spare rule at the
+ *  smallest rung, as a `spareStock` floor function: a creature keeps at least
+ *  one of anything and gives away the rest, so one unit of a head is never
+ *  wealth. Head-blind by design; there is no head a household would keep two
+ *  of on principle. */
+export const HOUSEHOLD_KEEP_ONE = (): number => 1;
 
 
 /** The host-service seam: every quest-host closure the verbatim-moved
@@ -805,6 +910,11 @@ export interface ConstructionDirectorCtx {
   issueTransferHaul(session: QuestSession, cid: string, agreementId: string): void;
   enqueueNpcErrand(session: QuestSession, npcId: string, errand: NpcErrand): void;
   townShortage(session: QuestSession, good: string): number;
+  /** ⚖️ `townShortage`'s MIRROR (S&D S1): production above COMMITTED DEMAND
+   *  (own need + export owed) as a fraction of it, 0 when the books merely
+   *  balance. The growth motive's feed — one definition, host-side, because
+   *  the export commitment lives there. */
+  townSurplus(session: QuestSession, good: string): number;
   standAvoid(cid: string): BodyAvoidance;
   stackTake(map: Record<string, number>, glyph: string): boolean;
   spawnLooseProp(session: QuestSession, glyph: string, x: number, y: number): string | null;
@@ -916,7 +1026,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     presenter, deps, possession,
     avatarIdOf, npcChatBubble, containerAnchor, houseContainerKeys, buildingUnits,
     stockEndpointOf, postPooledTask, playerWorldPos, familyOf,
-    playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage,
+    playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage, townSurplus,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
     relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, fellIfConsumed, dropFromStack,
@@ -933,14 +1043,42 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
 
   // ═══════ A-craft (verbatim from quest-host.ts) ═══════
   /**
-   * A household's PROSPERITY signals for the day (construction v1 §5) —
-   * the PROXY trio, all read from existing deterministic state (no money
-   * exists yet; this adapter is what a real economy later replaces):
-   *   pantry   how full the street-good boxes sit (surplus households
-   *            bank; hand-to-mouth ones don't),
-   *   breadth  how many distinct stacks the house's chests hold,
-   * each normalized to ~0..1 per day so the daily cap and threshold in
-   * constructionStep read plainly.
+   * ⚖️ A household's PROSPERITY signals for the day — RE-DERIVED AS REAL
+   * SURPLUS (S&D S1; growth-motive law ②, user 2026-08-12: *"growth doesn't
+   * happen for no reason, it happens due to unfulfilled needs"*).
+   *
+   * WHAT THIS USED TO BE, and why it had to go: `pantry` scored how full the
+   * street-good boxes sit (×0.8) and `breadth` how many distinct stacks the
+   * chests hold (×0.4). Both are SATIETY. A household that eats well banked
+   * every single day and eventually built a room — the city grew because the
+   * bank always filled, which is exactly the fault the law names.
+   *
+   * WHAT IT IS NOW — the SPARE PATTERN at the household rung, the same three
+   * terms the commons reserve uses one floor up (`spareStock`):
+   *
+   *   stock − COMMITTED DEMAND − RESERVE = surplus, and only surplus banks.
+   *
+   * ① **An unmet demand banks NOTHING.** If the town is not meeting its own
+   *    demand for a street good (`townShortage` past the noise floor), or the
+   *    household's box has fallen under the buffer it keeps
+   *    (`surplusUnits` — its own declared reserve), the day banks zero. A
+   *    FULL PANTRY IN A SHORT TOWN IS NOT SAVINGS; it is the buffer draining.
+   * ② **Satiety banks nothing, ever.** The pantry sawtooth runs between the
+   *    keep-buffer and `boxCap`, and `boxCap` IS the household's committed
+   *    demand over its stocking horizon (HOUSEHOLD × capDays × perCapitaDaily).
+   *    So `held − boxCap` — the only surplus term available — is 0 for every
+   *    household living its routine, however well fed. What banks is stock
+   *    held ABOVE the routine.
+   * ③ **Breadth counts SPARE stacks only.** A head is wealth when the
+   *    household holds more than one unit of it that nobody has spoken for:
+   *    `unreservedStock` takes out what its own open orders reserved,
+   *    `spareStock(…, keep one)` takes out the G1/G2 keep-one floor. A chest
+   *    full of blocks already claimed by the room it is raising is not
+   *    breadth — it is the bill.
+   *
+   * The SHAPE is untouched: named 0..1-ish signals, summed and capped by
+   * `PROSPERITY_DAILY_CAP`, spent at `PROSPERITY_THRESHOLD`. Only the feed
+   * became honest.
    */
   function prosperitySignals(
     session: QuestSession,
@@ -949,23 +1087,50 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const ctx = residentTownCtx(session, houseIndex);
     if (!ctx?.house || ctx.neighbor) return [];
     const house = ctx.house;
+    // ── ① THE UNMET-DEMAND GATE ──────────────────────────────────────────
+    for (const g of ctx.goods) {
+      if (townShortage(session, g.good.key) > PROSPERITY_DEMAND_MET) return [];
+      if (g.pantry(house, session.townClock) + 1e-9 < g.surplusUnits(house)) return [];
+    }
     const signals: Array<{ key: string; value: number }> = [];
-    let fill = 0;
+    // ── ② SURPLUS — holdings above the whole stocking horizon ────────────
+    let spare = 0;
     let goodsN = 0;
     for (const g of ctx.goods) {
       const cap = Math.max(1, g.boxCap);
-      fill += Math.max(0, Math.min(1, g.pantry(house, session.townClock) / cap));
+      const held = g.pantry(house, session.townClock) + storedGoodUnits(session, houseIndex, g.good.key);
+      spare += Math.max(0, Math.min(1, (held - cap) / cap));
       goodsN++;
     }
-    if (goodsN) signals.push({ key: "pantry", value: (fill / goodsN) * 0.8 });
+    if (goodsN) signals.push({ key: "surplus", value: (spare / goodsN) * 0.8 });
+    // ── ③ BREADTH — spare stacks, not stacks ─────────────────────────────
     let stacks = 0;
     for (const objId of houseContainerKeys(session, houseIndex)) {
-      const stock = session.containerStock.get(objId);
-      if (stock) stacks += Object.values(stock).filter((n) => n > 0).length;
+      const stock = session.containerRecords.get(objId)?.stock;
+      if (!stock) continue;
+      const free = unreservedStock(stock, session.reservations, objId);
+      stacks += Object.values(spareStock(free, HOUSEHOLD_KEEP_ONE)).filter((n) => n > 0).length;
     }
     signals.push({ key: "breadth", value: Math.min(1, stacks / 6) * 0.4 });
     return signals;
   }
+
+  /** Units of a street good the household holds in its OWN containers (the
+   *  pantry closed form is separate — this is what it has PUT AWAY, head-aware
+   *  so `food.cooked` counts toward `food`). */
+  function storedGoodUnits(session: QuestSession, houseIndex: number, good: string): number {
+    const head = stackHead(good);
+    let n = 0;
+    for (const objId of houseContainerKeys(session, houseIndex)) {
+      const stock = session.containerRecords.get(objId)?.stock;
+      if (!stock) continue;
+      for (const [g, q] of Object.entries(stock)) {
+        if (q > 0 && stackHead(g) === head) n += q;
+      }
+    }
+    return n;
+  }
+
 
   /** Last town-day each carpenter house crafted (construction v1). */
   const craftDayOf = new Map<number, number>();
@@ -1137,7 +1302,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // in a box (a fresh workshop's empty woodstore has no row yet, and
       // that is precisely the box the bench wants).
       for (const p of buildingFurnitureOf(session, key)) {
-        if (!p.openable && !session.containerStock.has(p.id)) continue;
+        if (!p.openable && session.containerRecords.get(p.id)?.stock === undefined) continue;
         // Economy-driven stacks are never a workbench's bin (the same
         // exclusion craftMaterialSources draws).
         if (session.marketStore.has(p.id) || session.produceBox.has(p.id)) continue;
@@ -1173,6 +1338,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       spotId: craftSpotOf(session, hi),
       agreements: [],
       laborS: 0,
+      // The waiting line holds nothing BUT spoken orders (`orderCraft` is its
+      // only writer), so a popped row keeps the rank it was queued with —
+      // else the house's own rotation could displace it the moment it started.
+      spoken: true,
     });
     presenter.toast(`🔨 making the ${next.label} now — its turn came`, "feedback");
     return true;
@@ -1280,7 +1449,28 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // in the right room" any more — the blueprint already chose the spot, an
     // outline has been standing on it, and the piece lands exactly there. That
     // is the difference between a promise and a coincidence.
-    const task = buildingFurnishTasks(session, key).find((q) => q.act === "install");
+    // 🚨 A PIECE LYING ON THE FLOOR IS INSTALLABLE (2026-08-11). The work list
+    // calls it a `move` — `reconcileFurnishing` cannot tell a loose prop from a
+    // standing chest, and for anything already INSIDE this house the two are
+    // the same errand: walk to it, pick it up, stand it on its mark.
+    // `handlePlaceOrder` has taken a loose prop as its source since the
+    // watched-craft fix; only this sweep's filter kept it out.
+    //
+    // The consequence of the filter was the reported one: a workbench a family
+    // had just made lay on its own kitchen floor forever. `install` needs a
+    // unit STORED, and the arrival of a watched craft is a prop by definition —
+    // so the only route left was `stepBlueprintReflow`, one carry per building
+    // at a time, gated on a free pair of hands, competing with every other
+    // re-flow in the house. The bench never rose, so the house stayed benchless,
+    // so the bootstrap made another one.
+    //
+    // A `move` off a STANDING row still belongs to the re-flow sweep: that
+    // carry has to lift a real placed row out of the building (`piecesInHand`)
+    // and land it whole, which is machinery this path does not have.
+    const tasks = buildingFurnishTasks(session, key);
+    const task =
+      tasks.find((q) => q.act === "install") ??
+      tasks.find((q) => q.act === "move" && !!q.slot && !!q.from?.id.startsWith("small:"));
     if (!task?.slot) return;
     const room = hp.rooms.find((r) => r.id === task.slot!.roomId);
     programFurnishAt.set(hi, session.townClock + 45);
@@ -1291,6 +1481,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       { quiet: true, roomId: task.slot.roomId, spot: task.slot },
     );
     if (res === "placed") {
+      // ONE BODY PER PIECE. The re-flow sweep reads the same work list and
+      // would send its own free hand after the very same prop while this
+      // errand is still walking — one of them would arrive to nothing. The
+      // CLAIM is shared (`reflowCarriesOut`), so whichever sweep started the
+      // carry owns that piece until the body stops walking. It used to be the
+      // 12 s carry gate that was shared, which locked the whole HOUSE rather
+      // than the one piece actually spoken for.
+      if (task.act === "move" && task.from) {
+        reflowCarriesOut(session, key).set(task.from.id, avatarIdOf(cid));
+      }
       presenter.toast(`🪑 the ${task.kind} is set up for the ${room?.kind ?? "room"}`, "feedback");
     }
   }
@@ -1312,7 +1512,33 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   /** Material sources a HOUSE's craft may draw on: every container stack
    *  its members may use (their own boxes, communal crates, the yard, wild
    *  features), nearest the craft spot first BY STREET (`sourceDistanceM` —
-   *  the same geometry the site walk uses; §2.2). */
+   *  the same geometry the site walk uses; §2.2).
+   *
+   *  ⚖️ BOUND TO THE NEIGHBOURHOOD — WITH THE TOWN'S OWN STORE EXEMPT (§1's
+   *  locality law, {@link civicRecruitRadiusM}, and its limit).
+   *
+   *  A kitchen craft used to enumerate EVERY stack in the town, so a bench in
+   *  the old quarter would raid a stranger's cupboard 231 m across a city
+   *  (measured 2026-08-11). Somebody else's box at that distance is not a
+   *  source, and neither is a tree: those are the neighbourhood's business and
+   *  the cap is what says so.
+   *
+   *  🚨 THE COMMUNAL STORE IS NOT SUBJECT TO IT, and the first cut of this cap
+   *  proved why — MEASURED, not argued. The mill deposits its blocks in the
+   *  storehouse (`commitRefineOrder` → `refineDepositId`), which sits at the
+   *  town centre; capping every house's reach at the social radius severed the
+   *  entire town from its own materials. Every craft in every house starved,
+   *  each starved craft posted a refine order, the mill milled, the blocks
+   *  landed out of reach, the order retired and the next sweep posted another:
+   *  157 toasts in a four-minute run against 1 before (dx-doll-bench →
+   *  fx-doll-bench, 2026-08-11). A storehouse a household cannot walk to is
+   *  not a storehouse.
+   *
+   *  ⚠️ AND THE CAP WAS NEVER A RANKING FIX. `resolveMaterials` already draws
+   *  nearest-first off `TransferSource.d`, so the long walk only ever happened
+   *  when nothing nearer HELD the head — the cap can remove the last option, it
+   *  can never improve the choice. Which is exactly what it must do for private
+   *  property, and must not do for the town's own shelf. */
   function craftMaterialSources(
     session: QuestSession,
     hi: number,
@@ -1320,14 +1546,23 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     excludeId: string,
   ): TransferSource[] {
     const member = `resident_${hi}_0`;
+    const reach = civicRecruitRadius(session);
     const sources: TransferSource[] = [];
-    for (const [boxId, stack] of session.containerStock) {
+    for (const [boxId, boxRec] of stockedEntries(session)) {
+      const stack = boxRec.stock!;
       if (boxId === excludeId) continue;
       if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
-      if (!mayUse(member, hi, session.containerOwner.get(boxId))) continue;
+      if (!mayUse(member, hi, boxRec.owner)) continue;
       const at = containerAnchor(session, boxId);
       if (!at) continue;
-      sources.push({ id: boxId, stack, d: sourceDistanceM(session, destAt, at) });
+      const communal = isCivicStockDest(session, boxId);
+      // Chord first — a street walk is never SHORTER than the straight line,
+      // so a box already out of reach as the crow flies is dropped without
+      // walking the graph for it (this runs over every stack in the town).
+      if (!communal && Math.hypot(at.x - destAt.x, at.y - destAt.y) > reach) continue;
+      const d = sourceDistanceM(session, destAt, at);
+      if (!communal && d > reach) continue;
+      sources.push({ id: boxId, stack, d });
     }
     return sources;
   }
@@ -1407,8 +1642,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // never read a craft spot's gathered wood as free supply, not even for
     // one tick).
     const spotHolder = `craftspot:${hi}`;
-    const spot = session.containerStock.get(job.spotId) ?? {};
-    session.containerStock.set(job.spotId, spot);
+    const spot = ensureContainerStock(session, job.spotId);
     const consumes = job.consumes;
     const member = `resident_${hi}_0`;
     // Units this job has already banked ON the spot (its own reservations).
@@ -1502,13 +1736,39 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           return;
         }
         const tmp = `craft:${hi}`;
-        const sources = craftMaterialSources(session, hi, anchor, job.spotId);
+        // ⚖️ SPARE ONLY FOR AN AUTOMATED BENCH (surplus control S1). The
+        // household's inventory rotation and its program crafts are the town's
+        // OWN appetite at the smallest rung — ten families milling chairs is
+        // exactly what emptied the yard under the spoken `make workbench`. A
+        // job the player SPOKE draws the reserve; nothing else does.
+        const { sources, withheld } = spareSources(
+          session,
+          craftMaterialSources(session, hi, anchor, job.spotId),
+          missing,
+          job.spoken === true,
+        );
         const { draws } = resolveMaterials({
           holder: tmp,
           costs: missing,
           sources,
           ledger: session.reservations,
         });
+        if (!draws.length && withheld) {
+          // ⏸️ THE RESERVE IS WHY, and honest waiting is QUIET: the commons has
+          // the wood on its shelf, this bench simply may not have it. Park on
+          // the SAME two events (fresh stock, a released claim — both of which
+          // grow the spare), but say nothing and chain nothing: a mill order
+          // and a "there is none to fetch" would both be lies told over a full
+          // yard.
+          session.reservations.release(tmp);
+          parkTown(session, craftGatherParkKey(hi), {
+            scope: "job",
+            why: `the commons keeps its reserve of ${Object.keys(missing).join(", ") || "the bill"}`,
+            now: session.townClock,
+            staleAfterS: craftLabourSecondsOf(session, hi, job),
+          });
+          return;
+        }
         if (!draws.length) {
           // ⏸️ NOTHING TO DRAW — the walk found no free units for any short
           // head. Re-walking is worth exactly as much as the world has moved,
@@ -1533,7 +1793,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           // a refine order first — the mill fills it, the next re-resolve
           // finds the blocks. Only chain-less heads toast the shortage.
           session.reservations.release(tmp);
-          const { milling, rest } = ensureRefineOrders(session, missing);
+          // ⚖️ THE HOUSEHOLD'S OWN BOOK (order-scoping law ①): this bill is
+          // the FAMILY's, so the mill order it posts is the family's too —
+          // sized to 4 blocks, milled at the family's bench, banked in the
+          // family's box. It never reads the town's 198-block workshop bill
+          // as its own work in progress, and never waits behind it.
+          const { milling, rest } = ensureRefineOrders(
+            session, missing, LOCAL_PLAYER_CID, houseOrderScope(hi), job.spoken === true,
+          );
           if (session.townClock >= (craftStarvedAt.get(hi) ?? 0)) {
             craftStarvedAt.set(hi, session.townClock + 90);
             if (Object.keys(rest).length) {
@@ -1569,6 +1836,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           !!world.state.avatars[avatarIdOf(member)] &&
           !session.transfers.executing(member) &&
           !!stockEndpointOf(session, job.spotId)?.at;
+        // 🚨 THE OBSERVATION LAW, as the site piles already state it
+        // (`obs ? postSiteHauls : twinStagePile`): a SHOWN house's materials
+        // are carried by a body or they WAIT. The twin below is the
+        // unobserved arm and nothing else — running it in a watched kitchen
+        // teleported wood into the cupboard in front of the player, which is
+        // the "builds itself" bug class in its craft costume. A watched house
+        // with no free carrier this sweep simply gathers next sweep; the units
+        // stay where they are and nothing is spoken for in the meantime.
+        const twinMayRun = !isShown;
+        let carried = false;
         for (const d of draws) {
           if (carrierFree && stockEndpointOf(session, d.endpoint)?.at) {
             const a = session.transfers.post({
@@ -1584,10 +1861,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             job.agreements.push(a.id);
             if (session.transfers.begin(a.id, member)) issueTransferHaul(session, member, a.id);
             carrierFree = false;
-          } else {
+            carried = true;
+          } else if (twinMayRun) {
             // THE ABSTRACT TWIN: the hidden house draws the same units from
             // the same stacks, instantly — conservation and coincidence.
-            const src = session.containerStock.get(d.endpoint);
+            const src = session.containerRecords.get(d.endpoint)?.stock;
             if (src) {
               const taken = takeStock(src, d.glyph, d.take);
               for (const [g, c] of Object.entries(taken)) {
@@ -1602,6 +1880,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
               fellIfConsumed(session, d.endpoint); // a drained kill-source fells
             }
           }
+        }
+        // ⏸️ A WATCHED HOUSE WITH NO FREE PAIR OF HANDS PARKS (the same park,
+        // its second cause). Without the twin this branch can now legitimately
+        // move nothing — the carrier is already walking one load, or the family
+        // are all out — and a resolve that moved nothing is a resolve worth
+        // exactly as much as the world has changed. The wake set is unchanged
+        // and it is the right one: the carrier's own unload bumps the stock
+        // epoch at the seam, which is precisely the moment the next draw
+        // becomes worth walking for.
+        if (!carried && !twinMayRun) {
+          parkTown(session, craftGatherParkKey(hi), {
+            scope: "job",
+            why: "the house is watched and no hand is free to carry",
+            now: session.townClock,
+            staleAfterS: craftLabourSecondsOf(session, hi, job),
+          });
         }
         session.reservations.release(tmp);
         return;
@@ -1704,6 +1998,58 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       }
       craftJobsOf(session).delete(hi);
       craftApproachAt.delete(hi); // the approach box dies with its job
+      // ── IT WAS MADE FOR SOMEBODY ELSE (CraftJob.for): SEND IT.
+      //
+      // A commissioned piece never becomes the maker's floor clutter. It stays
+      // a stack unit at the spot and leaves as an ordinary civic haul — the
+      // SAME agreement + pooled task `requestPiece` posts for a piece it found
+      // already stored, so the shell's `inbound` test recognises it and never
+      // designates a second. This is the leg that was missing: the shell asked,
+      // the household made it, and nothing in the engine remembered the ask, so
+      // the piece sat in a kitchen the shell's haul is forbidden to open
+      // (`mayUse`) or on a floor no haul can see at all (2026-08-11).
+      //
+      // A commission whose building is GONE (demolished, cancelled) resolves to
+      // no endpoint — the piece then falls through to the ordinary arrival
+      // below and belongs to the house that made it. Nothing is ever owed to
+      // nowhere.
+      if (job.for && (spot[job.produces] ?? 0) > 0 && stockEndpointOf(session, job.for)) {
+        const a = session.transfers.post({
+          from: job.spotId,
+          to: job.for,
+          goods: { [job.produces]: 1 },
+          issuer: LOCAL_PLAYER_CID,
+          mode: "haul",
+          now: session.taskClock,
+          sourceGlyph: `bring ${job.label}`,
+        });
+        session.reservations.reserve(agrHolder(a.id), job.spotId, stackHead(job.produces), 1);
+        const anchor = containerAnchor(session, job.spotId);
+        postPooledTask(
+          session,
+          {
+            kind: "transfer",
+            agreementId: a.id,
+            goods: a.goods,
+            // §4.1 — the SHELL is where this is going, not the piece: the thing
+            // being carried is already the sentence's object, and naming it
+            // twice is "I will carry the door to the door".
+            to: { kind: "named", id: shellHaulDestWord(session, job.for.slice(BFURN_EP.length)) },
+          },
+          LOCAL_PLAYER_CID,
+          {
+            x: anchor?.x ?? t.stage.center.x,
+            y: anchor?.y ?? t.stage.center.y,
+            radius: civicRecruitRadius(session),
+          },
+          `bring ${job.label}`,
+          // ⚖️ ONE piece, and the commissioner has none (that is exactly why it
+          // was ordered), so the shortage term is 1 — `requestPiece`'s own
+          // arithmetic for the same errand.
+          goodsValueS(1, 1, townFillS(session.scale), 1),
+        );
+        return;
+      }
       // …AND IT HAS TO ARRIVE AS A THING.
       //
       // MAKING SOMETHING ALWAYS PRODUCES AN ITEM (user law, 2026-07-28) — and
@@ -1832,7 +2178,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (!house) continue;
       let stacks = 0;
       for (const objId of houseContainerKeys(session, hi)) {
-        const stock = session.containerStock.get(objId);
+        const stock = session.containerRecords.get(objId)?.stock;
         if (!stock) continue;
         for (const g of Object.keys(stock)) {
           if (furnitureKindOfGlyph(g)) stacks += stock[g] ?? 0;
@@ -1894,10 +2240,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     pushPocket(session);
     // …and so do material PILES already dropped at the spot (loose props
     // within arm's-reach radius of the founding point).
-    for (const [objId, rec] of [...session.smallProps]) {
+    for (const [objId, rec] of [...looseEntries(session)]) {
       const obj = world.state.objects[objId];
       if (!obj || Math.hypot(obj.x - at.x, obj.y - at.y) > 8) continue;
-      const stack: Record<string, number> = { [rec.glyph]: 1 };
+      const stack: Record<string, number> = { [rec.glyph!]: 1 };
       const moved = depositSiteStock(site, stack);
       if (Object.keys(moved).length) removeLooseProp(session, objId);
     }
@@ -1917,9 +2263,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       iconRef: "🏗️",
       glyph: "wood",
     });
-    session.containers.set(SITE_STOCK_ID, "in");
-    session.containerStock.set(SITE_STOCK_ID, site.stock);
-    session.containerOwner.set(SITE_STOCK_ID, null); // communal — the founders'
+    registerContainer(session, SITE_STOCK_ID, "in", null, site.stock); // communal — the founders'
     session.foundedSite = site;
     // The session's ledger/shelves become the SITE's (deltas-owned) — a
     // standing route agreed at the frontier serializes with the site and
@@ -1957,9 +2301,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     if (Math.hypot(pos.x - site.at.x, pos.y - site.at.y) <= siteAbandonRadius(side)) return;
     if (!siteIsEmpty(site)) return;
     const spill = abandonSite(site);
-    session.containers.delete(SITE_STOCK_ID);
-    session.containerStock.delete(SITE_STOCK_ID);
-    session.containerOwner.delete(SITE_STOCK_ID);
+    deleteContainerRecord(session, SITE_STOCK_ID);
     world.removeObject(SITE_STOCK_ID);
     // Spill the materials back where they were gathered to (bounded — a
     // wilderness stock is small; anything past the cap merges into the last pile).
@@ -2546,6 +2888,18 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  in `workSite`. */
   const siteStaffedAt = new Map<string, number>();
 
+  /**
+   * 🚨 Task-clock second a CLAIMED build-work row last had its claimant AT the
+   * work (seeded when the claim is first seen, so a body gets one whole window
+   * to walk there). A claim is a PROMISE, not a builder: the pool never expires
+   * a claimed row, and the pool sweep's errand-ran-out completion skips
+   * `buildwork` on purpose — so without this stamp one claimant that wandered
+   * off held its site "staffed" for the rest of the session while banking
+   * nothing. Pruned as rows leave `claimed`; the site sweep also drops the
+   * stamps of rows it retires.
+   */
+  const buildClaimSeenAt = new Map<string, number>();
+
   /** STREAM-IN materialization (phase 2 step 3): the reveal must show the
    *  work IN MOTION. Stage geometry at its banked fraction and the pile
    *  stacks are emergent (pure reads of labor and the pile map) — but the
@@ -2741,29 +3095,157 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   ): TransferSource[] {
     const issuerHouse = familyOf(session)?.house ?? null;
     const sources: TransferSource[] = [];
-    for (const [boxId, stack] of session.containerStock) {
+    for (const [boxId, boxRec] of stockedEntries(session)) {
       if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
-      const owner = session.containerOwner.get(boxId);
+      const owner = boxRec.owner;
       if (!mayUse(issuer, issuerHouse, owner)) continue;
       const at = containerAnchor(session, boxId);
       if (!at) continue;
-      sources.push({ id: boxId, stack, d: sourceDistanceM(session, destAt, at) });
+      sources.push({ id: boxId, stack: boxRec.stock!, d: sourceDistanceM(session, destAt, at) });
     }
     return sources;
   }
 
+  /** THE COMMONS, as a set of endpoint ids — the yard, the founded-site
+   *  crate, the storehouse's own block bank. `isCivicStockDest`'s three
+   *  answers, hoisted so a source walk asks once instead of per stack. */
+  function civicStockIds(session: QuestSession): Set<string> {
+    const out = new Set<string>([TOWN_YARD_EP, SITE_STOCK_ID]);
+    const dep = refineDepositId(session);
+    if (dep) out.add(dep);
+    return out;
+  }
+
+  /**
+   * ⚖️ SPARE ONLY — the source list an AUTOMATED draw may resolve against
+   * (surplus control S1, user addendum 2026-08-12: automated bills/claims may
+   * reserve materials only ABOVE a reserve floor; SPOKEN orders may draw the
+   * reserve).
+   *
+   * The move is `unreservedStock`'s, one floor further down: hand the resolver
+   * a COPY of each COMMONS stack with `commonsReserveOf` units taken out, and
+   * it draws — and reserves — only what is genuinely surplus, through the same
+   * `resolveMaterials` every other order uses. Nothing else changes: the
+   * endpoint ids are the real ones, so the draws are real draws, and a
+   * SPOKEN order gets the list untouched and may take the reserve down to zero.
+   *
+   * 🚨 THE FLOOR IS THE COMMONS', NOT EVERY STACK'S. A household's own box, a
+   * neighbour's crate and a STANDING TREE are not the town's shelf — and none
+   * of those three is an exception written here: the reserve rides exactly the
+   * endpoints `civicStockIds` names, so anything that is not the commons is
+   * simply not the thing being reserved. (S&D S4: the old note argued the wild
+   * case specially — *"wild sources especially must stay uncapped or the
+   * frontier stops harvesting"* — which was true and was never a rule. A
+   * felled oak is production, not spending, because a natural source is not
+   * the town's shelf; `scopeReceivesGoods` says so in the grammar and the
+   * commons set says so here.)
+   *
+   * `withheld` says THE RESERVE IS WHY THERE IS NOTHING TO DRAW — free units
+   * exist on the commons and the floor is holding them. Callers use it to stay
+   * QUIET (honest waiting is quiet) instead of announcing "there is none to
+   * fetch" over a shelf that visibly has some.
+   */
+  function spareSources(
+    session: QuestSession,
+    sources: readonly TransferSource[],
+    want: Readonly<Record<string, number>>,
+    spoken: boolean,
+  ): { sources: TransferSource[]; withheld: boolean } {
+    if (spoken) return { sources: [...sources], withheld: false };
+    const dial = session.scale.resourceCompression;
+    const heads = new Set<string>();
+    for (const g of Object.keys(want)) {
+      const head = stackHead(g);
+      if (commonsReserveOf(head, dial) > 0) heads.add(head);
+    }
+    if (!heads.size) return { sources: [...sources], withheld: false };
+    const civic = civicStockIds(session);
+    let withheld = false;
+    const out = sources.map((s) => {
+      if (!civic.has(s.id)) return s;
+      let stack: Record<string, number> | null = null;
+      for (const head of heads) {
+        if (freeUnits(s.stack, session.reservations, s.id, head) <= 0) continue;
+        stack ??= { ...s.stack };
+        takeStock(stack, head, commonsReserveOf(head, dial));
+        withheld = true;
+      }
+      return stack ? { ...s, stack } : s;
+    });
+    return { sources: out, withheld };
+  }
+
+  /**
+   * ⚖️ THE AUTOMATED-DRAW POLICY (S&D S4) — the parked question answered:
+   * *what may a standing automated loop pull from private shelves, from the
+   * commons, and from nature?* Three answers, one place, and none of them a
+   * wilderness test:
+   *
+   *  • **NATURE — freely.** A natural source is unowned (`containerOwner` null
+   *    — "nature is nobody's", quest-host `spawnWildFeature`), so the town's
+   *    own reach already includes it. Felling an oak is PRODUCTION, not
+   *    spending: nothing is drawn down that anybody was keeping.
+   *  • **THE COMMONS — only its SPARE.** `spareSources` hands the resolver the
+   *    civic stacks with `commonsReserveOf` taken out. And because the S3
+   *    par≡reserve coupling makes that floor the very level this loop stocks
+   *    TO, a par loop can never in practice pull from the commons: below par
+   *    there is no spare, and at par there is nothing to want. The rule is
+   *    stated anyway, because it is the rule — the arithmetic agreeing with it
+   *    is the coupling working, not a coincidence to lean on.
+   *  • **PRIVATE SHELVES — never.** This is the answer that changed. The loop
+   *    resolved sources through the ISSUING BODY's reach, and the issuer is a
+   *    townsman with a household, so a family's boxes were fair game for an
+   *    ambient civic errand. A town's standing errand acts AS THE TOWN
+   *    (`CIVIC_SCOPES`): the commons and the unowned, never a household's own.
+   *    A SPOKEN order is untouched — you may still tell your own family to
+   *    fetch its own wood, which is `mayUse` doing exactly its job.
+   */
+  function civicDrawSources(
+    session: QuestSession,
+    sources: readonly TransferSource[],
+  ): TransferSource[] {
+    return sources.filter((s) => mayUseByScopes(CIVIC_SCOPES, session.containerRecords.get(s.id)?.owner));
+  }
+
+  /**
+   * ⚖️ WHAT THE TOWN HAS ON HAND — the stock a par is a level OF (S&D S4).
+   *
+   * The par loop used to count every reachable stack that was not a standing
+   * tree, which made two halves of one declared coupling disagree: the reserve
+   * floor rides `civicStockIds` (the yard, the site crate, the storehouse's
+   * own bank) while the par it is pegged to was measured over private boxes as
+   * well. A par is the level of a SHELF, and this town's shelves are its
+   * commons: a chest of wood in a family's house is not the storehouse being
+   * full, and standing timber is not stock at all — it is supply.
+   */
+  function townShelfSources(
+    session: QuestSession,
+    sources: readonly TransferSource[],
+  ): TransferSource[] {
+    const civic = civicStockIds(session);
+    return sources.filter((s) => civic.has(s.id));
+  }
+
   /** The costs no FREE stack can cover right now (head → units) — the
    *  build-order affordability check, over every haul-able source instead
-   *  of the yard alone, minus what pending hauls have spoken for. */
+   *  of the yard alone, minus what pending hauls have spoken for.
+   *
+   *  🚨 THROUGH THE ONE RESOLVER (`structureCosts` — phase 6). This read
+   *  `spec.costs` raw, which since 02b61390 is the EXTRAS map alone: `{}` for
+   *  every catalog row, so every structure priced as free and the board
+   *  offered the whole catalog on an empty yard. `CostBearing` is what makes
+   *  the two callers safe in one signature — a full row (with a `footprint`)
+   *  is billed for its geometry, a bare `{ costs }` annex/partition literal is
+   *  taken as given. */
   function buildMissingMaterials(
     session: QuestSession,
-    spec: Pick<StructureSpec, "costs">,
+    spec: CostBearing,
     destAt: { x: number; y: number },
     issuer: string = LOCAL_PLAYER_CID,
   ): Record<string, number> {
     const sources = siteMaterialSources(session, destAt, issuer);
     const need = new Map<string, number>();
-    for (const [g, n] of Object.entries(spec.costs)) {
+    for (const [g, n] of Object.entries(structureCosts(spec))) {
       const head = stackHead(g);
       need.set(head, (need.get(head) ?? 0) + n);
     }
@@ -2773,6 +3255,141 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (free < n) missing[head] = n - free;
     }
     return missing;
+  }
+
+  /**
+   * 🚫 THE PART OF A BILL NOTHING IN THE WORLD CAN COVER — the UNFULFILLABLE
+   * test (user law ③, 2026-08-12: "unfulfillable orders must be refused
+   * vocally if the player creates one, with the reason stated").
+   *
+   * ⚠️ SLOW IS NOT DEAD, AND THE DIFFERENCE IS THE WHOLE POINT. Pipeline ⑥'s
+   * law stands for everything else: a bill the world can eventually cover is a
+   * DESIGNATION that waits honestly, is named aloud ("we still need 272
+   * block") and unsticks itself when a tree falls or a caravan lands. This
+   * function answers the narrower question the refusal needs — is there, right
+   * now, ANY reachable source holding the head, or holding a raw that refines
+   * into it? Nothing else is a refusal.
+   *
+   * 🚨 TOTAL UNITS, NEVER FREE UNITS. A head every one of whose units is
+   * spoken for by another order is CONTESTED, not absent — and contention is
+   * exactly what the per-scope split says the two books are allowed to do to
+   * each other. Refusing on `freeUnits` would make a spoken order fail because
+   * an ambient one happened to reserve first, which is the shared queue
+   * wearing a new hat.
+   */
+  function deadBillHeads(
+    session: QuestSession,
+    /** head → units still wanted (a `buildMissingMaterials` / recipe bill). */
+    missing: Record<string, number>,
+    /** What the ORDER's own author can reach for the head itself. */
+    sources: TransferSource[],
+    issuer: string = LOCAL_PLAYER_CID,
+    /** The book the chain would post into — its mill spot decides which raws
+     *  are reachable (per-scope order books). */
+    scope: string = TOWN_ORDER_SCOPE,
+  ): Record<string, number> {
+    const holdsAny = (srcs: TransferSource[], head: string): boolean =>
+      srcs.some((s) => stackUnits(s.stack, head) > 0);
+    const dead: Record<string, number> = {};
+    for (const [g, n] of Object.entries(missing)) {
+      const head = stackHead(g);
+      if (holdsAny(sources, head) || looseUnitsOf(session, head) > 0) continue;
+      let chained = false;
+      for (const p of rawsForRefined(head)) {
+        const spot = refineSpotOf(session, p.refinesTo?.at, scope);
+        if (!spot) continue;
+        const raw = stackHead(p.glyph);
+        if (
+          holdsAny(siteMaterialSources(session, spot, issuer), raw) ||
+          looseUnitsOf(session, raw) > 0
+        ) {
+          chained = true;
+          break;
+        }
+      }
+      if (!chained) dead[head] = n;
+    }
+    return dead;
+  }
+
+  /**
+   * 🪵 A LOOSE PROP IS STILL STOCK — units of a head lying ON THE GROUND
+   * (`smallProps`), counted for the AVAILABILITY question only.
+   *
+   * The order-scoping round shipped the vocal refusal and immediately recorded
+   * what it exposed: *"a loose `wood-1` prop is lying in view while the town
+   * says it has none"* (handoff item 4). `siteMaterialSources` reads container
+   * STACKS, and a prop on the floor is not a container — so the pipeline was
+   * right and the SENTENCE was wrong, which is the worse of the two.
+   *
+   * This is the `looseFurnitureIn` move ("a stove taken apart to get past it
+   * is still a stove, and it is still right here"), applied to materials: the
+   * DEAD test — the one question whose answer is a refusal — counts what is
+   * lying about, so a world with wood in view is SLOW, never DEAD. It waits
+   * honestly, and the tidy chore that sweeps props into boxes is the path by
+   * which the wood becomes drawable stock.
+   *
+   * 🚫 DELIBERATELY NOT A HAUL SOURCE, and that is the recorded remainder. A
+   * prop has no stack to draw from: making one resolve as a `StockEndpoint`
+   * means a prop→endpoint bridge whose take DELETES the world object, or the
+   * unit exists twice (the item-conservation law). That is the supply/demand
+   * round's, together with the rest of the wilderness-as-source-renderer
+   * unification — see the landing notes.
+   */
+  function looseUnitsOf(session: QuestSession, glyph: string): number {
+    // A prop is a WORLD OBJECT: no world (a pure-arithmetic host, a fixture)
+    // means no floor for anything to be lying on, and the answer is zero.
+    const objects = world?.state.objects;
+    if (!objects) return 0; // no world (a pure-arithmetic host): nothing lying on a floor
+    const head = stackHead(glyph);
+    let n = 0;
+    for (const [objId, rec] of looseEntries(session)) {
+      if (stackHead(rec.glyph!) !== head) continue;
+      const o = objects[objId];
+      if (!o || o.carriedBy || o.containedIn) continue; // in hand / already put away
+      n++;
+    }
+    return n;
+  }
+
+  /** The bill as the refusal says it — the "we still need 272 block" shape,
+   *  which is the copy this vocabulary already ships. */
+  const billNames = (bill: Record<string, number>): string =>
+    Object.entries(bill).map(([g, n]) => `${n} ${g}`).join(", ");
+
+  /** WHO SAYS THE TOWN'S NO.
+   *
+   *  The refusal's line is `noSourceLine` — deliberately the COLLECTIVE voice
+   *  ("we don't have any wood"), a claim about the whole settlement's stock
+   *  rather than one pair of pockets — so ANY standing mouth may carry it, and
+   *  the only question is which one the player can see move. In order: the
+   *  builder the order named; the focused household's head (the body a
+   *  dollhouse player is looking at, and the one `stepCraftJob` already speaks
+   *  this same line through); else the nearest LOADED body, which is what a
+   *  founding camp of settlers has instead of a household.
+   *
+   *  Null only when nothing here has a mouth at all. The toast still runs: the
+   *  HUD channel and the voice are two channels, never substitutes for one
+   *  another (silence must be explicit). */
+  function refusalVoiceOf(session: QuestSession, named: string | null): string | null {
+    if (named) return named;
+    const reg = session.creatures?.nodeByCreature;
+    if (!reg) return null;
+    const hi = familyOf(session)?.house;
+    if (hi !== undefined && hi !== null && reg.has(`resident_${hi}_0`)) return `resident_${hi}_0`;
+    const from = playerWorldPos(session) ?? session.town?.stage.center ?? null;
+    let best: { cid: string; d: number } | null = null;
+    for (const cid of reg.keys()) {
+      if (isPlayerCid(cid)) continue;
+      const body = world?.state.avatars[avatarIdOf(cid)];
+      if (!body) continue;
+      const d = from ? Math.hypot(body.x - from.x, body.y - from.y) : 0;
+      // Deterministic across peers: distance, then the lexicographic id.
+      if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && cid < best.cid)) {
+        best = { cid, d };
+      }
+    }
+    return best?.cid ?? null;
   }
 
   /** A pending annex's pile endpoint id (pipeline ⑤). */
@@ -2975,7 +3592,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // per trip, unobserved exactly as it would in view (decision 9).
       const exCarry = bodyCarryOf(session, exec);
       const held = bodyCarryView(exCarry);
-      const dstStock = session.containerStock.get(a.to) ?? {};
+      const dstStock = session.containerRecords.get(a.to)?.stock ?? {};
       const delivered: Record<string, number> = {};
       for (const [g, n] of Object.entries(a.carried ?? {})) {
         let give = Math.min(n, stackUnits(held, g));
@@ -2994,7 +3611,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         session.reservations.release(bagHolder(a.id));
         continue;
       }
-      session.containerStock.set(a.to, dstStock);
+      setContainerStock(session, a.to, dstStock);
       // The seam's landing law, unobserved: reserved before "done".
       onTransferLanded(session, a.id, delivered);
       // ⏸️ TWIN PARITY: the watched unload bumps the stock epoch, so this one
@@ -3024,6 +3641,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       missing: Record<string, number>;
       /** The order's LIVE pile map (drawn units land here). */
       pile: Record<string, number>;
+      /** WHOSE ORDER BOOK this pile belongs to (per-scope order books) — a
+       *  chained refine posted for it lands in the SAME book. */
+      scope?: string;
+      /** ⚖️ A PLAYER SPOKE THE ORDER THIS PILE FEEDS (surplus control S1):
+       *  its hauls may draw the COMMONS RESERVE. Absent = automated, and an
+       *  automated pile draws SPARE only. */
+      spoken?: boolean;
     },
     issuer: string = LOCAL_PLAYER_CID,
   ): void {
@@ -3034,18 +3658,30 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     pileRetryAt.set(opts.pileId, now + SITE_HAUL_RETRY_S);
     const led = session.reservations;
     const tmp = `stage:${opts.pileId}`;
+    const { sources, withheld } = spareSources(
+      session,
+      siteMaterialSources(session, opts.at, issuer),
+      want,
+      opts.spoken === true,
+    );
     const { draws } = resolveMaterials({
       holder: tmp,
       costs: want,
-      sources: siteMaterialSources(session, opts.at, issuer),
+      sources,
       ledger: led,
     });
+    if (!draws.length && withheld) {
+      led.release(tmp); // ⚖️ the reserve is holding it — honest waiting is quiet
+      return;
+    }
     if (!draws.length) {
       led.release(tmp);
       // THE CHAIN (phase 3): a refinable shortfall posts a refine order
       // instead of starving — blocks get milled, the next resolve finds
       // them. Only what no chain can reach toasts the honest bill.
-      const { milling, rest } = ensureRefineOrders(session, want, issuer);
+      const { milling, rest } = ensureRefineOrders(
+        session, want, issuer, opts.scope ?? TOWN_ORDER_SCOPE, opts.spoken === true,
+      );
       if (Object.keys(rest).length) {
         const bill = Object.entries(rest)
           .map(([g, n]) => `${n} ${g}`)
@@ -3057,7 +3693,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       return;
     }
     for (const d of draws) {
-      const src = session.containerStock.get(d.endpoint);
+      const src = session.containerRecords.get(d.endpoint)?.stock;
       if (!src) continue;
       const taken = takeStock(src, d.glyph, d.take);
       for (const [g, c] of Object.entries(taken)) {
@@ -3081,6 +3717,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       missing: Record<string, number>;
       /** The spoken destination word for the haul's intent line. */
       glyph: string;
+      /** WHOSE ORDER BOOK this pile belongs to (per-scope order books). */
+      scope?: string;
+      /** ⚖️ A PLAYER SPOKE THE ORDER THIS PILE FEEDS (surplus control S1) —
+       *  see `twinStagePile`'s twin of this field. */
+      spoken?: boolean;
     },
     issuer: string = LOCAL_PLAYER_CID,
   ) {
@@ -3091,12 +3732,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     pileRetryAt.set(opts.pileId, now + SITE_HAUL_RETRY_S);
     const led = session.reservations;
     const tmp = `stage:${opts.pileId}`;
+    const { sources, withheld } = spareSources(
+      session,
+      siteMaterialSources(session, opts.at, issuer),
+      want,
+      opts.spoken === true,
+    );
     const { draws } = resolveMaterials({
       holder: tmp,
       costs: want,
-      sources: siteMaterialSources(session, opts.at, issuer),
+      sources,
       ledger: led,
     });
+    if (!draws.length && withheld) {
+      led.release(tmp); // ⚖️ the reserve is holding it — honest waiting is quiet
+      return;
+    }
     if (!draws.length) {
       // STARVED, not waiting: the bill is known and NOTHING reachable can
       // cover any of it. Honest waiting is quiet; a world with no source at
@@ -3106,7 +3757,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // THE CHAIN (phase 3): a refinable shortfall posts a refine order
       // first — only what no chain can reach toasts the honest bill.
       led.release(tmp);
-      const { milling, rest } = ensureRefineOrders(session, want, issuer);
+      const { milling, rest } = ensureRefineOrders(
+        session, want, issuer, opts.scope ?? TOWN_ORDER_SCOPE, opts.spoken === true,
+      );
       if (Object.keys(rest).length) {
         const bill = Object.entries(rest)
           .map(([g, n]) => `${n} ${g}`)
@@ -3158,6 +3811,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         at,
         missing: stagingMissing(b),
         glyph: resolveStructure(structureCatalogOf(session), b.type)?.glyph ?? "yard",
+        // ⚖️ surplus control S1 — the row already records who ordered it.
+        ...(b.spoken ? { spoken: true } : {}),
       },
       issuer,
     );
@@ -3177,6 +3832,41 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  chain did before phase 5 split the trades, and an unmarked raw must keep
    *  doing exactly that. */
   const REFINE_WORK_DEFAULT = "workshop";
+
+  // ── PER-SCOPE ORDER BOOKS (user law ①, 2026-08-12) ──────────────────────
+  //
+  // "With the house scope, all orders should be scoped to the house, not the
+  // town. So while the family members going out to collect blocks may
+  // technically compete with those elsewhere, it only competes in the sense
+  // that both need the same resources — they shouldn't be put in the same
+  // queue."
+  //
+  // WHAT WAS WRONG. `ensureRefineOrders` kept ONE standing refine order per
+  // refined head for the WHOLE session. A household that needed 4 blocks for a
+  // spoken `make workbench` looked at the town's open 198-block workshop bill,
+  // read `open >= n`, said "milling 4 block for the workbench" and posted
+  // nothing — so the family's 4-block job could not finish until the town's
+  // 198-block order did, at REFINE_CREW_CAP = 1 and 0.05 build-days a unit.
+  // One queue, two scopes, and the small order always last (measured: the GL
+  // closing sweep's handoff item 1).
+  //
+  // WHAT IT IS NOW. The per-head standing-order rule (the REFINE_CREW_CAP-class
+  // limit — one bench, one queue) applies PER SCOPE: the town/civic book, and
+  // one book per household. Each book mills at its OWN spot and banks into its
+  // OWN container. The two books then meet exactly where the law says they
+  // should — at the RAWS, through the reservation ledger that already
+  // arbitrates two competing sites. There is deliberately NO cross-queue
+  // priority anywhere in this file.
+  /** The town/civic order book — every site bill, every ambient growth row. */
+  const TOWN_ORDER_SCOPE = "town";
+  /** One household's own order book. */
+  const houseOrderScope = (hi: number): string => `house:${hi}`;
+  /** The house a scope key names, or null for the town/civic book. */
+  const houseOfOrderScope = (scope: string | undefined): number | null => {
+    if (!scope || !scope.startsWith("house:")) return null;
+    const hi = Number(scope.slice("house:".length));
+    return Number.isInteger(hi) ? hi : null;
+  };
 
   /** The DOORSTEP of the town's standing work building of a given type —
    *  completed and un-vacated — or null when the town has none.
@@ -3221,9 +3911,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   function refineSpotOf(
     session: QuestSession,
     workType: string = REFINE_WORK_DEFAULT,
+    /** WHOSE BOOK is milling (per-scope order books). A household mills at
+     *  its OWN bench — that is what makes its queue its own in the world and
+     *  not merely in the data: the town's single carpentry doorstep was the
+     *  shared mill everyone queued at. */
+    scope: string = TOWN_ORDER_SCOPE,
   ): { x: number; y: number } | null {
     const t = session.town;
     if (t) {
+      const hi = houseOfOrderScope(scope);
+      if (hi !== null) {
+        // The bench if one stands, else the household's own craft container —
+        // a benchless family (the `make workbench` bootstrap) still mills at
+        // home rather than walking its bill to the town's queue.
+        const own = houseBench(session, hi) ?? containerAnchor(session, craftSpotOf(session, hi));
+        if (own) return own;
+      }
       return (
         refineStationSpot(session, workType) ??
         containerAnchor(session, TOWN_YARD_EP) ??
@@ -3238,13 +3941,20 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   /** The container milled blocks LAND in: a communal container standing
    *  inside a completed STOREHOUSE (storehouse-first — the town's block
    *  bank), else the yard / site crate. Null = mint into deltas.stock
-   *  directly (the yard aliases it anyway). */
-  function refineDepositId(session: QuestSession): string | null {
+   *  directly (the yard aliases it anyway).
+   *
+   *  ⚖️ A HOUSEHOLD'S OWN BOOK BANKS AT HOME (order-scoping law ①). Its
+   *  blocks were milled at its own bench out of raws its own order staged;
+   *  putting them on the town's communal shelf would hand them straight back
+   *  to the queue the split exists to escape (whoever resolves first wins the
+   *  free units). The craft spot IS the container beside the bench, so this
+   *  is the same handful of metres the pile already crossed — never a
+   *  teleport, and never another household's box. */
+  function refineDepositId(session: QuestSession, scope: string = TOWN_ORDER_SCOPE): string | null {
     const t = session.town;
+    const scopeHouse = houseOfOrderScope(scope);
+    if (t && scopeHouse !== null) return craftSpotOf(session, scopeHouse);
     if (t) {
-      const wildIds = new Set(
-        (session.wilderness?.features ?? []).map((f) => wildFeatureContainerId(f)),
-      );
       for (let wi = 0; wi < t.plan.works.length; wi++) {
         const wk = t.plan.works[wi]!;
         if (wk.vacated || wk.type !== "storehouse") continue;
@@ -3259,11 +3969,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           w: wk.w,
           h: wk.h,
         };
-        for (const boxId of session.containerStock.keys()) {
-          // A COMMUNAL registered crate, never a wild feature that happens
-          // to stand on the lot (a tree is not shelving).
-          if (wildIds.has(boxId)) continue;
-          if (session.containerOwner.get(boxId) !== null && session.containerOwner.get(boxId) !== undefined) continue;
+        for (const boxId of stockedIds(session)) {
+          // ⚖️ A DELIVERY TARGET MUST RECEIVE (S&D S4). "A tree is not
+          // shelving" used to be a scan of `session.wilderness.features` for
+          // this id; it is a question about the ENDPOINT — a shelf receives, a
+          // natural source only yields — and the grammar answers it for every
+          // renderer at once (a standing oak, an embodied plant's body, a
+          // grazing cow, an offloaded stand).
+          if (!scopeIdReceivesGoods(boxId)) continue;
+          const boxOwner = session.containerRecords.get(boxId)?.owner;
+          if (boxOwner !== null && boxOwner !== undefined) continue;
           if (session.marketStore.has(boxId) || session.produceBox.has(boxId)) continue;
           const at = containerAnchor(session, boxId);
           if (!at) continue;
@@ -3272,19 +3987,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           }
         }
       }
-      return session.containerStock.has(TOWN_YARD_EP) ? TOWN_YARD_EP : null;
+      return hasStock(session, TOWN_YARD_EP) ? TOWN_YARD_EP : null;
     }
     if (session.foundedSite) {
-      return session.containerStock.has(SITE_STOCK_ID) ? SITE_STOCK_ID : null;
+      return hasStock(session, SITE_STOCK_ID) ? SITE_STOCK_ID : null;
     }
     return null;
   }
 
   /** ENSURE the chain covers a starved bill: for each missing head a raw
-   *  refines into, keep ONE standing refine order sized to the shortfall
-   *  (a remainder re-triggers after the commit). Returns what the chain
-   *  cannot reach (`rest` — the honest starved toast's bill) and how many
-   *  units are being milled (`milling` — the softer message). */
+   *  refines into, keep ONE standing refine order PER SCOPE sized to the
+   *  shortfall (a remainder re-triggers after the commit). Returns what the
+   *  chain cannot reach (`rest` — the honest starved toast's bill) and how
+   *  many units are being milled (`milling` — the softer message). */
   function ensureRefineOrders(
     session: QuestSession,
     want: Record<string, number>,
@@ -3292,6 +4007,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
      *  reachable raws through that author's own reach, so a chained refine
      *  order can never be ranked on stock the order itself may not draw. */
     issuer: string = LOCAL_PLAYER_CID,
+    /** WHOSE ORDER BOOK the bill belongs to (per-scope order books, law ①).
+     *  Default = the town/civic book, which is every caller that is not a
+     *  household's own craft. */
+    scope: string = TOWN_ORDER_SCOPE,
+    /** ⚖️ THE BILL THAT ASKED WAS SPOKEN (surplus control S1/S2). A refine
+     *  order is never spoken in its own right, so it inherits: the mill posted
+     *  for a spoken `make` may draw the commons reserve for its raws, and the
+     *  AUTOMATED arm below will not LAUNCH a mill the spare cannot feed.
+     *  Default false = every ambient caller and every pre-patch call site. */
+    spoken: boolean = false,
   ): { milling: number; rest: Record<string, number> } {
     const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
     const rest: Record<string, number> = {};
@@ -3303,12 +4028,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         rest[head] = n;
         continue;
       }
+      // ⚖️ ONLY THIS SCOPE'S OWN ROWS COVER THIS SCOPE'S BILL (law ①). A row
+      // in ANOTHER book is not this book's work in progress, however much of
+      // the same head it happens to be milling.
       const open = deltas
         .refineOrders()
-        .filter((r) => stackHead(r.produces) === head)
+        .filter((r) => stackHead(r.produces) === head && (r.scope ?? TOWN_ORDER_SCOPE) === scope)
         .reduce((s, r) => s + r.count, 0);
       if (open >= n) {
-        milling += open;
+        // ⚖️ `n`, NOT `open` — WHAT THIS CALLER IS OWED (2026-08-12). `milling`
+        // is the number the caller SAYS OUT LOUD, and `open` is the town's
+        // whole mill queue: every starved consumer announced the queue as if it
+        // were its own order, so a bench short of 4 blocks toasted "milling 67
+        // block for the workbench" while a market site said the same 67 in the
+        // same window (measured: fx-doll-bench-long). One shared order covers
+        // many bills; what each of them is waiting for is its own.
+        milling += n;
         continue;
       }
       // WHICH RAW, in three keys. Each candidate is measured AT ITS OWN SPOT,
@@ -3325,11 +4060,21 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       //     been, kept last so the choice stays deterministic.
       // A raw-less world still posts on key 3 alone, and the refine order
       // itself starves naming the raw — the honest failure, not a silent one.
+      // ⚖️ …AND FOR AN AUTOMATED BILL, KEY 1 IS THE SPARE, NOT THE FREE STOCK
+      // (surplus control S1). One lens for both readings: the raw a town may
+      // actually cut today is the one it can cut WITHOUT eating the reserve, so
+      // ranking on free units while the cap below spends spare ones would pick
+      // a raw it then declines to mill and pass over one it could have.
       const ranked = raws
         .map((p, i) => {
-          const spot = refineSpotOf(session, p.refinesTo?.at);
+          const spot = refineSpotOf(session, p.refinesTo?.at, scope);
           const free = spot
-            ? siteMaterialSources(session, spot, issuer).reduce(
+            ? spareSources(
+                session,
+                siteMaterialSources(session, spot, issuer),
+                { [p.glyph]: 1 },
+                spoken,
+              ).sources.reduce(
                 (s, src) => s + freeUnits(src.stack, session.reservations, src.id, p.glyph),
                 0,
               )
@@ -3349,17 +4094,45 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         rest[head] = n;
         continue;
       }
-      const count = n - open;
+      // ⚖️ S&D S3 H1 — multiplier ② of five, wired at the ONE site that
+      // actually MOVES stock (the transaction below, `count * inPerOut`),
+      // not at every reader (freight pricing, `withRefinableCredit`'s
+      // catalog-level credit preview stay at the dial-1 anchor — recorded
+      // residual: a preview that shows MORE raw material than what a bench
+      // actually charges is the safe direction).
+      const inPerOut = effectiveInPerOut(raw.refinesTo?.inPerOut ?? 1, session.scale.resourceCompression);
+      // ⚖️ AMBIENT GROWTH MAY NOT LAUNCH A BILL THAT WOULD EXHAUST THE COMMONS
+      // (surplus control S2). The mill an AUTOMATED consumer asks for is sized
+      // to the raws the SPARE can actually feed — not to the appetite. Two
+      // things this deliberately is not: it is not a refusal (⑥ stands — an
+      // order that CAN be fed is still posted at full size and still waits
+      // honestly for hands), and it never touches an IN-FLIGHT row (first-come
+      // reservations STAND; the cap bites only on the row about to be created).
+      // A spare of zero posts NOTHING and stays quiet — the caller's `milling`
+      // still counts the bill, so the bench says "milling N" rather than "there
+      // is none to fetch" over a shelf that has some.
+      let count = n - open;
+      if (!spoken) count = Math.min(count, Math.floor(pick.free / Math.max(1, inPerOut)));
+      if (count <= 0) {
+        milling += n; // the bill IS known and the chain IS the answer — just not today
+        continue;
+      }
       deltas.postRefineOrder({
         produces: refinedGlyphOf(raw.glyph) ?? head,
         count,
-        costs: { [raw.glyph]: count * (raw.refinesTo?.inPerOut ?? 1) },
+        costs: { [raw.glyph]: count * inPerOut },
         pile: {},
         at,
         startedDay: buildDayNow(session),
         buildDays: constructionGameDays(REFINE_UNIT_BUILD_DAYS * count, session.scale),
+        // The town book writes NO key — a civic row serializes exactly as it
+        // did before the split, so no save round-trips differently for it.
+        ...(scope !== TOWN_ORDER_SCOPE ? { scope } : {}),
+        // …and the SPOKEN key likewise: absent on every ambient row, so an
+        // automated mill serializes byte-identically to a pre-patch save.
+        ...(spoken ? { spoken: true } : {}),
       });
-      milling += count;
+      milling += n; // …and the same on this arm: the caller's OWN bill, open + new
     }
     return { milling, rest };
   }
@@ -3374,11 +4147,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     if (!deltas) return;
     if (Object.keys(stagingMissing(r)).length) return; // pile ran thin — regather
     for (const [head, n] of Object.entries(r.costs)) takeStock(r.pile, head, n);
-    const destId = refineDepositId(session);
+    const destId = refineDepositId(session, r.scope);
     const stack = destId
-      ? (session.containerStock.get(destId) ?? {})
+      ? ensureContainerStock(session, destId)
       : (deltas.stock as Record<string, number>);
-    if (destId) session.containerStock.set(destId, stack);
     stack[r.produces] = (stack[r.produces] ?? 0) + r.count;
     for (const [g, n] of Object.entries(r.pile)) {
       if (n > 0) stack[g] = (stack[g] ?? 0) + n;
@@ -3417,8 +4189,29 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     storehouseStockAt = session.taskClock + STOREHOUSE_STOCK_RETRY_S;
     const destId = refineDepositId(session);
     if (!destId) return;
-    // The par loop is the STOREHOUSE'S behavior — no storehouse, no
-    // ambient logging (the yard is a buffer, not a mandate).
+    // ⚖️ THE ANCHOR IS THE ENDPOINT THE STOCK LANDS IN, whatever RENDERS that
+    // endpoint (user law, 2026-08-12: a source/stock place is one kind of
+    // thing — a storeroom, a shop, a yard, a stand of trees — and the
+    // building around it is a renderer, not a separate rule).
+    //
+    // 🌲 WHAT THIS FIXES. The scan below used to be a GATE — "the par loop is
+    // the STOREHOUSE's behaviour; no storehouse, no ambient logging" — and it
+    // made the loop dead in the only world that has anything to log:
+    // `plan.ts` lays no base works at `days ≤ FOUNDING_AGE_DAYS`, so a
+    // founding town can never own a finished storehouse, and the two shipped
+    // worlds each held one half of the chain (the dollhouse a storehouse and
+    // no wilderness, the frontier wilderness and no storehouse — the GL
+    // closing sweep's pincer, handoff item 2).
+    //
+    // `refineDepositId` had already answered the endpoint question — the
+    // storehouse's crate, else the yard, else the founding site's pile — and
+    // `isCivicStockDest`/`stepTaskPool` have always treated all three as the
+    // same civic destination ("par-stock logging to the yard / storehouse is
+    // the town's business", quest-host.ts). The doorstep scan was the one
+    // place that disagreed. So the storehouse's doorstep is now a PREFERENCE
+    // (a walk to the shed's door rather than to a crate behind it), not a
+    // permit, and the fallback is simply where the destination endpoint
+    // stands. No age test, no wilderness test, no new rule — one deleted.
     let store: { x: number; y: number } | null = null;
     for (let wi = 0; wi < t.plan.works.length; wi++) {
       const wk = t.plan.works[wi]!;
@@ -3431,12 +4224,17 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       store = workDoorstep(t.stage.center, wk);
       break;
     }
+    store ??= containerAnchor(session, destId);
     if (!store) return;
     if (!observedRect(session, { x: store.x - 2, y: store.y - 2, w: 4, h: 4 })) return;
-    const wildIds = new Set(
-      (session.wilderness?.features ?? []).map((f) => wildFeatureContainerId(f)),
-    );
     const sources = siteMaterialSources(session, store, issuer);
+    // ⚖️ S&D S4 — the two halves of the policy, named once (see
+    // `civicDrawSources` / `townShelfSources`): what the town HAS is what sits
+    // on its own shelves; what this loop may DRAW is the commons' spare and
+    // whatever nobody owns. A shelf never stocks itself, whichever of the
+    // three the destination happens to be today.
+    const onHand = townShelfSources(session, sources);
+    const drawable = civicDrawSources(session, sources).filter((s) => s.id !== destId);
     const led = session.reservations;
     // ACKNOWLEDGE finished stocking hauls (the staging sweep's done-release,
     // applied to the yard): a FAILED haul's spoken-for source units must
@@ -3456,20 +4254,39 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         }
       }
     }
+    // ⚖️ S&D S3 — THE PAR≡RESERVE COUPLING, live: the same dial-resolved par
+    // this loop stocks TO is `commonsReserveOf`'s own floor (storehouseRawParAt).
+    const par = storehouseRawParAt(session.scale.resourceCompression);
     for (const p of rawsForRefined(BLOCK_GLYPH)) {
-      const free = sources
-        .filter((s) => !wildIds.has(s.id))
-        .reduce((s, src) => s + freeUnits(src.stack, led, src.id, p.glyph), 0);
+      const free = onHand.reduce((s, src) => s + freeUnits(src.stack, led, src.id, p.glyph), 0);
       // Loads already walking count toward the par — the retry window must
       // top up the SHORTFALL, never re-order the whole batch.
-      const wantN = STOREHOUSE_RAW_PAR - free - (inbound[p.glyph] ?? 0);
+      const wantN = par - free - (inbound[p.glyph] ?? 0);
       if (wantN <= 0) continue;
       const tmp = `stock:${destId}:${p.glyph}`;
+      // AUTOMATED, therefore SPARE-ONLY on the commons (`spoken: false`) — the
+      // one reserve gate every other ambient draw goes through, rather than a
+      // second rule written here.
+      const { sources: draw } = spareSources(session, drawable, { [p.glyph]: wantN }, false);
       const { draws } = resolveMaterials({
         holder: tmp,
         costs: { [p.glyph]: wantN },
-        sources: sources.filter((s) => wildIds.has(s.id)),
+        sources: draw,
         ledger: led,
+        // ⚖️ S&D S3 H2 — "larger trees will typically be cut first" (user
+        // law, verbatim): the draw ranks by size class before cost, never by
+        // hand-seconds fiction (transfer.ts `rankKey`'s own doc). A species
+        // with no growth clock (rock) answers 0 for every candidate — pure
+        // distance order, unchanged, and so does every candidate that is not
+        // a natural source at all. NOT a wilderness gate (S4): this is the
+        // RENDERER being asked for the state only it holds — which size class
+        // is standing here — the way a chest is asked how full it is.
+        price: {
+          rankKey: (s) => {
+            const f = session.wilderness?.features.find((x) => wildFeatureContainerId(x) === s.id);
+            return f ? wildFeatureSizeRank(f) : 0;
+          },
+        },
       });
       for (const d of draws) {
         const a = session.transfers.post({
@@ -3497,7 +4314,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           // 0 for every one of them and would price the whole par loop at zero.
           goodsValueS(
             d.take,
-            Math.max(0, Math.min(1, wantN / STOREHOUSE_RAW_PAR)),
+            Math.max(0, Math.min(1, wantN / par)),
             townFillS(session.scale),
             1,
           ),
@@ -3523,11 +4340,20 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // A structure's catalog buildDays are RELATIVE (house = 1); the session's
     // scale turns them into game-days — half a year of them at realism, one
     // street-day on the shipped town profile (space-time-compression.md §4).
+    // 🚨 THE BILL IS `structureCosts(spec)`, NEVER `spec.costs` (phase 6). The
+    // row authors only its EXTRAS; the blocks are derived from the footprint by
+    // the ONE resolver. Passing the raw map founded every player-ordered
+    // building with an EMPTY bill — `stagingMissing` answered {} on the next
+    // line, the plot staged instantly, no haul was ever posted and the walls
+    // rose out of nothing (the frontier farm finished with the yard's 14 wood
+    // and 6 stone untouched, 2026-08-11). Everything downstream of `b.costs`
+    // — the site pile, postSiteHauls, the mill's refine orders, the builder's
+    // ghosts, the completion labor branch — was correct and starved.
     const b = ctx.deltas.foundBuilding(
       candidate,
       buildDayNow(session),
       constructionGameDays(spec.buildDays, session.scale),
-      spec.costs,
+      structureCosts(spec),
     );
     if (session.town) {
       // The plan row (staff arrives at completion) — the stage reconciles
@@ -3637,9 +4463,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             contains: [{ relation: "in", capacity: 4 }],
           });
           if (ok && piece.openable) {
-            session.containers.set(piece.id, "in");
-            session.containerStock.set(piece.id, {});
-            session.containerOwner.set(piece.id, null); // communal — the founders'
+            registerContainer(session, piece.id, "in", null, {}); // communal — the founders'
           }
         }
       }
@@ -3725,8 +4549,21 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * designated ANOTHER one, every window, forever: the user's "Mara kept
    * crafting it over and over", and a standing breach of item conservation
    * (blocks burnt to mint duplicates). One exists ⇒ we wait for it.
+   *
+   * 🚨 …AND IT NAMES THE HOLDER (2026-08-12). "Wait for it" is only honest if
+   * something is bringing it, and for a whole round nothing was: the piece was
+   * in a household box the caller's own scan is forbidden to open (`mayUse`
+   * refuses another household's containers outright), so the shell waited for a
+   * delivery nobody had scheduled. The commission (`CraftJob.for`) schedules
+   * one at the moment of making; this field is the SECOND half — the recovery
+   * for a delivery that failed, and for every piece already sitting in a
+   * neighbour's cupboard from before the commission existed. A caller that gets
+   * `"held"` can now go and fetch it.
    */
-  type CraftHand = { kind: "make"; house: number } | { kind: "held" } | { kind: "none" };
+  type CraftHand =
+    | { kind: "make"; house: number }
+    | { kind: "held"; house: number }
+    | { kind: "none" };
   function craftHouseholdFor(
     session: QuestSession,
     at: { x: number; y: number },
@@ -3745,7 +4582,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (Math.hypot(door.x - at.x, door.y - at.y) > reach) continue;
       const d = sourceDistanceM(session, at, door);
       if (d > reach) continue;
-      if (houseHolds(session, hi, glyph) > 0) return { kind: "held" };
+      if (houseHolds(session, hi, glyph) > 0) return { kind: "held", house: hi };
       if (craftJobsOf(session).get(hi)) continue; // its one slot is taken
       const benched =
         !!houseBench(session, hi) || houseHolds(session, hi, furnitureGlyph("workbench")) > 0;
@@ -3829,6 +4666,18 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         if (!fdef?.craft) return "skip"; // non-craftables come with generation
         const glyph = furnitureGlyph(k);
         if ((pile[glyph] ?? 0) > 0 || inbound.has(glyph)) return "wait"; // delivery underway
+        // 🚨 …AND A COMMISSION ALREADY PLACED IS A DELIVERY UNDERWAY (CraftJob.for).
+        // The two lines above only see a piece that EXISTS; between the order and
+        // the finished thing this sweep re-asked every 20 s, skipped the busy
+        // household (`craftHouseholdFor` passes over a taken craft slot) and
+        // designated the SAME piece at the next house along — a bed apiece across
+        // the neighbourhood while the first one was still being cut. The brake
+        // used to be accidental: the first piece to finish answered `"held"` and
+        // stopped the rest. Now the promise itself is legible, so the sweep waits
+        // on the order it placed rather than on the object it produces.
+        for (const j of craftJobsOf(session).values()) {
+          if (j.for === `${BFURN_EP}${key}` && j.produces === glyph) return "wait";
+        }
         const at = {
           x: center.x + wk.dx + wk.w / 2,
           y: center.y + wk.dy + wk.h / 2,
@@ -3836,8 +4685,30 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // ⚖️ THE THIRD COPY, RETIRED (scope-behaviors.md §2.2): the inline
         // nearest-first sort that used to live here is now the ONE priced walk,
         // with this call's own "does it hold one" test passed in.
+        //
+        // 🚨 A NEIGHBOUR'S BOX IS IN REACH FOR THIS ONE GLYPH (2026-08-12). The
+        // scan is otherwise the issuer's own propriety walk, and `mayUse`
+        // refuses another household's containers — which is right for wood and
+        // wrong for the door THIS SHELL COMMISSIONED. The two sides of the want
+        // used to answer different questions about the same object: the "do we
+        // need to make one" test sees the whole scope (`"anywhere"`) and said
+        // `"held"`, the haul sees only boxes it may open and said "nothing
+        // stored", and the piece sat in a kitchen forever. One definition now:
+        // whatever `"held"` can SEE, this can FETCH.
+        const heldAt = craftHouseholdFor(session, at, glyph);
         const src = rankPricedSources(
-          siteMaterialSources(session, at, issuer),
+          heldAt.kind === "held"
+            ? [
+                ...siteMaterialSources(session, at, issuer),
+                ...houseContainerKeys(session, heldAt.house)
+                  .filter((id) => (session.containerRecords.get(id)?.stock?.[glyph] ?? 0) > 0)
+                  .map((id) => ({
+                    id,
+                    stack: session.containerRecords.get(id)!.stock!,
+                    d: sourceDistanceM(session, at, containerAnchor(session, id) ?? at),
+                  })),
+              ]
+            : siteMaterialSources(session, at, issuer),
           (s) => s.stack[glyph] ?? 0,
         )[0];
         if (src) {
@@ -3886,10 +4757,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // its own bill and its own labour clock, and pricing that needs the
         // station costs that land with §7 step 6. When they do, this fork
         // FOLDS INTO `haulBagLeg`'s arithmetic rather than living beside it.
-        const hand = craftHouseholdFor(session, at, glyph);
-        if (hand.kind === "held") return "wait"; // one exists — never mint a second
-        if (hand.kind === "none") return "done"; // nobody local is free; ask again next sweep
-        const hi = hand.house;
+        // Nothing fetchable. A `"held"` that reaches HERE is a unit no haul can
+        // take — a prop on the maker's own floor. It is still a unit, so we do
+        // not mint a second; F4's furnish sweep stands it up where it lies and
+        // the next want is answered afresh.
+        if (heldAt.kind === "held") return "wait";
+        if (heldAt.kind === "none") return "done"; // nobody local is free; ask again next sweep
+        const hi = heldAt.house;
         const target =
           houseBench(session, hi) || houseHolds(session, hi, furnitureGlyph("workbench")) > 0
             ? fdef
@@ -3899,6 +4773,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           spotId: craftSpotOf(session, hi),
           agreements: [],
           laborS: 0,
+          // 🚨 THE COMMISSION IS RECORDED (CraftJob.for). Without it the shell
+          // designates the piece, the household makes it, and the piece stays
+          // in that household's kitchen — unreachable by the haul scan and
+          // perfectly visible to the `"held"` test, so the shell waits on a
+          // delivery nobody ever scheduled. Only the WANTED piece is owed:
+          // the bench-first bootstrap (`target !== fdef`) is the maker's own
+          // tool and belongs to the house that has to bootstrap it.
+          ...(target === fdef ? { for: `${BFURN_EP}${key}` } : {}),
         });
         return "done";
       };
@@ -4174,15 +5056,86 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     }
   }
 
-  /** How long a building waits between carries. One piece at a time, at
-   *  walking pace — a re-arranged house should settle over a visible minute or
-   *  so, which is the whole difference between furniture being MOVED and
-   *  furniture having CHANGED. Long enough that it reads as work being done;
-   *  short enough that a doorway somebody is standing in front of clears while
-   *  they are still trying to get through it. */
-  const REFLOW_GAP_S = 12;
-  /** townClock second before a building may start its next carry. */
-  const reflowAt = new Map<string, number>();
+  /**
+   * ⚖️ THE PACE IS A HAND COUNT, NOT A CLOCK (scope-unification ⑥,
+   * 2026-08-13).
+   *
+   * What stood here was `REFLOW_GAP_S = 12` and a per-building `reflowAt`
+   * map: one carry per building per twelve seconds, whoever happened to be
+   * free and however many of them. A household with two people standing about
+   * carried one chest a minute; a household with nobody home carried one just
+   * as often, because the metronome never asked. The chapter's first draft
+   * named it for what it was — "a timer standing in for a hand count".
+   *
+   * It is now the SAME census the build sites read (`availableCrew` /
+   * `crewShareOf`): a building asks for the hands it could put on a carry
+   * THIS INSTANT, {@link allocateHands} splits the town's free pool
+   * (`townHandPool`) across everyone asking, and a share of one buys one
+   * carry this sweep. Two free members ⇒ two carries; none ⇒ none, and the
+   * drawing waits until somebody is free, which is what waiting for a hand
+   * means.
+   *
+   * THE SPLIT NEEDS A CLOSED LIST, and only a finished pass has one — the
+   * askers arrive from two different loops (`stepConstructionHousekeeping`
+   * for houses, `stepShellPrograms` for shells), so no single call site knows
+   * the whole claim list the way the order loop does. Asks therefore
+   * accumulate through a tick and are allocated at the first ask of the NEXT
+   * one: the same "read the whole roster on the town clock" shape as
+   * `handPoolMemo`, and one tick of lag on a decision whose unit is a
+   * ten-second walk.
+   */
+  /** Hands each building asked for, this tick (still filling). */
+  const reflowAsk = new Map<string, number>();
+  /** The townClock the filling ask list belongs to. */
+  let reflowAskAt = -1;
+  /** The CLOSED allocation — what each asker got out of the free pool. */
+  let reflowShare = new Map<string, number>();
+
+  function reflowShareOf(session: QuestSession, key: string, cap: number): number {
+    if (session.townClock !== reflowAskAt) {
+      const keys = [...reflowAsk.keys()];
+      const got = allocateHands(
+        keys.map((k) => reflowAsk.get(k) ?? 0),
+        townHandPool(session).free,
+      );
+      reflowShare = new Map(keys.map((k, i) => [k, got[i] ?? 0]));
+      reflowAsk.clear();
+      reflowAskAt = session.townClock;
+    }
+    reflowAsk.set(key, cap);
+    return reflowShare.get(key) ?? 0;
+  }
+
+  /**
+   * ONE BODY PER PIECE — the timer's OTHER job, done honestly.
+   *
+   * A carry is in flight from the moment the body is sent until the piece
+   * lands, and for all of that time the piece is still standing where it was,
+   * so the work list still asks for it. The 12 s gate hid that by never
+   * sending a second body inside its window; with the pace set by hands
+   * instead, the next free member would be sent after the very same chest and
+   * one of them would arrive to nothing. So the PIECE is claimed, by the body
+   * that was sent — and a body that is no longer walking (its errand landed,
+   * a pooled claim took it off, it streamed out) is carrying nothing, so its
+   * piece goes straight back on the list. No clock anywhere in it.
+   */
+  const reflowCarry = new Map<string, Map<string, string>>();
+
+  /** This building's live carries (piece → body), pruned to the ones a body is
+   *  actually still walking. */
+  function reflowCarriesOut(session: QuestSession, key: string): Map<string, string> {
+    let out = reflowCarry.get(key);
+    if (!out) {
+      out = new Map<string, string>();
+      reflowCarry.set(key, out);
+    }
+    for (const [pieceId, body] of [...out]) {
+      const walking =
+        (session.npcTasks.get(body)?.length ?? 0) > 0 && !!world?.state.avatars[body];
+      if (!walking) out.delete(pieceId);
+    }
+    return out;
+  }
 
   /**
    * WHO CARRIES IT. A house's own household comes first — rearranging your home
@@ -4201,28 +5154,29 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * a house rearranged itself using whoever happened to be listed first rather
    * than whoever was standing next to the chest. Same law, both branches: the
    * NEAREST free body wins, ties by id.
+   *
+   * ⚖️ IT ANSWERS WITH THE WHOLE LIST (scope-unification ⑥). The pace is a
+   * hand COUNT now, so the caller needs to know how many there are, not only
+   * who is nearest — `[0]` is the same body the single-answer version picked.
    */
-  function reflowHandFor(session: QuestSession, buildingKey: string): string | null {
-    if (!world) return null;
-    /** Nearest free body to `at` within `reach`, ties by id. */
+  function reflowHandsFor(session: QuestSession, buildingKey: string): string[] {
+    if (!world) return [];
+    /** Free bodies within `reach` of `at`, NEAREST FIRST, ties by id. */
     const nearestFree = (
       ids: Iterable<string>,
       at: { x: number; y: number },
       reach: number,
-    ): string | null => {
-      let best: string | null = null;
-      let bestD = reach;
+    ): string[] => {
+      const near: Array<{ id: string; d: number }> = [];
       for (const id of ids) {
         const av = world!.state.avatars[id];
         if (!av || av.canOpen === false) continue;
         if (!handIsFree(session, id)) continue;
         const d = Math.hypot(av.x - at.x, av.y - at.y);
-        if (d < bestD || (d === bestD && best !== null && id < best)) {
-          bestD = d;
-          best = id;
-        }
+        if (d < reach) near.push({ id, d });
       }
-      return best;
+      near.sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return near.map((q) => q.id);
     };
     const hm = /^h_(\d+)$/.exec(buildingKey);
     if (hm) {
@@ -4236,14 +5190,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       for (let m = 0; m < HOUSEHOLD; m++) ids.push(avatarIdOf(`resident_${houseIndex}_${m}`));
       // No town geometry to measure against (a founded-site session) ⇒ the
       // shipped index order, which is all there ever was to go on.
-      if (!at) {
-        for (const id of ids) if (world.state.avatars[id] && handIsFree(session, id)) return id;
-        return null;
-      }
+      if (!at) return ids.filter((id) => world!.state.avatars[id] && handIsFree(session, id));
       return nearestFree(ids, at, Infinity);
     }
     const b = pendingBuildingOf(session, buildingKey);
-    if (!b || !session.town) return null;
+    if (!b || !session.town) return [];
     const c = session.town.stage.center;
     const at = { x: c.x + b.shape.dx + b.shape.w / 2, y: c.y + b.shape.dy + b.shape.h / 2 };
     const streetBodies: string[] = [];
@@ -4256,8 +5207,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   /**
    * PUT IT WHERE IT BELONGS — the sweep that makes the drawing come true.
    *
-   * One carry per building per {@link REFLOW_GAP_S}: a resident walks to the
-   * piece, picks it up, walks to its mark and sets it down. Two acts only,
+   * One carry per FREE HAND (see {@link reflowShareOf}): a resident walks to
+   * the piece, picks it up, walks to its mark and sets it down. Two acts only,
    * because the work list has only two that involve something already standing:
    *
    *   `move`        the drawing has a place for this piece — take it there.
@@ -4286,17 +5237,25 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     if (!hasDrift(delta) && !delta?.programs?.length && !ownedStationKinds(session, key).length) {
       return;
     }
-    // NOBODY WAITS BEHIND A CHEST. Checked ahead of the carry rate limit — a
-    // body already stopped by something is not a thing to schedule.
+    // NOBODY WAITS BEHIND A CHEST. Checked ahead of the hand census — a body
+    // already stopped by something is not a thing to schedule.
     stepStrayBumps(session, key);
-    if (session.townClock < (reflowAt.get(key) ?? 0)) return;
-    const npcId = reflowHandFor(session, key);
+    // THE ASK, AND WHAT IT GOT. `hands` is what this building could put on a
+    // carry right now (a body already carrying is not free, so the list
+    // shrinks as its own carries go out); the town's free pool is split across
+    // every asker. The ask is registered BEFORE any bail below — a building
+    // that stops asking drops out of the next tick's split, and a building
+    // that never asks can never be given a share it would not spend.
+    const carried = reflowCarriesOut(session, key);
+    const hands = reflowHandsFor(session, key);
+    if (reflowShareOf(session, key, hands.length) < 1) return;
+    const npcId = hands[0];
     if (!npcId) return; // nobody about to carry anything
     const task = buildingFurnishTasks(session, key).find(
-      (q) => (q.act === "move" || q.act === "deconstruct") && !!q.from,
+      (q) => (q.act === "move" || q.act === "deconstruct") && !!q.from && !carried.has(q.from.id),
     );
     if (!task?.from) return;
-    reflowAt.set(key, session.townClock + REFLOW_GAP_S);
+    carried.set(task.from.id, npcId);
     const from = task.from;
     // CLAIM THE BODY the way every other directed errand does — a resident
     // whose need loop is still holding the wheel would re-route mid-carry and
@@ -4313,6 +5272,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       enqueueNpcErrand(session, npcId, {
         points: [{ x: from.x, y: from.y, dwell: 0.9 }],
         onDone: () => {
+          carried.delete(from.id); // the hand is free again, whatever it found
           if (!buildingFurnitureOf(session, key).some((p) => p.id === from.id)) return;
           fireCarryGesture(npcId, "pickup", { x: from.x, y: from.y });
           // INCIDENTAL: the household re-arranging itself is not the player
@@ -4343,6 +5303,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         token = liftPieceIntoHands(session, key, npcId, from);
       },
       onDone: () => {
+        carried.delete(from.id); // the hand is free again, landed or not
         if (!token) return; // the lift failed (somebody else got there first)
         landPieceFromHands(session, key, npcId, token, slot);
       },
@@ -4379,7 +5340,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // Already loose on the floor (deconstructed to clear a path, or dropped):
     // it IS the thing hands take, and it is registered, so nothing to record.
     if (piece.id.startsWith("small:")) {
-      if (!session.smallProps.has(piece.id)) return null; // somebody else took it
+      if (!isLooseProp(session, piece.id)) return null; // somebody else took it
       return takeIntoHands(session, npcId, { kind: "object", objId: piece.id });
     }
     // Standing: materialize so the piece is a row (never the drawing), then
@@ -4457,16 +5418,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // across the room stands up still holding its water: the stock moves from
     // the prop's id to the standing piece's, which is the same move `break`
     // made in the other direction. Nothing is ever poured into a sibling.
-    const carriedStock = session.containerStock.get(token);
+    const tokenRec = session.containerRecords.get(token);
+    const carriedStock = tokenRec?.stock;
     if (carriedStock && Object.keys(carriedStock).length) {
-      session.containerStock.delete(token);
-      session.containerStock.set(rowId, carriedStock);
-      session.containers.set(rowId, session.containers.get(token) ?? "in");
-      const owner = session.containerOwner.get(token);
-      if (owner) session.containerOwner.set(rowId, owner);
+      registerContainer(session, rowId, tokenRec?.relation ?? "in", tokenRec?.owner ?? null, carriedStock);
     }
-    session.containers.delete(token);
-    session.containerOwner.delete(token);
+    deleteContainerRecord(session, token);
     placeFurniture(t.deltas, key, {
       id: rowId,
       kind: slot.kind,
@@ -4673,6 +5630,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // that was being minted out of nothing.
     const crewCapOf = (o: ConstructionOrder): number =>
       o.kind === "refine" ? REFINE_CREW_CAP : BUILDERS_CAP;
+    /** Did a PLAYER speak this row? Only a founded row records it (that is the
+     *  only kind `orderBuild` posts); everything else is the town's own. */
+    const orderIsSpoken = (o: ConstructionOrder): boolean =>
+      o.kind === "found" && o.spoken === true;
     const inLaborPhase = (o: ConstructionOrder): boolean => {
       switch (o.kind) {
         case "found":
@@ -4688,7 +5649,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     let crewShares: Map<number, number> | null = null;
     const crewShareOf = (ord: number | undefined): number => {
       if (!crewShares) {
-        const open = [...deltas.orders()].filter(inLaborPhase);
+        // ⚖️ SPOKEN OUTRANKS AUTOMATED — WITHIN THE SCOPE, AND ONLY HERE
+        // (order-scoping law ①, 2026-08-12). The town book is one list of
+        // rows; the one thing they contend for is the shared hand pool, so
+        // that is where "the player asked for this one" is allowed to mean
+        // something. `allocateHands` floors everybody evenly first and then
+        // pours the remainder in THIS order, so a spoken row is never a
+        // starvation of the ambient ones — and when the pool covers every cap
+        // (`free ≥ Σ caps`) the split is byte-identical to the unsorted one.
+        // Founding order still decides among equals, so the split stays
+        // deterministic across peers.
+        const open = [...deltas.orders()]
+          .filter(inLaborPhase)
+          .sort((a, b) => (orderIsSpoken(b) ? 1 : 0) - (orderIsSpoken(a) ? 1 : 0) || a.ord - b.ord);
         const share = allocateHands(open.map(crewCapOf), townHandPool(session).free);
         crewShares = new Map(open.map((o, i) => [o.ord, share[i] ?? 0]));
       }
@@ -4712,6 +5685,35 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const tasks = [...session.taskPool.open(), ...session.taskPool.claimed()].filter(
         (t) => t.goal.kind === "buildwork" && t.goal.site === siteId,
       );
+      // 🚨 A CLAIM IS NOT A BUILDER (2026-08-11). `staffed` used to mean "some
+      // row says claimed", and a claimed buildwork row NEVER expires — the
+      // pool's `expire` only ever retires OPEN rows, and the pool-sweep's
+      // errand-ran-out completion explicitly skips `buildwork` because these
+      // complete off real construction state. So one body that claimed a slot
+      // and then walked off to eat held the site "staffed" forever: the
+      // unstaffed timer was reset every sweep, the clock arm could never
+      // engage, and `present` stayed 0 because nobody was inside
+      // BUILD_WORK_EDGE_R. The site sat at its percentage for as long as
+      // anyone watched it — the livelock behind "50 % worked" for ten
+      // straight minutes (dx-doll-workshop / dx-doll-long).
+      //
+      // A claim counts as STAFFING while its claimant is present-or-arriving,
+      // and a claim that has not put a body at the rect for one whole CLAIM
+      // WINDOW is RELEASED back to open — where the pool's existing
+      // expire/re-claim path can do its job. The window is the pool's own TTL:
+      // no new constant, the same "one posting cycle unanswered" the unstaffed
+      // rule already means by it.
+      for (const t of tasks) {
+        if (t.status !== "claimed") buildClaimSeenAt.delete(t.id);
+        else if (!buildClaimSeenAt.has(t.id)) buildClaimSeenAt.set(t.id, session.taskClock);
+      }
+      const claimStale = (t: PooledTask): boolean =>
+        session.taskClock - (buildClaimSeenAt.get(t.id) ?? session.taskClock) >= DEFAULT_TASK_TTL_S;
+      for (const t of tasks) {
+        if (t.status !== "claimed" || !claimStale(t)) continue;
+        session.taskPool.release(t.id); // → open; the pool expires or re-claims it
+        buildClaimSeenAt.delete(t.id);
+      }
       // ⚖️ NOBODY LOCAL ⇒ THE CLOCK ARM (§1 step 2, the other half of the
       // locality law). With recruiting bound to the neighbourhood, a lot whose
       // own streets are empty of embodied bodies gets NO claimant — and the
@@ -4763,6 +5765,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         const py = rect ? Math.min(Math.max(body.y, rect.y), rect.y + rect.h) : at.y;
         if (Math.hypot(body.x - px, body.y - py) <= BUILD_WORK_EDGE_R) {
           present++;
+          // THE CLAIM IS ALIVE — a body stood at the work this sweep, so its
+          // window restarts. This stamp is the whole difference between "a row
+          // says claimed" and "somebody is building it".
+          buildClaimSeenAt.set(t.id, session.taskClock);
           // The BUILD LOOP animation: the sustained "play" rig — crouched
           // over the work, limbs stroking at a spot in front (the same loop
           // a crafter holds at the bench). Refreshed each sweep with a
@@ -4853,6 +5859,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                   at,
                   missing: stagingMissing(b),
                   pile: (b.pile ??= {}),
+                  ...(b.spoken ? { spoken: true } : {}),
                 },
                 issuer,
               );
@@ -4900,6 +5907,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                 at: r.at,
                 missing: stagingMissing(r),
                 glyph: stackHead(r.produces),
+                // A chained refine stays in the book that asked for it.
+                ...(r.scope ? { scope: r.scope } : {}),
+                // …and keeps the standing of the bill that chained it.
+                ...(r.spoken ? { spoken: true } : {}),
               },
               issuer,
             );
@@ -4912,6 +5923,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                 at: r.at,
                 missing: stagingMissing(r),
                 pile: r.pile,
+                ...(r.scope ? { scope: r.scope } : {}),
+                ...(r.spoken ? { spoken: true } : {}),
               },
               issuer,
             );
@@ -4977,6 +5990,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                 at,
                 missing: stagingMissing(p),
                 glyph: ROOM_GLYPH[roomKind as HouseRoom["kind"]] ?? "room",
+                ...(p.spoken ? { spoken: true } : {}),
               },
               issuer,
             );
@@ -4995,6 +6009,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                 at,
                 missing: stagingMissing(p),
                 pile: p.pile,
+                ...(p.spoken ? { spoken: true } : {}),
               },
               issuer,
             );
@@ -5032,12 +6047,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (t.goal.kind !== "buildwork") continue;
       if (!buildworkSiteAt(session, t.goal.site)) {
         session.taskPool.complete(t.id);
+        buildClaimSeenAt.delete(t.id);
         continue;
       }
       const m = /^o:(\d+)$/.exec(t.goal.site);
       const oo = m ? deltas.orders().find((q) => q.ord === Number(m[1])) : undefined;
       const rect = oo ? orderRectOf(session, oo) : null;
-      if (rect && !observedRect(session, rect)) session.taskPool.complete(t.id);
+      if (rect && !observedRect(session, rect)) {
+        session.taskPool.complete(t.id);
+        buildClaimSeenAt.delete(t.id);
+      }
     }
     // The observation-edge memory dies with its order.
     for (const ord of [...orderObservedPrev.keys()]) {
@@ -5224,7 +6243,58 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     }
     const hi = familyOf(session)?.house ?? session.town.plan.houses[0]?.index;
     if (hi === undefined) return false;
-    if (craftJobsOf(session).get(hi)) {
+    const member = `resident_${hi}_0`;
+    // 🚫 UNFULFILLABLE ⇒ REFUSED, ALOUD, WITH THE REASON (user law ③). Not
+    // "short" — short is the ordinary honest wait this pipeline is built on.
+    // Dead: no source the household can reach holds the head, and no raw that
+    // refines into it is reachable either. Starting the job anyway burned the
+    // house's ONE slot on work that could not begin, and said so only 90 s
+    // later out of `stepCraftJob`'s starve branch.
+    const spotId = craftSpotOf(session, hi);
+    const spotAt = containerAnchor(session, spotId);
+    if (spotAt) {
+      const wantHeads: Record<string, number> = {};
+      for (const [g, n] of Object.entries(recipe.consumes)) {
+        const head = stackHead(g);
+        wantHeads[head] = (wantHeads[head] ?? 0) + n;
+      }
+      const dead = deadBillHeads(
+        session,
+        wantHeads,
+        [
+          { id: spotId, stack: session.containerRecords.get(spotId)?.stock ?? {}, d: 0 },
+          ...craftMaterialSources(session, hi, spotAt, spotId),
+        ],
+        LOCAL_PLAYER_CID,
+        houseOrderScope(hi),
+      );
+      const deadHead = Object.keys(dead)[0];
+      if (deadHead) {
+        const voice = refusalVoiceOf(session, speaker ?? null) ?? member;
+        speakLine(session, voice, noSourceLine(stackHead(deadHead)), true);
+        presenter.toast(
+          `💬 can't make the ${word} — we still need ${billNames(dead)}, and there is none to fetch`,
+          "feedback",
+        );
+        return true;
+      }
+    }
+    const active = craftJobsOf(session).get(hi);
+    // ⚖️ SPOKEN OUTRANKS AUTOMATED, WITHIN THE HOUSE (order-scoping law ①).
+    // The waiting line already came first for an EMPTY slot
+    // (`popQueuedCraft` before `startProgramCraft` before the rotation); what
+    // it could not do was reach a slot the house had already given to its own
+    // inventory rotation, so a spoken `make` queued behind a chair nobody
+    // asked for. An automated job that has not begun LABOUR yields it — its
+    // hauls come with it (the loads are the household's either way, and
+    // dropping their claims mid-walk would be the double-spend the staging
+    // sweep warns about), and its want re-derives on the next sweep
+    // (`startProgramCraft` re-reads the work list every 90 s; the rotation
+    // re-picks tomorrow). A job already at the bench is NOT interrupted:
+    // taking the piece out of a crafter's hands is the "builds itself" bug
+    // class in reverse.
+    const yields = !!active && active.spoken !== true && active.laborStart === undefined;
+    if (active && !yields) {
       // THE ORDER WAITS, IT IS NOT DROPPED (phase 4 step 5): the slot is one
       // per house, but a second spoken order used to be answered with "waits
       // its turn" and then thrown away — the line was a fiction. It is a real
@@ -5254,11 +6324,24 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       );
       return true;
     }
+    if (active && yields) {
+      // The yielding job's gathered units are already reserved AT the spot
+      // under the house's own holder — they stay the household's, and the
+      // walking loads keep walking.
+      craftApproachAt.delete(hi);
+      craftStarvedAt.delete(hi);
+      session.townParks.delete(craftGatherParkKey(hi));
+      presenter.toast(
+        `🔨 the ${active.label} steps aside — the ${word} was asked for`,
+        "feedback",
+      );
+    }
     craftJobsOf(session).set(hi, {
       ...recipe,
-      spotId: craftSpotOf(session, hi),
-      agreements: [],
+      spotId,
+      agreements: active && yields ? active.agreements : [],
       laborS: 0,
+      spoken: true,
     });
     if (speaker) npcChatBubble(session, speaker, "ok");
     presenter.toast(
@@ -5354,6 +6437,27 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const lotAt = foundedLotAt(session, candidates[0]!) ?? ctx.center;
     const missing = buildMissingMaterials(session, spec, lotAt, issuer);
     const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
+    // 🚫 …BUT AN UNFULFILLABLE ONE IS REFUSED, ALOUD (user law ③, 2026-08-12).
+    // The recorded divergence this closes: the BOARD gated a structure noun on
+    // affordability while `orderBuild` refused nothing, so a poor town lost
+    // building words off the child's board and the same sentence, spoken, still
+    // staked a plot that could never rise. The board now shows what can be SAID
+    // (quest-host's noun push demotes instead of hiding) and the ORDER refuses
+    // what cannot be BUILT — both halves of the question, answered the same way.
+    // "Dead" is strictly narrower than "short": see `deadBillHeads`.
+    const deadBill = deadBillHeads(
+      session, missing, siteMaterialSources(session, lotAt, issuer), issuer,
+    );
+    const deadHead = Object.keys(deadBill)[0];
+    if (deadHead) {
+      const voice = refusalVoiceOf(session, speakerFor);
+      if (voice) speakLine(session, voice, noSourceLine(stackHead(deadHead)), true);
+      presenter.toast(
+        `💬 can't build the ${spec.label} — we still need ${billNames(deadBill)}, and there is none to fetch`,
+        "feedback",
+      );
+      return true;
+    }
     if (!explicitBuilder) {
       // UNTARGETED → the ①a TASK POOL: any appropriate creature in the
       // focus area may claim it (stepTaskPool's build capability check).
@@ -5379,7 +6483,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       compliance(relationToward(session, explicitBuilder, issuer), creatureMood(explicitBuilder)) >=
         VOLUNTEER_COMPLIANCE;
     if (!willing) {
+      // 🚨 A SPOKEN ORDER REFUSES VOCALLY OR IT DID NOT REFUSE (the standing
+      // law; S&D closing sweep 2026-08-12). This arm used to bubble and
+      // nothing else — and a bubble is not a channel: `sayNpcLine` hangs
+      // NOTHING when the nominated body has no poser point (off-view, not
+      // streamed, an inert species), so an order handed to such a creature
+      // vanished without the pooled task, the zoning refusal OR the honest
+      // "can't build here" — the worst of the three. Every OTHER refusal in
+      // this function toasts as well as speaks (see the dead-bill arm above);
+      // this one now does too, and it NAMES the creature, because "someone
+      // said no" with no bubble on screen is the same silence in slower
+      // clothes.
       npcChatBubble(session, explicitBuilder, placementWontLine()[syntax]);
+      presenter.toast(`💬 can't build the ${spec.label} — the one you asked won't`, "feedback");
       return true;
     }
     const walker = explicitBuilder === possession.creatureId ? null : explicitBuilder;
@@ -5388,6 +6504,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       presenter.toast(`💬 "${sentence}" — can't do that here`, "feedback");
       return true;
     }
+    // ⚖️ A PLAYER SPOKE THIS ROW (order-scoping law ①). Stamped HERE rather
+    // than threaded through `executeBuildOrder` because this is the only
+    // caller that is a player order — every other one is the town growing.
+    // Within the town book it buys first call on the shared crew, nothing
+    // more (see `crewShareOf`); it never reaches into another scope's book.
+    b.spoken = true;
     // THE ACCEPTED ORDER SPEAKS. A bare "ok" is right when the order can start
     // — nothing is outstanding. When it is STAKED AND SHORT, the builder names
     // what the structure is waiting on instead ("the house needs more blocks"):
@@ -5555,8 +6677,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   /**
    * NEED-STEERED AUTO-FOUNDING (③ + city-founding), once per credited
    * town day: URGENT need (homeless souls, real shortage) founds at once;
-   * otherwise the town banks prosperity off the SAME household signals
-   * the annex accumulator reads and a banked threshold founds the
+   * otherwise the town banks its own REAL SURPLUS (S&D S1 — production above
+   * committed demand; it used to bank the mean household signal) and a
+   * banked threshold founds the
    * most-needed admitted structure (zoning.ts foundingGrowthStep —
    * deterministic: need-ranked, capacity/cap/stock-gated, no RNG).
    * Charters CONSTRAIN candidates when present; with none, need builds
@@ -5568,24 +6691,35 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const t = session.town;
     const ctx = buildContext(session);
     if (!t || !ctx) return;
-    // The day's town gain: the MEAN household gain (each capped like the
-    // annex accrual), so town growth paces with how the households live.
-    let gainSum = 0;
-    for (const h of t.plan.houses) {
-      gainSum += Math.min(
-        PROSPERITY_DAILY_CAP,
-        Math.max(0, prosperitySignals(session, h.index).reduce((s, sig) => s + sig.value, 0)),
-      );
+    // ⚖️ THE DAY'S TOWN GAIN — THE TOWN'S OWN REAL SURPLUS (S&D S1; growth
+    // motive law ②). This was the MEAN HOUSEHOLD GAIN, which made the town's
+    // bank a second reading of household satiety; the household rung now has
+    // its own honest derivation (`prosperitySignals`), so the town gets ITS
+    // rung's: production ABOVE committed demand, straight off the books
+    // (`townSurplus` — got vs need PLUS what an export lane is owed), averaged
+    // over the goods the town keeps books on and expressed as a fraction of a
+    // full day's accrual.
+    //
+    // A town that merely MEETS its demand banks nothing. That is the whole
+    // law: there is no surplus to spend, so nothing non-urgent is founded, and
+    // a content town goes quiet. URGENT need (URGENT_CROWDING /
+    // URGENT_SHORTAGE, inside foundingGrowthStep) bypasses the bank exactly as
+    // before — survival was never funded by prosperity.
+    let surplusSum = 0;
+    let bookN = 0;
+    for (const f of t.eco.fills) {
+      surplusSum += Math.min(1, townSurplus(session, f.good));
+      bookN++;
     }
-    // FOUNDING LABOR (city-founding): a settlement with people but no
-    // households yet still works — the camp accrues at the daily cap, so
-    // a founding town's non-urgent wants (a workshop after the farm)
-    // eventually fund themselves without a single house standing.
-    const gain = t.plan.houses.length
-      ? gainSum / t.plan.houses.length
-      : t.town.scalar("population") > 0
-        ? FOUNDING_PROSPERITY_DAILY_CAP
-        : 0;
+    const bookSurplus = bookN ? surplusSum / bookN : 0;
+    // 🚨 THE FLAT-CAP NO-HOUSES ARM IS DEAD (S&D S1). It read: a settlement
+    // with people but no households accrues at the DAILY CAP — i.e. a camp
+    // with nothing but a population scalar funded a workshop out of thin air,
+    // the purest form of growth-for-free on the map. A HOUSE-LESS CAMP ACCRUES
+    // 0. It is not frozen: a homeless population is URGENT crowding, and
+    // urgent founds without any bank at all, so the camp still raises its
+    // first houses — and once it has households and a surplus, it banks.
+    const gain = t.plan.houses.length ? bookSurplus * FOUNDING_PROSPERITY_DAILY_CAP : 0;
     // House-role types (the crowding denominator counts BOTH base houses
     // and founded house-role works; a VACATED row already counts as its
     // plan.houses household — never twice).
@@ -5614,6 +6748,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // work it off, exactly like a player's order. (The costless clock
       // twin stays for worldgen, where there is nobody to watch.)
       pipeline: true,
+      // ⚖️ AND IT MAY ONLY START WHAT THE SPARE COVERS (surplus control S2).
+      // The town's ambient founding is the loudest automated appetite there is
+      // — one workshop's ≈198-block bill reserves everything a yard has — so
+      // the stock it prices itself against is the free yard MINUS the commons
+      // reserve. Growth is not stopped, it is made to wait for a surplus,
+      // which is the addendum's own diagnosis of the fault.
+      reserve: (head) => commonsReserveOf(head, session.scale.resourceCompression),
       signals: {
         crowding: houseCount > 0 ? Math.min(2, pop / (houseCount * HOUSEHOLD)) : pop > 0 ? 2 : 0,
         shortage: (good) => townShortage(session, good),
@@ -5762,7 +6903,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         furnStock: (glyph) => {
           let n = 0;
           for (const objId of houseContainerKeys(session, house.index)) {
-            n += session.containerStock.get(objId)?.[glyph] ?? 0;
+            n += session.containerRecords.get(objId)?.stock?.[glyph] ?? 0;
           }
           return n;
         },
@@ -5917,7 +7058,38 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       presenter.toast(`💬 no ground for a ${roomKind} on this house`, "feedback");
       return true;
     }
-    return stakeAnnex(session, houseIndex, cluster, candidate);
+    // ⚖️ A PLAYER ORDERED IT (surplus control S1) — the one thing that
+    // separates this from the daily prosperity spend, which shares every
+    // other line of `stakeAnnex`.
+    return stakeAnnex(session, houseIndex, cluster, candidate, { spoken: true });
+  }
+
+  /**
+   * ⚖️ CAN THE COMMONS SPARE AFFORD THIS ROOM? — the AUTOMATED annex launch
+   * gate (surplus control S2), handed to `constructionStep` so it is asked
+   * BEFORE the household's banked threshold is spent.
+   *
+   * The reading is `foundingGrowthStep`'s own, one rung down: the yard's
+   * unreserved stock, minus the commons reserve, WITH refinable credit (a
+   * block bill is honestly payable out of wood — that is the chain). So the
+   * wood floor is what bites here even though a room's bill is in blocks, and
+   * it bites in exactly the way the addendum describes: a town whose whole
+   * woodpile is spoken for stops ordering rooms instead of staking plots
+   * nobody can stock. A player's `build bedroom` never reaches this — it goes
+   * through `orderAnnex`, which is spoken, and designations never refuse (⑥).
+   */
+  function annexWithinSpare(
+    session: QuestSession,
+    candidate: AnnexCandidate | InteriorCandidate,
+  ): boolean {
+    const t = session.town;
+    if (!t) return true;
+    const dial = session.scale.resourceCompression;
+    const free = unreservedStock(t.deltas.stock, t.deltas.reservations, TOWN_YARD_EP);
+    return costsMet(
+      { costs: roomOrderCosts(candidate, dial) },
+      withRefinableCredit(spareStock(free, (head) => commonsReserveOf(head, dial))),
+    );
   }
 
   /**
@@ -5935,8 +7107,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     candidate: AnnexCandidate | InteriorCandidate,
     /** The player AIMED at this ground (⑦ — a lit area was pressed). The
      *  highlight is a promise about a place, so the empty-room shortcut
-     *  below must not answer it somewhere else. */
-    opts?: { pinned?: boolean },
+     *  below must not answer it somewhere else.
+     *
+     *  ⚖️ `spoken` (surplus control S1) — a PLAYER-ordered room, so its
+     *  staging may draw the commons reserve. The daily prosperity spend
+     *  passes neither, and draws SPARE only. */
+    opts?: { pinned?: boolean; spoken?: boolean },
     /** WHO ORDERED THE ROOM — the author whose reach the bill is measured
      *  against and whose name the staking hauls carry. */
     issuer: string = LOCAL_PLAYER_CID,
@@ -5966,7 +7142,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // — not one flat block for every room in the world. An outward annex
     // brings a floor, a roof and its three unshared walls; an inward cut is a
     // partition and nothing else, and this path stakes either.
-    const costs = roomOrderCosts(candidate);
+    const costs = roomOrderCosts(candidate, session.scale.resourceCompression);
     const missing = buildMissingMaterials(session, { costs }, at, issuer);
     const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
     const p = t.deltas.postAnnexSite({
@@ -5977,6 +7153,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       pile: {},
       startedDay: buildDayNow(session),
       buildDays: constructionGameDays(ANNEX_BUILD_DAYS, session.scale),
+      ...(opts?.spoken ? { spoken: true } : {}),
     });
     // THE PERSISTENT WANT (pipeline ④): the ordered room outlives the room
     // itself — its furniture requirement drives crafting until met. One row
@@ -5992,6 +7169,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         at,
         missing: stagingMissing(p),
         glyph: ROOM_GLYPH[roomKind] ?? "room",
+        ...(opts?.spoken ? { spoken: true } : {}),
       },
       issuer,
     );
@@ -6313,8 +7491,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const b = pendingBuildingOf(session, buildingKey);
     if (!b || !world) return [];
     const out: FurniturePiece[] = [];
-    for (const [objId, rec] of session.smallProps) {
-      const kind = furnitureKindOfGlyph(rec.glyph);
+    for (const [objId, rec] of looseEntries(session)) {
+      const kind = furnitureKindOfGlyph(rec.glyph!);
       if (!kind) continue;
       const o = world.state.objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue; // in hand or in a box already
@@ -6427,19 +7605,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const destId = hm
       ? (houseContainerKeys(session, Number(hm[1])).find((id) => !gone.has(id)) ?? null)
       : null;
-    const dest = destId ? (session.containerStock.get(destId) ?? {}) : t.deltas.stock;
+    const dest = destId ? (session.containerRecords.get(destId)?.stock ?? {}) : t.deltas.stock;
     for (const [kind, n] of Object.entries(stowed)) {
       const g = furnitureGlyph(kind as StationKind);
       dest[g] = (dest[g] ?? 0) + (n ?? 0);
     }
     for (const [g, n] of Object.entries(refund)) dest[g] = (dest[g] ?? 0) + n;
     for (const boxId of removedBoxes) {
-      const stock = session.containerStock.get(boxId);
+      const stock = session.containerRecords.get(boxId)?.stock;
       if (!stock) continue;
       for (const [g, n] of Object.entries(stock)) dest[g] = (dest[g] ?? 0) + n;
-      session.containerStock.delete(boxId);
+      delete session.containerRecords.get(boxId)!.stock; // stock ONLY — relation/owner untouched, as before
     }
-    if (destId) session.containerStock.set(destId, dest);
+    if (destId) setContainerStock(session, destId, dest);
   }
 
   /**
@@ -6631,16 +7809,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     //
     // Only the headless case still banks: with no world there is no prop to
     // hold anything, and re-homing beats vanishing.
-    const contents = session.containerStock.get(pieceId);
+    const pieceRec = session.containerRecords.get(pieceId);
+    const contents = pieceRec?.stock;
     if (prop && contents && Object.keys(contents).length) {
-      session.containerStock.delete(pieceId);
-      session.containerStock.set(prop, contents);
-      session.containers.set(prop, session.containers.get(pieceId) ?? "in");
-      const owner = session.containerOwner.get(pieceId);
-      if (owner) session.containerOwner.set(prop, owner);
+      registerContainer(session, prop, pieceRec?.relation ?? "in", pieceRec?.owner ?? null, contents);
     }
-    session.containers.delete(pieceId);
-    session.containerOwner.delete(pieceId);
+    deleteContainerRecord(session, pieceId);
     // `removedBoxes` still names the piece so it can't be chosen as its own
     // destination; its stock has already left, so the pour-out loop finds
     // nothing to pour.
@@ -6759,14 +7933,15 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   function roomTeardownCosts(
     delta: BuildingDelta | undefined,
     room: HouseRoom,
+    conversionDial = 1,
   ): Record<string, number> {
     const am = /_a(\d+)$/.exec(room.id);
     const a = am ? (delta?.annexes ?? []).find((x) => x.ord === Number(am[1])) : undefined;
-    if (a) return annexCosts(a);
+    if (a) return annexCosts(a, conversionDial);
     const im = /_i(\d+)$/.exec(room.id);
     const i = im ? (delta?.interior ?? []).find((x) => x.ord === Number(im[1])) : undefined;
-    if (i) return interiorCosts(i);
-    return baseRoomCosts(room.rect);
+    if (i) return interiorCosts(i, conversionDial);
+    return baseRoomCosts(room.rect, conversionDial);
   }
 
   function commitDemolition(session: QuestSession, p: PendingDemolition): void {
@@ -6798,7 +7973,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             .filter((q) => q.roomId === p.roomId)
             .map((q) => q.id)
         : []
-    ).concat(generated.filter((g) => session.containerStock.has(g.id)).map((g) => g.id));
+    ).concat(generated.filter((g) => hasStock(session, g.id)).map((g) => g.id));
     const res = empty
       ? emptyRoom(t.deltas, p.buildingKey, plan, p.roomId, generated)
       : demolishRoom(t.deltas, p.buildingKey, plan, p.roomId);
@@ -6825,7 +8000,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // demolish it, bank a whole annex.
     const wallRefund: Record<string, number> = {};
     if (!empty) {
-      for (const [head, n] of Object.entries(roomTeardownCosts(t.deltas.get(p.buildingKey), room))) {
+      const teardown = roomTeardownCosts(
+        t.deltas.get(p.buildingKey),
+        room,
+        session.scale.resourceCompression,
+      );
+      for (const [head, n] of Object.entries(teardown)) {
         wallRefund[head === BLOCK_GLYPH ? (refinedGlyphOf("wood") ?? head) : head] = n;
       }
     }
@@ -6915,7 +8095,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // AN INTERIOR CUT IS A PARTITION (phase 6) — no floor, no roof, no outer
     // wall, so it costs a fraction of the annex above. Subdividing a standing
     // shell is genuinely the cheap way to get a room, and now says so.
-    const costs = interiorCosts(candidate);
+    const costs = interiorCosts(candidate, session.scale.resourceCompression);
     const missing = buildMissingMaterials(session, { costs }, at, issuer);
     const missingNames = Object.entries(missing).map(([g, n]) => `${n} ${g}`).join(", ");
     const p = t.deltas.postAnnexSite({
@@ -6925,6 +8105,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       pile: {},
       startedDay: buildDayNow(session),
       buildDays: constructionGameDays(ANNEX_BUILD_DAYS, session.scale),
+      // ⚖️ ALWAYS A PLAYER'S CUT (surplus control S1) — `orderWorkRoom` has no
+      // ambient caller, so a shell's subdivision may draw the reserve.
+      spoken: true,
     });
     // THE PERSISTENT WANT (④) rides the work's own delta — the standing
     // program outlives the room it raises (and comes off with it, phase 4).
@@ -6936,6 +8119,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         at,
         missing: stagingMissing(p),
         glyph: ROOM_GLYPH[roomKind] ?? "room",
+        spoken: true,
       },
       issuer,
     );
@@ -7259,6 +8443,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // exported path exposes, and the routing they decide is invisible from
     // outside until a hauler has already walked to the wrong bench.
     refineSpotOf, ensureRefineOrders,
+    // THE REFUSAL'S ONE TEST (order-scoping round, law ③): SLOW vs DEAD. Pure
+    // over the live stacks, and the whole difference between an honest
+    // designation that waits and an order refused aloud — so it is pinned
+    // directly rather than only through the two order verbs that call it.
+    deadBillHeads, siteMaterialSources,
     // §1's third decision point: WHICH HOUSEHOLD makes a shell's piece. A pure
     // lookup over the town plan, invisible from outside until somebody's mother
     // has already been put to work on a door across town.
@@ -7271,6 +8460,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     orderCraft, orderBuild, orderZone, stepZonedFounding,
     structureFocusOf, structureActsFor, structureConstructionOptions, structureFurnishOptions,
     orderAnnex, stakeAnnex, orderDemolish, orderWorkRoom, orderWorkDemolish,
+    // ⚖️ SURPLUS CONTROL's launch gate for the ambient annex (S2). `stakeAnnex`
+    // itself cannot host it — `constructionStep` has already spent the
+    // household's threshold by the time it calls — so the predicate is handed
+    // UP to the step that does the spending. Exported (rather than only
+    // reachable through the day tick) because it is the one place the reserve
+    // meets the room bill, and a pin on it is a pin on the whole gate.
+    annexWithinSpare,
     // PHASE 4 — the removal verbs (empty a room, break one piece).
     orderEmpty, orderWorkEmpty, orderBreakPiece,
   };

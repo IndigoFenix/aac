@@ -467,6 +467,28 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
     return out;
   }
 
+  /** ⏩ `warp <n>d` — the books jump n economy days, then the world settles.
+   *
+   *  The `# warp` comment is emitted whatever the answer, including a REFUSAL:
+   *  a transcript that silently omitted a warp the harness declined would be
+   *  lying about what the driver asked for. A refusal settles too (nothing
+   *  moved, so the settle is the usual quiet one) — every command still ends
+   *  with exactly one TICK. */
+  function warpEvents(days: number): TextEvent[] {
+    const warp = deps.host.advanceLedgerDays;
+    if (!warp) {
+      return [
+        { tag: "ERR", text: "this boot has no clock warp (the host predates it)." },
+        ...settle(),
+      ];
+    }
+    const r = warp.call(deps.host, days);
+    return [
+      { tag: "WARP", ok: r.ok, days: r.days, edges: r.edges, text: r.note },
+      ...settle(),
+    ];
+  }
+
   /** The current scene, re-probed without stepping (a query must not move time
    *  before it answers — the settle after it does that). */
   function currentScene(): VisibleScene | null {
@@ -1022,6 +1044,7 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
           "send <who> to <thing> — tell somebody to go to it",
           "watch <thing> / unwatch <thing|all> / watching",
           `wait [n]         — let ${WAIT_DEFAULT_S}s (or n) of world time pass`,
+          "warp <n>d        — jump the BOOKS n economy days (no bodies move)",
           "help             — this list",
         ],
       },
@@ -1334,6 +1357,14 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
         return frame([...whoEvents(), ...settle()]);
       case "wait":
         return frame(stepExactly(cmd.seconds));
+      // ⏩ THE CLOCK WARP (⑬). The books jump; nothing walks. The `# warp` line
+      //    lands FIRST so a transcript reads in order, and then the ordinary
+      //    SETTLE runs — the world's own reaction to a week of ledgers (a
+      //    stake-out toast, a board that changed) is play, and play is what a
+      //    settle is for. The TICK that closes the command therefore reports
+      //    the SETTLE's seconds, never the warped span: no time was played.
+      case "warp":
+        return frame(warpEvents(cmd.days));
       case "say": {
         // The driver's own composition, handed to the host verbatim. The line
         // that comes back is read off the bubble like any other (law ②) — this

@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus,
   Search,
@@ -28,6 +29,8 @@ import {
   Users,
   Link2,
   Loader2,
+  Check,
+  Sparkles,
   Contact as ContactIcon,
   ArrowLeft,
 } from 'lucide-react';
@@ -51,6 +54,9 @@ export function StudentContactsPanel({ isOpen }: Props) {
   const [editingContact, setEditingContact] = useState<StudentContact | null>(null);
   const [creating, setCreating] = useState(false);
   const [prefillForm, setPrefillForm] = useState<Record<string, any> | null>(null);
+  // 'confirmed' = contacts a person entered (or has already reviewed);
+  // 'review'    = contacts the AAC's AI created from what it observed.
+  const [activeTab, setActiveTab] = useState<'confirmed' | 'review'>('confirmed');
 
   // Listen for cross-component requests to open the create modal with prefilled
   // values (e.g. consent wizard's "Add me as a contact" shortcut).
@@ -84,6 +90,20 @@ export function StudentContactsPanel({ isOpen }: Props) {
     );
   }, [contacts, searchQuery]);
 
+  // Contacts the AI created during AAC sessions stay out of the main list until
+  // a person confirms them — see aacSettings.autoAddContacts for the gate that
+  // decides whether the AI may create them at all.
+  const confirmedContacts = useMemo(
+    () => filteredContacts.filter((c) => !c.autoAdded),
+    [filteredContacts],
+  );
+  const reviewContacts = useMemo(
+    () => filteredContacts.filter((c) => c.autoAdded),
+    [filteredContacts],
+  );
+  // Badge count ignores the search box — it reports the real backlog.
+  const pendingCount = useMemo(() => contacts.filter((c) => c.autoAdded).length, [contacts]);
+
   const deleteMut = useMutation({
     mutationFn: async (id: string) => {
       const response = await apiRequest(
@@ -95,6 +115,28 @@ export function StudentContactsPanel({ isOpen }: Props) {
     },
     onSuccess: () => {
       toast({ title: t('contacts.deleted') });
+      queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', studentId, 'contacts'] });
+    },
+    onError: (err: Error) => {
+      toast({ title: t('common.error'), description: err.message, variant: 'destructive' });
+    },
+  });
+
+  // Confirming an AI-created contact simply clears its autoAdded flag — the row
+  // itself is already in use by face/voice recognition, so this is a review
+  // step, not an import.
+  const confirmMut = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest(
+        'PATCH',
+        `/api/biometric/students/${studentId}/contacts/${id}`,
+        { autoAdded: false },
+      );
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || 'Failed to confirm');
+    },
+    onSuccess: () => {
+      toast({ title: t('contacts.confirmed') });
       queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', studentId, 'contacts'] });
     },
     onError: (err: Error) => {
@@ -138,6 +180,100 @@ export function StudentContactsPanel({ isOpen }: Props) {
       </div>
     );
   }
+
+  // One card shape for both tabs. An AI-created contact gets the extra
+  // "added automatically" badge and a Confirm action; everything else about the
+  // row (photo, links, edit, delete) is identical, so it lives in one place.
+  const renderContactCard = (contact: StudentContact) => {
+    const isLinked = !!(contact.linkedUserId || contact.linkedStudentId);
+    const photoSrc = contact.biometricDataId
+      ? apiUrl(`/api/biometric-data/${contact.biometricDataId}/photo`)
+      : null;
+    return (
+      <Card key={contact.id}>
+        <CardContent className="p-4 flex items-center gap-3">
+          {photoSrc ? (
+            <img
+              src={photoSrc}
+              alt=""
+              className="w-12 h-12 rounded-full object-cover border shrink-0"
+              onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <User className="w-5 h-5 text-primary" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium truncate">{contact.name}</span>
+              {contact.relationship && (
+                <Badge variant="secondary" className="text-xs">
+                  {contact.relationship}
+                </Badge>
+              )}
+              {contact.autoAdded && (
+                <Badge variant="outline" className="text-xs">
+                  <Sparkles className="w-3 h-3 me-1" />
+                  {t('contacts.autoAddedBadge')}
+                </Badge>
+              )}
+              {isLinked && (
+                <Badge variant="outline" className="text-xs">
+                  <Link2 className="w-3 h-3 me-1" />
+                  {contact.linkedUserId
+                    ? t('contacts.linkedToUser')
+                    : t('contacts.linkedToStudent')}
+                </Badge>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5 flex-wrap">
+              {contact.role && <span>{t(`team.roles.${contact.role}`)}</span>}
+              {contact.organization && <span>· {contact.organization}</span>}
+              {contact.contactEmail && <span>· {contact.contactEmail}</span>}
+            </div>
+            {contact.autoAdded && contact.contextNotes && (
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                {contact.contextNotes}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {contact.autoAdded && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                disabled={confirmMut.isPending}
+                onClick={() => confirmMut.mutate(contact.id)}
+              >
+                <Check className="w-4 h-4" />
+                {t('contacts.confirm')}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setEditingContact(contact)}
+            >
+              <Edit className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive"
+              onClick={() => {
+                if (confirm(t('contacts.confirmDelete'))) deleteMut.mutate(contact.id);
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div
@@ -202,99 +338,81 @@ export function StudentContactsPanel({ isOpen }: Props) {
         </div>
       </div>
 
-      {/* List */}
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-3 max-w-4xl mx-auto">
-          {contactsQuery.isLoading && (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
+      {/* List — one tab for reviewed contacts, one for the AI's suggestions */}
+      <Tabs
+        dir={isRTL ? 'rtl' : 'ltr'}
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as 'confirmed' | 'review')}
+        className="flex-1 flex flex-col min-h-0"
+      >
+        <div
+          className={cn(
+            'border-b px-4 shrink-0',
+            isDark ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white',
           )}
-
-          {!contactsQuery.isLoading && filteredContacts.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground">
-              <ContactIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p className="text-sm">
-                {searchQuery ? t('contacts.noResults') : t('contacts.empty')}
-              </p>
-              {!searchQuery && (
-                <Button variant="outline" className="mt-4 gap-2" onClick={() => { setPrefillForm(null); setCreating(true); }}>
-                  <Plus className="w-4 h-4" />
-                  {t('contacts.add')}
-                </Button>
+        >
+          <TabsList className="h-12 bg-transparent gap-1">
+            <TabsTrigger value="confirmed" className="gap-2 data-[state=active]:bg-primary/10">
+              <ContactIcon className="w-4 h-4" />
+              {t('contacts.tabAll')}
+            </TabsTrigger>
+            <TabsTrigger value="review" className="gap-2 data-[state=active]:bg-primary/10">
+              <Sparkles className="w-4 h-4" />
+              {t('contacts.tabAutoAdded')}
+              {pendingCount > 0 && (
+                <Badge variant="secondary" className="ms-1 h-5 px-1.5 text-xs">
+                  {pendingCount}
+                </Badge>
               )}
-            </div>
-          )}
-
-          {filteredContacts.map((contact) => {
-            const isLinked = !!(contact.linkedUserId || contact.linkedStudentId);
-            const photoSrc = contact.biometricDataId
-              ? apiUrl(`/api/biometric-data/${contact.biometricDataId}/photo`)
-              : null;
-            return (
-              <Card key={contact.id}>
-                <CardContent className="p-4 flex items-center gap-3">
-                  {photoSrc ? (
-                    <img
-                      src={photoSrc}
-                      alt=""
-                      className="w-12 h-12 rounded-full object-cover border shrink-0"
-                      onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <User className="w-5 h-5 text-primary" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium truncate">{contact.name}</span>
-                      {contact.relationship && (
-                        <Badge variant="secondary" className="text-xs">
-                          {contact.relationship}
-                        </Badge>
-                      )}
-                      {isLinked && (
-                        <Badge variant="outline" className="text-xs">
-                          <Link2 className="w-3 h-3 me-1" />
-                          {contact.linkedUserId
-                            ? t('contacts.linkedToUser')
-                            : t('contacts.linkedToStudent')}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5 flex-wrap">
-                      {contact.role && <span>{t(`team.roles.${contact.role}`)}</span>}
-                      {contact.organization && <span>· {contact.organization}</span>}
-                      {contact.contactEmail && <span>· {contact.contactEmail}</span>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setEditingContact(contact)}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={() => {
-                        if (confirm(t('contacts.confirmDelete'))) deleteMut.mutate(contact.id);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+            </TabsTrigger>
+          </TabsList>
         </div>
-      </ScrollArea>
+
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-3 max-w-4xl mx-auto">
+            {contactsQuery.isLoading && (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
+            <TabsContent value="confirmed" className="mt-0 space-y-3">
+              {!contactsQuery.isLoading && confirmedContacts.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <ContactIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">
+                    {searchQuery ? t('contacts.noResults') : t('contacts.empty')}
+                  </p>
+                  {!searchQuery && (
+                    <Button variant="outline" className="mt-4 gap-2" onClick={() => { setPrefillForm(null); setCreating(true); }}>
+                      <Plus className="w-4 h-4" />
+                      {t('contacts.add')}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {confirmedContacts.map((contact) => renderContactCard(contact))}
+            </TabsContent>
+
+            <TabsContent value="review" className="mt-0 space-y-3">
+              {!contactsQuery.isLoading && reviewContacts.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">
+                    {searchQuery ? t('contacts.noResults') : t('contacts.autoAddedEmpty')}
+                  </p>
+                </div>
+              )}
+              {reviewContacts.length > 0 && (
+                <p className="text-sm text-muted-foreground pb-1">
+                  {t('contacts.autoAddedHint')}
+                </p>
+              )}
+              {reviewContacts.map((contact) => renderContactCard(contact))}
+            </TabsContent>
+          </div>
+        </ScrollArea>
+      </Tabs>
 
       {/* Editor modal (create + edit share this) */}
       {(creating || editingContact) && (

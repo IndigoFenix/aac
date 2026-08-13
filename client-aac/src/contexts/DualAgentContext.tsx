@@ -410,8 +410,11 @@ interface DualAgentProviderProps {
    *  window, sent with speech clips so the server can fuse it with the voice
    *  match. See shared/aac/speaker-fusion.ts. */
   getLipActivity?: (startMs: number, endMs: number) => import("@shared/aac/speaker-fusion").LipFace[];
-  /** Function to get unmatched face descriptors for AI-triggered enrollment */
-  getUnmatchedFaceDescriptors?: () => Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>;
+  /** Function to get unmatched face descriptors for AI-triggered enrollment.
+   *  Types the FULL payload (quality + observed age/sex attributes) rather than
+   *  a hand-copied subset — the extra fields were already travelling at runtime,
+   *  and the server's attribute veto reads them. */
+  getUnmatchedFaceDescriptors?: () => import("@/hooks/usePersonIdentification").UnknownFaceDescriptor[];
   /** Compute a speaker embedding from a VAD-gated speech clip (16 kHz mono WAV).
    *  When provided, voice samples are sent to the server for voice matching. */
   embedVoiceClip?: (wav: Blob) => Promise<{ embedding: number[]; quality: number } | null>;

@@ -47,6 +47,7 @@ import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play.j
 import { houseDoorstep } from "@shared/world-engine/kernel/town/goods.js";
 import { foundedBuildingDone, type FoundingCandidate } from "@shared/world-engine/kernel/town/construction.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
+import type { ContainerRecord } from "@shared/world-engine/kernel/town/containers.js";
 import { DOLLHOUSE_SCALE, serviceRadiusM } from "@shared/world-engine/scale.js";
 
 // startPop 80 (was 20) — growth phase B re-pin. The fixture needs a town with
@@ -162,9 +163,8 @@ function harness(opts?: { family?: number | null }) {
     // distances, and under REAL_SCALE the service radius (~35 km) swallows
     // every town, which is exactly the "one district" case scale.ts documents.
     scale: DOLLHOUSE_SCALE,
-    containerStock: new Map<string, Record<string, number>>(),
-    containers: new Map<string, "in" | "on">(),
-    containerOwner: new Map<string, string | null>(),
+    containerRecords: new Map<string, ContainerRecord>(),
+    wornBagIndex: new Map<string, string>(),
     marketStore: new Map<string, unknown>(),
     produceBox: new Map<string, unknown>(),
     houseShown: new Set<number>(),
@@ -274,8 +274,19 @@ describe("craftHouseholdFor — the shell's piece is made in the shell's own str
     const { session, held, director } = harness();
     const first = director.craftHouseholdFor(session, SITE.at, "furn.door");
     expect(first.kind).toBe("make");
-    held.set(`h_${first.kind === "make" ? first.house : -1}`, { "furn.door": 1 });
-    expect(director.craftHouseholdFor(session, SITE.at, "furn.door")).toEqual({ kind: "held" });
+    const holder = first.kind === "make" ? first.house : -1;
+    held.set(`h_${holder}`, { "furn.door": 1 });
+    // 🔁 RE-PINNED 2026-08-12 (GL fix round F2): the answer now NAMES the
+    // holder. "Wait for it" was only honest if something was bringing it, and
+    // for a whole round nothing was — the piece sat in a household box the
+    // caller's own scan is forbidden to open (`mayUse`), so the shell waited
+    // for a delivery nobody had scheduled. `requestPiece` uses this index to
+    // fetch from that household directly, which is what finally makes the
+    // "have we got one" test and the haul mean the same thing by "one exists".
+    expect(director.craftHouseholdFor(session, SITE.at, "furn.door")).toEqual({
+      kind: "held",
+      house: holder,
+    });
     // A DIFFERENT piece is unaffected — the question is per-glyph, never
     // "does that house own any furniture".
     expect(director.craftHouseholdFor(session, SITE.at, "furn.bed").kind).toBe("make");
@@ -335,5 +346,52 @@ describe("an OBSERVED site with no local hand banks on the clock arm and finishe
     // And it never nagged: an unstaffed site keeps ONE standing call out, not
     // three expiries a window forever.
     expect(session.taskPool.open().length).toBeLessThanOrEqual(1);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // 🚨 …AND A CLAIM IS NOT A BUILDER (GL fix round — F5)
+  //
+  // The clock arm above had a hole exactly one word wide: `staffed` meant
+  // "some row says claimed". A claimed `buildwork` row NEVER expires (the
+  // pool's `expire` only retires OPEN rows) and the pool sweep's
+  // errand-ran-out completion skips `buildwork` BY DESIGN, because these
+  // complete off real construction state. So one body that claimed a slot and
+  // then walked away — to eat, to sleep, to be unstreamed — reset the
+  // unstaffed timer on every sweep forever, while `present` stayed 0 because
+  // nobody was inside BUILD_WORK_EDGE_R. Neither arm ran. The site held its
+  // percentage for as long as anyone watched it: "pillars up, 50 % worked"
+  // across ten straight minutes of dx-doll-workshop / dx-doll-long
+  // (2026-08-11), with the whole household milling about in view.
+  // ───────────────────────────────────────────────────────────────────────
+  it("a claim nobody honours is RELEASED, and the clock arm takes the site to completion", () => {
+    const { play, session, me, director } = harness();
+    const b = play.deltas.foundBuilding(LOT, 0, 0.5);
+    me.at = { x: play.stage.center.x + b.dx + b.w / 2, y: play.stage.center.y + b.dy + b.h / 2 };
+    director.stepFoundedConstruction(session, 1);
+    const slots = session.taskPool.open();
+    expect(slots.length).toBe(3);
+
+    // A BODY PUTS ITS HAND UP AND NEVER ARRIVES. (The harness has no `world`,
+    // so no claimant is ever at the rect — the "claimed and gone" case.)
+    expect(session.taskPool.claim(slots[0]!.id, "resident_1_0")).toBe(true);
+    session.taskClock += 1;
+    session.townClock += 1;
+    director.stepFoundedConstruction(session, 1);
+    // Nothing banks yet: a claim inside its window is a builder ON THE WAY,
+    // and an observed site does not build itself while one might still arrive.
+    expect(b.labor ?? 0).toBe(0);
+    expect(session.taskPool.get(slots[0]!.id)!.status).toBe("claimed");
+
+    for (let s = 0; s < 300 && !b.completed; s++) {
+      session.taskClock += 1;
+      session.townClock += 1;
+      session.taskPool.expire(session.taskClock);
+      director.stepFoundedConstruction(session, 1);
+    }
+    // THE CLAIM LET GO — released to open, then expired by the pool's own path.
+    expect(session.taskPool.get(slots[0]!.id)!.status).not.toBe("claimed");
+    // …and the site is finished, not frozen at whatever it had banked.
+    expect(b.labor ?? 0).toBeGreaterThanOrEqual(b.buildDays);
+    expect(b.completed).toBe(true);
   });
 });

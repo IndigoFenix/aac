@@ -1,0 +1,95 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.0167  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T18:24:04.530Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> /wild
+CHEAT  /wild
+> say build farm
+OK     said: build + farm
+TOAST  🪧 build + farm — anyone nearby may take it (feedback)
+SAY    mara: "I will build the farm."  [build.will + farm]
+TICK   quiet after 0.8s.
+> say build house
+OK     said: build + house
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+SAY    orrin: "I will carry the block to the farm."  [carry.will + block + to + farm]
+TICK   quiet after 1.0s.
+> say build farm
+OK     said: build + farm
+TOAST  🪧 build + farm — anyone nearby may take it (feedback)
+EXIT   mara went out of the orange house.
+EXIT   orrin went out of the orange house.
+TICK   quiet after 1.3s.
+> say build house
+OK     said: build + house
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 60
+TOAST  🪚 milling 40 block for the site (feedback)
+TOAST  🪚 milling 40 block for the site (feedback)
+TOAST  📦 bring 80 wood — delivered (feedback)
+TOAST  💬 no one can do that: "build + house" (feedback)
+TOAST  💬 no one can do that: "build + farm" (feedback)
+TOAST  💬 no one can do that: "build + house" (feedback)
+TOAST  📦 bring 72 wood — delivered (feedback)
+TOAST  🪚 milling 40 block for the site (feedback)
+TICK   waited 60.0s.
+> say build farm
+OK     said: build + farm
+TOAST  🪧 build + farm — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> say build house
+OK     said: build + house
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 60
+TOAST  📦 bring 64 wood — delivered (feedback)
+TOAST  📦 bring 56 wood — delivered (feedback)
+TOAST  🪚 milling 24 block for the site (feedback)
+TOAST  💬 no one can do that: "build + farm" (feedback)
+TOAST  💬 no one can do that: "build + house" (feedback)
+TOAST  📦 bring 48 wood — delivered (feedback)
+TOAST  🪚 milling 24 block for the site (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 60.0s.
+> wait 60
+TOAST  📦 bring 40 wood — delivered (feedback)
+TOAST  🪚 milling 24 block for the site (feedback)
+TOAST  📦 bring 32 wood — delivered (feedback)
+TOAST  🪚 milling 24 block for the site (feedback)
+TOAST  📦 bring 24 wood — delivered (feedback)
+TICK   waited 60.0s.
+> /wild
+CHEAT  /wild
+> wait 60
+TOAST  📦 bring 16 wood — delivered (feedback)
+TOAST  🪚 milling 32 block for the site (feedback)
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 40 block (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  📦 bring 8 wood — delivered (feedback)
+TICK   waited 60.0s.
+> wait 60
+ENTER  mara came into view there north.
+SAY    mara: [water]
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TICK   waited 60.0s.
+> /wild
+CHEAT  /wild
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=16  presses=0  screens=1  sim=310.4s
+# events: TOAST 40  TICK 12  OK 6  CHEAT 4  SAY 3  EXIT 2  BOARD 1  NOTE 1  ENTER 1

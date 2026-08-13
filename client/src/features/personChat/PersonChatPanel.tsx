@@ -42,6 +42,7 @@ export function PersonChatPanel({ isOpen }: PersonChatPanelProps) {
   const { institutes, currentInstitute } = useInstitute();
   const {
     rooms,
+    roomsLoading,
     selfPersonId,
     activeRoomId,
     messagesByRoom,
@@ -80,7 +81,10 @@ export function PersonChatPanel({ isOpen }: PersonChatPanelProps) {
           </Button>
         </div>
         <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
-          {rooms.length === 0 && (
+          {roomsLoading && (
+            <div className="p-4 text-sm text-muted-foreground">{t("common.loading")}</div>
+          )}
+          {!roomsLoading && rooms.length === 0 && (
             <div className="p-4 text-sm text-muted-foreground">{t("personChat.noRooms")}</div>
           )}
           {rooms.map((entry) => (
@@ -286,6 +290,7 @@ function NewChatDialog(props: {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState("");
+  const [contactsLoading, setContactsLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -293,12 +298,14 @@ function NewChatDialog(props: {
     setName("");
     setSearch("");
     if (currentInstituteId) {
+      setContactsLoading(true);
       fetchContacts(currentInstituteId).then(setContacts).catch((err) => {
         console.error("[personChat] fetchContacts:", err);
         setContacts([]);
-      });
+      }).finally(() => setContactsLoading(false));
     } else {
       setContacts([]);
+      setContactsLoading(false);
     }
   }, [open, currentInstituteId]);
 
@@ -357,7 +364,10 @@ function NewChatDialog(props: {
                 onChange={(e) => setSearch(e.target.value)}
               />
               <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="h-64 border rounded-md">
-                {filtered.length === 0 && (
+                {contactsLoading && (
+                  <div className="p-3 text-sm text-muted-foreground">{t("common.loading")}</div>
+                )}
+                {!contactsLoading && filtered.length === 0 && (
                   <div className="p-3 text-sm text-muted-foreground">{t("personChat.noContacts")}</div>
                 )}
                 {filtered.map((c) => {

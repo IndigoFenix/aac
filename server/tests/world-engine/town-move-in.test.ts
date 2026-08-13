@@ -6,6 +6,13 @@
 // a real plan.houses row instead of the ①b empty work row — on the live
 // conversion and on every rebuild (applyFoundedBuildings / buildTownPlay).
 // No DOM / GL.
+//
+// ⚖️ MOVED PIN (S&D S1, growth-motive law ②). Every call below gained an
+// explicit `push: 1` — "somewhere else is as bad as it gets". It is not
+// decoration: `push` is now REQUIRED, because the rule used to admit a
+// household on a fed day with no origin anywhere, i.e. conjure a family out of
+// nothing. Stating `1` is these cases saying "hold the pull half still while I
+// pin it"; the PUSH half is pinned in its own describe at the bottom.
 
 import { describe, it, expect } from "@jest/globals";
 import {
@@ -15,6 +22,7 @@ import {
 } from "@shared/world-engine/kernel/town/construction.js";
 import {
   MOVE_IN_FOOD_SHORTAGE_MAX,
+  MOVE_IN_PUSH_MIN,
   moveInStep,
 } from "@shared/world-engine/kernel/town/population.js";
 import type { TownGrowthSignals } from "@shared/world-engine/kernel/town/zoning.js";
@@ -58,7 +66,7 @@ function deltasWithHouses(n: number, complete = true): TownDeltas {
 describe("moveInStep — the immigration rule", () => {
   it("admits a household into a finished empty house on surplus", () => {
     const deltas = deltasWithHouses(1);
-    const admitted = moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0) });
+    const admitted = moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: 1 });
     expect(admitted?.ord).toBe(0);
     expect(deltas.founded()[0]!.household).toBe(true);
   });
@@ -69,6 +77,7 @@ describe("moveInStep — the immigration rule", () => {
       deltas,
       catalog: TOWN_PLAY_STRUCTURES,
       signals: signals(MOVE_IN_FOOD_SHORTAGE_MAX + 0.01),
+      push: 1,
     });
     expect(admitted).toBeNull();
     expect(deltas.founded()[0]!.household).toBeUndefined();
@@ -81,13 +90,14 @@ describe("moveInStep — the immigration rule", () => {
         deltas,
         catalog: TOWN_PLAY_STRUCTURES,
         signals: signals(MOVE_IN_FOOD_SHORTAGE_MAX),
+        push: 1,
       }),
     ).not.toBeNull();
   });
 
   it("never admits into an unfinished house", () => {
     const deltas = deltasWithHouses(1, false);
-    expect(moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0) })).toBeNull();
+    expect(moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: 1 })).toBeNull();
   });
 
   it("never admits into a work-role structure", () => {
@@ -98,27 +108,72 @@ describe("moveInStep — the immigration rule", () => {
       1,
     );
     deltas.completeFounding(b.ord);
-    expect(moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0) })).toBeNull();
+    expect(moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: 1 })).toBeNull();
   });
 
   it("is oldest-first and one household per tick (a trickle, not a flood)", () => {
     const deltas = deltasWithHouses(2);
-    const first = moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0) });
+    const first = moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: 1 });
     expect(first?.ord).toBe(0);
     expect(deltas.founded()[1]!.household).toBeUndefined();
-    const second = moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0) });
+    const second = moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: 1 });
     expect(second?.ord).toBe(1);
     // Every house full — nothing left to admit.
-    expect(moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0) })).toBeNull();
+    expect(moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: 1 })).toBeNull();
   });
 
   it("is deterministic — same store, same signals, same admission", () => {
     const run = () => {
       const deltas = deltasWithHouses(3);
-      moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0.1) });
+      moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0.1), push: 1 });
       return deltas.toJSON();
     };
     expect(run()).toEqual(run());
+  });
+});
+
+// ⚖️ THE PUSH (S&D S1) — growth-motive law ②: "growth doesn't happen for no
+// reason". A household appears in this town because it LEFT somewhere, and
+// with no origin in distress there is nobody on the road.
+describe("moveInStep — the PUSH term (a migrant needs somewhere to be leaving)", () => {
+  it("🚨 A FED TOWN WITH A FINISHED EMPTY HOUSE ADMITS NOBODY when nowhere is worse", () => {
+    const deltas = deltasWithHouses(1);
+    expect(moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: 0 })).toBeNull();
+    expect(deltas.founded()[0]!.household).toBeUndefined();
+    // …and the house is still there, still empty, still waiting — nothing was
+    // consumed by the refusal.
+    expect(deltas.founded()[0]!.completed).toBe(true);
+  });
+
+  it("admits the moment a real distress appears somewhere else", () => {
+    const deltas = deltasWithHouses(1);
+    expect(
+      moveInStep({ deltas, catalog: TOWN_PLAY_STRUCTURES, signals: signals(0), push: MOVE_IN_PUSH_MIN }),
+    ).not.toBeNull();
+  });
+
+  it("a push UNDER the floor is nobody uprooting", () => {
+    const deltas = deltasWithHouses(1);
+    expect(
+      moveInStep({
+        deltas,
+        catalog: TOWN_PLAY_STRUCTURES,
+        signals: signals(0),
+        push: MOVE_IN_PUSH_MIN - 0.01,
+      }),
+    ).toBeNull();
+  });
+
+  it("BOTH halves gate — a pushed migrant still will not walk into a famine", () => {
+    const deltas = deltasWithHouses(1);
+    expect(
+      moveInStep({
+        deltas,
+        catalog: TOWN_PLAY_STRUCTURES,
+        signals: signals(MOVE_IN_FOOD_SHORTAGE_MAX + 0.01),
+        push: 1,
+      }),
+    ).toBeNull();
   });
 });
 

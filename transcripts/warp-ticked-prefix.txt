@@ -1,0 +1,86 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-13T05:54:54.368Z
+# ─────────────────────────────────────────
+> wait 60
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+ENTER  orrin came into view there south.
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view here south.
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   orrin left view there south.
+EXIT   mara left view there west.
+EXIT   biscuit left view here south.
+EXIT   pip left view here north.
+ENTER  pip came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there south.
+TICK   waited 60.0s.
+> wait 60
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+EXIT   mara left view there west.
+EXIT   orrin left view there south.
+TICK   waited 60.0s.
+> wait 60
+TICK   waited 60.0s.
+> wait 60
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here south.
+ENTER  pip came into view here west.
+ENTER  mara came into view there south.
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   biscuit left view here south.
+EXIT   orrin left view here south.
+EXIT   mara left view there south.
+EXIT   pip left view here north.
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here west.
+ENTER  mara came into view here south.
+ENTER  pip came into view here north.
+SAY    mara: "play with I"  [play + with + i_me]
+SAY    biscuit: "okay"  [ok]
+EXIT   orrin left view here north.
+EXIT   mara left view here north.
+EXIT   pip left view there north.
+ENTER  mara came into view here north.
+ENTER  orrin came into view here north.
+ENTER  pip came into view here north.
+SAY    biscuit: "okay"  [ok]
+SAY    biscuit: "bye-bye"  [goodbye]
+EXIT   biscuit left view here north.
+EXIT   mara left view here north.
+EXIT   orrin left view here north.
+ENTER  biscuit came into view here north.
+ENTER  orrin came into view here north.
+ENTER  mara came into view here north.
+SAY    mara: [play]
+EXIT   pip left view here west.
+ENTER  pip came into view here south.
+EXIT   biscuit left view here north.
+TOAST  🏗️ the people stake out a market (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TICK   waited 60.0s.
+# ─────────────────────────────────────────
+# commands=4  presses=0  screens=1  sim=240.1s
+# events: ENTER 25  EXIT 24  SAY 10  TOAST 7  TICK 4  BOARD 1  NOTE 1  CLOSE 1

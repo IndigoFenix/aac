@@ -325,6 +325,20 @@ export type GameMessage = BridgeMessageBase & (
   /** Correlated answer to `builder_state`. */
   | { type: "builder_surface"; requestId: string; surface: BuilderSurface }
   /**
+   * PICTURES FOR WORDS THE PLATFORM CANNOT DRAW. A game may offer builder words
+   * that belong to no vocabulary — an individual creature's NAME — and the
+   * platform's glyph resolver has nothing to render them with but a "❓". A game
+   * that can DRAW such a word (the world engine bakes a creature's own head into
+   * a portrait) sends the picture here, keyed by the same word it surfaced.
+   *
+   * `image` is a SELF-CONTAINED data URL: the platform renders it directly and
+   * never fetches from the game's origin. Sent as pictures become ready — never
+   * folded into `builder_surface`, which must answer immediately — and merged by
+   * key, so a later message adds to what the platform already holds. Ignoring
+   * this message costs a game nothing but the placeholder.
+   */
+  | { type: "word_images"; images: Array<{ key: string; image: string }> }
+  /**
    * The game's ambient HUD state (family members present, pocket contents,
    * status line, …) for the PLATFORM to render beside its own board — the
    * in-iframe side panel is hidden when embedded, freeing that screen edge

@@ -42,8 +42,15 @@
  * O(depth), and still the answer for every town that never closed a loop.
  * With links it is a shortest path over the graph of junctions, link ends
  * and the trip's own two projections. Either way `roadRoute` materializes
- * the same path as waypoints that lie ON streets, preserving the old
- * contract: NPCs walk like people, never through a parlor.
+ * the path as waypoints that lie ON PAVEMENT — on a street, or on a link,
+ * whose points it pushes verbatim. The old contract (NPCs walk like people,
+ * never through a parlor) is unchanged; what is NOT true is the narrower
+ * claim this note used to make, that every waypoint lies on a STREET. A link
+ * is not a street: it owns no lots, no arm, and no entry in `streets`. That
+ * distinction is load-bearing for anyone DRAWING the net — read `streets`
+ * alone and half the traffic walks over unpaved ground (measured: 53% of
+ * riverside-7's door-to-door trips). Draw `links` too, at an alley's width;
+ * `interaction/town/town-stage.ts` is where the shipped stage does it.
  */
 
 /* ------------------------------ types ------------------------------- */
@@ -1201,8 +1208,25 @@ function bestCoverageStation(st: GrowState): { station: Station; run: number } |
 
 /* ---------------------------- geometry ------------------------------- */
 
-/** Point on a street's centerline at arc length `a` (clamped). */
+/** A street with no SEGMENT yet — `seedArterial` pushes an arterial as its
+ *  origin point alone and lets the rounds extend it, so a mouth that stays
+ *  blocked leaves a one-point street standing in the tree for good. Every
+ *  arc query on one has the same honest answer: that point. */
+const isPointStreet = (s: Street): boolean => s.pts.length < 2;
+
+/** Point on a street's centerline at arc length `a` (clamped).
+ *
+ *  A ONE-POINT STREET IS ITS POINT. Interpolating a segment that does not
+ *  exist read `pts[1]` and threw (MEASURED: a town given three span seeds —
+ *  ordinary once the port law clips at a compressed extent — roots its second
+ *  span on the nearest network point with `attachSeedPath`, and the nearest
+ *  point can be an un-extended arterial's origin; `networkJunctions` then asks
+ *  this function where that parent's junction is and the whole founding threw
+ *  `Cannot read properties of undefined`. Three of twelve home-planet towns.)
+ *  The junction is real — a lane genuinely leaves from there — so answering
+ *  with the point is the correct reading, not a guard against one. */
 export function pointAt(s: Street, a: number): Vec2 {
+  if (isPointStreet(s)) return { x: s.pts[0].x, y: s.pts[0].y };
   const total = s.cum[s.cum.length - 1];
   const arc = Math.max(0, Math.min(total, a));
   let i = 0;
@@ -1214,7 +1238,11 @@ export function pointAt(s: Street, a: number): Vec2 {
   return { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f };
 }
 
+/** Heading along a street at arc `a`. A one-point street (see `pointAt`) has
+ *  no direction of its own — the live heading map carries the bearing its
+ *  mouth was aimed at — so it reads 0 rather than sampling a missing point. */
 function tangentAt(s: Street, a: number): number {
+  if (isPointStreet(s)) return 0;
   const total = s.cum[s.cum.length - 1];
   const arc = Math.max(0, Math.min(total, a));
   let i = 0;

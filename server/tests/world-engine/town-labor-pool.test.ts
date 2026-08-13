@@ -30,6 +30,7 @@ import {
 import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play.js";
 import type { FoundingCandidate } from "@shared/world-engine/kernel/town/construction.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
+import type { ContainerRecord } from "@shared/world-engine/kernel/town/containers.js";
 import { CLOCK_SCHEDULE_RATE } from "@shared/world-engine/npc-controller.js";
 import { DOLLHOUSE_SCALE } from "@shared/world-engine/scale.js";
 
@@ -51,9 +52,8 @@ function harness(freeHands: number, inTown = true) {
     townClock: 0,
     taskClock: 0,
     scale: DOLLHOUSE_SCALE,
-    containerStock: new Map<string, Record<string, number>>(),
-    containers: new Map<string, "in" | "on">(),
-    containerOwner: new Map<string, string | null>(),
+    containerRecords: new Map<string, ContainerRecord>(),
+    wornBagIndex: new Map<string, string>(),
     marketStore: new Map<string, unknown>(),
     produceBox: new Map<string, unknown>(),
     houseShown: new Set<number>(),

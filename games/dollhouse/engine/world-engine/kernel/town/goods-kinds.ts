@@ -95,9 +95,96 @@ export const goodKeyOfGlyph = (glyph: string): string => {
   if (CLOTHING_HEADS.includes(head)) return "clothing";
   return head;
 };
-/** Total units of a good across its kind stacks. */
+// ── ONE stack-counting core (unification pass) ─────────────────────────────
+//
+// Five functions in this module, transfer.ts and scope.ts count units in a
+// glyph→count stack, and disagree ON PURPOSE — three match rules, each
+// load-bearing for its own caller. This is the ONE arithmetic core; every
+// counting function below (plus transfer.ts's `stackUnits`/`stackTotal` and
+// scope.ts's `unitsOf`) is a thin, documented call into it. Lives here
+// (rather than in transfer.ts or scope.ts) because this is the lower-level
+// module: transfer.ts and scope-shape.ts both already sit above it, and
+// scope.ts imports it here rather than the reverse to avoid a cycle.
+
+/** The material HEAD of a stack glyph ("wood.wet" → "wood") — the
+ *  structures.ts / founding.ts convention: facted variants pay toward and
+ *  count toward their head. Canonical home for the HEAD match rule (moved
+ *  here from transfer.ts so this counting core can use it without an import
+ *  cycle back into transfer.ts); transfer.ts re-exports this under its
+ *  original name, so every existing caller of `stackHead` is unaffected.
+ *
+ *  🚨 A STORED PIECE IS HEADED BY ITS KIND. Furniture stacks under the prefix
+ *  `furn.<kind>`, so the plain head made every piece the same material: a bill
+ *  for a bed counted the chairs, and `takeStock` for a bed could take one and
+ *  install it as the bed. The kind is the first modifier; anything after it
+ *  (a colour) is an ordinary facet and still pays toward its kind. */
+export function stackHead(glyph: string): string {
+  if (glyph.startsWith("furn.")) {
+    const kind = glyph.split(".")[1];
+    return kind ? `furn.${kind}` : glyph;
+  }
+  return headOf(glyph);
+}
+
+/**
+ * WHICH match rule a counting call uses — the three ways this codebase asks
+ * "does this stack row count toward what I'm asking for", named so they can
+ * never blur together again:
+ *
+ *  · `head` — HEAD match (`stackHead(row) === stackHead(target)`): a facted
+ *    variant counts toward its material/kind (transfer.ts's order and haul
+ *    arithmetic — `stackUnits`, and `stackTotal`'s sibling total).
+ *  · `prefix` — PREFIX match (`row === target || row.startsWith(target+".")`):
+ *    this glyph, or a further-facted EXTENSION of it (scope.ts `unitsOf`).
+ *    🚨 Deliberately NOT head-matching: furniture is spelled `furn.<kind>`
+ *    with the SAME dot the facet grammar uses, so every piece of furniture
+ *    shares the head `furn` — head-matching a bench query would answer yes
+ *    for a stored chair, and the bench-first bootstrap would stop on the
+ *    first chair the household owned. The prefix rule degrades to exactly
+ *    head-matching for an ordinary undotted glyph, so nothing else changes.
+ *  · `kinds` — an explicit KIND LIST, exact key membership (this module's own
+ *    `stackTotalOf`/`carryTotalOf`): the caller already knows precisely which
+ *    stack keys count (a good's kind vocabulary, or its carry projection).
+ *  · `all` — every row counts (`stackTotal`/`totalStackUnits`); `clampNegatives`
+ *    is the one knob where two near-duplicate totals genuinely disagree — see
+ *    those two functions' own docstrings for which is which.
+ */
+export type UnitSelector =
+  | { all: true; clampNegatives?: boolean }
+  | { head: string }
+  | { prefix: string }
+  | { kinds: readonly string[] };
+
+/** Does stack row `rowGlyph` count toward `selector`? The three match rules,
+ *  written once — see {@link UnitSelector}. */
+export function matchesGlyph(rowGlyph: string, selector: UnitSelector): boolean {
+  if ("all" in selector) return true;
+  if ("head" in selector) return stackHead(rowGlyph) === stackHead(selector.head);
+  if ("prefix" in selector) return rowGlyph === selector.prefix || rowGlyph.startsWith(`${selector.prefix}.`);
+  return selector.kinds.includes(rowGlyph);
+}
+
+/**
+ * THE core: sum a stack's rows matching `selector`. Negative rows clamp to 0
+ * for `head`/`prefix` matches and for `{all, clampNegatives: true}` — the
+ * defensive floor those original call sites carried (`stackUnits`, `unitsOf`,
+ * `stackTotal`). `kinds` matches and a plain `{all}` sum raw values,
+ * UNCLAMPED, exactly as `stackTotalOf`/`carryTotalOf`/`totalStackUnits`
+ * always did — that difference from `stackTotal` is real and preserved (see
+ * `totalStackUnits`'s own docstring).
+ */
+export function countUnits(stack: Readonly<Record<string, number>>, selector: UnitSelector): number {
+  const clamp = "all" in selector ? selector.clampNegatives === true : !("kinds" in selector);
+  let n = 0;
+  for (const [g, c] of Object.entries(stack)) {
+    if (matchesGlyph(g, selector)) n += clamp ? Math.max(0, c) : c;
+  }
+  return n;
+}
+
+/** Total units of a good across its kind stacks — the KIND-LIST selector. */
 export const stackTotalOf = (stock: Record<string, number> | undefined, goodKey: string): number =>
-  kindsOf(goodKey).reduce((s, k) => s + (stock?.[k] ?? 0), 0);
+  countUnits(stock ?? {}, { kinds: kindsOf(goodKey) });
 /** The kinds a body may CARRY of a good — kindsOf plus, for FOOD, the treats.
  *  THE PROJECTION RULE (DEBUG-CREATURE-BEHAVIOR §4): everything that reads a
  *  HAND — ctx.carried, the deposit effect, the carry prop — projects through
@@ -106,9 +193,10 @@ export const stackTotalOf = (stock: Record<string, number> | undefined, goodKey:
  *  kindsOf: treats are never dealt into mixes or counted toward provisioning. */
 export const carryKindsOf = (goodKey: string): readonly string[] =>
   goodKey === "food" ? [...FOOD_KINDS, ...TREAT_KINDS] : kindsOf(goodKey);
-/** Total CARRIED units of a good — stackTotalOf over the carry projection. */
+/** Total CARRIED units of a good — the KIND-LIST selector over the carry
+ *  projection (stackTotalOf's sibling). */
 export const carryTotalOf = (stock: Record<string, number> | undefined, goodKey: string): number =>
-  carryKindsOf(goodKey).reduce((s, k) => s + (stock?.[k] ?? 0), 0);
+  countUnits(stock ?? {}, { kinds: carryKindsOf(goodKey) });
 // ── ITEM SIZE — what may ride in a bag at all ──────────────────────────────
 //
 // A body's HANDS hold exactly ONE item (the thing it is visibly using or
@@ -154,10 +242,14 @@ export const LARGE_KINDS: readonly string[] = [
  *  definition. The head test covers loose props whose stack IS the kind. */
 export const isLargeGlyph = (glyph: string): boolean =>
   glyph.startsWith("furn.") || LARGE_KINDS.includes(headOf(glyph));
-/** Total units a stack map holds, across every glyph in it. (Distinct from
- *  transfer.ts's `stackUnits(stack, glyph)`, which counts ONE glyph.) */
+/** Total units a stack map holds, across every glyph in it — the `all`
+ *  selector, UNCLAMPED (raw sum, negatives and all). Distinct from
+ *  transfer.ts's `stackUnits(stack, glyph)`, which counts ONE glyph's head;
+ *  and from transfer.ts's `stackTotal`, its own near-duplicate total, which
+ *  clamps negative rows to 0 — that clamp is the one place the two totals
+ *  genuinely disagree, and it is preserved per-name, not merged away. */
 export const totalStackUnits = (stock: Record<string, number> | undefined): number =>
-  Object.values(stock ?? {}).reduce((s, n) => s + n, 0);
+  countUnits(stock ?? {}, { all: true });
 
 /** Deal `n` units of a good across its kinds, deterministically (salt varies the mix). */
 export function splitStock(goodKey: string, n: number, salt: number): Record<string, number> {

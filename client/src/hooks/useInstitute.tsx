@@ -210,6 +210,7 @@ interface InstituteContextType {
 
   // User's pending invites
   pendingInvites: PendingInvite[];
+  pendingInvitesLoading: boolean;
   acceptInvite: (inviteId: string) => Promise<void>;
   declineInvite: (inviteId: string) => Promise<void>;
   refetchPendingInvites: () => void;
@@ -301,7 +302,7 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
   const institutes: Institute[] = institutesData || [];
 
   // Fetch pending invites
-  const { data: pendingInvitesData, refetch: refetchPendingInvites } = useQuery({
+  const { data: pendingInvitesData, isLoading: pendingInvitesLoading, refetch: refetchPendingInvites } = useQuery({
     queryKey: PENDING_INVITES_QUERY_KEY,
     queryFn: async () => {
       const response = await apiRequest('GET', '/api/invites/pending');
@@ -838,6 +839,7 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     cancelInvite,
     resendInvite,
     pendingInvites,
+    pendingInvitesLoading,
     acceptInvite,
     declineInvite,
     refetchPendingInvites: () => refetchPendingInvites(),

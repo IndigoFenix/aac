@@ -261,6 +261,32 @@ export interface BuildingDef {
      *  tier); the rest guard and spend at exactly their amount. */
     costs: Array<{ stockpile: string; amount: number }>;
   };
+  /**
+   * σ — THE SURPLUS THIS PRODUCER PLANS FOR, as a fraction above the demand
+   * its scale is derived from (scale.ts `REAL_SURPLUS_FRAC` /
+   * `producerSurplusFrac`). SPEC-SIDE, PER-PRODUCER (user law, S&D σ round):
+   * the seat lives on the producer row because a farm, a weaver and a mine do
+   * not hedge alike, and because a settlement's own margin is a property of
+   * WHO PRODUCES, not of the world.
+   *
+   * Omit to inherit the class anchor. A reader that wants the honest value
+   * calls `producerSurplusFrac(row.surplusFrac, cls)` — never `?? 0`, which
+   * would re-create the no-slack economy this field exists to end.
+   *
+   * ⚠️ NOT `kernel/town/goods.ts`'s `surplusFrac`/`surplusUnits`, which is a
+   * HOUSEHOLD's pantry-buffer fraction (the sawtooth floor a family shops
+   * back up from). Same word, opposite end of the chain: that one is how much
+   * a CONSUMER keeps in the box, this one is how much a PRODUCER plans past
+   * the demand it serves.
+   *
+   * ⚖️ THE FUTURE ADJUSTER is the scope's GOVERNMENT
+   * (planning-docs/games/world-engine/influence-and-authority.md): risk
+   * appetite, a remembered famine, a levy that wants the margin spent
+   * elsewhere. This anchor is the DEFAULT that tier adjusts, not a tuning
+   * knob for play — and it is NOT `resource_compression` (S3's dial, applied
+   * once at the natural→usable boundary); the two must never multiply.
+   */
+  surplusFrac?: number;
   /** Commodity keys sold to households (a street seller). */
   sells?: string[];
   /** Sells over a stocked SHELF (dawn-stocked counter) vs at the gate. */

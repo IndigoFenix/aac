@@ -99,8 +99,15 @@ describe("town-stage: the open town", () => {
     // town's heart read as artificial (user, 2026-07-22). Street 0 is now
     // the BASELINE — the real road the town formed around — so it is drawn
     // like the road it is, and NOTHING is excluded.
+    // RE-PINNED AGAIN (GL fix round, R5): the LOOPS are pavement too. Links
+    // were routable but undrawn — 53% of riverside-7's trips walked one over
+    // bare ground — so `stage.roads` now carries a ribbon per link as well,
+    // at an alley's width. The count is streets + links, and the invariant
+    // worth pinning is that NOTHING routable is missing from the ribbons.
     const drawn = plan.streets.streets.filter(s => s.pts.length >= 2);
-    expect(stage.roads).toHaveLength(drawn.length);
+    const links = (plan.streets.links ?? []).filter(l => l.pts.length >= 2);
+    expect(links.length).toBeGreaterThan(0); // this fixture really closes loops
+    expect(stage.roads).toHaveLength(drawn.length + links.length);
     expect(stage.roads.length).toBeGreaterThan(0);
     for (const r of stage.roads) {
       expect(r.points.length).toBeGreaterThanOrEqual(2);
@@ -114,6 +121,18 @@ describe("town-stage: the open town", () => {
     );
     expect(baseRoad).toBeDefined();
     expect(baseRoad!.width).toBe(3.4);
+    // And every LINK has a ribbon, at an alley's width — narrower than the
+    // branch lanes (LINK_GAP = MIN_GAP/2: a shortcut holds half a
+    // thoroughfare's ground, so it may not read as a lane the tree grew).
+    for (const l of links) {
+      const want = { x: stage.center.x + l.pts[0].x, y: stage.center.y + l.pts[0].y };
+      const ribbon = stage.roads.find(
+        r => Math.abs(r.points[0].x - want.x) < 1e-6 && Math.abs(r.points[0].y - want.y) < 1e-6
+          && r.width < 2.4,
+      );
+      expect(ribbon).toBeDefined();
+      expect(ribbon!.width).toBe(1.2);
+    }
   });
 
   it("streams by the SHARED mechanics: homebodies indoors, budgeted, no churn", () => {

@@ -78,6 +78,15 @@ import type { TownDeltas } from "@shared/world-engine/kernel/town/construction.j
 
 export { residentId } from "@shared/world-engine/kernel/town/residents.js";
 
+// THE PAVEMENT HIERARCHY (one place, three widths). The 2D map's read made
+// physical: an arterial is broader than the branch lanes it feeds, so the
+// same hierarchy shows underfoot. The ALLEY is the loops' width — a link
+// holds `LINK_GAP = MIN_GAP/2` of ground (kernel/town/streets.ts), so it is
+// half a thoroughfare and reads as the shortcut it is, never as a lane the
+// street tree grew.
+const ARTERIAL_W = 3.4;
+const BRANCH_W = 2.4;
+const ALLEY_W = BRANCH_W / 2;
 // Structure streaming, the 2D manager's numbers: buildings become real
 // walls inside the load radius and stay until they drift past the unload
 // radius (hysteresis) — grand-dream's STRUCT_LOAD_R / STRUCT_UNLOAD_R.
@@ -422,8 +431,29 @@ export function* createTownStageSteps(
     .filter(s => s.pts.length >= 2)
     .map(s => ({
       points: s.pts.map(p => ({ x: center.x + p.x, y: center.y + p.y })),
-      width: s.gen === 0 ? 3.4 : 2.4,
+      width: s.gen === 0 ? ARTERIAL_W : BRANCH_W,
     }));
+  // AND THE LOOPS ARE PAVEMENT TOO (growth phase C §2). `TownStreets.links`
+  // are the shortcuts growth cut when a lane died against a street it had
+  // walked half the town to reach, and routing has ridden them since they
+  // existed — `roadRoute` pushes their points verbatim. Nothing DREW them:
+  // this list was the one ribbon builder in the engine and it read only
+  // `streets`, so on the shipped riverside town 53% of door-to-door trips
+  // crossed ground with no road on it (MEASURED, seed 7: 415/780 trips over
+  // 9 undrawn links). Emitting them here is the whole fix — city-visuals'
+  // roadMesh, the quest host and the 2D city view all inherit `stage.roads`,
+  // so one emission paves them everywhere at once.
+  //
+  // At ALLEY width, by the same law that sizes the link itself: a shortcut
+  // holds `LINK_GAP = MIN_GAP/2` of ground (streets.ts), so it is HALF a
+  // thoroughfare and must not read as a branch lane the tree never grew.
+  for (const l of plan.streets.links ?? []) {
+    if (l.pts.length < 2) continue;
+    roads.push({
+      points: l.pts.map(p => ({ x: center.x + p.x, y: center.y + p.y })),
+      width: ALLEY_W,
+    });
+  }
 
   // --- The quest cast: always-on NPCs at their REAL town anchors. ---
   const castSpawns = new Map<string, { x: number; y: number }>();

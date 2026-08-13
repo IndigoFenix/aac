@@ -10,6 +10,7 @@
 //   go approach stop send where who                              (⑨)
 //   watch unwatch watching                                       (⑩)
 //   /convos /scope /stock /carry /probe /truth                   (⑪)
+//   warp <n>d                                                    (⑬)
 //
 // THE CHEAT PREFIX IS PARSED HERE BUT GATED ELSEWHERE (law ⑦). This layer only
 // recognizes the shape; whether the channel is open at all is the session's
@@ -44,6 +45,7 @@ export const TEXT_COMMANDS: readonly string[] = [
   "unwatch",
   "watching",
   "wait",
+  "warp",
   "help",
 ];
 
@@ -189,6 +191,18 @@ export function parseCommand(input: string): TextParseResult {
       const n = Number(rest[0]);
       if (!Number.isFinite(n) || n <= 0) return { error: `wait needs a positive number of seconds.` };
       return { kind: "wait", seconds: n };
+    }
+    // ⏩ `warp 7d` — economy DAYS of books, no frames (clock-warp.ts). The `d`
+    //    suffix is required and is the whole point: `wait` counts SECONDS of
+    //    play, `warp` counts DAYS of ledger, and the two must never be
+    //    mistakable for one another in a transcript or in a driver's head.
+    case "warp": {
+      const raw = (rest[0] ?? "").toLowerCase();
+      const m = /^(\d+)d$/.exec(raw);
+      if (!m) return { error: `warp needs a whole number of days, as in "warp 7d".` };
+      const n = Number(m[1]);
+      if (!(n > 0)) return { error: `warp needs a positive number of days.` };
+      return { kind: "warp", days: n };
     }
     case "help":
       return { kind: "help" };

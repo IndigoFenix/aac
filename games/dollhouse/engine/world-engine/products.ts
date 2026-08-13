@@ -64,11 +64,47 @@ export interface NaturalProduct {
 
 export type NaturalSourceKind = "plant" | "animal" | "mineral";
 
+/**
+ * ONE GROWTH SIZE CLASS (S&D S3 — timber lifecycle). `yieldMul` scales the
+ * KILL products' base `yield.min/max` (via `growthClassYield`) — 1 at the
+ * LAST class, so the catalogue's own numbers stay the mature anchor and a
+ * freshly-scattered (mature) feature is byte-identical to today. Render
+ * (standing size per class) is a DEFERRED seam — an embodied plant's body
+ * is its blueprint's business (wilderness.ts `resizeWildFeature`), not
+ * this registry's; this lands the STATE (class + yield), not the model.
+ */
+export interface GrowthSizeClass {
+  /** Content name — probe/log only, never branched on. */
+  name: string;
+  /** Yield multiplier at this class, 0..1, last class = 1 (mature). */
+  yieldMul: number;
+}
+
 export interface NaturalSource {
   /** Species id (creatures/species.ts); minerals name their own ("rock"). */
   species: string;
   kind: NaturalSourceKind;
   products: NaturalProduct[];
+  /**
+   * ⚖️ THE GROWTH CLOCK (S&D S3 — feedback_world_size_resource_realism, user
+   * 2026-08-12: *"trees grow and larger trees will typically be cut
+   * first"*). WOOD-BEARING species only (a kill product feeds `building`) —
+   * a felled feature RE-SEEDS as a sapling (class 0) instead of vanishing,
+   * and climbs `classes` on a clock anchored in REAL YEARS, compressed by
+   * `scale.generation` (`bioYearsGameDays` — the generation/growth family
+   * precedent, NEVER `resourceCompression`: growing faster and yielding
+   * more per act are orthogonal facts). Absent = no growth clock — the
+   * ORIGINAL felling rule (delete on kill-exhaustion) still applies, which
+   * is how stone/minerals stay finite without a special case: `rock` simply
+   * never declares this.
+   */
+  growth?: {
+    /** Real YEARS from a fresh sapling (class 0) to mature (last class). */
+    maturityYears: number;
+    /** Size classes, youngest (sapling) first; the LAST entry is the
+     *  catalogue's own mature yield (yieldMul 1). */
+    classes: readonly GrowthSizeClass[];
+  };
   /** Wilderness scatter presentation — the OBJECT a source stands as when it
    *  has no grown body. Minerals live here permanently and legitimately: a
    *  rock is a thing, not an organism, so `bodyHeightM`/the creature
@@ -137,6 +173,23 @@ const CATALOGUE: NaturalSource[] = [
         tool: { glyph: "axe", multiplier: 2 },
       },
     ],
+    // ⚖️ S&D S3 — TIMBER LIFECYCLE. 40 real years, sapling → young → mature —
+    // a working real-world anchor for "worth felling" oak timber (commercial
+    // stands are typically thinned well inside a human lifetime), not tuned
+    // against play numbers. Sapling yields NOTHING (class 0 — a felled
+    // sapling has no wood to give, which is also what keeps a freshly-
+    // reseeded tree from being immediately re-fellable); young is a quarter
+    // the mature timber; the LAST class (1.0) is the catalogue's own
+    // yield.min/max above, so a freshly-scattered (mature) forest is
+    // byte-identical to today.
+    growth: {
+      maturityYears: 40,
+      classes: [
+        { name: "sapling", yieldMul: 0 },
+        { name: "young", yieldMul: 0.25 },
+        { name: "mature", yieldMul: 1 },
+      ],
+    },
   },
   {
     species: "apple_tree",
@@ -156,6 +209,16 @@ const CATALOGUE: NaturalSource[] = [
         tool: { glyph: "axe", multiplier: 2 },
       },
     ],
+    // A fruit tree matures far faster than an oak (real orchard anchor:
+    // bearing age, not the oak's timber age) — two classes, no "young"
+    // middle rung, since the whole tree is a quarter the oak's size anyway.
+    growth: {
+      maturityYears: 8,
+      classes: [
+        { name: "sapling", yieldMul: 0 },
+        { name: "mature", yieldMul: 1 },
+      ],
+    },
   },
   {
     species: "banana_plant",
@@ -267,20 +330,34 @@ export function sourcesForGood(
   );
 }
 
-/** One roll of a product's yield range (uniform min..max, one `roll()`). */
-export function rollYield(p: NaturalProduct, roll: () => number): number {
-  return p.yield.min + Math.floor(roll() * (p.yield.max - p.yield.min + 1));
+/**
+ * One roll of a product's yield range (uniform min..max, one `roll()`).
+ *
+ * ⚖️ S&D S3 H1 — THE RESOURCE-CONVERSION DIAL, multiplier ① of five: a
+ * SUPPLY quantity (units per act), so it scales UP with the dial —
+ * `yields × dial`, the round's declared direction. Applied to the RANGE
+ * before rolling (never the rolled result), so the roll stays uniform over
+ * the scaled bounds rather than a scaled-uniform value. `conversionDial`
+ * defaults to 1 (`Math.round(min×1)===min` for every integer bound the
+ * catalogue declares) — byte-identical to the pre-S3 signature; the ONE
+ * `roll()` call this makes is unchanged, so determinism (call count) holds.
+ */
+export function rollYield(p: NaturalProduct, roll: () => number, conversionDial = 1): number {
+  const min = Math.max(0, Math.round(p.yield.min * conversionDial));
+  const max = Math.max(min, Math.round(p.yield.max * conversionDial));
+  return min + Math.floor(roll() * (max - min + 1));
 }
 
 /** The stack a DESTRUCTIVE take of this source releases — every kill product
  *  rolled once, in product order (deterministic `roll()` call count). What a
- *  felled tree or quarried rock holds. Empty for pure-harvest sources. */
-export function killStockOf(species: string, roll: () => number): Record<string, number> {
+ *  felled tree or quarried rock holds. Empty for pure-harvest sources.
+ *  `conversionDial` — see `rollYield`; default 1, byte-identical. */
+export function killStockOf(species: string, roll: () => number, conversionDial = 1): Record<string, number> {
   const src = BY_SPECIES.get(species);
   const stock: Record<string, number> = {};
   for (const p of src?.products ?? []) {
     if (p.method !== "kill") continue;
-    stock[p.glyph] = (stock[p.glyph] ?? 0) + rollYield(p, roll);
+    stock[p.glyph] = (stock[p.glyph] ?? 0) + rollYield(p, roll, conversionDial);
   }
   return stock;
 }
@@ -288,15 +365,43 @@ export function killStockOf(species: string, roll: () => number): Record<string,
 /** The stack a LIVE take of this source can bear at once — every harvest
  *  product rolled once, in product order (deterministic `roll()` call
  *  count). What the standing tree carries ripe, the ewe carries grown.
- *  Empty for kill-only sources. */
-export function harvestStockOf(species: string, roll: () => number): Record<string, number> {
+ *  Empty for kill-only sources. `conversionDial` — see `rollYield`; default
+ *  1, byte-identical. */
+export function harvestStockOf(species: string, roll: () => number, conversionDial = 1): Record<string, number> {
   const src = BY_SPECIES.get(species);
   const stock: Record<string, number> = {};
   for (const p of src?.products ?? []) {
     if (p.method !== "harvest") continue;
-    stock[p.glyph] = (stock[p.glyph] ?? 0) + rollYield(p, roll);
+    stock[p.glyph] = (stock[p.glyph] ?? 0) + rollYield(p, roll, conversionDial);
   }
   return stock;
+}
+
+/**
+ * DETERMINISTIC size-class yield (S&D S3 H2) — a felled feature's kill stock
+ * at the class it just grew into. NO RNG (unlike `rollYield`'s scatter-time
+ * roll): growth is a CLOCK event, not a draw, exactly as fruit regrowth
+ * (`dueHarvestRegrowth`) adds fixed units rather than re-rolling. Takes the
+ * product's yield MIDPOINT (the roll's own expected value) × the class's
+ * `yieldMul` × the conversion dial (multiplier ① again — the same "yields ×
+ * dial" direction `rollYield` uses, so a re-seeded tree and a freshly-
+ * scattered one answer the dial identically at their shared mature class).
+ */
+export function growthClassYield(p: NaturalProduct, yieldMul: number, conversionDial = 1): number {
+  const mid = (p.yield.min + p.yield.max) / 2;
+  return Math.max(0, Math.round(mid * yieldMul * conversionDial));
+}
+
+/**
+ * ⚖️ S&D S3 H1 — multiplier ② of five: a BILL (raw units a refined unit
+ * COSTS), so it scales DOWN with the dial — `bills ÷ dial`, the direction
+ * paired with `rollYield`'s `× dial` so the two ends of one conversion move
+ * together (more usable resource per natural unit, however you reach it).
+ * Floored at 1 raw unit: refining may get cheaper, never free. Default 1,
+ * byte-identical (`effectiveInPerOut(2, 1) === 2`).
+ */
+export function effectiveInPerOut(inPerOut: number, conversionDial = 1): number {
+  return Math.max(1, Math.round(inPerOut / conversionDial));
 }
 
 /** Is the source CONSUMED when its yield is taken — i.e. does it carry any

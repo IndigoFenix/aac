@@ -2565,6 +2565,10 @@ export const ko = {
     allowNotesDesc: "비활성화 시 AI는 세션 메모를 읽거나 쓸 수 없습니다 (메시지 로그 외에 저장되는 기억 없음)",
     shareMonitorNotesWithInstitute: "내 기관과 AAC 메모 공유",
     shareMonitorNotesWithInstituteDesc: "활성화하면 이 기관의 임상의가 AAC 세션 중 기록된 메모(관심사, 선호도, 관찰)를 볼 수 있습니다. 명시적인 공유 권한을 요구하려면 비활성화하세요.",
+    aiLearning: "AI 학습 설정",
+    aiLearningDesc: "세션 중 AI가 스스로 기록할 수 있는 항목입니다.",
+    autoAddContacts: "새 연락처 학습",
+    autoAddContactsDesc: "AI가 세션 중 만난 사람을 연락처 목록에 추가하도록 허용합니다. 새 연락처는 확인하기 전까지 검토 대상으로 표시됩니다. 꺼져 있으면 연락처 페이지에서만 추가할 수 있습니다.",
     // Symbol generation
     symbolGeneration: "기호 생성",
     symbolGenerationDesc: "AI를 사용하여 AAC 버튼에 아이콘 이미지를 자동 생성합니다",
@@ -3742,6 +3746,8 @@ export const ko = {
     updated: "연락처가 업데이트됨",
     deleted: "연락처가 삭제됨",
     confirmDelete: "이 연락처를 제거하시겠습니까?",
+    confirm: "확인",
+    confirmed: "연락처가 확인되었습니다",
     name: "이름",
     namePlaceholder: "예: 엄마",
     nameRequired: "이름이 필요합니다",
@@ -3775,6 +3781,11 @@ export const ko = {
     callable: "영상 통화 허용",
     callableHint: "이 사람이 온라인일 때 학생(및 AI)이 영상 통화를 할 수 있습니다.",
     photoAfterCreate: "연락처를 저장한 후 사진 업로드를 사용할 수 있습니다.",
+    tabAll: "연락처",
+    tabAutoAdded: "자동 추가됨",
+    autoAddedBadge: "자동 추가됨",
+    autoAddedHint: "AAC 도우미가 세션 중 관찰한 내용을 바탕으로 이 사람들을 추가했습니다. 실제로 해당하는 사람은 확인하고 나머지는 삭제하세요.",
+    autoAddedEmpty: "검토할 항목이 없습니다.",
   },
 
   // Biometric (photo upload)

@@ -1,0 +1,65 @@
+# world-text v1   proto=1
+# world=frontier-wild.spec  seed=11  locale=en  grid=8  dt=0.0167  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T16:27:08.199Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> say build farm
+OK     said: build + farm
+SAY    mara: "I'm happy."  [i_me + happy]
+TICK   quiet after 1.4s.
+> wait 40
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   waited 40.0s.
+> wait 40
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm lonely."  [i_me + lonely]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   waited 40.0s.
+> /wild
+CHEAT  /wild
+> wait 40
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> wait 40
+SAY    mara: [water]
+SAY    orrin: [water]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   orrin left view here east.
+TICK   waited 40.0s.
+> /wild
+CHEAT  /wild
+> /stock
+CHEAT  /stock
+> /wild cycle
+CHEAT  /wild cycle
+> /stock
+CHEAT  /stock
+> wait 20
+SAY    mara: "eat with I"  [eat + with + i_me]
+TICK   waited 20.0s.
+> /wild
+CHEAT  /wild
+# ─────────────────────────────────────────
+# commands=13  presses=0  screens=1  sim=191.4s
+# events: SAY 26  TICK 7  CHEAT 6  BOARD 1  NOTE 1  OK 1  EXIT 1

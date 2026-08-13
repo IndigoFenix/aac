@@ -988,7 +988,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const linkedServiceUserIds = (serviceUsersData || []).map((u) => u.userId);
 
   // Pool of users who share an institute with this student
-  const { data: instituteMembersData } = useQuery({
+  const { data: instituteMembersData, isLoading: instituteMembersLoading } = useQuery({
     queryKey: ['/api/students', student?.id, 'institute-members'],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/students/${student!.id}/institute-members`);
@@ -1032,7 +1032,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   });
 
   // --- Scheduled events for the service ---
-  const { data: serviceEventsData } = useQuery({
+  const { data: serviceEventsData, isLoading: serviceEventsLoading } = useQuery({
     queryKey: ['/api/services', editingService?.id, 'events'],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/services/${editingService!.id}/events`);
@@ -3264,7 +3264,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   <p className="text-xs text-muted-foreground">
                     {t('service.assignedUsersHint')}
                   </p>
-                  {instituteMembers.length === 0 ? (
+                  {instituteMembersLoading ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('common.loading')}
+                    </p>
+                  ) : instituteMembers.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       {t('service.noInstituteMembers')}
                     </p>
@@ -3324,7 +3328,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                       {t('service.scheduleNew')}
                     </Button>
                   </div>
-                  {serviceEvents.length === 0 ? (
+                  {serviceEventsLoading ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('common.loading')}
+                    </p>
+                  ) : serviceEvents.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       {t('service.noScheduledEvents')}
                     </p>

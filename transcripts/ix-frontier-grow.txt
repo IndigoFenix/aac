@@ -1,0 +1,377 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T11:44:46.526Z
+# ─────────────────────────────────────────
+> wait 1200
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm lonely."  [i_me + lonely]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: [water]
+SAY    orrin: [water]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   orrin left view here east.
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    mara: "Are you okay?"  [you + ok#question]
+ENTER  orrin came into view here south.
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    mara: [sit]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    mara: [sit]
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    orrin: [sit]
+SAY    mara: [sit]
+SAY    orrin: [sit]
+SAY    mara: [banana.hot]
+SAY    orrin: [banana.hot]
+EXIT   mara left view here east.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   orrin left view here east.
+ENTER  mara came into view here south.
+ENTER  orrin came into view here east.
+EXIT   orrin went out of the orange house.
+SAY    mara: [water]
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    mara: [sit]
+EXIT   mara went out of the orange house.
+ENTER  orrin came into view there north.
+EXIT   orrin left view here east.
+ENTER  orrin came into view here south.
+SAY    orrin: "🍳"  [apple.hot]
+SAY    orrin: "bye-bye"  [goodbye]
+ENTER  mara came into view there north.
+SAY    orrin: [apple.hot]
+SAY    mara: [water]
+SAY    mara: [apple]
+EXIT   mara left view here east.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    orrin: "eat with I"  [eat + with + i_me]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "eat with I"  [eat + with + i_me]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    orrin: "eat with I"  [eat + with + i_me]
+ENTER  mara came into view here south.
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm thirsty."  [i_me + thirsty]
+SAY    orrin: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    mara: [water]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    orrin: [water]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+EXIT   orrin left view there east.
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   mara left view here east.
+ENTER  orrin came into view here east.
+SAY    orrin: "eat with I"  [eat + with + i_me]
+EXIT   orrin left view there west.
+ENTER  mara came into view here east.
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    orrin: [meal]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [apple.hot]
+ENTER  orrin came into view there west.
+SAY    orrin: [grape.hot]
+EXIT   mara left view here east.
+EXIT   orrin left view there west.
+ENTER  mara came into view here east.
+EXIT   mara went out of the orange house.
+ENTER  orrin came into view there west.
+EXIT   orrin left view here east.
+ENTER  mara came into view there north.
+EXIT   mara left view there west.
+ENTER  orrin came into view here east.
+ENTER  mara came into view there west.
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: [water]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    orrin: [water]
+EXIT   mara left view here east.
+ENTER  mara came into view here east.
+SAY    mara: "😴"
+EXIT   orrin left view here east.
+EXIT   mara left view there south.
+ENTER  mara came into view here south.
+ENTER  orrin came into view here east.
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    orrin: [meal]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+TICK   waited 1200.0s.
+> wait 1200
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    orrin: [sit]
+SAY    mara: [apple.hot]
+SAY    orrin: [apple.hot]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   mara left view here east.
+EXIT   orrin left view there west.
+ENTER  mara came into view here east.
+EXIT   mara went out of the orange house.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there north.
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm lonely."  [i_me + lonely]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+EXIT   mara left view there west.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+ENTER  mara came into view there west.
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+EXIT   mara left view there east.
+SAY    orrin: "Where are you going?"  [place#question + you + go]
+SAY    orrin: "bye-bye"  [goodbye]
+ENTER  mara came into view here east.
+EXIT   orrin left view here east.
+SAY    mara: [water]
+ENTER  orrin came into view here south.
+EXIT   orrin went out of the orange house.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [grape]
+EXIT   mara left view here east.
+ENTER  mara came into view here east.
+EXIT   mara went out of the orange house.
+ENTER  orrin came into view there north.
+SAY    orrin: [water]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+SAY    orrin: [apple]
+ENTER  mara came into view there north.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm tired."  [i_me + tired]
+EXIT   mara left view here east.
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "bye-bye"  [goodbye]
+ENTER  mara came into view here south.
+SAY    mara: [water]
+SAY    mara: [water]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view here east.
+SAY    mara: [apple.hot]
+EXIT   mara left view here east.
+ENTER  orrin came into view here east.
+SAY    orrin: [water]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+ENTER  mara came into view here east.
+EXIT   orrin left view here east.
+SAY    mara: [sit]
+ENTER  orrin came into view here east.
+SAY    orrin: [apple]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here south.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    orrin: [meal]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+EXIT   mara went out of the orange house.
+ENTER  orrin came into view there west.
+SAY    orrin: [sit]
+SAY    orrin: [sit]
+SAY    orrin: [sit]
+SAY    orrin: [water]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+ENTER  mara came into view there north.
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there west.
+EXIT   orrin left view there west.
+SAY    mara: [water]
+ENTER  orrin came into view there west.
+EXIT   mara left view here east.
+SAY    orrin: [sit]
+SAY    orrin: [apple.hot]
+ENTER  mara came into view here east.
+SAY    mara: [water]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   orrin left view here east.
+SAY    mara: [apple.hot]
+ENTER  orrin came into view here south.
+SAY    orrin: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    mara: [sit]
+SAY    orrin: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+EXIT   orrin left view there west.
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "I'm bored."  [i_me + bored]
+TICK   waited 1200.0s.
+> scene
+SCENE  house-1 — 10 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  table-1 (table), here north.
+  satchel-1 (satchel), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  apple-8 (apple), here east.
+  2 chairs, here north.
+  a basket, there west.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-21 (house), close west, purple, door open, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  7 houses, close west, all shut.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=3  presses=0  screens=1  sim=2400.8s
+# events: SAY 238  EXIT 53  ENTER 52  TICK 3  BOARD 1  NOTE 1  SCENE 1

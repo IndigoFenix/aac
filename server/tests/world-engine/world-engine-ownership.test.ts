@@ -5,11 +5,13 @@
 
 import { describe, it, expect } from "@jest/globals";
 import {
+  CIVIC_SCOPES,
   TOWN_SCOPE,
   creatureScope,
   houseScope,
   isPrivateOwner,
   mayUse,
+  mayUseByScopes,
   ownerCidsOf,
   ownerScopesOf,
 } from "@shared/world-engine/interaction/behavior/ownership.js";
@@ -59,6 +61,24 @@ describe("the private tier", () => {
     expect(isPrivateOwner(TOWN_SCOPE)).toBe(false);
     expect(isPrivateOwner(null)).toBe(false);
     expect(isPrivateOwner("vendor_node_7")).toBe(false); // legacy vendor ids
+  });
+
+  it("⚖️ S4 — a CIVIC errand reaches the commons and the unowned, never a household", () => {
+    // The town's own standing loop (par stocking) acts as the TOWN, not as
+    // whichever body happens to issue it — the answer to "what may an
+    // automated loop pull from private shelves": nothing.
+    expect(mayUseByScopes(CIVIC_SCOPES, TOWN_SCOPE)).toBe(true); // the yard
+    expect(mayUseByScopes(CIVIC_SCOPES, null)).toBe(true); // a standing tree
+    expect(mayUseByScopes(CIVIC_SCOPES, houseScope(3))).toBe(false); // their pantry
+    expect(mayUseByScopes(CIVIC_SCOPES, creatureScope("resident_3_1"))).toBe(false);
+    // …and a member of that household still may, through the ordinary door.
+    expect(mayUse("resident_3_1", 3, houseScope(3))).toBe(true);
+  });
+
+  it("mayUse IS mayUseByScopes over the body's own chain (one rule, two askers)", () => {
+    for (const owner of [null, "", TOWN_SCOPE, houseScope(3), houseScope(4), creatureScope("x")]) {
+      expect(mayUse("x", 3, owner)).toBe(mayUseByScopes(ownerScopesOf("x", 3), owner));
+    }
   });
 
   it("ownerCidsOf names who may OBJECT", () => {

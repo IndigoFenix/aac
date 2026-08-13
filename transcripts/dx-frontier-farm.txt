@@ -1,0 +1,185 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-11T18:37:00.787Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+SAY    person-3: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> scene
+SCENE  outdoors — 7 thing(s) in view.
+  person-1 (person), there east.
+  person-3 (person), there east.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  3 people, there south.
+SAY    person-1: "I'm happy."  [i_me + happy]
+TICK   quiet after 1.4s.
+> board
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+TICK   quiet after 0.8s.
+> say build farm
+OK     said: build + farm
+SAY    person-1: "okay"  [ok]
+TOAST  🏗️ building the farm — builders to work (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+SAY    person-3: "I will build."  [i_me + build.will]
+SAY    person-4: "I will build."  [i_me + build.will]
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   quiet after 1.7s.
+> wait 20
+TICK   waited 20.0s.
+> scene
+SCENE  outdoors — 7 thing(s) in view.
+  person-3 (person), there east.
+  person-4 (person), there east.
+  person-1 (person), there east.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  2 people, there south.
+SITE   1 thing(s) being built.
+  site-1: a farm — floor laid, 27% worked, there east, 12 m
+TICK   quiet after 0.8s.
+> wait 40
+SITE   1 thing(s) being built.
+  site-1: a farm — pillars up, 52% worked, there east, 12 m
+TOAST  🏛️ the farm is finished (feedback)
+TICK   waited 40.0s.
+> scene
+SCENE  outdoors — 9 thing(s) in view, 2 place(s) around you.
+  person-3 (person), there east.
+  person-4 (person), there east.
+  person-1 (person), there east.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  table-1 (table), there east.
+  2 people, there south.
+  a barrel, there east.
+  house-1 (house), there east, green, door open, you can see inside.
+  house-2 (house), there east, green, door open, shut to you.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-5: "I'm happy."  [i_me + happy]
+SAY    person-5: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-5: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> scene
+SCENE  outdoors — 11 thing(s) in view, 2 place(s) around you.
+  person-5 (person), here south.
+  person-3 (person), here east.
+  person-4 (person), there north.
+  person-1 (person), there west.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  2 people, here east.
+  a person, there north.
+  a table, there east.
+  a barrel, there east.
+  house-1 (house), there east, green, door open, you can see inside.
+  house-2 (house), there east, green, door open, shut to you.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-5: "I'm happy."  [i_me + happy]
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> scene
+SCENE  outdoors — 11 thing(s) in view, 2 place(s) around you.
+  person-4 (person), here south.
+  person-5 (person), there north.
+  person-3 (person), there south.
+  person-1 (person), there west.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  a table, there east.
+  3 people, there north.
+  a barrel, there east.
+  house-1 (house), there east, green, door open, you can see inside.
+  house-2 (house), there east, green, door open, shut to you.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> scene
+SCENE  outdoors — 9 thing(s) in view, 2 place(s) around you.
+  person-4 (person), there north.
+  person-1 (person), there north.
+  person-5 (person), there north.
+  person-3 (person), there north.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  a person, there west.
+  a table, there east.
+  a barrel, there east.
+  house-1 (house), there east, green, door open, you can see inside.
+  house-2 (house), there east, green, door open, shut to you.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    person-5: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-5: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> scene
+SCENE  outdoors — 9 thing(s) in view, 2 place(s) around you.
+  person-4 (person), there south.
+  person-5 (person), there west.
+  person-2 (person), there south.
+  person-3 (person), there west.
+  person-1 (person), there north.
+  basket-1 (basket), here south.
+  wood, here west.
+  a table, there east.
+  a barrel, there east.
+  house-1 (house), there east, green, door open, you can see inside.
+  house-2 (house), there east, green, door open, shut to you.
+TICK   quiet after 0.8s.
+> self
+SELF   you are outdoors.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> /stock
+CHEAT  /stock
+> /scope
+CHEAT  /scope
+# ─────────────────────────────────────────
+# commands=19  presses=0  screens=2  sim=239.1s
+# events: SAY 24  TICK 17  SCENE 7  BOARD 2  TOAST 2  SITE 2  CHEAT 2  NOTE 1  OK 1  SELF 1

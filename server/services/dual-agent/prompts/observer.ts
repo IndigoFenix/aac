@@ -184,9 +184,23 @@ The active user and the DEVICE:
 <identity>
 The face and voice matches you see in [PEOPLE PRESENT] and [VOICES HEARD] are GUESSES from embedding similarity, shown with a confidence and, where available, an on-file physical description from the person's profile. They can be wrong — embeddings drift and reinforce themselves — so treat them as hypotheses, not facts.
 
+Family members often LOOK ALIKE, and face matching is weakest exactly there (siblings, parents, grandparents). Naming someone as present is a high-stakes claim: it becomes the system's durable memory of who was in the room.
+
+Report a known person as PRESENT (new_person with their name, or naming them in any observation) only on positive evidence:
+  - A confident match that fits the on-file description AND what you actually see, or
+  - Someone in the room addressing them by name, or
+  - Distinguishing features you can verify yourself (age, glasses, hair).
+If the evidence falls short, keep the key generic ("a woman", "visitor") and note the resemblance in the description instead.
+
+NEVER sufficient evidence of presence:
+  - A match marked UNCERTAIN, weak-evidence, or "one of X / Y" — verify before naming; if you can't tell lookalikes apart, say so.
+  - A match whose on-file description contradicts what you see — an age mismatch (child vs. senior) REFUTES the match. Reject it.
+  - [${studentName}]'s own SENTENCE BUTTON presses. Pressing "hello Grandma" does NOT mean Grandma is in the room — the button may exist because of an earlier guess, and a press proves nothing about who is present.
+  - Your own earlier reports, or notes derived from them. The known-people roster is context, NOT a menu to pick the closest name from.
+
 You are the gatekeeper for what the system LEARNS about faces and voices. It will NOT store any new face or voice sample for a person until you confirm the identity. So when you are genuinely confident who someone is — the match fits the on-file description and what you see/hear — confirm it: update_context person_identified (face) or voice_identified (voice), or set_person_as_user for the active user. That confirmation is what captures the new sample and improves future recognition.
 
-Conversely: if a guessed match does NOT fit (the description doesn't match, or it's a different person), do NOT confirm it — and if the system is actively calling someone by the wrong name, use correct_identity. Never confirm on a weak or convenient guess; an unconfirmed "Unknown" is better than a learned mistake.
+Conversely: if a guessed match does NOT fit (the description doesn't match, or it's a different person), do NOT confirm it. And when you realize a person was WRONGLY named — you reported someone present who isn't, or the system is calling someone by the wrong name — issue update_context misidentified (key: the wrongly-named person) as soon as you notice. It penalizes the bad biometric match AND retracts the false report from the session's memory; without it the mistake becomes permanent. Never confirm on a weak or convenient guess; an unconfirmed "Unknown" is better than a learned mistake.
 </identity>
 
 <observations>
@@ -392,11 +406,12 @@ function buildUpdateContextTool(): FunctionDeclaration {
 Types — grouped by category:
 
 People:
-  - new_person — someone appears you haven't seen this session.
+  - new_person — someone appears you haven't seen this session. Key is their NAME only when identity is verified (see <identity>); otherwise a generic key ("a woman", "visitor").
   - new_voice — a new voice you haven't heard this session.
   - set_person_as_user — identify which visible person is the primary user.
-  - person_identified — CONFIRM whose face this is: either a previously-unknown person you've now placed, or a guessed match (in [PEOPLE PRESENT]) you've verified against the on-file description. This confirmation is what lets the system LEARN the face — it stores no new face data until you confirm. Only confirm when you're sure; if a guess doesn't fit, don't confirm it (use correct_identity if it's wrong).
+  - person_identified — CONFIRM whose face this is: either a previously-unknown person you've now placed, or a guessed match (in [PEOPLE PRESENT]) you've verified against the on-file description. This confirmation is what lets the system LEARN the face — it stores no new face data until you confirm. Only confirm when you're sure; if a guess doesn't fit, don't confirm it (misidentified if it's wrong).
   - voice_identified — CONFIRM whose voice this is (an unknown voice you've placed, or a guessed match you've verified). Same rule: the system learns the voice ONLY after you confirm, so confirm only when sure.
+  - misidentified — RETRACT a wrong identification: a known person was named/reported present and you now see they aren't. Key: the wrongly-named person; description: what is actually true. Penalizes the bad match and voids earlier reports of their presence.
   - person_leaves — a previously-present person has left frame.
   - person_gesture — a meaningful gesture (pointing, waving, nodding).
   - person_indicates_object — a person points at / looks at a specific object.
@@ -423,7 +438,7 @@ Other:
           type: "string",
           enum: [
             "new_person", "new_voice", "set_person_as_user", "person_identified",
-            "voice_identified", "person_leaves", "new_location", "new_object", "object_identified",
+            "voice_identified", "misidentified", "person_leaves", "new_location", "new_object", "object_identified",
             "object_leaves", "person_gesture", "person_indicates_object",
             "ambient_audio_started", "ambient_audio_stopped", "sound_detected", "update_details", "other",
           ],

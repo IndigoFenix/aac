@@ -163,9 +163,24 @@ export function furnitureBlocks(radius: number): number {
   return Math.max(1, Math.round(radius * 6));
 }
 
-/** A bill (or a bare block count) as a costs map the whole construction
- *  machinery already speaks — `missingCosts`, `resolveMaterials`, a
- *  `FoundedBuilding.costs` row. */
+/**
+ * A bill (or a bare block count) as a costs map the whole construction
+ * machinery already speaks — `missingCosts`, `resolveMaterials`, a
+ * `FoundedBuilding.costs` row.
+ *
+ * ⚖️ S&D S3 H1 — BILLS ARE DIAL-FREE (corrected in review). The
+ * `resource_compression` dial applies at exactly ONE boundary — the
+ * natural→usable conversion (`effectiveInPerOut`, `storehouseRawParAt`,
+ * `farmAcresPerPerson`) — never here. A bill is usable-per-artifact
+ * (construction ambition), not conversion; a wild yield is natural
+ * abundance, not conversion. Applying the dial at more than one stage
+ * compounds it (an early draft had bills ÷ dial AND yields × dial AND
+ * counts × dial — ~dial⁴ end to end), which breaks the law's "a single
+ * value that multiplies the conversion of natural resources to usable
+ * ones". Blocks-per-structure stays the honest spatial truth at every
+ * declaration.
+ */
 export function blockCosts(bill: BlockBill | number): Record<string, number> {
-  return { [BLOCK_GLYPH]: typeof bill === "number" ? bill : bill.total };
+  const total = typeof bill === "number" ? bill : bill.total;
+  return { [BLOCK_GLYPH]: Math.max(1, Math.round(total)) };
 }

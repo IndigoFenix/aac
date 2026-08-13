@@ -66,6 +66,9 @@ import {
   scaleWarnings,
   walkSpeedMps,
   yearGameDays,
+  // S&D S3 — the resource-conversion dial + the growth-clock time bridge
+  bioYearsGameDays,
+  farmAcresPerPerson,
 } from "@shared/world-engine/scale.js";
 import { FOOD_DAY_SEC, ERRAND_WALK } from "@shared/world-engine/kernel/town/goods.js";
 import { TOWN_DIMS } from "@shared/world-engine/kernel/town/dimensions.js";
@@ -305,6 +308,70 @@ describe("gap_compression and the settled map's two distances", () => {
     expect(scaleWarnings(absurd).join(" ")).toMatch(/gap: towns stand/);
     // The shipped profiles say nothing about gaps.
     expect(scaleWarnings(REAL_SCALE).join(" ")).not.toMatch(/gap:/);
+  });
+});
+
+// ── THE RESOURCE-CONVERSION DIAL (S&D S3) ─────────────────────────────────
+// feedback_world_size_resource_realism, user 2026-08-12, verbatim: "a
+// single value that multiplies the conversion of natural resources to
+// usable ones (which was one of the main reasons for the block paradigm in
+// the first place)." Mirrors gap_compression's own test shape: the simple
+// planet_compression-fallback precedent (no cascading default), the
+// path-exact gate, the round-trip.
+describe("resource_compression — the natural→usable conversion dial", () => {
+  it("REAL_SCALE/DOLLHOUSE_SCALE/SEASONAL_SCALE all declare it at 1", () => {
+    expect(REAL_SCALE.resourceCompression).toBe(1);
+    expect(DOLLHOUSE_SCALE.resourceCompression).toBe(1);
+    expect(SEASONAL_SCALE.resourceCompression).toBe(1);
+  });
+
+  it("resolves like planet_compression itself — simple default, no cascade", () => {
+    expect(resolveWorldScale().resourceCompression).toBe(1);
+    expect(resolveWorldScale({ resource_compression: 4 }).resourceCompression).toBe(4);
+    // Unlike interplanetary/interstellar/gap_compression, it does NOT fall
+    // back to planet_compression — the two axes (body-scale vs yield
+    // conversion) are unrelated.
+    expect(resolveWorldScale({ planet_compression: 25 }).resourceCompression).toBe(1);
+  });
+
+  it("legal below 1 — a world may want SCARCER conversion (the famine end)", () => {
+    expect(resolveWorldScale({ resource_compression: 0.5 }).resourceCompression).toBe(0.5);
+  });
+
+  it("the dial round-trips and is gated path-exact", () => {
+    expect(scaleSpecOf(resolveWorldScale({ resource_compression: 4 })))
+      .toMatchObject({ resource_compression: 4 });
+    expect(() => parseWorldScaleSpec({ resource_compression: 0 }, "g.scale"))
+      .toThrow(/g\.scale\.resource_compression/);
+    expect(() => parseWorldScaleSpec({ resource_compression: 10_001 }, "g.scale"))
+      .toThrow(/g\.scale\.resource_compression/);
+  });
+
+  it("farmAcresPerPerson reads it as the conversionDial argument (S2's seat, now wired)", () => {
+    const compressed = resolveWorldScale({ resource_compression: 2 });
+    expect(farmAcresPerPerson("ancient", compressed.resourceCompression)).toBe(6);
+  });
+});
+
+describe("bioYearsGameDays — the generation/growth family precedent, generalized", () => {
+  it("REAL_SCALE: a real-years anchor passes through yearGameDays unmultiplied", () => {
+    // generation=1, so bioYearsGameDays(scale, Y) === Y real years, in GAME
+    // days — at REAL_SCALE a game day IS a real day, so this is just Y×365.25.
+    expect(bioYearsGameDays(REAL_SCALE, 40)).toBeCloseTo(40 * REAL_YEAR_DAYS, 6);
+  });
+
+  it("generation compresses it — the SAME dial a creature's lifespan reads", () => {
+    const fast = { ...REAL_SCALE, generation: 10 };
+    expect(bioYearsGameDays(fast, 40)).toBeCloseTo(bioYearsGameDays(REAL_SCALE, 40) / 10, 6);
+    // Consistency check against the existing lifespan family: a 70-year
+    // lifespan and a 40-year tree maturity move by the SAME factor under the
+    // SAME generation dial (bioYearsGameDays generalizes lifespanGameDays).
+    expect(bioYearsGameDays(fast, REAL_LIFESPAN_YEARS)).toBeCloseTo(lifespanGameDays(fast), 6);
+  });
+
+  it("resourceCompression never enters it — orthogonal axes", () => {
+    const compressed = { ...REAL_SCALE, resourceCompression: 50 };
+    expect(bioYearsGameDays(compressed, 40)).toBeCloseTo(bioYearsGameDays(REAL_SCALE, 40), 6);
   });
 });
 

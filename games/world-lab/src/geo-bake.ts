@@ -7,6 +7,7 @@ import {
   geographyParamsFromFeatures, type PlanetGeography,
 } from "@shared/world-engine/space/planet-geography";
 import { rebuiltPlanetWorld, type PlanetWorldSpec } from "@shared/world-engine/planet/planet-game";
+import type { WorldScaleSpec } from "@shared/world-engine/scale";
 import type { FoundingSite } from "@shared/world-engine/kernel/cells/index";
 import type { PlanetCity } from "@shared/world-engine/planet/cities";
 import type { PlanetRoute } from "@shared/world-engine/planet/routes";
@@ -168,7 +169,15 @@ export function createGeologyBaker(opts: GeologyBakerOpts = {}): GeologyBaker {
       // Cheap, main-thread: physics character → planet-world params. The
       // params (including the compressed radius) fully determine the bake,
       // so a miniature world caches separately from its real-scale twin.
-      const { world, radiusM, hasOcean } = geographyParamsFromFeatures(resolved, systemSeed, { faceN, compression });
+      // THE DECLARED SCALE IS AN INPUT TO THE PARAMS NOW, not only to the
+      // request: a world that declares its settlement gap gets NO authored
+      // `founding` (planet-geography.ts), so the derivation can run — which
+      // also means `world` itself differs, and the key below moves with it.
+      const scaleSpec = opts.scale?.() ?? null;
+      const { world, radiusM, hasOcean } = geographyParamsFromFeatures(
+        resolved, systemSeed,
+        { faceN, compression, scale: scaleSpec as WorldScaleSpec | null },
+      );
       // The params determine the bake ONLY AT A FIXED ALGORITHM — bump the
       // version whenever worldgen changes shape (the refine keys always did
       // this; the bake key silently didn't, and every algorithm improvement
@@ -187,7 +196,11 @@ export function createGeologyBaker(opts: GeologyBakerOpts = {}): GeologyBaker {
       // `game.scale`, not in these params. It joins the key (and the request
       // below) rather than moving it: an undeclared world stringifies `null`
       // and keeps the `bake8` entry it already has.
-      const scaleSpec = opts.scale?.() ?? null;
+      // NO BUMP for the derived-founding change (GL fix round, R3): a world
+      // that declares a gap now stringifies WITHOUT the `founding` key, so its
+      // `world` — already the bulk of this key — differs and the stale entry
+      // is unreachable by construction. An undeclared world's params and
+      // scan are byte-identical to yesterday's and keep their `bake8` entry.
       const key = `bake8:${JSON.stringify(world)}${scaleSpec ? `:${JSON.stringify(scaleSpec)}` : ""}`;
       const db = await dbPromise;
       const hit = await cacheGet(db, key);

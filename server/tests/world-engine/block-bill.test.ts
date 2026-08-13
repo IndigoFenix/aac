@@ -240,3 +240,27 @@ describe("the block as an object", () => {
     });
   });
 });
+
+// ── S&D S3 H1 — multiplier ③ (BLOCKS_PER_BAY × BUILD_BAY_M), wired at
+// ⚖️ S3 REVIEW CORRECTION — BILLS ARE DIAL-FREE. The resource_compression
+// dial applies at exactly ONE boundary (effectiveInPerOut / storehouseRawParAt
+// / farmAcresPerPerson). A bill is construction ambition, not natural→usable
+// conversion; the reviewed draft's bills ÷ dial compounded with the refine
+// side (~dial² and worse). These pins hold the INVARIANCE.
+describe("blockCosts — dial-INVARIANT bills (one-application law)", () => {
+  it("blockCosts is a pure function of the bill", () => {
+    const bill = shellBill({ w: 9, h: 8 });
+    expect(blockCosts(bill)).toEqual({ [BLOCK_GLYPH]: bill.total });
+    expect(blockCosts(40)).toEqual({ [BLOCK_GLYPH]: 40 });
+  });
+
+  it("the wrapper params are INERT: a passed dial changes nothing", () => {
+    const cut: InteriorCandidate = {
+      hostId: "h_0", kind: "bedroom", u0: 0, u1: 4, v0: 0, v1: 2.5,
+      doorAt: { u: 2, v: 2.5, width: 1.8 },
+    };
+    expect(interiorCosts(cut, 2)).toEqual(interiorCosts(cut));
+    expect(roomOrderCosts(cut, 2)).toEqual(roomOrderCosts(cut));
+    expect(baseRoomCosts({ w: 4, h: 2.5 }, 2)).toEqual(baseRoomCosts({ w: 4, h: 2.5 }));
+  });
+});

@@ -207,6 +207,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [allowReadReports, setAllowReadReports] = useState(true);
   const [allowNotes, setAllowNotes] = useState(true);
   const [shareMonitorNotesWithInstitute, setShareMonitorNotesWithInstitute] = useState(true);
+  const [autoAddContacts, setAutoAddContacts] = useState(true);
   const [useApprovedSymbols, setUseApprovedSymbols] = useState(false);
   const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
@@ -535,6 +536,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
+      setAutoAddContacts(aac?.autoAddContacts ?? true);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
@@ -590,6 +592,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAllowReadReports = aac?.allowReadReports ?? true;
       const originalAllowNotes = aac?.allowNotes ?? true;
       const originalShareMonitorNotesWithInstitute = aac?.shareMonitorNotesWithInstitute ?? true;
+      const originalAutoAddContacts = aac?.autoAddContacts ?? true;
       const originalUseApprovedSymbols = aac?.useApprovedSymbols ?? false;
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       const originalAppConfig = aac?.appConfig || {};
@@ -640,6 +643,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         allowReadReports !== originalAllowReadReports ||
         allowNotes !== originalAllowNotes ||
         shareMonitorNotesWithInstitute !== originalShareMonitorNotesWithInstitute ||
+        autoAddContacts !== originalAutoAddContacts ||
         useApprovedSymbols !== originalUseApprovedSymbols ||
         useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
@@ -653,7 +657,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -691,6 +695,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowReadReports: boolean;
       allowNotes: boolean;
       shareMonitorNotesWithInstitute: boolean;
+      autoAddContacts: boolean;
       useApprovedSymbols: boolean;
       useUnapprovedSymbols: boolean;
       appConfig?: Record<string, any>;
@@ -793,6 +798,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowReadReports,
       allowNotes,
       shareMonitorNotesWithInstitute,
+      autoAddContacts,
       useApprovedSymbols,
       useUnapprovedSymbols,
       appConfig,
@@ -849,6 +855,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
+      setAutoAddContacts(aac?.autoAddContacts ?? true);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
@@ -3026,6 +3033,32 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   onCheckedChange={setShareMonitorNotesWithInstitute}
                 />
               </div>
+
+              {/* AI Learning — what the AI is allowed to record about the
+                  people and world around the student, on its own initiative. */}
+              <CollapsibleSubSection
+                icon={<Sparkles className="w-4 h-4" />}
+                title={t('aacSettings.aiLearning')}
+                description={t('aacSettings.aiLearningDesc')}
+              >
+                <CardContent className="space-y-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">
+                        {t('aacSettings.autoAddContacts')}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        {t('aacSettings.autoAddContactsDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={autoAddContacts}
+                      onCheckedChange={setAutoAddContacts}
+                      data-testid="switch-auto-add-contacts"
+                    />
+                  </div>
+                </CardContent>
+              </CollapsibleSubSection>
             </CardContent>
           </CollapsibleSection>
 

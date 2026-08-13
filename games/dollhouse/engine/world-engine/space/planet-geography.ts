@@ -17,7 +17,10 @@
 // `sites` are where the civ layer founds cities.
 
 import type { GameSettings } from "../kernel/manifest.js";
-import { buildPlanetWorld, type BuiltPlanet } from "../planet/planet-game.js";
+import {
+  buildPlanetWorld, declaresSettlementGap, type BuiltPlanet,
+} from "../planet/planet-game.js";
+import type { WorldScaleSpec } from "../scale.js";
 import type { PlanetPalette } from "../planet/surface.js";
 import {
   EARTHLIKE_VARIANTS, BARREN_VARIANTS, MOON_PALETTE, BARREN_YELLOW, ICE_WORLD, BARREN_DARK,
@@ -55,6 +58,12 @@ export interface GeographyOpts {
    *  physics body is. Relief stays real-height (storybook-steep terrain —
    *  the doc's vertical-compression choice). Default 1 (real scale). */
   compression?: number;
+  /** THE DOCUMENT'S DECLARED SPACE-TIME SCALE (`game.scale`, unresolved —
+   *  the raw declaration, because what matters here is whether the world
+   *  SAID anything about its settlement gap). A world that did gets a
+   *  DERIVED founding scan (see `world.founding` below) and carries the
+   *  declaration into the build, so `planetFoundingOpts` can run it. */
+  scale?: WorldScaleSpec | null;
 }
 
 /** Pick a rocky world's terrain palette from its physics character (seagull's
@@ -136,13 +145,29 @@ export function geographyParamsFromFeatures(
       radius: radiusM,
       relief,
       detail,
-      // TOWN-scale settlement density: the map-scope founding defaults were
-      // tuned for regional grids; on a real-radius world their minSpacing 6
-      // (~1,250 km at faceN 48) reads as continental capitals. Spacing 2
-      // (~415 km) founds hundreds of candidates — still sparse next to a
-      // real civilization (a village tier awaits region-refinement on
-      // approach), but a functioning one.
-      founding: { threshold: 60, radius: 2, minSpacing: 2, maxHarvest: 600 },
+      // TIER-0 SETTLEMENT DENSITY — a CHART number, and only where the world
+      // said nothing better. The map-scope founding defaults were tuned for
+      // regional grids; on a real-radius world their minSpacing 6 (~1,250 km
+      // at faceN 48) reads as continental capitals. Spacing 2 (~415 km)
+      // founds hundreds of candidates — still sparse next to a real
+      // civilization (a village tier awaits region-refinement on approach),
+      // but a functioning one. At real radius a chart cell dwarfs any town,
+      // so the clip law (`scale.ts townExtentM`) holds with room to spare.
+      //
+      // A WORLD THAT DECLARES ITS SETTLEMENT GAP GETS NO LITERAL AT ALL.
+      // Authored `founding` OUTRANKS `planetFoundingOpts`' derivation (content
+      // over derivation — the right rule), so authoring one here made the
+      // declaration unreachable: the 2 km demo planet said its towns stand
+      // 780 m apart and then founded them on a chart lattice that knew
+      // nothing about it, ~284 m apart, inside 450 m extents. Roads through
+      // buildings, by arithmetic. Omitting the key hands the scan to Gate A's
+      // closed form (`kernel/civ/bands.ts foundingScan`, growth phase C
+      // §3.1), whose spacing IS `townSpacingM(scale)` in chart cells — so the
+      // gap the world declares, the gap it founds by, and the extent its
+      // towns build to are one derivation and cannot drift apart.
+      ...(declaresSettlementGap(opts.scale ?? null)
+        ? {}
+        : { founding: { threshold: 60, radius: 2, minSpacing: 2, maxHarvest: 600 } }),
       // Colour comes from the body's physics, so Mars reads red, the Moon grey,
       // an ice world white — not every rocky planet as Earth.
       palette: paletteFromFeatures(resolved, systemSeed),
@@ -169,7 +194,12 @@ export function buildPlanetGeography(
     canFly: false,
     creativeMode: false,
     entities: null,
-    scale: null,
+    // THE DECLARATION TRAVELS WITH THE PARAMS. `geographyParamsFromFeatures`
+    // omits `world.founding` for a world that declared its gap precisely so
+    // `planetFoundingOpts` can derive the scan — and it derives from THIS
+    // field. Dropping it here would hand the derived branch a null and fall
+    // back to the real-scale chart default the omission exists to escape.
+    scale: (opts.scale ?? null) as GameSettings["scale"],
     transport: null,
     culture: null,
   };

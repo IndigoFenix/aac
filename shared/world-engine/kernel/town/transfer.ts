@@ -35,10 +35,10 @@
 import { FOOD_DAY_SEC } from "./goods.js";
 import type { TradeRoute } from "./trade.js";
 import { IMPORT_ALLOTMENT } from "./trade.js";
-import { headOf } from "../../variations.js";
 import { journeyTimeS, priceOf } from "./pricing.js";
 import { costTotalS } from "./scope-shape.js";
 import { ERRAND_WALK_MPS } from "../../scale.js";
+import { countUnits, stackHead } from "./goods-kinds.js";
 
 // ---------------------------------------------------------------------------
 // Stock endpoints — ONE shape over every stack-map holder
@@ -65,36 +65,25 @@ export interface StockEndpoint {
   stack: Record<string, number>;
 }
 
-/** The material HEAD of a stack glyph ("wood.wet" → "wood") — the
- *  structures.ts / founding.ts convention: facted variants pay toward and
- *  count toward their head.
- *
- *  🚨 A STORED PIECE IS HEADED BY ITS KIND. Furniture stacks under the prefix
- *  `furn.<kind>`, so the plain head made every piece the same material: a bill
- *  for a bed counted the chairs, and `takeStock` for a bed could take one and
- *  install it as the bed. The kind is the first modifier; anything after it
- *  (a colour) is an ordinary facet and still pays toward its kind. */
-export function stackHead(glyph: string): string {
-  if (glyph.startsWith("furn.")) {
-    const kind = glyph.split(".")[1];
-    return kind ? `furn.${kind}` : glyph;
-  }
-  return headOf(glyph);
-}
+/** The material HEAD of a stack glyph ("wood.wet" → "wood") — re-exported
+ *  under its original name; the definition (and its 🚨 furniture warning)
+ *  now lives in goods-kinds.ts, the lower-level module the shared
+ *  stack-counting core belongs in (see its own docstring there). Every
+ *  existing importer of `stackHead` from this file is unaffected. */
+export { stackHead };
 
-/** Units in a stack matching `glyph`'s head (facted variants included). */
+/** Units in a stack matching `glyph`'s head (facted variants included) — the
+ *  HEAD selector of goods-kinds.ts's `countUnits` core. */
 export function stackUnits(stack: Readonly<Record<string, number>>, glyph: string): number {
-  const head = stackHead(glyph);
-  let n = 0;
-  for (const [g, c] of Object.entries(stack)) {
-    if (stackHead(g) === head) n += Math.max(0, c);
-  }
-  return n;
+  return countUnits(stack, { head: glyph });
 }
 
-/** Total units across the whole stack. */
+/** Total units across the whole stack — the `all` selector, WITH negative
+ *  rows clamped to 0. Distinct from goods-kinds.ts's `totalStackUnits`,
+ *  which sums raw (unclamped): that difference is real, per-name behavior,
+ *  not a bug to unify away. */
 export function stackTotal(stack: Readonly<Record<string, number>>): number {
-  return Object.values(stack).reduce((s, n) => s + Math.max(0, n), 0);
+  return countUnits(stack, { all: true, clampNegatives: true });
 }
 
 /**
@@ -242,6 +231,18 @@ export interface PricedSourceOpts {
   /** Per-source overrides where a caller genuinely has them. Absent (or
    *  returning nothing) ⇒ the walk-level defaults above. */
   perSource?(s: TransferSource): { speedMps?: number; loadDwellS?: number } | undefined;
+  /**
+   * ⚖️ POLICY PRIORITY (S&D S3 H2 — "larger trees will typically be cut
+   * first"): a source with a LOWER key ranks BEFORE cost, not as a
+   * hand-seconds fiction — cutting the biggest specimen is a management
+   * CHOICE, not a claim that it is cheaper to reach. Sources tying on the
+   * key (including every source when this is absent) fall through to cost
+   * then id, unchanged. Absent ⇒ every key reads 0 ⇒ byte-identical to the
+   * pre-S3 walk — the seam `PricedSourceOpts`'s own doc reserves for
+   * exactly this: a caller with a genuine reason to price two sources
+   * differently.
+   */
+  rankKey?(s: TransferSource): number;
 }
 
 /** THE SORT KEY: this source's `VerbCost`, totalled in hand-seconds. */
@@ -273,8 +274,9 @@ export function rankPricedSources<T extends TransferSource>(
 ): T[] {
   return sources
     .filter((s) => unitsOf(s) > 0)
-    .map((s) => ({ s, c: sourceCostS(s, opts) }))
+    .map((s) => ({ s, c: sourceCostS(s, opts), r: opts.rankKey?.(s) ?? 0 }))
     .sort((a, b) =>
+      a.r !== b.r ? a.r - b.r :
       a.c < b.c ? -1 : a.c > b.c ? 1 : a.s.id < b.s.id ? -1 : a.s.id > b.s.id ? 1 : 0,
     )
     .map((r) => r.s);

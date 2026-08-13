@@ -39,6 +39,7 @@ import { createNpcVoice } from "@shared/world-engine/npc-voice";
 import { GazeSmoother } from "@shared/gaze-kit";
 import { mountBoardIsland, type BoardIsland, type NounEntry } from "./board-island";
 import { bootLivingTown, type QuestBoot, type SharedBoard, type BoardHandlers } from "./quest-boot";
+import { onPortraitsBaked, requestPortraits } from "./portraits";
 import specJson from "./game.spec.json";
 
 const GAME_ID = "dollhouse";
@@ -119,6 +120,31 @@ let convoAddressees: string[] = [];
 let familyMembers: FamilyHudEntry[] = [];
 let pocketItems: PocketEntry[] = [];
 let cityChips: CityHudChip[] = [];
+
+// ── CREATURE PORTRAITS: the picture a NAMED creature's button wears, baked from
+// that creature's own body (portraits.ts). Two facts have to meet — the host
+// says which BODY each member has (FamilyHudEntry species/outfit), the noun list
+// says which names are actually offered as WORDS — and either can arrive first,
+// so the intersection is recomputed whenever one of them lands. A word already
+// drawn (or queued) is never re-requested, so this is cheap to call on every
+// push. ──────────────────────────────────────────────────────────────────────
+function refreshPortraits(): void {
+  if (!familyMembers.length || !knownNouns.length) return;
+  const bodyByName = new Map<string, FamilyHudEntry>();
+  for (const m of familyMembers) if (m.species) bodyByName.set(m.label.toLowerCase(), m);
+  const reqs: Array<{ symbol: string; speciesId: string; outfit?: number }> = [];
+  for (const n of knownNouns) {
+    if (n.kind !== "creature") continue;
+    const body = bodyByName.get(n.symbol.toLowerCase());
+    if (!body?.species) continue;
+    reqs.push({
+      symbol: n.symbol.toLowerCase(),
+      speciesId: body.species,
+      ...(body.outfit !== undefined ? { outfit: body.outfit } : {}),
+    });
+  }
+  if (reqs.length) requestPortraits(reqs);
+}
 
 // ── world_hud: what the standalone side panel DISPLAYS (family chips, city
 // chips, pocket stacks), re-mapped into the bridge's generic sections for the
@@ -208,22 +234,35 @@ function mountIsland(): BoardIsland {
     );
     return {
       ...raw,
-      setNouns: (nouns) => { knownNouns = nouns; raw.setNouns(nouns); },
-      setFamily: (members) => { familyMembers = members; raw.setFamily(members); },
+      setNouns: (nouns) => { knownNouns = nouns; raw.setNouns(nouns); refreshPortraits(); },
+      setFamily: (members) => { familyMembers = members; raw.setFamily(members); refreshPortraits(); },
       setAddressees: (list) => { convoAddressees = list; raw.setAddressees?.(list); },
     };
   }
   return {
     set: (view) => pushSidebarBoard(view),
-    setNouns: (nouns) => { knownNouns = nouns; },
+    setNouns: (nouns) => { knownNouns = nouns; refreshPortraits(); },
     setPocket: (items) => { pocketItems = items; pushWorldHud(); },
-    setFamily: (members) => { familyMembers = members; pushWorldHud(); },
+    setFamily: (members) => { familyMembers = members; pushWorldHud(); refreshPortraits(); },
     setCity: (chips) => { cityChips = chips; pushWorldHud(); },
     setAddressees: (list) => { convoAddressees = list; },
     dispose: () => {},
   };
 }
 const island: BoardIsland = mountIsland();
+
+// A finished portrait has to reach the board it belongs to. EMBEDDED: the
+// platform's builder holds the buttons — the pictures go up as `word_images`,
+// keyed by the same word the surfacer offered. STANDALONE: the island draws
+// them, and the WORDS didn't change (only their faces), so the list is re-pushed
+// by identity to make React look again.
+onPortraitsBaked((added) => {
+  if (embedded) {
+    sendToParent({ type: "word_images", images: added.map((a) => ({ key: a.symbol, image: a.url })) });
+  } else {
+    island.setNouns([...knownNouns]);
+  }
+});
 
 const sharedBoard: SharedBoard = {
   island,

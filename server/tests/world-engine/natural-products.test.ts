@@ -9,7 +9,9 @@ import { describe, it, expect } from "@jest/globals";
 import {
   buildingMaterialGlyphs,
   drinkGlyphs,
+  effectiveInPerOut,
   foodGlyphs,
+  growthClassYield,
   harvestProductsOf,
   harvestStockOf,
   killStockOf,
@@ -193,5 +195,83 @@ describe("derived vocabularies — the registry IS the source of truth", () => {
 
   it("sheep still shears (harvestProductsOf)", () => {
     expect(harvestProductsOf("sheep").map((p) => p.glyph)).toEqual(["wool"]);
+  });
+});
+
+// ── S&D S3 H1 — THE RESOURCE-CONVERSION DIAL ────────────────────────────────
+describe("the conversion dial — multiplier ① (yields × dial)", () => {
+  it("rollYield: dial 1 is byte-identical (default AND explicit)", () => {
+    const p = naturalSourceOf("oak")!.products[0]!;
+    expect(rollYield(p, () => 0)).toBe(p.yield.min);
+    expect(rollYield(p, () => 0, 1)).toBe(p.yield.min);
+    expect(rollYield(p, () => 0.999999)).toBe(p.yield.max);
+    expect(rollYield(p, () => 0.999999, 1)).toBe(p.yield.max);
+  });
+
+  it("rollYield: the dial scales the RANGE before rolling, one roll() call either way", () => {
+    const p = naturalSourceOf("oak")!.products[0]!; // wood: 12..20
+    let calls = 0;
+    const roll = () => { calls++; return 0; };
+    expect(rollYield(p, roll, 2)).toBe(24); // min×2
+    expect(calls).toBe(1); // deterministic call count — unchanged by the dial
+    const rollMax = () => 0.999999;
+    expect(rollYield(p, rollMax, 2)).toBe(40); // max×2
+  });
+
+  it("killStockOf/harvestStockOf thread the SAME dial to rollYield", () => {
+    expect(killStockOf("oak", () => 0, 2)).toEqual({ wood: 24 });
+    expect(killStockOf("oak", () => 0, 1)).toEqual({ wood: 12 });
+    expect(harvestStockOf("apple_tree", () => 0, 3)).toEqual({ apple: 3 }); // min 1 × 3
+  });
+});
+
+describe("effectiveInPerOut — multiplier ② (bills ÷ dial)", () => {
+  it("dial 1 is byte-identical", () => {
+    expect(effectiveInPerOut(2)).toBe(2);
+    expect(effectiveInPerOut(2, 1)).toBe(2);
+  });
+
+  it("scales down with the dial, floored at 1 raw unit (never free)", () => {
+    expect(effectiveInPerOut(2, 2)).toBe(1);
+    expect(effectiveInPerOut(10, 4)).toBe(3); // round(10/4) = round(2.5) = 3 (JS rounds .5 up)
+    expect(effectiveInPerOut(2, 1000)).toBe(1); // floored, never 0
+  });
+
+  it("below 1 the bill grows — the same paired direction as rollYield's ×dial", () => {
+    expect(effectiveInPerOut(2, 0.5)).toBe(4);
+  });
+});
+
+describe("S&D S3 H2 — the growth clock (wood-bearing species only)", () => {
+  it("oak and apple_tree declare growth; every other species does not", () => {
+    expect(naturalSourceOf("oak")!.growth).toBeDefined();
+    expect(naturalSourceOf("apple_tree")!.growth).toBeDefined();
+    for (const s of ["rock", "sheep", "cow", "banana_plant", "grape_vine"]) {
+      expect(naturalSourceOf(s)!.growth).toBeUndefined();
+    }
+  });
+
+  it("growth classes: sapling yields NOTHING, the LAST class is the catalogue's own mature anchor", () => {
+    for (const species of ["oak", "apple_tree"]) {
+      const src = naturalSourceOf(species)!;
+      const g = src.growth!;
+      expect(g.classes[0]!.yieldMul).toBe(0);
+      expect(g.classes[g.classes.length - 1]!.yieldMul).toBe(1);
+      expect(g.maturityYears).toBeGreaterThan(0);
+    }
+  });
+
+  it("growthClassYield: dial 1, mature class (mul 1) reproduces the yield MIDPOINT, deterministically", () => {
+    const p = naturalSourceOf("oak")!.products[0]!; // wood 12..20, mid 16
+    expect(growthClassYield(p, 1)).toBe(16);
+    expect(growthClassYield(p, 1, 1)).toBe(16);
+    expect(growthClassYield(p, 0)).toBe(0); // sapling
+    expect(growthClassYield(p, 0.25)).toBe(4); // young: round(16 × 0.25)
+  });
+
+  it("growthClassYield: the SAME ×dial direction as rollYield, no RNG (repeatable)", () => {
+    const p = naturalSourceOf("oak")!.products[0]!;
+    expect(growthClassYield(p, 1, 2)).toBe(32);
+    expect(growthClassYield(p, 1, 2)).toBe(growthClassYield(p, 1, 2)); // pure
   });
 });

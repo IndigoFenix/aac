@@ -45,6 +45,17 @@ import type { FoundedBuilding, TownDeltas } from "./construction.js";
  *  turns newcomers away — surplus attracts, hunger repels. */
 export const MOVE_IN_FOOD_SHORTAGE_MAX = 0.25;
 
+/**
+ * ⚖️ THE PUSH FLOOR (growth-motive law ②, S&D S1): pressure somewhere ELSE
+ * must read at least this before anybody uproots. Nobody leaves a place that
+ * is fine — a pull with no push is a household conjured out of nowhere, which
+ * is precisely what `moveInStep` used to do on every fed day.
+ *
+ * Low (0.1) on purpose: this is a MINIMUM, and the reading it gates is a real
+ * neighbour's real distress, not a knob.
+ */
+export const MOVE_IN_PUSH_MIN = 0.1;
+
 export interface MoveInInput {
   /** The town's serialized store — the founded rows + the admission fact. */
   deltas: TownDeltas;
@@ -52,19 +63,39 @@ export interface MoveInInput {
   catalog: ReadonlyArray<StructureSpec>;
   /** The ③ growth signals (host-assembled off the live books). */
   signals: TownGrowthSignals;
+  /**
+   * ⚖️ THE PUSH, 0..1 (S&D S1) — how much WORSE it is somewhere else: the
+   * worst distress among the origins this town can actually see (cluster
+   * neighbours' and trade partners' own shortage/crowding books). A migrant
+   * needs an origin, and this is the honest v1 of one.
+   *
+   * 🚨 IT IS NOT AN ORIGIN LEDGER. Nothing is debited from the place the
+   * household left, because no place is named — the reading says only "it is
+   * worse out there". What a conserving migration needs is recorded in the
+   * S&D landing notes: a named origin, a soul debited there and credited
+   * here, and a refusal when the origin cannot spare the family.
+   *
+   * REQUIRED (not optional-with-a-default) so no caller can migrate by
+   * forgetting: a fixture that wants the historical behaviour states `1`.
+   */
+  push: number;
 }
 
 /**
  * ONE move-in tick (call once per credited town day, beside the growth
- * steps): when food is not scarce, the OLDEST completed, still-empty
- * founded house admits a household — `admitHousehold` writes the
- * serialized fact and the caller materializes it (a plan.houses row live;
- * applyFoundedBuildings on every rebuild). At most one household a day —
- * immigration is a trickle, not a flood. Null = nothing admitted (famine,
- * or no empty finished house). Deterministic given (deltas, signals).
+ * steps): when food is not scarce AND somewhere else is worse, the OLDEST
+ * completed, still-empty founded house admits a household —
+ * `admitHousehold` writes the serialized fact and the caller materializes it
+ * (a plan.houses row live; applyFoundedBuildings on every rebuild). At most
+ * one household a day — immigration is a trickle, not a flood. Null =
+ * nothing admitted (famine, nowhere worse, or no empty finished house).
+ * Deterministic given (deltas, signals, push).
  */
 export function moveInStep(input: MoveInInput): FoundedBuilding | null {
+  // THE PULL (unchanged): a town that cannot feed itself turns newcomers away.
   if (input.signals.shortage("food") > MOVE_IN_FOOD_SHORTAGE_MAX) return null;
+  // ⚖️ THE PUSH (S&D S1): and somebody has to have a reason to leave.
+  if (!(input.push >= MOVE_IN_PUSH_MIN)) return null;
   for (const b of input.deltas.founded()) {
     if (!b.completed || b.household) continue;
     const spec = resolveStructure(input.catalog, b.type);
@@ -260,6 +291,34 @@ export interface CohortRates {
    *  surplus the market/export flows carry off abstractly. Absent =
    *  uncapped. */
   stackCap?: Record<string, number>;
+  /**
+   * ⚖️ ENDOGENOUS POPULATION v1 (growth-motive law ②, S&D S1) — the CIV
+   * TIER'S OWN Malthus policy, adopted verbatim in shape at the live rung.
+   *
+   * The live cohort step has never written `row.pop`: souls only ever entered
+   * a pool by demotion and left by promotion, so no town on any map had a
+   * birth. This is the one closed-form law the engine already trusts
+   * (`kernel/civ/plan.ts` and `town-world.ts` run it clause for clause):
+   *
+   *     births = pop × birthRate × fill
+   *     deaths = pop × (deathRate + starvation × (1 − fill))
+   *
+   * FILL GATES BIRTHS — a starving pool has no children and buries more, which
+   * is what makes population growth a consequence of the food economy instead
+   * of a clock. `diet` names the commodity whose satisfaction is the fill
+   * (absent ⇒ the mean over every need integrated this window; a pool with no
+   * needs at all reads fill 1).
+   *
+   * ABSENT ⇒ the shipped step to the byte: no pop write, no rounding, nothing.
+   */
+  vitals?: {
+    birthRate: number;
+    deathRate: number;
+    /** Extra death rate at zero fill, scaled by (1 − fill). */
+    starvation?: number;
+    /** The commodity whose satisfaction gates births. */
+    diet?: string;
+  };
 }
 
 /** Fractional head-aware draw (takeStock floors to integers; pool
@@ -293,6 +352,20 @@ function drawStock(stack: Record<string, number>, glyph: string, n: number): num
  * partial service), the cap trims last. Needs satisfaction is the served
  * fraction of the window; wellbeing drifts toward what the satisfaction
  * earns (fed pools brighten, starved pools sink). No RNG.
+ *
+ * ⚖️ AND THEN THE POOL BREATHES (S&D S1, `rates.vitals`) — births and deaths
+ * on the fill this window just delivered, exactly where `town-world.ts` puts
+ * them ("day end: vitals on the diet fill the settlement just delivered").
+ * Compounded over the window (`(1 + r)^elapsed`), so a pool that slept a year
+ * catches up in one step like everything else here.
+ *
+ * ⚠️ ONE HONEST CAVEAT, and it is the reason vitals are OPT-IN. Without them
+ * this step is slice-EXACT: one call over N days moves the same stock as N
+ * daily calls, and the test pins that. With them it cannot be, because the
+ * population that eats in the second day depends on the fill of the first —
+ * feedback has no slice-invariant closed form. One call reads the whole window
+ * at one fill; N calls re-read it N times. Both are deterministic and both are
+ * honest; they are not identical, and nothing may assume they are.
  */
 export function cohortRatesStep(row: CohortRow, day: number, rates: CohortRates): void {
   const elapsed = Math.max(0, day - row.ratesDay);
@@ -322,6 +395,34 @@ export function cohortRatesStep(row: CohortRow, day: number, rates: CohortRates)
       const have = stackUnits(row.stack, g);
       if (have > cap) drawStock(row.stack, g, have - cap);
     }
+  }
+  // ⚖️ VITALS (S&D S1) — the civ tier's closed form at the live rung.
+  if (rates.vitals && row.pop > 0) {
+    const v = rates.vitals;
+    // The fill THIS window delivered: the diet's own satisfaction when one is
+    // named, else the mean over everything the pool needed. A pool with no
+    // needs integrated (nothing to eat, nothing owed) reads 1 — it is not
+    // starving, it simply has no diet in the books.
+    const fill =
+      v.diet !== undefined
+        ? Math.max(0, Math.min(1, row.needs[v.diet] ?? 1))
+        : satN > 0
+          ? satSum / satN
+          : 1;
+    const r =
+      Math.max(0, v.birthRate) * fill -
+      (Math.max(0, v.deathRate) + Math.max(0, v.starvation ?? 0) * (1 - fill));
+    // Compounded over the window, never negative-per-day (a rate that would
+    // take a pool below zero in one day takes it to zero instead).
+    const next = row.pop * Math.pow(Math.max(0, 1 + r), elapsed);
+    // 🚨 CONSERVE-TOTALS DISCIPLINE FOR TRANSITIONS. `promoteHousehold` gives
+    // a demoted household back exactly the members it pooled, so the pool may
+    // never hold fewer souls than its housed base owes — a starved pool that
+    // dipped under it would MINT people on the next promotion. Deaths bite the
+    // street population above that base; below it, a full model would have to
+    // age the households themselves (recorded, S&D landing notes).
+    const housed = row.houses.reduce((s, h) => s + h.members, 0);
+    row.pop = Math.max(housed, next);
   }
 }
 

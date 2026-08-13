@@ -404,9 +404,12 @@ describe("surfaceNext — group chips", () => {
     expect(ids).toContain("places");
   });
 
-  it("groups vanish when the grid already holds every member", () => {
+  it("NOUN chips vanish when the grid already holds every member", () => {
     const s = surfaceNext(["i_me", "want"], ctx()); // the small library fits inline
-    expect(s.groups).toEqual([]);
+    expect(s.groups.filter((g) => g.kind !== "verb")).toEqual([]);
+    // What stands is the modal ACTION BAND — a different band with its own
+    // budget (surface-modal-actions.test.ts owns its pins).
+    expect(s.groups.map((g) => g.id)).toEqual(["do", "play", "make", "get"]);
   });
 
   it("chips are deterministic and noun-order-independent", () => {

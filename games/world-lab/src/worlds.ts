@@ -117,15 +117,22 @@ export const TEST_WORLDS: NamedWorld[] = [
         ],
       },
       // ⚖️ A 2 km PLANET DECLARES ITS SETTLEMENT GAP (growth phase C §1.1/§3.1).
-      // Earth's day's walk is 25 km; a body this size has a 131 m chart cell
-      // and founds its cities ~790 m apart, so its towns really do stand 1/32
-      // of a real gap from one another. Declaring it is what lets
-      // `townSpacingM`/`townExtentM` derive: the founding spacing comes back as
-      // the same 6 cells the map already used, and the town extent falls from
-      // 450 m to 195 m — at which the interstate roads END AT PORTS instead of
-      // running through the buildings (measured on this exact planet: 18 of 34
-      // road ends unclipped → 0).
-      session: { avatar: "spirit", scale: { gap_compression: 32 } },
+      // Earth's day's walk is 25 km; these bodies have 131 m and 92 m chart
+      // cells, so their towns really do stand ~1/88 of a real gap apart.
+      //
+      // THE DECLARATION IS NOW WHAT FOUNDS THEM (GL fix round, R3). It used to
+      // be decoration: `space/planet-geography.ts` authored a `founding`
+      // literal, authored content outranks derivation, and the two disagreed —
+      // the world said 781 m and founded at 284 m inside 450 m extents, so
+      // EVERY road ran to the town centre (measured: 63/63 ends unclipped,
+      // 61/63 crossing a roof). With no literal to outrank it, the scan
+      // derives from this number: spacing `townSpacingM(scale)` in chart cells
+      // (2 cells = 262 m, realized p50 284 m — the declaration re-measured),
+      // extent `townExtentM(scale)` = 71 m, and the clip law
+      // `2·extent + 10 = 152 m < 284 m` holds BY CONSTRUCTION rather than by
+      // luck. 88 is the measured value, not a round one: it is 25 km ÷ the gap
+      // these planets actually found at, on both bodies (284 m and 286 m).
+      session: { avatar: "spirit", scale: { gap_compression: 88 } },
     },
   },
   {
@@ -135,7 +142,15 @@ export const TEST_WORLDS: NamedWorld[] = [
       // A single BODY as the root — a planet with no surrounding system (its
       // sun/stars come later). Watched from orbit as a spirit; gaze-zoom down.
       tree: { kind: "body", params: { geology: { seed: 7 }, radius: 6000, rain: 1.5 } },
-      session: { avatar: "spirit" },
+      // A 6 km BODY DECLARES ITS GAP TOO (GL fix round, R3). Declaring nothing
+      // does not mean "no compression" — it means EARTH, and this planet is
+      // not Earth: its 393 m chart cell founded cities 844 m apart while the
+      // undeclared extent stayed at Earth's 450 m, so 2·450 + 10 = 910 m of
+      // town straddled an 844 m gap and 13 of 65 road ends had no open country
+      // to port in (measured). 30 is 25 km ÷ the 844 m gap it really founds
+      // at; the derived scan holds that lattice (2 cells = 785 m, realized p50
+      // 844 m) and the extent falls to 208 m, clearing the clip law at 427 m.
+      session: { avatar: "spirit", scale: { gap_compression: 30 } },
     },
   },
 ];

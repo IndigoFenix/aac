@@ -88,6 +88,33 @@ export interface FaceMatchResult {
   description?: string;
   contextNotes?: string;
   relationship?: string;
+  /**
+   * The runner-up person, present ONLY when they sit within
+   * FACE_AMBIGUITY_MARGIN of the winner — i.e. the face data cannot actually
+   * tell these two people apart on this frame. Lookalike relatives (siblings,
+   * a child and their parent, grandparent/grandchild) routinely land here.
+   *
+   * Consumers MUST NOT present an ambiguous match as a confident
+   * identification — no "that's Sarah", no sighting bump attributed to one of
+   * them, no gallery growth on the winner (growing the wrong person's gallery
+   * is exactly how a lookalike confusion becomes permanent). The coordinator
+   * renders it as "one of A / B" and lets downstream reasoning (voice, context,
+   * who is expected to be present) break the tie.
+   *
+   * Absent = the winner was clearly separated from everyone else, and the match
+   * may be trusted as usual.
+   */
+  ambiguousWith?: {
+    entityType: EntityType;
+    entityId: string;
+    name: string;
+    relationship?: string;
+    distance: number;
+  };
+  /** The runner-up's best distance — the same number as `ambiguousWith.distance`,
+   *  surfaced flat for logging/telemetry. Set only alongside `ambiguousWith`, so
+   *  its presence is itself the "this was a close call" flag in a log line. */
+  runnerUpDistance?: number;
 }
 
 export interface VoiceMatchResult {
@@ -122,6 +149,16 @@ export interface KnownPerson {
   voiceGallery: VoiceGalleryEntry[] | null;
   description?: string;
   contextNotes?: string;
+  /**
+   * Coarse STORED attributes from biometric_data, parsed for the attribute veto
+   * (see attributeVeto). `estimated_age` is free text on the row — "8",
+   * "8 years", "senior" — so it is normalised to a representative number here;
+   * null means "nothing usable on file", which can never produce a veto.
+   */
+  estimatedAge?: number | null;
+  /** Stored sex, normalised to lowercase "male"/"female"; null for anything
+   *  else (blank, "none", "unknown", a Hebrew label we don't read). */
+  estimatedSex?: "male" | "female" | null;
 }
 
 // ============================================================================
@@ -130,6 +167,30 @@ export interface KnownPerson {
 
 const FACE_MATCH_THRESHOLD = 0.6;
 const VOICE_MATCH_THRESHOLD = 0.75;
+
+/**
+ * The doppelgänger margin. A 1:N match is only trustworthy when the winner is
+ * clearly SEPARATED from the runner-up — a threshold alone says "close enough
+ * to be this person", never "closer to this person than to that one".
+ *
+ * Family faces break that assumption hard. Measured min distances from one
+ * student's stored faces to their relatives: sister 0.4527, brother 0.5508,
+ * mother 0.5613, grandmother 0.6045 — every one of them at or under the 0.6
+ * threshold. With a single running best, a probe sitting 0.45 from the student
+ * and 0.47 from the sister is silently named as the student at ~0.25
+ * confidence-margin worth of evidence: a coin flip reported as a fact.
+ *
+ * So when the best person and the runner-up PERSON are separated by less than
+ * this, the match is flagged ambiguous (see FaceMatchResult.ambiguousWith)
+ * instead of being trusted. Separation is what matters, not whether the
+ * runner-up also cleared the threshold: someone 0.02 outside the threshold is
+ * every bit as likely to be the true subject as the winner who scraped inside.
+ *
+ * Value: 0.08 — comfortably wider than the frame-to-frame jitter of the same
+ * face (~0.02-0.04 across poses within one sitting), narrow enough that
+ * genuinely distinct people (typically ≥0.2 apart) are still named outright.
+ */
+const FACE_AMBIGUITY_MARGIN = 0.08;
 
 // ---- Multi-angle gallery tuning -------------------------------------------
 /** Max gallery entries kept per person (anchor is separate, always kept). */
@@ -634,12 +695,178 @@ export async function removeVoiceEmbeddingForStudent(studentId: string): Promise
 }
 
 // ============================================================================
+// Attribute veto — coarse age/sex as a NEGATIVE filter on face matching
+// ============================================================================
+//
+// The 128-d face embedding is age-blind in practice: a child's probe routinely
+// lands ~0.6 from her grandmother's single stored anchor, i.e. inside the match
+// threshold, and no margin tuning fixes that because the two really are the
+// nearest neighbours in that space. What the embedding cannot do, a coarse
+// attribute read can — face-api's ageGenderNet will not call a child a senior.
+//
+// So attributes are used ONLY to REMOVE impossible candidates, never to choose
+// one. Every rule below is deliberately conservative: the cost of a wrong veto
+// (a real person becomes unrecognisable) is far worse than the cost of a missed
+// veto (the doppelgänger margin still flags the tie). Missing data on either
+// side is always "no opinion".
+
+/** Age band boundaries. child < 14 ≤ adult ≤ 55 < senior. */
+const AGE_BAND_CHILD_MAX = 14;
+const AGE_BAND_ADULT_MAX = 55;
+/** face-api's gender head is noisy; only a near-certain read may veto. */
+const SEX_VETO_MIN_CONFIDENCE = 0.9;
+/** …and only on a face old enough for that head to be reliable at all. */
+const SEX_VETO_MIN_AGE = 18;
+
+/** 0 = child, 1 = adult, 2 = senior. */
+function ageBand(age: number): 0 | 1 | 2 {
+  if (age < AGE_BAND_CHILD_MAX) return 0;
+  if (age <= AGE_BAND_ADULT_MAX) return 1;
+  return 2;
+}
+
+const AGE_BAND_NAMES = ["child", "adult", "senior"] as const;
+
+/** Words that stand in for a number in a free-text `estimated_age`, mapped to a
+ *  representative age inside their band. Matched on word boundaries so "8 years
+ *  old" never trips the "old" entry (the numeric branch wins first anyway). */
+const AGE_WORD_TO_YEARS: Array<[RegExp, number]> = [
+  [/\b(child|children|kid|kids|baby|babies|infant|toddler|young child)\b/, 8],
+  [/\b(adult|grown[- ]?up|middle[- ]?aged)\b/, 35],
+  [/\b(senior|elderly|elder|old|aged|geriatric)\b/, 70],
+];
+
+/**
+ * Parse a stored free-text `estimated_age` into a representative number.
+ * Handles "8", "8 years", "~42", "senior". Anything unreadable (blank, a
+ * Hebrew label, "unknown") returns null → no opinion, no veto. Ages outside a
+ * plausible human range are rejected rather than clamped: a nonsense value must
+ * not be allowed to veto anybody.
+ */
+export function parseEstimatedAge(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+
+  // Leading integer wins — it's the most specific thing the text can say.
+  const m = s.match(/^\D{0,4}(\d{1,3})/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (Number.isFinite(n) && n >= 0 && n <= 120) return n;
+    return null;
+  }
+
+  for (const [re, years] of AGE_WORD_TO_YEARS) {
+    if (re.test(s)) return years;
+  }
+  return null;
+}
+
+/** Tokens we accept as a stored sex. Checked as WHOLE strings (never substring)
+ *  so "woman" can't be read as "man" and "female" can't be read as "male". */
+const FEMALE_TOKENS = new Set(["f", "female", "woman", "women", "girl", "lady"]);
+const MALE_TOKENS = new Set(["m", "male", "man", "men", "boy", "guy"]);
+
+/**
+ * Parse a stored `estimated_sex` into "male" | "female" | null. Anything that
+ * isn't unambiguously one of the two — blank, "none", "unknown", "other", a
+ * Hebrew label — is null, which can never produce a veto.
+ */
+export function parseEstimatedSex(raw: string | null | undefined): "male" | "female" | null {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+  if (FEMALE_TOKENS.has(s)) return "female";
+  if (MALE_TOKENS.has(s)) return "male";
+  return null;
+}
+
+/**
+ * Should this stored person be EXCLUDED from matching a probe with these
+ * observed attributes? Pure; no I/O. The rules, each conservative by design:
+ *
+ *  1. AGE — veto only at ≥ 2 bands of separation (child vs senior). One band
+ *     apart is ordinary model error: ageGenderNet routinely reads a 12-year-old
+ *     as 16 or a 50-year-old as 60, and vetoing on that would erase real people.
+ *     Child-vs-senior is the case the embedding actually gets wrong and the
+ *     attribute net actually gets right.
+ *  2. SEX — veto only when EVERY guard holds: both sides known, they disagree,
+ *     the observation is near-certain (≥ 0.9), and the observed face is at
+ *     least 18. The gender head is unreliable on children's faces, so a child
+ *     is never sex-vetoed however confident the number looks.
+ *  3. Missing data on either side (or an unreadable stored value) → no veto.
+ */
+export function attributeVeto(
+  observed: { age?: number; sex?: "male" | "female"; sexConfidence?: number },
+  person: { estimatedAge?: number | null; estimatedSex?: string | null },
+): { veto: boolean; reason?: string } {
+  // --- Age ---
+  const observedAge =
+    typeof observed.age === "number" && Number.isFinite(observed.age) ? observed.age : null;
+  // The stored value may arrive already parsed (KnownPerson) or as raw text —
+  // re-parse defensively so either caller is safe.
+  const storedAge =
+    typeof person.estimatedAge === "number" && Number.isFinite(person.estimatedAge)
+      ? person.estimatedAge
+      : parseEstimatedAge(person.estimatedAge as unknown as string | null | undefined);
+
+  if (observedAge !== null && storedAge !== null) {
+    const oBand = ageBand(observedAge);
+    const sBand = ageBand(storedAge);
+    // ≥ 2 bands apart = child vs senior, the only separation we trust.
+    if (Math.abs(oBand - sBand) >= 2) {
+      return {
+        veto: true,
+        reason:
+          `age band ${AGE_BAND_NAMES[oBand]} (observed ~${Math.round(observedAge)}) vs ` +
+          `${AGE_BAND_NAMES[sBand]} (on file ~${Math.round(storedAge)})`,
+      };
+    }
+  }
+
+  // --- Sex ---
+  const observedSex = observed.sex === "male" || observed.sex === "female" ? observed.sex : null;
+  const storedSex = parseEstimatedSex(person.estimatedSex ?? null);
+  const conf =
+    typeof observed.sexConfidence === "number" && Number.isFinite(observed.sexConfidence)
+      ? observed.sexConfidence
+      : 0;
+
+  if (
+    observedSex !== null &&
+    storedSex !== null &&
+    observedSex !== storedSex &&
+    conf >= SEX_VETO_MIN_CONFIDENCE &&
+    // Never sex-veto a child-aged (or age-unknown) face — the gender head is
+    // unreliable there, and an unknown age might BE a child.
+    observedAge !== null &&
+    observedAge >= SEX_VETO_MIN_AGE
+  ) {
+    return {
+      veto: true,
+      reason: `sex ${observedSex} (p=${conf.toFixed(2)}) vs ${storedSex} on file`,
+    };
+  }
+
+  return { veto: false };
+}
+
+/** The observed-attribute bundle a probe may carry (from the client's
+ *  ageGenderNet). Every field optional — absent means "no opinion". */
+export interface ObservedFaceAttributes {
+  age?: number;
+  sex?: "male" | "female";
+  sexConfidence?: number;
+}
+
+// ============================================================================
 // Face matching — dedupe by biometricDataId so linked records match once
 // ============================================================================
 
 export async function findMatchingFace(
   embedding: FaceEmbedding,
   studentId: string,
+  observed?: ObservedFaceAttributes,
 ): Promise<FaceMatchResult | null> {
   // SECURITY: matching is scoped strictly to THIS student's known people
   // (the student, users linked via userStudents, and the student's active
@@ -647,35 +874,98 @@ export async function findMatchingFace(
   // every institute would be a cross-tenant biometric identification leak.
   if (!studentId) return null;
 
-  let bestMatch: FaceMatchResult | null = null;
-  let bestDistance = FACE_MATCH_THRESHOLD;
-
   // getKnownPeopleForStudent already dedupes by biometricDataId, so a person
-  // linked through multiple records is only evaluated once.
+  // linked through multiple records is only evaluated once — one entry here is
+  // one real human, which is what makes the runner-up comparison below mean
+  // "a DIFFERENT person" rather than "the same person's other record".
   const people = await getKnownPeopleForStudent(studentId);
 
+  // Score EVERY candidate instead of tracking a single running best. The winner
+  // on its own can't say whether the decision was clear-cut — only the field
+  // behind it can (see FACE_AMBIGUITY_MARGIN). Keeping all scores is what turns
+  // a silent pick between two lookalike relatives into a declared tie.
+  // Does the probe carry any coarse attribute worth vetoing on? (No attributes
+  // → the loop below behaves exactly as it did before this parameter existed.)
+  const hasObserved =
+    !!observed && (typeof observed.age === "number" || observed.sex !== undefined);
+
+  const scored: { person: KnownPerson; distance: number }[] = [];
   for (const p of people) {
     if (!p.faceEmbedding && !(p.faceGallery && p.faceGallery.length)) continue;
     // Min distance across the enrolled anchor AND every above-floor gallery pose.
     const distance = bestFaceDistance(embedding, p.faceEmbedding as number[] | null, p.faceGallery);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestMatch = {
-        matched: true,
-        entityType: p.type,
-        entityId: p.id,
-        name: p.name,
-        distance,
-        confidence: Math.max(0, 1 - distance / FACE_MATCH_THRESHOLD),
-        sampleCount: usableSampleCount(p.faceEmbedding as number[] | null, p.faceGallery),
-        description: p.description,
-        contextNotes: p.contextNotes,
-        relationship: p.relationship,
-      };
+    // Infinity = nothing usable left (dimension mismatch, or every pose below
+    // the weight floor). Such a person never matched before and must not become
+    // a runner-up now.
+    if (!Number.isFinite(distance)) continue;
+
+    // ATTRIBUTE VETO — applied BEFORE anything is ranked, so a vetoed person can
+    // be neither the winner nor the ambiguous runner-up. Excluding them here
+    // (rather than after the sort) is what makes the veto meaningful: a child
+    // probe must not merely lose to her grandmother, she must not be TIED with
+    // her either.
+    if (hasObserved) {
+      const v = attributeVeto(observed!, p);
+      if (v.veto) {
+        console.log(
+          `[Recognition] ATTRIBUTE VETO for student ${studentId}: excluded ${p.name} ` +
+            `(${p.type}:${p.id}) at d=${distance.toFixed(4)} — ${v.reason}`,
+        );
+        continue;
+      }
     }
+
+    scored.push({ person: p, distance });
+  }
+  if (!scored.length) return null;
+
+  // Ascending by distance; the sort is stable, so people at an exact tie keep
+  // the old iteration order and the same winner as before this change.
+  scored.sort((a, b) => a.distance - b.distance);
+  const [first, second] = scored;
+
+  // Unchanged gate: the winner still has to clear the match threshold outright.
+  if (first.distance >= FACE_MATCH_THRESHOLD) return null;
+
+  const p = first.person;
+  const distance = first.distance;
+  const match: FaceMatchResult = {
+    matched: true,
+    entityType: p.type,
+    entityId: p.id,
+    name: p.name,
+    distance,
+    confidence: Math.max(0, 1 - distance / FACE_MATCH_THRESHOLD),
+    sampleCount: usableSampleCount(p.faceEmbedding as number[] | null, p.faceGallery),
+    description: p.description,
+    contextNotes: p.contextNotes,
+    relationship: p.relationship,
+  };
+
+  // Doppelgänger margin. Note the runner-up is NOT required to be under the
+  // threshold: what decides ambiguity is the SEPARATION between the two people.
+  // A probe 0.59 from the sister and 0.61 from the brother is no more "the
+  // sister" than a coin is heads — the winner merely scraped inside a line the
+  // runner-up scraped outside.
+  if (second && second.distance - first.distance < FACE_AMBIGUITY_MARGIN) {
+    const r = second.person;
+    match.ambiguousWith = {
+      entityType: r.type,
+      entityId: r.id,
+      name: r.name,
+      relationship: r.relationship,
+      distance: second.distance,
+    };
+    match.runnerUpDistance = second.distance;
+    console.log(
+      `[Recognition] AMBIGUOUS face for student ${studentId}: ${p.name} (d=${distance.toFixed(4)}) vs ` +
+        `${r.name} (d=${second.distance.toFixed(4)}) — separation ` +
+        `${(second.distance - distance).toFixed(4)} < ${FACE_AMBIGUITY_MARGIN}. ` +
+        `Must NOT be presented as a confident identification.`,
+    );
   }
 
-  return bestMatch;
+  return match;
 }
 
 // ============================================================================
@@ -1164,6 +1454,8 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
       voiceEmbeddings: biometricData.voiceEmbeddings,
+      estimatedAge: biometricData.estimatedAge,
+      estimatedSex: biometricData.estimatedSex,
     })
     .from(students)
     .leftJoin(biometricData, eq(biometricData.id, students.biometricDataId))
@@ -1180,6 +1472,8 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       faceGallery: normalizeGallery(student.faceEmbeddings),
       voiceEmbedding: (student.voiceEmbedding as number[] | null) ?? null,
       voiceGallery: normalizeVoiceGallery(student.voiceEmbeddings),
+      estimatedAge: parseEstimatedAge(student.estimatedAge),
+      estimatedSex: parseEstimatedSex(student.estimatedSex),
     });
   }
 
@@ -1196,6 +1490,8 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
       voiceEmbeddings: biometricData.voiceEmbeddings,
+      estimatedAge: biometricData.estimatedAge,
+      estimatedSex: biometricData.estimatedSex,
     })
     .from(userStudents)
     .innerJoin(users, eq(users.id, userStudents.userId))
@@ -1215,6 +1511,8 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       faceGallery: normalizeGallery(u.faceEmbeddings),
       voiceEmbedding: (u.voiceEmbedding as number[] | null) ?? null,
       voiceGallery: normalizeVoiceGallery(u.voiceEmbeddings),
+      estimatedAge: parseEstimatedAge(u.estimatedAge),
+      estimatedSex: parseEstimatedSex(u.estimatedSex),
     });
   }
 
@@ -1233,6 +1531,8 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       voiceEmbedding: biometricData.voiceEmbedding,
       voiceEmbeddings: biometricData.voiceEmbeddings,
       physicalDescription: biometricData.physicalDescription,
+      estimatedAge: biometricData.estimatedAge,
+      estimatedSex: biometricData.estimatedSex,
     })
     .from(studentContacts)
     .leftJoin(biometricData, eq(biometricData.id, studentContacts.biometricDataId))
@@ -1253,6 +1553,8 @@ export async function getKnownPeopleForStudent(studentId: string): Promise<Known
       voiceGallery: normalizeVoiceGallery(c.voiceEmbeddings),
       description: c.physicalDescription || undefined,
       contextNotes: c.contextNotes || undefined,
+      estimatedAge: parseEstimatedAge(c.estimatedAge),
+      estimatedSex: parseEstimatedSex(c.estimatedSex),
     });
   }
 
@@ -1460,6 +1762,8 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
       voiceEmbeddings: biometricData.voiceEmbeddings,
+      estimatedAge: biometricData.estimatedAge,
+      estimatedSex: biometricData.estimatedSex,
     })
     .from(users)
     .leftJoin(biometricData, eq(biometricData.id, users.biometricDataId))
@@ -1477,6 +1781,8 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       faceGallery: normalizeGallery(user.faceEmbeddings),
       voiceEmbedding: (user.voiceEmbedding as number[] | null) ?? null,
       voiceGallery: normalizeVoiceGallery(user.voiceEmbeddings),
+      estimatedAge: parseEstimatedAge(user.estimatedAge),
+      estimatedSex: parseEstimatedSex(user.estimatedSex),
     });
   }
 
@@ -1490,6 +1796,8 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       faceEmbeddings: biometricData.faceEmbeddings,
       voiceEmbedding: biometricData.voiceEmbedding,
       voiceEmbeddings: biometricData.voiceEmbeddings,
+      estimatedAge: biometricData.estimatedAge,
+      estimatedSex: biometricData.estimatedSex,
     })
     .from(userStudents)
     .innerJoin(students, eq(students.id, userStudents.studentId))
@@ -1506,6 +1814,8 @@ export async function getKnownPeopleForUser(userId: string): Promise<KnownPerson
       faceGallery: normalizeGallery(s.faceEmbeddings),
       voiceEmbedding: (s.voiceEmbedding as number[] | null) ?? null,
       voiceGallery: normalizeVoiceGallery(s.voiceEmbeddings),
+      estimatedAge: parseEstimatedAge(s.estimatedAge),
+      estimatedSex: parseEstimatedSex(s.estimatedSex),
     });
   }
 

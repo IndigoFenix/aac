@@ -886,6 +886,7 @@ Rules:
 - Write in ${languageName}.
 - Be concise — at most ~250 words. A digest, not a transcript.
 - Plain prose or short dashed bullets. No markdown headers.
+- A [RETRACTION] line voids earlier reports of that person: the retracted presence must NOT appear in the summary (drop it from the previous summary too), and never state a person was present from an UNCERTAIN match or the user's own greeting presses alone.
 - If nothing meaningful has happened, output a one-line note saying so.
 
 ## Output format

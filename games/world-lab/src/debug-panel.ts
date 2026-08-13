@@ -236,7 +236,9 @@ export function mountDebugPanel(): DebugPanel {
       {
         townClock: session.townClock,
         carrying: host()?.carryOf(session.handsCid) ?? {},
-        wornBags: Object.fromEntries([...session.wornBags].map(([c, w]) => [c, w.glyph])),
+        wornBags: Object.fromEntries(
+          [...session.wornBagIndex].map(([c, objId]) => [c, session.containerRecords.get(objId)?.glyph]),
+        ),
         selectedPocket: (session as unknown as { selectedPocketGlyph?: string }).selectedPocketGlyph,
         party: [...session.party],
         escorting: [...session.escorting],
@@ -255,7 +257,7 @@ export function mountDebugPanel(): DebugPanel {
           [...session.needMeters].map(([k, v]) => [k, Math.round(v * 100) / 100]),
         ),
         carried: Object.fromEntries(
-          [...new Set([...session.liveNeedBodies, ...session.wornBags.keys()])]
+          [...new Set([...session.liveNeedBodies, ...session.wornBagIndex.keys()])]
             .map((cid) => [cid, host()?.carryOf(cid) ?? {}] as const)
             .filter(([, c]) => Object.keys(c).length > 0),
         ),
@@ -265,7 +267,9 @@ export function mountDebugPanel(): DebugPanel {
         liveBodies: [...session.liveNeedBodies],
         housesShown: [...session.houseShown],
         containers: Object.fromEntries(
-          [...session.containerStock].filter(([, stock]) => Object.keys(stock).length > 0),
+          [...session.containerRecords]
+            .map(([id, rec]) => [id, rec.stock] as const)
+            .filter((pair): pair is [string, Record<string, number>] => !!pair[1] && Object.keys(pair[1]).length > 0),
         ),
       },
       null,

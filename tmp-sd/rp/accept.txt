@@ -1,0 +1,15 @@
+> wait 10
+> scene
+> /wild
+> /stock
+> say build farm
+> wait 40
+> wait 40
+> /wild
+> say build house
+> wait 40
+> wait 40
+> wait 40
+> /wild
+> /stock
+> scene

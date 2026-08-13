@@ -108,8 +108,15 @@ const PLANET_FOUNDING = foundingScan({
 
 /** True when the world SAYS something about how far apart its towns stand —
  *  the declaration that lets tier-0 spacing derive rather than sit in the
- *  chart's own units. */
-function declaresSettlementGap(spec: WorldScaleSpec | null): boolean {
+ *  chart's own units.
+ *
+ *  EXPORTED because the geography seam (`space/planet-geography.ts`) must ask
+ *  the SAME question before it authors a `founding` literal: an authored scan
+ *  outranks the derivation below, so a seam that always authored one made the
+ *  declaration unreachable — the world would say "my towns stand 780 m apart"
+ *  and found them wherever a real-scale chart number put them. One definition
+ *  of "declares a gap", one place the derivation happens. */
+export function declaresSettlementGap(spec: WorldScaleSpec | null): boolean {
   return !!spec && ("gap_compression" in spec || "planet_compression" in spec);
 }
 

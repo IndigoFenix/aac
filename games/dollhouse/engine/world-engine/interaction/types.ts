@@ -15,6 +15,8 @@
 //   SENTENCE — up to three GLYPHs joined by `+`, with #-OPERATOR tags
 //   QUOTE    — an authored SENTENCE template with fillable {slots} + per-locale text
 
+import type { ItemWords } from "./lang/core.js";
+
 // ---------------------------------------------------------------------------
 // Affordance tags (NEW concept; §6.1)
 // ---------------------------------------------------------------------------
@@ -76,6 +78,9 @@ export interface PoolMember {
    * lands on the worklist instead of erroring. Defaults to "ships".
    */
   glyphStatus?: GlyphStatus;
+  /** The member's own words, per locale (content/words.ts joiner) — absent
+   *  when another registry owns the head (`box`/`bin` are station kinds). */
+  words?: ItemWords;
 }
 
 /** A pool id, used both as the slot name in templates (`{treat}`) and the pool key. */

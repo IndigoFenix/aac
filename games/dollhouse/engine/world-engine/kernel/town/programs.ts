@@ -23,6 +23,7 @@
  */
 
 import { STATION_PROPERTIES, type StationKind } from "./stations.js";
+import type { ItemWords } from "../../interaction/lang/core.js";
 
 /** One room program — a goal forward, a derivation rule backward. */
 export interface RoomProgramDef {
@@ -62,6 +63,10 @@ export interface RoomProgramDef {
    * which is the normal case.
    */
   word?: string;
+  /** The room word's own lexemes, per locale (content/words.ts joiner), keyed
+   *  under `word ?? kind`. Absent when the word is a CORE ENGINE CONCEPT the
+   *  central lexicons own (the bath program speaks "bathroom"). */
+  words?: ItemWords;
 }
 
 /** One structure program — what rooms make the building what it is. */
@@ -87,6 +92,11 @@ export interface StructureProgramDef {
    *  `house` needs it: the lang layer's key is `home` (whose English word IS
    *  "house"), so an unfolded `house` would read raw English everywhere else. */
   word?: string;
+  /** The type word's own lexemes, per locale — `RoomProgramDef.words`'s twin,
+   *  keyed under `word ?? type`. Absent when a room program or the central
+   *  lexicons already own the head (the house speaks core "home"; the
+   *  workshop structure shares the workshop ROOM's word). */
+  words?: ItemWords;
 }
 
 /** Precedence order is semantics: the FIRST def whose signature matches
@@ -96,7 +106,18 @@ export interface StructureProgramDef {
 // lexicon can draw — so the icon shows the very fixture that derives the kind,
 // and a room's picture can never drift from its rule.
 export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
-  { kind: "workshop", requires: ["workbench"], signature: ["workbench"], symbol: "workbench" },
+  {
+    kind: "workshop",
+    requires: ["workbench"],
+    signature: ["workbench"],
+    symbol: "workbench",
+    words: {
+      en: { w: "workshop" },
+      he: { w: "סדנה", g: "f", plw: "סדנאות" },
+      es: { w: "taller", g: "m" },
+      pt: { w: "oficina", g: "f" },
+    },
+  },
   // ── THE PLACE-MAKING ROOMS ────────────────────────────────────────────
   // Four kinds whose signature fixture IS the room (stations.ts). They sit up
   // here beside the workshop because precedence is semantics and these are the
@@ -110,28 +131,116 @@ export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
   // the private arrangement (the household shrine, the cottage loom), and a
   // culture that gathers instead flips the SAME row to `"building"` — the
   // temple, the weaving hall. One program, two social arrangements.
-  { kind: "forge", requires: ["anvil"], signature: ["anvil"], symbol: "anvil" },
+  {
+    kind: "forge",
+    requires: ["anvil"],
+    signature: ["anvil"],
+    symbol: "anvil",
+    words: {
+      en: { w: "forge" },
+      he: { w: "מפוחה", g: "f" },
+      es: { w: "forja", g: "f", plw: "forjas" },
+      pt: { w: "forja", g: "f" },
+    },
+  },
   // The MASONRY (construction phase 5) — the forge's rule applied to stone,
   // and filed beside it for the same reason: a room with a stonecutter in it
   // is a masonry no matter what counter or barrel WORK_STATIONS also put
   // there. BELOW `workshop` deliberately, following the forge's precedent: a
   // floor holding both a workbench and a stonecutter is a carpenter's room
   // that happens to keep a slab, and the bench is the more general trade.
-  { kind: "masonry", requires: ["stonecutter"], signature: ["stonecutter"], symbol: "stonecutter" },
-  { kind: "shrine", requires: ["altar"], signature: ["altar"], symbol: "altar" },
-  { kind: "weaving", requires: ["loom"], signature: ["loom"], symbol: "loom" },
-  { kind: "study", requires: ["shelf"], signature: ["shelf"], symbol: "shelf" },
-  { kind: "kitchen", requires: ["oven"], signature: ["oven"], symbol: "oven" },
+  {
+    kind: "masonry",
+    requires: ["stonecutter"],
+    signature: ["stonecutter"],
+    symbol: "stonecutter",
+    words: {
+      en: { w: "masonry", plw: "masonries" },
+      he: { w: "חדר סיתות", g: "m" },
+      es: { w: "cantería", g: "f", plw: "canterías" },
+      pt: { w: "cantaria", g: "f" },
+    },
+  },
+  {
+    kind: "shrine",
+    requires: ["altar"],
+    signature: ["altar"],
+    symbol: "altar",
+    words: {
+      en: { w: "shrine" },
+      he: { w: "מקדש קטן", g: "m" },
+      es: { w: "santuario", g: "m", plw: "santuarios" },
+      pt: { w: "santuário", g: "m" },
+    },
+  },
+  {
+    kind: "weaving",
+    requires: ["loom"],
+    signature: ["loom"],
+    symbol: "loom",
+    words: {
+      en: { w: "weaving room", plw: "weaving rooms" },
+      he: { w: "חדר אריגה", g: "m" },
+      es: { w: "sala de tejido", g: "f", plw: "salas de tejido" },
+      pt: { w: "sala de tecelagem", g: "f" },
+    },
+  },
+  {
+    kind: "study",
+    requires: ["shelf"],
+    signature: ["shelf"],
+    symbol: "shelf",
+    words: {
+      en: { w: "study", plw: "studies" },
+      he: { w: "חדר עבודה", g: "m" },
+      es: { w: "estudio", g: "m", plw: "estudios" },
+      pt: { w: "escritório", g: "m" },
+    },
+  },
+  {
+    kind: "kitchen",
+    requires: ["oven"],
+    signature: ["oven"],
+    symbol: "oven",
+    words: {
+      en: { w: "kitchen" },
+      he: { w: "מטבח", g: "m" },
+      es: { w: "cocina", g: "f" },
+      pt: { w: "cozinha", g: "f" },
+    },
+  },
   // THE BATHROOM (user law): the room reads by its TOILET, not its tub — `bath`
   // is the FIXTURE ("I want a bath" is the tub), and the AAC's word for the
   // floor is `bathroom`, which is also what `ROOM_GLYPH` already speaks and what
   // the lang layer carries in all four rulesets. `requires` said as much long
   // before the icon did.
   { kind: "bath", requires: ["toilet"], signature: ["bath", "toilet"], symbol: "toilet", word: "bathroom" },
-  { kind: "bedroom", requires: ["bed"], signature: ["bed"], symbol: "bed" },
+  {
+    kind: "bedroom",
+    requires: ["bed"],
+    signature: ["bed"],
+    symbol: "bed",
+    words: {
+      en: { w: "bedroom" },
+      he: { w: "חדר שינה", g: "m", defw: "חדר השינה" },
+      es: { w: "dormitorio", g: "m" },
+      pt: { w: "quarto", g: "m" },
+    },
+  },
   // Living BEFORE store: a hearth room holds goods chests beside its table,
   // and the table claims it; a chest standing alone is storage.
-  { kind: "living", requires: ["table", "chair"], signature: ["table", "chair"], symbol: "table" },
+  {
+    kind: "living",
+    requires: ["table", "chair"],
+    signature: ["table", "chair"],
+    symbol: "table",
+    words: {
+      en: { w: "living room", plw: "living rooms" },
+      he: { w: "סלון", g: "m" },
+      es: { w: "sala", g: "f", plw: "salas" },
+      pt: { w: "sala", g: "f" },
+    },
+  },
   // `box` for the store room, not `chest`: the station kind is a chest, but the
   // lexicon's word for a lidded container is `box` (things/furniture/box).
   //
@@ -141,7 +250,19 @@ export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
   // cupboard. The lang layer always meant storage here (en "storeroom", he
   // "מחסן", es "almacén", pt "despensa"); this gives that sense its own key so
   // the picture can follow it — storage draws `room(box)`, a shop draws trade.
-  { kind: "store", requires: ["chest"], signature: ["chest", "barrel", "bin"], symbol: "box", word: "storeroom" },
+  {
+    kind: "store",
+    requires: ["chest"],
+    signature: ["chest", "barrel", "bin"],
+    symbol: "box",
+    word: "storeroom",
+    words: {
+      en: { w: "storeroom" },
+      he: { w: "מחסן", g: "m" },
+      es: { w: "almacén", g: "m", plw: "almacenes" },
+      pt: { w: "despensa", g: "f" },
+    },
+  },
 ];
 
 export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
@@ -154,12 +275,32 @@ export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
   // dedicated living/dwelling symbol is coming, and this row is where it lands.)
   { type: "house", rooms: ["living", "bedroom", "kitchen", "bath"], symbol: "family", word: "home" },
   { type: "workshop", rooms: ["workshop"], symbol: "workbench" },
-  { type: "shop", rooms: ["store"], symbol: "trade" },
+  {
+    type: "shop",
+    rooms: ["store"],
+    symbol: "trade",
+    words: {
+      en: { w: "shop" },
+      he: { w: "חנות", g: "f" },
+      es: { w: "tienda", g: "f", plw: "tiendas" },
+      pt: { w: "loja", g: "f" },
+    },
+  },
   // The place-making buildings — each derives from its ONE defining room, the
   // same rule that makes a shell holding four household rooms a house. A
   // building that ends up with an anvil in it IS a smithy, however it was
   // built; nothing has to declare it.
-  { type: "smithy", rooms: ["forge"], symbol: "anvil" },
+  {
+    type: "smithy",
+    rooms: ["forge"],
+    symbol: "anvil",
+    words: {
+      en: { w: "smithy", plw: "smithies" },
+      he: { w: "נפחייה", g: "f" },
+      es: { w: "herrería", g: "f", plw: "herrerías" },
+      pt: { w: "ferraria", g: "f" },
+    },
+  },
   // The MASONRY is the one place-making pair whose ROOM and BUILDING share a
   // word — a masonry is the room you cut in and the building that room fills,
   // the way a workshop already is (and unlike the forge/smithy, which have
@@ -168,12 +309,42 @@ export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
   // the first entry per word (buildings first), so the one button draws
   // `building(stonecutter)` — which is what a player means by "masonry".
   { type: "masonry", rooms: ["masonry"], symbol: "stonecutter" },
-  { type: "temple", rooms: ["shrine"], symbol: "altar" },
-  { type: "weaver", rooms: ["weaving"], symbol: "loom" },
+  {
+    type: "temple",
+    rooms: ["shrine"],
+    symbol: "altar",
+    words: {
+      en: { w: "temple" },
+      he: { w: "מקדש", g: "m" },
+      es: { w: "templo", g: "m", plw: "templos" },
+      pt: { w: "templo", g: "m" },
+    },
+  },
+  {
+    type: "weaver",
+    rooms: ["weaving"],
+    symbol: "loom",
+    words: {
+      en: { w: "weaver" },
+      he: { w: "אריגה", g: "f" },
+      es: { w: "tejeduría", g: "f", plw: "tejedurías" },
+      pt: { w: "tecelagem", g: "f" },
+    },
+  },
   // `book`, where the STUDY room keeps `shelf`: the shelf is what derives the
   // room (a floor with a shelf on it is a study), but a library is a building
   // OF BOOKS — the shelf is furniture, the book is the point.
-  { type: "library", rooms: ["study"], symbol: "book" },
+  {
+    type: "library",
+    rooms: ["study"],
+    symbol: "book",
+    words: {
+      en: { w: "library", plw: "libraries" },
+      he: { w: "ספריה", g: "f" },
+      es: { w: "biblioteca", g: "f", plw: "bibliotecas" },
+      pt: { w: "biblioteca", g: "f" },
+    },
+  },
 ];
 
 /** Culture-authored program blocks (culture.ts gates their shape; station

@@ -47,6 +47,35 @@ function lot(occupied: Array<{ x: number; y: number; w: number; h: number }> = [
   })[0]!;
 }
 
+/** A crowded town that wants a house urgently — materials are the only gate.
+ *  Shared by the F1 seam pin and the collapsed-twin suite below, so both
+ *  describe the SAME founding through the same input. */
+function makeGrowthInput(
+  deltas: ReturnType<typeof createTownDeltas>,
+  day: number,
+): FoundingGrowthInput {
+  const districtOf = () => null;
+  return {
+    deltas,
+    catalog: TOWN_PLAY_STRUCTURES,
+    gain: 99, // the daily cap holds accrual honest
+    day,
+    signals: { crowding: 2, shortage: () => 0 },
+    economyOf: () => null,
+    capValueOf: () => 200,
+    countOf: () => 0,
+    candidatesFor: (spec, zone) => {
+      const cands = foundingOptions({
+        seed: SEED, key: KEY, footprint: spec.footprint, type: spec.type,
+        occupied: deltas.founded().map((b) => ({ x: b.dx, y: b.dy, w: b.w, h: b.h })),
+        claimedSlots: new Set(deltas.founded().map((b) => b.slot)),
+        zoning: slotZoningFn(deltas.zones(), categoriesOfSpec(spec, districtOf)),
+      });
+      return zone === null ? cands : cands.filter((c) => candidateInZone(deltas.zones(), zone, c));
+    },
+  };
+}
+
 describe("the staged labor clock (FoundedBuilding.costs / pile / laborStartDay)", () => {
   it("a designation records its costs with an empty pile and NEVER completes unstaged", () => {
     const deltas = createTownDeltas();
@@ -113,6 +142,56 @@ describe("the staged labor clock (FoundedBuilding.costs / pile / laborStartDay)"
     expect(rb.laborStartDay).toBe(0);
     expect(rb.labor).toBe(0.75);
     expect(stagingMissing(rb)).toEqual({ wood: 1, stone: 1 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 🚨 THE BILL THE **CALLERS** WRITE (GL fix round — F1)
+//
+// Every assertion above hands `foundBuilding` a bill this file resolved for
+// it, which is precisely the shape of the bug it could not see: since the
+// phase-6 split a catalog row's `costs` is the EXTRAS map — `{}` for every
+// shipped structure — and the blocks live only in `structureCosts`. Three
+// callers passed the raw map (`executeBuildOrder`, the affordability probe,
+// this pipeline founding), so a player-ordered building was founded with an
+// EMPTY bill: `stagingMissing` answered {}, the plot staged the same tick, no
+// haul was ever posted and the walls rose out of nothing.
+//
+// MEASURED: the frontier farm finished in 60 sim-s with the yard's 14 wood and
+// 6 stone untouched (dx-frontier-farm, 2026-08-11); after the fix the same run
+// stakes out, demands 272 block, mills, and hauls (fx-frontier-farm).
+//
+// The pin is the SEAM, not the resolver: what the row ENDS UP with must be
+// what the resolver would say — a test that resolves the costs itself and
+// hands them in can never catch a caller that doesn't.
+// ─────────────────────────────────────────────────────────────────────────
+describe("a founded row's bill is the RESOLVER's, never the row's extras map", () => {
+  it("the trap is real: a catalog row authors no blocks of its own", () => {
+    // If this ever stops being true the pin below stops being a pin — the two
+    // maps would agree by accident and the seam would go untested again.
+    expect(HOUSE.costs[BLOCK_GLYPH]).toBeUndefined();
+    expect(HOUSE_BLOCKS).toBeGreaterThan(0);
+  });
+
+  it("PIPELINE founding writes structureCosts(spec) — the designation the affordability check admitted", () => {
+    const deltas = createTownDeltas();
+    // Enough free wood for the twin's 2:1 mill to cover the real bill.
+    deltas.stock.wood = HOUSE_BLOCKS * 2 + 10;
+    deltas.stock.stone = 40;
+    const input: FoundingGrowthInput = { ...makeGrowthInput(deltas, 1), pipeline: true };
+    const order = foundingGrowthStep(input);
+    expect(order).not.toBeNull();
+    const b = order!.building;
+    // THE ROW CARRIES THE RESOLVED BILL…
+    expect(b.costs).toEqual(structureCosts(order!.spec));
+    expect(b.costs![BLOCK_GLYPH]).toBeGreaterThan(0);
+    // …NOT the extras map, which would have been {} and staged instantly.
+    expect(b.costs).not.toEqual(order!.spec.costs);
+    expect(Object.keys(stagingMissing(b)).length).toBeGreaterThan(0);
+    expect(b.laborStartDay).toBeUndefined(); // nothing staged, nothing paid
+    expect(foundedBuildingDone(b, 1_000_000)).toBe(false);
+    // A PIPELINE designation still pays nothing up front — the hauls do.
+    expect(deltas.stock.wood).toBe(HOUSE_BLOCKS * 2 + 10);
   });
 });
 
@@ -183,29 +262,7 @@ describe("pending annexes (pipeline ⑤ — annex staging)", () => {
 });
 
 describe("growth's collapsed twin spends only FREE yard stock", () => {
-  const districtOf = () => null;
-  function makeInput(deltas: ReturnType<typeof createTownDeltas>, day: number): FoundingGrowthInput {
-    return {
-      deltas,
-      catalog: TOWN_PLAY_STRUCTURES,
-      gain: 99, // the daily cap holds accrual honest
-      day,
-      // A crowded town wants a house urgently — materials are the only gate.
-      signals: { crowding: 2, shortage: () => 0 },
-      economyOf: () => null,
-      capValueOf: () => 200,
-      countOf: () => 0,
-      candidatesFor: (spec, zone) => {
-        const cands = foundingOptions({
-          seed: SEED, key: KEY, footprint: spec.footprint, type: spec.type,
-          occupied: deltas.founded().map((b) => ({ x: b.dx, y: b.dy, w: b.w, h: b.h })),
-          claimedSlots: new Set(deltas.founded().map((b) => b.slot)),
-          zoning: slotZoningFn(deltas.zones(), categoriesOfSpec(spec, districtOf)),
-        });
-        return zone === null ? cands : cands.filter((c) => candidateInZone(deltas.zones(), zone, c));
-      },
-    };
-  }
+  const makeInput = makeGrowthInput;
 
   it("reserved wood halts growth; releasing it restarts growth; the spend never eats reserved units", () => {
     // Phase 3: the bill is BLOCKS; a wood-only yard pays through the

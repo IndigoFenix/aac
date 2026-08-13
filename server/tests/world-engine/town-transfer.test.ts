@@ -19,6 +19,7 @@ import {
   orderQuantity,
   planTransferSources,
   putStock,
+  rankPricedSources,
   runDueTransfers,
   stackUnits,
   takeGoods,
@@ -188,6 +189,37 @@ describe("transfer agreements — lifecycle, serialization, determinism", () => 
     expect(orderQuantity()).toBe(1);
     expect(orderQuantity("three")).toBe(3);
     expect(orderQuantity("all")).toBe(Infinity);
+  });
+
+  // ── S&D S3 H2 — `rankKey`: policy priority ahead of cost (transfer.ts)
+  it("rankKey (absent) is byte-identical to the pre-S3 walk", () => {
+    const sources: TransferSource[] = [
+      { id: "chest_b", stack: { wood: 2 }, d: 4 },
+      { id: "chest_a", stack: { wood: 2 }, d: 4 },
+      { id: "chest_c", stack: { wood: 9 }, d: 9 },
+    ];
+    expect(rankPricedSources(sources, (s) => stackUnits(s.stack, "wood")))
+      .toEqual([sources[1], sources[0], sources[2]]); // chest_a, chest_b, chest_c
+  });
+
+  it("rankKey ranks BEFORE cost — a lower key wins even against a nearer source", () => {
+    const near: TransferSource = { id: "near", stack: { wood: 5 }, d: 1 };
+    const far: TransferSource = { id: "far", stack: { wood: 5 }, d: 500 };
+    const ranked = rankPricedSources(
+      [near, far], (s) => stackUnits(s.stack, "wood"),
+      { rankKey: (s) => (s.id === "far" ? -1 : 0) }, // "far" is policy-preferred
+    );
+    expect(ranked).toEqual([far, near]);
+  });
+
+  it("equal (including every-source-absent) rankKey falls through to cost then id, unchanged", () => {
+    const a: TransferSource = { id: "a", stack: { wood: 5 }, d: 10 };
+    const b: TransferSource = { id: "b", stack: { wood: 5 }, d: 5 };
+    const ranked = rankPricedSources(
+      [a, b], (s) => stackUnits(s.stack, "wood"),
+      { rankKey: () => 0 }, // every source ties
+    );
+    expect(ranked).toEqual([b, a]); // b is nearer — cost still decides
   });
 });
 

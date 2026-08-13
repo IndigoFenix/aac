@@ -44,6 +44,7 @@ import {
   type WaterSampler,
   type MoveConstraint,
   type WorldEngineConfig,
+  type WorldEvent,
   type WorldState,
 } from "./engine.js";
 import { createDwellTracker } from "./dwell.js";
@@ -99,6 +100,54 @@ const PRESENCE_INTERVAL_MS = 1000 / 8; // ~8 Hz relay position (cheap, position-
 export interface WorldHostNet {
   send: (msgs: WorldNetMessage[]) => void;
   publishPresence?: (p: PresencePacket) => void;
+}
+
+/** THE FRAME-LENGTH CEILING with no wide tick configured — today's value, and
+ *  the reason a caller's wider `dt` has always been a silent no-op: the loop
+ *  re-derives dt from the clock and clamps it here (wide-tick-round.md). */
+const FRAME_DT_CAP_S = 0.05;
+/** Default inner MOTION cap for a wide tick — BLESSED at 0.1 by the W4a
+ *  calibration (wide-tick-round.md): the A/B comparator's gating channels
+ *  (toast/depart/ledger) read identical to today's 0.05 at every tested
+ *  value, and `arrive`'s one `mara` divergence is present ALREADY at 0.05 —
+ *  it is a dt=0.5 decision-latency artifact (W2's recorded class e3), not
+ *  something raising innerStepS introduces. 0.1 is also the mathematically
+ *  PROVABLE ceiling: `step = dt / ceil(dt/innerStepS) ≤ innerStepS` for any
+ *  dt, so `innerStepS ≤ maxStep` (`WORLD_ENGINE_DEFAULTS.maxStep`, 0.1)
+ *  guarantees the engine's own internal clamp (engine.ts `Math.min(dt,
+ *  config.maxStep)`, :694/:838) never binds — there is only ever ONE clock.
+ *  0.15 was tested and REJECTED: at dt ∈ {0.25, 0.5} it produces a 0.125 s
+ *  substep, which the engine's own clamp silently truncates to 0.1 s —
+ *  bodies under-integrate by 20% while the outer loop's accounting believes
+ *  the full step happened, reintroducing the exact desync this seam exists
+ *  to close. (Its beat diff read CLEANER than 0.1's, which is the tell: that
+ *  is under-integration nudging timing to coincidentally dodge this arc's
+ *  truncated-window artifact, not genuine improved fidelity — the comparator
+ *  measures discrete beats, not walked distance, so it cannot see this on
+ *  its own.) W-② — a tuning parameter of the seam, not a user dial. */
+export const WIDE_TICK_INNER_STEP_S = 0.1;
+/** The widest frame a wide-tick host will admit — text-mode's `--dt` ceiling. */
+export const WIDE_TICK_MAX_FRAME_S = 0.5;
+
+/**
+ * ⏩ THE WIDE TICK (planning-docs/games/world-engine/wide-tick-round.md).
+ *
+ * OPT-IN, at host construction only. Present, it does exactly two things:
+ *   • lifts the host's own frame-length clamp from 0.05 s to `maxFrameS`, so a
+ *     headless pump that hands over a wide dt actually gets one; and
+ *   • splits the two MOTION arms of the frame (`tickWorld` + `advanceNpcs`)
+ *     into equal substeps of ≤ `innerStepS`, while the DECISION pass
+ *     (`deps.onFrame` — the whole quest layer) runs ONCE with the full dt.
+ *
+ * ⚖️ W-① one dt enters the frame; bodies cover all of it.
+ * ⚖️ W-③ ABSENT, the frame body and the clamps behave byte-identically to
+ *    today — GL never constructs this, so play mode is untouched.
+ */
+export interface WideTickConfig {
+  /** Max seconds of MOTION integrated per inner step. Default 0.05. */
+  innerStepS?: number;
+  /** Max frame dt this host will admit. Default 0.5. */
+  maxFrameS?: number;
 }
 
 export interface WorldHostDeps {
@@ -208,6 +257,8 @@ export interface WorldHostDeps {
    *  is untouched, so nothing here can shove a body or change a distance rule.
    *  Return null to stream the avatar's own position (the default). */
   netLocalPos?: () => Vec2 | null;
+  /** ⏩ WIDE TICK — see `WideTickConfig`. Omit for today's behaviour. */
+  wideTick?: WideTickConfig;
 }
 
 /** A running world loop. Feed it peer state + input; it renders and emits outbound. */
@@ -435,6 +486,23 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // SPIRIT/stationary mode, mutable live (setStationary) — possession flips a
   // formless spirit into an ordinary walker and back.
   let stationary = !!deps.stationary;
+
+  // ── ⏩ THE WIDE TICK, resolved once (see `WideTickConfig`) ────────────────
+  /** Seconds of MOTION per inner step. `Infinity` with no wide tick configured,
+   *  so `dt > innerStepS` is false for every frame this host will ever see and
+   *  the substep branch is dead code in a GL build (W-③). */
+  const innerStepS = deps.wideTick
+    ? Math.max(1e-3, deps.wideTick.innerStepS ?? WIDE_TICK_INNER_STEP_S)
+    : Infinity;
+  /** The host's own frame-length clamp — 0.05 s unless a wide tick lifts it.
+   *  THIS is the ceiling a caller's wide `dt` used to die against. */
+  const frameCapS = deps.wideTick
+    ? Math.max(FRAME_DT_CAP_S, deps.wideTick.maxFrameS ?? WIDE_TICK_MAX_FRAME_S)
+    : FRAME_DT_CAP_S;
+  /** How many equal motion substeps this frame's dt needs. Always 1 without a
+   *  wide tick, and 1 for any frame already inside the inner cap. */
+  const wideSubsteps = (dt: number): number =>
+    dt > innerStepS ? Math.ceil(dt / innerStepS) : 1;
 
   const state: WorldState = createWorldState(spec, localId, deps.spawnIndex, deps.spawnAt, deps.groundAt, deps.waterAt);
 
@@ -1137,9 +1205,6 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // default. Unclaimed, drivenId === localId (never in npcConfigs) → undefined
     // → WORLD_ENGINE_DEFAULTS, exactly as before.
     const drivenConfig = npcConfigs.get(driven());
-    const _tA = _pnow();
-    const { events } = tickWorld(state, { aim }, dt, drivenConfig, deps.constraint);
-    _pf.tick = _pnow() - _tA;
     // SPIRIT: a carried object rides the GAZE. A formless stationary avatar can't
     // walk it into place, and the engine parks a carried item a fixed step in
     // FRONT of the carrier — so in spirit mode it would just sit by the invisible
@@ -1147,19 +1212,54 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     // the fixation each frame so it lifts to the spark on pick-up and glides with
     // it until the place-dwell drops it (placeCarriedObject already uses the same
     // point). Skip mid-saccade (effFix null) so it doesn't jump to the origin.
-    if (stationary && effFix) {
+    const snapSpiritCarried = (): void => {
+      if (!stationary || !effFix) return;
       const heldId = carriedId();
       const held = heldId ? state.objects[heldId] : undefined;
       if (held) {
         held.x = effFix.x;
         held.y = effFix.y;
       }
+    };
+    // ⏩ THE MOTION ARMS (W-①). `tickWorld` integrates the local body + toys;
+    // `advanceNpcs` integrates the hosted cast — and NOTHING else in this frame
+    // is motion. Handed a dt wider than the inner cap (only possible with the
+    // opt-in `wideTick` config), they run in ceil(dt/innerStepS) equal substeps
+    // off the SAME player aim, so the bodies cover every second the decision
+    // pass below is about to be told elapsed. `substeps` is 1 in every other
+    // build of this host, and the one-substep branch below is byte-for-byte the
+    // order this frame has always run in (W-③).
+    const substeps = wideSubsteps(dt);
+    const events: WorldEvent[] = [];
+    /** One motion substep of `step` seconds: local tick, then the hosted cast
+     *  (after it, so controllers see this substep's player position). */
+    const stepMotion = (step: number): void => {
+      const _tA = _pnow();
+      const r = tickWorld(state, { aim }, step, drivenConfig, deps.constraint);
+      _pf.tick += _pnow() - _tA;
+      if (r.events.length) events.push(...r.events);
+      const _tB = _pnow();
+      advanceNpcs(step);
+      _pf.npc += _pnow() - _tB;
+    };
+    if (substeps === 1) {
+      // Today's frame, unchanged — including the carried-object snap's position
+      // BETWEEN the two arms.
+      const _tA = _pnow();
+      const r = tickWorld(state, { aim }, dt, drivenConfig, deps.constraint);
+      _pf.tick += _pnow() - _tA;
+      if (r.events.length) events.push(...r.events);
+      snapSpiritCarried();
+      const _tB = _pnow();
+      advanceNpcs(dt);
+      _pf.npc += _pnow() - _tB;
+    } else {
+      const step = dt / substeps;
+      for (let i = 0; i < substeps; i++) stepMotion(step);
+      // ONCE per frame: the snap is idempotent and its point (`effFix`) is fixed
+      // for the whole frame, so the end-of-frame state is what it always was.
+      snapSpiritCarried();
     }
-    // Advance hosted NPC bodies (no-op when this peer hosts none). Runs after the
-    // local tick so controllers see this frame's player position.
-    const _tB = _pnow();
-    advanceNpcs(dt);
-    _pf.npc = _pnow() - _tB;
     emitProximityIfChanged();
     // Glide remote avatars between the ~8–15 Hz packets (dead-reckon + ease).
     smoothRemoteAvatars(state, dt);
@@ -1235,8 +1335,12 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     });
     _pf.render = _pnow() - _tD;
     const _total = _pf.tick + _pf.npc + _pf.sim + _pf.render;
+    // PUBLISH EVERY FRAME while the probes are on (wide-tick-round.md W0): the
+    // console line stays a SLOW-frame reporter, but a headless sampler needs the
+    // split of an ORDINARY frame too — it reads `__framePhase` after each
+    // stepFrame and accumulates. Probes off (the default) = untouched.
+    if (probesOn()) (globalThis as unknown as Record<string, unknown>).__framePhase = _pf;
     if (_total > 150 && probesOn() && typeof console !== "undefined") {
-      (globalThis as unknown as Record<string, unknown>).__framePhase = _pf;
       console.log(
         `[frame-phase] ${_total.toFixed(0)}ms — tick:${_pf.tick.toFixed(0)} npc:${_pf.npc.toFixed(0)}` +
           `(aim:${_npcPhase.aim.toFixed(0)}/${_npcPhase.aimProbes}p det:${_npcPhase.detour.toFixed(0)} steer:${_npcPhase.steer.toFixed(0)} n:${_npcPhase.bodies})` +
@@ -1253,7 +1357,10 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
 
   const loop = (now: number): void => {
     if (!running) return;
-    const dt = Math.min(0.05, (now - last) / 1000);
+    // ⏩ `frameCapS` is 0.05 unless a wide tick was configured — the host
+    // RE-DERIVES dt from the clock, so this clamp (not the engine's) is what a
+    // caller's wide frameDt has always died against.
+    const dt = Math.min(frameCapS, (now - last) / 1000);
     last = now;
     // Paused: still render (and update the pointer pick, so click-to-inspect works)
     // but advance the sim by ZERO — nothing moves, no clock/errand/chatter tick.
@@ -1530,7 +1637,8 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       cancel = deps.scheduleFrame(loop);
     },
     step(dt, now) {
-      frame(paused ? 0 : Math.min(0.05, Math.max(0, dt)), now);
+      // The external-clock twin of the loop's clamp — same ceiling, same lift.
+      frame(paused ? 0 : Math.min(frameCapS, Math.max(0, dt)), now);
     },
     stop() {
       running = false;

@@ -303,14 +303,42 @@ describe("spliceRouteAtTown — the render-only PORT → GATE refinement", () =>
     expect(spliceRouteAtTown(raw, "b", FRAME, PORT_EXTENT_M, tips, R)).toBeNull();
   });
 
-  it("refuses when the road is shorter than its own connector, or no tips", () => {
-    // A 150 m stub between overlapping towns: the midpoint clamp keeps it a
-    // road (routes never vanish), but there is less road left than the
-    // port→gate connector would need, so the plain ribbon stands.
+  it("refuses an overlapped stub (no port at all) and a town with no tips", () => {
+    // RE-NAMED (GL fix round, R6). This case never tested the length guard it
+    // was named for: a 150 m stub lies ENTIRELY inside the 450 m extent, so
+    // the overlap rule hands it back unclipped and it is refused for having
+    // no port — the case below it. The length guard is pinned in its own test.
     const short = portedThrough([[150, 0], [75, 0], [0, 0]], "b");
+    const stubEnd = toTownLocal(FRAME, R, routePointAt(short, short.lengthM))!;
+    expect(Math.hypot(stubEnd.x, stubEnd.y)).toBeLessThan(1); // the endpoint IS the centre
     expect(spliceRouteAtTown(short, "b", FRAME, PORT_EXTENT_M, tips, R)).toBeNull();
     const route = portedThrough(CURVED, "b");
     expect(spliceRouteAtTown(route, "b", FRAME, PORT_EXTENT_M, [], R)).toBeNull();
+  });
+
+  it("a SHORT road still reaches its gate — it lends the arc it can afford", () => {
+    // RE-PINNED (GL fix round, R6): a road shorter than its own connector used
+    // to be REFUSED, and on a gap-1 world that left real roads stopping in a
+    // field (measured: Zelemont cell 775, 3 of 65 ends, median 211 m of grass).
+    // The length only ever governed the ARC the parent lends, so it CLAMPS now.
+    // 520 m of road due +y, ported at 450 ⇒ ~70 m port-to-port, against a
+    // ~151 m gap to the northern gate: the old rule refused (70 < 151×1.5).
+    const short = portedThrough([[0, 520], [0, 300], [0, 0]], "b");
+    expect(short.lengthM).toBeLessThan(120);
+    const port = toTownLocal(FRAME, R, routePointAt(short, short.lengthM))!;
+    expect(Math.hypot(port.x, port.y)).toBeCloseTo(PORT_EXTENT_M, 0);
+    const cut = spliceRouteAtTown(short, "b", FRAME, PORT_EXTENT_M, tips, R);
+    expect(cut).not.toBeNull();
+    expect(cut!.street).toBe(2);                       // the northern gate
+    expect(cut!.s1).toBe(short.lengthM);
+    // It lent at most two thirds of itself — a third of the road arrives
+    // un-bent, and the borrowed span stays inside the parent.
+    expect(cut!.s0).toBeGreaterThan(short.lengthM / 3 - 1e-6);
+    expect(cut!.s0).toBeGreaterThan(0);
+    // The connector still ENDS on the gate, however little arc it borrowed.
+    const drawEnd = toTownLocal(FRAME, R, cut!.draw.dirs[cut!.draw.dirs.length - 1]!)!;
+    expect(drawEnd.x).toBeCloseTo(-20, 4);
+    expect(drawEnd.y).toBeCloseTo(300, 4);
   });
 
   it("refuses when no gate faces the road (the cross-town chord guard)", () => {

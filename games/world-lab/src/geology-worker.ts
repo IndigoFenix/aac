@@ -178,7 +178,15 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
       const cities = planetCities(built);
       const states = planetStates(built, cities);
       const pairs = statePairs(states);
-      const t0Routes = planetRoutes(built, cities, pairs.length ? { pairs } : {});
+      // THE SAME SCALE THE SPANS WILL BE MEASURED AGAINST. `planetRoutes`
+      // clips each end at `townExtentM(scale)`; dropping the declaration here
+      // ported the parents at the REAL 450 m while `refineHighways` below
+      // dropped its port cells at the DERIVED extent, so the two halves of
+      // one road disagreed about where the town began.
+      const t0Routes = planetRoutes(built, cities, {
+        ...(pairs.length ? { pairs } : {}),
+        ...(scale ? { scale } : {}),
+      });
       const highways = refineHighways(built, refined, t0Routes, scale ? { scale } : {});
       const res: GeologyBakeResponse = {
         id: req.id, ok: true, op: "refine",

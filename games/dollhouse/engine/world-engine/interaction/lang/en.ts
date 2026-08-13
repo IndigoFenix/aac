@@ -23,8 +23,9 @@ import {
   type SpeakOpts,
   type Token,
 } from "./core.js";
+import { specWords } from "../content/words.js";
 
-const L: Record<string, Lexeme> = {
+const CENTRAL: Record<string, Lexeme> = {
   i_me: { w: "I" },
   you: { w: "you" },
   // The collective voice (nations P6) — plural, so `conj` picks "don't"
@@ -110,48 +111,18 @@ const L: Record<string, Lexeme> = {
   home: { w: "house" },
   work: { w: "work" }, // the workplace — "I go to work" commute answers
   thing: { w: "thing" },
-  cookie: { w: "cookie" },
-  apple: { w: "apple" },
-  banana: { w: "banana" },
-  grape: { w: "grape" },
-  ball: { w: "ball" },
   // The rest of the toy family. (`toy` itself is already below, with the
   // category words — it doubles as the DOLL descriptor, `rabbit.toy`.)
-  blocks: { w: "blocks", pl: true },
-  puzzle: { w: "puzzle" },
   doll: { w: "doll" },
-  car: { w: "car" },
-  train: { w: "train" },
-  rabbit: { w: "rabbit" },
-  bear: { w: "bear" },
-  frog: { w: "frog" },
-  dog: { w: "dog" },
   // Creature SPECIES words (reference resolution: "I talk to the {species}").
   // The animal-people (bear/frog/dog/rabbit) reuse the words above; these fill
   // the remaining registered species so a creature is never "the there".
   person: { w: "person", plw: "people" },
   animal: { w: "animal" },
   creature: { w: "creature" },
-  cow: { w: "cow" },
-  deer: { w: "deer", plw: "deer" },
-  ram: { w: "ram" },
-  sheep: { w: "sheep", plw: "sheep" },
-  box: { w: "box" },
-  basket: { w: "basket" },
-  satchel: { w: "satchel" },
-  bubbles: { w: "bubbles", pl: true },
-  sparks: { w: "sparks", pl: true },
-  boat: { w: "boat" },
-  broccoli: { w: "broccoli", mass: true },
-  sock: { w: "sock" },
   water: { w: "water", mass: true },
   fire: { w: "fire", mass: true },
   // Devices (§5) + their toggle states (invariant in English).
-  lamp: { w: "lamp" },
-  window: { w: "window" },
-  heater: { w: "heater" },
-  generator: { w: "generator" },
-  switch: { w: "switch" },
   off: { w: "off" },
   open: { w: "open" },
   closed: { w: "closed" },
@@ -201,64 +172,9 @@ const L: Record<string, Lexeme> = {
   town: { w: "town" },
   area: { w: "area" },
   bathroom: { w: "bathroom" },
-  kitchen: { w: "kitchen" },
-  bath: { w: "bath" },
-  toilet: { w: "toilet" },
-  barrel: { w: "barrel" },
-  // FURNITURE as a spoken noun. An unplaced piece stacks as `furn.<kind>` and
-  // now speaks as its kind (core.ts canonicalToken), so the kinds need words —
-  // English only ever LOOKED right because the fallback spells the raw glyph,
-  // and every other language said "chair" in Latin script.
-  chair: { w: "chair" },
-  table: { w: "table" },
-  bed: { w: "bed" },
-  // The food chest IS a refrigerator (stations.ts `kindByGood`), and since the
-  // where-is answer names the box it would open ("the food is in the
-  // refrigerator" — household-economy-and-where-is.md §5.2) the kind needs a
-  // lexeme like every other fixture. Without one every language spelled the raw
-  // glyph, which only ever LOOKED right in English.
-  refrigerator: { w: "refrigerator" },
-  // The `chest` and `cupboard` KINDS speak `box` and `cabinet` (types.ts
-  // FIXTURE_WORD) — the vocabulary draws no chest/box distinction, and those
-  // two words are not in it. `box` already has its entry above.
-  cabinet: { w: "cabinet" },
-  workbench: { w: "workbench" },
-  bin: { w: "bin" },
-  bowl: { w: "bowl" },
-  oven: { w: "oven" },
-  anvil: { w: "anvil" },
-  loom: { w: "loom" },
-  shelf: { w: "shelf" },
-  altar: { w: "altar" },
-  // The masonry bench (construction phase 5) — the fifth place-making fixture,
-  // and the SYMBOL its room and its building both draw (structure specs name
-  // the picture, not the place: `building(stonecutter)` is the masonry).
-  stonecutter: { w: "stonecutter" },
-  well: { w: "well" },
-  smithy: { w: "smithy", plw: "smithies" },
-  weaver: { w: "weaver" },
-  library: { w: "library", plw: "libraries" },
-  temple: { w: "temple" },
-  living: { w: "living room", plw: "living rooms" },
-  shop: { w: "shop" },
-  forge: { w: "forge" },
-  shrine: { w: "shrine" },
-  weaving: { w: "weaving room", plw: "weaving rooms" },
-  study: { w: "study", plw: "studies" },
-  // The stonecutter's room/building — the word beside `forge` and `weaving`.
-  masonry: { w: "masonry", plw: "masonries" },
-  // The wild outcrop, NOT the material: you quarry `stone` out of a `rock`.
-  // Two words because they are two things — one is a place in the world you
-  // walk to, the other is what ends up in your hands.
-  rock: { w: "rock" },
   food: { w: "food", mass: true },
   toy: { w: "toy" },
-  book: { w: "book" },
   clothing: { w: "clothes", pl: true },
-  hat: { w: "hat" },
-  shirt: { w: "shirt" },
-  dress: { w: "dress" },
-  scarf: { w: "scarf" },
   // Grammar-marker words (gloss safety only — the markers normally render as
   // constructions, never as these bare words).
   this: { w: "this" },
@@ -302,32 +218,20 @@ const L: Record<string, Lexeme> = {
   // Construction ④ — the room-EMPTYING verb (break's stow-only twin).
   empty: { w: "empty" },
   room: { w: "room" },
-  door: { w: "door" },
-  bedroom: { w: "bedroom" },
-  store: { w: "store" },
-  storeroom: { w: "storeroom" },
-  workshop: { w: "workshop" },
   // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
   // Every word a building site can SAY. These shipped as live glyphs long
   // before they had lexemes, so the whole trade spoke raw English keys inside
   // the other rulesets ("אני build את הhouse") — English only ever LOOKED
   // right because `baseWord` falls back to the glyph id, which is an English
-  // word. Same lesson the furniture kinds taught above.
+  // word. Same lesson the furniture kinds taught above. The materials and the
+  // named structures now live on their spec rows (content/words.ts ITEM_WORDS
+  // until products.ts/town-play.ts settle); what stays here is the core pair
+  // (`house`/`building` are CORE_CONCEPTS) and the trade's own verbs.
   //
-  // The MATERIALS. `wood`/`stone` are mass ("we don't have wood", never "a
-  // wood"); `block` counts, because a bill is a number of them.
-  block: { w: "block" },
-  wood: { w: "wood", mass: true },
-  stone: { w: "stone", mass: true },
-  tree: { w: "tree" },
-  // The STRUCTURES a build order can name (town-play's catalogue `glyph`s).
   // `house` is the spoken word for a dwelling ORDER; `home` stays the place a
   // creature returns to — two words because they are two things.
   house: { w: "house", plw: "houses" },
-  farm: { w: "farm" },
-  market: { w: "market" },
   building: { w: "building" },
-  storehouse: { w: "storehouse" },
   // The builders' YARD — where a town's materials pile up between orders, and
   // the default destination of a haul with no site to name.
   yard: { w: "yard" },
@@ -342,6 +246,16 @@ const L: Record<string, Lexeme> = {
   // The completion state ("the house is finished").
   finished: { w: "finished" },
 };
+
+/** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec
+ *  ITEMS live on their spec rows (content/words.ts joiner) and must not appear
+ *  here too; the no-overlap conformance pin reads this export. */
+export const CENTRAL_WORDS = CENTRAL;
+
+/** The LIVE word table — central words ⊕ the spec items' own words. Built
+ *  BEFORE the renderer, which closes over it: an item's row is authoritative
+ *  for its word, in the gloss fallback and the frame grammar alike. */
+const L: Record<string, Lexeme> = { ...CENTRAL, ...specWords("en") };
 
 function pluralize(w: string): string {
   if (/(s|x|ch|sh)$/.test(w)) return `${w}es`;

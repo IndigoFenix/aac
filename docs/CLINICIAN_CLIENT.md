@@ -156,6 +156,17 @@ These compose into the master field list registered in `sessionService`, and a
 filtered subset is used for AAC mode via `getAACMemoryFields()` in
 `aac-memory-schema.ts`.
 
+An AAC (student-facing) session does not get the master `Student_*` list
+verbatim — `aacStudentMemoryFields()` in `sessionService.ts` gates it by that
+student's AAC settings, and BOTH the schema shown to the AI and the processor
+that executes its ops are built from it. `allowNotes=false` drops
+`Student_Notes`; `autoAddContacts=false` swaps in a `Student_Contacts` variant
+(via `buildStudentContactsField`) that still reads and updates but refuses
+`add`. When the AAC *is* allowed to create contacts, those rows are written
+with `studentContacts.autoAdded = true` and appear in the Contacts panel's
+"Added automatically" tab until a clinician confirms them — confirming is a
+`PATCH … { autoAdded: false }`, which the AI's own update whitelist cannot do.
+
 A representative field — `STUDENT_PEOPLE_FIELD` in `student-memory-schema.ts`:
 
 ```ts

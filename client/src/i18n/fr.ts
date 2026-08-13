@@ -2565,6 +2565,10 @@ export const fr = {
     allowNotesDesc: "Quand désactivé, l'IA ne peut ni lire ni écrire de notes de session (aucune mémoire stockée en dehors des journaux de messages)",
     shareMonitorNotesWithInstitute: "Partager les notes AAC avec mon institution",
     shareMonitorNotesWithInstituteDesc: "Quand activé, les cliniciens de cette institution voient les notes enregistrées pendant les sessions AAC (intérêts, préférences, observations). Désactiver pour exiger un partage explicite.",
+    aiLearning: "Paramètres d'apprentissage de l'IA",
+    aiLearningDesc: "Ce que l'IA peut enregistrer d'elle-même pendant les sessions.",
+    autoAddContacts: "Apprendre de nouveaux contacts",
+    autoAddContactsDesc: "Permet à l'IA d'ajouter à la liste de contacts les personnes qu'elle rencontre pendant les sessions. Les nouveaux contacts sont marqués pour révision jusqu'à ce que vous les confirmiez. Si désactivé, les contacts ne peuvent être ajoutés que depuis la page Contacts.",
     // Symbol generation
     symbolGeneration: "Génération de symboles",
     symbolGenerationDesc: "Générer automatiquement des images d'icônes pour les boutons AAC avec l'IA",
@@ -3742,6 +3746,8 @@ export const fr = {
     updated: "Contact mis à jour",
     deleted: "Contact supprimé",
     confirmDelete: "Supprimer ce contact ?",
+    confirm: "Confirmer",
+    confirmed: "Contact confirmé",
     name: "Nom",
     namePlaceholder: "p. ex. Maman",
     nameRequired: "Le nom est obligatoire",
@@ -3775,6 +3781,11 @@ export const fr = {
     callable: "Autoriser les appels vidéo",
     callableHint: "L'élève (et l'IA) peuvent appeler cette personne en vidéo lorsqu'elle est en ligne.",
     photoAfterCreate: "Le téléversement de photo sera disponible après l'enregistrement du contact.",
+    tabAll: "Contacts",
+    tabAutoAdded: "Ajoutés automatiquement",
+    autoAddedBadge: "ajouté automatiquement",
+    autoAddedHint: "L'assistant CAA a ajouté ces personnes d'après ce qu'il a remarqué pendant les sessions. Confirmez celles qui ont vraiment leur place ici et supprimez les autres.",
+    autoAddedEmpty: "Rien en attente de révision.",
   },
 
   // Biometric (photo upload)

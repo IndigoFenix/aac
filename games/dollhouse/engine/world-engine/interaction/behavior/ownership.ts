@@ -63,10 +63,34 @@ export function mayUse(
   houseIndex: number | null,
   owner: OwnerScope | null | undefined,
 ): boolean {
+  return mayUseByScopes(ownerScopesOf(cid, houseIndex), owner);
+}
+
+/**
+ * ⚖️ THE SAME QUESTION, ASKED BY A SCOPE RATHER THAN A BODY (S&D S4).
+ *
+ * `mayUse` asks it of a CREATURE, which is right for everything a creature
+ * does. A town's own standing errand is not one of those: the par loop that
+ * keeps the storehouse stocked is the TOWN acting, and borrowing whichever
+ * body happens to be the issuer hands it that body's household shelves —
+ * which is how an ambient civic loop came to be able to spend a family's
+ * stores. Given `[TOWN_SCOPE]` this answers the town's own reach: the commons
+ * and what nobody owns, and nothing private.
+ *
+ * Extending is still adding LINKS, not machinery — a guild loop passes
+ * `["guild:5", TOWN_SCOPE]` and inherits every gate.
+ */
+export function mayUseByScopes(
+  mine: readonly OwnerScope[],
+  owner: OwnerScope | null | undefined,
+): boolean {
   if (owner == null || owner === "") return true;
-  const mine = ownerScopesOf(cid, houseIndex);
   return owner.split("|").some((o) => mine.includes(o));
 }
+
+/** The scope chain an errand acting AS THE TOWN reaches with — the commons and
+ *  the unowned, never a household's shelves. */
+export const CIVIC_SCOPES: readonly OwnerScope[] = [TOWN_SCOPE];
 
 /** Is this owner string PRIVATE property (some creature's own)? The
  *  social stop-gate (player takes, commanded takes) protects exactly

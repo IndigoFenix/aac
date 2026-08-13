@@ -38,6 +38,7 @@ import { DOLLHOUSE_SCALE, type WorldScale } from "../../scale";
 // cycle. `BarterSignals`/`PartnerGeography` are TYPE ONLY (erased).
 import { complementaryRanking } from "./complementary";
 import type { BarterSignals, PartnerGeography } from "./barter";
+import { allocate } from "./allocate";
 
 export interface TradeRoute {
   /** Opaque partner settlement key — `"away:<seed>"` until a REAL neighbor is
@@ -250,30 +251,14 @@ export const TRADE_IMPORT_KINDS: readonly string[] = ["ball", "teddy", "blocks"]
  * split silently DROPPED (6 units across 4 kinds: 2/2/1/1, not 1/1/1/1 with
  * two units vanishing at the depot gate). Conservation is the point of the
  * shape; the shipped 3-kind line divides evenly and is untouched.
+ *
+ * A thin call into allocate.ts's shared conserving allocator (the
+ * "largest-remainder" policy) — see that file for the shape this shares
+ * with city-districts.ts `allocateDistrictFill` and scope-shape.ts
+ * `allocateHands`.
  */
 export function allotmentSplit(weights: readonly number[], total: number): number[] {
-  const n = weights.length;
-  if (n === 0) return [];
-  const units = Math.max(0, Math.floor(total));
-  const w = weights.map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
-  let sum = w.reduce((a, b) => a + b, 0);
-  // No opinion anywhere (an authored list carries no wants) ⇒ share alike.
-  if (!(sum > 0)) {
-    w.fill(1);
-    sum = n;
-  }
-  const exact = w.map((x) => (units * x) / sum);
-  const out = exact.map((x) => Math.floor(x));
-  let left = units - out.reduce((a, b) => a + b, 0);
-  const order = exact
-    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
-    .sort((a, b) => b.frac - a.frac || a.i - b.i);
-  for (const o of order) {
-    if (left <= 0) break;
-    out[o.i]! += 1;
-    left--;
-  }
-  return out;
+  return allocate({ mode: "largest-remainder", weights, total });
 }
 
 function hashSeed(seed: number, key: string): number {

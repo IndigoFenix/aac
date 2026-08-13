@@ -8,14 +8,20 @@ import { describe, it, expect } from "@jest/globals";
 import {
   armHarvestRegrow,
   buildWilderness,
+  dueGrowthAdvance,
   dueHarvestRegrowth,
+  growthClassPeriodS,
+  homesteadWildMix,
+  reseedGrowthStock,
   wildAnimalBodyId,
   wildFeatureContainerId,
   wildFeatureEmbodied,
   wildFeatureRadius,
+  wildFeatureSizeRank,
   type WildernessFeature,
 } from "@shared/world-engine/interaction/quest/wilderness.js";
 import { naturalSourceOf } from "@shared/world-engine/products.js";
+import { REAL_SCALE } from "@shared/world-engine/scale.js";
 
 describe("buildWilderness", () => {
   it("is deterministic in the seed", () => {
@@ -200,6 +206,42 @@ describe("buildWilderness", () => {
     });
     expect(viaMix).toEqual(legacy);
   });
+
+  // ── S&D S3 H1 — THE RESOURCE-CONVERSION DIAL ──────────────────────────────
+  describe("conversionDial — multiplier ① routed through the scatter", () => {
+    it("dial 1 (default AND explicit) is byte-identical", () => {
+      const bare = buildWilderness({ seed: 3, trees: 5, rocks: 4, creatures: 2 });
+      const explicit = buildWilderness({ seed: 3, trees: 5, rocks: 4, creatures: 2, conversionDial: 1 });
+      expect(explicit).toEqual(bare);
+    });
+
+    it("⚖️ INVARIANCE (S3 review): a passed dial changes NOTHING — abundance is dial-free", () => {
+      const bare = buildWilderness({ seed: 3, trees: 5, rocks: 4, creatures: 0 });
+      const dialed = buildWilderness({ seed: 3, trees: 5, rocks: 4, creatures: 0, conversionDial: 2 });
+      expect(dialed).toEqual(bare);
+    });
+
+    it("a freshly-scattered tree stands MATURE — sizeClass/growAt stay unset", () => {
+      const w = buildWilderness({ seed: 3, trees: 3, rocks: 0, creatures: 0 });
+      for (const f of w.features) {
+        expect(f.sizeClass).toBeUndefined();
+        expect(f.growAt).toBeUndefined();
+      }
+    });
+  });
+});
+
+describe("homesteadWildMix — multiplier ⑤ (the dial, the same × direction as yield)", () => {
+  it("dial 1 (default AND explicit) is byte-identical", () => {
+    expect(homesteadWildMix("farmland", 1)).toEqual(homesteadWildMix("farmland", 1, 1));
+    expect(homesteadWildMix("mining", 5)).toEqual(homesteadWildMix("mining", 5, 1));
+  });
+
+  it("⚖️ INVARIANCE (S3 review): counts are dial-free — abundance is not conversion", () => {
+    const base = homesteadWildMix("farmland", 1);
+    expect(homesteadWildMix("farmland", 1, 2)).toEqual(base);
+    expect(homesteadWildMix("farmland", 1, 0.01)).toEqual(base);
+  });
 });
 
 // The regrow calculators are PURE — the host applies their results to its
@@ -275,5 +317,113 @@ describe("embodiment rule — bodyHeightM is the data flip", () => {
     expect(wildFeatureEmbodied(oak)).toBe(true);
     expect(wildFeatureContainerId(oak)).toBe("flora:oak:wild:oak_0");
     expect(wildFeatureEmbodied(rock)).toBe(false); // minerals never embody
+  });
+});
+
+// ── S&D S3 H2 — THE TIMBER GROWTH CLOCK ─────────────────────────────────────
+const oakGrowth = () => naturalSourceOf("oak")!.growth!;
+const oakFeature = (over: Partial<WildernessFeature> = {}): WildernessFeature => ({
+  id: "wild:oak_0", species: "oak", x: 0, y: 0, stock: { wood: 16 }, ...over,
+});
+
+describe("growthClassPeriodS — real years → game seconds, the generation family precedent", () => {
+  it("at REAL_SCALE, dividing evenly across the classes", () => {
+    const g = oakGrowth();
+    const steps = g.classes.length - 1;
+    const period = growthClassPeriodS(REAL_SCALE, g);
+    // REAL_SCALE: dayLengthS = 86400, generation = 1, so this is just
+    // (maturityYears / steps) real years, in seconds.
+    expect(period).toBeCloseTo((g.maturityYears / steps) * 365.25 * 86400, 0);
+  });
+
+  it("generation compresses it — a faster-aging world grows its trees faster too", () => {
+    const g = oakGrowth();
+    const fast = { ...REAL_SCALE, generation: 10 };
+    expect(growthClassPeriodS(fast, g)).toBeCloseTo(growthClassPeriodS(REAL_SCALE, g) / 10, 3);
+  });
+
+  it("resourceCompression never enters it — orthogonal to the growth clock", () => {
+    const g = oakGrowth();
+    const dialed = { ...REAL_SCALE, resourceCompression: 50 };
+    expect(growthClassPeriodS(dialed, g)).toBeCloseTo(growthClassPeriodS(REAL_SCALE, g), 3);
+  });
+});
+
+describe("dueGrowthAdvance — the sibling of dueHarvestRegrowth, size classes not units", () => {
+  const PERIOD = 100;
+
+  it("null: no growAt armed, or the species has no growth clock", () => {
+    expect(dueGrowthAdvance(oakFeature(), 1e9, PERIOD)).toBeNull();
+    const rock: Pick<WildernessFeature, "species" | "sizeClass" | "growAt"> =
+      { species: "rock", sizeClass: 0, growAt: 0 };
+    expect(dueGrowthAdvance(rock, 1e9, PERIOD)).toBeNull();
+  });
+
+  it("nothing matures before the deadline; one class per period after it", () => {
+    const f = oakFeature({ sizeClass: 0, growAt: 100 });
+    expect(dueGrowthAdvance(f, 99, PERIOD)).toBeNull();
+    const due = dueGrowthAdvance(f, 100, PERIOD);
+    expect(due).not.toBeNull();
+    expect(due!.sizeClass).toBe(1); // sapling → young
+    expect(due!.growAt).toBe(200); // still below mature (3 classes: 0,1,2)
+    expect(due!.stock.wood).toBe(growthYieldAt("oak", 1)); // young's yield
+  });
+
+  it("a long absence catches up whole classes but STOPS AT MATURE, clock retires", () => {
+    const f = oakFeature({ sizeClass: 0, growAt: 100 });
+    const due = dueGrowthAdvance(f, 100_000, PERIOD);
+    expect(due!.sizeClass).toBe(2); // mature — the last class
+    expect(due!.growAt).toBeUndefined(); // retired, exactly like a full harvest ledger
+    expect(due!.stock.wood).toBe(growthYieldAt("oak", 2));
+  });
+
+  it("LARGER-FIRST ordering data: stock REPLACES, never accumulates", () => {
+    // A felled-then-regrown tree's wood is a function of its CURRENT class,
+    // not a running total — the same "size means units left" law
+    // wildFeatureRadius states for depletion, read forward for growth.
+    const f = oakFeature({ sizeClass: 0, growAt: 100, stock: { wood: 999 } });
+    const due = dueGrowthAdvance(f, 100, PERIOD)!;
+    expect(due.stock.wood).toBe(growthYieldAt("oak", 1));
+    expect(due.stock.wood).not.toBe(999 + growthYieldAt("oak", 1));
+  });
+});
+
+function growthYieldAt(species: string, cls: number, dial = 1): number {
+  const src = naturalSourceOf(species)!;
+  const p = src.products.find((q) => q.method === "kill")!;
+  const mid = (p.yield.min + p.yield.max) / 2;
+  return Math.max(0, Math.round(mid * src.growth!.classes[cls]!.yieldMul * dial));
+}
+
+describe("reseedGrowthStock — the fell→sapling replacement", () => {
+  it("class 0 (sapling): zero wood, at dial 1 or any dial", () => {
+    expect(reseedGrowthStock("oak", oakGrowth())).toEqual({ wood: 0 });
+    expect(reseedGrowthStock("oak", oakGrowth(), 5)).toEqual({ wood: 0 }); // 0 × 5 = 0
+  });
+
+  it("only kill glyphs — a fruit tree's harvest glyph is untouched here", () => {
+    const stock = reseedGrowthStock("apple_tree", naturalSourceOf("apple_tree")!.growth!);
+    expect(stock).toEqual({ wood: 0 });
+    expect(stock.apple).toBeUndefined();
+  });
+});
+
+describe("wildFeatureSizeRank — LARGER TREES CUT FIRST (user law, verbatim)", () => {
+  it("unset sizeClass (never felled) ranks as MATURE — the most negative key", () => {
+    const mature = oakFeature(); // sizeClass unset
+    const sapling = oakFeature({ sizeClass: 0 });
+    expect(wildFeatureSizeRank(mature)).toBeLessThan(wildFeatureSizeRank(sapling));
+  });
+
+  it("a bigger class always outranks (sorts first under an ascending comparator)", () => {
+    const young = oakFeature({ sizeClass: 1 });
+    const sapling = oakFeature({ sizeClass: 0 });
+    expect(wildFeatureSizeRank(young)).toBeLessThan(wildFeatureSizeRank(sapling));
+  });
+
+  it("a species with no growth clock (rock) has NO size preference — always 0", () => {
+    const rock: WildernessFeature = { id: "wild:rock_0", species: "rock", x: 0, y: 0, stock: { stone: 1 } };
+    expect(wildFeatureSizeRank(rock)).toBe(0);
+    expect(wildFeatureSizeRank({ ...rock, sizeClass: 3 })).toBe(0);
   });
 });

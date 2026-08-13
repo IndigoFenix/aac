@@ -1,0 +1,6 @@
+> wait 10
+> say build farm
+> wait 20
+> scene
+> wait 40
+> scene

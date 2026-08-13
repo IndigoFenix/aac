@@ -1172,17 +1172,28 @@ export function ChatFeature() {
       )}
       </div>
 
-      {/* Pinned history on the END side — opposite the main app sidebar */}
-      {pinnedHistory && pinnedOpen && (
-        <div className="w-72 flex-shrink-0 h-full">
-          <ChatHistorySidebar
-            studentId={student?.id}
-            activeSessionId={sessionId}
-            onSelectSession={handleSelectSession}
-            onNewChat={handleNewChat}
-            onDeletedActive={() => startNewSession()}
-            className="border-s border-border"
-          />
+      {/* Pinned history on the END side — opposite the main app sidebar.
+          Width (not display) is what's animated, so closing it slides the
+          column away and lets the chat area reclaim the space smoothly
+          instead of jumping. */}
+      {pinnedHistory && (
+        <div
+          className={cn(
+            "h-full flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-out",
+            pinnedOpen ? "w-72" : "w-0"
+          )}
+        >
+          <div className="w-72 h-full">
+            <ChatHistorySidebar
+              studentId={student?.id}
+              activeSessionId={sessionId}
+              onSelectSession={handleSelectSession}
+              onNewChat={handleNewChat}
+              onDeletedActive={() => startNewSession()}
+              onCollapse={() => setPinnedOpen(false)}
+              className="border-s border-border"
+            />
+          </div>
         </div>
       )}
     </div>

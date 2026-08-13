@@ -18,10 +18,21 @@
 //      is ALSO read live (`townShortage`'s feed term) and banked durably
 //      (`TownDeltas.driftBank`, re-injected at boot).
 //
-// The live case is shipped content, not a fixture: a town-play town at **day
-// 15** has farms, a market and a WEAVER but no TAILOR yet — it makes cloth and
-// cannot turn it into clothing. That is the unlicensed-refinery town verbatim,
-// and its `clothing_got` is 0 against a real need, i.e. a shortage of 1.0.
+// The live case is shipped content, not a fixture: a town-play town at
+// `YOUNG_DAYS` has farms, a market and a WEAVER but no TAILOR yet — it makes
+// cloth and cannot turn it into clothing. That is the unlicensed-refinery town
+// verbatim, and its `clothing_got` is 0 against a real need, i.e. a shortage
+// of 1.0.
+//
+// 🚨 MOVED FIXTURE (S&D σ close), WITH WHY — `YOUNG_DAYS` 15 → 120. The age is
+// and always was a PROBED property of the shipped content ("when does this
+// town have a weaver and no tailor"), and the σ close moved the answer because
+// it made the fuel honest. Pre-S2 the farm read an abstract charter scalar and
+// produced ~40× a village's whole appetite regardless of population, so the
+// granary banked ~5 book units a DAY and a 15-day-old hamlet had already
+// funded seven farms and a loom. The town now banks its farmers' declared 20%
+// margin — σ × food_need — and reaches the same rung at day 113. Not one
+// assertion below was weakened; only the town's age was re-measured.
 //
 // Pure logic + ONE headless boot — no DOM / GL / DB.
 
@@ -53,8 +64,11 @@ import { parasiteReading, type CeilingReading } from "@shared/world-engine/kerne
 
 const SEED = 12;
 /** The age at which this content has a weaver and NO tailor (probed, and
- *  pinned below as the premise of every live case here). */
-const YOUNG_DAYS = 15;
+ *  pinned below as the premise of every live case here). The window on the
+ *  shipped seed is days 113–126 (the loom funds at 113, the tailor at 127);
+ *  120 is its centre, and its granary carries ~5 days of the caravan's load,
+ *  which the export-debit case below spends. */
+const YOUNG_DAYS = 120;
 
 // ─────────────────────────────────────────────────────────────────────────
 // ① T3a — THE DEPOT AS AN APPENDED SOURCE (pure, on a real town's geometry)
@@ -464,7 +478,12 @@ describe("T4a — an unlicensed town with a licensed partner sees its shortage F
     expect(shortage).toBeCloseTo(owed / scalar("food_need"), 9);
     // The equilibrium B4 solves for: about a tenth, and under the want gate
     // that decides whether food is on the export list at all.
-    expect(shortage).toBeCloseTo(0.1005, 4);
+    // ⚖️ RE-MEASURED (σ close): 0.1005 → 0.0998. The equilibrium is a ratio of
+    // two things that BOTH scale with the town (the authored shipment is a
+    // third of the households' draw; the burden divides it by the books' own
+    // need), so ageing the fixture 15 → 120 days moved it by 0.7% and not by
+    // an order of magnitude. Same tenth, same claim, one honest digit.
+    expect(shortage).toBeCloseTo(0.0998, 4);
     expect(shortage).toBeLessThan(BARTER_WANT_MIN);
   });
 
@@ -537,11 +556,17 @@ describe("T4a — an unlicensed town with a licensed partner sees its shortage F
     const before = host().shortageProbe("clothing");
     expect(before).toBe(1);
     const bucket = tr.tradeDay(run.session.townClock);
-    // Walk the clock to the next CARAVAN LANDING — the sweep settles the day's
-    // cargo there (nothing is poked; the visit is what the clock says it is).
-    for (let i = 0; i < 40 && tr.tradeDay(run.session.townClock) === bucket; i++) run.advanceS(8);
+    // ⏩ CONVERTED TO THE CLOCK WARP (clock-warp.ts, 2026-08-13). This was
+    // `for (let i = 0; i < 40 && tr.tradeDay(…) === bucket; i++) run.advanceS(8)`
+    // — up to 320 sim-s of frames (6 400 at dt 1/20, ~6 min of wall clock) spent
+    // walking to the next CARAVAN LANDING. A trade bucket is one economy day
+    // (`tradeDay` = `floor(t/FOOD_DAY_SEC − phase)`), and the landing is settled
+    // by `stepTradeCargo` on the day edge, so ONE warped day is the identical
+    // event — the same sweep, run the same once, off the frame loop. Nothing is
+    // poked: the visit is still what the clock says it is.
+    const warp = run.warpDays(1);
+    expect(warp.ok).toBe(true); // a refusal here means a body is mid-errand — see clock-warp.ts
     expect(tr.tradeDay(run.session.townClock)).toBeGreaterThan(bucket);
-    run.advanceS(2); // the task sweep is throttled to a second
 
     // ① the LANE now carries the good this town cannot make…
     expect([...tr.route.imports]).toContain("clothing");
@@ -574,12 +599,19 @@ describe("T4a — an unlicensed town with a licensed partner sees its shortage F
     // units. It is the honest form of what this line always meant — one visit
     // brings more than the town wants in a day — and it is now a statement
     // about a comparable pair rather than a units mismatch that happened to
-    // point the right way. What CHANGED is the margin: 0.006 against 7.66e-4
-    // is eight days of cover, where 6 against 7.66e-4 was twenty-one years.
+    // point the right way.
+    // ⚖️ RE-MEASURED (σ close): eight days of cover → **~2.75**. Nothing about
+    // the LANE moved — `IMPORT_ALLOTMENT` is still six garments and the bridge
+    // is still 0.001. The TOWN moved: an honest economy cannot fund a loom
+    // until ~370 souls (the granary banks the farmers' 20% margin, not a
+    // phantom 40×), so the weaver-and-no-tailor fixture is a town of 392 where
+    // it used to be one of 138, and a fixed allotment covers a 2.8× bigger
+    // wardrobe for 2.8× fewer days. The CLAIM is untouched and still checked
+    // below: one visit brings more than a day's want, and the relief runs out.
     expect(landed * bridge).toBeGreaterThan(scalar("clothing_need"));
     const daysOfCover = (landed * bridge) / scalar("clothing_need");
-    expect(daysOfCover).toBeGreaterThan(7);
-    expect(daysOfCover).toBeLessThan(9);
+    expect(daysOfCover).toBeGreaterThan(2);
+    expect(daysOfCover).toBeLessThan(3);
   });
 
   it("🔒 T3b DURABILITY: the bank rides TownDeltas, and a reboot re-injects it", () => {
@@ -629,18 +661,42 @@ describe("T4a — an unlicensed town with a licensed partner sees its shortage F
 //
 // ⚠️ THE CLOCK IS DRIVEN, NOT WALKED. The host clamps its own frame dt at 0.05
 // (world-host.ts), so eight sim-days is 38,400 frames — twenty-odd minutes of
-// wall time for one pin. The drain is a DAY-EDGE EVENT, so the pin puts the
-// town clock on the eve of each edge and steps the real sweep across it: the
-// same edge the loop produces, reached the way a test clock reaches things.
-describe("B2 — one caravan relieves for eight days, then the shortage climbs back", () => {
+// wall time for one pin. The drain is a DAY-EDGE EVENT, so the pin crosses the
+// edges directly.
+//
+// ⏩ AND SINCE 2026-08-13 IT CROSSES THEM THROUGH THE SANCTIONED LEVER
+// (clock-warp.ts). `crossInto` used to POKE `run.session.townClock` to
+// `d·FOOD_DAY_SEC − 0.4` and step 2.5 s of frames — a hand-rolled clock warp,
+// written before there was a real one, and one that moved the TOWN clock while
+// leaving the TASK clock (transfer deadlines, barter legs) behind it.
+// `advanceLedgerDays` is that jump done honestly: both clocks together, every
+// edge in the span, the day arm and the four ledger sweeps run per edge in the
+// tick order — and no frames at all. NOT ONE PIN BELOW MOVED, which is this
+// conversion's own equivalence evidence.
+describe("B2 — one caravan relieves for a few days, then the shortage climbs back", () => {
   let run: TextQuestRun;
   const host = () => run.host as unknown as { shortageProbe(good: string): number };
   const scalar = (n: string) => run.session.town!.town.scalar(n);
-  /** Put the clock a breath before day `d`'s edge and step the sweep over it.
-   *  2.5 s guarantees at least one sweep lands AFTER the crossing whatever
-   *  phase the throttle (`TASK_CLAIM_INTERVAL_S` = 1 s) happens to be in. */
+  /** Cross into day `d` — warp exactly the days between here and there, so
+   *  every edge in between gets its own sweep, which is what a ticked run does. */
   const crossInto = (d: number) => {
+    const now = Math.floor(run.session.townClock / FOOD_DAY_SEC);
+    const r = run.warpDays(d - now);
+    // A refusal is a body mid-errand (clock-warp.ts law ①) — say WHICH, or the
+    // next reader has to re-derive the guard from scratch.
+    if (!r.ok) throw new Error(`crossInto(${d}): ${r.note}`);
+    expect(r.edges).toBe(d - now);
+  };
+  /** 🚨 THE ONE PLACE THE RAW POKE SURVIVES, AND IT IS THE POINT. `stepDriftDrain`
+   *  multiplies by the number of days ELAPSED SINCE THE LAST SWEEP, and the
+   *  defect it guards is a sweep that did not run for several days (a paused tab,
+   *  a compressed session). A warp gives every edge its own sweep and so cannot
+   *  produce that state at all — converting this call site would have quietly
+   *  retired the multiplier's only test. So this one skips the clock WITHOUT
+   *  sweeping, exactly as a missed window does. */
+  const skipSweepsTo = (d: number) => {
     run.session.townClock = d * FOOD_DAY_SEC - 0.4;
+    run.session.taskClock = d * FOOD_DAY_SEC - 0.4;
     run.advanceS(2.5);
   };
 
@@ -668,12 +724,26 @@ describe("B2 — one caravan relieves for eight days, then the shortage climbs b
     expect(t.deltas.driftBank.drapery).toBeCloseTo(-need, 12);
   });
 
-  it("🚨 THE SAWTOOTH: full relief for ~8 days, then the honest climb back", () => {
+  it("🚨 THE SAWTOOTH: full relief while the bank covers a day, then the honest climb back", () => {
     const need = scalar("clothing_need");
     const relief = IMPORT_ALLOTMENT * bookUnitsPerStreetUnit(run.session.town!.eco, "clothing");
-    // 0.006 book units against 7.66e-4/day — the caravan bought eight days.
-    expect(relief / need).toBeGreaterThan(7);
-    expect(relief / need).toBeLessThan(8);
+    // ⚖️ RE-MEASURED (σ close): 0.006 book units against **2.18e-3**/day — the
+    // caravan bought ~2.75 days, where against the 138-soul phantom-funded
+    // town it bought eight. The lane did not change; the town it lands in did
+    // (see the T4a note above). The three checkpoints below are DERIVED from
+    // the cover ratio now, so the shape is pinned and the arithmetic is read,
+    // never re-typed.
+    const cover = relief / need;
+    expect(cover).toBeGreaterThan(2);
+    expect(cover).toBeLessThan(3);
+    /** The first day the bank is empty, and the two rungs before it. */
+    const dryDay = Math.ceil(cover);
+    const partialDay = dryDay - 1;
+    expect(partialDay).toBeGreaterThanOrEqual(2); // both rungs land inside the walk below
+    // FULL RELIEF while the bank still covers a whole day's shortfall — the
+    // state the previous case left this town in (day 1, bank = relief − need).
+    expect(scalar("drapery")).toBeCloseTo(relief - need, 12);
+    expect(host().shortageProbe("clothing")).toBe(0);
     const curve: Array<{ day: number; bank: number; shortage: number }> = [];
     for (let d = 2; d <= 10; d++) {
       crossInto(d);
@@ -689,29 +759,15 @@ describe("B2 — one caravan relieves for eight days, then the shortage climbs b
     for (const row of curve) {
       expect(row.bank).toBeCloseTo(Math.max(0, relief - row.day * need), 12);
     }
-    // FULL RELIEF while the bank covers a day's shortfall…
-    expect(curve.find((r) => r.day === 6)!.shortage).toBe(0);
     // …a PARTIAL day as it runs out (the last of the bank still feeds)…
-    const seventh = curve.find((r) => r.day === 7)!;
-    expect(seventh.shortage).toBeGreaterThan(0);
-    expect(seventh.shortage).toBeCloseTo(1 - seventh.bank / need, 9);
+    const partial = curve.find((r) => r.day === partialDay)!;
+    expect(partial.shortage).toBeGreaterThan(0);
+    expect(partial.shortage).toBeCloseTo(1 - partial.bank / need, 9);
     // …and then the town is exactly as short as it was before the caravan
     // came. The eternal 0 is gone.
-    expect(curve.find((r) => r.day === 8)!.bank).toBe(0);
-    expect(curve.find((r) => r.day === 8)!.shortage).toBe(1);
+    expect(curve.find((r) => r.day === dryDay)!.bank).toBe(0);
+    expect(curve.find((r) => r.day === dryDay)!.shortage).toBe(1);
     expect(curve.find((r) => r.day === 10)!.shortage).toBe(1);
-  });
-
-  it("🔒 the multi-day skip is a MULTIPLIER, never a lost day", () => {
-    const t = run.session.town!;
-    const need = scalar("clothing_need");
-    t.town.inject("drapery", 20 * need); // twenty days of cover
-    const before = scalar("drapery");
-    const mirrorBefore = t.deltas.driftBank.drapery!;
-    const day = Math.floor(run.session.townClock / FOOD_DAY_SEC);
-    crossInto(day + 5); // five economy days pass between two sweeps
-    expect(scalar("drapery")).toBeCloseTo(before - 5 * need, 12);
-    expect(t.deltas.driftBank.drapery).toBeCloseTo(mirrorBefore - 5 * need, 12);
   });
 
   it("🚨 B5 THE CARAVAN DEBIT: what leaves on the cart leaves the books", () => {
@@ -735,6 +791,26 @@ describe("B2 — one caravan relieves for eight days, then the shortage climbs b
     // ONE visit's load, in book units — read off the line itself, not typed.
     expect(charged).toBeCloseTo(tr.exportDailyUnits() * bridge, 9);
     expect(t.deltas.driftBank.granary).toBeCloseTo(mirrorBefore - charged, 9);
+  });
+
+  // 🚨 MOVED LAST, WITH WHY (clock-warp round, 2026-08-13). This case must run
+  // 50 real frames (it is the only one here that does), and 50 frames of the
+  // shipped dollhouse is enough for the resident streamer to promote a handful
+  // of LIVE-NEED bodies — which then, correctly, REFUSE every warp after it
+  // ("warp refused — 3 body/bodies mid-errand (resident_21_0, resident_22_0,
+  // resident_4_2)"). The guard is not the problem; the ORDER was. Nothing in
+  // this case depends on running before B5 (it is about clothing's bank, B5 is
+  // about the granary), so it goes last and the warped cases keep a quiet town.
+  it("🔒 the multi-day skip is a MULTIPLIER, never a lost day", () => {
+    const t = run.session.town!;
+    const need = scalar("clothing_need");
+    t.town.inject("drapery", 20 * need); // twenty days of cover
+    const before = scalar("drapery");
+    const mirrorBefore = t.deltas.driftBank.drapery!;
+    const day = Math.floor(run.session.townClock / FOOD_DAY_SEC);
+    skipSweepsTo(day + 5); // five economy days pass BETWEEN TWO SWEEPS — see the helper
+    expect(scalar("drapery")).toBeCloseTo(before - 5 * need, 12);
+    expect(t.deltas.driftBank.drapery).toBeCloseTo(mirrorBefore - 5 * need, 12);
   });
 });
 

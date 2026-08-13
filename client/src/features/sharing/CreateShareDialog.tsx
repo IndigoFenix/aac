@@ -123,7 +123,7 @@ export function CreateShareDialog({
 
   // ── Data sources for the picker
   const items = useShareablePickerItems(studentId);
-  const contacts = useGuardianContacts(studentId);
+  const { contacts, isLoading: contactsLoading } = useGuardianContacts(studentId);
 
   // The picker uses `${type}:${id}` as a stable key.
   const itemByKey = useMemo(() => {
@@ -322,7 +322,11 @@ export function CreateShareDialog({
                 <SelectValue placeholder={t("shares.create.guardianContactPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                {contacts.length === 0 ? (
+                {contactsLoading ? (
+                  <div className="p-2 text-sm text-muted-foreground">
+                    {t("common.loading")}
+                  </div>
+                ) : contacts.length === 0 ? (
                   <div className="p-2 text-sm text-muted-foreground">
                     {t("shares.create.noLinkedContacts")}
                   </div>
@@ -550,8 +554,8 @@ interface ContactRow {
  * — anyone in the named-guardian role of a share invite must be a registered
  * user (the invite has a NOT NULL `guardian_user_id` FK).
  */
-function useGuardianContacts(studentId: string | undefined): ContactRow[] {
-  const { data } = useQuery<{ success: boolean; contacts: ContactRow[] }>({
+function useGuardianContacts(studentId: string | undefined): { contacts: ContactRow[]; isLoading: boolean } {
+  const { data, isLoading } = useQuery<{ success: boolean; contacts: ContactRow[] }>({
     queryKey: ["/api/biometric/students", studentId, "contacts"],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/biometric/students/${studentId}/contacts`);
@@ -560,7 +564,7 @@ function useGuardianContacts(studentId: string | undefined): ContactRow[] {
     enabled: !!studentId,
   });
   const list = data?.contacts ?? [];
-  return list.filter((c) => !!c.linkedUserId);
+  return { contacts: list.filter((c) => !!c.linkedUserId), isLoading };
 }
 
 /** Aggregate the picker rows from the student's existing records. */

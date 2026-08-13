@@ -2565,6 +2565,10 @@ export const de = {
     allowNotesDesc: "Wenn deaktiviert, kann die KI keine Sitzungsnotizen lesen oder schreiben (kein Speicher außerhalb der Nachrichtenprotokolle)",
     shareMonitorNotesWithInstitute: "AAC-Notizen mit meiner Einrichtung teilen",
     shareMonitorNotesWithInstituteDesc: "Wenn aktiviert, sehen Kliniker dieser Einrichtung die während AAC-Sitzungen aufgezeichneten Notizen (Interessen, Vorlieben, Beobachtungen). Deaktivieren, um eine ausdrückliche Freigabe zu verlangen.",
+    aiLearning: "KI-Lerneinstellungen",
+    aiLearningDesc: "Was die KI während Sitzungen von sich aus aufzeichnen darf.",
+    autoAddContacts: "Neue Kontakte lernen",
+    autoAddContactsDesc: "Lässt die KI Personen, die sie während Sitzungen kennenlernt, zur Kontaktliste hinzufügen. Neue Kontakte werden zur Überprüfung markiert, bis Sie sie bestätigen. Wenn deaktiviert, können Kontakte nur auf der Kontaktseite hinzugefügt werden.",
     // Symbol generation
     symbolGeneration: "Symbolgenerierung",
     symbolGenerationDesc: "Automatisch Symbolbilder für AAC-Schaltflächen mit KI generieren",
@@ -3742,6 +3746,8 @@ export const de = {
     updated: "Kontakt aktualisiert",
     deleted: "Kontakt gelöscht",
     confirmDelete: "Kontakt entfernen?",
+    confirm: "Bestätigen",
+    confirmed: "Kontakt bestätigt",
     name: "Name",
     namePlaceholder: "z. B. Mama",
     nameRequired: "Name ist erforderlich",
@@ -3775,6 +3781,11 @@ export const de = {
     callable: "Videoanrufe erlauben",
     callableHint: "Der Schüler (und die KI) können diese Person per Videoanruf erreichen, wenn sie online ist.",
     photoAfterCreate: "Foto-Upload wird nach dem Speichern des Kontakts verfügbar.",
+    tabAll: "Kontakte",
+    tabAutoAdded: "Automatisch hinzugefügt",
+    autoAddedBadge: "automatisch hinzugefügt",
+    autoAddedHint: "Der AAC-Assistent hat diese Personen anhand seiner Beobachtungen während der Sitzungen hinzugefügt. Bestätigen Sie die, die wirklich hierher gehören, und löschen Sie die übrigen.",
+    autoAddedEmpty: "Nichts zur Überprüfung vorhanden.",
   },
 
   // Biometric (photo upload)

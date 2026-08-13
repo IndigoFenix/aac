@@ -53,8 +53,14 @@ export type TextStreamTag =
 /** Answer tags — a reply to a question the driver asked. */
 export type TextAnswerTag = "SCENE" | "LOOK" | "SELF" | "WHERE" | "WHO" | "WATCH" | "BUILDER" | "HELP";
 
-/** Control tags — the harness talking about itself. */
-export type TextControlTag = "OK" | "ERR" | "ASK" | "NOTE" | "CHEAT";
+/** Control tags — the harness talking about itself.
+ *
+ *  `WARP` is the newest, and it is the one event that does NOT render as a
+ *  tagged line: a clock warp is a statement about the HARNESS, not about the
+ *  world, so render.ts prints it as a `#` comment (see there). It must never be
+ *  mistakable for elapsed play — "the transcript notes the warp honestly, not
+ *  as fake elapsed wait output". */
+export type TextControlTag = "OK" | "ERR" | "ASK" | "NOTE" | "CHEAT" | "WARP";
 
 export type TextTag = TextStreamTag | TextAnswerTag | TextControlTag;
 
@@ -367,7 +373,13 @@ export type TextEvent =
   | { tag: "ASK"; question: string; options: string[] }
   | { tag: "NOTE"; text: string }
   /** TODO step ⑪ (cheat channel) — every use MUST leave this marker (law ⑦). */
-  | { tag: "CHEAT"; text: string };
+  | { tag: "CHEAT"; text: string }
+  /** ⏩ A CLOCK WARP HAPPENED (⑬). Renders as a `#` COMMENT, never a tagged
+   *  stream line: the world did not do this, the harness did, and a reader
+   *  skimming for what the town did must not mistake it for elapsed play.
+   *  `ok:false` = the warp was REFUSED and nothing moved; `text` is the
+   *  helper's own honest account either way. */
+  | { tag: "WARP"; ok: boolean; days: number; edges: number; text: string };
 
 /**
  * Events plus the lines they render to — what `command()` hands back.
@@ -409,6 +421,9 @@ export type TextCommand =
   | { kind: "back" }
   /** Steps EXACTLY this many sim-seconds (§5). */
   | { kind: "wait"; seconds: number }
+  /** ⏩ Advances the BOOKS this many economy days with no frames (§5b,
+   *  clock-warp.ts). Days, never seconds — see parse.ts. */
+  | { kind: "warp"; days: number }
   | { kind: "help" }
   // ── step ⑧: the sentence builder ────────────────────────────────────────
   | { kind: "builder" }
@@ -482,6 +497,11 @@ export interface TextCheatHost {
    *  THE DEGENERATION INSTRUMENT: what is this body actually under orders to
    *  do? A pure read — deriving a chain moves nothing (law ③). */
   whyProbe?(cid: string): unknown;
+  /** ⚖️ S&D S4 — the wild stand, and the LOD fold between its two forms
+   *  (`/wild [fold|load|cycle]`). 🚨 THE ONE CHEAT THAT MOVES SOMETHING: the
+   *  driver that folds a stand lives in the GL boot, so headless has no other
+   *  way to exercise the conservation law. See `QuestHost3D.wildProbe`. */
+  wildProbe?(verb?: string): string;
 }
 
 /**
@@ -508,6 +528,12 @@ export interface TextSessionDeps {
      *  target because a moving body is hard to dwell on. Optional: a world
      *  with no household never pushes chips and never needs it. */
     selectFamilyMember?(cid: string): void;
+    /** ⏩ THE CLOCK WARP (quest-host `advanceLedgerDays`) — `days` economy days
+     *  of BOOKS with no frames. Not a new sim path (law ⑥): it runs the very
+     *  day arms and ledger sweeps the frame loop runs, off the frame loop.
+     *  Optional so a boot that predates it answers honestly instead of
+     *  throwing. Shape-typed like everything else here. */
+    advanceLedgerDays?(days: number): { ok: boolean; days: number; edges: number; note: string };
   };
   view: TextViewLike;
   /** Advance EXACTLY one fixed frame. The boot owns the clock (§5). */

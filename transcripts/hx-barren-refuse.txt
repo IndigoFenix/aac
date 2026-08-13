@@ -1,0 +1,69 @@
+# world-text v1   proto=1
+# world=barren.spec  seed=11  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T07:01:02.950Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+SAY    person-3: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-5: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> scene
+SCENE  outdoors — 7 thing(s) in view.
+  person-5 (person), there south.
+  person-1 (person), there east.
+  person-3 (person), there north.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  person-2 (person), here south.
+  a person, there south.
+TICK   quiet after 0.8s.
+> say build farm
+OK     said: build + farm
+SAY    person-2: "We don't have the block."  [we + have.not + block]
+TOAST  💬 can't build the farm — we still need 272 block, and there is none to fetch (feedback)
+TICK   quiet after 0.8s.
+> wait 20
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 20.0s.
+> wait 20
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 20.0s.
+> scene
+SCENE  outdoors — 7 thing(s) in view.
+  person-3 (person), there east.
+  person-2 (person), there west.
+  person-1 (person), there north.
+  person-5 (person), there north.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  a person, there south.
+TICK   quiet after 0.8s.
+> self
+SELF   you are outdoors.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=8  presses=0  screens=1  sim=63.1s
+# events: TICK 8  SAY 7  SCENE 2  BOARD 1  NOTE 1  OK 1  TOAST 1  SELF 1

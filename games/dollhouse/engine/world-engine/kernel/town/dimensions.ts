@@ -119,7 +119,13 @@ export const TOWN_DIMS = {
    *  stay village-to-burgher scale below that). */
   maxHouseFloors: 4,
 
-  /** Cultivated field patches (farmland biome). */
+  /** Cultivated field patches (farmland biome). W/H/out/side are the
+   *  SMALLHOLDING SHAPE — explicitly-declared content (proportions and
+   *  jitter feel), not a claim about total acreage. `kernel/town/plan.ts`
+   *  scales all four by the S2 area seam's `areaScale` so the SUM of
+   *  patches honestly covers what the town's population needs to eat
+   *  (scale.ts `farmAreaPerPersonM2`) — a big town gets a few VISIBLY HUGE
+   *  fields, not thousands of unrenderable smallholdings. */
   fieldWMin: 70,
   fieldWJit: 40,
   fieldHMin: 55,
@@ -127,6 +133,11 @@ export const TOWN_DIMS = {
   fieldOutMin: 40,
   fieldOutJit: 80,
   fieldSideSpread: 130,
+  /** RENDERING-RESOLUTION CEILING on patch count (S2 area seam) — patch
+   *  SIZE carries the honest total past this, never patch count. Also the
+   *  floor's mirror: `Math.max(2, …)` at the call site keeps a one-farm
+   *  hamlet from reading as a single suspicious rectangle. */
+  fieldPatchCap: 14,
 } as const;
 
 export type TownDims = typeof TOWN_DIMS;

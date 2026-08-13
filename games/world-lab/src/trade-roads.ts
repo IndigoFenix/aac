@@ -44,6 +44,7 @@ import {
   spliceRouteAtTown, toTownLocal, type ArterialTip, type TownFrame,
 } from "@shared/world-engine/kernel/town/approach";
 import { roadMaterial, surfaceMaterial } from "@shared/world-engine/materials";
+import type { WorldScale } from "@shared/world-engine/scale";
 
 // FAR ribbons: a MAP GLYPH, not literal asphalt — the road's equivalent of
 // the city beacon. Wide and faintly warm so the net reads from cruise
@@ -134,6 +135,17 @@ export interface TownSpliceSpec {
    *  ground paint that crossed a footprint would re-open the very
    *  roads-through-buildings bug the port law closed. */
   houses?: ReadonlyArray<{ dx: number; dy: number; w: number; h: number }>;
+}
+
+/** What the net needs to know about the WORLD, as opposed to the body. */
+export interface TradeRoadsOpts {
+  /** THE DOCUMENT'S DECLARED SPACE-TIME SCALE (`game.scale`, resolved). The
+   *  tier-0 routes port at `townExtentM(scale)`, so this is the one number
+   *  that decides where every interstate stops — and it MUST be the same one
+   *  the seam (main.ts `townSpliceSpecOf`/`cityRoadSeeds`) and the town's own
+   *  plan (`TownPlayConfig.scale`) read, or the road, the gate and the
+   *  buildings are laid against three different circles. Absent = realism. */
+  scale?: WorldScale;
 }
 
 export interface TradeRoads {
@@ -423,7 +435,9 @@ interface FarJob {
  * and route Dijkstras run here, synchronously — the tier-0 grid is a few
  * thousand cells, paid once per approached body.
  */
-export function createTradeRoads(body: CelestialBody): TradeRoads | null {
+export function createTradeRoads(
+  body: CelestialBody, opts: TradeRoadsOpts = {},
+): TradeRoads | null {
   const built = body.geography;
   if (!built) return null;
   const cities = planetCities(built);
@@ -434,7 +448,16 @@ export function createTradeRoads(body: CelestialBody): TradeRoads | null {
   // whatever the sea allows.
   const states = planetStates(built, cities);
   const pairs = statePairs(states);
-  const routes = planetRoutes(built, cities, pairs.length ? { pairs } : {});
+  // THE PORT LAW READS THE WORLD'S OWN EXTENT. `planetRoutes` clips every end
+  // at `townExtentM(scale)`, and this call is the one place tier 0 states it:
+  // omitting the declaration ported the roads at the REAL 450 m while the
+  // seam (main.ts townSpliceSpecOf/cityRoadSeeds) and the town's own plan
+  // used the DERIVED figure, so a compressed world clipped at an extent no
+  // other consumer believed in and every road ran to the town's centre.
+  const routes = planetRoutes(built, cities, {
+    ...(pairs.length ? { pairs } : {}),
+    ...(opts.scale ? { scale: opts.scale } : {}),
+  });
   if (!routes.length) return null;
   // WHO holds each state: the polity ledger (nations P1). Border ink draws
   // between POLITIES — at founding every state is its own city-state, so

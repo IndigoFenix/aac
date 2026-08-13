@@ -31,8 +31,9 @@ import {
   type SpeakOpts,
   type Token,
 } from "./core.js";
+import { specWords } from "../content/words.js";
 
-const L: Record<string, Lexeme> = {
+const CENTRAL: Record<string, Lexeme> = {
   i_me: { w: "אני" },
   you: { w: "אתה", f: "את" },
   // The collective voice (nations P6). Both are PLURAL: a group speaking of
@@ -71,7 +72,6 @@ const L: Record<string, Lexeme> = {
   stop: { w: "עוצר", f: "עוצרת", vmpl: "עוצרים", vfpl: "עוצרות", inf: "לעצור" },
   // Board chrome's "go back" word (⑦) — the AAC glyph `return`.
   return: { w: "חוזר", f: "חוזרת", vmpl: "חוזרים", vfpl: "חוזרות", inf: "לחזור" },
-  market: { w: "שוק" },
   trade: { w: "מחליף", f: "מחליפה", vmpl: "מחליפים", vfpl: "מחליפות" },
   // Nations P6: the verb the absolute taboo ring forbids (root ל.ח.מ).
   fight: { w: "נלחם", f: "נלחמת", vmpl: "נלחמים", vfpl: "נלחמות", inf: "להילחם" },
@@ -148,44 +148,14 @@ const L: Record<string, Lexeme> = {
   home: { w: "בית", g: "m" },
   work: { w: "עבודה", g: "f" },
   thing: { w: "דבר" },
-  cookie: { w: "עוגייה", g: "f" },
-  apple: { w: "תפוח", g: "m" },
-  banana: { w: "בננה", g: "f" },
-  grape: { w: "ענב", g: "m" },
-  ball: { w: "כדור", g: "m" },
-  blocks: { w: "קוביות", g: "f", pl: true },
-  puzzle: { w: "פאזל", g: "m" },
   doll: { w: "בובה", g: "f" },
-  car: { w: "מכונית", g: "f" },
-  train: { w: "רכבת", g: "f" },
-  rabbit: { w: "ארנב", g: "m" },
-  bear: { w: "דוב", g: "m" },
-  frog: { w: "צפרדע", g: "f" },
-  dog: { w: "כלב", g: "m" },
   // Creature SPECIES words (reference resolution: "אני מדבר עם ה{מין}").
   person: { w: "אדם", g: "m", plw: "אנשים" },
   animal: { w: "חיה", g: "f", plw: "חיות" },
   creature: { w: "יצור", g: "m" },
-  cow: { w: "פרה", g: "f" },
-  deer: { w: "צבי", g: "m" },
-  ram: { w: "איל", g: "m" },
-  sheep: { w: "כבשה", g: "f" },
-  box: { w: "קופסה", g: "f" },
-  basket: { w: "סל", g: "m" },
-  satchel: { w: "ילקוט", g: "m" },
-  bubbles: { w: "בועות", g: "f", pl: true },
-  sparks: { w: "ניצוצות", g: "m", pl: true },
-  boat: { w: "סירה", g: "f" },
-  broccoli: { w: "ברוקולי", g: "m", mass: true },
-  sock: { w: "גרב", g: "m" },
   water: { w: "מים", g: "m", pl: true, mass: true },
   fire: { w: "אש", g: "f", mass: true },
   // Devices (§5) + their toggle states (agree with the device's gender).
-  lamp: { w: "מנורה", g: "f" },
-  window: { w: "חלון", g: "m" },
-  heater: { w: "מחמם", g: "m" },
-  generator: { w: "גנרטור", g: "m" },
-  switch: { w: "מתג", g: "m" },
   on: { w: "דלוק", f: "דלוקה" },
   off: { w: "כבוי", f: "כבויה" },
   open: { w: "פתוח", f: "פתוחה" },
@@ -212,55 +182,13 @@ const L: Record<string, Lexeme> = {
   put: { w: "שם", f: "שמה", inf: "לשים" },
   good: { w: "טוב", f: "טובה" },
   bathroom: { w: "שירותים", g: "m", pl: true },
-  kitchen: { w: "מטבח", g: "m" },
-  bath: { w: "אמבטיה", g: "f" },
-  toilet: { w: "אסלה", g: "f" },
-  barrel: { w: "חבית", g: "f" },
-  chair: { w: "כיסא", g: "m" },
-  table: { w: "שולחן", g: "m" },
-  bed: { w: "מיטה", g: "f" },
-  // The food chest IS a refrigerator — the box a where-is answer names.
-  refrigerator: { w: "מקרר", g: "m" },
-  cabinet: { w: "ארון", g: "m" },
-  workbench: { w: "שולחן עבודה", g: "m" },
-  bin: { w: "פח", g: "m" },
-  bowl: { w: "קערה", g: "f" },
-  oven: { w: "תנור", g: "m" },
-  anvil: { w: "סדן", g: "m" },
-  loom: { w: "נול", g: "m" },
-  shelf: { w: "מדף", g: "m" },
-  altar: { w: "מזבח", g: "m" },
-  // The masonry bench — a construct pair built like `workbench` ("שולחן עבודה"),
-  // which is the model for every bench-that-is-a-trade in this lexicon.
-  stonecutter: { w: "שולחן סיתות", g: "m" },
-  well: { w: "באר", g: "f" },
-  smithy: { w: "נפחייה", g: "f" },
-  weaver: { w: "אריגה", g: "f" },
-  library: { w: "ספריה", g: "f" },
-  temple: { w: "מקדש", g: "m" },
-  living: { w: "סלון", g: "m" },
-  shop: { w: "חנות", g: "f" },
-  forge: { w: "מפוחה", g: "f" },
-  shrine: { w: "מקדש קטן", g: "m" },
-  weaving: { w: "חדר אריגה", g: "m" },
-  study: { w: "חדר עבודה", g: "m" },
-  // The stonecutter's room, formed like `weaving` ("חדר אריגה") — "the <craft>
-  // room" is how this lexicon names every workroom.
-  masonry: { w: "חדר סיתות", g: "m" },
-  // The wild outcrop, not the material: you quarry `stone` out of a `rock`.
-  rock: { w: "סלע", g: "m" },
   food: { w: "אוכל", g: "m", mass: true },
   // TOY is a NOUN used attributively, never an adjective: Hebrew says
   // "מכונית צעצוע" (a construct pair), not "מכונית צעצועה". Without invariant
   // forms the adjective walk synthesised a feminine and agreed it with the
   // noun, which is a word that does not exist.
   toy: { w: "צעצוע", g: "m", f: "צעצוע", mpl: "צעצוע", fpl: "צעצוע" },
-  book: { w: "ספר", g: "m" },
   clothing: { w: "בגדים", g: "m", pl: true },
-  hat: { w: "כובע", g: "m" },
-  shirt: { w: "חולצה", g: "f" },
-  dress: { w: "שמלה", g: "f" },
-  scarf: { w: "צעיף", g: "m" },
   // Attention/self-care verbs (attention-spark actions) — present + infinitive
   // (the intent periphrasis "הולך לאכול" needs the infinitive).
   eat: { w: "אוכל", f: "אוכלת", vmpl: "אוכלים", vfpl: "אוכלות", inf: "לאכול" },
@@ -299,30 +227,17 @@ const L: Record<string, Lexeme> = {
   // Construction ④ — the room-EMPTYING verb (break's stow-only twin).
   empty: { w: "מרוקן", f: "מרוקנת", vmpl: "מרוקנים", vfpl: "מרוקנות", inf: "לרוקן" },
   room: { w: "חדר", g: "m" },
-  door: { w: "דלת", g: "f" },
-  bedroom: { w: "חדר שינה", g: "m", defw: "חדר השינה" },
-  store: { w: "חנות", g: "f" },
-  storeroom: { w: "מחסן", g: "m" },
-  workshop: { w: "סדנה", g: "f", plw: "סדנאות" },
   // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
   // The building trade's words. They shipped as live glyphs with no lexemes,
   // so a builder here said "אני build את הhouse" — the raw English key inside
   // a Hebrew sentence, the same failure the furniture kinds had.
+  // The materials and named structures now live on their spec rows
+  // (content/words.ts) — what stays is the core pair and the trade's verbs.
   //
-  // MATERIALS. עץ is both the tree and the timber; the two entries are
-  // deliberate — `wood` is mass (the material), `tree` counts (the thing you
-  // fell). Same word, different grammar, which is exactly what the lexeme card
-  // is for.
-  block: { w: "לבנה", g: "f", plw: "לבנים" },
-  wood: { w: "עץ", g: "m", mass: true },
-  stone: { w: "אבן", g: "f", plw: "אבנים", mass: true },
-  tree: { w: "עץ", g: "m", plw: "עצים" },
   // STRUCTURES. `house` is the dwelling as an ORDER ("build a house"); `home`
   // stays the place you go back to.
   house: { w: "בית", g: "m", plw: "בתים" },
-  farm: { w: "חווה", g: "f", plw: "חוות" },
   building: { w: "מבנה", g: "m", plw: "מבנים" },
-  storehouse: { w: "מחסן", g: "m" },
   yard: { w: "חצר", g: "f", plw: "חצרות" },
   // TRADE VERBS — present tense in four agreement forms + the infinitive the
   // intent periphrasis ("הולך לבנות") needs.
@@ -334,6 +249,16 @@ const L: Record<string, Lexeme> = {
   // The completion state ("הבית מוכן").
   finished: { w: "מוכן", f: "מוכנה", mpl: "מוכנים", fpl: "מוכנות" },
 };
+
+/** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec
+ *  ITEMS live on their spec rows (content/words.ts joiner) and must not appear
+ *  here too; the no-overlap conformance pin reads this export. */
+export const CENTRAL_WORDS = CENTRAL;
+
+/** The LIVE word table — central words ⊕ the spec items' own words. Built
+ *  BEFORE the renderer, which closes over it: an item's row is authoritative
+ *  for its word, in the gloss fallback and the frame grammar alike. */
+const L: Record<string, Lexeme> = { ...CENTRAL, ...specWords("he") };
 
 function lex(head: string): Lexeme {
   return L[head] ?? { w: head };

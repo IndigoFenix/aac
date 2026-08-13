@@ -515,7 +515,17 @@ export function mergeSites(cluster: readonly FoundedSite[]): FoundedSite {
  *  same site ⇒ same config ⇒ byte-identical town. */
 export function siteTownConfig(
   site: FoundedSite,
-  opts?: { startPop?: number; charter?: { farmland: number; ore_access: number; timberland?: number } },
+  opts?: {
+    startPop?: number;
+    charter?: { farmland: number; ore_access: number; timberland?: number };
+    /** THE WORLD'S DECLARED SPACE-TIME SCALE (`game.scale`, resolved). A
+     *  founded site stands on the SAME planet its neighbours' roads were
+     *  ported at, so its town must lay out to the same `townExtentM` — a
+     *  config with no scale grows the real-scale 450 m town on a world whose
+     *  roads stop at 195 m, and the interstates cross the new buildings the
+     *  moment they exist. Absent = realism. */
+    scale?: WorldScale;
+  },
 ): TownPlayConfig {
   // The site's gathered materials become the town's builder's-yard stock
   // (①b) — the same stack map "build" costs draw from, riding the deltas.
@@ -536,5 +546,6 @@ export function siteTownConfig(
     // surroundings (explicit, not the founding-age default).
     wilderness: true,
     deltas,
+    ...(opts?.scale ? { scale: opts.scale } : {}),
   };
 }

@@ -5837,6 +5837,13 @@ export class AgentCoordinator {
     if (event.updateType === "person_identified" || event.updateType === "set_person_as_user") {
       void this.seedFaceFromObserver(event.key);
     }
+    // The inverse gate: the Observer retracting an identity penalizes the
+    // biometric match that mis-fired and drops the person from the identified
+    // lists. The event itself still flows to the agents/log below, where the
+    // flush marks it as a RETRACTION so the narrative unlearns the presence.
+    if (event.updateType === "misidentified") {
+      void this.retractIdentificationByName(event.key, event.description);
+    }
     this.contextUpdateBuffer.push(event);
     if (this.contextUpdateDebounceTimer) clearTimeout(this.contextUpdateDebounceTimer);
     this.contextUpdateDebounceTimer = setTimeout(
@@ -5852,10 +5859,17 @@ export class AgentCoordinator {
     if (batch.length === 0) return;
 
     // Join into a single context injection for Speaker, and a single
-    // Board Manager invocation with the whole batch as triggers.
-    const lines = batch.map(e =>
-      `[CONTEXT] ${e.updateType}: ${e.key} — ${e.description}${e.relevance ? ` (relevance: ${e.relevance})` : ""}`,
-    );
+    // Board Manager invocation with the whole batch as triggers. A
+    // misidentified event carries an explicit retraction rider: the line lands
+    // in the conversation log, which is what the Monitor and the session
+    // summarizer read — without the rider the false presence stays quietly
+    // on the record (notes, summary) even after the Observer corrected it.
+    const lines = batch.map(e => {
+      const base = `[CONTEXT] ${e.updateType}: ${e.key} — ${e.description}${e.relevance ? ` (relevance: ${e.relevance})` : ""}`;
+      return e.updateType === "misidentified"
+        ? `${base} [RETRACTION — earlier reports of this person were a misidentification. Treat them as NOT present; do not record their presence, and strike any note or summary line that claims it.]`
+        : base;
+    });
     const joined = lines.join("\n");
     this.observer?.sendContextInjection(joined);
     this.speaker?.sendContextInjection(joined);
@@ -10930,6 +10944,12 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       cameraRole?: "user" | "environment" | "unknown";
       cameraLabel?: string;
       quality?: number;
+      /** Client-side face-api age/gender read for the ATTRIBUTE VETO — a
+       *  candidate whose on-file age/sex grossly contradicts what the camera
+       *  sees (child vs senior) is excluded from matching entirely. */
+      observedAge?: number;
+      observedSex?: "male" | "female";
+      observedSexConfidence?: number;
     }>,
   ): Promise<void> {
     if (!this.studentId) return;
@@ -10944,7 +10964,9 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     }
 
     const matches = await Promise.all(
-      descriptors.map(d => findMatchingFace(d.descriptor, this.studentId!).catch(() => null as FaceMatchResult | null)),
+      descriptors.map(d => findMatchingFace(d.descriptor, this.studentId!, {
+        age: d.observedAge, sex: d.observedSex, sexConfidence: d.observedSexConfidence,
+      }).catch(() => null as FaceMatchResult | null)),
     );
 
     let unknownCounter = 0;
@@ -10967,6 +10989,12 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
           // Below this confidence the match is ambiguous — ask the AI to verify
           // against the description instead of trusting the name outright.
           borderline: m.confidence < AgentCoordinator.BORDERLINE_CONFIDENCE,
+          // Doppelgänger flag: a second known person sat within the ambiguity
+          // margin of the winner. Downstream this suppresses the sighting bump
+          // and renders as "one of A / B" instead of a confident name.
+          ambiguousWith: m.ambiguousWith
+            ? `${m.ambiguousWith.name}${m.ambiguousWith.relationship ? ` (${m.ambiguousWith.relationship})` : ""}`
+            : undefined,
         };
       }
       unknownCounter += 1;
@@ -10985,11 +11013,28 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     this.currentIdentifiedFacesAt = Date.now();
     this.send({ type: "people_identified", data: wire });
 
-    // Rate-limited sighting bumps for confidently-matched contacts only.
+    // Persist a compact per-batch match record. The [PEOPLE PRESENT] frame
+    // prompts are DB_NOISY_SECTIONS (never stored), so without this line a
+    // misidentification investigation has NO record of what the matcher
+    // actually claimed — name, distance, and reference count per face.
+    flowNote(
+      "COORDINATOR",
+      `FACE_MATCH: ${wire
+        .map((f, i) => {
+          const m = matches[i];
+          if (!f.matched || !m) return `[unknown q=${descriptors[i]?.quality?.toFixed(2) ?? "?"}]`;
+          return `[${f.name} ${(f.confidence * 100).toFixed(0)}% d=${m.distance.toFixed(3)} s=${f.sampleCount ?? 0}${f.borderline ? " BORDERLINE" : ""}${f.ambiguousWith ? ` AMBIGUOUS~${f.ambiguousWith} d2=${m.runnerUpDistance?.toFixed(3)}` : ""}${f.cameraRole ? ` ${f.cameraRole}-cam` : ""}]`;
+        })
+        .join(" ")}`,
+    );
+
+    // Rate-limited sighting bumps for confidently-matched contacts only. An
+    // AMBIGUOUS winner never bumps — recording a "sighting" of whichever
+    // lookalike scored a hair closer is how a false visit gets on the record.
     const now = Date.now();
     for (const f of wire) {
       if (!f.matched || f.entityType !== "contact" || !f.entityId) continue;
-      if (f.confidence < 0.4) continue;
+      if (f.confidence < 0.4 || f.ambiguousWith) continue;
       const last = this.lastSightingBumpAt.get(f.entityId) ?? 0;
       if (now - last < AgentCoordinator.SIGHTING_BUMP_INTERVAL_MS) continue;
       this.lastSightingBumpAt.set(f.entityId, now);
@@ -11211,20 +11256,49 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
 
   /** Resolve an Observer-supplied person name/role ("Mom", "Yael", a real name)
    *  to a known person. Case-insensitive: exact name first, then relationship,
-   *  then a contains-match. Returns null when nothing is a clear hit (we'd
-   *  rather not seed than seed the wrong person). */
+   *  then a contains-match — but a contains-match counts only when it is
+   *  UNIQUE: with several partial hits ("סבתא" against two grandmothers, a
+   *  shared surname across siblings) committing a biometric sample to
+   *  whichever listed first is exactly the lookalike poisoning this system
+   *  guards against. Returns null when nothing is a clear hit (we'd rather
+   *  not seed than seed the wrong person). */
   private resolvePersonByName(people: KnownPerson[], name: string): KnownPerson | null {
     const n = name.trim().toLowerCase();
     if (!n) return null;
-    return (
+    const exact =
       people.find(p => p.name.trim().toLowerCase() === n) ||
-      people.find(p => (p.relationship ?? "").trim().toLowerCase() === n) ||
-      people.find(p => {
-        const pn = p.name.trim().toLowerCase();
-        return pn.length >= 3 && (pn.includes(n) || n.includes(pn));
-      }) ||
-      null
-    );
+      people.find(p => (p.relationship ?? "").trim().toLowerCase() === n);
+    if (exact) return exact;
+    const contains = people.filter(p => {
+      const pn = p.name.trim().toLowerCase();
+      return pn.length >= 3 && (pn.includes(n) || n.includes(pn));
+    });
+    return contains.length === 1 ? contains[0] : null;
+  }
+
+  /**
+   * The Observer retracted an identification (update_context: misidentified) —
+   * the named person was reported present/named and is not actually there.
+   * Inverse of seedFaceFromObserver: resolve the name, then run the standard
+   * correction (penalize whichever fresh biometric match mis-fired, drop the
+   * person from the identified lists, notify the client). The retraction line
+   * itself reaches the agents/Monitor/log via the normal context flush.
+   */
+  private async retractIdentificationByName(name: string, description: string): Promise<void> {
+    if (!this.studentId || !name) return;
+    let people: KnownPerson[];
+    try {
+      people = await getKnownPeopleForStudent(this.studentId);
+    } catch (err) {
+      logLiveSession("IDENTITY_CORRECTION", `known-people lookup failed for retraction of "${name}": ${(err as Error).message}`);
+      return;
+    }
+    const target = this.resolvePersonByName(people, name);
+    if (!target) {
+      logLiveSession("IDENTITY_CORRECTION", `Observer retracted "${name}" but no known person matched — nothing to penalize.`);
+      return;
+    }
+    await this.correctMisidentification(target.type, target.id, `Observer retraction: ${description}`);
   }
 
   /**
@@ -11242,9 +11316,11 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     const lines = matched.map(v => {
       const conf = (v.confidence * 100).toFixed(0);
       const rel = v.relationship ? `, ${v.relationship}` : "";
+      // Sparse voice data cuts the same way as sparse face data: a single
+      // stored sample makes a weak match WEAK EVIDENCE, not excusably low.
       const samples = v.sampleCount ?? 0;
       const dataNote = samples > 0
-        ? ` [${samples} voice sample${samples === 1 ? "" : "s"} on file${samples <= 1 ? " — limited data, a low score is expected" : ""}]`
+        ? ` [${samples} voice sample${samples === 1 ? "" : "s"} on file${samples <= 1 ? " — weak evidence" : ""}]`
         : "";
       const hedge = v.borderline ? " (UNCERTAIN — confirm by what you see/hear before using the name)" : "";
       const desc = v.borderline && v.description ? ` On file: ${v.description}.` : "";
@@ -11272,9 +11348,12 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     const recentVoiceEarly = this.recentMatchedVoiceEmbeddings.get(key);
     const hasFace = !!recent && now - recent.at <= AgentCoordinator.RECENT_MATCH_TTL_MS;
     const hasVoice = !!recentVoiceEarly && now - recentVoiceEarly.at <= AgentCoordinator.RECENT_MATCH_TTL_MS;
+    // No fresh sample means nothing to PENALIZE — but the drop-from-lists below
+    // must still run: a correction that arrives past the sample TTL (the
+    // Observer often realizes late) has to stop the wrong name being acted on
+    // even when the offending embedding can no longer be traced.
     if (!hasFace && !hasVoice) {
-      logLiveSession("IDENTITY_CORRECTION", `No fresh face/voice match for ${key} — nothing to penalize.`);
-      return;
+      logLiveSession("IDENTITY_CORRECTION", `No fresh face/voice match for ${key} — dropping identity without penalizing.`);
     }
 
     let faceNote = "no recent face match";
@@ -11363,31 +11442,51 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       const conf = (f.confidence * 100).toFixed(0);
       const rel = f.relationship ? `, ${f.relationship}` : "";
       const isStudent = f.entityType === "student";
-      // Certainty depends on how much reference data backs the match, not just
-      // the score. A weak score off 0–1 samples is EXPECTED (we've barely seen
-      // this face) and shouldn't be read as evidence against identity; a weak
-      // score off many samples is genuinely meaningful.
+      // How much reference data backs the score — and it cuts OPPOSITE ways.
+      // For the STUDENT, a weak score off 0–1 samples is expected (we've barely
+      // seen this face) and is not evidence against them; the student branch
+      // below never hedges. For anyone ELSE the same sparseness is exactly the
+      // lookalike trap: one stored photo of a relative can sit near a family
+      // member's face, so a weak match against sparse data is LESS trustworthy,
+      // never more. (A grandmother with a single anchor "matching" the student
+      // at 3% is how a false presence got into permanent notes.)
       const samples = f.sampleCount ?? 0;
       const sparseData = samples <= 1;
       const dataNote = samples > 0
-        ? ` [${samples} reference${samples === 1 ? "" : "s"} on file${sparseData ? " — limited data, so a low score is expected" : ""}]`
+        ? ` [${samples} reference${samples === 1 ? "" : "s"} on file${
+            sparseData ? (isStudent ? " — limited data, so a low score is expected" : " — weak evidence") : ""
+          }]`
         : "";
+      // Doppelgänger tie (non-student): a second known person sat within the
+      // ambiguity margin — presenting either name as THE match is a coin flip
+      // between lookalike relatives. Render as an unresolved pair. Checked
+      // before the borderline branch: "too close to call" outranks "weak".
+      if (!isStudent && f.ambiguousWith) {
+        anyBorderline = true;
+        const desc = f.description ? ` On file for ${f.name}: ${f.description}.` : "";
+        return `- one of ${f.name}${rel} / ${f.ambiguousWith} — faces too similar to tell apart${where}${dataNote}. Do NOT use either name until you can verify.${desc}`;
+      }
       // Err toward the student: a student match is taken as the student even at
       // low confidence — the student is the device's default occupant, so we do
       // NOT hedge their identity. The UNCERTAIN caution exists only to stop us
       // greeting a stranger as a NAMED relative/caregiver, so it applies to
-      // non-student known people — AND only when we have enough data to trust a
-      // low score (with sparse data a weak match isn't real evidence either way).
-      if (!isStudent && f.borderline && !sparseData) {
+      // every borderline non-student match.
+      if (!isStudent && f.borderline) {
         anyBorderline = true;
         const desc = f.description ? ` On file: ${f.description}.` : "";
-        return `- ${f.name}${rel} — ${conf}% confidence (UNCERTAIN — verify before using the name)${where}${dataNote}.${desc}`;
+        return `- ${f.name}${rel} — ${conf}% confidence (UNCERTAIN — verify against the description before using the name; do NOT report them present on this match alone)${where}${dataNote}.${desc}`;
       }
       if (isStudent) {
+        // The default-occupant rule still wins a doppelgänger tie (the student
+        // is who we expect at the device), but the Observer should know a
+        // lookalike is also plausible before it CONFIRMS the identity.
+        const lookalike = f.ambiguousWith
+          ? ` (a lookalike is also plausible: ${f.ambiguousWith} — verify before confirming identity)`
+          : "";
         const hedge = f.confidence < AgentCoordinator.BORDERLINE_CONFIDENCE
           ? " (low-confidence match, but assume this IS the student)"
           : "";
-        return `- ${f.name}${rel} — ${conf}% confidence${hedge}${where} [THE STUDENT]${dataNote}`;
+        return `- ${f.name}${rel} — ${conf}% confidence${hedge}${where} [THE STUDENT]${dataNote}${lookalike}`;
       }
       if (!f.borderline) confidentOther = true;
       // Surface the on-file description on confident matches too — the Observer
@@ -11397,7 +11496,7 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       return `- ${f.name}${rel} — ${conf}% confidence${where}${dataNote}${desc}`;
     });
     const borderlineLine = anyBorderline
-      ? `\n(NOTE: an UNCERTAIN match means the face only loosely resembles the named person. Compare the on-file description to what you see. If it doesn't fit, treat them as unidentified rather than greeting the wrong person.)`
+      ? `\n(NOTE: an UNCERTAIN match means the face only loosely resembles the named person — family members often look alike. Compare the on-file description to what you see. If it doesn't fit — or you can't verify — treat them as unidentified rather than naming the wrong person, and never record them as present on the match alone.)`
       : "";
     // Identity default: assume the person at the device is the student unless
     // there is positive evidence otherwise — the student matched (handled

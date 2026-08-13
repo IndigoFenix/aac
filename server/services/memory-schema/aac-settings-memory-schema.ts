@@ -170,7 +170,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols", "dynamicBoardsEnabled",
     "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "selectionMethod", "restSpace",
     "signLanguage", "multiCameraMode",
-    "allowReadProgress", "allowReadReports", "allowNotes",
+    "allowReadProgress", "allowReadReports", "allowNotes", "autoAddContacts",
     "appConfig", "chatAgentPrompt", "autoAacPrompt", "seizureDetection",
   ]);
 
@@ -637,6 +637,16 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       type: "string",
       title: "Allow Notes",
       description: "AI can access and write student notes (true/false)",
+    },
+    // AI learning
+    autoAddContacts: {
+      id: "autoAddContacts",
+      type: "string",
+      title: "Learn New Contacts",
+      description:
+        "During AAC sessions the AI may create Student_Contacts entries for people it observes (true/false). " +
+        "When false it can still read and update existing contacts, but new people must be added from the " +
+        "Contacts panel. Contacts the AI does create are flagged for a caretaker to confirm.",
     },
     // Apps
     appConfig: {

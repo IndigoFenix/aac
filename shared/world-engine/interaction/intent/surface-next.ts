@@ -33,6 +33,7 @@
 import {
   canonicalVerb,
   LEXICON,
+  MODAL_VERBS,
   parseSentence,
   STATE_VERBS,
   type IntentFrame,
@@ -92,14 +93,16 @@ export interface SurfaceButton {
   weight: number;
 }
 
-/** A GROUP CONTROL (user decision): a ranked cluster of likely nouns rendered
+/** A GROUP CONTROL (user decision): a ranked cluster of likely words rendered
  *  as a chip that expands in place — it opens options, it never adds a word.
- *  `kind` says what clustered it: an object property ("food"), or a noun kind
- *  ("creatures"/"places"/"things"). Members are the FULL ranked expansion —
- *  a filter view, so inline words may repeat inside their group. */
+ *  `kind` says what clustered it: an object property ("food"), a noun kind
+ *  ("creatures"/"places"/"things"), or an ACTION category ("do"/"play"/
+ *  "make"/"get" — the verb families a modal desire opens). Members are the
+ *  FULL ranked expansion — a filter view, so inline words may repeat inside
+ *  their group. */
 export interface SurfaceGroup {
   id: string;
-  kind: "property" | "kind";
+  kind: "property" | "kind" | "verb";
   role: SlotNeed;
   weight: number;
   members: SurfaceButton[];
@@ -258,6 +261,40 @@ const OBJECT_OPTIONAL = new Set([
 ]);
 /** High-frequency opener verbs (concept-parser.md "core 40"). */
 const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play"];
+
+/**
+ * THE ACTION CATEGORIES a modal desire opens ("i_me + want + ___" — user
+ * decision 2026-08-12): a desire is not only for THINGS. "I want to eat",
+ * "I need to go" are first-page sentences, and the verb vocabulary that can
+ * follow a desire is far too broad for any grid — so the breadth ships as
+ * GROUP chips, one per broad family of doing, while the few actions this
+ * child actually reaches for ride inline (the frequency prior, personalized
+ * by the learned layer).
+ *
+ * Ids are lang-lexicon HEADS on purpose: the adapter labels a chip through
+ * `baseWord`, so [do]/[play]/[make]/[get] localize with no new vocabulary.
+ * Members are canonical family heads only (the synonym-collapse law) — the
+ * full families stay reachable through the verb tab. `stop` is deliberately
+ * absent: beside a modal it parses as a PHASE operator, not a wish.
+ *
+ * These cluster WORDS, never scene state: whether an action makes sense for
+ * the current body (a bodiless spirit cannot brush teeth) is the host's
+ * business when the sentence lands — out of the game the builder must still
+ * offer the whole set, because "I want to sleep" is a sentence a student
+ * needs at school far more often than in any game.
+ */
+const ACTION_CATEGORIES: readonly { id: string; verbs: readonly string[] }[] = [
+  // Everyday activities of one's own body — the self-care set plus movement.
+  { id: "do", verbs: ["eat", "drink", "sleep", "rest", "sit", "wake_up", "brush_teeth", "wear", "wash", "tidy", "go", "stay", "turn", "return"] },
+  // Doing things WITH people.
+  { id: "play", verbs: ["play", "talk", "help", "hug", "show", "share", "teach", "follow", "fight"] },
+  // Making and working.
+  { id: "make", verbs: ["make", "build", "fix", "break", "dig", "plant", "cut", "color", "fill", "empty", "heat", "cook"] },
+  // Things changing hands and states.
+  { id: "get", verbs: ["get", "give", "put", "drop", "throw", "open", "shut", "carry", "push", "pull", "trade"] },
+];
+/** How many actions ride INLINE beside the noun bands after a modal verb. */
+const MODAL_INLINE_ACTIONS = 5;
 
 /** TRANSPORT VERBS — the ones that MOVE A THING to an endpoint. Their `to` does
  *  not have to point at a body: "bring + wood + to + yard" ends at a place and
@@ -504,6 +541,9 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
   /** §3.1: the property group the composed verb pre-loads (set once a verb is
    *  in play; the board opens that sub-tab). */
   let subTab: ObjectProperty | undefined;
+  /** The modal ACTION PATH is open ("i_me + want + ___") — finalize adds the
+   *  action-category chips beside the noun groups. */
+  let actionBand = false;
   const wants = (property: ObjectProperty) => (n: SurfaceNoun) =>
     (n.properties ?? []).includes(property);
   /** Words already composed never re-surface — except joiners/quantities,
@@ -780,12 +820,42 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       if (verb === "make" || verb === "build") {
         addNouns("object", (nn) => isMakeable(headOf(nn.symbol)), verb === "make" ? 7 : 4);
       }
-      addNouns("object", (nn) => affordsVerb(nn, verb), 6);
+      // The desire verbs share ONE affordance channel: the library authors
+      // `want` and only `want`, so a noun wantable under "want" leads under
+      // "need"/"like" too — otherwise the need board demoted every noun and
+      // read backwards from the want board beside it.
+      addNouns("object", (nn) => affordsVerb(nn, MODAL_VERBS.has(verb) ? "want" : verb), 6);
       if (verb === "play") addNouns("object", (nn) => nn.kind === "creature", 3); // play WITH someone
       addNouns("object", () => true);
       if (verb === "help" || verb === "hug" || verb === "talk") {
         add("i_me", "object", 4);
         add("you", "object", 2);
+      }
+      // THE ACTION PATH (user decision 2026-08-12): after a BARE desire verb
+      // ("i_me + want + ___") DOING is offered as readily as having — the
+      // parser has read "want + play" as a modal wish all along, but the
+      // board never suggested it, so the sentence existed only for a child
+      // who already knew it did. The things a child wants still LEAD (the
+      // noun bands above); a handful of most-likely actions ride inline —
+      // picked by the child's own habit (pair/use counts), then the
+      // frequency prior — and the full breadth ships as the action-category
+      // chips finalize appends. Once an inner verb lands ("want + eat") the
+      // frame carries `modal` and this stage stands down in favor of that
+      // verb's own bands.
+      if (MODAL_VERBS.has(verb) && !frame.modal) {
+        openRole("verb");
+        const wantable = ACTION_CATEGORIES.flatMap((c) => c.verbs);
+        const habit = (v2: string): number =>
+          (lastHead !== undefined ? (pairsN.get(`${lastHead}>${v2}`) ?? 0) * 8 : 0) + (usesN.get(v2) ?? 0);
+        const likely = [...wantable].sort(
+          (x, y) =>
+            habit(y) - habit(x) ||
+            freqRank(x) - freqRank(y) ||
+            (lexOrder.get(x) ?? 0) - (lexOrder.get(y) ?? 0),
+        );
+        likely.slice(0, MODAL_INLINE_ACTIONS).forEach((v2, i) => add(v2, "verb", 12 - i));
+        for (const v2 of wantable) add(v2, "verb");
+        actionBand = true;
       }
     }
   } else if (verb && hasObject && !hasTarget) {
@@ -960,7 +1030,11 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     const categories = openCategories();
     return {
       buttons: chosen,
-      groups: buildGroups(seen, poolAllNouns, byRank),
+      // The noun clusters lead (things a child wants ARE the first reading);
+      // the action band rides behind them as its OWN band — it never competes
+      // for the noun chips' MAX_GROUPS budget, so [food] and [do] can stand
+      // on one board.
+      groups: [...buildGroups(seen, poolAllNouns, byRank), ...buildActionGroups(seen, byRank)],
       typeChips: showTypeChips ? [...TYPE_CHIPS] : [],
       categories,
       complete: isComplete(),
@@ -1031,6 +1105,37 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     return groups.slice(0, MAX_GROUPS);
   }
 
+  /** THE ACTION-CATEGORY CHIPS (the modal desire's breadth): one chip per
+   *  broad family of doing, membership from this call's own candidate
+   *  buttons — so the learned layer's bonuses rank each expansion, exactly
+   *  as they rank the grid. The face is simply the top-ranked members: no
+   *  noun prototype applies to verbs, and the actions a child reaches for
+   *  most ARE the picture of the category. */
+  function buildActionGroups(
+    chosen: Set<string>,
+    byRank: (a: SurfaceButton, b: SurfaceButton) => number,
+  ): SurfaceGroup[] {
+    if (!actionBand) return [];
+    const out: SurfaceGroup[] = [];
+    for (const c of ACTION_CATEGORIES) {
+      const members = c.verbs
+        .map((v2) => buttons.get(v2))
+        .filter((b): b is SurfaceButton => b !== undefined)
+        .sort(byRank);
+      if (members.length < 2) continue;
+      if (members.every((m) => chosen.has(m.symbol))) continue; // a chip must open something new
+      out.push({
+        id: c.id,
+        kind: "verb",
+        role: "verb",
+        weight: members[0]!.weight,
+        members,
+        exemplars: members.slice(0, GROUP_EXEMPLARS),
+      });
+    }
+    return out;
+  }
+
   function openCategories(): string[] {
     const cats = new Set<string>();
     for (const b of buttons.values()) {
@@ -1064,6 +1169,14 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
         return !!(frame.object || frame.subject || frame.modifiers.length || frame.quantity);
       case "request":
       case "offer":
+        // A MODAL DESIRE TO ACT ("i_me + want + play") is sayable exactly
+        // when its inner verb would be complete as a command: bare for the
+        // self/movement set, else once its object or target lands
+        // ("want + get + ball"). The thing-request reading keeps its old
+        // law — no object, no sentence.
+        if (frame.modal && frame.verb) {
+          return !!frame.object || !!frame.target || OBJECT_OPTIONAL.has(frame.verb);
+        }
         return !!frame.object;
       case "command": {
         const v = frame.verb;

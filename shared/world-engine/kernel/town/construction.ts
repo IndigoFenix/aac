@@ -162,6 +162,12 @@ export interface PendingAnnex {
    *  accrues only while builders stand at the site (more builders bank
    *  faster, capped); the room rises at `labor >= buildDays`. Absent = 0. */
   labor?: number;
+  /** ⚖️ A PLAYER SPOKE THIS ROOM (`FoundedBuilding.spoken`'s twin, surplus
+   *  control 2026-08-12): the row came from `orderAnnex` / `orderWorkRoom` /
+   *  a lit growth area, not from the daily prosperity spend. Absent =
+   *  AUTOMATED (every growth row, every save before this field), and an
+   *  automated row's staging draws only the COMMONS SPARE. */
+  spoken?: boolean;
 }
 
 /** The room kind a pending designation raises — the interior candidate's
@@ -269,6 +275,36 @@ export interface RefineOrder {
   laborStartDay?: number;
   /** BANKED LABOR, in build-days (the ⑥ pair, unchanged semantics). */
   labor?: number;
+  /**
+   * ⚖️ WHOSE ORDER BOOK THIS ROW SITS IN (order-scoping law ①, 2026-08-12).
+   *
+   * `"house:<index>"` = a HOUSEHOLD's own mill queue; absent = the town/civic
+   * book (every site bill, every ambient growth row, and every save written
+   * before this field). The chain keeps ONE standing refine order per
+   * (scope, refined head) — so a family short of 4 blocks posts its OWN
+   * 4-block order at its OWN bench instead of reading the town's 198-block
+   * workshop bill as "already covered" and waiting behind it (measured: the
+   * GL closing sweep, `fx-doll-bench-long`).
+   *
+   * 🚨 SCOPES CONTEND FOR MATERIAL, NEVER FOR TURNS. There is no cross-scope
+   * priority anywhere: both books post real orders, and the raws they both
+   * want are arbitrated by the reservation ledger exactly as two sites are.
+   */
+  scope?: string;
+  /**
+   * ⚖️ THE BILL THAT ASKED FOR IT WAS SPOKEN (surplus control, user addendum
+   * 2026-08-12). A refine order is never spoken in its own right — nobody says
+   * "mill four blocks" — so it INHERITS the flag from the order that chained
+   * it: a spoken `make workbench` starving on blocks posts a spoken mill, the
+   * town's ambient site posts an automated one. Absent = AUTOMATED (every
+   * growth row, every save before this field).
+   *
+   * WHAT IT BUYS, and the only thing it buys: the raw hauls that stage this
+   * mill may draw the COMMONS RESERVE (`commonsReserveOf`). An automated mill
+   * draws SPARE ONLY, so the town's own appetite can never leave the shelf
+   * bare for the family that spoke.
+   */
+  spoken?: boolean;
 }
 export type ConstructionOrder = FoundedOrder | RoomOrder | DemolishOrder | RefineOrder;
 
@@ -583,13 +619,22 @@ export interface FoundedBuilding {
    *  walls) and the deconstruction refund's glyph. Absent = legacy /
    *  unrecorded (reads as wood). */
   material?: string;
+  /** ⚖️ A PLAYER SPOKE THIS ONE (order-scoping law ①, 2026-08-12): the row
+   *  came from `orderBuild`, not from ambient growth. Within ONE scope a
+   *  spoken order outranks an automated one, and the only lever the town
+   *  scope has is the shared crew — `crewShareOf` pours the hand pool into
+   *  spoken rows first. Absent = automated (every growth row, every save
+   *  written before this field). NEVER a cross-scope priority: a household's
+   *  book is its own list, and the two contend for MATERIAL, not for turns. */
+  spoken?: boolean;
 }
 
 /** A founding candidate — a FoundedBuilding minus the ordinal/clock fields
  *  (assigned when the order is accepted). */
 export type FoundingCandidate = Omit<
   FoundedBuilding,
-  "ord" | "startedDay" | "buildDays" | "completed" | "costs" | "pile" | "laborStartDay" | "material"
+  | "ord" | "startedDay" | "buildDays" | "completed" | "costs" | "pile" | "laborStartDay"
+  | "material" | "spoken"
 >;
 
 /** A standing MAKE-ORDER (pipeline ③), one per house. The job carries a
@@ -622,6 +667,31 @@ export interface CraftJob {
    *  while somebody is there to do it, so an absence shifts the finish line
    *  rather than counting toward it. */
   lastWorkedAt?: number;
+  /**
+   * 🚨 WHO COMMISSIONED IT — the stock endpoint the finished piece is OWED to
+   * (`bfurn:<buildingKey>`, a shell's delivery pile). Absent = the house made
+   * it for itself (every player-spoken make, every program craft, every save
+   * before this field), and the piece stays where it was made.
+   *
+   * WHY THE JOB HAS TO REMEMBER. `stepShellPrograms` designates a craft at a
+   * NEIGHBOURING household and then forgets it asked: the piece lands in that
+   * household's cupboard (unwatched) or on its floor (watched), and NEITHER is
+   * reachable by the shell's haul — `siteMaterialSources` sees container
+   * stacks only, and `mayUse` refuses another household's boxes outright. The
+   * shell's own re-ask then answers `"held"` (`buildingUnits(…,"anywhere")`
+   * sees the piece perfectly well) and waits for a delivery nobody scheduled,
+   * forever. Recording the commission is what closes the loop: the maker
+   * SENDS it, the `inbound` test sees the haul, and the two sides finally
+   * mean the same thing by "one exists".
+   */
+  for?: string;
+  /** ⚖️ A PLAYER SPOKE THIS ONE (order-scoping law ①, 2026-08-12) — a `make`
+   *  order, or a row popped off the house's spoken waiting line. Absent =
+   *  AUTOMATED (the program-fulfilment craft, the workshop's daily restock
+   *  rotation, every save before this field). Within the household scope a
+   *  spoken order outranks an automated one: it takes the slot, and an
+   *  automated job that has not yet begun labour yields it. */
+  spoken?: boolean;
 }
 
 /** A QUEUED make-order (phase 4 — full craft queueing): what to make,
@@ -1275,23 +1345,30 @@ export const MAX_ANNEXES = 3;
  * partition and nothing else, so subdividing a shell is now properly the
  * cheap way to get a room — which is what it is.
  */
-export function annexCosts(candidate: AnnexCandidate): Record<string, number> {
+export function annexCosts(candidate: AnnexCandidate, conversionDial = 1): Record<string, number> {
+  void conversionDial; // ⚖️ INERT (S3 review): bills are dial-free — conversion applies only at effectiveInPerOut/par/acres
   return blockCosts(annexBill(candidate));
 }
 
 /** {@link annexCosts} for an INTERIOR cut — the partition alone. */
-export function interiorCosts(spec: Omit<InteriorSpec, "ord">): Record<string, number> {
+export function interiorCosts(
+  spec: Omit<InteriorSpec, "ord">,
+  conversionDial = 1,
+): Record<string, number> {
+  void conversionDial; // ⚖️ INERT (S3 review): bills are dial-free
   return blockCosts(partitionBill(spec));
 }
 
 /** THE ORDER-TIME BILL for either kind of room the stake path accepts. An
  *  outward annex carries a `side` (which wall it shares with the house); an
  *  interior cut carries a `hostId` (whose floor it is taken out of) — the one
- *  discriminator, so a caller holding the union never has to know which. */
+ *  discriminator, so a caller holding the union never has to know which.
+ *  `conversionDial` — see `blockCosts`; default 1, byte-identical. */
 export function roomOrderCosts(
   candidate: AnnexCandidate | InteriorCandidate,
+  conversionDial = 1,
 ): Record<string, number> {
-  return "side" in candidate ? annexCosts(candidate) : interiorCosts(candidate);
+  return "side" in candidate ? annexCosts(candidate, conversionDial) : interiorCosts(candidate, conversionDial);
 }
 
 /**
@@ -1306,7 +1383,8 @@ export function roomOrderCosts(
  * base room and cutting it again pays and refunds the same partition, so the
  * pair is a wash instead of a block mint.
  */
-export function baseRoomCosts(rect: { w: number; h: number }): Record<string, number> {
+export function baseRoomCosts(rect: { w: number; h: number }, conversionDial = 1): Record<string, number> {
+  void conversionDial; // ⚖️ INERT (S3 review): bills are dial-free
   return blockCosts(partitionBill({ u0: 0, u1: rect.w, v0: 0, v1: rect.h }));
 }
 
@@ -1316,6 +1394,10 @@ export function baseRoomCosts(rect: { w: number; h: number }): Record<string, nu
  * partition is the floor: no legal cut is smaller, so a builder who cannot
  * afford this cannot afford any room, and one who can is offered the
  * enumeration and gets a NAMED shortfall on whichever they pick.
+ *
+ * ⚖️ S&D S3 — a MODULE CONSTANT, computed once at the real (dial-1) anchor;
+ * `blockCosts`'s own doc records this as the deliberate, safe-direction
+ * residual (an OVER-estimate at dial > 1, never an under-estimate).
  */
 export const MIN_ROOM_COSTS: Readonly<Record<string, number>> = blockCosts(
   partitionBill({ u0: 0, u1: 1, v0: 0, v1: 1 }),
@@ -2361,6 +2443,38 @@ const CLUSTER_OF_ROOM: Readonly<Record<string, AnnexCluster>> = Object.fromEntri
   Object.entries(ANNEX_ROOM_KIND).map(([cluster, kind]) => [kind, cluster as AnnexCluster]),
 );
 
+/**
+ * ⚖️ THE BEDROOM STANDARD (growth-motive law ②, S&D S1) — souls one sleep
+ * cell houses without crowding. The want above it is a REAL unmet need; below
+ * it there is nothing to want, however rich the household.
+ *
+ * 2 is the ordinary crowding standard (a couple, or two children, per room).
+ * Note what it derives, and that it is a derivation and not a coincidence:
+ * `HOUSEHOLD` = 5 souls ⇒ ⌈5/2⌉ = 3 bedrooms, which is exactly the constant
+ * `nextAnnexWant` used to ASSERT. A full household therefore wants the same
+ * three rooms it always did; a SHRUNKEN one (a family with excluded members,
+ * a newly-admitted small household) now stops sooner, and a GROWN one
+ * (endogenous births) asks for a fourth. That is the whole point: the ladder
+ * stopped being a number and became a reading.
+ */
+export const SOULS_PER_BEDROOM = 2;
+
+/** ⚖️ WHAT A HOUSEHOLD IS LIVING WITH (S&D S1) — the occupancy/pressure
+ *  reading `nextAnnexWant` scores its wants against. Every field OPTIONAL and
+ *  every absence meaning "no reading, keep the historical want", so a caller
+ *  that knows only its soul count says only that. */
+export interface HouseOccupancy {
+  /** Souls sleeping in this house (HOUSEHOLD minus authored exclusions, plus
+   *  whatever the population model has since done to it). */
+  souls: number;
+  /** How full the household's OWN containers sit, 0..1+ (1 = no room left).
+   *  A store room is wanted when the boxes are full, not on principle. */
+  storagePressure?: number;
+  /** Craft work the household has in hand with nowhere to bench it (>0 wants
+   *  a workshop). */
+  craftPressure?: number;
+}
+
 /** The next annex CLUSTER a house wants, from its realized plan — ORDERED
  *  programs first (pipeline ④ persistent wants: a standing want is raised
  *  before any default differentiation), then the unmet occupant program (a
@@ -2370,10 +2484,23 @@ const CLUSTER_OF_ROOM: Readonly<Record<string, AnnexCluster>> = Object.fromEntri
  *  PHASE 4: this used to be documented as "a demolished programmed room
  *  re-rises". It no longer does — `removeProgram` drops the row at the
  *  demolition/empty/break commit, so a house never re-orders what the player
- *  tore out. The precedence over the rows it IS given is unchanged. */
+ *  tore out. The precedence over the rows it IS given is unchanged.
+ *
+ *  ⚖️ S&D S1 — `occupancy` REPLACES THE FIXED CHECKLIST (growth-motive law ②:
+ *  "growth happens due to unfulfilled needs"). The sleep want was
+ *  `bedrooms.length < 3`, a number that made every house on the map want a
+ *  third bedroom forever, whoever lived in it. Supplied, it becomes the
+ *  BEDROOM STANDARD over the real soul count, and the store/workshop
+ *  differentiations become need-bound too. The KITCHEN want stays
+ *  unconditional on purpose: a household cooks every day, so a house without
+ *  one has a standing unmet need and needs no pressure reading to prove it.
+ *
+ *  ABSENT ⇒ the shipped ladder, clause for clause — every worldgen caller,
+ *  every fixture and every abstract twin is byte-identical. */
 export function nextAnnexWant(
   plan: HouseRoomPlan,
   programs?: ReadonlyArray<{ room: string }>,
+  occupancy?: HouseOccupancy,
 ): AnnexCluster | null {
   if (programs) {
     for (const p of programs) {
@@ -2382,10 +2509,16 @@ export function nextAnnexWant(
       if (!plan.rooms.some((r) => r.kind === p.room)) return cluster;
     }
   }
-  if (plan.bedrooms.length < 3) return "sleep";
+  const crowded = occupancy
+    ? plan.bedrooms.length === 0 ||
+      occupancy.souls > plan.bedrooms.length * SOULS_PER_BEDROOM
+    : plan.bedrooms.length < 3;
+  if (crowded) return "sleep";
   if (!plan.rooms.some((r) => r.kind === "kitchen")) return "kitchen";
-  if (!plan.rooms.some((r) => r.kind === "store")) return "store";
-  if (!plan.rooms.some((r) => r.kind === "workshop")) return "workshop";
+  const wantsStore = (occupancy?.storagePressure ?? 1) >= 1;
+  if (wantsStore && !plan.rooms.some((r) => r.kind === "store")) return "store";
+  const wantsShop = (occupancy?.craftPressure ?? 1) > 0;
+  if (wantsShop && !plan.rooms.some((r) => r.kind === "workshop")) return "workshop";
   return null;
 }
 
@@ -2407,6 +2540,14 @@ export function nextAnnexWant(
  * `busy` is ground already spoken for by a live designation — the caller's
  * pending sites. Without it the same house would re-order its annex every
  * day while the first one is still gathering materials.
+ *
+ * ⚖️ SURPLUS CONTROL (user addendum 2026-08-12: "the town's own demands are
+ * exceeding its capacity … patchable with a simple surplus control").
+ * `opts.canAfford` is the caller's SPARE test over the candidate's own bill,
+ * asked BEFORE the threshold is spent — an ambient room the commons cannot
+ * cover out of surplus is simply not ordered today, and the household keeps
+ * its banked prosperity for a day when it can. Absent ⇒ no test, which is
+ * every pre-patch caller and every test fixture, byte-for-byte.
  */
 export function constructionStep(
   center: { x: number; y: number },
@@ -2415,8 +2556,16 @@ export function constructionStep(
   signalsOf: (houseIndex: number) => ConstructionSignal[],
   day: number,
   busy: ReadonlyArray<Rect> = [],
+  gates: {
+    canAfford?: (buildingKey: string, candidate: AnnexCandidate) => boolean;
+    /** ⚖️ S&D S1 — the household's OCCUPANCY reading, so its want is a need
+     *  and not a checklist (`nextAnnexWant`). Absent (or an absent answer for
+     *  one house) ⇒ the historical ladder for that house. */
+    occupancyOf?: (houseIndex: number) => HouseOccupancy | undefined;
+  } = {},
 ): ConstructionRequest[] {
   void day;
+  const canAfford = gates.canAfford;
   const rects: Rect[] = [
     ...plan.houses.map((h) => ({ x: center.x + h.dx, y: center.y + h.dy, w: h.w, h: h.h })),
     ...plan.works.map((w) => ({ x: center.x + w.dx, y: center.y + w.dy, w: w.w, h: w.h })),
@@ -2451,12 +2600,17 @@ export function constructionStep(
     if (designated.has(key)) continue; // its last order is still being built
     const delta = deltas.get(key);
     const housePlan = houseRoomPlan(center, e.h, delta);
-    const want = nextAnnexWant(housePlan, delta?.programs);
+    const want = nextAnnexWant(housePlan, delta?.programs, gates.occupancyOf?.(e.h.index));
     if (!want) continue; // content — prosperity keeps banking harmlessly
     const neighbors = rects.filter((_, ri) => ri !== e.i);
     const opts = annexOptions(center, e.h, housePlan, neighbors, delta, want);
     if (!opts.length) continue; // out of ground — try the next-richest
     const candidate = opts[0]!;
+    // ⚖️ SPARE ONLY, and BEFORE the spend: an ambient room whose bill would
+    // eat into the commons reserve waits for a richer day. The threshold is
+    // untouched, so nothing is lost by waiting (contrast the shipped path,
+    // which spent it and staked a plot that could not be stocked).
+    if (canAfford && !canAfford(key, candidate)) continue;
     deltas.mutate(key, (d) => {
       d.prosperity = Math.max(0, (d.prosperity ?? 0) - PROSPERITY_THRESHOLD);
     });

@@ -159,144 +159,182 @@ async function contactToMemory(row: StudentContact): Promise<ContactMemoryValue>
 // Student_Contacts (map) — DB operations
 // ============================================================================
 
-const studentContactsOps: MemoryDBOperations<ContactMemoryValue> = {
-  list: async (ctx, { offset, limit }) => {
-    const studentId = ctx.all.studentId;
-    if (!studentId) throw new Error("studentId required for Student_Contacts");
+/** How a given consumer of the Student_Contacts field may write to the table. */
+export interface StudentContactsFieldOptions {
+  /**
+   * May the AI CREATE contacts through this field? The AAC path passes the
+   * student's `aacSettings.autoAddContacts`; when false, `add` is refused with
+   * an explanation instead of silently landing an in-memory-only row.
+   */
+  allowAdd?: boolean;
+  /**
+   * Flag rows created through this field as `autoAdded` — set on the AAC
+   * (student-session) path, where nobody was present to vet the person. The
+   * clinician client lists those separately for confirm-or-delete.
+   */
+  markAutoAdded?: boolean;
+}
 
-    // Defense-in-depth: refuse the read when the requester has no resolved
-    // visibility ctx. Controllers verify student access before this runs, but
-    // a cross-student read here would expose phone, email, biometric
-    // descriptors, and identifying features.
-    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
-    if (!accessCtx) return { items: [], total: 0, keys: [] };
-    if (accessCtx.kind === "student" && accessCtx.studentId !== studentId) {
-      return { items: [], total: 0, keys: [] };
-    }
+function makeStudentContactsOps(
+  opts: StudentContactsFieldOptions,
+): MemoryDBOperations<ContactMemoryValue> {
+  const allowAdd = opts.allowAdd !== false;
+  return {
+    list: async (ctx, { offset, limit }) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required for Student_Contacts");
 
-    const rows = await db
-      .select()
-      .from(studentContacts)
-      .where(
-        and(
-          eq(studentContacts.studentId, studentId),
-          eq(studentContacts.isActive, true),
-        ),
-      )
-      .orderBy(asc(studentContacts.name))
-      .offset(offset)
-      .limit(limit);
+      // Defense-in-depth: refuse the read when the requester has no resolved
+      // visibility ctx. Controllers verify student access before this runs, but
+      // a cross-student read here would expose phone, email, biometric
+      // descriptors, and identifying features.
+      const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+      if (!accessCtx) return { items: [], total: 0, keys: [] };
+      if (accessCtx.kind === "student" && accessCtx.studentId !== studentId) {
+        return { items: [], total: 0, keys: [] };
+      }
 
-    const items = await Promise.all(rows.map(contactToMemory));
-    const keys = rows.map((r) => contactKey(r));
+      const rows = await db
+        .select()
+        .from(studentContacts)
+        .where(
+          and(
+            eq(studentContacts.studentId, studentId),
+            eq(studentContacts.isActive, true),
+          ),
+        )
+        .orderBy(asc(studentContacts.name))
+        .offset(offset)
+        .limit(limit);
 
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(studentContacts)
-      .where(
-        and(
-          eq(studentContacts.studentId, studentId),
-          eq(studentContacts.isActive, true),
-        ),
-      );
+      const items = await Promise.all(rows.map(contactToMemory));
+      const keys = rows.map((r) => contactKey(r));
 
-    return { items, total: Number(count ?? 0), keys };
-  },
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(studentContacts)
+        .where(
+          and(
+            eq(studentContacts.studentId, studentId),
+            eq(studentContacts.isActive, true),
+          ),
+        );
 
-  add: async (ctx, value) => {
-    const studentId = ctx.all.studentId;
-    if (!studentId) throw new Error("studentId required for contact creation");
+      return { items, total: Number(count ?? 0), keys };
+    },
 
-    const insert: InsertStudentContact = {
-      studentId,
-      name: value.name,
-      relationship: value.relationship ?? undefined,
-      role: (value.role as any) ?? undefined,
-      customRole: value.customRole ?? undefined,
-      organization: value.organization ?? undefined,
-      contactEmail: value.contactEmail ?? undefined,
-      contactPhone: value.contactPhone ?? undefined,
-      contextNotes: value.contextNotes ?? undefined,
-      linkedUserId: value.linkedUserId ?? null,
-      linkedStudentId: value.linkedStudentId ?? null,
-    };
-    const created = await createContact(insert);
+    add: async (ctx, value) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required for contact creation");
 
-    activityLogService.log({
-      userId: ctx.all.userId,
-      instituteId: ctx.all.instituteId,
-      eventType: "create",
-      subjectType1: "student_contact",
-      subjectId1: created.id,
-      details: { studentId },
-      isAiInitiated: true,
-    });
+      // Contact learning is off for this student. Throwing (rather than
+      // omitting the op) is deliberate: the bridge falls through to the
+      // in-memory processor when `add` is absent, which would leave a phantom
+      // contact in the session's memory values that never reached the table.
+      if (!allowAdd) {
+        throw new Error(
+          "Adding contacts is disabled for this student. Ask a caretaker to add this person " +
+            "from the Contacts panel. You may still update contacts that already exist.",
+        );
+      }
 
-    return contactToMemory(created);
-  },
+      const insert: InsertStudentContact = {
+        studentId,
+        name: value.name,
+        relationship: value.relationship ?? undefined,
+        role: (value.role as any) ?? undefined,
+        customRole: value.customRole ?? undefined,
+        organization: value.organization ?? undefined,
+        contactEmail: value.contactEmail ?? undefined,
+        contactPhone: value.contactPhone ?? undefined,
+        contextNotes: value.contextNotes ?? undefined,
+        linkedUserId: value.linkedUserId ?? null,
+        linkedStudentId: value.linkedStudentId ?? null,
+        // Set from the field options, never from `value` — the AI cannot
+        // choose whether its own creation counts as reviewed.
+        autoAdded: opts.markAutoAdded === true,
+      };
+      const created = await createContact(insert);
 
-  update: async (ctx, key, value) => {
-    const studentId = ctx.all.studentId;
-    if (!studentId) throw new Error("studentId required for contact update");
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "create",
+        subjectType1: "student_contact",
+        subjectId1: created.id,
+        details: { studentId, autoAdded: created.autoAdded },
+        isAiInitiated: true,
+      });
 
-    const row = await findContactByKey(studentId, String(key));
-    if (!row) throw new Error(`Contact with key ${key} not found`);
+      return contactToMemory(created);
+    },
 
-    // Strip read-only biometric descriptors — the AI must not edit those here.
-    const updates: UpdateStudentContact = {};
-    for (const k of [
-      "name",
-      "relationship",
-      "role",
-      "customRole",
-      "organization",
-      "contactEmail",
-      "contactPhone",
-      "contextNotes",
-      "linkedUserId",
-      "linkedStudentId",
-    ] as const) {
-      if (k in value) (updates as any)[k] = (value as any)[k];
-    }
+    update: async (ctx, key, value) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required for contact update");
 
-    const updated = await updateContact(row.id, updates);
-    if (!updated) throw new Error(`Contact update failed for key ${key}`);
+      const row = await findContactByKey(studentId, String(key));
+      if (!row) throw new Error(`Contact with key ${key} not found`);
 
-    activityLogService.log({
-      userId: ctx.all.userId,
-      instituteId: ctx.all.instituteId,
-      eventType: "update",
-      subjectType1: "student_contact",
-      subjectId1: updated.id,
-      details: { studentId },
-      isAiInitiated: true,
-    });
+      // Strip read-only biometric descriptors — the AI must not edit those here.
+      // `autoAdded` is absent by design: only a human confirming the contact in
+      // the Contacts panel clears that flag.
+      const updates: UpdateStudentContact = {};
+      for (const k of [
+        "name",
+        "relationship",
+        "role",
+        "customRole",
+        "organization",
+        "contactEmail",
+        "contactPhone",
+        "contextNotes",
+        "linkedUserId",
+        "linkedStudentId",
+      ] as const) {
+        if (k in value) (updates as any)[k] = (value as any)[k];
+      }
 
-    return contactToMemory(updated);
-  },
+      const updated = await updateContact(row.id, updates);
+      if (!updated) throw new Error(`Contact update failed for key ${key}`);
 
-  delete: async (ctx, key) => {
-    const studentId = ctx.all.studentId;
-    if (!studentId) return;
-    const row = await findContactByKey(studentId, String(key));
-    if (!row) return;
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "update",
+        subjectType1: "student_contact",
+        subjectId1: updated.id,
+        details: { studentId },
+        isAiInitiated: true,
+      });
 
-    await deleteContact(row.id); // soft-delete
-    activityLogService.log({
-      userId: ctx.all.userId,
-      instituteId: ctx.all.instituteId,
-      eventType: "delete",
-      subjectType1: "student_contact",
-      subjectId1: row.id,
-      details: { studentId },
-      isAiInitiated: true,
-    });
-  },
+      return contactToMemory(updated);
+    },
 
-  fromDB: (record) => record,
+    delete: async (ctx, key) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) return;
+      const row = await findContactByKey(studentId, String(key));
+      if (!row) return;
 
-  getDBKey: (value) => (value.id ? `${shortId(value.id)}_${sanitize(value.name)}` : sanitize(value.name)),
-};
+      await deleteContact(row.id); // soft-delete
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "delete",
+        subjectType1: "student_contact",
+        subjectId1: row.id,
+        details: { studentId },
+        isAiInitiated: true,
+      });
+    },
+
+    fromDB: (record) => record,
+
+    getDBKey: (value) =>
+      value.id ? `${shortId(value.id)}_${sanitize(value.name)}` : sanitize(value.name),
+  };
+}
 
 // ============================================================================
 // Student_Contacts — field schema
@@ -347,7 +385,8 @@ const contactValueSchema: AgentMemoryFieldObjectWithDB = {
         "they interact with the student. Record ONLY information that is directly relevant to this " +
         "person's role in the student's life. Do NOT record overheard background conversations, " +
         "ambient remarks, or any third-party information that does not concern this person's " +
-        "relationship with the student.",
+        "relationship with the student. Record a visit or presence only from a VERIFIED " +
+        "identification — never from an uncertain face match or the student's own greeting presses.",
       opened: true,
     },
     linkedUserId: {
@@ -376,26 +415,47 @@ const contactValueSchema: AgentMemoryFieldObjectWithDB = {
   required: ["name"],
 };
 
-export const STUDENT_CONTACTS_FIELD: AgentMemoryFieldMapWithDB = {
-  id: "Student_Contacts",
-  type: "map",
-  title: "Student Contacts",
-  description:
-    "People in the student's life — parents, siblings, classmates, therapists, teachers, " +
-    "team members. THIS is the right place to record relationships and contacts. Do not use " +
-    "/Context_Students/<id>/users for this — that map is only for granting platform login " +
-    "access to a registered user account, not for recording who someone is to the student. " +
-    "Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. " +
-    "If the person already exists as a user or student in the system, set linkedUserId " +
-    "(for users) or linkedStudentId (for students) on the new contact so their records " +
-    "stay connected — shared biometric data, no duplicate identities. Linking is NOT " +
-    "automatic; you must set it explicitly when you recognize the person. To associate a " +
-    "contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) " +
-    "after creating the contact. Photos and face embeddings are managed through the UI.",
-  opened: true,
-  values: contactValueSchema,
-  db: studentContactsOps as any,
-};
+const CONTACTS_FIELD_DESCRIPTION =
+  "People in the student's life — parents, siblings, classmates, therapists, teachers, " +
+  "team members. THIS is the right place to record relationships and contacts. Do not use " +
+  "/Context_Students/<id>/users for this — that map is only for granting platform login " +
+  "access to a registered user account, not for recording who someone is to the student. " +
+  "Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. " +
+  "If the person already exists as a user or student in the system, set linkedUserId " +
+  "(for users) or linkedStudentId (for students) on the new contact so their records " +
+  "stay connected — shared biometric data, no duplicate identities. Linking is NOT " +
+  "automatic; you must set it explicitly when you recognize the person. To associate a " +
+  "contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) " +
+  "after creating the contact. Photos and face embeddings are managed through the UI.";
+
+/** The no-add wording, appended when contact learning is switched off. */
+const CONTACTS_NO_ADD_SUFFIX =
+  " CONTACT LEARNING IS OFF for this student: you may READ and UPDATE the contacts below, " +
+  "but you may NOT create new ones. If you meet someone who is not listed, note it for the " +
+  "caretakers instead of adding them — an add will be refused.";
+
+/**
+ * Build the Student_Contacts field for a given consumer. The clinician chat
+ * gets the unrestricted default (STUDENT_CONTACTS_FIELD); the AAC session
+ * builds its own from the student's `autoAddContacts` setting so a contact the
+ * AI creates from observation is both gate-able and flagged for review.
+ */
+export function buildStudentContactsField(
+  opts: StudentContactsFieldOptions = {},
+): AgentMemoryFieldMapWithDB {
+  return {
+    id: "Student_Contacts",
+    type: "map",
+    title: "Student Contacts",
+    description:
+      CONTACTS_FIELD_DESCRIPTION + (opts.allowAdd === false ? CONTACTS_NO_ADD_SUFFIX : ""),
+    opened: true,
+    values: contactValueSchema,
+    db: makeStudentContactsOps(opts) as any,
+  };
+}
+
+export const STUDENT_CONTACTS_FIELD: AgentMemoryFieldMapWithDB = buildStudentContactsField();
 
 // ============================================================================
 // Program_TeamContacts (array on Context_Program)

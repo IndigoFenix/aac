@@ -717,6 +717,23 @@ export interface Lexeme {
   objPrep?: "of" | "to";
 }
 
+/** The shipped ruleset ids — the locales a spec item can carry words for. */
+export type WordLocale = "en" | "he" | "es" | "pt";
+
+/**
+ * A SPEC ITEM'S OWN WORDS (user decision 2026-08-12): the per-locale lexeme
+ * map an item DEFINITION carries, so that adding an item — a furniture kind,
+ * a pool member, a room program, one day a user's own item — brings its
+ * translations along in the same row, instead of requiring edits to four
+ * central language files. Locales are optional ON PURPOSE: an item that
+ * never had a Portuguese word keeps today's fallback (the raw head via
+ * `baseWord`) rather than forcing an invented one; filling a gap is a
+ * deliberate authoring act. The word joiner (content/words.ts) collects
+ * these into each ruleset's lexicon at load — grammar and agreement flow
+ * through the same `Lexeme` machinery as every central word.
+ */
+export type ItemWords = Partial<Record<WordLocale, Lexeme>>;
+
 export interface GlyphLanguage {
   /** BCP-47 primary subtag ("en", "he"). */
   id: string;

@@ -70,6 +70,7 @@ import {
 } from "@shared/world-engine/kernel/town/goods-kinds.js";
 import { headOf } from "@shared/world-engine/variations.js";
 import { NEED_FILL_S } from "@shared/world-engine/scale.js";
+import { isLooseProp, setContainerStock } from "@shared/world-engine/kernel/town/containers.js";
 
 const specPath = join(process.cwd(), "games", "dollhouse", "src", "game.spec.json");
 const doc = JSON.parse(readFileSync(specPath, "utf8"));
@@ -359,7 +360,7 @@ describe("the drop, live on the dollhouse", () => {
       expect(bagId).not.toBeNull();
       // PAST THE COMMAND GRACE: `TIDY_GRACE_S` is what makes an order the
       // player just gave visibly land, and this basket was not ordered.
-      session.smallProps.get(bagId!)!.at = session.townClock - 1000;
+      session.containerRecords.get(bagId!)!.at = session.townClock - 1000;
       // …and a nap is due, so the freed-hands term is live: this is the case
       // the ride-along was made of — a body with something else to do, holding
       // a bag it has no use for.
@@ -392,7 +393,7 @@ describe("the drop, live on the dollhouse", () => {
       const houseIndex = session.dollhouse!;
       const cid = `resident_${houseIndex}_1`;
       const wardrobe = `furn_${houseIndex}_chest_clothing`;
-      const clean = () => Object.values(session.containerStock.get(wardrobe) ?? {}).reduce((a, b) => a + b, 0);
+      const clean = () => Object.values(session.containerRecords.get(wardrobe)?.stock ?? {}).reduce((a, b) => a + b, 0);
 
       // THE WEAR CYCLE, driven from its own meter: the garment is worn out, so
       // the dress row fetches a clean one and the equip effect hands the doffed
@@ -403,7 +404,7 @@ describe("the drop, live on the dollhouse", () => {
       for (let i = 0; i < 40 && !dirtyId; i++) {
         run.advanceS(0.5);
         const held = Object.values(run.state.objects).find((o) => o.carriedBy === cid);
-        if (held && session.smallProps.get(held.id)?.glyph.endsWith(".dirty")) dirtyId = held.id;
+        if (held && session.containerRecords.get(held.id)?.glyph?.endsWith(".dirty")) dirtyId = held.id;
       }
       expect(dirtyId).not.toBeNull();
       // Counted AFTER the change of clothes: the clean one the dress row drew
@@ -413,7 +414,7 @@ describe("the drop, live on the dollhouse", () => {
       // …and now it has RIDDEN a while (past `TIDY_GRACE_S`, which exists so a
       // player's order visibly lands and is not the drop law's business) and a
       // nap comes due. Before this pass the shirt went to bed with the body.
-      session.smallProps.get(dirtyId!)!.at = session.townClock - 200;
+      session.containerRecords.get(dirtyId!)!.at = session.townClock - 200;
       session.needMeters.set(`${cid}|energy`, 1.0);
 
       let down = false;
@@ -424,7 +425,7 @@ describe("the drop, live on the dollhouse", () => {
       // ① DROPPED — and the loose census keeps it findable, which is the whole
       // point of asking the scope tree rather than dropping it anywhere.
       expect(down).toBe(true);
-      expect(session.smallProps.has(dirtyId!)).toBe(true);
+      expect(isLooseProp(session, dirtyId!)).toBe(true);
 
       // ② …AND STILL THE HOUSEHOLD'S, lying in its own house: which is what
       // makes the wash able to find it (`laundryTemplate().acquire` is `loose`
@@ -432,7 +433,7 @@ describe("the drop, live on the dollhouse", () => {
       // in text mode, not here — CLAUDE.md's own rule about jest and
       // quest-host. It is quoted in the §3 ledger: a housemate picks the shirt
       // up, scrubs it at `furn_<h>_bath`, and banks the clean garment.
-      expect(run.host.dropKeepsItem(cid, session.smallProps.get(dirtyId!)!.glyph)).toBe(true);
+      expect(run.host.dropKeepsItem(cid, session.containerRecords.get(dirtyId!)!.glyph!)).toBe(true);
       expect(clean()).toBe(cleanAfterChange); // nothing banked yet — it is on the floor
     } finally {
       run.dispose();
@@ -449,18 +450,18 @@ describe("the drop, live on the dollhouse", () => {
 
       const bagId = run.host.giveBag(cid, "basket");
       expect(bagId).not.toBeNull();
-      session.smallProps.get(bagId!)!.at = session.townClock - 1000;
+      session.containerRecords.get(bagId!)!.at = session.townClock - 1000;
       // Treats ARE food (they bank into the food chest) but are never dealt
       // into a pantry mix, so nothing else in the house can eat them behind
       // the assertion — the same lever `trip-span.test.ts` uses.
-      session.containerStock.set(bagId!, { [RARE_IMPORT_KIND]: 3 });
+      setContainerStock(session, bagId!, { [RARE_IMPORT_KIND]: 3 });
 
       run.advanceS(3); // the empty basket above went down inside 0.6 s
 
       // Either still in hand, or banked into the household's own box — never
       // tipped onto the floor and abandoned. The units are what matter.
       const inHand = run.host.carryOf(cid)[RARE_IMPORT_KIND] ?? 0;
-      const chest = session.containerStock.get(`furn_${houseIndex}_chest_food`) ?? {};
+      const chest = session.containerRecords.get(`furn_${houseIndex}_chest_food`)?.stock ?? {};
       expect(inHand + (chest[RARE_IMPORT_KIND] ?? 0)).toBe(3);
     } finally {
       run.dispose();

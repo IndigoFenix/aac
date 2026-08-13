@@ -1,0 +1,16 @@
+> wait 5
+> /wild
+> say build farm
+> say build house
+> say build farm
+> say build house
+> wait 60
+> say build farm
+> say build house
+> wait 60
+> wait 60
+> /wild
+> wait 60
+> wait 60
+> /wild
+> /stock

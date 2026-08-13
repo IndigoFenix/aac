@@ -123,6 +123,7 @@ import {
   type AnnexCandidate,
   type AnnexCluster,
   type BuildingDelta,
+  type ConstructionOrder,
   type FoundedBuilding,
   type FoundingCandidate,
   type InteriorCandidate,
@@ -254,7 +255,10 @@ import {
 import {
   armHarvestRegrow,
   buildWilderness,
+  dueGrowthAdvance,
   dueHarvestRegrowth,
+  growthClassPeriodS,
+  reseedGrowthStock,
   wildAnimalBodyId,
   wildFeatureContainerId,
   wildFeatureEmbodied,
@@ -265,6 +269,21 @@ import {
   type WildernessParams,
   type WildSource,
 } from "./wilderness.js";
+import {
+  advanceWildArea,
+  condenseWildArea,
+  expandWildArea,
+  wildAreaCounts,
+  wildAreaPopulation,
+  wildAreaStock,
+  type WildAreaRecord,
+} from "./wild-area.js";
+import {
+  refuseLedgerWarp,
+  runLedgerWarp,
+  type LedgerWarpArms,
+  type LedgerWarpResult,
+} from "./clock-warp.js";
 import { createPossession, type Possession } from "./possession.js";
 import { LOCAL_PLAYER_CID, isPlayerCid, peerIdOf, playerCidOf } from "./player-identity.js";
 import {
@@ -331,7 +350,10 @@ import {
   type DressPalette,
 } from "../../creatures/clothing.js";
 import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, requireSpecies, speciesBodyRadius } from "../../creatures/species.js";
-import { drinkGlyphs, naturalSourceOf, sourceKillExhausted, sourcesForGood, takeUnitsOf } from "../../products.js";
+import {
+  drinkGlyphs, growthClassYield, naturalSourceOf, sourceKillExhausted, sourcesForGood, takeUnitsOf,
+  type NaturalSource,
+} from "../../products.js";
 import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
 import { hashSeed, mulberry32 } from "@shared/prng.js";
 import { buildConcepts } from "@shared/world-engine/interaction/content/concepts.js";
@@ -346,6 +368,27 @@ import { itemObjectSpec } from "@shared/world-engine/interaction/content/item-pr
 import {
   containerDefOfGlyph,
   mayDissolveToStack,
+  type ContainerRecord,
+  recordOf,
+  isContainerId,
+  registerContainer,
+  setContainerOwner,
+  setContainerStock,
+  ensureContainerStock,
+  containerEntries,
+  containerIds,
+  stockedEntries,
+  stockedIds,
+  stockedCount,
+  deleteContainerRecord,
+  isLooseProp,
+  loosePropOf,
+  setLooseProp,
+  clearLooseProp,
+  looseEntries,
+  looseIds,
+  looseCount,
+  wornBagOf,
 } from "@shared/world-engine/kernel/town/containers.js";
 // WHAT BAGS THE WORLD STARTS WITH (step ③, the seeding half). Pure data — the
 // glyph, the spot and the owner. Minting them is this host's business.
@@ -380,6 +423,7 @@ import {
   scopeStockIndex,
   unitsOf,
   walkScopeTree,
+  wildAreaId,
   type ScopeId,
   type ScopeNode,
   type ScopeStockInput,
@@ -389,7 +433,7 @@ import { createGlyphImageSource } from "../../glyph-images.js";
 import type { ImageResolver } from "@shared/glyph-compositor.js";
 import { dwellBubble, dwellBubbleGlyphs, restDoneBubble } from "@shared/world-engine/interaction/quest/activity-bubble.js";
 import { createDwellTracker } from "../../dwell.js";
-import { runWorldHost, type WorldHost, type WorldHostNet } from "../../world-host.js";
+import { runWorldHost, type WideTickConfig, type WorldHost, type WorldHostNet } from "../../world-host.js";
 import {
   claimMessage,
   convoMessage,
@@ -1194,10 +1238,10 @@ export interface QuestSession {
    *  stays with that body when you let go.
    *
    *  `selectedPocketGlyph` = the armed stack;
-   *  `smallProps` = world objectId → the LOOSE concrete prop on the ground
-   *  ({instance id, glyph}) — the only place a small item is a concrete instance, so it
-   *  can be carried/owned; picking it up merges it into whatever bag the body has (or
-   *  rides its hands when it has none). A fresh instance is MATERIALIZED from a glyph
+   *  a LOOSE prop is a `containerRecords` row with `mount: "loose"` — the only
+   *  place a small item is a concrete instance, so it can be carried/owned;
+   *  picking it up merges it into whatever bag the body has (or rides its
+   *  hands when it has none). A fresh instance is MATERIALIZED from a glyph
    *  only when a stack leaves storage into the world/dialogue (drop / put-visible /
    *  present). */
   /** WHOSE HANDS THE PLAYER IS USING — the claimed creature while the spark
@@ -1205,37 +1249,29 @@ export interface QuestSession {
    *  possession is the only thing that moves it. */
   handsCid: string;
   selectedPocketGlyph: string | null;
-  /** THE WORN CONTAINER per body (cid → its object id + glyph) — the satchel,
-   *  the `install` verb at body scope (§3.4: a satchel is a FIXTURE of the body
-   *  exactly as a chest is of a house). Its stock stays in `containerStock`
-   *  under that object id, so a worn bag is an ordinary container scope that
-   *  happens to hang off a creature.
+  /** ⑤ THE ONE CONTAINER STORE (`ContainerRecord`, above) — any object with
+   *  `contains` slots is an openable container; a loose prop or worn bag gets
+   *  the SAME row keyed by objId. Mutate ONLY through the accessor helpers
+   *  declared alongside `containerUnitCap` (`registerContainer`,
+   *  `registerLooseProp`, `donWornBag`/`doffWornBag`, `deleteContainerRecord`,
+   *  …) — never `.set`/`.delete` the map directly, or the wearer index below
+   *  can drift out of step with it. */
+  containerRecords: Map<string, ContainerRecord>;
+  /** THE WORN-BAG INDEX — wearer creature id → the objId of the container
+   *  they have equipped (§3.4: a satchel is a FIXTURE of the body exactly as
+   *  a chest is of a house; `install` at body scope). The inverse direction
+   *  (`record.wearer`) lives on the container's own row; `donWornBag` /
+   *  `doffWornBag` are the ONE seam that writes both directions together —
+   *  never write one without the other.
    *
    *  ⚠️ DECLARED DEBT: the world prop is REMOVED while worn — there is no
    *  on-body satchel mount yet, so the alternative would be a bag lying on the
    *  floor that the tidy chore sweeps out from under its owner. The
-   *  REGISTRATION survives (`containers`, `containerStock`, `containerOwner`),
-   *  which is what conserves the goods; `doffWornBag` re-spawns the prop under
-   *  the SAME object id so its stock is never orphaned. */
-  wornBags: Map<string, { objId: string; glyph: string }>;
-  /** `at` = townClock when the prop hit the floor — the TIDY chore only sweeps
-   *  props older than TIDY_GRACE_S (a toy mid-game isn't snatched). */
-  smallProps: Map<string, { entityId: string; glyph: string; at?: number }>;
-  /** CONTAINERS — ONE abstraction (feedback_items_stack_one_container): any object with
-   *  `contains` slots is an openable container. `containers` maps its objectId → the
-   *  placement relation ("in" = hidden inside; "on" = renders VISIBLY, e.g. a table).
-   *  `containerStock` is each container's contents as a glyph→count STACK MAP (a chest's
-   *  fixed goods, or whatever's been put in a cupboard/table); a MARKET store's stock is
-   *  computed live from the economy instead (see `marketStore`). A building's inventory
-   *  is just the AGGREGATE of its containers' stacks — no separate structure.
-   *  `containerOwner` holds each container's OWNER SCOPE (ownership.ts —
-   *  `house:<hi>` communal furniture, `creature:<cid>` a member's private box,
-   *  `town` the well; legacy vendor stores keep their vendor node id). The
-   *  walkers only LIST containers they may use; the social stop-gate refuses
-   *  takes of private property while an owner is nearby to object. */
-  containers: Map<string, "in" | "on">;
-  containerStock: Map<string, Record<string, number>>;
-  containerOwner: Map<string, string | null>;
+   *  REGISTRATION survives (the row stays in `containerRecords`, `mount`
+   *  flips to `"worn"`), which is what conserves the goods; `doffWornBag`
+   *  re-spawns the prop under the SAME object id so its stock is never
+   *  orphaned. */
+  wornBagIndex: Map<string, string>;
   /** Containers PINNED open by an explicit "open the chest" command — they stay
    *  open with nobody near (the auto-close sweep skips them), until "shut". An
    *  access-opened lid (a creature reaching in) is NOT pinned: it shuts when the
@@ -1651,6 +1687,13 @@ export interface QuestSession {
   /** WILDERNESS session (founding flow): the deterministic resource/creature
    *  scatter laid over the open ground, or null. */
   wilderness: WildernessContent | null;
+  /** ⚖️ S&D S4 — OFFLOADED WILD AREAS, by area key: the closed-form record a
+   *  stand folds to when it stops being simulated (`wild-area.ts`), keyed the
+   *  way its endpoint id spells it (`wild:area:<key>`). The scattered features
+   *  above are the RENDERER of whatever is NOT in here; an area is in exactly
+   *  one of the two forms at a time, which is what makes the fold conserving.
+   *  Empty in every session that has never folded one. */
+  wildAreas: Map<string, WildAreaRecord>;
   /** The ONE site a wilderness session may found (a spoken "build"), or null.
    *  Its `stock` object IS the site stockpile container's stack map (aliased
    *  into `containerStock`), so ordinary container puts/takes keep it true. */
@@ -1887,6 +1930,12 @@ export interface QuestHostDeps {
   /** NPC randomness. Absent = the world-host's default (`Math.random`) —
    *  the host has never passed one, so omitting it changes nothing. */
   npcRng?: () => number;
+  /** ⏩ WIDE TICK (wide-tick-round.md): forwarded verbatim to `runWorldHost`.
+   *  Present, the world host admits a frame dt above 0.05 s and substeps the
+   *  motion arms under it while this quest layer's `onFrame` runs ONCE with the
+   *  full dt. Absent — every GL boot — the frame body is today's, byte for
+   *  byte. Headless only in practice: `bootTextQuest` sets it from its `dt`. */
+  wideTick?: WideTickConfig;
   /** Symbol→artwork resolver for glyph rasters (each app bundles its own
    *  icons; omit for the compositor's emoji fallback). */
   resolveImage?: ImageResolver;
@@ -2388,6 +2437,40 @@ export interface QuestHost3D {
   /** The whole session's stock, summed by glyph across that tree — the
    *  conservation probe. `__questLab.stockAudit()`. */
   stockAudit(): Record<string, number>;
+  /**
+   * ⚖️ S&D S4 — THE WILD AREA, in whichever form it is in, and the LOD
+   * transition between them (`wild-area.ts`).
+   *
+   * Verbs: `""`/`"state"` reports the stand (loaded species/size classes, or
+   * the condensed record's counts + gradient); `"fold"` condenses it;
+   * `"load"` expands it; `"cycle"` does both and prints the session's stock
+   * audit at each step, which is the conservation evidence for the fold.
+   *
+   * 🚨 THE ONLY MUTATING PROBE, and it is one deliberately: the LOD driver
+   * that folds a stand lives in the GL boot (`syncFloraTwins`, world-lab), so
+   * a headless run has no other way to REACH the transition — and a
+   * conservation law nobody can exercise outside a browser is a law nobody
+   * checks. Quarantined behind the cheat channel like every other omniscient
+   * door, and it moves nothing a real driver would not move.
+   */
+  wildProbe(verb?: string): string;
+  /**
+   * ⏩ ADVANCE THE BOOKS BY `days` ECONOMY DAYS, WITHOUT RUNNING THE PHYSICS
+   * (clock-warp.ts — the laws and the reasoning live there).
+   *
+   * The engine's clock arm is closed-form and day-edge triggered; only motion
+   * needs `dt`. A consumer that wants a week of ledgers therefore does not need
+   * a week of frames, and this is how it says so: the day edges the span
+   * crosses are run, in the tick order, with the clock parked on each edge.
+   * Deterministic, conservative, and REFUSES (`ok:false`, blockers named)
+   * rather than letting an interrupted errand complete abstractly.
+   *
+   * NOT a probe: this MOVES the world, which is why it sits on the public
+   * surface beside `start`/`step` rather than behind the cheat channel. It is
+   * the mid-session twin of the boot fast-forward (`town-play.ts`), and the
+   * only thing it can express that a tick cannot is *speed*.
+   */
+  advanceLedgerDays(days: number): LedgerWarpResult;
   /**
    * ⚖️ R&T ⑤ — THIS TOWN'S LIVE SHORTAGE OF ONE GOOD (`townShortage`:
    * 1 − (got + what the fed stockpile tops up)/need, clamped). Exposed for
@@ -2976,12 +3059,9 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     // through `bodyCarryOf`. There is no map here to shadow it with.
     handsCid: LOCAL_PLAYER_CID,
     selectedPocketGlyph: null,
-    wornBags: new Map(),
-    smallProps: new Map(),
-    containers: new Map(),
-    containerStock: new Map(),
+    containerRecords: new Map(),
+    wornBagIndex: new Map(),
     containerPinned: new Set(),
-    containerOwner: new Map(),
     marketStore: new Map(),
     marketConsumed: new Map(),
     matSerial: 0,
@@ -3045,6 +3125,7 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     driftDrainDay: null,
     dlogged: new Set(),
     wilderness: null,
+    wildAreas: new Map(),
     foundedSite: null,
     taskPool: createTaskPool(),
     taskClock: 0,
@@ -3836,7 +3917,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     stepFollowerConvoSync(state);
     mpClaimT += dt;
     if (mpClaimT >= 5) {
-      mpClaimT = 0;
+      // subtract the period rather than resetting to 0 — carries overshoot so
+      // a coarse dt doesn't stretch the 5 s cadence; one fire per elapsed
+      // period, so a leftover still ≥ the period (a huge dt) is clamped down.
+      mpClaimT -= 5;
+      if (mpClaimT >= 5) mpClaimT %= 5;
       if (possession.creatureId) {
         mpNet.send([claimMessage(PLAYER_ID, avatarIdOf(possession.creatureId))]);
       }
@@ -4387,7 +4472,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  (§8 D2 rung 2 — the check rung 1's container answer must also pass.) */
   function stackHoldsTarget(session: QuestSession, objId: string, target: NeedTarget): boolean {
     if (!target.kind) return true;
-    const stock = session.containerStock.get(objId);
+    const stock = session.containerRecords.get(objId)?.stock;
     if (!stock) return false;
     return Object.entries(stock).some(([g, n]) => n > 0 && matchesNeedItem(g, target));
   }
@@ -4458,7 +4543,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const box = householdBoxIds(session, state, houseIndex).find((id) =>
       target.kind
         ? stackHoldsTarget(session, id, target)
-        : Object.entries(session.containerStock.get(id) ?? {}).some(
+        : Object.entries(session.containerRecords.get(id)?.stock ?? {}).some(
             ([g, n]) => n > 0 && matchesNeedItem(g, target),
           ),
     );
@@ -4468,10 +4553,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // Two passes over the same sorted census, because a thing in somebody's
     // hands is known more directly than a thing lying about: "the dog has it"
     // beats pointing at where it last lay.
-    const props = [...session.smallProps.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const props = [...looseIds(session)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     for (const objId of props) {
-      const rec = session.smallProps.get(objId)!;
-      if (!matchesNeedItem(rec.glyph, target)) continue;
+      const rec = loosePropOf(session, objId)!;
+      if (!matchesNeedItem(rec.glyph!, target)) continue;
       const holder = state.objects[objId]?.carriedBy;
       // A HOUSEHOLD body only (pets included, the answerer itself included) —
       // a passing stranger's hands are not this body's ken.
@@ -4480,8 +4565,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const rect = houseRectOf(session, houseIndex);
     if (rect) {
       for (const objId of props) {
-        const rec = session.smallProps.get(objId)!;
-        if (!matchesNeedItem(rec.glyph, target)) continue;
+        const rec = loosePropOf(session, objId)!;
+        if (!matchesNeedItem(rec.glyph!, target)) continue;
         const o = state.objects[objId];
         if (!o || o.carriedBy || o.containedIn) continue;
         if (o.x < rect.x || o.x > rect.x + rect.w || o.y < rect.y || o.y > rect.y + rect.h) continue;
@@ -5614,20 +5699,42 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // modifier word ("wear + shirt + red"), already in the lexicon.
       addRaw("clothing", "clothing");
       for (const k of CLOTHING_HEADS) addRaw(k, k);
-      for (const [, rec] of session.smallProps) addRaw(drawnGlyph(rec.glyph), spokenWord(rec.glyph));
+      for (const [, rec] of looseEntries(session)) addRaw(drawnGlyph(rec.glyph!), spokenWord(rec.glyph!));
     }
     // BUILDABLE STRUCTURES (①b): at a town / founded site, the catalog's
     // nouns are speakable — the sentence builder can compose "build house"
     // ("build" is already in the LEXICON; these are its objects).
     if (session.town || session.foundedSite) {
+      // ⚖️ AFFORDABILITY DEMOTES, IT NEVER HIDES (user law ③, 2026-08-12:
+      // "unaffordable build words can be demoted from the board, but should
+      // not be removed from the sentence builder — the builder is unaware of
+      // the world state; unfulfillable orders must therefore be refused
+      // vocally"). This list IS the sentence builder's noun feed, so an
+      // affordability FILTER here was the world state reaching into a layer
+      // that must not see it: a poor town silently lost building words off the
+      // child's board (recorded divergence, GL closing sweep item 5) while the
+      // same sentence, spoken, still posted a designation.
+      //
+      // Both halves moved. Every catalog structure is speakable at a town or a
+      // site, always; the unaffordable ones are DE-RANKED — appended after the
+      // affordable ones, which is the only rank this push carries (the lead
+      // block keeps insertion order; the surfacer reads it as its noun-library
+      // order). And the ORDER now refuses what cannot be built, aloud, with the
+      // reason — `orderBuild`'s `deadBillHeads` arm.
+      //
       // Affordability reads FREE haul-able availability (pipeline ②), not
       // the yard alone — wood in a chest or a standing tree counts.
       const center = session.town ? session.town.stage.center : session.foundedSite!.at;
+      const structureMeta = { kind: "place" as NounKind, affords: ["build", "go"], properties: ["structure"] };
+      const shortStructures: { glyph: string; label: string }[] = [];
       for (const spec of structureCatalogOf(session)) {
-        if (!Object.keys(buildMissingMaterials(session, spec, center)).length) {
-          addRaw(spec.glyph, spec.label, { kind: "place", affords: ["build", "go"], properties: ["structure"] });
+        if (Object.keys(buildMissingMaterials(session, spec, center)).length) {
+          shortStructures.push({ glyph: spec.glyph, label: spec.label });
+        } else {
+          addRaw(spec.glyph, spec.label, structureMeta);
         }
       }
+      for (const s of shortStructures) addRaw(s.glyph, s.label, structureMeta);
       // TRANSFER surface (②): the yard is a speakable destination, houses
       // are endpoints, and any building MATERIAL on hand (yard/site stock or
       // the pocket) is a speakable object — "bring wood to the yard".
@@ -6690,20 +6797,39 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  averaged over the good's staffed producer works. Full crews yesterday ⇒ 1;
    *  a poached farm crew ⇒ today's food shelf runs thin (never below the floor —
    *  the aggregate's other hands still move goods). */
+  /** ⚖️ R8 (S&D S4) — MEMOIZED ON THE TOWN CLOCK, the `handPoolMemo` shape.
+   *  One reading is a walk of every work × every job row, and S1 gave it a hot
+   *  new caller: `prosperitySignals` asks `townShortage` (→ `exportOwedBooks` →
+   *  here) once per street good per household per town day. The value is
+   *  genuinely constant within a town-second — `attendanceFactor` reads
+   *  YESTERDAY's roll-up (roster.ts: `rec.day === day ? rec.prevSeconds : …`),
+   *  which only moves on the day edge — so the memo is exact, not approximate,
+   *  and a re-dealt roster invalidates with the clock rather than needing to
+   *  be hunted down at every `townJobsMemo = null`. */
+  let producerAttendanceMemo: { at: number; by: Map<string, number> } | null = null;
   function producerAttendance(session: QuestSession, goodKey: string): number {
     const town = session.town;
     if (!town || !ensureTownJobs(session)) return 1;
+    if (!producerAttendanceMemo || producerAttendanceMemo.at !== session.townClock) {
+      producerAttendanceMemo = { at: session.townClock, by: new Map() };
+    }
+    const hit = producerAttendanceMemo.by.get(goodKey);
+    if (hit !== undefined) return hit;
     const g = town.stage.goods.find((x) => x.good.key === goodKey);
-    if (!g) return 1;
-    const day = Math.floor(session.townClock / FOOD_DAY_SEC);
-    let sum = 0;
-    let n = 0;
-    town.plan.works.forEach((wk, w) => {
-      if (!g.good.producers.includes(wk.type)) return;
-      sum += workAttendanceFactor(session, w, day); // unstaffed works read 1
-      n++;
-    });
-    return n > 0 ? sum / n : 1;
+    const answer = ((): number => {
+      if (!g) return 1;
+      const day = Math.floor(session.townClock / FOOD_DAY_SEC);
+      let sum = 0;
+      let n = 0;
+      town.plan.works.forEach((wk, w) => {
+        if (!g.good.producers.includes(wk.type)) return;
+        sum += workAttendanceFactor(session, w, day); // unstaffed works read 1
+        n++;
+      });
+      return n > 0 ? sum / n : 1;
+    })();
+    producerAttendanceMemo.by.set(goodKey, answer);
+    return answer;
   }
 
   // ── THE HANDS (economy arc batch 2, L3) ───────────────────────────────────
@@ -7147,7 +7273,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  (grasp)? A graspless body (a pet) reaches only the first two, so an opened
    *  box is what lets it help itself. */
   function containerAccessible(session: QuestSession, id: string, grasp: boolean): boolean {
-    if (session.containers.get(id) === "on") return true;
+    if (session.containerRecords.get(id)?.relation === "on") return true;
     if (world?.state.objects[id]?.heldOpen) return true;
     return grasp;
   }
@@ -7927,7 +8053,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const x0 = rc.center.x + house.dx;
     const y0 = rc.center.y + house.dy;
     const areas: string[] = [];
-    for (const objId of session.smallProps.keys()) {
+    for (const objId of looseIds(session)) {
       const o = state.objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue;
       if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -8241,7 +8367,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       placeId,
       ctx: {
         bodies,
-        ready: tpl.prepare ? stackTotalOf(session.containerStock.get(placeId), tpl.prepare.category) : 0,
+        ready: tpl.prepare ? stackTotalOf(session.containerRecords.get(placeId)?.stock, tpl.prepare.category) : 0,
         capacity: ritualCapacity(session, state, tpl, placeId),
         dayF,
       },
@@ -8516,7 +8642,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             const goodKey = goodKeyOfGlyph(glyph);
             const span = naturalTripSpanS(session, houseIndex, goodKey);
             if (span === null) continue;
-            if (!session.containers.has(designatedContainerFor(session, glyph, houseIndex, cid))) continue;
+            if (!isContainerId(session, designatedContainerFor(session, glyph, houseIndex, cid))) continue;
             if (!haul || span < haul.span) haul = { goodKey, span };
           }
           if (haul && awayS > haul.span) {
@@ -9401,7 +9527,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // FRONT of the body), so bodies on opposite sides both reach it.
         // (Floor stations only — an on-fixture use takes its facing from the
         // fixture's own use contract, through the anchor.)
-        const at = objId && session.smallProps.has(objId) ? state.objects[objId] : undefined;
+        const at = objId && isLooseProp(session, objId) ? state.objects[objId] : undefined;
         if (at && step.kind === "rest") {
           const dx = at.x - av.x;
           const dy = at.y - av.y;
@@ -9501,7 +9627,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world) return;
     egressSweepT += dt;
     if (egressSweepT < EGRESS_SWEEP_S) return;
-    egressSweepT = 0;
+    // subtract the period (carry overshoot) instead of resetting to 0, so the
+    // sweep cadence doesn't stretch at a coarse dt; clamp the remainder below
+    // the period so one huge dt still fires the sweep only once.
+    egressSweepT -= EGRESS_SWEEP_S;
+    if (egressSweepT >= EGRESS_SWEEP_S) egressSweepT %= EGRESS_SWEEP_S;
     const ref = session.town?.stage.center ?? session.foundedSite?.at;
     if (!ref) return;
     const now = state.time;
@@ -9907,7 +10037,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       provisionedHeads: provisionedHeads(session, houseIndex),
       ownerId: session.creatures?.world.items[glyph]?.ownerId,
       selfId: cid,
-      exists: (id) => session.containers.has(id),
+      exists: (id) => isContainerId(session, id),
     });
   }
 
@@ -9976,7 +10106,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         carry.inHand &&
         !carry.inHand.bag &&
         carry.inHand.glyph === glyph &&
-        session.containers.has(box) &&
+        isContainerId(session, box) &&
         setDownFromHands(session, avatarIdOf(cid), { kind: "container", id: box }, { objId: carry.inHand.objId })
       ) {
         left--;
@@ -9984,9 +10114,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       const took = takeUnitsFromBody(session, cid, glyph, left);
       if (took > 0) {
-        const stock = session.containerStock.get(box) ?? {};
+        const stock = ensureContainerStock(session, box);
         stock[glyph] = (stock[glyph] ?? 0) + took;
-        session.containerStock.set(box, stock);
         bumpStockEpoch(session); // ⏸️ a box gained units — wakes parked rows
         banked += took;
       }
@@ -10156,7 +10285,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const carry = bodyCarryOf(session, cid);
     const held = carry.inHand;
     if (!held) return null;
-    const rec = session.smallProps.get(held.objId);
+    const rec = loosePropOf(session, held.objId);
     if (session.townClock - (rec?.at ?? 0) < TIDY_GRACE_S) return null;
     if (wantedByLiveRow(session, cid, held.glyph, all)) return null;
     if (bankedByOwnRow(session, houseIndex, held.glyph, all)) return null;
@@ -10249,10 +10378,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       //    home role reads (`containerUnitCap`). The full box is the reported
       //    case, and it is the one that must read as "no outlet".
       const box = designatedContainerFor(session, glyph, houseIndex, cid);
-      if (!box || !session.containers.has(box)) continue;
+      if (!box || !isContainerId(session, box)) continue;
       const cap = containerUnitCap(session, box);
       if (cap === null) return true; // uncapped — there is always room
-      if (totalStackUnits(session.containerStock.get(box) ?? {}) < cap) return true;
+      if (totalStackUnits(session.containerRecords.get(box)?.stock ?? {}) < cap) return true;
     }
     return false;
   }
@@ -10322,7 +10451,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     ring: boolean,
   ): { x: number; y: number } {
     const bodyR = world?.npcRadiusOf(avatarIdOf(cid));
-    return ring && session.smallProps.has(objId)
+    return ring && isLooseProp(session, objId)
       ? playRingSpot(state, raw, from, bodyR, standAvoid(cid))
       : standPointFor(state, objId, raw, from, bodyR, standAvoid(cid));
   }
@@ -10483,11 +10612,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const houseContainerIdx = new WeakMap<QuestSession, { n: number; at: number; byHouse: Map<number, string[]> }>();
   function houseContainerKeys(session: QuestSession, houseIndex: number): readonly string[] {
     const c = houseContainerIdx.get(session);
-    if (c && c.n === session.containerStock.size && session.townClock - c.at < 1) {
+    // ⚠️ STOCKED, not merely registered (`stockedIds`, not `containerIds`) —
+    // the old sweep was over `containerStock` specifically: a freshly-founded
+    // cupboard/table/bin/bowl/member-box has no stock row until the first
+    // real put, exactly as it never had a `containerStock` entry before one.
+    const n = stockedCount(session);
+    if (c && c.n === n && session.townClock - c.at < 1) {
       return c.byHouse.get(houseIndex) ?? [];
     }
     const byHouse = new Map<number, string[]>();
-    for (const id of session.containerStock.keys()) {
+    for (const id of stockedIds(session)) {
       const m = /^furn_(\d+)_/.exec(id);
       if (!m) continue;
       const hi = Number(m[1]);
@@ -10495,7 +10629,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (list) list.push(id);
       else byHouse.set(hi, [id]);
     }
-    houseContainerIdx.set(session, { n: session.containerStock.size, at: session.townClock, byHouse });
+    houseContainerIdx.set(session, { n, at: session.townClock, byHouse });
     return byHouse.get(houseIndex) ?? [];
   }
 
@@ -10529,13 +10663,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const x0 = rc.center.x + house.dx;
     const y0 = rc.center.y + house.dy;
     const out: string[] = [];
-    for (const objId of session.smallProps.keys()) {
+    for (const objId of looseIds(session)) {
       // A REGISTERED CONTAINER, whatever shape: the household's basket, a
       // satchel somebody put down, a flat-packed barrel standing in the corner
       // ("a LOOSE barrel is as much a container as a standing one" —
       // container-home.ts). Anything BOLTED DOWN has a `furn_*` id and comes
       // through the index above instead; these ids are all `small:*`.
-      if (!session.containers.has(objId)) continue;
+      if (!isContainerId(session, objId)) continue;
       const o = state.objects[objId];
       // In NOBODY's hands and not itself shelved: a basket inside a chest is
       // the chest's business, and one in a pair of hands is that body's.
@@ -10598,7 +10732,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         : [];
     for (const kind of at) if (boxId === `furn_${houseIndex}_${kind}`) return true;
     // ③ this body's own property (its box, a bag it put down).
-    return session.containerOwner.get(boxId) === creatureScope(cid);
+    return session.containerRecords.get(boxId)?.owner === creatureScope(cid);
   }
 
   // ── THE PRICE BOARD (scope-behaviors.md §3, step ④.2) ────────────────────
@@ -11102,7 +11236,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // (StockCandidate.free): a pantry below its buffer is short whether or
         // not a housemate has spoken for what's left in it, but the housemate
         // that spoke first is the one that gets to draw it.
-        const units = stackTotalOf(session.containerStock.get(homeId), goodKey);
+        const units = stackTotalOf(session.containerRecords.get(homeId)?.stock, goodKey);
         containers.home = {
           id: homeId,
           place: P(homeId),
@@ -11152,7 +11286,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // `mayUse` (a housemate's private bag is not the household's), FREE units
       // (claims apply), and the distance the pricing reads.
       for (const id of [...houseContainerKeys(session, houseIndex), ...floorContainers()]) {
-        const stock = session.containerStock.get(id);
+        const stock = session.containerRecords.get(id)?.stock;
         if (!stock) continue;
         // 🧺 NEVER THE ROW'S OWN LARDER. The food rows carry BOTH a `home`
         // branch and (new) a `storage` one, and the storage sweep walks the
@@ -11162,7 +11296,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // with no exit. The home branch owns that container; this arm is
         // strictly "what ELSE in the house holds some".
         if (id === homeId) continue;
-        if (!mayUse(cid, houseIndex, session.containerOwner.get(id))) continue;
+        if (!mayUse(cid, houseIndex, session.containerRecords.get(id)?.owner)) continue;
         // GRASPABILITY, for the floor arm: a lidded crate on the floor needs
         // hands to open exactly as a chest does; an open basket does not
         // (`containerAccessible` — "on", left open, or the body can open it).
@@ -11212,7 +11346,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           tpl.drive.kind === "stock" && tpl.drive.container === "ritual" && tpl.drive.of
             ? tpl.drive.of
             : goodKey;
-        const units = stackTotalOf(session.containerStock.get(live.placeId), measure);
+        const units = stackTotalOf(session.containerRecords.get(live.placeId)?.stock, measure);
         const d = distToObj(live.placeId);
         containers.ritual = {
           id: live.placeId,
@@ -11234,7 +11368,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const oid = `furn_${wanterHouse}_${kind}`;
         if (!state.objects[oid]) continue;
         const cap = kind === "bowl" ? BOWL_CAP : 99;
-        const units = stackTotalOf(session.containerStock.get(oid), goodKey);
+        const units = stackTotalOf(session.containerRecords.get(oid)?.stock, goodKey);
         const d = distToObj(oid);
         containers.recipient = {
           id: oid,
@@ -11346,8 +11480,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // hot dish on the table pulls the hungry straight to it (the
           // acquire+consume combine — the dinner scene).
           const waiting =
-            stackTotalOf(session.containerStock.get(sid), goodKey) +
-            (goodKey === "food" ? stackTotalOf(session.containerStock.get(sid), "meal") : 0);
+            stackTotalOf(session.containerRecords.get(sid)?.stock, goodKey) +
+            (goodKey === "food" ? stackTotalOf(session.containerRecords.get(sid)?.stock, "meal") : 0);
           // ⚠️ THE STAMPEDE GUARD DOES NOT APPLY TO YOUR OWN PLACE AT A RITUAL.
           // A ritual's bill is already one portion PER HEAD, so the food on the
           // table is reserved by construction and there is nothing to race for.
@@ -11401,7 +11535,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // makes everyone sleep in their own bed. When none of their own
           // stands (the fit rule went without), politeness collapses: any
           // bed in the house serves rather than dozing on the floor.
-          const own = cands.filter((sid) => mayUse(cid, houseIndex, session.containerOwner.get(sid)));
+          const own = cands.filter((sid) => mayUse(cid, houseIndex, session.containerRecords.get(sid)?.owner));
           if (own.length) cands = own;
         }
         for (const sid of cands) {
@@ -11423,8 +11557,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
         const areas: { c: StationCandidate; d: number }[] = [];
-        for (const [objId, rec] of session.smallProps) {
-          if (!matchesNeedItem(rec.glyph, tpl.item)) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (!matchesNeedItem(rec.glyph!, tpl.item)) continue;
           const o = state.objects[objId];
           if (!o || o.carriedBy || o.containedIn) continue;
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -11503,8 +11637,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // and OWNED things count: you play with your own teddy.
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
-        for (const [objId, rec] of session.smallProps) {
-          if (!matchesNeedItem(rec.glyph, tpl.item)) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (!matchesNeedItem(rec.glyph!, tpl.item)) continue;
           const o = state.objects[objId];
           if (!o || o.carriedBy || o.containedIn) continue;
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -11519,8 +11653,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
         const kinds = kindsOf(goodKey);
-        for (const [objId, rec] of session.smallProps) {
-          if (!kinds.includes(rec.glyph)) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (!kinds.includes(rec.glyph!)) continue;
           const o = state.objects[objId];
           if (!o || o.carriedBy || o.containedIn) continue;
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -11550,12 +11684,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           ...floorContainers(),
         ];
         for (const boxId of looseBoxes) {
-          const stock = session.containerStock.get(boxId);
+          const stock = session.containerRecords.get(boxId)?.stock;
           if (!stock) continue;
           if (!containerAccessible(session, boxId, grasp)) continue;
           // Never raid a housemate's PRIVATE box (ownership.ts) — the
           // laundry chore reaches the wardrobe, not Mara's treasures.
-          if (!mayUse(cid, houseIndex, session.containerOwner.get(boxId))) continue;
+          if (!mayUse(cid, houseIndex, session.containerRecords.get(boxId)?.owner)) continue;
           if (inPlay(boxId)) continue; // a basket somebody is playing with
           const units = stackTotalOf(stock, goodKey);
           if (units <= 0) continue;
@@ -11586,8 +11720,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const heads = provisionedHeads(session, houseIndex);
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
-        for (const [objId, rec] of session.smallProps) {
-          if (heads.has(headOf(rec.glyph))) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (heads.has(headOf(rec.glyph!))) continue;
           // A PORTABLE CONTAINER IS NOT CLUTTER (container-home.ts rung 0). The
           // ladder would send the household's basket to whichever member's box
           // came first, and the deposit could never even land — a bag is not a
@@ -11595,7 +11729,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // pickup itself was one-way: NOTHING on a body could see a held
           // container, so the tidier carried the family's only bag for the rest
           // of the session. It lives on the floor; leave it there.
-          if (livesOnTheFloor(rec.glyph)) continue;
+          if (livesOnTheFloor(rec.glyph!)) continue;
           // SOMEONE'S OWN thing (a gift, a keepsake — creature-world ownerId)
           // IS tidied, but never re-homed: designatedContainerFor sends it back
           // to its OWNER's box, not the tidier's. Putting your teddy away in
@@ -11650,7 +11784,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!stations.length && state.objects[live.placeId]) {
         // The place isn't in this row's own station list (a floor station for a
         // fixture-shaped satisfy). Offer it anyway — the event is there.
-        const waiting = stackTotalOf(session.containerStock.get(live.placeId), goodKey);
+        const waiting = stackTotalOf(session.containerRecords.get(live.placeId)?.stock, goodKey);
         stations = [{ id: live.placeId, place: P(live.placeId), kind: fixtureKindOf(state, live.placeId), waiting }];
       }
       sources = [];
@@ -11892,7 +12026,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // affords no play, so a step that wants what is IN it can never be
       // confused with the `relieve` row's step that wants the basket.
       const asContainerSource = (() => {
-        if (!session.containers.has(step.objId!)) return false;
+        if (!isContainerId(session, step.objId!)) return false;
         const glyph = objGlyphOf(session, step.objId!) ?? "";
         if (step.affords) return !matchesNeedItem(glyph, { affords: step.affords });
         if (step.goodKey) return !carryKindsOf(step.goodKey).includes(glyph);
@@ -11904,9 +12038,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // body has; a body with no bag simply picks the thing UP, which is the
       // single-unit trip the law makes ordinary.
       if (step.objId.startsWith("small:") && !asContainerSource) {
-        const rec = session.smallProps.get(step.objId);
-        if (!rec) return;
-        const cdef = containerDefOfGlyph(rec.glyph);
+        const rec = loosePropOf(session, step.objId);
+        if (!rec || !rec.glyph) return;
+        const glyph = rec.glyph;
+        const cdef = containerDefOfGlyph(glyph);
         if (cdef?.hold === "wear" && !carry.worn) {
           if (donWornBag(session, cid, step.objId)) {
             console.log(`[needs] ${cid} put on a ${rec.glyph}`);
@@ -11916,9 +12051,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // A LARGE thing (furniture) and any CONTAINER ride in the HANDS: a
         // scope cannot become a countable unit inside another bag, and a chair
         // was never bag-shaped either.
-        const handsOnly = isLargeGlyph(rec.glyph) || !!cdef?.hold;
+        const handsOnly = isLargeGlyph(glyph) || !!cdef?.hold;
         if (!handsOnly && activeBag(carry)) {
-          if (giveUnitsToBody(session, cid, rec.glyph, 1, reach ? { at: reach } : {}) > 0) {
+          if (giveUnitsToBody(session, cid, glyph, 1, reach ? { at: reach } : {}) > 0) {
             removeLooseProp(session, step.objId);
             console.log(`[needs] ${cid} picked up ${rec.glyph} (tidying)`);
           }
@@ -11936,7 +12071,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       // OPEN the lid to reach in — the access action for a lidded home/storage
       // box (stays open until the taker leaves; lets a graspless housemate use it).
-      if (session.containers.get(step.objId) === "in") openContainerLid(session, cid, step.objId);
+      if (session.containerRecords.get(step.objId)?.relation === "in") openContainerLid(session, cid, step.objId);
       let take = 0;
       // ⚖️ §1.2: A SOURCE ENDPOINT, of either kind. `goodSourceEndpointId` sends
       // a gate-bound household to the producer's own pile, so the shopping arm
@@ -11975,7 +12110,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // From a stored container: draw the liked kind first, then the rest.
         // An AFFORDANCE row (fun's `play`) carries no goodKey, so its order is
         // whatever the box holds that DOES the thing — take the toy out.
-        const stock = session.containerStock.get(step.objId) ?? {};
+        const stock = session.containerRecords.get(step.objId)?.stock ?? {};
         const order = step.affords
           ? Object.keys(stock).filter((g) => (stock[g] ?? 0) > 0 && matchesNeedItem(g, { affords: step.affords }))
           : kindOrder(step.goodKey);
@@ -11990,7 +12125,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             take++;
           }
         }
-        if (take > 0) session.containerStock.set(step.objId, stock);
+        if (take > 0) setContainerStock(session, step.objId, stock);
       }
       // THE CLAIM CLOSES HERE (scope-behaviors.md §2.6: "reserve at
       // resolution, consume as units actually leave, release on
@@ -12004,8 +12139,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     } else if (step.kind === "deposit" && step.objId) {
       // OPEN the lid to file it away — the access action for a lidded box (bug:
       // items were being put away THROUGH a shut lid). "on" surfaces have none.
-      if (session.containers.get(step.objId) === "in") openContainerLid(session, cid, step.objId);
-      const stock = session.containerStock.get(step.objId) ?? {};
+      if (session.containerRecords.get(step.objId)?.relation === "in") openContainerLid(session, cid, step.objId);
+      const stock = session.containerRecords.get(step.objId)?.stock ?? {};
       let put = 0;
       const onMe = carriedNow();
       // AN UNTYPED ROW deposits CLUTTER — whatever non-provisioned glyphs are
@@ -12040,7 +12175,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       if (put > 0) {
         session.needDepositFail.delete(`${cid}|${step.tplKey}`);
-        session.containerStock.set(step.objId, stock);
+        setContainerStock(session, step.objId, stock);
         bumpStockEpoch(session); // ⏸️ the pantry filled — wakes parked rows
         showWorldBubble(state, `put:${cid}`, { anchor: { kind: "avatar", id: cid }, text: "", glyph: step.goodKey, ttl: 1.5 });
         console.log(`[needs] ${cid} deposited ${put}×${step.goodKey} into ${step.objId}`);
@@ -12282,13 +12417,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         eaten = inHand[0]!;
         dropOwnedInstances(session, cid, eaten, 1);
       } else if (step.objId) {
-        const stock = session.containerStock.get(step.objId) ?? {};
+        const stock = session.containerRecords.get(step.objId)?.stock ?? {};
         const waiting = eatOrder.filter((k) => (stock[k] ?? 0) > 0);
         if (waiting.length > 0) {
           eaten = waiting[0]!;
           stock[eaten]! -= 1;
           if (stock[eaten]! <= 0) delete stock[eaten];
-          session.containerStock.set(step.objId, stock);
+          setContainerStock(session, step.objId, stock);
           removeVisibleContainedProp(session, step.objId, eaten);
         }
       }
@@ -12371,7 +12506,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const house = rc?.house;
     if (!rc || !house) return;
     for (const g of rc.goods) {
-      const units = stackTotalOf(session.containerStock.get(`furn_${houseIndex}_chest_${g.good.key}`), g.good.key);
+      const units = stackTotalOf(session.containerRecords.get(`furn_${houseIndex}_chest_${g.good.key}`)?.stock, g.good.key);
       g.reanchor(house, units, session.townClock);
     }
   }
@@ -12391,10 +12526,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         for (const g of town.stage.goods) {
           const objId = `furn_${house.index}_chest_${g.good.key}`;
           const level = Math.min(Math.floor(g.boxCap), Math.max(0, Math.round(g.pantry(house, session.townClock))));
-          const stock = session.containerStock.get(objId) ?? {};
+          const stock = ensureContainerStock(session, objId);
           for (const k of kindsOf(g.good.key)) delete stock[k]; // re-sync the good's own kinds only
           Object.assign(stock, dealGood(session.dress, g.good.key, level, house.index));
-          session.containerStock.set(objId, stock);
         }
         // ⏸️ THE LOAD EDGE IS A RESTOCK EVENT: the schedule's off-show drain
         // and its dawn deliveries land here all at once, so a row parked on an
@@ -12413,16 +12547,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  smallProps so the eat/take path can find and clear it; its containedIn
    *  keeps it off the tidy chore and the loose lists. */
   function addVisibleContainedProp(session: QuestSession, objId: string, glyph: string) {
-    if (session.containers.get(objId) !== "on" || !world) return;
+    if (session.containerRecords.get(objId)?.relation !== "on" || !world) return;
     const c = world.state.objects[objId];
     if (!c) return;
-    const entityId = materialize(session, glyph, representativeOwnerCid(session.containerOwner.get(objId)));
+    const entityId = materialize(session, glyph, representativeOwnerCid(session.containerRecords.get(objId)?.owner));
     const pid = `small:${entityId}`;
     // NO CARRY: a mirror prop stands for one unit of the container's stack, so
     // hands must not lift it out from under the count (`unshelveProp` is the
     // only way it becomes a real thing). Same object, one affordance different.
     world.addObject(itemObjectSpec(glyph, pid, c, { carry: false }));
-    session.smallProps.set(pid, { entityId, glyph, at: session.townClock });
+    setLooseProp(session, pid, { entityId, glyph, at: session.townClock });
     session.needsPropsEpoch++; // a new loose prop wakes dormant tidy/fun decides
     placeInContainer(world.state, pid, objId, "on");
   }
@@ -12430,12 +12564,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** A table renders its contents: remove one matching visible prop when a stack unit
    *  leaves an "on" container (shared by the player's take and a creature's eat). */
   function removeVisibleContainedProp(session: QuestSession, objId: string, glyph: string) {
-    if (session.containers.get(objId) !== "on" || !world) return;
-    for (const [pObjId, rec] of session.smallProps) {
+    if (session.containerRecords.get(objId)?.relation !== "on" || !world) return;
+    for (const [pObjId, rec] of looseEntries(session)) {
       if (rec.glyph === glyph && world.state.objects[pObjId]?.containedIn?.objectId === objId) {
         world.removeObject(pObjId);
-        session.smallProps.delete(pObjId);
-        if (session.creatures) delete session.creatures.world.items[rec.entityId];
+        if (session.creatures && rec.entityId) delete session.creatures.world.items[rec.entityId];
+        clearLooseProp(session, pObjId);
         break;
       }
     }
@@ -12452,14 +12586,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  stock and the very same object comes back as a loose prop hands can take.
    *  Same object id and entity, so a plan that already named it still holds. */
   function unshelveProp(session: QuestSession, objId: string, boxId: string): boolean {
-    const rec = session.smallProps.get(objId);
+    const rec = loosePropOf(session, objId);
     const o = world?.state.objects[objId];
-    const stock = session.containerStock.get(boxId);
-    if (!world || !rec || !o || !stock || !stackTake(stock, rec.glyph)) return false;
-    session.containerStock.set(boxId, stock);
+    const stock = session.containerRecords.get(boxId)?.stock;
+    if (!world || !rec || !o || !stock || !rec.glyph || !stackTake(stock, rec.glyph)) return false;
     world.removeObject(objId);
     world.addObject(itemObjectSpec(rec.glyph, objId, o));
-    session.smallProps.set(objId, { ...rec, at: session.townClock }); // `at` re-paces the tidy grace
+    setLooseProp(session, objId, { entityId: rec.entityId!, glyph: rec.glyph, at: session.townClock }); // `at` re-paces the tidy grace
     session.needsPropsEpoch++; // loose now — wakes dormant tidy/fun decides
     return true;
   }
@@ -13218,7 +13351,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  or a loose small prop. Null = the entity has no physical body right now. */
   function objIdOfEntity(session: QuestSession, entityId: string): string | null {
     for (const [objId, it] of session.convItems) if (it.entityId === entityId) return objId;
-    for (const [objId, rec] of session.smallProps) if (rec.entityId === entityId) return objId;
+    for (const [objId, rec] of looseEntries(session)) if (rec.entityId === entityId) return objId;
     return null;
   }
 
@@ -13249,11 +13382,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     ) {
       return false; // economy-driven stock takes no puts (same rule as putSelectedIn)
     }
-    const rel = session.containers.get(containerObjId);
+    const rel = session.containerRecords.get(containerObjId)?.relation;
     const o = world.state.objects[objId];
     if (!rel || !o) return false;
     dropObject(world.state, objId, o.x, o.y); // release the carry first
-    const small = session.smallProps.get(objId);
+    const small = loosePropOf(session, objId);
     if (!small) {
       placeInContainer(world.state, objId, containerObjId, rel);
       return true;
@@ -13266,26 +13399,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // been boxed and stood up again. (The refrigerator kept its food only
     // because nobody ever put IT in a box.) An EMPTY container still stacks —
     // a flat-packed barrel is just a barrel.
-    const ownStock = session.containerStock.get(objId);
-    if (!mayDissolveToStack(small.glyph, ownStock)) {
+    const ownStock = session.containerRecords.get(objId)?.stock;
+    if (!small.glyph || !mayDissolveToStack(small.glyph, ownStock)) {
       // No room for a whole object ⇒ refuse, rather than quietly spilling it.
       return placeInContainer(world.state, objId, containerObjId, rel);
     }
-    const stock = session.containerStock.get(containerObjId) ?? {};
+    const stock = ensureContainerStock(session, containerObjId);
     stackAdd(stock, small.glyph);
-    session.containerStock.set(containerObjId, stock);
     bumpStockEpoch(session); // ⏸️ a whole prop became stock — wakes parked rows
     if (rel === "on") {
       placeInContainer(world.state, objId, containerObjId, "on"); // visible on the table
     } else {
       world.removeObject(objId);
-      session.smallProps.delete(objId);
       // An emptied container that just became a tally leaves no registration
       // behind — a stale one is an endpoint pointing at an object that is gone.
-      session.containerStock.delete(objId);
-      session.containers.delete(objId);
-      session.containerOwner.delete(objId);
-      if (session.creatures) {
+      deleteContainerRecord(session, objId);
+      if (session.creatures && small.entityId) {
         delete session.creatures.world.items[small.entityId];
         for (const cr of Object.values(session.creatures.world.creatures)) {
           delete cr.knowledge[small.entityId];
@@ -13367,7 +13496,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let objId = planned ? objIdOfEntity(session, planned) : null;
     if (!objId || world.state.objects[objId]?.carriedBy !== showerBody) {
       objId = null;
-      for (const [id] of session.smallProps) {
+      for (const id of looseIds(session)) {
         if (world.state.objects[id]?.carriedBy === showerBody) {
           objId = id;
           break;
@@ -13384,7 +13513,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       saySystem(session, line, `💬 nothing to show`, from);
       return;
     }
-    const entityId = session.smallProps.get(objId)?.entityId ?? session.convItems.get(objId)?.entityId ?? planned;
+    const entityId = loosePropOf(session, objId)?.entityId ?? session.convItems.get(objId)?.entityId ?? planned;
     if (!entityId) return;
     const glyph = liveItemGlyph(session, entityId);
     // HELD UP: a glyph-only bubble over the shower (the symbol-first caption —
@@ -13653,7 +13782,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // moment that clock should restart: a commanded "pick up the basket" has to
     // visibly land before the put-down row (`heldIdleObject`) may undo it, and
     // a thing set down and taken up again is not stale clutter either.
-    const rec = session.smallProps.get(objId);
+    const rec = loosePropOf(session, objId);
     if (rec) rec.at = session.townClock;
     fireCarryGesture(bodyId, "pickup", reach);
     return objId;
@@ -13701,7 +13830,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const o = state.objects[objId];
     if (!o || o.carriedBy !== bodyId) return null;
     const glyph =
-      session.smallProps.get(objId)?.glyph ??
+      loosePropOf(session, objId)?.glyph ??
       state.spec.objects.find((s) => s.id === objId)?.glyph ??
       null;
     let landed = { x: o.x, y: o.y };
@@ -13717,7 +13846,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the thing up or bank it. Registered props go through removeLooseProp so
       // the creature world drops the entity with them; a display token was never
       // registered and only has to leave the scene.
-      if (session.smallProps.has(objId)) removeLooseProp(session, objId);
+      if (isLooseProp(session, objId)) removeLooseProp(session, objId);
       else world.removeObject(objId);
     }
     if (!opts?.quiet) fireCarryGesture(bodyId, "putdown", opts?.reachAt ?? landed);
@@ -13770,7 +13899,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world || !surfaceId || !objId) return false;
     // A SURFACE, not a box: only an "on" container shows what it holds, and only
     // a shown unit reads as a meal waiting in front of the diner.
-    if (session.containers.get(surfaceId) !== "on") return false;
+    if (session.containerRecords.get(surfaceId)?.relation !== "on") return false;
     const surface = world.state.objects[surfaceId];
     const bodyId = avatarIdOf(cid);
     if (!surface || world.state.objects[objId]?.carriedBy !== bodyId) return false;
@@ -13805,7 +13934,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  record is the truth for anything the game minted), else the spec's own. */
   function objGlyphOf(session: QuestSession, objId: string): string | null {
     return (
-      session.smallProps.get(objId)?.glyph ??
+      loosePropOf(session, objId)?.glyph ??
       world?.state.spec.objects.find((s) => s.id === objId)?.glyph ??
       null
     );
@@ -13813,8 +13942,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /**
    * A PORTABLE CONTAINER, as a live bag view — or null for anything that is
-   * not one. `stock` ALIASES `session.containerStock`, which is the whole
-   * point: `StockEndpoint.stack` is an alias law, and a copy here would let
+   * not one. `stock` ALIASES the container's own record (`ensureContainerStock`),
+   * which is the whole point: `StockEndpoint.stack` is an alias law, and a copy here would let
    * units land in a bag that nobody else can see. The entry is CREATED if the
    * container has never held anything, so the alias is real from the first
    * write (the same ensure trick the old pocket branch used).
@@ -13824,11 +13953,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!g) return null;
     const def = containerDefOfGlyph(g);
     if (!def?.hold) return null; // furniture is a container, but not one a body holds
-    let stock = session.containerStock.get(objId);
-    if (!stock) {
-      stock = {};
-      session.containerStock.set(objId, stock);
-    }
+    const stock = ensureContainerStock(session, objId);
     return { objId, glyph: g, stock, capacity: def.capacity };
   }
 
@@ -13852,16 +13977,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    */
   function bodyCarryOf(session: QuestSession, cid: string): BodyCarry {
     const carry: BodyCarry = { inHand: null, worn: null };
-    const wornRec = session.wornBags.get(cid);
+    const wornRec = wornBagOf(session, cid);
     if (wornRec) carry.worn = bagRefOf(session, wornRec.objId, wornRec.glyph);
     if (!world) return carry;
     const bodyId = avatarIdOf(cid);
     const objects = world.state.objects;
     let objId: string | null = null;
-    for (const [id, rec] of session.smallProps) {
+    for (const [id, rec] of looseEntries(session)) {
       if (objects[id]?.carriedBy !== bodyId) continue;
       objId ??= id;
-      if (containerDefOfGlyph(rec.glyph)?.hold) {
+      if (containerDefOfGlyph(rec.glyph!)?.hold) {
         objId = id;
         break;
       }
@@ -13997,30 +14122,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * the routing). A satchel becomes a fixture of the body, and the body's hands
    * stay free, which is the whole difference between it and a basket.
    *
-   * The prop LEAVES the world while worn (see `wornBags` — declared debt: there
-   * is no on-body mount yet, and a bag left lying on the floor would be swept
-   * up by its owner's own tidy chore). Its registration and its stock stay
-   * exactly where they were, keyed by the same object id.
+   * The prop LEAVES the world while worn (see `wornBagIndex` — declared debt:
+   * there is no on-body mount yet, and a bag left lying on the floor would be
+   * swept up by its owner's own tidy chore). Its registration and its stock
+   * stay exactly where they were, keyed by the same object id.
    */
   function donWornBag(session: QuestSession, cid: string, objId: string): boolean {
-    if (!world || session.wornBags.has(cid)) return false;
+    if (!world || session.wornBagIndex.has(cid)) return false;
     const glyph = objGlyphOf(session, objId);
     const def = glyph ? containerDefOfGlyph(glyph) : null;
     if (!glyph || def?.hold !== "wear") return false;
     const av = world.state.avatars[avatarIdOf(cid)];
-    if (!session.containerStock.has(objId)) session.containerStock.set(objId, {});
-    session.containers.set(objId, def.relation);
+    const rec = recordOf(session, objId);
+    if (!rec.stock) rec.stock = {};
+    rec.relation = def.relation;
     // A PERSONAL BAG IS NOT THE HOUSEHOLD PANTRY (ownership.ts): what is in
     // somebody's satchel is theirs, so the walkers' private-property gate keeps
     // housemates out of it exactly as it keeps them out of a member's own box.
-    session.containerOwner.set(objId, creatureScope(cid));
-    const rec = session.smallProps.get(objId);
+    rec.owner = creatureScope(cid);
+    const hadEntityId = rec.entityId;
     world.removeObject(objId);
-    session.smallProps.delete(objId);
     // The creature-world instance goes with the prop — the bag is a fixture of
     // the body now, not a loose thing anybody can be told to fetch.
-    if (rec && session.creatures) delete session.creatures.world.items[rec.entityId];
-    session.wornBags.set(cid, { objId, glyph });
+    if (hadEntityId && session.creatures) delete session.creatures.world.items[hadEntityId];
+    rec.mount = "worn";
+    rec.glyph = glyph;
+    rec.wearer = cid;
+    delete rec.entityId;
+    delete rec.at;
+    session.wornBagIndex.set(cid, objId);
     if (av) fireCarryGesture(avatarIdOf(cid), "pickup", { x: av.x, y: av.y });
     return true;
   }
@@ -14034,15 +14164,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cid: string,
     at: { x: number; y: number },
   ): string | null {
-    const rec = session.wornBags.get(cid);
-    if (!rec || !world) return null;
-    const entityId = materialize(session, rec.glyph, null);
-    world.addObject(itemObjectSpec(rec.glyph, rec.objId, at));
-    session.smallProps.set(rec.objId, { entityId, glyph: rec.glyph, at: session.townClock });
+    const objId = session.wornBagIndex.get(cid);
+    const rec = objId ? session.containerRecords.get(objId) : undefined;
+    if (!objId || !rec || !world) return null;
+    const glyph = rec.glyph ?? "";
+    const entityId = materialize(session, glyph, null);
+    world.addObject(itemObjectSpec(glyph, objId, at));
+    rec.mount = "loose";
+    rec.entityId = entityId;
+    rec.at = session.townClock;
+    delete rec.wearer;
     session.needsPropsEpoch++; // a bag on the floor wakes dormant tidy decides
-    session.wornBags.delete(cid);
+    session.wornBagIndex.delete(cid);
     fireCarryGesture(avatarIdOf(cid), "putdown", at);
-    return rec.objId;
+    return objId;
   }
 
   /** The registered TRANSFORM station whose `applies` IS `state` (fire → hot,
@@ -14106,7 +14241,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // A commanded body meets the same social stop-gate as the player's
         // own hand (ownership.ts): foreign PRIVATE property is refused
         // while an owner is nearby to object.
-        const bOwner = session.containerOwner.get(boxId);
+        const bOwner = session.containerRecords.get(boxId)?.owner;
         if (isPrivateOwner(bOwner) && !mayUse(cid, houseIndexOfCid(cid), bOwner)) {
           const objector = objectingOwner(bOwner, world.state.objects[boxId]);
           if (objector) {
@@ -14116,8 +14251,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
         // OPEN the lid to reach in — the access action (a lidded box); it stays
         // open until the taker leaves (stepContainerLids) or "shut".
-        if (session.containers.get(boxId) === "in") openContainerLid(session, cid, boxId);
-        const stock = session.containerStock.get(boxId) ?? {};
+        if (session.containerRecords.get(boxId)?.relation === "in") openContainerLid(session, cid, boxId);
+        const stock = session.containerRecords.get(boxId)?.stock ?? {};
         if ((stock[glyph] ?? 0) <= 0) return; // emptied during the walk — re-command re-resolves
         const body = world.state.avatars[npcId];
         const at = body ?? world.state.objects[boxId];
@@ -14145,7 +14280,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (got < 1) return;
         stock[glyph]! -= 1;
         if (stock[glyph]! <= 0) delete stock[glyph];
-        session.containerStock.set(boxId, stock);
+        setContainerStock(session, boxId, stock);
         removeVisibleContainedProp(session, boxId, glyph);
         fellIfConsumed(session, boxId); // an emptied kill-source is felled
         // A unit that went INTO A BAG leaves no instance behind, so the goal
@@ -14165,17 +14300,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // pursuit planned was a silent no-op and the trip achieved nothing. A
       // container and anything furniture-sized still ride the hands only: a
       // scope may never become a countable unit inside another bag.
-      const loose = o ? session.smallProps.get(o) : undefined;
-      if (o && loose && npcCarrying(npcId) && !world.state.objects[o]?.carriedBy) {
+      const loose = o ? loosePropOf(session, o) : undefined;
+      if (o && loose && loose.glyph && npcCarrying(npcId) && !world.state.objects[o]?.carriedBy) {
+        const looseGlyph = loose.glyph;
         const carry = bodyCarryOf(session, cid);
-        const cdef = containerDefOfGlyph(loose.glyph);
-        const handsOnly = isLargeGlyph(loose.glyph) || !!cdef?.hold;
+        const cdef = containerDefOfGlyph(looseGlyph);
+        const handsOnly = isLargeGlyph(looseGlyph) || !!cdef?.hold;
         const at = world.state.objects[o];
         if (!handsOnly && activeBag(carry) && at) {
           // TAKE-FIRST, REMOVE-SECOND (item conservation): the unit is on the
           // body before the prop leaves the world, and a refusal leaves it
           // lying exactly where it was.
-          if (giveUnitsToBody(session, cid, loose.glyph, 1, { at: { x: at.x, y: at.y } }) > 0) {
+          if (giveUnitsToBody(session, cid, looseGlyph, 1, { at: { x: at.x, y: at.y } }) > 0) {
             removeLooseProp(session, o);
             // Nothing is left for a `holding` precondition to see, so the
             // errand ends here rather than re-planning into the act cap.
@@ -14201,7 +14337,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // to lift it out — the access action (bug: items taken through a shut
         // lid). "on" surfaces and loose props have no lid to work.
         const boxId = at?.containedIn?.objectId;
-        if (boxId && session.containers.get(boxId) === "in") openContainerLid(session, cid, boxId);
+        if (boxId && session.containerRecords.get(boxId)?.relation === "in") openContainerLid(session, cid, boxId);
         // The mirror-prop conversion (unshelveProp), the carry and the reach all
         // live in the master now — this used to be the only one of the five
         // carry paths that did all three, which is why it was the only one that
@@ -14384,10 +14520,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // serving that renders nowhere and can never be eaten again. Same draw-
           // down the needs walker's own consume does when it eats at a station.
           const shelf = at?.containedIn?.objectId;
-          const stock = shelf ? session.containerStock.get(shelf) : undefined;
+          const stock = shelf ? session.containerRecords.get(shelf)?.stock : undefined;
           if (shelf && stock) {
-            stackTake(stock, session.smallProps.get(o)?.glyph ?? "");
-            session.containerStock.set(shelf, stock);
+            stackTake(stock, loosePropOf(session, o)?.glyph ?? "");
+            setContainerStock(session, shelf, stock);
           }
           removeLooseProp(session, o);
         }
@@ -14457,7 +14593,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!o || world.state.objects[o]?.carriedBy !== npcId) {
         // Stale/desynced id — transform the REAL prop in hand (give/place's rule).
         o = null;
-        for (const [objId] of session.smallProps) {
+        for (const objId of looseIds(session)) {
           if (world.state.objects[objId]?.carriedBy === npcId) {
             o = objId;
             break;
@@ -14468,13 +14604,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const body = world.state.avatars[npcId];
       const st = nearestStationApplying(session, step.state, body ? { x: body.x, y: body.y } : null);
       if (!st) return; // no station grants this state here — the pursuit spoke the reason
-      const entityId = session.smallProps.get(o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
+      const entityId = loosePropOf(session, o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
       const events = useStation(session.creatures.world, entityId, st.applies, st.removes, st.powerDeviceId);
       if (!events.length) return; // wrong direction / unpowered — a no-op, re-plan next tick
       const newGlyph = liveItemGlyph(session, entityId);
       const specObj = world.state.spec.objects.find((ob) => ob.id === o);
       if (specObj) specObj.glyph = newGlyph; // render3d re-rasters the icon
-      const rec = session.smallProps.get(o);
+      const rec = loosePropOf(session, o);
       if (rec) rec.glyph = newGlyph; // later lookups (eat/tidy/give) see the new type
       const stObj = world.state.objects[st.objectId];
       fireCarryGesture(npcId, "pickup", stObj ? { x: stObj.x, y: stObj.y } : undefined); // a reach at the station
@@ -14590,8 +14726,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!body) return;
       let boxId: string | undefined;
       let bestD = 2.4;
-      for (const [id, rel] of session.containers) {
-        if (rel !== "in") continue; // only lidded boxes have an open-state
+      for (const [id, rec] of containerEntries(session)) {
+        if (rec.relation !== "in") continue; // only lidded boxes have an open-state
         const o = state.objects[id];
         if (!o) continue;
         const d = Math.hypot(o.x - body.x, o.y - body.y);
@@ -14630,7 +14766,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       let o = objIdOfEntity(session, step.itemId);
       if (!o || state.objects[o]?.carriedBy !== npcId) {
         o = null;
-        for (const [objId] of session.smallProps) {
+        for (const objId of looseIds(session)) {
           if (state.objects[objId]?.carriedBy === npcId) {
             o = objId;
             break;
@@ -14638,7 +14774,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       }
       if (!o) return; // empty-handed — nothing to wear
-      const glyph = session.smallProps.get(o)?.glyph ?? liveItemGlyph(session, step.itemId);
+      const glyph = loosePropOf(session, o)?.glyph ?? liveItemGlyph(session, step.itemId);
       // Keep the FULL clean garment signature (head + colour, minus any state
       // facet) so the doffed unit and the visible re-dress carry the colour —
       // e.g. "wear + shirt + red" dons `shirt.color_red`, not a bare `shirt`.
@@ -14671,7 +14807,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       let o = objIdOfEntity(session, step.itemId);
       if (!o || state.objects[o]?.carriedBy !== npcId) {
         o = null;
-        for (const [objId] of session.smallProps) {
+        for (const objId of looseIds(session)) {
           if (state.objects[objId]?.carriedBy === npcId) {
             o = objId;
             break;
@@ -14679,17 +14815,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       }
       if (!o) return; // empty-handed — nothing to colour
-      const entityId = session.smallProps.get(o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
+      const entityId = loosePropOf(session, o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
       // Swap the colour on the CANONICAL item so every later lookup (wear, give,
       // tidy) sees the new colour; keep head + other facets + state.
       const ent = session.entities.get(entityId);
-      const cur = ent?.glyph ?? session.smallProps.get(o)?.glyph ?? liveItemGlyph(session, entityId);
+      const cur = ent?.glyph ?? loosePropOf(session, o)?.glyph ?? liveItemGlyph(session, entityId);
       const recolored = withVariation(cur, step.color);
       if (ent) ent.glyph = recolored;
       const newGlyph = ent ? liveItemGlyph(session, entityId) : recolored;
       const specObj = state.spec.objects.find((ob) => ob.id === o);
       if (specObj) specObj.glyph = newGlyph; // render3d re-rasters the icon
-      const rec = session.smallProps.get(o);
+      const rec = loosePropOf(session, o);
       if (rec) rec.glyph = newGlyph; // later lookups see the new colour
       fireCarryGesture(npcId, "pickup", { x: av.x, y: av.y }); // a reach at the tub
       showWorldBubble(state, `color:${cid}`, {
@@ -14750,7 +14886,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let o = objIdOfEntity(session, step.itemId);
     if (!o || world.state.objects[o]?.carriedBy !== npcId) {
       o = null;
-      for (const [objId] of session.smallProps) {
+      for (const objId of looseIds(session)) {
         if (world.state.objects[objId]?.carriedBy === npcId) {
           o = objId;
           break;
@@ -14760,7 +14896,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const c = o ? world.state.objects[o] : undefined;
     if (!o || !c) return; // empty-handed — nothing to give / put down
     const entityId =
-      session.smallProps.get(o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
+      loosePropOf(session, o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
     if (step.kind === "give") {
       const cworld = session.creatures?.world;
       const item = cworld?.items[entityId];
@@ -14810,10 +14946,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // place: prefer a real CONTAINER — the named one, else the nearest within
     // reach of the drop point — and fall back to setting the item down.
     const named = step.place.kind === "named" ? step.place.id : null;
-    let containerId = named && session.containers.has(named) ? named : null;
+    let containerId = named && isContainerId(session, named) ? named : null;
     if (!containerId) {
       let bestD = 2.5;
-      for (const [boxId] of session.containers) {
+      for (const boxId of containerIds(session)) {
         const box = world.state.objects[boxId];
         if (!box) continue;
         const d = Math.hypot(box.x - c.x, box.y - c.y);
@@ -14825,7 +14961,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // OPEN the lid to file it in — a lidded box takes the access action first
     // (bug: "put X away" stowed THROUGH a shut lid). "on" surfaces have none.
-    if (containerId && session.containers.get(containerId) === "in") openContainerLid(session, cid, containerId);
+    if (containerId && session.containerRecords.get(containerId)?.relation === "in") openContainerLid(session, cid, containerId);
     if (!containerId || !stowCarriedIn(session, o, containerId)) {
       dropObject(world.state, o, c.x, c.y);
       fireCarryGesture(npcId, "putdown", { x: c.x, y: c.y });
@@ -15048,7 +15184,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
           };
           for (const objId of Object.keys(host.state.objects)) tryObj(objId, null);
-          for (const [objId, rec] of session.smallProps) tryObj(objId, objHead(rec.glyph));
+          for (const [objId, rec] of looseEntries(session)) tryObj(objId, objHead(rec.glyph!));
           for (const [objId, it] of session.convItems) {
             tryObj(objId, objHead(session.entities.get(it.entityId)?.glyph));
           }
@@ -15112,14 +15248,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         for (const [objId, it] of session.convItems) {
           consider(it.entityId, objId, session.entities.get(it.entityId)?.glyph ?? "");
         }
-        for (const [objId, rec] of session.smallProps) consider(rec.entityId, objId, rec.glyph);
+        for (const [objId, rec] of looseEntries(session)) consider(rec.entityId!, objId, rec.glyph!);
         // Container stocks: a matching stacked glyph resolves as a synthetic
         // `stock:<container>|<glyph>` ref; the pick step withdraws one unit
         // and materializes it into the hand. CAPABILITY-GATED like the needs
         // walker: a graspless seeker (the commanded pet) reaches only open
         // surfaces ("on" — the table, its bowl), never lidded boxes.
         const seekerGrasp = canGrasp(session.creatures?.world.creatures[seeker]);
-        for (const [boxId, stock] of fromCid !== null ? [] : session.containerStock) {
+        for (const [boxId, boxRec] of fromCid !== null ? [] : stockedEntries(session)) {
+          const stock = boxRec.stock!;
           const box = host.state.objects[boxId];
           if (!box) continue;
           if (!scopeOk(boxId, box)) continue; // a need eats from ITS OWN pantry
@@ -15128,7 +15265,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // OWNERSHIP-GATED (ownership.ts): a command never auto-resolves
           // into someone ELSE's private box — an explicit take at the box
           // itself still meets the social stop-gate (and its objection).
-          const bOwner = session.containerOwner.get(boxId);
+          const bOwner = boxRec.owner;
           if (isPrivateOwner(bOwner) && !mayUse(seeker, houseIndexOfCid(seeker), bOwner)) continue;
           for (const [glyph, n] of Object.entries(stock)) {
             if (n <= 0) continue;
@@ -15324,17 +15461,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world) return [];
     const houseIndex = houseIndexOfCid(cid);
     const out: IdleBag[] = [];
-    for (const [objId, rec] of session.smallProps) {
-      if (!livesOnTheFloor(rec.glyph)) continue;
+    for (const [objId, rec] of looseEntries(session)) {
+      if (!rec.glyph || !rec.entityId) continue;
+      const glyph = rec.glyph;
+      if (!livesOnTheFloor(glyph)) continue;
       const o = world.state.objects[objId];
       if (!o || o.carriedBy) continue; // somebody has it
-      if (!mayUse(cid, houseIndex, session.containerOwner.get(objId))) continue;
+      if (!mayUse(cid, houseIndex, session.containerRecords.get(objId)?.owner)) continue;
       if (toolClaimed(session.reservations, objId)) continue; // another trip's
       if (isPlayArea(session, world.state, objId)) continue;
-      const cap = containerDefOfGlyph(rec.glyph)?.capacity ?? 0;
-      const room = cap - totalStackUnits(session.containerStock.get(objId) ?? {});
+      const cap = containerDefOfGlyph(glyph)?.capacity ?? 0;
+      const room = cap - totalStackUnits(session.containerRecords.get(objId)?.stock ?? {});
       if (room <= 0) continue;
-      out.push({ objId, entityId: rec.entityId, glyph: rec.glyph, at: { x: o.x, y: o.y }, room });
+      out.push({ objId, entityId: rec.entityId, glyph, at: { x: o.x, y: o.y }, room });
     }
     return out.sort((a, b) => (a.objId < b.objId ? -1 : a.objId > b.objId ? 1 : 0));
   }
@@ -15543,13 +15682,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // The SPOKEN word of each stack, not its storage head: a piece waiting on
     // the floor is a `furn.<kind>` stack, and the child says "workbench".
-    for (const [, rec] of session.smallProps) {
-      if (spokenWord(rec.glyph).toLowerCase() === sym) return "item";
+    for (const [, rec] of looseEntries(session)) {
+      if (spokenWord(rec.glyph!).toLowerCase() === sym) return "item";
     }
     const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
     if (Object.keys(onMe).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
-    for (const stock of session.containerStock.values()) {
-      if (Object.keys(stock).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
+    for (const [, rec] of stockedEntries(session)) {
+      if (Object.keys(rec.stock!).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
     }
     return "unknown";
   }
@@ -15691,6 +15830,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     );
   }
 
+  /** WHAT BODY a creature wears, as the avatar factories decide it (`speciesFor`
+   *  / `outfitFor` — makeTownModelFactory). ONE owner: a presenter that draws a
+   *  creature's own body (the builder's creature portraits) reads it from here
+   *  rather than re-deriving the override/hash ladder and drifting off the body
+   *  the child can see. Outfit only where a body is DRESSED — pets and fauna run
+   *  bare, and the spark has no body at all. */
+  function bodyLookOf(session: QuestSession, cid: string): { species: string; outfit?: number } {
+    const species = speciesOf(session, cid);
+    if (species === SPARK_SPECIES_ID || isPetCid(cid) || cid.startsWith("fauna:") || cid.startsWith("flora:")) {
+      return { species };
+    }
+    // Keyed by the BODY id, exactly as the factory's `outfitFor` is called.
+    const body = avatarIdOf(cid);
+    const authored = familyOverrides(session)?.get(body)?.outfit;
+    return {
+      species,
+      outfit: authored !== undefined ? Math.floor(authored) : outfitIndexForDress(fnv1a(body), session.dress),
+    };
+  }
+
   /** Sample the DOLLHOUSE family's live states into HUD chips (family-hud.ts):
    *  one emoji per member from the same machinery that drives the bodies —
    *  meters, the active need step, queued spoken commands, the clock's shift
@@ -15709,6 +15868,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         state: "guest" as const,
         selected: session.addressedFamily === cid,
         present: !!world!.state.avatars[avatarIdOf(cid)],
+        ...bodyLookOf(session, cid),
       }));
     }
     const h = session.dollhouse;
@@ -15747,6 +15907,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           state,
           selected: session.addressedFamily === cid,
           present: false,
+          ...bodyLookOf(session, cid),
         });
         continue;
       }
@@ -15775,6 +15936,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         state,
         selected: session.addressedFamily === cid,
         present: true,
+        ...bodyLookOf(session, cid),
       });
     }
     // PETS: family members of another species — same ladder, no duties.
@@ -15806,6 +15968,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         state,
         selected: session.addressedFamily === cid,
         present,
+        ...bodyLookOf(session, cid),
       });
     }
     // GUESTS: recruited street residents ("you follow i_me") get a chip too —
@@ -15821,6 +15984,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         state: "guest",
         selected: session.addressedFamily === cid,
         present: true,
+        ...bodyLookOf(session, cid),
       });
     }
     return entries;
@@ -16369,8 +16533,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world) return [];
     const key = `h_${houseIndex}`;
     const out: Array<{ id: string; glyph: string; x: number; y: number }> = [];
-    for (const [objId, rec] of session.smallProps) {
-      if (!furnitureKindOfGlyph(rec.glyph)) continue;
+    for (const [objId, rec] of looseEntries(session)) {
+      if (!rec.glyph || !furnitureKindOfGlyph(rec.glyph)) continue;
       const o = world.state.objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue;
       if (buildingAt(world.state, o.x, o.y)?.id !== key) continue;
@@ -16516,7 +16680,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const glyph = furnitureGlyph(kind);
     let sourceBox: string | null = null;
     for (const objId of houseContainerKeys(session, house.index)) {
-      const stock = session.containerStock.get(objId);
+      const stock = session.containerRecords.get(objId)?.stock;
       if (stock && (stock[glyph] ?? 0) > 0) {
         sourceBox = objId;
         break;
@@ -16655,13 +16819,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const drawStock = (): boolean => {
       if (sourceProp) {
         const o = state.objects[sourceProp];
-        return !!o && !o.carriedBy && session.smallProps.has(sourceProp);
+        return !!o && !o.carriedBy && isLooseProp(session, sourceProp);
       }
       if (took) return true;
-      const stock = session.containerStock.get(sourceBox!) ?? {};
+      const stock = session.containerRecords.get(sourceBox!)?.stock ?? {};
       if ((stock[glyph] ?? 0) <= 0) return false; // someone took it meanwhile
       stackTake(stock, glyph);
-      session.containerStock.set(sourceBox!, stock);
+      setContainerStock(session, sourceBox!, stock);
       took = true;
       return true;
     };
@@ -16739,12 +16903,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * them, so there is nothing to absorb it into and nothing to say about it.
    */
   function pocketLoose(session: QuestSession, objId: string) {
-    const rec = session.smallProps.get(objId);
-    if (!rec) return;
+    const rec = loosePropOf(session, objId);
+    if (!rec || !rec.glyph) return;
+    const glyph = rec.glyph;
     const cid = session.handsCid;
     const held = world?.state.objects[objId]?.carriedBy === avatarIdOf(cid);
     const carry = bodyCarryOf(session, cid);
-    const cdef = containerDefOfGlyph(rec.glyph);
+    const cdef = containerDefOfGlyph(glyph);
     if (cdef?.hold === "wear" && !carry.worn) {
       if (donWornBag(session, cid, objId)) pushPocket(session);
       return;
@@ -16752,7 +16917,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // A CONTAINER — or anything furniture-sized — rides the HANDS as itself: a
     // scope may never become a countable unit inside another bag (containers.ts),
     // and nobody ever pocketed a chair.
-    const handsOnly = !!cdef?.hold || isLargeGlyph(rec.glyph);
+    const handsOnly = !!cdef?.hold || isLargeGlyph(glyph);
     const bag = activeBag(carry);
     if (handsOnly || !bag) {
       if (held) return; // already in the hands — that IS where it goes
@@ -16762,7 +16927,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // INTO THE BAG — take-first, remove-second, so the unit is never in both
     // places (and a full bag simply leaves it where it is).
-    if (giveUnitsToBody(session, cid, rec.glyph, 1) < 1) return;
+    if (giveUnitsToBody(session, cid, glyph, 1) < 1) return;
     removeLooseProp(session, objId);
     pushPocket(session);
   }
@@ -16776,14 +16941,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const entityId = materialize(session, glyph, null);
     const objId = `small:${entityId}`;
     world.addObject(itemObjectSpec(glyph, objId, { x, y }));
-    session.smallProps.set(objId, { entityId, glyph, at: session.townClock }); // `at` paces the tidy grace
+    setLooseProp(session, objId, { entityId, glyph, at: session.townClock }); // `at` paces the tidy grace
     // A CONTAINER IS A CONTAINER WHEREVER IT IS (step ②): a basket on the floor
     // and a barrel on its side are places things can go, so they register as
     // such the moment they exist. Registration is what makes the stock map
     // reachable — without it a loose container has no endpoint and cannot hold
     // anything at all.
     const cdef = containerDefOfGlyph(glyph);
-    if (cdef) session.containers.set(objId, cdef.relation);
+    // Relation only — NOT `registerContainer` (which also stamps `owner`):
+    // ownership is a separate decision a caller makes afterward (or never, for
+    // plain unowned clutter), so this leaves it untouched exactly as the old
+    // bare `containers.set` did.
+    if (cdef) recordOf(session, objId).relation = cdef.relation;
     session.needsPropsEpoch++; // a new loose prop wakes dormant tidy/fun decides
     return objId;
   }
@@ -16794,7 +16963,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  remember. Returns the prop id, or null when the world isn't up. */
   function seedContainerProp(session: QuestSession, seed: ContainerSeed): string | null {
     const objId = spawnLooseProp(session, seed.glyph, seed.at.x, seed.at.y);
-    if (objId) session.containerOwner.set(objId, seed.owner);
+    if (objId) setContainerOwner(session, objId, seed.owner);
     return objId;
   }
 
@@ -16819,7 +16988,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function seedPlayerBag(session: QuestSession) {
     if (!world) return;
     const cid = session.handsCid;
-    if (session.wornBags.has(cid)) return; // already equipped — never a second one
+    if (session.wornBagIndex.has(cid)) return; // already equipped — never a second one
     const body = world.state.avatars[avatarIdOf(cid)];
     const at = body ? { x: body.x, y: body.y } : { x: 0, y: 0 };
     // The prop exists for one instant: `donWornBag` takes it out of the world
@@ -16829,9 +16998,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (donWornBag(session, cid, objId)) return;
     // Defensive: nothing that reaches here can refuse (the glyph is a worn
     // container and the body wears none), but a half-minted bag would be a
-    // registered container nobody holds — so it goes back out whole.
+    // registered container nobody holds — so it goes back out whole (fully —
+    // not just the loose half `removeLooseProp` alone would clear).
     removeLooseProp(session, objId);
-    session.containers.delete(objId);
+    deleteContainerRecord(session, objId);
   }
 
   /**
@@ -16905,9 +17075,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!setDownFromHands(session, avatarIdOf(cid), { kind: "container", id: containerObjId }, { objId: carry.inHand.objId })) return;
     } else {
       if (takeUnitsFromBody(session, cid, glyph, 1) < 1) return;
-      const stock = session.containerStock.get(containerObjId) ?? {};
+      const stock = ensureContainerStock(session, containerObjId);
       stackAdd(stock, glyph);
-      session.containerStock.set(containerObjId, stock);
       bumpStockEpoch(session); // ⏸️ the PLAYER filled a box — wakes parked rows
       addVisibleContainedProp(session, containerObjId, glyph);
     }
@@ -16998,9 +17167,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         iconRef: "🏗️",
         glyph: "wood",
       });
-      session.containers.set(TOWN_YARD_ID, "in");
-      session.containerStock.set(TOWN_YARD_ID, town.deltas.stock); // ALIAS — the one stack map
-      session.containerOwner.set(TOWN_YARD_ID, TOWN_SCOPE); // communal
+      registerContainer(session, TOWN_YARD_ID, "in", TOWN_SCOPE, town.deltas.stock); // stock ALIAS — the one stack map
       // …and ONE basket beside it (step ③ seeding), communal at the same tier.
       // Seeded HERE, inside the pre-houses block, for the same reason the yard
       // is: an age-0 homestead has stock and no market, and it is the
@@ -17055,9 +17222,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           contains: [{ relation: "in", capacity: STORE_DISPLAY_CAP }],
           glyph: g.good.key,
         });
-        session.containers.set(objId, "in");
+        // NO containerStock — a market shelf's stack is DERIVED (marketStore),
+        // never stored, so this stamps relation+owner only.
+        const mrec = recordOf(session, objId);
+        mrec.relation = "in";
+        mrec.owner = vendorOf(g.good.key);
         session.marketStore.set(objId, g.good.key);
-        session.containerOwner.set(objId, vendorOf(g.good.key));
       });
     });
 
@@ -17113,9 +17283,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         contains: [{ relation: "in", capacity: 99 }],
         glyph: "water",
       });
-      session.containers.set(ws.id, "in");
-      session.containerStock.set(ws.id, { water: 99 });
-      session.containerOwner.set(ws.id, TOWN_SCOPE); // communal at the TOWN tier
+      registerContainer(session, ws.id, "in", TOWN_SCOPE, { water: 99 }); // communal at the TOWN tier
     }
 
     // (THE BUILDER'S YARD — city-expansion ②, the ①b gap — registers at the
@@ -17145,9 +17313,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           contains: [{ relation: "in", capacity: STORE_DISPLAY_CAP }],
           glyph: g.good.key,
         });
-        session.containers.set(objId, "in");
+        // NO containerStock — a producer pile's stack is DERIVED too.
+        const prec = recordOf(session, objId);
+        prec.relation = "in";
+        prec.owner = null;
         session.produceBox.set(objId, { key: g.good.key, work: w });
-        session.containerOwner.set(objId, null);
       }
     });
 
@@ -17174,9 +17344,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // `at:"box"` seeds into a member's box (0's — the boxes are
             // per-member now; there is no communal one). `at:"table"` unchanged.
             const objId = it.at === "table" ? `furn_${fam.house}_table` : `furn_${fam.house}_box_0`;
-            const stock = session.containerStock.get(objId) ?? {};
+            const stock = ensureContainerStock(session, objId);
             stock[it.glyph] = (stock[it.glyph] ?? 0) + 1;
-            session.containerStock.set(objId, stock);
           }
         });
       }
@@ -17207,8 +17376,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           contains: [{ relation: "in", capacity: STORE_DISPLAY_CAP }],
           glyph,
         });
-        session.containers.set(objId, "in");
-        session.containerOwner.set(objId, null);
+        // NO containerStock — both crates are derived stocks (trade.ts).
+        const trec = recordOf(session, objId);
+        trec.relation = "in";
+        trec.owner = null;
       }
     }
 
@@ -17221,28 +17392,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // COMMUNAL furniture belongs to the HOUSEHOLD tier (ownership.ts) —
       // every member's walker may list it; outsiders' never do.
       const owner = houseScope(house.index);
-      session.containers.set(`furn_${house.index}_cupboard`, "in");
-      session.containers.set(`furn_${house.index}_table`, "on");
+      registerContainer(session, `furn_${house.index}_cupboard`, "in", owner);
+      registerContainer(session, `furn_${house.index}_table`, "on", owner);
       // (No communal toy box — each member owns one, seeded in the private
       // tier below.)
-      session.containers.set(`furn_${house.index}_barrel`, "in");
-      session.containers.set(`furn_${house.index}_bin`, "in");
-      session.containers.set(`furn_${house.index}_bowl`, "on");
-      session.containerOwner.set(`furn_${house.index}_cupboard`, owner);
-      session.containerOwner.set(`furn_${house.index}_table`, owner);
-      session.containerOwner.set(`furn_${house.index}_barrel`, owner);
-      session.containerOwner.set(`furn_${house.index}_bin`, owner);
-      session.containerOwner.set(`furn_${house.index}_bowl`, owner);
-      session.containerStock.set(`furn_${house.index}_barrel`, { water: BARREL_CAP - 2 });
+      registerContainer(session, `furn_${house.index}_barrel`, "in", owner, { water: BARREL_CAP - 2 });
+      registerContainer(session, `furn_${house.index}_bin`, "in", owner);
+      registerContainer(session, `furn_${house.index}_bowl`, "on", owner);
       for (const g of town.stage.goods) {
         const objId = `furn_${house.index}_chest_${g.good.key}`;
-        session.containers.set(objId, "in");
         // Seed the chest to the REAL pantry level (doc §13a.3) — so eating draws down a
         // truthful count, not a token 2. Clamped to the box capacity; food splits
         // into fruit KINDS (each house flavors its own pantry mix).
         const level = Math.min(g.boxCap, Math.max(1, Math.round(g.pantry(house, session.townClock))));
-        session.containerStock.set(objId, dealGood(session.dress, g.good.key, level, house.index));
-        session.containerOwner.set(objId, owner);
+        registerContainer(session, objId, "in", owner, dealGood(session.dress, g.good.key, level, house.index));
       }
       // THE HOUSEHOLD'S BASKET (step ③ seeding) — ONE, standing on the living
       // room floor where the goods chests corner, at the same once-per-session
@@ -17260,16 +17423,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const cidOf = (m: number) => creatureScope(`resident_${house.index}_${m}`);
       for (let m = 0; m < HOUSEHOLD; m++) {
         const boxId = `furn_${house.index}_box_${m}`;
-        session.containers.set(boxId, "in");
-        session.containerOwner.set(boxId, cidOf(m));
+        registerContainer(session, boxId, "in", cidOf(m));
       }
+      // A BED IS NOT A CONTAINER (it has no `contains` slots — a fixture
+      // needn't be one) but ownership.ts still needs to know whose it is, so
+      // this stamps `owner` alone — the row it lands on has no `relation`.
       const rp = houseRoomPlan(town.stage.center, house);
-      session.containerOwner.set(`furn_${house.index}_bed_0`, `${cidOf(0)}|${cidOf(1)}`);
+      setContainerOwner(session, `furn_${house.index}_bed_0`, `${cidOf(0)}|${cidOf(1)}`);
       if (rp.bedrooms.length >= 2) {
-        session.containerOwner.set(`furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}`);
-        session.containerOwner.set(`furn_${house.index}_bed_2`, cidOf(4));
+        setContainerOwner(session, `furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}`);
+        setContainerOwner(session, `furn_${house.index}_bed_2`, cidOf(4));
       } else {
-        session.containerOwner.set(`furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}|${cidOf(4)}`);
+        setContainerOwner(session, `furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}|${cidOf(4)}`);
       }
     }
   }
@@ -17511,7 +17676,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const n = produceBoxUnits(session, objId);
       return splitStock(pb.key, n, pb.work);
     }
-    return session.containerStock.get(objId) ?? {};
+    return session.containerRecords.get(objId)?.stock ?? {};
   }
 
   /** Total items in a container (openability test). */
@@ -17524,17 +17689,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  through its glyph (concept affordances + object properties); a fixture
    *  through the station kind encoded in its id. */
   function hoverObjectMotive(session: QuestSession, objId: string): AttentionMotive | null {
-    const prop = session.smallProps.get(objId);
-    if (prop) {
+    const prop = loosePropOf(session, objId);
+    if (prop && prop.glyph) {
       // `spokenWord`, not `headOf`: a piece waiting on the floor stacks as
       // `furn.<kind>`, and no concept is filed under `furn` — so a loose bed
       // afforded nothing at all until the prefix was folded away.
-      const head = spokenWord(prop.glyph);
+      const glyph = prop.glyph;
+      const head = spokenWord(glyph);
       return objectMotive({
         affords: CONCEPT_LIBRARY.get(head)?.affords ?? [],
-        properties: propertiesOf(prop.glyph),
+        properties: propertiesOf(glyph),
         stationKind: null,
-        isWater: isKindOf(prop.glyph, "water"),
+        isWater: isKindOf(glyph, "water"),
       });
     }
     if (isWellId(objId)) {
@@ -17555,8 +17721,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  the ground says "put it away" (tidy). Only reached for objects `hoverObjectMotive`
    *  didn't claim (food/toy/bed…), so a food prop is still eaten, not swept. */
   function hoverObjectChore(session: QuestSession, objId: string): "tidy" | "provision" | null {
-    if (session.containers.has(objId)) return "provision"; // a chest/cupboard → fill-check
-    if (session.smallProps.has(objId)) return "tidy"; // loose clutter → put away
+    if (isContainerId(session, objId)) return "provision"; // a chest/cupboard → fill-check
+    if (isLooseProp(session, objId)) return "tidy"; // loose clutter → put away
     return null;
   }
 
@@ -17781,17 +17947,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** Everything the attention-action table wants to know about an object. */
   function attentionTargetInfo(session: QuestSession, objId: string): AttentionTargetInfo | null {
-    const prop = session.smallProps.get(objId);
-    if (prop) {
-      const head = spokenWord(prop.glyph); // the piece, never the `furn` prefix
+    const prop = loosePropOf(session, objId);
+    if (prop && prop.glyph && prop.entityId) {
+      const glyph = prop.glyph;
+      const head = spokenWord(glyph); // the piece, never the `furn` prefix
       const it = session.creatures?.world.items[prop.entityId];
-      const f = glyphFacets(prop.glyph);
+      const f = glyphFacets(glyph);
       const o = world?.state.objects[objId];
       return {
         affords: CONCEPT_LIBRARY.get(head)?.affords ?? [],
-        properties: propertiesOf(prop.glyph),
+        properties: propertiesOf(glyph),
         stationKind: null,
-        isWater: isKindOf(prop.glyph, "water"),
+        isWater: isKindOf(glyph, "water"),
         states: it?.states ?? f.states ?? [],
         isClothing: goodKeyOfGlyph(head) === "clothing",
         unclaimed: !it?.ownerId && !it?.bound,
@@ -17812,7 +17979,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         affords: [], properties: [], stationKind: kind, isWater: false,
         states: [], isClothing: false, unclaimed: false, loose: false,
         // A container's "low" is probed for real by promoteChore's fires-check.
-        stockLow: session.containers.has(objId),
+        stockLow: isContainerId(session, objId),
       };
     }
     return null;
@@ -17880,7 +18047,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!o || !info) return false;
     const acts = attentionActions(info);
     if (!acts.length) return false;
-    const entityId = session.smallProps.get(objId)?.entityId ?? null;
+    const entityId = loosePropOf(session, objId)?.entityId ?? null;
     const latchKey = `${cid}|${objId}`;
     let refusable: string | null = null; // the first unwilling meter act
     for (const act of acts) {
@@ -18384,8 +18551,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The word a world object is named by on the board (AAC — pressing it says
    *  it). A loose prop speaks its glyph; a fixture its station kind. */
   function objectWord(session: QuestSession, objId: string): string {
-    const prop = session.smallProps.get(objId);
-    if (prop) return drawnGlyph(prop.glyph); // an unplaced piece IS a chair, not a "furn"
+    const prop = loosePropOf(session, objId);
+    if (prop) return drawnGlyph(prop.glyph!); // an unplaced piece IS a chair, not a "furn"
     if (isWellId(objId)) return "water";
     const ws = wildSourceOf(session, objId);
     if (ws) return ws.species; // a wild source IS its species (oak, sheep)
@@ -18444,11 +18611,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): { id: string; x: number; y: number } | null {
     return resolveFurnitureAim(
       {
-        isContainer: (id) => session.containers.has(id),
+        isContainer: (id) => isContainerId(session, id),
         isFurniture: (id) => !!state.spec.objects.find((o) => o.id === id)?.fixture,
         containedIn: (id) => state.objects[id]?.containedIn?.objectId,
         standpoint: (id) => containerStandpoint(state, id),
-        ids: () => session.containers.keys(),
+        ids: () => containerIds(session),
       },
       gz,
       { want, me, spirit: spiritNow() || ignoreReach, reach: CONVO_RADIUS, fixRadius: CONVO_FIG_RADIUS },
@@ -18567,7 +18734,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // "my sheep" — pressing it makes the animal the player's.
         ...(((): QuestBoardView["options"] => {
           const wa = wildAnimalOf(session, container.objId);
-          if (!wa || session.containerOwner.get(container.objId)) return [];
+          if (!wa || session.containerRecords.get(container.objId)?.owner) return [];
           const g = `${wa.species}.my`;
           return [{ id: `tame:${container.objId}`, label: labelOfGlyph(g), glyph: g, spokenText: playerStatement(g) }];
         })()),
@@ -18644,7 +18811,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function takeFromContainer(session: QuestSession, glyph: string) {
     if (!container) return;
     const objId = container.objId;
-    const cOwner = session.containerOwner.get(objId);
+    const cOwner = session.containerRecords.get(objId)?.owner;
     // Your OWN private property never objects to you (a tamed animal's owner
     // milks it freely); everyone else's still does.
     if (isPrivateOwner(cOwner) && world && !mayUse(LOCAL_PLAYER_CID, null, cOwner)) {
@@ -18691,7 +18858,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       chargeSourceTake(session, objId, 1);
     } else {
       regrowWildStock(session, objId); // matured units are takeable this frame
-      const stock = session.containerStock.get(objId) ?? {};
+      const stock = session.containerRecords.get(objId)?.stock ?? {};
       if (!stackTake(stock, glyph)) return;
       // TOOLS MULTIPLY THE TAKE (step ④, registry-declared): the right tool on
       // the body moves more units per act — axe on wood, pick on stone. Bare
@@ -18710,17 +18877,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           stackTake(stock, glyph);
         }
       }
-      session.containerStock.set(objId, stock);
+      setContainerStock(session, objId, stock);
       // A LIVE take off a standing source arms its regrow clock (no-op for
       // kill glyphs and non-wild containers).
       if (ws) armHarvestRegrow(ws, glyph, session.taskClock, FOOD_DAY_SEC);
       // A table shows its contents — remove one matching visible prop as it's taken.
-      if (session.containers.get(objId) === "on" && world) {
-        for (const [pObjId, rec] of session.smallProps) {
+      if (session.containerRecords.get(objId)?.relation === "on" && world) {
+        for (const [pObjId, rec] of looseEntries(session)) {
           if (rec.glyph === glyph && world.state.objects[pObjId]?.containedIn?.objectId === objId) {
             world.removeObject(pObjId);
-            session.smallProps.delete(pObjId);
-            if (session.creatures) delete session.creatures.world.items[rec.entityId];
+            if (session.creatures && rec.entityId) delete session.creatures.world.items[rec.entityId];
+            clearLooseProp(session, pObjId);
             break;
           }
         }
@@ -18775,8 +18942,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function tameWildAnimal(session: QuestSession, objId: string) {
     const c = wildAnimalOf(session, objId);
     if (!c || !world) return;
-    if (session.containerOwner.get(objId)) return; // already someone's
-    session.containerOwner.set(objId, `creature:${LOCAL_PLAYER_CID}`);
+    if (session.containerRecords.get(objId)?.owner) return; // already someone's
+    setContainerOwner(session, objId, `creature:${LOCAL_PLAYER_CID}`);
     // Re-tether: same body id (model cache holds), grazing close to the
     // spot of the claim.
     const av = world.state.avatars[objId];
@@ -18820,7 +18987,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world || wildFeatureEmbodied(f)) return;
     const spec = world.state.spec.objects.find((o) => o.id === objId);
     if (!spec) return;
-    const radius = wildFeatureRadius(f.species, session.containerStock.get(objId));
+    const radius = wildFeatureRadius(f.species, session.containerRecords.get(objId)?.stock);
     if (Math.abs(spec.radius - radius) < 0.01) return; // nothing a player could see
     // A re-add mints FRESH object state, and the two things that survive a
     // resize in the player's eyes are the lid someone is holding open and
@@ -18873,7 +19040,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // depletion becomes visible everywhere at once without one new call site,
     // one new flag, or anything running per frame.
     if (fi >= 0) resizeWildFeature(session, w.features[fi]!, objId);
-    if (!sourceKillExhausted(src, session.containerStock.get(objId))) return;
+    if (!sourceKillExhausted(src, session.containerRecords.get(objId)?.stock)) return;
+    // ⚖️ S&D S3 H2 — A GROWTH-BEARING FEATURE RE-SEEDS, NEVER DELETES (user
+    // law, verbatim: "trees grow and larger trees will typically be cut
+    // first"). The SAME feature id/position stands on as a sapling instead
+    // of vanishing; a species with no `growth` (rock, sheep, cow, the
+    // fruit-only plants) falls straight through to the ORIGINAL delete
+    // branch below — "stone stays finite" is that fall-through, not a
+    // special case.
+    if (fi >= 0 && src.growth) {
+      reseedWildFeature(session, w.features[fi]!, src.growth);
+      return;
+    }
     if (container?.objId === objId) closeContainer();
     // The source's stand-in goes with it: a placed box object, or — an
     // embodied plant / product animal — its body.
@@ -18881,9 +19059,41 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     else world.removeNpc(objId);
     if (fi >= 0) w.features.splice(fi, 1);
     else w.creatures.splice(ci, 1);
-    session.containers.delete(objId);
-    session.containerStock.delete(objId);
-    session.containerOwner.delete(objId);
+    deleteContainerRecord(session, objId);
+  }
+
+  /** THE RE-SEED (S3 H2): sapling stock (kill glyphs) + a fresh growth clock,
+   *  armed from THIS moment. IDEMPOTENT — a feature already standing as an
+   *  un-grown sapling (`sizeClass 0` with a clock still running) is left
+   *  alone rather than restarting its clock, which is what keeps a body
+   *  that keeps trying to take from a bare sapling from pinning it at
+   *  class 0 forever. Harvest glyphs (fruit) are zeroed and their OWN
+   *  regrow clock re-armed — "a felled tree bears nothing; its harvest
+   *  stock dies with it" (products.ts `sourceKillExhausted`'s law), read
+   *  forward through a re-seed instead of a deletion. */
+  function reseedWildFeature(
+    session: QuestSession,
+    f: WildernessFeature,
+    growth: NonNullable<NaturalSource["growth"]>,
+  ) {
+    const objId = wildFeatureContainerId(f);
+    const alreadySapling = f.sizeClass === 0 && f.growAt !== undefined;
+    const dial = session.scale.resourceCompression;
+    const stock = ensureContainerStock(session, objId);
+    const src = naturalSourceOf(f.species)!;
+    for (const p of src.products) {
+      if (p.method === "kill") {
+        if (!alreadySapling) stock[p.glyph] = growthClassYield(p, growth.classes[0]!.yieldMul, dial);
+      } else if ((stock[p.glyph] ?? 0) > 0) {
+        stock[p.glyph] = 0;
+        armHarvestRegrow(f, p.glyph, session.taskClock, FOOD_DAY_SEC);
+      }
+    }
+    if (!alreadySapling) {
+      f.sizeClass = 0;
+      f.growAt = session.taskClock + growthClassPeriodS(session.scale, growth);
+    }
+    resizeWildFeature(session, f, objId); // depletion-visible (box features only)
   }
 
   /** LIVE-HARVEST REGROWTH made real (products.ts regrowDays): apply a wild
@@ -18896,13 +19106,66 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  wilderness.ts; the stacks are only ever written HERE. */
   function regrowWildStock(session: QuestSession, objId: string) {
     const s = wildSourceOf(session, objId);
-    if (!s) return;
-    const stock = session.containerStock.get(objId) ?? {};
-    const due = dueHarvestRegrowth(s, stock, session.taskClock, FOOD_DAY_SEC);
-    if (!due) return;
-    for (const [glyph, n] of Object.entries(due.add)) stock[glyph] = (stock[glyph] ?? 0) + n;
-    s.regrowAt = due.regrowAt;
-    session.containerStock.set(objId, stock);
+    if (s) {
+      const stock = session.containerRecords.get(objId)?.stock ?? {};
+      const due = dueHarvestRegrowth(s, stock, session.taskClock, FOOD_DAY_SEC);
+      if (due) {
+        for (const [glyph, n] of Object.entries(due.add)) stock[glyph] = (stock[glyph] ?? 0) + n;
+        s.regrowAt = due.regrowAt;
+        setContainerStock(session, objId, stock);
+      }
+    }
+    growWildFeature(session, objId); // S3 H2 — the size-class clock, same checkpoint
+  }
+
+  /** ⚖️ S&D S3 H2 — THE TIMBER GROWTH CLOCK, applied: a re-seeded feature
+   *  (only these carry `growAt`) climbs its size classes here, the SAME
+   *  "ripen before the board is drawn / before a take reads it" checkpoint
+   *  `regrowWildStock` already rides. The pure calculator lives in
+   *  wilderness.ts (`dueGrowthAdvance`); the stack is only ever written
+   *  HERE, mirroring `regrowWildStock`'s own law. */
+  function growWildFeature(session: QuestSession, objId: string) {
+    const w = session.wilderness;
+    if (!w) return;
+    const f = w.features.find((x) => wildFeatureContainerId(x) === objId);
+    if (!f?.growAt) return;
+    const src = naturalSourceOf(f.species);
+    if (!src?.growth) return;
+    const period = growthClassPeriodS(session.scale, src.growth);
+    const advance = dueGrowthAdvance(f, session.taskClock, period);
+    if (!advance) return;
+    f.sizeClass = advance.sizeClass;
+    f.growAt = advance.growAt;
+    // MERGE, never replace: `advance.stock` names the KILL glyphs only (the
+    // growth clock's whole business); any harvest glyph (fruit) already on
+    // the shelf — its own regrow ledger, untouched here — must survive.
+    const stock = session.containerRecords.get(objId)?.stock ?? {};
+    setContainerStock(session, objId, { ...stock, ...advance.stock });
+    resizeWildFeature(session, f, objId); // depletion-visible (box features only)
+  }
+
+  /** ⚖️ S&D S3 H2 acceptance seam: `/probe` names every growth-bearing
+   *  feature's SIZE CLASS by name (`oak[sapling:1 young:0 mature:7]`), so a
+   *  re-seeded sapling is OBSERVABLE without waiting on the render polish
+   *  (`products.ts` `GrowthSizeClass` doc — state over model). Species with
+   *  no `growth` clock (rock) are omitted; an empty wilderness answers "". */
+  function wildGrowthProbe(w: WildernessContent | null | undefined): string {
+    if (!w?.features.length) return "";
+    const bySpecies = new Map<string, number[]>();
+    for (const f of w.features) {
+      const g = naturalSourceOf(f.species)?.growth;
+      if (!g) continue;
+      const cls = f.sizeClass ?? g.classes.length - 1;
+      const counts = bySpecies.get(f.species) ?? g.classes.map(() => 0);
+      counts[cls] = (counts[cls] ?? 0) + 1;
+      bySpecies.set(f.species, counts);
+    }
+    const rows: string[] = [];
+    for (const [species, counts] of bySpecies) {
+      const g = naturalSourceOf(species)!.growth!;
+      rows.push(`${species}[${g.classes.map((c, i) => `${c.name}:${counts[i] ?? 0}`).join(" ")}]`);
+    }
+    return rows.join(" ");
   }
 
   // ── Ambient NPC↔NPC conversation ──────────────────────────────────────────
@@ -20365,8 +20628,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function stepNpcChatter(session: QuestSession, state: WorldState, dt: number) {
     if (!world) return;
     for (const [k, v] of session.chatCooldown) {
-      if (v <= dt) session.chatCooldown.delete(k);
-      else session.chatCooldown.set(k, v - dt);
+      // dt-honest: carry the residual delay rather than deleting outright the
+      // instant a coarse tick overshoots — clamp at 0, never negative. (A
+      // cooldown shorter than dt is still fully spent this frame; this only
+      // changes bookkeeping, not the `> 0` gate `chatEligible` reads.)
+      const remaining = Math.max(0, v - dt);
+      if (remaining > 0) session.chatCooldown.set(k, remaining);
+      else session.chatCooldown.delete(k);
     }
     for (const c of [...conversations.values()]) {
       // ⑫④ — AN ADDRESS LASTS UNTIL YOU LOOK ELSEWHERE OR UNTIL YOU MOVE, and
@@ -20974,6 +21242,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       hostNpcs: !mp || mp.role === "owner",
       ...(mpFollower() ? { replicaNpcs: true } : {}),
       ...(mpNet ? { net: mpNet } : {}),
+      // ⏩ WIDE TICK: opt-in, headless only — see QuestHostDeps.wideTick.
+      ...(deps.wideTick ? { wideTick: deps.wideTick } : {}),
       // IRREGULAR GROUND: place the whole session on the host's terrain.
       ...(deps.groundAt ? { groundAt: deps.groundAt } : {}),
       // WATER: the engine's terrain gate makes it impassable.
@@ -21128,46 +21398,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // this peer's own camera — the deterministic cast, as replicas).
           if (!mpFollower()) session.townClock += dt;
           const newDay = Math.floor(session.townClock / FOOD_DAY_SEC);
-          // AUTOMATIC EXPANSION (construction v1): once per town day, the
-          // prosperity accrual + at-most-one-annex spend. Signals are the
-          // proxy trio (pantry surplus, attendance, stocked breadth) — the
-          // adapter a real economy later replaces. The stage's delta
-          // watcher raises any new annex (scaffold-first when watched).
-          if (newDay > prevDay) {
-            const t = session.town;
-            // A BUILDING NEVER RISES BY ITSELF (⑥): the step DESIGNATES and
-            // the host stakes it — the town's own growth waits on the same
-            // hauls and the same builders a player's order does.
-            for (const o of constructionStep(
-              t.stage.center,
-              t.plan,
-              t.deltas,
-              (houseIndex) => prosperitySignals(session, houseIndex),
-              newDay,
-              pendingGrowthRects(session),
-            )) {
-              const m = /^h_(\d+)$/.exec(o.buildingKey);
-              if (m && o.action.kind === "annex") {
-                stakeAnnex(session, Number(m[1]), o.action.cluster, o.action.candidate);
-              }
-            }
-            // ZONE-STEERED FOUNDING (③, the ①b deferred piece): the town
-            // banks its own prosperity (the mean of the same household
-            // signals) and spends it FOUNDING the most-needed structure
-            // inside a zone with ground for it — same FoundedBuilding path
-            // as a spoken order (scaffold → completion sweep → roster),
-            // spending the same yard stock. No zones ⇒ nothing changes.
-            // The DAY-EDGE gates the cadence; the row stamps ride the
-            // SCALE-day clock (buildDayNow), the unit every done-check reads
-            // — an integer food-day here mis-stamped startedDay/laborStartDay.
-            stepZonedFounding(session, buildDayNow(session));
-            // MOVE-IN (④): a finished empty house admits a household when
-            // the town can feed one — build houses, people come.
-            stepTownMoveIn(session);
-            // COHORT RATES (④): each district pool integrates its
-            // production/consumption up to today (idle-safe closed form).
-            stepCohortDay(session, newDay);
-          }
+          // AUTOMATIC EXPANSION (construction v1) and the rest of the once-a-day
+          // arm — extracted to `stepTownDay` so the CLOCK WARP runs the very
+          // same block per bucket (clock-warp.ts law ②) instead of a twin.
+          if (newDay > prevDay) stepTownDay(session, newDay);
           const meTown = state.avatars[PLAYER_ID];
           const townHost = world;
           if (meTown && townHost) {
@@ -21477,9 +21711,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // if it does not, because the hands are the whole inventory of a body with no
         // container. A pending gift is settled first so debts still clear.
         if (session.creatures) {
-          for (const [objId, rec] of [...session.smallProps]) {
+          for (const [objId, rec] of [...looseEntries(session)]) {
             if (state.objects[objId]?.carriedBy !== PLAYER_ID) continue;
-            if (session.creatures.world.items[rec.entityId]?.pendingTransferTo === LOCAL_PLAYER_CID) {
+            if (rec.entityId && session.creatures.world.items[rec.entityId]?.pendingTransferTo === LOCAL_PLAYER_CID) {
               concludeTransfer(session.creatures.world, LOCAL_PLAYER_CID, rec.entityId);
             }
             pocketLoose(session, objId);
@@ -21817,7 +22051,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (playerAv && gzTake && !playerHolds) {
             const pendings: Array<{ objId: string; entityId: string }> = [];
             for (const [objId, item] of session.convItems) pendings.push({ objId, entityId: item.entityId });
-            for (const [objId, rec] of session.smallProps) pendings.push({ objId, entityId: rec.entityId });
+            for (const [objId, rec] of looseEntries(session)) {
+              if (rec.entityId) pendings.push({ objId, entityId: rec.entityId });
+            }
             for (const { objId, entityId } of pendings) {
               const st = session.creatures.world.items[entityId];
               if (st?.pendingTransferTo !== LOCAL_PLAYER_CID) continue;
@@ -21979,7 +22215,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (session.dollhouse !== null) {
             dollLogT += dt;
             if (dollLogT >= 5) {
-              dollLogT = 0;
+              // carry the overshoot rather than resetting to 0, so the
+              // heartbeat's 5 s cadence doesn't stretch at a coarse dt.
+              dollLogT -= 5;
+              if (dollLogT >= 5) dollLogT %= 5;
               const h = session.dollhouse;
               const rcD = residentTownCtx(session, h);
               const famD = familyOf(session);
@@ -22102,7 +22341,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // it in the container it rests on, or drops it on ground within reach.
           // (Selecting a stack WHILE in conversation presents it instead.)
           if (session.selectedPocketGlyph && !active && !container) {
-            const box = target?.kind === "object" && session.containers.has(target.id!) ? target : null;
+            const box = target?.kind === "object" && isContainerId(session, target.id!) ? target : null;
             const spot = target?.kind === "ground" ? target : null;
             const canDrop = !!spot && Math.hypot(meAv.x - spot.x, meAv.y - spot.y) <= CONVO_RADIUS;
             const at = box ?? (canDrop ? spot : null);
@@ -22473,7 +22712,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // scatter's side and spawn at the centre clearing BEFORE the world builds
     // — the spec is consumed at host construction.
     if (opts.wilderness && !town) {
-      const content = buildWilderness(opts.wilderness);
+      // ⚖️ S&D S3 (corrected in review): the scatter is DIAL-FREE — wild
+      // abundance is not natural→usable conversion; the dial applies only
+      // at effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson.
+      const content = buildWilderness({ ...opts.wilderness });
       sess.wilderness = content;
       sess.embedding.spec.manifold = {
         kind: "flat",
@@ -22708,10 +22950,191 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       });
     }
     if (!stood) return false;
-    session.containers.set(key, "in");
-    session.containerStock.set(key, { ...f.stock });
-    session.containerOwner.set(key, null); // nature is nobody's
+    registerContainer(session, key, "in", null, { ...f.stock }); // nature is nobody's
     return true;
+  }
+
+  /** The key the session's own scatter folds under. ONE area for now — the
+   *  ground this session renders; a region of many sheds is the world-size
+   *  round's (the record and its id grammar already take a key). */
+  const HOME_WILD_AREA = "home";
+
+  /** The ground a folded area covers, and the disc kept clear in it — the
+   *  scatter's own two facts (`buildWilderness`: a square manifold side, the
+   *  plaza/site clearing), so a re-expand lays the stand back where the stand
+   *  was and never through the town. */
+  function wildAreaGround(session: QuestSession): {
+    area: { x: number; y: number; w: number; h: number };
+    clearAt?: { x: number; y: number };
+    clearR?: number;
+  } {
+    const side = session.wilderness?.side ?? 240;
+    const t = session.town;
+    return {
+      area: { x: 0, y: 0, w: side, h: side },
+      ...(t ? { clearAt: t.stage.center, clearR: t.plan.radius + 6 } : {}),
+    };
+  }
+
+  /**
+   * ⚖️ S&D S4 — FOLD THE STAND (the LOD-fold law: ceasing to be simulated
+   * FOLDS, it never evaporates). Every standing feature's LIVE stack, size
+   * class and clocks condense into one closed-form record, the stand-ins come
+   * down, and the units live on in the record — visible to the session audit
+   * (`sessionStockAudit`) the whole way across, which is the conservation
+   * proof this transition has to be able to show.
+   *
+   * Creatures (product animals, possessable locals) are NOT folded: a body
+   * with a mind is the streamer's business, and a cow you tamed is somebody's
+   * property rather than a stand of trees.
+   */
+  function foldWildArea(session: QuestSession, key = HOME_WILD_AREA): WildAreaRecord | null {
+    const w = session.wilderness;
+    if (!w) return null;
+    const ground = wildAreaGround(session);
+    const rec = condenseWildArea({
+      features: w.features,
+      liveStock: (id) => session.containerRecords.get(id)?.stock,
+      now: session.taskClock,
+      area: ground.area,
+      seed: wildAreaSeedOf(session),
+      key,
+      prev: session.wildAreas.get(key) ?? null,
+    });
+    // Take the renderer down AFTER the fold has read it — same teardown
+    // `removeWildFeature` does, and for the same reason (this is a release
+    // back to abstraction, never a felling).
+    for (const f of [...w.features]) {
+      const objId = wildFeatureContainerId(f);
+      if (container?.objId === objId) closeContainer();
+      if (world?.state.objects[objId]) world.removeObject(objId);
+      else if (world?.state.avatars[objId]) world.removeNpc(objId);
+      deleteContainerRecord(session, objId);
+    }
+    w.features.length = 0;
+    session.wildAreas.set(key, rec);
+    return rec;
+  }
+
+  /** The placement seed a folded area re-lays itself from: the SCATTER's own
+   *  seed (carried on the content since S4), so two sessions of the same world
+   *  fold and unfold to the same stand. */
+  function wildAreaSeedOf(session: QuestSession): number {
+    return (session.wilderness?.seed ?? session.town?.config.seed ?? 0) >>> 0;
+  }
+
+  /**
+   * ⚖️ S&D S4 — UNFOLD THE STAND. The record deals its sources back out
+   * (thinner toward the harvesters, `expandWildArea`) and they stand up
+   * through the ordinary spawner, so everything downstream — the take path,
+   * the regrow ledger, the felling rule — meets features it cannot tell from
+   * a fresh scatter's. The record retires: an area is loaded or condensed,
+   * never both (that is the whole of the conservation argument).
+   */
+  function unfoldWildArea(session: QuestSession, key = HOME_WILD_AREA): boolean {
+    const rec = session.wildAreas.get(key);
+    if (!rec || !world) return false;
+    const ground = wildAreaGround(session);
+    // AN UNLOADED STAND KEPT GROWING while nobody watched — the same class
+    // clock the standing features ride, applied once on the way back in.
+    const grown = advanceWildArea(rec, session.taskClock, (species) => {
+      const g = naturalSourceOf(species)?.growth;
+      return g ? growthClassPeriodS(session.scale, g) : Infinity;
+    });
+    const w: WildernessContent = (session.wilderness ??= {
+      side: ground.area.w,
+      seed: rec.seed,
+      spawn: { x: ground.area.w / 2, y: ground.area.h / 2 },
+      features: [],
+      creatures: [],
+    });
+    const laid = expandWildArea({
+      rec: grown,
+      ...(ground.clearAt ? { clearAt: ground.clearAt, clearR: ground.clearR } : {}),
+      // The scatter's own id spelling, area-keyed so two stands can never
+      // collide on `wild:oak_0`.
+      idOf: (species, i) => `wild:${species}_${key}.${i}`,
+    });
+    // 🚨 A REFUSED SPAWN MUST NOT EAT THE TREE. `spawnWildFeature` can decline
+    // (body budget — an embodied plant needs an NPC slot), and the record is
+    // the only place those units exist. Whatever could not stand FOLDS BACK
+    // into a residual record under the same key, so the area is still in
+    // exactly one form per source and the audit's total never moves.
+    const failed: WildernessFeature[] = [];
+    for (const f of laid) {
+      if (spawnWildFeature(session, f)) w.features.push(f);
+      else failed.push(f);
+    }
+    if (failed.length) {
+      session.wildAreas.set(
+        key,
+        condenseWildArea({
+          features: failed,
+          now: session.taskClock,
+          area: ground.area,
+          seed: grown.seed,
+          key,
+          prev: { ...grown, stands: [] }, // keep the gradient, not the stock
+        }),
+      );
+    } else {
+      session.wildAreas.delete(key);
+    }
+    return true;
+  }
+
+  /** One line per glyph the session holds, all in — the conservation reading
+   *  a fold has to keep identical (`sessionStockAudit`, sorted for diffing). */
+  function stockLine(session: QuestSession): string {
+    const totals = sessionStockAudit(session);
+    return Object.keys(totals)
+      .sort()
+      .filter((g) => (totals[g] ?? 0) > 0)
+      .map((g) => `${g}:${totals[g]}`)
+      .join(" ");
+  }
+
+  /** The stand as it stands: loaded features by species and size class, or the
+   *  condensed record's own counts. The two readings are deliberately the same
+   *  shape — that is the condensed-twin doctrine, visible. */
+  function wildStandLine(session: QuestSession): string {
+    const loaded = wildGrowthProbe(session.wilderness);
+    const bySpecies = new Map<string, number>();
+    for (const f of session.wilderness?.features ?? []) {
+      bySpecies.set(f.species, (bySpecies.get(f.species) ?? 0) + 1);
+    }
+    const counts = [...bySpecies].map(([s, n]) => `${s}×${n}`).join(" ");
+    const folded = [...session.wildAreas.values()].map((rec) => {
+      const classes = Object.entries(wildAreaCounts(rec))
+        .map(([s, list]) => `${s}[${list.join("/")}]`)
+        .join(" ");
+      const stock = Object.entries(wildAreaStock(rec))
+        .map(([g, n]) => `${g}:${n}`)
+        .join(" ");
+      return `folded ${wildAreaId(rec.key)}: ${wildAreaPopulation(rec)} source(s) ${classes} — ${stock} — draw[${rec.draw.map((n) => Math.round(n)).join(",")}]`;
+    });
+    return [
+      `loaded: ${counts || "(none)"}${loaded ? ` — ${loaded}` : ""}`,
+      ...folded,
+    ].join("\n");
+  }
+
+  /** ⚖️ S&D S4 — the `/wild` cheat's whole body (see `wildProbe`). */
+  function wildAreaReport(session: QuestSession, verb: string): string {
+    const lines: string[] = [];
+    if (verb === "fold" || verb === "cycle") {
+      lines.push(`before: ${stockLine(session)}`);
+      const rec = foldWildArea(session);
+      lines.push(rec ? `folded ${wildAreaPopulation(rec)} source(s)` : "nothing to fold");
+      lines.push(`folded: ${stockLine(session)}`);
+    }
+    if (verb === "load" || verb === "cycle") {
+      const ok = unfoldWildArea(session);
+      lines.push(ok ? "loaded the stand back" : "nothing folded to load");
+      lines.push(`after: ${stockLine(session)}`);
+    }
+    lines.push(wildStandLine(session));
+    return lines.join("\n");
   }
 
   function seedWilderness(session: QuestSession) {
@@ -22727,9 +23150,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the container board on the same dwell).
       if (c.species) {
         const body = wildAnimalBodyId(c);
-        session.containers.set(body, "in");
-        session.containerStock.set(body, { ...(c.stock ?? {}) });
-        session.containerOwner.set(body, null); // wild — nobody's, until tamed
+        registerContainer(session, body, "in", null, { ...(c.stock ?? {}) }); // wild — nobody's, until tamed
         world.addNpc({
           id: body,
           x: c.x,
@@ -23034,7 +23455,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     for (const o of Object.values(state.objects)) {
       if (o.carriedBy) continue;
       const nameable =
-        session.smallProps.has(o.id) || /^furn_\d+_/.test(o.id) || isWellId(o.id);
+        isLooseProp(session, o.id) || /^furn_\d+_/.test(o.id) || isWellId(o.id);
       if (!nameable) continue;
       const d = Math.hypot(o.x - p.x, o.y - p.y);
       if (d > bestD) continue;
@@ -23119,7 +23540,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (p.kind === "named") {
           // A world-object id speaks its WORD ("furn_3_bed_0" → "bed", a prop
           // its glyph) — never the raw id.
-          if (session.smallProps.has(p.id) || /^furn_\d+_/.test(p.id) || isWellId(p.id)) {
+          if (isLooseProp(session, p.id) || /^furn_\d+_/.test(p.id) || isWellId(p.id)) {
             return objectWord(session, p.id);
           }
           return p.id;
@@ -23210,7 +23631,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world || !session.creatures) return;
     taskSweepT += dt;
     if (taskSweepT < TASK_CLAIM_INTERVAL_S) return;
-    taskSweepT = 0;
+    // subtract the period (carry overshoot) instead of resetting to 0, so the
+    // claim/expiry cadence doesn't stretch at a coarse dt; clamp below the
+    // period so a huge dt still fires the sweep only once.
+    taskSweepT -= TASK_CLAIM_INTERVAL_S;
+    if (taskSweepT >= TASK_CLAIM_INTERVAL_S) taskSweepT %= TASK_CLAIM_INTERVAL_S;
     const pool = session.taskPool;
     // EXPIRY surfaces back to the issuer — a task never rots silently. An
     // expired TRANSFER task retires its agreement the same way (no-executor).
@@ -23226,41 +23651,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (t.goal.kind === "buildwork") continue;
       presenter.toast(`💬 no one can do that: "${t.sourceGlyph ?? t.goal.kind}"`, "feedback");
     }
-    // STANDING transfer agreements (②): run any DUE scheduled legs over the
-    // live endpoints — deterministic given the clock (creation order).
-    // A TRIBUTE pull (E5) from a STUB partner draws from its synthetic
-    // shelf — mint it first (the ⑤ one-boundary-mint law), so the pull
-    // moves real units; a cluster partner's REAL yard is used as-is and
-    // can honestly run dry.
-    {
-      const due = session.transfers.due(session.taskClock).filter((a) => !a.barter);
-      if (due.length) {
-        const partners = tradePartnersOf(session);
-        for (const a of due) {
-          const p = partners.find((tp) => townEndpointId(tp.key) === a.from);
-          if (p && !p.real) {
-            for (const [g, n] of Object.entries(a.goods)) {
-              stockAbstractPartner(p.stack, g, Math.max(3, n * 2));
-            }
-          }
-        }
-      }
-    }
-    runDueTransfers(session.transfers, (id) => stockEndpointOf(session, id), session.taskClock);
-    // ⚖️ BATCH 3 (B2): THE DAY'S EATING, before the day's trading — the fed
-    // stockpiles drain by exactly what they fed, the kernel law the frozen
-    // town world never gets to run. First, so every trade decision this tick
-    // reads a bank that has already paid for the days that passed.
-    stepDriftDrain(session);
-    // ⚖️ R&T ⑤ (T3): the DAILY CARAVAN's own settlement — this visit's cargo
-    // list re-derived off today's books, and its load credited to the town's
-    // stockpile. Before the barter sweep, so a shipment quoted this tick reads
-    // the same shortage the depot shelf does.
-    stepTradeCargo(session);
-    // INTERCITY BARTER shipments (⑤): due barter agreements re-derive their
-    // terms, re-check the partner's willingness, and move stock BOTH ways —
-    // each landing rendered at the depot (a caravan body + the honest toast).
-    stepBarters(session);
+    // THE LEDGER SWEEPS — the four arms this pool runs that move BOOKS rather
+    // than bodies (standing transfers, the drain, the caravan, the barters).
+    // Extracted to `stepLedgerSweeps` so the CLOCK WARP runs the very same
+    // block per day bucket instead of a twin (clock-warp.ts law ②).
+    stepLedgerSweeps(session);
     // FILLED → DONE: the claimant's errand queue ran out. BUILD tasks are
     // the exception — they complete off REAL construction state (the
     // founded delta's clock, stepFoundedConstruction), never off the walk.
@@ -23509,6 +23904,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           pool.release(task.id); // the stock moved between checks — reopen
           continue;
         }
+        // ⚖️ AN UNTARGETED ORDER IS STILL THE PLAYER'S (surplus control S1).
+        // Every `{kind:"build"}` task in this pool was posted by `orderBuild`'s
+        // no-named-builder arm — the pool is how a spoken sentence FINDS HANDS,
+        // never a second, ambient way to build. The order-scoping round stamped
+        // `spoken` only on the named-builder path because the flag then bought
+        // nothing but crew order; now it also decides whether the row may draw
+        // the commons reserve, and "build the farm" said out loud must not be
+        // throttled as if the town had thought of it.
+        b.spoken = true;
         session.buildTaskOrds.set(task.id, b.ord);
         session.lastDrive.set(avatarIdOf(winner), "task");
         continue;
@@ -23672,16 +24076,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * hold eight of something instead of being a bag of holding.
    *
    * Null = uncapped, which is what every non-goods container was until now.
+   *
+   * ⑤ PAYOFF: one glyph read replaces the old two-store search (`smallProps`
+   * first, then a linear scan of `wornBags.values()`) — loose or worn, the
+   * glyph is on the SAME row now.
    */
   function containerUnitCap(session: QuestSession, id: string): number | null {
     const good = houseChestCap(session, id);
     if (good !== null) return good;
-    // A WORN bag has no world prop while it is worn (see `wornBags`) — its
-    // glyph is on the record instead, and its capacity must survive being put
-    // on, or a satchel would become a bag of holding the moment it was donned.
-    const glyph =
-      session.smallProps.get(id)?.glyph ??
-      [...session.wornBags.values()].find((w) => w.objId === id)?.glyph;
+    const glyph = session.containerRecords.get(id)?.glyph;
     if (glyph) return containerDefOfGlyph(glyph)?.capacity ?? null;
     return null;
   }
@@ -23817,9 +24220,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // This is the whole law in one line: a scope's inventory is the sum of
       // the containers it holds. A WORN bag has no world object to ask, so
       // the wear register answers for it.
-      for (const [cid, w] of session.wornBags) {
-        if (w.objId === objectId) return `${POCKET_EP}${cid}`;
-      }
+      //
+      // ⑤ PAYOFF: one record read replaces the old linear scan of
+      // `wornBags` — the wearer is `mount:"worn"`'s own `wearer` field now.
+      const wornRec = session.containerRecords.get(objectId);
+      if (wornRec?.mount === "worn") return `${POCKET_EP}${wornRec.wearer}`;
       const o = world?.state.objects[objectId];
       if (!o || !world) return null;
       if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
@@ -23839,7 +24244,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (censusMemo) return censusMemo;
       censusMemo = new Map();
       if (!world) return censusMemo;
-      for (const [objId, rec] of session.smallProps) {
+      for (const [objId, rec] of looseEntries(session)) {
         const o = world.state.objects[objId];
         if (!o || o.containedIn) continue; // in a box: counted as that box's stack
         const parent = parentOfObject(objId);
@@ -23849,7 +24254,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           bucket = {};
           censusMemo.set(parent, bucket);
         }
-        bucket[rec.glyph] = (bucket[rec.glyph] ?? 0) + 1;
+        const glyph = rec.glyph!; // mount:"loose" always carries a glyph
+        bucket[glyph] = (bucket[glyph] ?? 0) + 1;
       }
       return censusMemo;
     };
@@ -23883,11 +24289,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           for (const key of shellFurnPilesOf(session).keys()) out.add(`${BFURN_EP}${key}`);
           for (const p of tradePartnersOf(session)) out.add(townEndpointId(p.key));
         }
-        // Registered containers AND known stacks: a far unshown house's
-        // woodstore holds real goods whether or not its object is staged, and
-        // the audit has to see them or it will report items as lost.
-        for (const id of session.containers.keys()) out.add(id);
-        for (const id of session.containerStock.keys()) out.add(id);
+        // Registered containers: a far unshown house's woodstore holds real
+        // goods whether or not its object is staged, and the audit has to see
+        // them or it will report items as lost.
+        //
+        // ⑤ PAYOFF: one loop replaces the old `containers.keys()` +
+        // `containerStock.keys()` pair — every container row carries both now.
+        for (const [id] of containerEntries(session)) out.add(id);
         // BODIES — as stackless parent nodes. They carry no stack of their own
         // (their containers, already enumerated above, do), so listing one adds
         // structure to the tree without adding a single unit to the audit. The
@@ -23895,9 +24303,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // or holding a container, which is the only way a body can have goods
         // on it at all.
         out.add(`${POCKET_EP}${LOCAL_PLAYER_CID}`);
-        for (const cid of session.wornBags.keys()) out.add(`${POCKET_EP}${cid}`);
+        for (const cid of session.wornBagIndex.keys()) out.add(`${POCKET_EP}${cid}`);
         for (const [objId, o] of Object.entries(world?.state.objects ?? {})) {
-          if (o.carriedBy && session.containers.has(objId)) {
+          if (o.carriedBy && isContainerId(session, objId)) {
             out.add(`${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`);
           }
         }
@@ -23969,7 +24377,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // 45–90 s backoff of its own. (Rebuilding per town-second cost ~10% of the
     // whole sim step on a 200-house town; per stock epoch was far worse, since
     // it rebuilt mid-tick for each household in turn.)
-    const sig = `${session.containerStock.size}|${session.smallProps.size}|${Math.floor(session.townClock / 5)}`;
+    const sig = `${stockedCount(session)}|${looseCount(session)}|${Math.floor(session.townClock / 5)}`;
     let memo = buildingStockMemo.get(session);
     if (!memo || memo.sig !== sig) {
       memo = { sig, anywhere: null, stored: null };
@@ -23991,7 +24399,87 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  The conservation probe `condense`/`expand` will be checked against, landed
    *  with the tree rather than after it. */
   function sessionStockAudit(session: QuestSession): Record<string, number> {
-    return auditScopeTree(scopeTreeOf(session));
+    const totals = auditScopeTree(scopeTreeOf(session));
+    // ⚖️ S&D S4 — AND WHAT ITS OFFLOADED STANDS HOLD. An area that folded is
+    // not a place the tree can walk (it has no live stacks, by definition);
+    // its units are just as real, and a probe blind to them would report the
+    // fold itself as a hundred trees' worth of wood destroyed.
+    for (const rec of session.wildAreas.values()) {
+      for (const [glyph, n] of Object.entries(wildAreaStock(rec))) {
+        if (n > 0) totals[glyph] = (totals[glyph] ?? 0) + n;
+      }
+    }
+    return totals;
+  }
+
+  // ── ONE MATERIAL-PILE ENDPOINT (④) ────────────────────────────────────────
+  // `orderpile:<ord>`, `sitepile:<ord>` (LEGACY) and `annexpile:<ord>`
+  // (LEGACY) all end at the SAME shape — a construction-order row's live
+  // pile, anchored at its site — differing only in which rows are eligible
+  // and how `ord` is matched against them. FROZEN: every id already in the
+  // wild (persisted, cross-referenced by transfer agreements) must keep
+  // resolving to byte-identical endpoints, so the per-spelling eligibility
+  // and matching rules below are copied verbatim from the three branches
+  // this replaces, not re-derived.
+  //
+  // 🚨 THE LEGACY-FALLBACK FIELD IS NOT SAFE EVERYWHERE. The one-sequence
+  // adapter (construction.ts createTownDeltas) renumbers pre-phase-2
+  // annex/interior/demolish rows into the town-wide `ord` sequence and keeps
+  // their OLD per-kind ordinal as `legacyOrd` — but that old ordinal was
+  // drawn from a per-kind sequence that started at 0 independently of
+  // founding's, so an annex row's `legacyOrd` routinely COINCIDES with a
+  // found row's real `ord` (see town-construction-orders.test.ts's legacy
+  // fixture: the house is `ord:0`, the sleep annex is `legacyOrd:0`).
+  // `orderpile:<ord>` ids are only ever minted against the CURRENT unified
+  // sequence, never against a legacy per-kind ordinal, so its lookup must
+  // stay a plain `ord` match across every eligible kind — folding
+  // `legacyOrd` into that search would let an old annex row hijack a
+  // `orderpile:0` meant for the house. `sitepile:` (found rows only) and
+  // `annexpile:` (annex/interior rows only) each search a single kind, where
+  // the fallback is either inert (a `FoundedOrder` never carries
+  // `legacyOrd`) or exactly the old per-kind behaviour it always had.
+  const PILE_ID_ELIGIBLE: Record<"orderPile" | "sitePile" | "annexPile", ReadonlySet<ConstructionOrder["kind"]>> = {
+    orderPile: new Set(["found", "annex", "interior", "refine"]),
+    sitePile: new Set(["found"]),
+    annexPile: new Set(["annex", "interior"]),
+  };
+
+  /** The ONE ordinal lookup all three pile-id spellings share. */
+  function pileOrderRow(
+    orders: readonly ConstructionOrder[],
+    ord: number,
+    idKind: "orderPile" | "sitePile" | "annexPile",
+  ): ConstructionOrder | undefined {
+    const eligible = orders.filter((o) => PILE_ID_ELIGIBLE[idKind].has(o.kind));
+    if (idKind === "annexPile") {
+      // The one-sequence adapter's legacyOrd-first fallback (the seam an
+      // in-flight `annexpile:<old>` agreement resolves through).
+      const rooms = eligible.filter((o): o is RoomOrder => o.kind === "annex" || o.kind === "interior");
+      const byLegacy = rooms.find((o) => o.legacyOrd === ord);
+      if (byLegacy) return byLegacy;
+    }
+    return eligible.find((o) => o.ord === ord);
+  }
+
+  /** The site anchor + live pile for a construction-order row — the shared
+   *  return shape every pile id ends in. One arm per payload geometry
+   *  (found/refine/annex+interior); a demolition is never eligible above,
+   *  so there is no fourth arm to fall through to. */
+  function pileEndpointOf(session: QuestSession, id: string, row: ConstructionOrder): StockEndpoint | null {
+    if (row.kind === "found") {
+      if (row.completed) return null;
+      const at = foundedLotAt(session, row);
+      if (!at) return null;
+      row.pile ??= {};
+      return { id, kind: "site", at, stack: row.pile, owner: null };
+    }
+    if (row.kind === "refine") {
+      return { id, kind: "site", at: row.at, stack: row.pile, owner: null };
+    }
+    if (row.kind === "demolish") return null; // unreachable — never in PILE_ID_ELIGIBLE
+    const at = pendingAnnexAt(session, row);
+    if (!at) return null;
+    return { id, kind: "site", at, stack: row.pile, owner: null };
   }
 
   function stockEndpointOf(session: QuestSession, id: string): StockEndpoint | null {
@@ -24037,7 +24525,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // across both economies); an abstract partner aliases its synthetic
     // shelf. No `at`: abstract, scheduled-only (transfer.ts convention).
     // ("town:yard" is a registered container and never reaches this branch.)
-    if (ref.kind === "town" && !session.containers.has(id)) {
+    if (ref.kind === "town" && !isContainerId(session, id)) {
       const p = tradePartnersOf(session).find((tp) => townEndpointId(tp.key) === id);
       if (!p) return null;
       return { id, kind: "town", stack: p.stack, owner: null };
@@ -24047,52 +24535,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // uncapped, anchored at the site (the marking is walkable ground). Gone
     // once the order commits (completion consumed the pile).
     if (ref.kind === "orderPile") {
-      const ord = ref.ord;
       const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
-      const o = deltas?.orders().find((q) => q.ord === ord);
-      if (!o || o.kind === "demolish") return null;
-      if (o.kind === "found") {
-        if (o.completed) return null;
-        const at = foundedLotAt(session, o);
-        if (!at) return null;
-        o.pile ??= {};
-        return { id, kind: "site", at, stack: o.pile, owner: null };
-      }
-      // A REFINE order's pile (phase 3) anchors at its own mill spot.
-      if (o.kind === "refine") {
-        return { id, kind: "site", at: o.at, stack: o.pile, owner: null };
-      }
-      const at = pendingAnnexAt(session, o);
-      if (!at) return null;
-      return { id, kind: "site", at, stack: o.pile, owner: null };
+      const row = pileOrderRow(deltas?.orders() ?? [], ref.ord, "orderPile");
+      return row ? pileEndpointOf(session, id, row) : null;
     }
     // A FOUNDED SITE PILE (LEGACY, pre-phase-2 agreements in flight):
     // `sitepile:<ord>` — founding ordinals are immortal, so the plain ord
     // lookup still lands on the adapted order's live pile.
     if (ref.kind === "sitePile") {
-      const ord = ref.ord;
       const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
-      const b = deltas?.founded().find((f) => f.ord === ord);
-      if (!b || b.completed) return null;
-      const at = foundedLotAt(session, b);
-      if (!at) return null;
-      b.pile ??= {};
-      return { id, kind: "site", at, stack: b.pile, owner: null };
+      const row = pileOrderRow(deltas?.orders() ?? [], ref.ord, "sitePile");
+      return row ? pileEndpointOf(session, id, row) : null;
     }
     // A PENDING ANNEX PILE (LEGACY, pre-phase-2 agreements in flight):
     // `annexpile:<ord>` named the row's OLD per-kind ordinal — the one-
     // sequence adapter renumbered the row and kept that number as
-    // `legacyOrd`, which is why it resolves FIRST here.
+    // `legacyOrd`, which is why it resolves FIRST (pileOrderRow, above).
     if (ref.kind === "annexPile") {
-      const ord = ref.ord;
-      const rows =
-        session.town?.deltas
-          .orders()
-          .filter((o): o is RoomOrder => o.kind === "annex" || o.kind === "interior") ?? [];
-      const p = rows.find((a) => a.legacyOrd === ord) ?? rows.find((a) => a.ord === ord);
-      const at = p ? pendingAnnexAt(session, p) : null;
-      if (!p || !at) return null;
-      return { id, kind: "site", at, stack: p.pile, owner: null };
+      // 🚨 session.town ONLY — never session.foundedSite: the pre-phase-2
+      // annex spelling never named a founded-site pile, and preserving that
+      // asymmetry (rather than "fixing" it to match orderPile/sitePile) is
+      // the frozen contract this refactor must not touch.
+      const row = pileOrderRow(session.town?.deltas.orders() ?? [], ref.ord, "annexPile");
+      return row ? pileEndpointOf(session, id, row) : null;
     }
     // A BUILDING's FURNITURE-DELIVERY pile (⑥): `bfurn:<deltaKey>` — the
     // hauled piece lands here; the placement sweep stands it up. Anchored
@@ -24122,16 +24587,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // woodstore holds real goods, and civic resolution already reads its
     // stack; refusing the endpoint here made every draw from unstreamed
     // ground fail at claim time. The anchor is deterministic either way.
-    if (!session.containers.has(id) && !session.containerStock.has(id)) return null;
-    let stack = session.containerStock.get(id);
-    if (!stack) {
-      stack = {};
-      session.containerStock.set(id, stack); // a registered but never-stocked container (a cupboard)
-    }
+    const rec0 = session.containerRecords.get(id);
+    if (!rec0 || (rec0.relation === undefined && rec0.stock === undefined)) return null;
+    const stack = ensureContainerStock(session, id); // a registered but never-stocked container (a cupboard)
     const at = containerAnchor(session, id);
     if (!at) return null;
     const kind = id === TOWN_YARD_ID ? "yard" : id === SITE_STOCK_ID ? "site" : "container";
-    const ep: StockEndpoint = { id, kind, at, stack, owner: session.containerOwner.get(id) ?? null };
+    const ep: StockEndpoint = { id, kind, at, stack, owner: session.containerRecords.get(id)?.owner ?? null };
     const cap = containerUnitCap(session, id);
     if (cap !== null) ep.capacity = cap;
     return ep;
@@ -24171,9 +24633,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function houseEndpointId(session: QuestSession, hi: number, goodsHead: string): string | null {
     if (!session.town) return null;
     const chest = `furn_${hi}_chest_${goodKeyOfGlyph(goodsHead)}`;
-    if (session.containers.has(chest)) return chest;
+    if (isContainerId(session, chest)) return chest;
     const cupboard = `furn_${hi}_cupboard`;
-    return session.containers.has(cupboard) ? cupboard : null;
+    return isContainerId(session, cupboard) ? cupboard : null;
   }
 
   /** The stock ENDPOINT a transfer destination names, or null when the place
@@ -24192,7 +24654,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (id === "yard") return session.town ? TOWN_YARD_ID : session.foundedSite ? SITE_STOCK_ID : null;
     const hm = /^house:(\d+)$/.exec(id);
     if (hm) return houseEndpointId(session, Number(hm[1]), goodsHead);
-    if (session.containers.has(id) && stockEndpointOf(session, id)) return id;
+    if (isContainerId(session, id) && stockEndpointOf(session, id)) return id;
     // A spoken container noun ("box"/"chest"/"cupboard"/"table"): the nearest
     // registered container answering to it (the resolver's token rule). Ids
     // carry the fixture KIND, so the board's word folds back first ("cabinet"
@@ -24201,7 +24663,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const at = playerWorldPos(session);
     let best: string | null = null;
     let bestD = Infinity;
-    for (const boxId of session.containers.keys()) {
+    for (const boxId of containerIds(session)) {
       if (!boxId.split(/[_:]/).includes(kindToken)) continue;
       const anchor = containerAnchor(session, boxId);
       if (!anchor || !stockEndpointOf(session, boxId)) continue;
@@ -24228,11 +24690,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const issuerHouse = familyOf(session)?.house ?? null;
     const sources: TransferSource[] = [];
     let foreignOwner: string | null = null;
-    for (const [boxId, stack] of session.containerStock) {
+    for (const [boxId, boxRec] of stockedEntries(session)) {
+      const stack = boxRec.stock!;
       if (boxId === destId) continue;
       if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
       if (stackUnits(stack, goodsHead) <= 0) continue;
-      const owner = session.containerOwner.get(boxId);
+      const owner = boxRec.owner;
       if (!mayUse(LOCAL_PLAYER_CID, issuerHouse, owner)) {
         foreignOwner = owner ?? foreignOwner;
         continue;
@@ -24257,9 +24720,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  phrased as that PERSON — "bring it to Mara", not "to the basket": the
    *  container is how the goods get there, the creature is who they are for. */
   function transferDestPlaceRef(session: QuestSession, destId: string): PlaceRef {
-    for (const [cid, w] of session.wornBags) {
-      if (w.objId === destId) return { kind: "creature", id: cid };
-    }
+    const wornRec = session.containerRecords.get(destId);
+    if (wornRec?.mount === "worn") return { kind: "creature", id: wornRec.wearer! };
     const holder = world?.state.objects[destId]?.carriedBy;
     if (holder) return { kind: "creature", id: creatureOfAvatar(holder) };
     if (destId.startsWith(POCKET_EP)) return { kind: "creature", id: destId.slice(POCKET_EP.length) };
@@ -24360,7 +24822,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           VOLUNTEER_COMPLIANCE;
       if (!willing) {
         for (const a of posted) session.transfers.fail(a.id, "no-executor");
+        // 🚨 REFUSE VOCALLY OR NOT AT ALL — the build order's twin arm, fixed
+        // in the same sweep for the same reason: a bubble alone is not a
+        // channel (no poser point ⇒ `sayNpcLine` hangs nothing), and this
+        // `return true` is the caller's last word on the sentence.
         npcChatBubble(session, explicitHauler, placementWontLine()[syntax]);
+        presenter.toast(`💬 "${sentence}" — the one you asked won't`, "feedback");
         return true;
       }
       npcChatBubble(session, explicitHauler, "ok"); // the RESERVED okay — an accepted order
@@ -24485,7 +24952,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // furniture path in this file already does.
     const bodyR = world.npcRadiusOf(npcId);
     const standAt = (epAt: { x: number; y: number }, epId: string, from2: { x: number; y: number }) =>
-      session.containers.has(epId)
+      isContainerId(session, epId)
         ? standPointFor(world!.state, epId, epAt, from2, bodyR, standAvoid(cid))
         : { x: epAt.x, y: epAt.y };
     const bodyNow = world.state.avatars[npcId] ?? { x: from.at.x, y: from.at.y };
@@ -24650,11 +25117,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** Drop a loose small prop from the world + the session's books — a prop that
    *  has become a unit in somebody's bag, or been swept up by a founding. */
   function removeLooseProp(session: QuestSession, objId: string) {
-    const rec = session.smallProps.get(objId);
+    const rec = loosePropOf(session, objId);
     if (!rec) return;
-    session.smallProps.delete(objId);
     world?.removeObject(objId);
-    if (session.creatures) delete session.creatures.world.items[rec.entityId];
+    if (session.creatures && rec.entityId) delete session.creatures.world.items[rec.entityId];
+    clearLooseProp(session, objId);
   }
 
 
@@ -25143,6 +25610,221 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     t.deltas.driftBank[scalar] = (t.deltas.driftBank[scalar] ?? 0) - units;
   }
 
+  // ── ⏩ THE DAY ARM AND THE LEDGER SWEEPS (clock-warp.ts) ───────────────────
+  // The two blocks the frame loop runs that move BOOKS rather than bodies.
+  // They lived INLINE in `onFrame` and `stepTaskPool` until the clock warp
+  // needed to run them off the frame loop; extracted verbatim so the warp and
+  // the tick share ONE definition of "what a day does" and can never drift
+  // ([[feedback_one_owner_per_file]]). Both call sites are unchanged in
+  // behaviour — the warp is the only new caller.
+
+  /**
+   * ONE ECONOMY DAY'S ARM — the `newDay > prevDay` block of the frame loop.
+   * The clock is already on/past the edge when this runs; `day` is the integer
+   * economy day (`Math.floor(townClock / FOOD_DAY_SEC)`) it is the arm FOR.
+   */
+  function stepTownDay(session: QuestSession, day: number) {
+    const t = session.town;
+    if (!t) return;
+    // A BUILDING NEVER RISES BY ITSELF (⑥): the step DESIGNATES and the host
+    // stakes it — the town's own growth waits on the same hauls and the same
+    // builders a player's order does.
+    for (const o of constructionStep(
+      t.stage.center,
+      t.plan,
+      t.deltas,
+      (houseIndex) => prosperitySignals(session, houseIndex),
+      day,
+      pendingGrowthRects(session),
+      // ⚖️ SURPLUS CONTROL (S2): ambient growth may not LAUNCH a room bill the
+      // commons cannot cover out of surplus. Asked before the threshold is
+      // spent, so a poor day costs the household nothing.
+      {
+        canAfford: (_key, candidate) => annexWithinSpare(session, candidate),
+        // ⚖️ S&D S1 — the want is a NEED, not a checklist: the sleep cluster is
+        // asked for when the household's real soul count outgrows the bedroom
+        // standard (`nextAnnexWant`).
+        occupancyOf: (houseIndex) => ({ souls: membersOfHouse(session, houseIndex) }),
+      },
+    )) {
+      const m = /^h_(\d+)$/.exec(o.buildingKey);
+      if (m && o.action.kind === "annex") {
+        stakeAnnex(session, Number(m[1]), o.action.cluster, o.action.candidate);
+      }
+    }
+    // ZONE-STEERED FOUNDING (③, the ①b deferred piece): the town banks its own
+    // prosperity (the mean of the same household signals) and spends it
+    // FOUNDING the most-needed structure inside a zone with ground for it —
+    // same FoundedBuilding path as a spoken order (scaffold → completion sweep
+    // → roster), spending the same yard stock. No zones ⇒ nothing changes. The
+    // DAY-EDGE gates the cadence; the row stamps ride the SCALE-day clock
+    // (buildDayNow), the unit every done-check reads — an integer food-day here
+    // mis-stamped startedDay/laborStartDay.
+    stepZonedFounding(session, buildDayNow(session));
+    // MOVE-IN (④): a finished empty house admits a household when the town can
+    // feed one — build houses, people come.
+    stepTownMoveIn(session);
+    // COHORT RATES (④): each district pool integrates its production/
+    // consumption up to today (idle-safe closed form).
+    stepCohortDay(session, day);
+  }
+
+  /** THE LEDGER SWEEPS the task pool runs every sweep. Order is load-bearing
+   *  and documented at each arm; a warp runs this block per day bucket. */
+  function stepLedgerSweeps(session: QuestSession) {
+    // STANDING transfer agreements (②): run any DUE scheduled legs over the
+    // live endpoints — deterministic given the clock (creation order).
+    // A TRIBUTE pull (E5) from a STUB partner draws from its synthetic
+    // shelf — mint it first (the ⑤ one-boundary-mint law), so the pull
+    // moves real units; a cluster partner's REAL yard is used as-is and
+    // can honestly run dry.
+    {
+      const due = session.transfers.due(session.taskClock).filter((a) => !a.barter);
+      if (due.length) {
+        const partners = tradePartnersOf(session);
+        for (const a of due) {
+          const p = partners.find((tp) => townEndpointId(tp.key) === a.from);
+          if (p && !p.real) {
+            for (const [g, n] of Object.entries(a.goods)) {
+              stockAbstractPartner(p.stack, g, Math.max(3, n * 2));
+            }
+          }
+        }
+      }
+    }
+    runDueTransfers(session.transfers, (id) => stockEndpointOf(session, id), session.taskClock);
+    // ⚖️ BATCH 3 (B2): THE DAY'S EATING, before the day's trading — the fed
+    // stockpiles drain by exactly what they fed, the kernel law the frozen
+    // town world never gets to run. First, so every trade decision this tick
+    // reads a bank that has already paid for the days that passed.
+    stepDriftDrain(session);
+    // ⚖️ R&T ⑤ (T3): the DAILY CARAVAN's own settlement — this visit's cargo
+    // list re-derived off today's books, and its load credited to the town's
+    // stockpile. Before the barter sweep, so a shipment quoted this tick reads
+    // the same shortage the depot shelf does.
+    stepTradeCargo(session);
+    // INTERCITY BARTER shipments (⑤): due barter agreements re-derive their
+    // terms, re-check the partner's willingness, and move stock BOTH ways —
+    // each landing rendered at the depot (a caravan body + the honest toast).
+    stepBarters(session);
+  }
+
+  /**
+   * ⏩ WHO MAKES A WARP ILLEGAL (clock-warp.ts law ①).
+   *
+   * `liveNeedBodies` is the engine's OWN name for the class: "bodies the need
+   * loop is DRIVING … they keep running even off-show until the disruption is
+   * neutralized". Those, and a body carrying a spoken/derived `pursuit`, are
+   * bodies whose motion the clock owns; jumping the clock past them would let
+   * an interrupted errand finish abstractly, which is the one thing a fold may
+   * never do ([[feedback_clock_owns_motion_disruption_disrupts]]).
+   *
+   * 🚨 THE STREAMED CAST IS NOT IN THIS SET, AND THAT IS THE POINT. The 40–60
+   * `resident_*`/`hauler_*`/`caravan_*` bodies walking the goods clock's trips
+   * are the stage's CLOSED-FORM PROJECTION: `residents.update(p, tSec, …)`
+   * re-decides every one of them from the clock every frame, spawning a body
+   * mid-trip with the REMAINDER of its walk. Folding them is what already
+   * happens when the player walks away, so a warp folds them for free — it
+   * only has to cancel the in-flight engine errand each was walking (see
+   * `foldStreamedErrands`), or the stage would resume a body toward a waypoint
+   * seven days stale. Measured on the shipped dollhouse (seed 12): 0–1
+   * live-need bodies against 40–60 streamed walkers.
+   */
+  function ledgerWarpBlockers(session: QuestSession): string[] {
+    const out = new Set<string>(session.liveNeedBodies);
+    for (const cid of session.pursuits.keys()) out.add(cid);
+    for (const t of session.taskPool.claimed()) if (t.claimedBy) out.add(t.claimedBy);
+    return [...out].sort();
+  }
+
+  /**
+   * ⏩ THE FOLD (the LOD law, S&D S4's discipline).
+   *
+   * Every walk still in flight drops, because the walk was a projection of a
+   * clock that is about to jump. THE GUARD IS WHAT MAKES THIS SAFE: an errand
+   * that anything OWNS — a live need, a pursuit, a claimed pool task — already
+   * refused the warp above, so by construction every errand left here is an
+   * UNOWNED one, i.e. a `clockErrandQueue` trip the town stage emitted off the
+   * goods clock, or a wander. Those are closed forms: the next frame's
+   * `residents.update` re-decides each body against the NEW clock and re-issues
+   * (or despawns) it, exactly as it does when the player walks away and back.
+   *
+   * The body stays standing where it is; no errand COMPLETES, and nothing it
+   * carries moves — folding, never disrupting.
+   */
+  function foldStreamedErrands(session: QuestSession): number {
+    if (!world) return 0;
+    let n = 0;
+    const keep = new Set<string>([PLAYER_ID, ...session.party]);
+    if (possession.creatureId) keep.add(avatarIdOf(possession.creatureId));
+    for (const id of Object.keys(world.state.avatars)) {
+      if (keep.has(id) || !world.npcErrandActive(id)) continue;
+      world.setNpcErrand(id, null);
+      n++;
+    }
+    clockErrandQueue.clear(); // the queued trips are the same stale projection
+    return n;
+  }
+
+  /**
+   * ⏩ THE MID-SESSION CLOCK WARP — the host's arm of clock-warp.ts.
+   *
+   * `days` economy days of BOOKS, with no physics: every day edge the span
+   * crosses runs `stepTownDay` + `stepLedgerSweeps` with the clock parked on
+   * that edge, in the tick order, and the lazy closed-form clocks (wild harvest
+   * regrowth, the timber size class) catch up once at the end off their own
+   * absolute deadlines. The boot fast-forward's lever, moved mid-session.
+   *
+   * Refuses (never partially warps) when a live-need body is mid-errand.
+   */
+  function advanceLedgerDays(session: QuestSession, days: number): LedgerWarpResult {
+    const at = session.townClock;
+    if (!session.town) {
+      return refuseLedgerWarp(days, at, ["no-town"]);
+    }
+    const blockers = ledgerWarpBlockers(session);
+    if (blockers.length) return refuseLedgerWarp(days, at, blockers);
+    // A ZERO-DAY WARP IS A NO-OP, INCLUDING ITS FOLD. `runLedgerWarp` already
+    // answers `edges: 0`; folding first would have made "move nothing" cancel
+    // every walk in town, which is a side effect nobody asked for.
+    if (Math.floor(days) < 1) return runLedgerWarp(warpArmsFor(session), days);
+    foldStreamedErrands(session);
+    return runLedgerWarp(warpArmsFor(session), days);
+  }
+
+  /** The clock + arms `runLedgerWarp` drives for this session. */
+  function warpArmsFor(session: QuestSession): LedgerWarpArms {
+    return {
+      // THE ECONOMY DAY, not the scale day. Every arm below counts in
+      // `Math.floor(townClock / FOOD_DAY_SEC)` (`stepDriftDrain`, the frame
+      // loop's own `newDay`, `TownTrade.tradeDay`), so that is the bucket a
+      // warp must land on — `buildDayNow`'s scale-day reading is derived from
+      // the same clock and follows for free.
+      dayS: FOOD_DAY_SEC,
+      clockNow: () => session.townClock,
+      setClock: (t) => {
+        // ONE WRITER, BOTH CLOCKS. They advance in lockstep by `dt` for an
+        // owner (`onFrame` / `stepTaskPool`), and the arms below read one or
+        // the other — a warp that moved only the town clock would fire the day
+        // arms against transfer deadlines that had not moved.
+        session.taskClock += t - session.townClock;
+        session.townClock = t;
+      },
+      dayArm: (day) => stepTownDay(session, day),
+      economySweeps: () => stepLedgerSweeps(session),
+      settleLazyClocks: () => {
+        // Harvest regrowth and the size-class clock hold ABSOLUTE taskClock
+        // deadlines and catch up whole periods on read (`regrowWildStock` /
+        // `growWildFeature`), so one idempotent pass at the new clock is the
+        // whole of the wild arm. A FOLDED area needs nothing at all:
+        // `advanceWildArea` runs closed-form when the record unfolds.
+        for (const f of session.wilderness?.features ?? []) {
+          regrowWildStock(session, wildFeatureContainerId(f));
+        }
+      },
+    };
+  }
+
   /**
    * ⚖️ BATCH 3 · B2 — THE BANK IS A STOCK THAT EMPTIES AS IT FEEDS.
    *
@@ -25310,7 +25992,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // ⚖️ T3b: …and the INBOUND leg landed real units in our yard. That is the
       // moment the town's books learn the lane exists — the crate the shipment
       // filled is the visible half, this is the aggregate one.
-      for (const [good, n] of Object.entries(r.received)) creditImport(session, good, n);
+      //
+      // ⚖️ R1 (S&D S4) — AND IT DEBITED THEIRS. The mirror of the sent leg
+      // above, and for the same reason: goods that arrived here LEFT there
+      // (`barter.ts` `inbound.moved` is stock off the partner's own stack), so
+      // where the partner is a real sim its books lose what ours gain. Without
+      // this half a cluster neighbour could supply a lane forever out of books
+      // that never noticed — the free lunch the pairwise law exists to close.
+      // A stub has no ledger to debit: its shelf is the condensed twin of a
+      // town we are not running, and `abstractPartnerStack` can only return
+      // what was shipped into it.
+      for (const [good, n] of Object.entries(r.received)) {
+        creditImport(session, good, n);
+        if (them?.books) debitDelivery(them.books.town, them.books.eco, good, n);
+      }
       renderBarterLeg(session, r);
     }
   }
@@ -25808,6 +26503,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return booksShortage(need, got, fed, exportOwedBooks(session, good));
   }
 
+  /**
+   * ⚖️ THE TOWN'S REAL SURPLUS in a good (S&D S1) — `townShortage`'s MIRROR,
+   * and the growth motive's whole feed at the town rung.
+   *
+   * COMMITTED DEMAND is the town's own `need` PLUS what an export lane is owed
+   * (`exportOwedBooks` — the same term the shortage twin folds in, so the two
+   * readings agree about what the town has promised away). Production above
+   * that, as a fraction of it. Zero when the books merely balance, and zero
+   * whenever `townShortage` is positive — the two can never both be nonzero.
+   *
+   * The drift BANK is deliberately not credited here: a bank is a stock the
+   * shortage twin spends to cover a bad day, not income, and counting savings
+   * as surplus would let a town grow on the way down.
+   */
+  function townSurplus(session: QuestSession, good: string): number {
+    const t = session.town;
+    if (!t) return 0;
+    const fill = t.eco.fills.find((f) => f.good === good);
+    if (!fill) return 0;
+    const need = t.town.scalar(fill.need) + exportOwedBooks(session, good);
+    if (need <= 0) return 0;
+    return Math.max(0, (t.town.scalar(fill.got) - need) / need);
+  }
+
   /** Souls a household counts (HOUSEHOLD minus a mode-"all" family's
    *  never-generated members). */
   function membersOfHouse(session: QuestSession, houseIndex: number): number {
@@ -25865,6 +26584,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
+   * ⚖️ THE MIGRATION PUSH (S&D S1) — how much WORSE it is somewhere this town
+   * can actually SEE, 0..1. Growth-motive law ②: a household does not appear
+   * because we built a house; it appears because it left somewhere.
+   *
+   * The origins this session can read are its TRADE PARTNERS — cluster
+   * neighbours running real books, and the abstract twins standing in for the
+   * towns beyond the map. Their own STAPLE shortage is the distress: a
+   * neighbour that cannot feed itself sends people down the road, and a
+   * comfortable one sends nobody. Worst partner wins (people leave the worst
+   * place, not the average one).
+   *
+   * 🚨 NOT AN ORIGIN LEDGER. Nothing is debited anywhere — see
+   * `MoveInInput.push`, and the S&D landing notes for what a conserving
+   * migration needs. A session with NO partners at all reads 0 and admits
+   * nobody, which is the honest answer: a town alone on the map has nowhere
+   * for a family to have come from.
+   */
+  function migrationPush(session: QuestSession): number {
+    let worst = 0;
+    for (const p of tradePartnersOf(session)) {
+      for (const f of session.town?.eco.fills ?? []) {
+        worst = Math.max(worst, p.signals.shortage(f.good));
+      }
+    }
+    return Math.min(1, worst);
+  }
+
+  /**
    * MOVE-IN (④ scope 1), once per credited town day: the kernel rule
    * (population.ts moveInStep — food not scarce admits the oldest finished
    * empty house; famine turns newcomers away) writes the serialized
@@ -25882,6 +26629,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       deltas: t.deltas,
       catalog: structureCatalogOf(session),
       signals: { crowding: 0, shortage: (g) => townShortage(session, g) },
+      // ⚖️ THE PUSH (S&D S1): a migrant needs somewhere to be leaving.
+      push: migrationPush(session),
     });
     if (!admitted) return;
     const spec = resolveStructure(structureCatalogOf(session), admitted.type);
@@ -25929,9 +26678,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         contains: [{ relation: "in", capacity: 99 }],
         glyph: "water",
       });
-      session.containers.set(wid, "in");
-      session.containerStock.set(wid, { water: 99 });
-      session.containerOwner.set(wid, TOWN_SCOPE); // communal at the TOWN tier
+      registerContainer(session, wid, "in", TOWN_SCOPE, { water: 99 }); // communal at the TOWN tier
       presenter.toast("⛲ the neighborhood digs a well", "feedback");
     }
   }
@@ -25968,7 +26715,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         production[key] = (production[key] ?? 0) + g.good.cartRations * share;
       }
     }
-    return { production, perCapita, stackCap };
+    // ⚖️ ENDOGENOUS POPULATION v1 (S&D S1): the town's OWN Malthus policy —
+    // the very row `town-world.ts` runs on the aggregate during worldgen —
+    // handed to the live pool so its souls finally breathe. The diet is
+    // resolved back from the vitals' need SCALAR to the good it books
+    // (`eco.fills`), so births gate on the same fill the shortage twin reads.
+    // No vitals row ⇒ omitted ⇒ the shipped step, byte for byte.
+    const vt = t.eco.vitals[0];
+    const diet = vt?.foodNeed ? t.eco.fills.find((f) => f.need === vt.foodNeed)?.good : undefined;
+    return {
+      production,
+      perCapita,
+      stackCap,
+      ...(vt
+        ? {
+            vitals: {
+              birthRate: vt.birthRate,
+              deathRate: vt.deathRate,
+              ...(vt.starvation !== undefined ? { starvation: vt.starvation } : {}),
+              ...(diet !== undefined ? { diet } : {}),
+            },
+          }
+        : {}),
+    };
   }
 
   /** COHORT RATES (④), once per credited town day: every pool integrates
@@ -26024,16 +26793,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       //    home as a whole object instead, which is the only honest answer.
       for (const bagRef of [carry.inHand?.bag ?? null, carry.worn]) {
         if (!bagRef) continue;
-        if (!mayDissolveToStack(bagRef.glyph, session.containerStock.get(bagRef.objId))) {
+        if (!mayDissolveToStack(bagRef.glyph, session.containerRecords.get(bagRef.objId)?.stock)) {
           const at = world?.state.avatars[avatarIdOf(cid)];
-          if (session.wornBags.get(cid)?.objId === bagRef.objId && at) doffWornBag(session, cid, at);
+          if (session.wornBagIndex.get(cid) === bagRef.objId && at) doffWornBag(session, cid, at);
           continue;
         }
         if (bagRef !== carry.inHand?.bag) bank(bagRef.glyph, 1); // the held one already banked at ②
-        session.containerStock.delete(bagRef.objId);
-        session.containers.delete(bagRef.objId);
-        session.containerOwner.delete(bagRef.objId);
-        if (session.wornBags.get(cid)?.objId === bagRef.objId) session.wornBags.delete(cid);
+        const wasWorn = session.wornBagIndex.get(cid) === bagRef.objId;
+        deleteContainerRecord(session, bagRef.objId);
+        if (wasWorn) session.wornBagIndex.delete(cid);
       }
       stressSum += session.stress.get(cid) ?? 0;
       clearNeedStep(session, cid);
@@ -26078,7 +26846,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!t) return;
     cohortSweepT += dt;
     if (cohortSweepT < COHORT_SWEEP_S) return;
-    cohortSweepT = 0;
+    // subtract the period (carry overshoot) instead of resetting to 0, so the
+    // tier sweep's cadence doesn't stretch at a coarse dt; clamp below the
+    // period so a huge dt still fires the sweep only once.
+    cohortSweepT -= COHORT_SWEEP_S;
+    if (cohortSweepT >= COHORT_SWEEP_S) cohortSweepT %= COHORT_SWEEP_S;
     const cap = trackedCapOf(session);
     // DORMANCY FAST PATH: nothing pooled and the town fits — do nothing.
     if (
@@ -26214,7 +26986,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     presenter, deps, possession,
     avatarIdOf, npcChatBubble, containerAnchor, houseContainerKeys, buildingUnits,
     stockEndpointOf, postPooledTask, playerWorldPos, familyOf,
-    playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage,
+    playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage, townSurplus,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
     relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, fellIfConsumed, dropFromStack,
@@ -26244,6 +27016,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     orderCraft, orderBuild, orderZone, stepZonedFounding,
     structureFocusOf, structureActsFor, structureConstructionOptions, structureFurnishOptions,
     orderAnnex, stakeAnnex, orderDemolish, orderWorkRoom, orderWorkDemolish,
+    // ⚖️ the ambient annex's SPARE gate (surplus control S2) — see the
+    // director's note: it must be asked before the threshold is spent.
+    annexWithinSpare,
     // ④ — the room verbs' stow-only twin and the single-piece break.
     orderEmpty, orderWorkEmpty, orderBreakPiece,
   } = director;
@@ -26486,7 +27261,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               stakeAnnex(
                 s, spot.focus.index, offer.cluster as AnnexCluster,
                 offer.candidate as AnnexCandidate | InteriorCandidate,
-                { pinned: true },
+                // ⚖️ a PRESS is a spoken order (surplus control S1): the
+                // sentence was said above, so its staging may draw the reserve.
+                { pinned: true, spoken: true },
               )
             : orderWorkRoom(s, spot.focus.index, kind, offer.candidate as InteriorCandidate));
         if (!ok) saySystem(s, CANT_HERE, `💬 "${glyph}" — can't build here`);
@@ -26826,6 +27603,42 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         possessed: speakerInCircle ? null : localPossessed,
         nearest: speakerInCircle ? null : localNearest,
       });
+      // ⚖️ WHOM THE SPEAKER ACTUALLY SINGLED OUT — the SAME ladder with its
+      // `nearest` rung cut. An order that hands WORK to a body may read only
+      // this one: "nobody explicit ⇒ the order pools", never "nearest grabs
+      // it" (the law the generic-command arm below already states as "NOT the
+      // incidental `nearestCreature` fallback"). The build/craft arms used to
+      // read `target`, so the incidental body DID grab the order — and in a
+      // town with WILDERNESS the incidental body is a wild animal, which is
+      // how a spoken `build farm` came to produce no task and no refusal at
+      // all (S&D closing sweep 2026-08-12; `nearestCreature` builds `npc_<cid>`
+      // by hand, so it cannot see a resident or a pet AT ALL and a scattered
+      // critter is the only thing it ever returns in a town).
+      //
+      // …AND `opts.targetId` IS NOT AUTOMATICALLY DELIBERATE EITHER. A LOCAL
+      // `speak()` travels as a PlayerAction carrying `currentGesture()`, whose
+      // addressee is `api.localAddressee()` — the same ladder, `nearest` rung
+      // and all — so the incidental body arrives back here wearing an explicit
+      // target's clothes. Strip exactly that case: a target identical to what
+      // `nearest` would have said is not an act of addressing. Coincidence
+      // costs nothing — when the nearest body is ALSO the gazed / chipped /
+      // conversing one, the rung below hands it straight back.
+      const deliberateTarget = opts.targetId && opts.targetId !== localNearest ? opts.targetId : null;
+      const singledOut = resolveAddressee(vocativeCid ?? deliberateTarget, {
+        addressedFamily: localChip,
+        gaze: localGazed,
+        convo: localAddressee ?? localConvo,
+        possessed: speakerInCircle ? null : localPossessed,
+        nearest: null,
+      });
+      /** The speaker NAMED an agent ("mara + build + farm") — as opposed to the
+       *  listener subject every subject-less imperative carries by default
+       *  (`parse-intent.ts` :977), which is why `frame.subject !== undefined`
+       *  never told these two cases apart. */
+      const subjectNamed =
+        frame.subject !== undefined &&
+        frame.subject.kind !== "listener" &&
+        frame.subject.kind !== "player";
       // "there" → the ground THE SPEAKER indicated ("you go there"). It comes
       // off the utterance's own gesture, never this device's live gaze: the
       // eyes that chose the place may be on another machine, and by the time an
@@ -27261,9 +28074,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
         // WHO builds, when someone was singled out: a named subject, the
         // ridden body, the tapped chip, the gazed/conversing creature.
-        // Nobody explicit → the order pools (never "nearest grabs it").
+        // Nobody explicit → the order pools (never "nearest grabs it") — which
+        // is what `singledOut` is for; see its comment above.
         const explicitBuilder =
-          (frame.subject !== undefined && actor !== speaker ? actor : null) ??
+          (actor !== speaker && (subjectNamed || singledOut !== null) ? actor : null) ??
           localPossessed ??
           localChip ??
           localGazed ??
@@ -27284,7 +28098,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // speaker slot, which made the acknowledgement bubble address a creature
         // id that never existed.
         const explicitMaker =
-          (frame.subject !== undefined && actor !== speaker ? actor : null) ??
+          (actor !== speaker && (subjectNamed || singledOut !== null) ? actor : null) ??
           localPossessed ??
           localChip ??
           localGazed ??
@@ -27372,7 +28186,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // drops at a spot) fall through to the shipped paths below.
       if ((goal.kind === "give" || goal.kind === "putIn") && "match" in goal.item) {
         const explicitHauler =
-          (frame.subject !== undefined && actor !== speaker && actor !== localPossessed
+          (actor !== speaker && actor !== localPossessed && (subjectNamed || singledOut !== null)
             ? actor
             : null) ??
           localChip ??
@@ -27504,11 +28318,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const gz = world?.getGaze();
       const c = gz?.committedWorld ?? null;
       const ptr = lastClient ? `${Math.round(lastClient.x)},${Math.round(lastClient.y)}` : "-";
+      const wild = wildGrowthProbe(sess?.wilderness);
       return (
         `${questView?.debugCutaway?.() ?? "view:none"} | ` +
         `sess:${spirit ? "spirit" : "walker"}${possession.creatureId ? "+poss" : ""} ` +
         `ptr:${ptr} gz:${c ? `${Math.round(c.x)},${Math.round(c.y)}` : "-"} ` +
-        `hov:${gz?.hover?.id ?? "-"}`
+        `hov:${gz?.hover?.id ?? "-"}` +
+        (wild ? ` wild:${wild}` : "")
       );
     },
     setPathDebug(on) {
@@ -27600,9 +28416,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (world.state.objects[key]) world.removeObject(key);
       else if (world.state.avatars[key]) world.removeNpc(key);
       w.features.splice(fi, 1);
-      s.containers.delete(key);
-      s.containerStock.delete(key);
-      s.containerOwner.delete(key);
+      deleteContainerRecord(s, key);
       return true;
     },
     get camera() {
@@ -27644,11 +28458,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (old.inHand) setDownFromHands(s, avatarIdOf(cid), { kind: "consumed" }, { objId: old.inHand.objId, quiet: true });
       for (const bag of [old.inHand?.bag ?? null, old.worn]) {
         if (!bag) continue;
-        s.containerStock.delete(bag.objId);
-        s.containers.delete(bag.objId);
-        s.containerOwner.delete(bag.objId);
+        deleteContainerRecord(s, bag.objId);
       }
-      s.wornBags.delete(cid);
+      s.wornBagIndex.delete(cid);
       // CONTAINERS FIRST, then their goods — the order is the capacity: fill
       // before the bag exists and the units have nowhere but the hands to go.
       const goods: [string, number][] = [];
@@ -27662,7 +28474,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         for (let k = 0; k < n; k++) {
           const objId = spawnLooseProp(s, g, at.x, at.y);
           if (!objId) break;
-          if (def.hold === "wear" && !s.wornBags.has(cid)) donWornBag(s, cid, objId);
+          if (def.hold === "wear" && !s.wornBagIndex.has(cid)) donWornBag(s, cid, objId);
           else if (!takeIntoHands(s, avatarIdOf(cid), { kind: "object", objId })) break; // it stays at their feet
         }
       }
@@ -27791,6 +28603,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     stockAudit() {
       return sess ? sessionStockAudit(sess) : {};
     },
+    wildProbe(verb) {
+      const s = sess;
+      if (!s) return "no session.";
+      return wildAreaReport(s, (verb ?? "").trim().toLowerCase());
+    },
+    advanceLedgerDays(days) {
+      const s = sess;
+      if (!s) return refuseLedgerWarp(days, 0, ["no-session"]);
+      return advanceLedgerDays(s, days);
+    },
     shortageProbe(good) {
       return sess ? townShortage(sess, good) : 0;
     },
@@ -27875,15 +28697,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!objId) return null;
       // A PERSONAL BAG IS THEIRS (`donWornBag` says the same for the worn one) —
       // so the walkers' private-property gate keeps housemates out of it.
-      s.containerOwner.set(objId, creatureScope(cid));
+      setContainerOwner(s, objId, creatureScope(cid));
       const took =
         def.hold === "wear"
           ? donWornBag(s, cid, objId)
           : !!takeIntoHands(s, avatarIdOf(cid), { kind: "object", objId });
       if (!took) {
         removeLooseProp(s, objId);
-        s.containers.delete(objId);
-        s.containerOwner.delete(objId);
+        deleteContainerRecord(s, objId);
         return null;
       }
       if (cid === s.handsCid) pushPocket(s);

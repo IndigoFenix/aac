@@ -46,6 +46,7 @@ import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play.j
 import { createResidentModel, residentId } from "@shared/world-engine/kernel/town/residents.js";
 import { streetGoods } from "@shared/world-engine/kernel/town/goods.js";
 import { RARE_IMPORT_KIND } from "@shared/world-engine/kernel/town/trade.js";
+import { setContainerStock } from "@shared/world-engine/kernel/town/containers.js";
 
 const specPath = join(process.cwd(), "games", "dollhouse", "src", "game.spec.json");
 const doc = JSON.parse(readFileSync(specPath, "utf8"));
@@ -136,7 +137,7 @@ describe("a live trip that overruns its span is DISRUPTED, never delivered", () 
       expect(run.state.avatars[cid]).toBeDefined();
 
       const chestId = `furn_${houseIndex}_chest_food`;
-      const chestBefore = { ...(session.containerStock.get(chestId) ?? {}) };
+      const chestBefore = { ...(session.containerRecords.get(chestId)?.stock ?? {}) };
       const treats = 3;
 
       // A HAUL IN HAND: a basket holding three treats. A treat is food (it
@@ -144,7 +145,7 @@ describe("a live trip that overruns its span is DISRUPTED, never delivered", () 
       // nothing else in the household can add or eat one behind the assertion.
       const bag = run.host.giveBag(cid, "basket");
       expect(bag).not.toBeNull();
-      session.containerStock.set(bag!, { [RARE_IMPORT_KIND]: treats });
+      setContainerStock(session, bag!, { [RARE_IMPORT_KIND]: treats });
       expect(run.host.carryOf(cid)[RARE_IMPORT_KIND]).toBe(treats);
 
       // …a long way from home, on a trip that started long ago, owned by the
@@ -163,7 +164,7 @@ describe("a live trip that overruns its span is DISRUPTED, never delivered", () 
       // three treats are exactly where the body left them — in the basket. An
       // abstraction that emptied the hands here would be telling the economy a
       // trip completed that never did.
-      const chestAfter = session.containerStock.get(chestId) ?? {};
+      const chestAfter = session.containerRecords.get(chestId)?.stock ?? {};
       expect((chestAfter[RARE_IMPORT_KIND] ?? 0) - (chestBefore[RARE_IMPORT_KIND] ?? 0)).toBe(0);
       expect(run.host.carryOf(cid)[RARE_IMPORT_KIND] ?? 0).toBe(treats);
       // …and the basket itself is still in the hands, carrying them home.
@@ -190,11 +191,11 @@ describe("a live trip that overruns its span is DISRUPTED, never delivered", () 
       const houseIndex = session.dollhouse!;
       const cid = `resident_${houseIndex}_0`;
       const chestId = `furn_${houseIndex}_chest_food`;
-      const before = { ...(session.containerStock.get(chestId) ?? {}) };
+      const before = { ...(session.containerRecords.get(chestId)?.stock ?? {}) };
 
       const bag = run.host.giveBag(cid, "basket");
       expect(bag).not.toBeNull();
-      session.containerStock.set(bag!, { [RARE_IMPORT_KIND]: 2 });
+      setContainerStock(session, bag!, { [RARE_IMPORT_KIND]: 2 });
       const body = run.state.avatars[cid]!;
       body.x += 400;
       session.liveNeedBodies.add(cid);
@@ -203,7 +204,7 @@ describe("a live trip that overruns its span is DISRUPTED, never delivered", () 
 
       run.advance(1);
 
-      const after = session.containerStock.get(chestId) ?? {};
+      const after = session.containerRecords.get(chestId)?.stock ?? {};
       expect((after[RARE_IMPORT_KIND] ?? 0) - (before[RARE_IMPORT_KIND] ?? 0)).toBe(0);
       expect(run.host.carryOf(cid)[RARE_IMPORT_KIND] ?? 0).toBe(2);
     } finally {

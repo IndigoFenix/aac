@@ -2565,6 +2565,10 @@ export const en = {
     allowNotesDesc: "When disabled, the AI cannot read or write session notes (no memory stored outside message logs)",
     shareMonitorNotesWithInstitute: "Share AAC Notes with My Institute",
     shareMonitorNotesWithInstituteDesc: "When enabled, clinicians at this institute see notes recorded during AAC sessions (interests, preferences, observations). Disable to require an explicit share grant.",
+    aiLearning: "AI Learning Settings",
+    aiLearningDesc: "What the AI may record on its own during sessions.",
+    autoAddContacts: "Learn new contacts",
+    autoAddContactsDesc: "Let the AI add people it meets during sessions to the contacts list. New contacts are marked for review until you confirm them. When off, contacts can only be added from the Contacts page.",
     // Symbol generation
     symbolGeneration: "Symbol Generation",
     symbolGenerationDesc: "Automatically generate icon images for AAC buttons using AI",
@@ -3742,6 +3746,8 @@ export const en = {
     updated: "Contact updated",
     deleted: "Contact deleted",
     confirmDelete: "Remove this contact?",
+    confirm: "Confirm",
+    confirmed: "Contact confirmed",
     name: "Name",
     namePlaceholder: "e.g., Mom",
     nameRequired: "Name is required",
@@ -3775,6 +3781,11 @@ export const en = {
     callable: "Allow video calls",
     callableHint: "The student (and the AI) can video-call this person when they are online.",
     photoAfterCreate: "Photo upload becomes available after saving the contact.",
+    tabAll: "Contacts",
+    tabAutoAdded: "Added automatically",
+    autoAddedBadge: "added automatically",
+    autoAddedHint: "The AAC assistant added these people from what it noticed during sessions. Confirm the ones who really belong here; delete the rest.",
+    autoAddedEmpty: "Nothing waiting for review.",
   },
 
   // Biometric (photo upload)

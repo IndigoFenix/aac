@@ -334,7 +334,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   // Incidents — lightweight per-student events not tied to any report.
   const queryClient = useQueryClient();
   const incidentsQueryKey = ['/api/students', student?.id, 'incidents'];
-  const { data: incidentsData } = useQuery({
+  const { data: incidentsData, isLoading: incidentsLoading } = useQuery({
     queryKey: incidentsQueryKey,
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/students/${student!.id}/incidents`);
@@ -862,7 +862,13 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                   </Button>
                 </div>
 
-                {incidents.length === 0 ? (
+                {incidentsLoading ? (
+                  <Card>
+                    <CardContent className="py-8 flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                    </CardContent>
+                  </Card>
+                ) : incidents.length === 0 ? (
                   <Card>
                     <CardContent className="py-8 text-center text-sm text-muted-foreground">
                       {t('incidents.empty')}

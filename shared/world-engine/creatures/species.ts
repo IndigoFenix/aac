@@ -20,6 +20,7 @@ import { clampBlueprint } from "./blueprint";
 import { CREATURE_EXAMPLES } from "./examples";
 import { ANIMAL_PEOPLE_BLUEPRINTS } from "./animals-people";
 import { orchardPlants } from "../products";
+import type { ItemWords } from "../interaction/lang/core.js";
 
 /** "spark" is the PLAYER, and is deliberately not a body plan — see SPARK_SPECIES_ID. */
 export type SpeciesKind = "creature" | "plant" | "fruit" | "spark";
@@ -51,6 +52,10 @@ export interface Species {
    *  elsewhere. undefined = DEFAULT_BODY_RADIUS_M (the people default —
    *  human_cute's capsule is exactly this wide). */
   readonly bodyRadiusM?: number;
+  /** The species word's own lexemes, per locale (content/words.ts joiner),
+   *  keyed under `id`. NOT `name` — `name` is a worked-example title
+   *  ("Cow (straight horns)"), never a word a sentence can carry. */
+  readonly words?: ItemWords;
 }
 
 /** The people default (human_cute's collision capsule). The FALLBACK when a
@@ -70,14 +75,60 @@ export function speciesBodyRadius(id: string | undefined | null): number {
 // The curated catalogue: which worked example backs each stable id, plus its
 // kind. Extend freely — a species only needs a stable id + a body plan. Hard
 // species parameters (per the design note) live HERE, not in game specs.
-const CATALOGUE: ReadonlyArray<{ id: string; kind: SpeciesKind; example: string; scale?: number }> = [
+const CATALOGUE: ReadonlyArray<{
+  id: string;
+  kind: SpeciesKind;
+  example: string;
+  scale?: number;
+  words?: ItemWords;
+}> = [
   // ── People + animals ──────────────────────────────────────────────────────
   { id: "human", kind: "creature", example: "Human (biped + hands)" },
   { id: "quadruped", kind: "creature", example: "Quadruped (default)" },
-  { id: "cow", kind: "creature", example: "Cow (straight horns)" },
-  { id: "deer", kind: "creature", example: "Deer (branching antlers)" },
-  { id: "ram", kind: "creature", example: "Ram (curled horns)" },
-  { id: "sheep", kind: "creature", example: "Sheep (woolly)" },
+  {
+    id: "cow",
+    kind: "creature",
+    example: "Cow (straight horns)",
+    words: {
+      en: { w: "cow" },
+      he: { w: "פרה", g: "f" },
+      es: { w: "vaca", g: "f" },
+      pt: { w: "vaca", g: "f" },
+    },
+  },
+  {
+    id: "deer",
+    kind: "creature",
+    example: "Deer (branching antlers)",
+    words: {
+      en: { w: "deer", plw: "deer" },
+      he: { w: "צבי", g: "m" },
+      es: { w: "ciervo", g: "m" },
+      pt: { w: "cervo", g: "m" },
+    },
+  },
+  {
+    id: "ram",
+    kind: "creature",
+    example: "Ram (curled horns)",
+    words: {
+      en: { w: "ram" },
+      he: { w: "איל", g: "m" },
+      es: { w: "carnero", g: "m" },
+      pt: { w: "carneiro", g: "m" },
+    },
+  },
+  {
+    id: "sheep",
+    kind: "creature",
+    example: "Sheep (woolly)",
+    words: {
+      en: { w: "sheep", plw: "sheep" },
+      he: { w: "כבשה", g: "f" },
+      es: { w: "oveja", g: "f" },
+      pt: { w: "ovelha", g: "f" },
+    },
+  },
   { id: "ungulate", kind: "creature", example: "Ungulate (hooves)" },
   // The lab-tuned bodies. `dog` matters beyond the menu: it is a `friend` pool
   // WORD, so until now the one animal a child could most readily ask for had no
@@ -86,7 +137,17 @@ const CATALOGUE: ReadonlyArray<{ id: string; kind: SpeciesKind; example: string;
   { id: "elephant", kind: "creature", example: "Elephant (trunk)" },
   { id: "horse", kind: "creature", example: "Horse" },
   { id: "cat", kind: "creature", example: "Cat" },
-  { id: "dog", kind: "creature", example: "Dog" },
+  {
+    id: "dog",
+    kind: "creature",
+    example: "Dog",
+    words: {
+      en: { w: "dog" },
+      he: { w: "כלב", g: "m" },
+      es: { w: "perro", g: "m" },
+      pt: { w: "cachorro", g: "m" },
+    },
+  },
   // ── Plants ────────────────────────────────────────────────────────────────
   { id: "oak", kind: "plant", example: "Oak (tree)" },
   { id: "grass", kind: "plant", example: "Grass tuft" },
@@ -148,6 +209,7 @@ for (const entry of CATALOGUE) {
     kind: entry.kind,
     blueprint: exampleBlueprint(entry.example),
     scale: entry.scale,
+    words: entry.words,
   });
 }
 

@@ -43,7 +43,7 @@ export default function PendingInvitesPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  const { pendingInvites, acceptInvite, declineInvite, refetchPendingInvites } = useInstitute();
+  const { pendingInvites, pendingInvitesLoading, acceptInvite, declineInvite, refetchPendingInvites } = useInstitute();
 
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [declineConfirmId, setDeclineConfirmId] = useState<string | null>(null);
@@ -146,7 +146,15 @@ export default function PendingInvitesPage() {
 
       {/* Content */}
       <div className="max-w-3xl mx-auto px-4 py-6">
-        {pendingInvites.length === 0 ? (
+        {pendingInvitesLoading ? (
+          <Card className={cn(
+            isDark ? 'bg-slate-900 border-slate-800' : ''
+          )}>
+            <CardContent className="py-12 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </CardContent>
+          </Card>
+        ) : pendingInvites.length === 0 ? (
           <Card className={cn(
             isDark ? 'bg-slate-900 border-slate-800' : ''
           )}>

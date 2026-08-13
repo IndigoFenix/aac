@@ -2565,6 +2565,10 @@ export const pt = {
     allowNotesDesc: "Quando desativado, a IA não pode ler ou escrever notas de sessão (sem memória armazenada fora dos registros de mensagens)",
     shareMonitorNotesWithInstitute: "Compartilhar notas AAC com minha instituição",
     shareMonitorNotesWithInstituteDesc: "Quando ativado, os clínicos desta instituição veem as notas registradas durante as sessões AAC (interesses, preferências, observações). Desative para exigir um compartilhamento explícito.",
+    aiLearning: "Configurações de aprendizagem da IA",
+    aiLearningDesc: "O que a IA pode registrar por conta própria durante as sessões.",
+    autoAddContacts: "Aprender novos contatos",
+    autoAddContactsDesc: "Permite que a IA adicione à lista de contatos as pessoas que encontra durante as sessões. Os novos contatos ficam marcados para revisão até você confirmá-los. Quando desativado, só é possível adicionar contatos pela página de Contatos.",
     // Symbol generation
     symbolGeneration: "Geração de símbolos",
     symbolGenerationDesc: "Gerar automaticamente imagens de ícones para botões AAC usando IA",
@@ -3742,6 +3746,8 @@ export const pt = {
     updated: "Contacto atualizado",
     deleted: "Contacto eliminado",
     confirmDelete: "Remover este contacto?",
+    confirm: "Confirmar",
+    confirmed: "Contato confirmado",
     name: "Nome",
     namePlaceholder: "p. ex. Mãe",
     nameRequired: "O nome é obrigatório",
@@ -3775,6 +3781,11 @@ export const pt = {
     callable: "Permitir videochamadas",
     callableHint: "O aluno (e a IA) podem fazer uma videochamada para esta pessoa quando estiver online.",
     photoAfterCreate: "O envio de foto estará disponível após guardar o contacto.",
+    tabAll: "Contatos",
+    tabAutoAdded: "Adicionados automaticamente",
+    autoAddedBadge: "adicionado automaticamente",
+    autoAddedHint: "O assistente CAA adicionou estas pessoas a partir do que percebeu durante as sessões. Confirme quem realmente pertence aqui e exclua o restante.",
+    autoAddedEmpty: "Nada aguardando revisão.",
   },
 
   // Biometric (photo upload)

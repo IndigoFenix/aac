@@ -188,6 +188,29 @@ export interface WorldScale {
    * hosts exactly one town does not care at all.
    */
   gapCompression: number;
+  /**
+   * ⚖️ THE RESOURCE-CONVERSION DIAL (S&D round, S3 — feedback_world_size_
+   * resource_realism, user 2026-08-12): **"a single value that multiplies
+   * the conversion of natural resources to usable ones (which was one of
+   * the main reasons for the block paradigm in the first place)."**
+   *
+   * NOT a distance/time compression like the dials above — it multiplies
+   * NATURAL→USABLE YIELD: how much a wild source gives up per act, how few
+   * raw units a refined unit costs, how much a town's raw-material buffer
+   * needs to hold. `farmAreaPerPersonM2`'s `conversionDial` argument (S2)
+   * is this field, read at the call site (S2 had no `WorldScaleSpec` field
+   * to read yet); the S3 five-multiplier round (oak yield, refine
+   * `inPerOut`, the block bill, `STOREHOUSE_RAW_PAR`/`commonsReserveOf`,
+   * `homesteadWildMix` counts) is the same seam, generalized — THE
+   * BLOCK PARADIGM'S ORIGINAL PURPOSE, named directly in the law.
+   *
+   * Default 1 = the real anchors verbatim (byte-identical to a world that
+   * declares nothing). Independent of `generation` — tree GROWTH TIMING
+   * rides the ecosystem-wide life-acceleration dial (the same clock a
+   * creature ages on), never this one, because growing faster and
+   * yielding more per act are orthogonal facts about a compressed world.
+   */
+  resourceCompression: number;
 
   // ---- the independently-moving clocks (settlement-emergence.md §4a) ----
   // Each is its own declaration: a world may see sunrise every four minutes,
@@ -261,6 +284,7 @@ export const REAL_SCALE: WorldScale = {
   interplanetary: 1,
   interstellar: 1,
   gapCompression: 1,
+  resourceCompression: 1,
   leanFraction: REAL_LEAN_FRACTION,
   metabolism: 1,
   locomotion: 1,
@@ -295,6 +319,7 @@ export const DOLLHOUSE_SCALE: WorldScale = {
   interplanetary: 1,
   interstellar: 1,
   gapCompression: 1,
+  resourceCompression: 1,
   leanFraction: REAL_LEAN_FRACTION,
   metabolism: 1,
   locomotion: 1,
@@ -330,6 +355,7 @@ export const SEASONAL_SCALE: WorldScale = {
   interplanetary: 1,
   interstellar: 1,
   gapCompression: 1,
+  resourceCompression: 1,
   leanFraction: REAL_LEAN_FRACTION,
   metabolism: 3, // a meal every 80 s ⇒ 36 meals/year, lean share 14.4
   locomotion: 1,
@@ -397,6 +423,26 @@ export function lifespanGameDays(scale: WorldScale): number {
   return lifespanGameYears(scale) * yearGameDays(scale);
 }
 
+/**
+ * ⚖️ THE GENERATION/GROWTH FAMILY PRECEDENT, generalized (S&D S3 — timber
+ * lifecycle). A tree's REAL-DECADES maturity is a BIOLOGICAL clock, exactly
+ * like a creature's lifespan (`lifespanGameYears`) — so it compresses on the
+ * SAME ecosystem-wide `generation` dial, never `resourceCompression` (which
+ * multiplies YIELD conversion, an orthogonal axis: how much a mature source
+ * gives up per act, not how long it takes to become mature). The
+ * "ecosystem = one ledger" law (space-time-compression.md): accelerating one
+ * species' life clock without the others breaks the trophic ratios, and a
+ * standing forest is as much part of that ledger as the herd grazing under it.
+ *
+ * Named generically (unlike `lifespanGameYears`, which has one durable
+ * caller): this is the SAME shape a second biological-maturity anchor would
+ * want (a herd's breeding cycle, a coppice's regrowth), so it takes its
+ * anchor as a parameter from the start.
+ */
+export function bioYearsGameDays(scale: WorldScale, realYears: number): number {
+  return (realYears / scale.generation) * yearGameDays(scale);
+}
+
 /** Game-days from birth to producing adult — the growth stage. Rides the
  *  lifespan by construction (growthFraction is a FRACTION, not a duration). */
 export function growthGameDays(scale: WorldScale): number {
@@ -426,6 +472,10 @@ export interface WorldScaleSpec {
   interstellar?: number;
   /** Town-to-town spacing ÷ this. Absent ⇒ `planet_compression` (uniform). */
   gap_compression?: number;
+  /** THE RESOURCE-CONVERSION DIAL (S&D S3) — multiplies natural→usable
+   *  yield (wild source yields, refine ratios, raw-material buffers).
+   *  Absent ⇒ 1, the real anchors verbatim. See `WorldScale.resourceCompression`. */
+  resource_compression?: number;
   lean_fraction?: number;
   metabolism?: number;
   locomotion?: number;
@@ -451,7 +501,7 @@ export function parseWorldScaleSpec(raw: unknown, path: string): WorldScaleSpec 
   if (!isObj(raw)) fail(path, "expected an object (the space-time compression declaration)");
   const allowed = [
     "rotation", "revolution", "sleep_fraction", "construction", "planet_compression",
-    "interplanetary", "interstellar", "gap_compression",
+    "interplanetary", "interstellar", "gap_compression", "resource_compression",
     "lean_fraction", "metabolism", "locomotion", "generation", "growth_fraction",
   ];
   for (const k of Object.keys(raw)) {
@@ -477,6 +527,12 @@ export function parseWorldScaleSpec(raw: unknown, path: string): WorldScaleSpec 
   if ("interplanetary" in raw) out.interplanetary = num(raw.interplanetary, `${path}.interplanetary`, 1, 10_000_000);
   if ("interstellar" in raw) out.interstellar = num(raw.interstellar, `${path}.interstellar`, 1, 10_000_000);
   if ("gap_compression" in raw) out.gap_compression = num(raw.gap_compression, `${path}.gap_compression`, 1, 10_000);
+  // The resource-conversion dial is a YIELD multiplier, not a distance/time
+  // one — legal below 1 (a world that wants scarcer conversion, testing the
+  // famine end), same floor as `metabolism`/`locomotion`.
+  if ("resource_compression" in raw) {
+    out.resource_compression = num(raw.resource_compression, `${path}.resource_compression`, 0.01, 10_000);
+  }
   // The independently-moving clocks. `rotation`/`revolution`/`planet_compression`
   // floor at 1 (the celestial dials only ever speed a world up, as the shipped
   // day length already did); the creature dials may go below 1, because a
@@ -507,6 +563,13 @@ export function resolveWorldScale(spec?: WorldScaleSpec | null): WorldScale {
     interplanetary: spec?.interplanetary ?? planetCompression,
     interstellar: spec?.interstellar ?? planetCompression,
     gapCompression: spec?.gap_compression ?? planetCompression,
+    // THE PLANET_COMPRESSION-FALLBACK PRECEDENT, but the SIMPLE case: unlike
+    // interplanetary/interstellar/gapCompression (which default to the BODY
+    // scale, uniform-shrink), resource_compression has no parent dial to
+    // cascade from — it is its own axis (yield, not distance) — so it
+    // resolves exactly like `planetCompression` itself: spec value, else the
+    // real anchor. Never falls back to `gapCompression` or any other dial.
+    resourceCompression: spec?.resource_compression ?? REAL_SCALE.resourceCompression,
     leanFraction: spec?.lean_fraction ?? REAL_SCALE.leanFraction,
     metabolism: spec?.metabolism ?? REAL_SCALE.metabolism,
     locomotion: spec?.locomotion ?? REAL_SCALE.locomotion,
@@ -528,6 +591,7 @@ export function scaleSpecOf(scale: WorldScale): Required<WorldScaleSpec> {
     interplanetary: scale.interplanetary,
     interstellar: scale.interstellar,
     gap_compression: scale.gapCompression,
+    resource_compression: scale.resourceCompression,
     lean_fraction: scale.leanFraction,
     metabolism: scale.metabolism,
     locomotion: scale.locomotion,
@@ -691,6 +755,124 @@ export function townExtentM(
   spacingM: number = townSpacingM(scale),
 ): number {
   return Math.min(REAL_TOWN_EXTENT_M, (spacingM * (1 - OPEN_COUNTRY_SHARE)) / 2);
+}
+
+// ------------------------------------------------------------ farmland realism
+//
+// THE AREA SEAM (economy-arc-opening.md, SUPPLY & DEMAND ROUND S2). USER LAW
+// (feedback_world_size_resource_realism, 2026-08-12), verbatim: *"The amount
+// of farmland needed per person varied by technology and diet but ranged
+// from 12 acres in ancient times to 0.5 acres in modern times... this should
+// be anchored in realism and adjusted by the world's compression parameters,
+// which probably can be handled by a single value that multiplies the
+// conversion of natural resources to usable ones."*
+
+/** One acre, in square metres — the unit the anchor below is quoted in. */
+export const M2_PER_ACRE = 4_046.8564224;
+
+/**
+ * REAL_ anchor (the F4 pattern): acres of farmland one person needs to eat,
+ * by technology tier — the user's own two data points, verbatim. Nothing
+ * shipped needs a tier between them yet, so the table carries only the two;
+ * a caller naming a third tier is a content error, not a silent guess.
+ */
+export const REAL_FARM_ACRES_PER_PERSON = {
+  ancient: 12,
+  modern: 0.5,
+} as const;
+
+export type FarmTechTier = keyof typeof REAL_FARM_ACRES_PER_PERSON;
+
+/**
+ * Acres of farmland one person needs at a tech tier, ÷ the natural→usable
+ * conversion dial. THE S3 SEAT, NOW WIRED: `resource_compression`
+ * (`WorldScale.resourceCompression`) is the `conversionDial` argument —
+ * `plan.ts`'s field geometry and `town-play.ts`'s farm process both pass
+ * `scale.resourceCompression` (S2 had no field to read yet and passed the
+ * default 1 everywhere; the formula was written divisor-first for exactly
+ * this reason). Default 1 stays the real anchor, byte-identical.
+ */
+export function farmAcresPerPerson(tier: FarmTechTier, conversionDial = 1): number {
+  return REAL_FARM_ACRES_PER_PERSON[tier] / conversionDial;
+}
+
+/** The same anchor, in square metres — what area math over `TownField` rects
+ *  actually wants. */
+export function farmAreaPerPersonM2(tier: FarmTechTier, conversionDial = 1): number {
+  return farmAcresPerPerson(tier, conversionDial) * M2_PER_ACRE;
+}
+
+// ------------------------------------------------------------ σ, THE SURPLUS
+//
+// THE SURPLUS FRACTION (economy-arc-opening.md, SUPPLY & DEMAND ROUND — the
+// σ close). USER LAW (feedback_order_scoping_and_growth_motive.md, addendum σ,
+// 2026-08-12): *anchor σ in realism; σ is PER-PRODUCER (a spec-side seat on
+// the producer row); the deciding machinery — the risk/growth adjustment a
+// settlement actually makes — belongs to the scope's GOVERNMENT
+// (influence-and-authority), and the anchor here is the DEFAULT that a future
+// government adjusts.*
+//
+// WHY IT HAD TO EXIST. S2 sized a town's fields at exactly `pop × acres`, so
+// the books closed at `food_got ≡ food_need` to the last bit — an economy
+// with no slack at all. Nothing drifted into the granary, so no work was ever
+// funded out of it: weavers = tailors = 0, `clothing_got` = 0, and (through
+// `prosperitySignals`' unmet-demand gate) no household on the map could ever
+// bank again. A producer that plans for EXACTLY the table is not realism; it
+// is the one thing no farmer has ever done.
+
+/**
+ * REAL_ anchor (the F4 pattern): the fraction ABOVE the demand it is sized
+ * against that a producer honestly plans to make.
+ *
+ * **`staple` = 0.20 — the reasoning, recorded.** Pre-industrial agrarian
+ * societies carried a non-farming population of roughly 10–20% (medieval
+ * Europe ~10–15% urban, Roman Egypt ~20%), and a farmer sows past the family
+ * table for four more reasons that have nothing to do with towns: SEED CORN
+ * for next spring, STORAGE LOSS in the granary, the TITHE/rent, and the lean
+ * year. Measured against TOTAL consumption — which is what `food_need`
+ * already counts, farmers included — the honest band a good year leaves above
+ * the table is 10–30%; 0.20 is its middle and the value the shipped
+ * hand-farmed "ancient" tier (`REAL_FARM_ACRES_PER_PERSON.ancient`) can
+ * actually hold. It is deliberately NOT tuned to a play outcome.
+ *
+ * **`craft` = 0.10 — half the staple, and why.** A workshop plans a smaller
+ * cushion than a farm: its input is bought rather than sown a season ahead,
+ * its output does not rot, and cloth nobody wants is capital tied up rather
+ * than a hedge against famine. This is the CLASS DEFAULT every producer that
+ * declares nothing inherits.
+ *
+ * ⚖️ NOT A DIAL. σ is a producer's declared plan, not a world conversion
+ * factor — `resource_compression` is applied ONCE at the natural→usable
+ * boundary (S3's review correction) and these two must never be multiplied
+ * into each other. A world that compresses conversion still leaves its
+ * farmers the same 20% margin above whatever the table then costs.
+ */
+export const REAL_SURPLUS_FRAC = {
+  staple: 0.2,
+  craft: 0.1,
+} as const;
+
+export type SurplusClass = keyof typeof REAL_SURPLUS_FRAC;
+
+/**
+ * The surplus fraction a producer actually plans for: ITS OWN declared seat
+ * when the spec named one, else its class anchor.
+ *
+ * ⚖️ THE GOVERNMENT SEAM. `declared` is where a settlement's own decision
+ * lands. Today nothing writes it but the content document itself; the
+ * ADJUSTER — a scope that raises its margin against a remembered famine or
+ * lowers it to free hands for the walls — is the government tier
+ * (planning-docs/games/world-engine/influence-and-authority.md), which does
+ * not exist yet. Everything downstream reads THIS function, so when that tier
+ * lands it has exactly one seat to write and no formula to re-derive.
+ */
+export function producerSurplusFrac(
+  declared: number | undefined,
+  cls: SurplusClass = "craft",
+): number {
+  return typeof declared === "number" && Number.isFinite(declared) && declared >= 0
+    ? declared
+    : REAL_SURPLUS_FRAC[cls];
 }
 
 // --------------------------------------------------------------------- space

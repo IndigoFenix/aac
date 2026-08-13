@@ -203,6 +203,11 @@ export type ContextUpdateType =
   | "set_person_as_user"
   | "person_identified"
   | "voice_identified"
+  /** The Observer realized a known person was WRONGLY reported present/named.
+   *  `key` = that person's name. Triggers the biometric penalty path AND a
+   *  broadcast retraction so the narrative (Monitor notes, summaries) can
+   *  un-learn the false presence — the inverse of person_identified. */
+  | "misidentified"
   | "person_leaves"
   | "new_location"
   | "new_object"

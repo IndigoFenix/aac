@@ -1,0 +1,3065 @@
+
+> aivota-aac@1.0.30 test:engine
+> cross-env NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.engine.js --shard=3/3
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/Daniel/Documents/Apps/aac/CliniAACian/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+(node:25856) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL server/tests/world-engine/growth-motive.test.ts (6.885 s)
+  nextAnnexWant — occupancy replaces the fixed 3-bedroom checklist
+    √ the bedroom standard DERIVES the old constant — 5 souls ⇒ 3 rooms (4 ms)
+    √ absent occupancy ⇒ the shipped ladder, clause for clause (2 ms)
+    √ 🚨 A SMALL HOUSEHOLD STOPS ASKING — 2 souls in 2 bedrooms want no third (2 ms)
+    √ …and a GROWN one asks for a fourth the checklist would never give it (2 ms)
+    √ a house with NO bedrooms is crowded at any occupancy (never a divide by zero) (1 ms)
+    √ exactly AT the standard is not crowded (the boundary belongs to contentment) (1 ms)
+    √ ORDERED PROGRAMS still outrank everything — a spoken want is not a need reading (3 ms)
+    √ the KITCHEN want stays unconditional — a household cooks every day (2 ms)
+    √ 🚨 CONTENT IS AN ANSWER — kitchen kept, boxes roomy, no craft work ⇒ NOTHING (2 ms)
+  constructionStep — the occupancy gate outranks the bank
+    √ 🚨 A CONTENT HOUSEHOLD BUILDS NOTHING, however full its bank (78 ms)
+    √ …and a CROWDED one still does — need is the license, not the bank (107 ms)
+    √ no occupancy supplied ⇒ the shipped step (fixtures are untouched) (173 ms)
+  prosperitySignals — the spare pattern at the household rung
+    √ 🚨 SATIETY ALONE BANKS NOTHING — a fed household with bare chests accrues 0 (80 ms)
+    × 🚨 AN UNMET DEMAND BANKS NOTHING — a short town pays nobody (82 ms)
+    × SPARE stacks are wealth — and the keep-one floor says one unit is not (200 ms)
+    × 🚨 RESERVED STOCK IS THE BILL, NOT BREADTH (75 ms)
+    √ is deterministic — the same house, the same day, the same signals (156 ms)
+    √ a neighbour's household is not ours (the cluster guard is unchanged) (97 ms)
+
+  ● prosperitySignals — the spare pattern at the household rung › 🚨 AN UNMET DEMAND BANKS NOTHING — a short town pays nobody
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+    [0m [90m 262 |[39m     [90m// demand, a full pantry is a buffer draining, not savings.[39m
+     [90m 263 |[39m     [36mconst[39m rich [33m=[39m { [32m"box:1"[39m[33m:[39m { wood[33m:[39m [35m9[39m[33m,[39m stone[33m:[39m [35m9[39m[33m,[39m apple[33m:[39m [35m9[39m[33m,[39m cloth[33m:[39m [35m9[39m[33m,[39m block[33m:[39m [35m9[39m[33m,[39m rope[33m:[39m [35m9[39m } }[33m;[39m
+    [31m[1m>[22m[39m[90m 264 |[39m     expect(signalHarness({ boxes[33m:[39m rich })[33m.[39mtotal())[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                                                    [31m[1m^[22m[39m
+     [90m 265 |[39m     expect(signalHarness({ boxes[33m:[39m rich[33m,[39m shortage[33m:[39m [35m0.4[39m })[33m.[39mtotal())[33m.[39mtoBe([35m0[39m)[33m;[39m
+     [90m 266 |[39m     expect(signalHarness({ boxes[33m:[39m rich[33m,[39m shortage[33m:[39m [35m0.4[39m })[33m.[39mdirector[33m.[39mprosperitySignals(
+     [90m 267 |[39m       signalHarness({ boxes[33m:[39m rich[33m,[39m shortage[33m:[39m [35m0.4[39m })[33m.[39msession[33m,[39m[0m
+
+      at Object.<anonymous> (server/tests/world-engine/growth-motive.test.ts:264:52)
+
+  ● prosperitySignals — the spare pattern at the household rung › SPARE stacks are wealth — and the keep-one floor says one unit is not
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+    [0m [90m 275 |[39m     [90m// G1/G2: a creature keeps at least one of anything and gives its surplus.[39m
+     [90m 276 |[39m     expect(signalHarness({ boxes[33m:[39m one })[33m.[39mtotal())[33m.[39mtoBe([35m0[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 277 |[39m     expect(signalHarness({ boxes[33m:[39m many })[33m.[39mtotal())[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                                                    [31m[1m^[22m[39m
+     [90m 278 |[39m   })[33m;[39m
+     [90m 279 |[39m
+     [90m 280 |[39m   it([32m"🚨 RESERVED STOCK IS THE BILL, NOT BREADTH"[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (server/tests/world-engine/growth-motive.test.ts:277:52)
+
+  ● prosperitySignals — the spare pattern at the household rung › 🚨 RESERVED STOCK IS THE BILL, NOT BREADTH
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+    [0m [90m 284 |[39m     [36mconst[39m boxes [33m=[39m { [32m"box:1"[39m[33m:[39m { wood[33m:[39m [35m6[39m[33m,[39m stone[33m:[39m [35m6[39m } }[33m;[39m
+     [90m 285 |[39m     [36mconst[39m open [33m=[39m signalHarness({ boxes })[33m;[39m
+    [31m[1m>[22m[39m[90m 286 |[39m     expect(open[33m.[39mtotal())[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 287 |[39m
+     [90m 288 |[39m     [36mconst[39m claimed [33m=[39m signalHarness({ boxes[33m:[39m { [32m"box:1"[39m[33m:[39m { wood[33m:[39m [35m6[39m[33m,[39m stone[33m:[39m [35m6[39m } } })[33m;[39m
+     [90m 289 |[39m     claimed[33m.[39msession[33m.[39mreservations[33m.[39mreserve([32m"annex:h0"[39m[33m,[39m [32m"box:1"[39m[33m,[39m [32m"wood"[39m[33m,[39m [35m6[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (server/tests/world-engine/growth-motive.test.ts:286:26)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/founding-scan.test.ts (224.434 s)
+  gateAThreshold — Gate A read as a density
+    √ is the plateau store beating the backs: fill × (1 − dailyKeep) × pack × worth (6 ms)
+    √ inverts exactly — the take and the density are ONE relationship (1 ms)
+    √ a DURABLE staple settles on any surplus at all (ratio 0) (1 ms)
+    √ a FRAGILE staple raises the bar by an order of magnitude — pastoralists stay mobile (3 ms)
+    √ ⚖️ THE METABOLISM CANCELS — the gate names no duration, as the law requires (2 ms)
+    √ carry is the pack: doubling the porter's load doubles what must be banked (2 ms)
+  foundingScan — the tier's whole scan, derived
+    √ the take IS the harvest cap, and the threshold is Gate A's answer to it (2 ms)
+    √ spacing is the world's own day's walk, in this tier's cells (1 ms)
+    √ the CHART FLOOR is a chart limit, never a spacing choice (1 ms)
+    √ a tier that measures in its OWN cells keeps the spacing it declares (1 ms)
+  THE TWIN CONVERGENCE — the scan places settlements where bands settle
+    √ cell for cell, the closed form and the lived gate agree (29251 ms)
+    √ and the ACCEPTED SETS overlap positionally under one spacing rule (34956 ms)
+    √ the twin is NOT perfect, and says where: pressure has no density (2 ms)
+  the planet tier founds by the derivation
+    √ REAL scale reproduces the authored aesthetic it replaces (1 ms)
+    √ a world that DECLARES its gap gets the spacing derived — and 32 is 6 (1 ms)
+    √ the derived scan founds the SAME site set the literals did (44394 ms)
+    √ gap_compression 32 re-lays the ROADS, not the towns: every end becomes a port (115407 ms)
+    √ the tier-1 take is a hamlet's, not a capital's (12 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/trip-span.test.ts (81.37 s)
+  the resident streamer — a WATCHED house's member is never culled
+    √ keeps its body a quarter of a town away, so `f.remove` can never name it (313 ms)
+  the natural trip span
+    √ IS both walk legs plus the shop dwell — the clock every abstracted house shops on (143 ms)
+    √ scales with the ROUTE, so a far household gets a longer span (no constant) (106 ms)
+  a live trip that overruns its span is DISRUPTED, never delivered
+    √ releases the claims and frees the body — and the haul stays in the basket (39135 ms)
+    √ does NOT fire inside the span — the body walks its own last leg (35924 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/why-chains.test.ts (82.927 s)
+  §4 the chain seam — one ladder, mirroring creatureActivity's first match
+    √ ① COMMAND → the AUTHORITY link: 'I am going home because you ask' (5 ms)
+    √ ② a DRIVE row → the MOTIVE link, from the ROW's own condition word (3 ms)
+    √ …and the motive is the ROW's, not the condition mirror's top-firing one (2 ms)
+    √ ③ a GOODS row → the CONTAINER'S want: 'because the refrigerator wants food' (4 ms)
+    √ ④ a CLAIMED POOLED TASK → the ORDER, then the AUTHORITY over it (4 ms)
+    √ ⑤ SCHEDULED SHOPPING → 'I am getting the food because the house wants food' (5 ms)
+    √ ⑥ IDLE / nothing this host can read → `[end]`, and nothing else (5 ms)
+    √ ⚖️ LAW ② — every member's chain ENDS, and no link kind repeats a loop (29 ms)
+    √ ⚖️ LAW ④ — an UNTYPED goods row (unload) collapses rather than inventing (1 ms)
+    √ ⚖️ LAW ③ — a what-doing + 3×why walk moves NOTHING (10 ms)
+    √ DETERMINISM — the same state answers the same lines, ask after ask (5 ms)
+    √ ANSWERER SCOPE — a HOUSEMATE walks the subject's chain, a stranger cannot (4 ms)
+  §5 the board — 'what are you doing' at any time, and 'why' only after
+    √ what-doing is on the board in BOTH dialogue states (3 ms)
+    √ …INCLUDING an idle creature — 'at any time' is the whole point (1 ms)
+    √ …and it SURVIVES THE ACT CUT on the most crowded board there is (2 ms)
+    √ why-doing is ABSENT before a doing answer and PRESENT after one (1 ms)
+    √ no chain hook ⇒ no walk is ever opened, and no button appears (2 ms)
+    √ ★ THE WALK ★ — doing, its reason, the motive, then the existential shrug (3 ms)
+    √ where-going opens the SAME walk — a walk is a step of the same chain (1 ms)
+    √ an IDLE creature's walk terminates on the first press (law ②) (1 ms)
+    √ a STRANGER answerer (no chain for that subject) shrugs at depth 1 and closes (1 ms)
+    √ the walk rides beside the OTHER board state, never over it (1 ms)
+  §5 the parse — [do] is the activity question, [why] continues the walk
+    √ bare [do] asks the LISTENER what it is doing (3 ms)
+    √ [{subject} + do] asks about the SUBJECT (2 ms)
+    √ …and the `what + …` shapes are untouched (one act, several phrasings) (2 ms)
+    √ ★ THE BUTTON PARSES BACK TO ITS OWN ACT ★ — one utterance, two ways in (3 ms)
+    √ [do] said to NOBODY leaves the frame to the ordinary arms, unchanged (1 ms)
+    √ a bare [why] rides the CHAIN act while a walk is open… (2 ms)
+    √ …and keeps its NEEDS-gated meaning when no walk is open (2 ms)
+    √ a why that NAMES A VERB stays the premise-checked ask, walk or no walk (1 ms)
+  §7 out of scope — no NPC ever asks either of the new questions
+    √ chooseSpeakerAct never picks what-doing or why-doing, however the wheel falls (8 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/where-is-probe.test.ts (76.002 s)
+  Fix C — the ambient place facts do not depend on a quest cast
+    √ a dollhouse boot (no questCount) knows where its goods are bought (12 ms)
+    √ …so a streamed resident learns a PROVIDER for food (4 ms)
+  Fix B — the probe IS the body's own acquire resolution, and it is read-only
+    √ a stocked house answers with the REFRIGERATOR — the box its own row would open (12 ms)
+    √ a KIND resolves through the same row as its category; an unknown sort answers nothing (13 ms)
+    √ the dialogue layer speaks it: the verbless locative naming the fridge (8 ms)
+    √ READ-ONLY IS A LAW — an answered ask leaves claims, steps, parks and meters untouched (39 ms)
+  Fix D — the locate ladder searches the answerer's own ken
+    √ rung 2 — the fridge answers an APPLE ask only because it holds apples (9 ms)
+    √ rung 2 — a fridge of nothing but bananas does NOT answer an apple ask (10 ms)
+    √ rung 2 — a ball banked in a household box answers with that box (5 ms)
+    √ rung 3 — a ball in the PET's mouth answers with the holder, not a box (10 ms)
+    √ rung 3 — the answerer's OWN hands count (it is a household body too) (5 ms)
+    √ rung 4 — a ball lying on the floor answers with an at: point (7 ms)
+    √ rung 7 — a sort that is nowhere at all is answered by nothing (honest) (4 ms)
+    √ rung 5 — a FURNITURE WORD points at the piece itself (4 ms)
+    √ SCOPE LAW — a body with no household of its own answers nothing (2 ms)
+    √ §9 E3 — the PET's own food resolution is a genuine GAP, so its ask survives (5 ms)
+    √ READ-ONLY holds across the WHOLE ladder, not just rung 1 (52 ms)
+    √ DETERMINISM — two identical asks give byte-identical answers (12 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/sequence-execution.test.ts (53.243 s)
+  the structural split — condition first, sequence second
+    √ 'if + night + then + go + home' is a RULE, not a sequence (the §2a bug) (30 ms)
+    √ 'when + hungry + then + eat' is a WHILE rule over the creature's own state (11 ms)
+    √ the joiner is the CLAUSE BOUNDARY — it never leaks into the trigger (7 ms)
+    √ no condition connective ⇒ still a SEQUENCE ('go + home + then + sleep') (4 ms)
+    √ …and 'eat + and + sleep' too — `and` was never the conditional's business (4 ms)
+    √ EACH CLAUSE CARRIES ITS OWN TOKENS — the host re-speaks the tail from them (5 ms)
+    √ a condition connective with NO VERB keeps today's non-rule reading (4 ms)
+    √ a partial 'if + night + then' is still not a rule (nothing to do yet) (3 ms)
+  the shipped conditionals are byte-identical
+    √ 'go + home + when + night' — the trailing-condition shape (4 ms)
+    √ 'when + night + sleep' — the leading-condition shape (no joiner) (5 ms)
+    √ 'if + window.open + shut' — and the same sentence WITH `then` reads identically (5 ms)
+  the two-verb conditional — the trap stays shut
+    √ no `then` ⇒ unbound, never a confidently wrong rule (§2b regression guard) (3 ms)
+    √ WITH `then` the clauses separate, and NEITHER half is an immediate act (3 ms)
+  what the host is handed
+    √ two orders compile to two GOALS (23 ms)
+    √ two bare nouns compile to two DIALOGUE moves (8 ms)
+    √ a MIXED pair stays mixed — the host refuses it whole (7 ms)
+  live on the dollhouse — a sequence that actually happens
+    √ runs head then tail, is superseded, dies with a refused head, and answers the rest aloud (50928 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/headless-determinism.test.ts (145.957 s)
+  bootTextQuest determinism
+    √ two runs at the same seed/dt/camera build the IDENTICAL world at every checkpoint (145149 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-barter-road.test.ts (154.584 s)
+  T1 — the caravan leg is priced on the road the bound route holds
+    √ an UNBOUND line keeps the flat fallback (its `gate` is our own street, not a place) (21009 ms)
+    √ 🔒 a BOUND partner's leg is the ROAD — not the flat fallback, not the recurrence (37662 ms)
+    √ a NEARER bound partner ships sooner — the road is re-derived PER LEG (60917 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-engine-activities.test.ts (19.338 s)
+  CreatureAnimator activities — rig-level, species-agnostic
+    √ eat on a handless kind bows to the plate instead (pitch dips) (4 ms)
+    √ walking dissolves the activity pose (a woken sleeper stands and goes) (6 ms)
+    √ a kind change blends through zero (sleep → play never snaps) (4 ms)
+    human_cute
+      √ sit folds the legs (lower bodyHeight), no recline (7 ms)
+      √ sleep reclines fully, then blends back out on wake (4 ms)
+      √ play crouches and bows over the play spot (3 ms)
+      √ play works the front limbs at a low spot IN FRONT, in alternation (4 ms)
+      √ play releases: the pose blends back out when the activity clears (4 ms)
+      √ eat rhythm: a handed kind carries a hand to its mouth (6 ms)
+    frog_person
+      √ sit folds the legs (lower bodyHeight), no recline (4 ms)
+      √ sleep reclines fully, then blends back out on wake (4 ms)
+      √ play crouches and bows over the play spot (4 ms)
+      √ play works the front limbs at a low spot IN FRONT, in alternation (10 ms)
+      √ play releases: the pose blends back out when the activity clears (8 ms)
+      √ eat rhythm: a handed kind carries a hand to its mouth (6 ms)
+  recline — the back goes to the ground for any posture
+    √ standing (recline 0) moves nothing (3 ms)
+    √ lands the back facing straight down from UPRIGHT, HORIZONTAL and between (2 ms)
+    √ a horizontal body rolls the whole way over — it is NOT stood on its tail (1 ms)
+    √ eases in — half a recline is half the turn (1 ms)
+    √ rests the lying body ON the surface and centres it where it stood (3 ms)
+  a sleeping body lies down on the surface it sleeps on
+    √ human_cute: down along the ground, and nothing through it (1252 ms)
+    √ human_cute: stands unchanged when it is not sleeping (953 ms)
+    √ horse: down along the ground, and nothing through it (2196 ms)
+    √ horse: stands unchanged when it is not sleeping (673 ms)
+    √ cat: down along the ground, and nothing through it (2948 ms)
+    √ cat: stands unchanged when it is not sleeping (1196 ms)
+  creature avatar factory — the activity channel end-to-end
+    √ a sleeping baked NPC lies onto its resolved bed anchor, then retires on wake (2923 ms)
+    √ an activity without an anchor plays out in place for every species (6825 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-play.test.ts (19.242 s)
+  town-play: config → session, deterministically
+    √ same config builds the SAME game and stage on both sides of the bridge (5037 ms)
+    √ the payload guard admits exactly the discriminated config (4 ms)
+  resolveTownFocus — the dollhouse frame (initial_focus names a house)
+    √ null → no focus (the village square, as ever) (5 ms)
+    √ "house:<index>" and { type: "house", index } name an exact house (6 ms)
+    √ a bare { type: 'house' } picks the ROOMIEST house (it fits the beds) (43 ms)
+    √ rejects unknown ids, unknown params, wrong types, and missing houses — path-exact (119 ms)
+  defined entities — a hand-authored household (entities.creatures/objects)
+    √ kernel gates the SHAPE: modes, groups, entry objects (37 ms)
+    √ town scope: a mode-'all' family fills the FOCUSED house exactly; replay-stable via config (6936 ms)
+    √ town scope refuses what it can't honor, path-exact (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/creature-outfit-bake.test.ts (9.661 s)
+  outfitPresetFor — deterministic wardrobe
+    √ offers one preset per (garment head × palette colour), each a valid clamped outfit (16 ms)
+    √ same hash → same outfit forever (fresh copies, wrap-around, negatives) (7 ms)
+    √ presets are varied — includes shirt+pants combos and a dress (1 ms)
+  dressed bakes — cached per (species, look, outfit)
+    √ a dressed bake has more vertices than the bare one (garment shells) (2649 ms)
+    √ bare path is unchanged: no-outfit lookups hit the same cache entry (13 ms)
+    √ one cache entry per preset: same preset shares a bake, different presets don't (2337 ms)
+    √ createBakedCreature and createDynamicCreature accept an outfit (2442 ms)
+  avatar factory — outfitFor hook
+    √ dresses residents per avatar id without touching the internals (1938 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-errand-walk.test.ts
+  furnished-house errands ARRIVE (the anti-wedge, anti-flip pin)
+    √ every furniture errand in the 12×9 south-door house arrives without flip-thrash (1059 ms)
+    √ every furniture errand in the 11.8×9.8 east-door house arrives without flip-thrash (793 ms)
+    √ every furniture errand in the 11.8×9.8 west-door house arrives without flip-thrash (638 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-creature-quests.test.ts
+  buildCreatureQuestWorld — both gauntlets across the grid
+    √ certifies: syntax=a complexity=simple quests=1 (17 ms)
+    √ certifies: syntax=a complexity=simple quests=2 (6 ms)
+    √ certifies: syntax=a complexity=simple quests=3 (8 ms)
+    √ certifies: syntax=a complexity=request quests=1 (6 ms)
+    √ certifies: syntax=a complexity=request quests=2 (7 ms)
+    √ certifies: syntax=a complexity=request quests=3 (3 ms)
+    √ certifies: syntax=a complexity=exchange quests=1 (3 ms)
+    √ certifies: syntax=a complexity=exchange quests=2 (5 ms)
+    √ certifies: syntax=a complexity=exchange quests=3 (5 ms)
+    √ certifies: syntax=a complexity=lend quests=1 (2 ms)
+    √ certifies: syntax=a complexity=lend quests=2 (3 ms)
+    √ certifies: syntax=a complexity=lend quests=3 (4 ms)
+    √ certifies: syntax=a complexity=mixed quests=1 (2 ms)
+    √ certifies: syntax=a complexity=mixed quests=2 (2 ms)
+    √ certifies: syntax=a complexity=mixed quests=3 (2 ms)
+    √ certifies: syntax=b complexity=simple quests=1 (2 ms)
+    √ certifies: syntax=b complexity=simple quests=2 (2 ms)
+    √ certifies: syntax=b complexity=simple quests=3 (3 ms)
+    √ certifies: syntax=b complexity=request quests=1 (3 ms)
+    √ certifies: syntax=b complexity=request quests=2 (3 ms)
+    √ certifies: syntax=b complexity=request quests=3 (4 ms)
+    √ certifies: syntax=b complexity=exchange quests=1 (7 ms)
+    √ certifies: syntax=b complexity=exchange quests=2 (3 ms)
+    √ certifies: syntax=b complexity=exchange quests=3 (4 ms)
+    √ certifies: syntax=b complexity=lend quests=1 (4 ms)
+    √ certifies: syntax=b complexity=lend quests=2 (3 ms)
+    √ certifies: syntax=b complexity=lend quests=3 (3 ms)
+    √ certifies: syntax=b complexity=mixed quests=1 (2 ms)
+    √ certifies: syntax=b complexity=mixed quests=2 (3 ms)
+    √ certifies: syntax=b complexity=mixed quests=3 (5 ms)
+    √ certifies: syntax=c complexity=simple quests=1 (2 ms)
+    √ certifies: syntax=c complexity=simple quests=2 (2 ms)
+    √ certifies: syntax=c complexity=simple quests=3 (2 ms)
+    √ certifies: syntax=c complexity=request quests=1 (2 ms)
+    √ certifies: syntax=c complexity=request quests=2 (2 ms)
+    √ certifies: syntax=c complexity=request quests=3 (3 ms)
+    √ certifies: syntax=c complexity=exchange quests=1 (2 ms)
+    √ certifies: syntax=c complexity=exchange quests=2 (3 ms)
+    √ certifies: syntax=c complexity=exchange quests=3 (4 ms)
+    √ certifies: syntax=c complexity=lend quests=1 (3 ms)
+    √ certifies: syntax=c complexity=lend quests=2 (2 ms)
+    √ certifies: syntax=c complexity=lend quests=3 (5 ms)
+    √ certifies: syntax=c complexity=mixed quests=1 (2 ms)
+    √ certifies: syntax=c complexity=mixed quests=2 (4 ms)
+    √ certifies: syntax=c complexity=mixed quests=3 (3 ms)
+    √ announce:'after' traders certify too (2 ms)
+    √ ask-around clue routing certifies: complexity=request (3 ms)
+    √ ask-around clue routing certifies: complexity=exchange (3 ms)
+    √ ask-around clue routing certifies: complexity=lend (2 ms)
+  counting b — multi-item needs
+    √ certifies: complexity=simple needCount=2 (2 ms)
+    √ certifies: complexity=simple needCount=3 (2 ms)
+    √ certifies: complexity=request needCount=2 (3 ms)
+    √ certifies: complexity=request needCount=3 (4 ms)
+    √ certifies: complexity=exchange needCount=2 (4 ms)
+    √ certifies: complexity=exchange needCount=3 (5 ms)
+    √ partial delivery leaves the need open and the ask reads MORE (6 ms)
+    √ lend quests force a single need (a consumed borrow can't come back) (3 ms)
+  task b — placement (state) needs
+    √ certifies: complexity=simple task=place (4 ms)
+    √ certifies: complexity=request task=place (2 ms)
+    √ certifies: complexity=exchange task=place (3 ms)
+    √ certifies: complexity=lend task=place (8 ms)
+    √ the kitchen sink certifies: place + multi + ask-around (3 ms)
+    √ hand-over is redirected to the box; the drop fulfills, binds, and earns the debt (5 ms)
+  item b — descriptor variants (glyph system)
+    √ certifies: complexity=simple descriptors=on (3 ms)
+    √ certifies: complexity=request descriptors=on (2 ms)
+    √ certifies: complexity=exchange descriptors=on (2 ms)
+    √ certifies: complexity=lend descriptors=on (3 ms)
+    √ variant entities are minimal pairs of COMPOSED glyphs (1 ms)
+    √ wrong-variant offer → '{item} + {descriptor}.not', item kept; right variant lands (2 ms)
+    √ a mistakenly-bought distractor is recoverable via the return price (2 ms)
+  task c — on-behalf needs (deliver)
+    √ certifies: complexity=simple task=deliver (3 ms)
+    √ certifies: complexity=request task=deliver (2 ms)
+    √ certifies: complexity=exchange task=deliver (2 ms)
+    √ certifies: complexity=lend task=deliver (2 ms)
+    √ giving the item to the RECIPIENT fulfills both needs; the giver never takes it (2 ms)
+    √ the kitchen sink certifies: deliver + descriptors + ask-around (2 ms)
+  item transformations b — states + stations
+    √ certifies: complexity=simple transformations=on (2 ms)
+    √ certifies: complexity=request transformations=on (5 ms)
+    √ certifies: complexity=exchange transformations=on (2 ms)
+    √ certifies: complexity=lend transformations=on (2 ms)
+    √ wrong-state offer → '{item} + {state}.not'; the station swap makes it land (6 ms)
+    √ a required state with NO station fails certification (3 ms)
+    √ the kitchen sink certifies: transformations + descriptors + deliver + multi (3 ms)
+  request c — inferred needs (announce never)
+    √ certifies: complexity=simple giverAnnounce=never (3 ms)
+    √ certifies: complexity=request giverAnnounce=never (2 ms)
+    √ certifies: complexity=exchange giverAnnounce=never (3 ms)
+    √ sad greet, sad small talk, no reveal — the keepsake is kept, the right offer lands (6 ms)
+    √ a never-announcing wanter without evidence fails certification (2 ms)
+    √ the kitchen sink certifies: inferred + transformations + descriptors (2 ms)
+  phrase generator — glyph counts + person deixis
+    √ a/b/c render 1/2/3 content slots and the game carries meta.syntax (2 ms)
+    √ state-need sentences cap at 3 content slots (subject drops for the tail) (1 ms)
+    √ creature references resolve by person: the player reads as 'you' (1 ms)
+  ask-around clue routing (Clues c)
+    √ the wanter doesn't know; the next giver holds the clue to the supplier (3 ms)
+    √ degenerate one-quest world: the supplier itself answers 'I have it' (2 ms)
+    √ a creature that knows the PLAYER holds an item says so (2 ms)
+  fulfill node runtime behavior
+    √ content creatures complete at start; needy ones on the fulfill-need input (5 ms)
+    √ derives the same creature world the certifier used (determinism) (3 ms)
+    √ clue-chain guarantee: a not-knowing wanter with a LOOSE item fails certification (1 ms)
+    √ rejects a game placing the same item in two creatures' rooms (3 ms)
+  v1 causal WHY channel (causation-and-elements.md §4)
+    √ certifies + is invariant to the fact, and the WHY answer reads correctly: syntax=a (12 ms)
+    √ certifies + is invariant to the fact, and the WHY answer reads correctly: syntax=b (6 ms)
+    √ certifies + is invariant to the fact, and the WHY answer reads correctly: syntax=c (5 ms)
+    √ placement / on-behalf / transformed needs get NO fact in v1 (2 ms)
+  composeNeed causal-frame compatibility table (§2)
+    √ because-lack-item fits only a plain possession need (1 ms)
+    √ in-order-to-recipient-happy fits only an on-behalf (deliver) need
+    √ the generator never emits an incompatible frame (whole grid still certifies) (2 ms)
+  v2 causal in_order_to purpose (deliver needs, §4.3)
+    √ the giver's LINE states remedy AND goal, stacks, and cert is invariant (3 ms)
+  step 4a creature-state needs (§5)
+    √ a cold MOTIVE generates a 'something hot' want: 'want hot because cold', certifies (2 ms)
+    √ revelation: the OPENING is the want or the motive; WHY carries the link (2 ms)
+    √ heating the item makes it match 'something hot'; giving it clears the cold (2 ms)
+    √ decoupled: the want is 'something hot'; a KNOWN COLD item doesn't answer where-is (1 ms)
+    √ fulfilling the remedy CLEARS the condition (getting-better demonstration) (1 ms)
+  step 4b device-state needs (§5)
+    √ a device quest: certifies, line 'want {device} closed', WHY reveals the open cause (5 ms)
+    √ toggling the device fulfills the need and clears a linked condition (P2) (1 ms)
+    √ a device is never picked up as a loose prop by the certifier (2 ms)
+  step 4b power chains — generators activated by switches (§5)
+    √ a device won't activate without power; powerUp switches the generator on first (1 ms)
+    √ powerUp resolves a DEEP chain (switch → generator → device), deepest first (1 ms)
+    √ a powered device quest certifies and WHY reveals the generator to switch on (2 ms)
+  P1 powered stations — a fridge that only cools when switched on (§5)
+    √ useStation is a REAL gate: no power → no transform; powered → it cools (3 ms)
+    √ a powered-station quest certifies; WHY reveals the generator to switch on (3 ms)
+    √ the power step is NECESSARY: a hand-built world can't cool without switching on (1 ms)
+  parameter-based needs — loose matching + reversible gifts (motive-driven-needs.md)
+    √ a TARGET need matches ANY item that fits (loose), not one instance (2 ms)
+    √ reversible gift: a fulfilled creature swaps its bound item for an equivalent (the red-apple puzzle) (1 ms)
+    √ an exact-instance need (no target) never swaps — it wants its one item (1 ms)
+    √ offer decline is PREDICATE-driven: names the OFFERED item's missing facet (2 ms)
+  step D — dimensions compose (motive-driven-needs.md obs. 1)
+    √ composes + certifies: {"giverCondition":"cold","complexity":"request"} (2 ms)
+    √ composes + certifies: {"giverCondition":"cold","complexity":"exchange"} (2 ms)
+    √ composes + certifies: {"giverCondition":"cold","complexity":"lend"} (2 ms)
+    √ composes + certifies: {"giverCondition":"cold","needCount":2} (3 ms)
+    √ composes + certifies: {"giverCondition":"cold","descriptors":true} (2 ms)
+    √ composes + certifies: {"giverCausalWhy":true,"descriptors":true} (3 ms)
+    √ composes + certifies: {"giverCausalWhy":true,"complexity":"request"} (3 ms)
+    √ composes + certifies: {"deliverCausalPurpose":true,"task":"deliver","transformations":true} (3 ms)
+    √ composes + certifies: {"deliverCausalPurpose":true,"task":"deliver","complexity":"request"} (2 ms)
+  step 4c places — go-to (presence) needs (§5)
+    √ noteArrival fulfills the presence need and credits the player (2 ms)
+    √ a go-to quest: certifies, line 'you + go + to + {dest}', item-acts suppressed (4 ms)
+    √ the go-to giver is NOT content at start; the destination IS (3 ms)
+  motive batch — giverMotive presets
+    √ hungry: condition → 'I want food'; WHY answers 'because I am hungry' (4 ms)
+    √ likes-item: exact want; WHY answers 'because I like {item}' (2 ms)
+    √ likes-color: 'something {color}' want; WHY answers 'because I like {color}' (4 ms)
+    √ play/read/wear: category want; WHY answers 'because I want to {verb}' (9 ms)
+    √ smelly: outdoor garbage placement; WHY answers 'sad because {item} smelly' (3 ms)
+    √ lonely: 'stay with me' want; WHY answers 'stay because lonely'; dwell fulfills (2 ms)
+    √ lonely at reveal 'motive': the OPENING is just 'I am lonely' (2 ms)
+    √ escort: 'take me to {dest}'; the GIVER arriving fulfills (3 ms)
+    √ every motive preset certifies across seeds (42 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/conversation-host-membership.test.ts
+  leaving a conversation never deletes the shared record (the close bug)
+    √ Ann closing her board leaves BEN's conversation — roster, reveals and all — intact (26 ms)
+    √ a quote to the LEAVER dies with them; a quote to whoever stays does not (9 ms)
+    √ the LAST player out takes the record with them (4 ms)
+  conversationSpent — is there still anybody in this room?
+    √ a roster with NO author is spent; the creature alone is not company (22 ms)
+    √ a REMOTE author keeps it alive exactly as the local one does (6 ms)
+    √ SILENCE is the second door: a full roster still expires on the idle clock (12 ms)
+    √ the sweep NEVER pulls a record out from under an open board (8 ms)
+  per-member syntax level — one student's confusion is not the other's
+    √ A's confused-drop leaves B's rung exactly where it was (11 ms)
+    √ …and the BOARDS differ accordingly — the same creature, two phrasings (13 ms)
+    √ a REJOIN never demotes a member back to the game's default rung (5 ms)
+  a peer's turn never moves this device's board
+    √ the ui transition of a REMOTE turn lands on a scratch, never on the local view (8 ms)
+    √ the scratch is thrown away between turns, so nothing accumulates in it (6 ms)
+    √ the LOCAL author speaking to somebody whose board is NOT up also writes to scratch (5 ms)
+    √ a turn taken HERE, in the conversation on THIS screen, does move this board (5 ms)
+  a turn is proof of membership — the unannounced speaker is seated
+    √ a relayed turn from a client that never sent a join still gets a roster row (5 ms)
+    √ the announced case costs nothing — joining is idempotent and never resets a rung (4 ms)
+    √ joins ride the SIM clock, and the roster stays in (joinedTick, id) order (3 ms)
+  owner → follower sync — one message per REMOTE member
+    √ the local author and the creature get nothing; every peer gets its OWN rung (8 ms)
+    √ only the member whose TURN it was is handed the board transition back (8 ms)
+    √ the shared half is a SNAPSHOT — a later turn cannot rewrite a sent message (4 ms)
+    √ what the owner sends is what the follower's row holds, keyed by ITS wire id (14 ms)
+    √ a merge never un-hears something the follower already knew (6 ms)
+  ⑩ per-author attention — a peer's gaze gates a peer's creature
+    √ a RELAYED attend writes the SENDER's row and leaves the owner's alone (13 ms)
+    √ engagement answers PER AUTHOR — Ben's hold on Bram says nothing about Ann's (4 ms)
+    √ 🚨 THE PAIRING LAW: Ann's engagement never pairs with a draw that isn't hers (3 ms)
+    √ the NEED LOOP asks about the creature, so ANY author's engagement wakes it (4 ms)
+    √ ROSTER-IS-ENGAGEMENT: a fellow member answers from the circle, not the hover (4 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-object-models.test.ts
+  object-models identity resolution
+    √ recognizes shipped pool emojis (21 ms)
+    √ resolves by composed-glyph head when the emoji is unknown (5 ms)
+    √ normalizes variation selectors and skin tones before matching (3 ms)
+    √ returns false (→ renderer failsafe) for unmodeled objects (7 ms)
+  parseDescriptors
+    √ reads size modifiers as an exaggerated scale (22 ms)
+    √ reads color + temperature modifiers (8 ms)
+    √ composes multiple descriptors on one glyph (5 ms)
+    √ ignores unknown modifiers (8 ms)
+  buildObjectModel
+    √ returns null for an unknown object so the caller can fall back (10 ms)
+    √ builds a multi-part model with standard materials (39 ms)
+    √ keeps the model within the object's vertical footprint (base at -radius) (36 ms)
+    √ scales for a size descriptor while keeping the base on the ground (42 ms)
+    √ tints the body for a color descriptor and restores it when cleared (10 ms)
+    √ adds a particle effect for hot/cold and removes it on change (16 ms)
+    √ disposes cleanly (including active particles) (19 ms)
+  the construction block is not a toy
+    √ the block head resolves to its own model, by glyph and by icon (3 ms)
+    √ is a SQUARED unit, longer than it is thick, resting on the ground line (6 ms)
+    √ is MATTE — a builder carries it at head height across the screen (5 ms)
+    √ the TOY blocks are untouched — a different word, a different object (8 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/glyph-raster-cache.test.ts
+  glyph raster cache key
+    √ separates the two text directions (14 ms)
+    √ separates plated from bare (9 ms)
+    √ keeps distinct glyphs distinct (4 ms)
+    √ is stable for the same glyph, direction and plate (9 ms)
+    √ carries the epoch, so a bump orphans every stored bitmap (7 ms)
+  slot asset key
+    √ never collides with a whole-glyph key (8 ms)
+    √ re-shrinks when the size cap changes rather than serving the old size (7 ms)
+    √ keeps distinct assets distinct (6 ms)
+  canBankSlotAsset
+    √ banks bundled, content-hashed app assets (7 ms)
+    √ refuses anything served under /api — the art can be REPLACED under a stable id (4 ms)
+    √ refuses a cross-origin symbol (generated art on a CDN) (3 ms)
+    √ refuses inline and object URLs, which are not addresses of anything durable (5 ms)
+  glyph raster cache without storage
+    √ reads as a miss rather than throwing (8 ms)
+    √ swallows a write (17 ms)
+    √ swallows a clear (7 ms)
+    √ reads a slot asset as a miss and swallows its write (7 ms)
+  dwell bubble prewarm vocabulary
+    √ covers every glyph the dwell and rest bubbles can emit (13 ms)
+    √ lists nothing twice — the same glyph must not be composed twice (9 ms)
+    √ warms only glyphs, never the emoji fallbacks (9 ms)
+  newly wired bundled icons
+    √ come points at its bundled art (7 ms)
+    √ follow points at its bundled art (7 ms)
+    √ enter points at its bundled art (6 ms)
+    √ exit points at its bundled art (8 ms)
+    √ read points at its bundled art (7 ms)
+    √ learn points at its bundled art (12 ms)
+    √ understand points at its bundled art (9 ms)
+    √ confused points at its bundled art (6 ms)
+    √ do points at its bundled art (8 ms)
+    √ my points at its bundled art (6 ms)
+    √ your points at its bundled art (8 ms)
+    √ come is a registered, translatable entry (4 ms)
+    √ follow is a registered, translatable entry (9 ms)
+    √ enter is a registered, translatable entry (7 ms)
+    √ exit is a registered, translatable entry (5 ms)
+    √ read is a registered, translatable entry (3 ms)
+    √ learn is a registered, translatable entry (4 ms)
+    √ understand is a registered, translatable entry (7 ms)
+    √ confused is a registered, translatable entry (16 ms)
+    √ do is a registered, translatable entry (8 ms)
+    √ my is a registered, translatable entry (7 ms)
+    √ your is a registered, translatable entry (14 ms)
+    √ marks the motion verbs directional so RTL flips them (15 ms)
+    √ does not make the mental/feeling verbs directional (15 ms)
+    √ drops `directional` from my / your now that they have their own art (15 ms)
+    √ keeps my / your as corner badges on opposite rows (9 ms)
+    √ points `receive` at the art that still exists (8 ms)
+  isRtlLocale
+    √ reads Hebrew and Arabic right-to-left (10 ms)
+    √ covers a script with no shipped glyph ruleset (12 ms)
+    √ reads the shipped LTR locales left-to-right (11 ms)
+    √ resolves a BCP-47 region tag by its primary subtag (8 ms)
+    √ is case- and separator-insensitive (13 ms)
+    √ defaults an absent or unknown locale to left-to-right (7 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-color.test.ts
+  color — regresses through holding → the coloring tub
+    √ loose garment: walk to it, pick it up, carry it to the tub, then color (39 ms)
+    √ already in hand: the pickup leg drops — just walk to the tub and color (9 ms)
+    √ held by ANOTHER creature is unreachable — can't snatch it to colour (5 ms)
+    √ NO tub nearby → recolour in hand where you stand (never a dead-end) (9 ms)
+    √ the colour rides the step verbatim (any color_* value) (13 ms)
+  color — the goal is planner-owned and compileGoal delegates
+    √ goalTarget maps color → the `colored` predicate (4 ms)
+    √ compileGoal returns exactly what planGoal returns (one owner, no drift) (39 ms)
+    √ pursue drives it to a terminal color act, then done (14 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-wilderness.test.ts
+  buildWilderness
+    √ is deterministic in the seed (47 ms)
+    √ lays the requested counts with the right material stacks (43 ms)
+    √ keeps everything inside the manifold and out of the spawn clearing (53 ms)
+    √ ids follow the session protocols (features wild:<species>_<n>, creatures wild_<n>) (12 ms)
+    √ floors the side at 60 m (11 ms)
+    √ kill-only features carry no harvest capacity or regrow ledger (10 ms)
+    √ an explicit mix replaces the oak-and-rock default (biome selection seam) (11 ms)
+    √ an ANIMAL mix entry scatters walking product bodies, not box features (25 ms)
+    √ the default mix is byte-identical to the legacy trees/rocks scatter (18 ms)
+    wildFeatureRadius
+      √ stands a full source at its declared radius (14 ms)
+      √ shrinks with the REMAINING kill stock — one stone reads as a pebble (12 ms)
+      √ size means UNITS LEFT, not a fraction of its own roll (9 ms)
+      √ never shrinks a source with no kill products (a picked bush is still a bush) (14 ms)
+      √ is pure and total — same input, same answer; unknown species get the default (11 ms)
+    conversionDial — multiplier ① routed through the scatter
+      √ dial 1 (default AND explicit) is byte-identical (13 ms)
+      √ ⚖️ INVARIANCE (S3 review): a passed dial changes NOTHING — abundance is dial-free (12 ms)
+      √ a freshly-scattered tree stands MATURE — sizeClass/growAt stay unset (9 ms)
+  homesteadWildMix — multiplier ⑤ (the dial, the same × direction as yield)
+    √ dial 1 (default AND explicit) is byte-identical (10 ms)
+    √ ⚖️ INVARIANCE (S3 review): counts are dial-free — abundance is not conversion (12 ms)
+  live-harvest regrow (dueHarvestRegrowth / armHarvestRegrow)
+    √ a live take arms the clock one regrow period out; kill glyphs never arm (12 ms)
+    √ nothing matures before the deadline; one unit per period after it (7 ms)
+    √ a long absence catches up whole periods but stops at capacity (5 ms)
+    √ below capacity, the ledger advances to the next deadline (6 ms)
+    √ an unarmed feature has nothing pending (7 ms)
+  embodiment rule — bodyHeightM is the data flip
+    √ a plant with bodyHeightM stands as a grown flora body; minerals stay boxes (7 ms)
+  growthClassPeriodS — real years → game seconds, the generation family precedent
+    √ at REAL_SCALE, dividing evenly across the classes (9 ms)
+    √ generation compresses it — a faster-aging world grows its trees faster too (7 ms)
+    √ resourceCompression never enters it — orthogonal to the growth clock (8 ms)
+  dueGrowthAdvance — the sibling of dueHarvestRegrowth, size classes not units
+    √ null: no growAt armed, or the species has no growth clock (8 ms)
+    √ nothing matures before the deadline; one class per period after it (9 ms)
+    √ a long absence catches up whole classes but STOPS AT MATURE, clock retires (5 ms)
+    √ LARGER-FIRST ordering data: stock REPLACES, never accumulates (4 ms)
+  reseedGrowthStock — the fell→sapling replacement
+    √ class 0 (sapling): zero wood, at dial 1 or any dial (8 ms)
+    √ only kill glyphs — a fruit tree's harvest glyph is untouched here (7 ms)
+  wildFeatureSizeRank — LARGER TREES CUT FIRST (user law, verbatim)
+    √ unset sizeClass (never felled) ranks as MATURE — the most negative key (14 ms)
+    √ a bigger class always outranks (sorts first under an ascending comparator) (4 ms)
+    √ a species with no growth clock (rock) has NO size preference — always 0 (8 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-intent-lines.test.ts
+  goalIntentLine — GoalSpec → the announcement glyphs
+    √ fetch: 'I'll get the wood' (47 ms)
+    √ give routes to the recipient (the issuer reads as 'you') (10 ms)
+    √ putIn names the destination; goTo/goHome name the place (11 ms)
+    √ place names WHERE: 'I'll put the chair next to the table' (20 ms)
+    √ near stays near — the two proximity relations are never collapsed (11 ms)
+    √ a containment placement speaks its room ('in the kitchen') (9 ms)
+    √ a POINT anchor names nothing, so the line stays bare (the gaze 'here') (8 ms)
+    √ a relation the lang layer cannot SAY stays silent rather than degrading (9 ms)
+    √ the vertical + facing relations earned lexemes and now speak (front as in_front_of) (14 ms)
+    √ every goal kind yields a speakable line (no silent arm) (30 ms)
+  asIntent — the STATEMENT-OF-INTENT syntax (.will)
+    √ marks the verb so the line reads 'I will …', never an imperative (7 ms)
+    √ renders the going-to future in every ruleset (34 ms)
+    √ marks movement intent through the going frame (8 ms)
+    √ never marks a line that would degrade to the telegraphic gloss (10 ms)
+    √ level a (the bare teaching slot) is never marked (5 ms)
+  the deixis marker — '.this' names the PARTICULAR instance
+    √ renders the demonstrative in every ruleset (9 ms)
+    √ wear + this garment ('I will wear this shirt') (5 ms)
+  attention-act shapes — the table's spoken intents
+    √ a bed speaks SLEEP, a bath WASH, a toilet the bathroom trip (8 ms)
+    √ play with a particular toy ('I will play with this ball') (5 ms)
+    √ talk to a partner ('I will talk to the bear') (11 ms)
+    √ the refusal lines speak proper negation (6 ms)
+  the criteria hook — ONE conservative gate, tuned later
+    √ announces when CLAIMING a pooled task (7 ms)
+    √ stays quiet for routine self-directed behavior and direct commands (9 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-carry-verbs.test.ts
+  pick_up — the physical lift (fetch)
+    √ 'pick_up + ball' parses as a directive verb and compiles to fetch (5 ms)
+  carry — hold, and optionally move to a destination
+    √ 'carry + ball' (no destination) → fetch (pick up and hold) (2 ms)
+    √ 'carry + ball + to + box' → carry it there (putIn the named place) (2 ms)
+    √ a bare second noun is the destination: 'carry + ball + box' (2 ms)
+  drop — release the held item
+    √ bare 'drop + ball' → the release-here drop goal (no destination) (2 ms)
+    √ 'drop + ball + in + box' → containment (putIn), same as put (1 ms)
+  get/take stay possession verbs (unchanged)
+    √ 'get + ball' still compiles to fetch (distinct WORD, same primitive) (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-relations.test.ts
+  compliance — the command-following weight
+    √ a neutral stranger is near-ignored (6 ms)
+    √ a liked, trusted, recognized commander is reliably obeyed (3 ms)
+    √ a resented authority drags its feet despite standing (2 ms)
+    √ authority is the primary driver (dominates trust at equal levels) (3 ms)
+    √ is monotonic in each axis (more never hurts) (3 ms)
+  compliance — genome-aware temperament (social-bot unification)
+    √ NEUTRAL_PERSONALITY matches the no-personality result exactly (3 ms)
+    √ an assertive creature obeys the SAME commander less; a yielding one more (2 ms)
+    √ patience and warmth nudge compliance up (2 ms)
+    √ the obedience floor lets a drone obey a total STRANGER (no relationship) (5 ms)
+    √ a soldier (high floor) mostly complies without a bond; the relation still adds on top (1 ms)
+  personality presets — non-standard characters are just points, not types
+    √ a drone obeys anyone; a wild creature obeys almost no one (1 ms)
+    √ the 'unit' preset is fully compliant regardless of relationship (1 ms)
+    √ a ruler takes no orders itself (obedience floor 0), even from an authority (1 ms)
+    √ presets accept per-dial overrides (2 ms)
+  baselineRelation — genome seeds a stranger's starting relation
+    √ a warm creature extends goodwill; a cold one starts near zero affinity (1 ms)
+    √ authority is never innate — always earned (1 ms)
+  relation clamping + nudges
+    √ makeRelation clamps out-of-range values (2 ms)
+    √ a gift raises affinity and a little trust, and saturates (can't max in one) (1 ms)
+  relation book — directed store with default fallback
+    √ unknown pairs read as the neutral default (2 ms)
+    √ relations are DIRECTED (bear→player need not equal player→bear) (1 ms)
+    √ nudgeInBook accumulates in place (1 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  override existing env vars with { override: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-blueprint.test.ts
+  blueprintDelta — the drawing does not see where things drifted to
+    √ CLEARS `materialized` — the house stops generating, the drawing never does (3 ms)
+    √ keeps what the PLAYER PINNED — a spoken order is a change to the drawing (1 ms)
+    √ re-slots an AUTONOMOUS placement — the oven follows the kitchen it never had (1 ms)
+    √ leaves a HUNG DOOR alone — a leaf is part of the wall, not the furniture (2 ms)
+    √ returns the delta UNCHANGED when nothing has drifted (the common case) (1 ms)
+    √ hasDrift is the cheap gate the reconciling sweeps ask first (1 ms)
+  materializedRows — making the furniture real
+    √ keeps the SAME id, so nothing keyed on a piece is orphaned (3 ms)
+    √ files each piece under the room it stands in (1 ms)
+    √ never re-records a piece that is already a row (1 ms)
+    √ records a piece standing outside every room rather than losing it (1 ms)
+  reconcileFurnishing — the difference, as a work list
+    √ a house standing on its own drawing owes NOTHING (5 ms)
+    √ forgives a few centimetres — nobody carries a bed 4 cm across a room (2 ms)
+    √ MOVES a piece that is already in the house instead of making a second one (3 ms)
+    √ carries the NEAREST one — a household does not cross the house for nothing (3 ms)
+    √ installs from a box before making, and makes only when there is none (2 ms)
+    √ spends the stored units as it promises them — one bed cannot fill two rooms (2 ms)
+    √ ROOM-SCOPED by construction: a filled bedroom never answers for an empty one (2 ms)
+    √ MAKES for a room that has not risen yet — the bed and the walls go up together (2 ms)
+    √ HOLDS a spare for the room being built instead of stowing then re-making it (2 ms)
+    √ waits on a stored unit rather than making a second — nothing to do yet (2 ms)
+    √ LINKS to the piece already there, and RE-OPENS the request when it vanishes (2 ms)
+    √ A PLACE IS NOT A POSSESSION — breaking the stove leaves the place wanting one (2 ms)
+    √ DECONSTRUCTS what the drawing has no place for under the new plans (2 ms)
+    √ CARRIES the street-good box too — the refrigerator does not teleport (2 ms)
+    √ never mistakes a plain chest for the pantry, in either direction (1 ms)
+    √ NEVER deconstructs a goods box — a household without its pantry cannot shop (1 ms)
+    √ SURPLUS FIRST: the removal set is worked out before any want is answered (2 ms)
+    √ keeps a STANDING ORDER only when the surplus and the store are both empty (5 ms)
+    √ is deterministic — the same house answers the same way every time (1 ms)
+  pieceAtItsSlot — what the bump rule asks before it breaks anything
+    √ says yes for a piece standing on its mark (walking into your own table breaks nothing) (1 ms)
+    √ says no for one the drawing does not account for (1 ms)
+  lift and land — a piece is in exactly one place, and comes back whole
+    √ THE PIECE IS OFF THE FLOOR WHILE IT IS IN HANDS — never in two places (184 ms)
+    √ and lands WHOLE — a carried refrigerator is still the food box (125 ms)
+    √ AN INTERRUPTED CARRY LEAVES THE PIECE EXACTLY WHERE IT WAS (146 ms)
+    √ exactly ONE row for the piece after a full lift-and-land cycle (114 ms)
+  a real house, extended — the drawing moves and the furniture does not
+    √ NOT ONE PIECE MOVES when the room goes up — the house is a list now (121 ms)
+    √ but the DRAWING does move — the generator keeps answering its question (131 ms)
+    √ and the difference is a list of carries for somebody to walk (125 ms)
+    √ a materialized building stops generating entirely — placed IS its contents (118 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/block-bill.test.ts
+  the bay — the unit a bill is counted in
+    √ spans a run, never rounds a real wall down to nothing (3 ms)
+    √ does not buy an extra bay off float noise (2 ms)
+  shellBill — a whole building from its footprint
+    √ tiles floor and roof, and rings the perimeter with wall bays (5 ms)
+    √ a bigger footprint always costs more — the whole point of deriving it (3 ms)
+    √ a second storey adds a floor and walls, but never a second roof (3 ms)
+    √ a house is a real undertaking now, not three blocks (2 ms)
+  structureCosts — the one resolver
+    √ derives the block bill from the footprint and passes extras through (3 ms)
+    √ an authored block count OVERRIDES the derivation (the world-doc hatch) (2 ms)
+    √ a bare costs map with no footprint is taken as given (3 ms)
+    √ costsMet on a REAL catalog row prices the geometry, never the extras alone (4 ms)
+    √ every default catalog row derives a bill (3 ms)
+  rooms — an annex, a partition, and what each gives back
+    √ an annex builds floor, roof and every wall BUT the shared one (3 ms)
+    √ an interior cut is a partition and NOTHING else (7 ms)
+    √ subdividing is dramatically cheaper than annexing — and now says so (2 ms)
+    √ roomOrderCosts discriminates on the candidate's own shape (2 ms)
+    √ MIN_ROOM_COSTS is a floor no orderable room undercuts (2 ms)
+    √ CONSERVATION: a base room refunds its partition, never a whole annex (2 ms)
+  furniture is made of blocks too, sized by the piece
+    √ scales with footprint — a table is not a waste bin (2 ms)
+    √ never free, however small the piece (3 ms)
+    √ the derived recipe rides EVERY craftable row, at the workbench (3 ms)
+  the chain stays affordable — bills and yields move together
+    √ a tree is worth felling against a real house bill (3 ms)
+  the block as an object
+    √ is a squared unit a body could carry, longer than it is thick (3 ms)
+  blockCosts — dial-INVARIANT bills (one-application law)
+    √ blockCosts is a pure function of the bill (3 ms)
+    √ the wrapper params are INERT: a passed dial changes nothing (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/wilderness-offload.test.ts
+  S4 — `wild:` in the scope grammar
+    √ round-trips every spelling a natural source has (7 ms)
+    √ names the species and the form (7 ms)
+    √ 🚨 moves no other id — every shipped prefix parses as before (5 ms)
+    √ ⚖️ a source YIELDS, a shelf RECEIVES — the test that replaced four wilderness scans (4 ms)
+    √ hangs a standing source where it stands, and an offloaded area nowhere (2 ms)
+  S4 — dealUnits (the exactness the fold rests on)
+    √ splits by weight and loses nothing (3 ms)
+  S4 — the offload record conserves
+    √ 🚨 FOLD conserves every unit (4 ms)
+    √ 🚨 EXPAND conserves every unit (4 ms)
+    √ 🚨 a whole CYCLE conserves, and settles (fold ∘ expand is idempotent) (3 ms)
+    √ conserves a HARVESTED stand — the live stack, not the initial roll (2 ms)
+    √ is DETERMINISTIC — the same record deals the same stand twice (4 ms)
+    √ keeps the size classes and the clocks (3 ms)
+    √ keeps a bearing source's harvest cap and regrow ledger (7 ms)
+  S4 — the harvest-direction gradient
+    √ ⚖️ reloads THINNER toward the harvesters (3 ms)
+    √ carries a previous record's direction forward (2 ms)
+    √ sectors a direction the way the compass does (4 ms)
+  S4 — an unloaded stand still grows
+    √ climbs its classes on the clock and re-derives the timber (3 ms)
+    √ does nothing before the clock, and nothing at all to a growth-less stand (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-circulation.test.ts
+  circulation as search (§9 slice 4)
+    √ NEVER loses to the ladder: solver beds ≥ ladder beds, everywhere, and never over-delivers demand (346 ms)
+    √ STRICTLY BEATS the ladder somewhere (the search earned its seat) (2 ms)
+    √ reproduces the ladder's taste where the ladder was right (3 ms)
+    √ round-7 KITCHEN: worth a hall, never a bed (289 ms)
+    √ is deterministic (same inputs, same layout) (7 ms)
+    √ plans through houseRoomPlan keep the search's wins (end-to-end) (218 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/natural-products.test.ts
+  natural-sources registry — internal coherence
+    √ every product is well-formed (yields, regrow, refinement rules) (44 ms)
+    √ the model's canonical examples hold: wool/milk/fruit are live takes, wood/meat/stone are kills (11 ms)
+    √ consumability = carrying any kill product (9 ms)
+  acquisition rolls
+    √ rollYield spans exactly min..max, one roll each (9 ms)
+    √ killStockOf rolls only the kill products (the legacy wilderness stacks) (49 ms)
+    √ harvestStockOf rolls only the harvest products (the standing bearing) (15 ms)
+    √ takeUnitsOf — the right tool multiplies the take; bare hands always work at one (13 ms)
+    √ sourceKillExhausted — the felling test reads KILL glyphs only (11 ms)
+  goods seam — sourcesForGood
+    √ cloth's living source is the sheep (wool refines into it) (13 ms)
+    √ food's living plant sources are the orchard, and kill-fed animals stay out of the herd query (11 ms)
+  derived vocabularies — the registry IS the source of truth
+    √ FOOD_KINDS = the orchard plants' harvest yields, order pinned (likes hash by index) (9 ms)
+    √ SITE_MATERIAL_GLYPHS = the building CHAIN's glyphs (phase 3) (12 ms)
+    √ FRUIT_TREES = the orchard mapping (10 ms)
+    √ drink glyphs include the sources' drink yields (milk) (8 ms)
+    √ sheep still shears (harvestProductsOf) (7 ms)
+  the conversion dial — multiplier ① (yields × dial)
+    √ rollYield: dial 1 is byte-identical (default AND explicit) (9 ms)
+    √ rollYield: the dial scales the RANGE before rolling, one roll() call either way (5 ms)
+    √ killStockOf/harvestStockOf thread the SAME dial to rollYield (6 ms)
+  effectiveInPerOut — multiplier ② (bills ÷ dial)
+    √ dial 1 is byte-identical (9 ms)
+    √ scales down with the dial, floored at 1 raw unit (never free) (14 ms)
+    √ below 1 the bill grows — the same paired direction as rollYield's ×dial (4 ms)
+  S&D S3 H2 — the growth clock (wood-bearing species only)
+    √ oak and apple_tree declare growth; every other species does not (8 ms)
+    √ growth classes: sapling yields NOTHING, the LAST class is the catalogue's own mature anchor (5 ms)
+    √ growthClassYield: dial 1, mature class (mul 1) reproduces the yield MIDPOINT, deterministically (7 ms)
+    √ growthClassYield: the SAME ×dial direction as rollYield, no RNG (repeatable) (5 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/clothing-color.test.ts
+  clothing colour — the (head × colour) outfit bijection
+    √ the index space is heads × colours, and every colour has a hex (24 ms)
+    √ garmentOfIndex ↔ outfitIndexOf round-trips for every slot (51 ms)
+    √ outfitPresetFor renders the colour's fabric hex on the main garment (13 ms)
+    √ wraps any integer/hash to a valid slot (negatives, overflow, NaN) (6 ms)
+  clothing colour — aligned with the canonical variation dimension
+    √ every garment colour is a value of the canonical colour dimension (no drift) (10 ms)
+  clothing colour — culture dress palette (Phase 2)
+    √ the vocabulary is the full colour superset; the default palette is a curated subset (14 ms)
+    √ dressPaletteFrom keeps valid selections, drops junk, and defaults the empty (13 ms)
+    √ outfitIndexForDress only ever lands inside the active palette (248 ms)
+    √ the same body picks the same culture garment forever (deterministic) (4 ms)
+  clothing colour — the kernel kind vocabulary
+    √ clothing KINDS are the (head × colour) product; laundry adds .dirty (5 ms)
+    √ clothing KINDS are NOT bare heads — the head-conflation trap (provisionedHeads livelock) (7 ms)
+    √ goodKeyOfGlyph routes a coloured garment AND its dirty variant to clothing (8 ms)
+    √ isKindOf is head-based for clothing, dirty-facet-based for laundry (5 ms)
+    √ isLaundryGlyph is colour- and facet-order tolerant (3 ms)
+    √ count + deal projections enumerate every colour (5 ms)
+    √ the doff → wash seam keeps the colour: clean + .dirty ∈ LAUNDRY, wash drops only .dirty (6 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-barter.test.ts
+  barterRatio — the scarcity price at the boundary
+    √ PERSPECTIVE CONSISTENCY — A's view of the deal is exactly B's inverse (17 ms)
+    √ MONOTONE — the scarcer their need for what we give, the better our ratio (26 ms)
+    √ BOUNDED — no deal goes infinite or free, even at the extremes (9 ms)
+    √ DETERMINISTIC — pure arithmetic of the signals (and worth is pair-symmetric) (10 ms)
+    √ a food-rich, wood-poor town gives more food per wood than a balanced one (10 ms)
+  barterQuote — the spoken integer pair
+    √ stays inside the speakable quantity words (1..3 a side) and tracks the ratio (107 ms)
+    √ balanced towns quote 1-for-1; a partner starving for our good pays more (14 ms)
+  barterWillingness — the deal must relieve THEIR worst shortages
+    √ accepts when they want our give-good more than what they give up (52 ms)
+    √ refuses "has-enough" when they barely need what we give (7 ms)
+    √ refuses "has-enough" when they need what they give up MORE than our offer (14 ms)
+    √ refuses "wont-part" during their famine on the take-good — famine dominates (36 ms)
+    √ our hunger for what we BUY never flips their answer (their books judge their side) (8 ms)
+    √ 🚨 G1 THE MIRROR — OUR famine on the give-good refuses, by the same constant (8 ms)
+    √ 🔒 G1 SYMMETRY — the famine half of the predicate survives the swap (36 ms)
+  stubPartnerSignals — the closed-form partner proxy
+    √ replays: same (partner, good, day) → the same shortage, in [0, 1] (12 ms)
+    √ shifts over the days (terms drift even against a stub) and by partner (12 ms)
+  stubPartnerSignals + geography — terrain biases what a stub can spare
+    √ 🔒 ABSENT geography is byte-identical to the shipped hash proxy (140 ms)
+    √ classes a good by its FREIGHT ROW, never by its name (12 ms)
+    √ SURPLUS/MOUTH country has food to sell; EXTRACTION country does not (17 ms)
+    √ EXTRACTION country has ore/stone to sell; a SHADOW town is desperate for refined goods (13 ms)
+    √ the CONTINUOUS charter reading is monotone — more farmland, less hunger (19 ms)
+    √ stays a PURE function of (key, day, geography) — replays, drifts, bounded (34 ms)
+    √ the FORWARD SAMPLERS still read the same closed form a geo partner quotes from (8 ms)
+  complementaryTrade — their surplus ∩ our shortage, over a real road
+    √ lists what they can spare that we lack, best first — and the mirror (14 ms)
+    √ 🔒 PERSPECTIVE CONSISTENCY — A's imports from B ⊆ B's exports to A (12 ms)
+    √ a good NEITHER side can spare, or neither wants, is on no list (10 ms)
+    √ 🔒 THE FREIGHT FILTER — a fragile good never makes the list, however short they are (12 ms)
+    √ ranks by NEED and breaks ties toward the earlier good (deterministic) (10 ms)
+    √ reads the WANT LINE the willingness refusal reads — one threshold, not two (15 ms)
+    √ 🔒 `complementaryTrade` IS `complementaryRanking`'s names — one rule, two shapes (9 ms)
+    √ 🚨 the `want` carried is the NEEDING side's own shortage, in ranked order (12 ms)
+  exportSpareScale — the want gate as a slope
+    √ 🔒 a fully fed town exports everything, to the bit (10 ms)
+    √ 🚨 hits ZERO exactly at BARTER_WANT_MIN — the same line the list draws (11 ms)
+    √ 🚨 the approach is CONTINUOUS — a margin, not a cliff (934 ms)
+    √ 🔒 it is the FAMINE slope's twin — one shape, two gates (14 ms)
+  defaultTakeGood — the clerk answers with what the town needs
+    √ picks our worst shortage, never the give-good; ties to the earlier good (13 ms)
+  barter agreements — the ⑤ flavor on the ② ledger
+    √ serializes round-trip: terms, quote, partner and the suspended flag survive (22 ms)
+    √ honors an explicit dueAt — the caravan takes travel time before landing (12 ms)
+    √ runDueTransfers SKIPS barter rows — they belong to the barter executor (12 ms)
+  runDueBarters — the shipment executor
+    √ ships whole quote batches both ways between the REAL endpoints, conserving (27 ms)
+    √ re-derives terms per shipment on a standing route — shifting scarcity shifts the deal (20 ms)
+    √ suspends a standing route on the partner's famine (edge-flagged) and RESUMES after (18 ms)
+    √ a stalled ONE-SHOT waits (re-armed a day out) instead of failing or vanishing (11 ms)
+    √ reports "short" (edge-flagged pause) when OUR yard can't cover one batch — nothing minted, nothing lost (16 ms)
+    √ a STANDING route flexes to at least one batch when re-derived terms outgrow its units (15 ms)
+    √ clamps to the PARTNER's real shelf too — a real neighbor can run dry (13 ms)
+    √ fails NAMED when the partner endpoint/signals can't resolve (14 ms)
+    √ is deterministic and replayable — same ledger JSON + clock ⇒ identical reports (22 ms)
+  barterSpareFraction — the famine wall, read as a slope
+    √ 🔒 a FED town spares everything, to the bit (11 ms)
+    √ 🚨 reaches ZERO exactly AT the gate the refusal fires at — and stays there (11 ms)
+    √ 🚨 THE APPROACH IS CONTINUOUS — no cliff anywhere on the way to the gate (672 ms)
+  runDueBarters — batches are bounded by the SPARE, not the shelf
+    √ 🔒 a FED town's shipment is EXACTLY the pre-G1 raw-shelf arithmetic (23 ms)
+    √ 🚨 A TOWN AT FAMINE ON G SHIPS ZERO G ON A STANDING ROUTE (11 ms)
+    √ 🚨 and it THINS on the way down — the standing route never jumps full → nothing (32 ms)
+    √ the SPARE, not the order, is what binds — a hungry town under-ships a full order (16 ms)
+    √ 🚨 B6 THE PAIRWISE LEG: yard + partner yard + BOTH books, conserved end to end (183 ms)
+    √ 🔒 B6 a debit can never overdraw: an empty bank ships its yard and says so (135 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/text-render.test.ts
+  text render — the §2 line grammar
+    √ pads the tag to 6 and puts the payload at column 7 (7 ms)
+    √ starts continuation lines with exactly two spaces and never emits a blank line (2 ms)
+    √ echoes and comments use their own column-0 markers (2 ms)
+    √ renders the design's worked conversation excerpt (3 ms)
+  text render — SCENE rows (law ⑤ phrasing)
+    √ a bucket of ONE reads as a thing in a room, not an inventory row (4 ms)
+    √ a bucket with no article in its ruleset reads bare (Hebrew has none) (3 ms)
+    √ counts things and places separately — the header never claims the flood (3 ms)
+    √ an ordinary place bucket keeps its direction (2 ms)
+  text render — determinism
+    √ renders the same events byte-identically twice (transcripts are diffable) (3 ms)
+    √ TICK always carries one decimal, in every reason (3 ms)
+  text board — law ④, exactly the page the presenter was handed
+    √ numbers the chrome IN — a 'more' is press 9, not invisible (4 ms)
+    √ prints the block plus the cost NOTE, and quotes spokenText only when it differs (2 ms)
+    √ the NOTE reports the paging chrome the page carries (3 ms)
+  text speech — laws ② and ③
+    √ copies the line byte-for-byte and reports a thought bubble as SILENT (3 ms)
+    √ a line from a body the §3 filter excludes is NOT narrated (the recorded GL divergence) (2 ms)
+    √ attributes a POINT-anchored line to the body standing under it (1 ms)
+    √ drops a line it cannot attribute rather than guessing a speaker (4 ms)
+  text session — §5, every command settles and closes with one TICK
+    √ answers a query, then settles quiet (12 ms)
+    √ `wait n` steps exactly n sim-seconds (11 ms)
+    √ a rejected line executes nothing, so it settles nothing and ticks not at all (1 ms)
+    √ caps a world that never goes quiet (26 ms)
+  text session — law ⑥, acts reach the world through the host and nothing else
+    √ `say` joins the words with + and hands them to host.speak; the LINE comes back off the bubble (5 ms)
+    √ `press` selects the option id on the page AS PRINTED, chrome included (11 ms)
+    √ presses nothing when no board is open (2 ms)
+    √ clearBoard closes the block, and the reprint says there is none (4 ms)
+  text session — scene and look answer from the probe
+    √ prints the scene with latched text ids (4 ms)
+    √ never lists YOU as a bystander — neither the spark's body nor the one it drives (4 ms)
+    √ looks at one body, and errs on a name the world does not have (23 ms)
+    √ `look person 1` shorthand and bare `look` both parse (§4) (9 ms)
+    √ help lists the command set and never mentions the cheat channel (14 ms)
+    √ refuses the cheat prefix by default — the channel is opt-in (law ⑦) (4 ms)
+  text session — a town is a skyline, not a roll-call
+    √ summarizes 82 houses into a handful of lines under an honest header (69 ms)
+    √ mirrors the CITY HUD in one trailing line, and enumerates no cohort (14 ms)
+    √ a house the driver LOOKED at keeps its own line afterwards (183 ms)
+  text session — a crowd of strangers becomes people you have MET
+    √ buckets identical strangers, then names the one whose board opened (9 ms)
+    √ hearing somebody speak in front of you is meeting them (13 ms)
+    √ a line the §3 filter never let you hear is NOT an introduction (8 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-host-carry.test.ts
+  runWorldHost carry dwell-UX
+    √ dwell picks up a nearby crate, then dwell places it on the table (28 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/conversation-arbitration.test.ts
+  responseUrge — addressed ≫ floor ≫ aimed at someone else
+    √ scores the three modes at 1.0 / 0.35 / 0.15 of the same base (4 ms)
+    √ an EMPTY addressee list is the floor, exactly like an absent one (7 ms)
+    √ being one of SEVERAL addressees is still being addressed (4 ms)
+    √ a member has NO urge to answer its own utterance (3 ms)
+  responseUrge — content is monotone and floored at half
+    √ rises with relevance, from half the gate to all of it (9 ms)
+    √ zero relevance never zeroes the urge (3 ms)
+  responseUrge — the attend gate carries all three of its dials
+    √ rises with EXPRESSIVENESS (a quiet creature stays quiet) (2 ms)
+    √ rises with AFFINITY toward the speaker (2 ms)
+    √ rises with ENGAGEMENT — the one LIVE term in the family (2 ms)
+  responseUrge — courtesy: I just spoke, so I yield
+    √ a member who NEVER spoke carries no penalty (3 ms)
+    √ suppresses the member who JUST spoke (2 ms)
+    √ decays back toward no penalty as ticks pass (3 ms)
+    √ a negative gap reads as JUST SPOKE, never as a bonus (3 ms)
+    √ PATIENCE deepens the yield and holds it longer (4 ms)
+  responseUrge — total and clamped
+    √ clamps to 1 however far out of range the inputs are (2 ms)
+    √ clamps to 0 from below, and never returns a NaN (2 ms)
+  arbitrateResponse — nobody present
+    √ zero candidates is neither a responder nor a silence (4 ms)
+    √ does not consume a draw when there is nobody to ask (2 ms)
+  arbitrateResponse — the addressee answers (cause and effect stays learnable)
+    √ answers ≥ 90% of 500 seeded draws when asked directly (11 ms)
+    √ still answers ≥ 88% with a neutral bystander who could barge in (8 ms)
+  arbitrateResponse — barge-in is possible but rare
+    √ a high-urge non-addressee sometimes takes the floor, and usually doesn't (5 ms)
+  arbitrateResponse — the silence weight
+    √ triples silence for a floor remark NOBODY cares about (10 ms)
+    √ one member at the nobodyCares bar keeps silence at base weight (3 ms)
+    √ a floor remark somebody DOES care about is not treated as ignored (5 ms)
+  arbitrateResponse — silence is VISIBLE (the non-negotiable law)
+    √ a full silence ALWAYS emits at least one reaction (5 ms)
+    √ hangs the forced reaction on the ADDRESSEE, not the keenest member (3 ms)
+    √ a HOSTILE silent addressee TURNS AWAY — the refusal reads as a refusal (3 ms)
+    √ falls back to the keenest member when the addressee has left the roster (3 ms)
+  arbitrateResponse — glances, and who is excluded from them
+    √ everyone above GLANCE_MIN who did not get the floor glances (3 ms)
+    √ the chosen responder NEVER appears in silent, wherever it sits in the roster (3 ms)
+    √ stays quiet about members below GLANCE_MIN (3 ms)
+    √ reports reactions in candidate order (the roster's deterministic order) (2 ms)
+  arbitrateResponse — determinism
+    √ the same rng sequence gives the same choices, draw for draw (4 ms)
+    √ consumes exactly ONE draw per call, whatever the roster size (2 ms)
+    √ a zero-weight member can never win, even on a roll of 0 (3 ms)
+    √ all-zero urges fall to a visible silence rather than an unearned answer (2 ms)
+  defaultRelevance — rung 1: it is about something of MINE
+    √ scores 1.0 for the member who HOLDS the requested item (3 ms)
+    √ scores 1.0 for the member whose OPEN NEED the offered item answers (2 ms)
+    √ scores 1.0 on a SORT reference too ('give me food') (3 ms)
+    √ outranks the question rung — the thing in my hand beats knowing about it (4 ms)
+    √ a need naming an item the world no longer has is still about me (3 ms)
+  defaultRelevance — rung 2: a question I can answer
+    √ scores 0.8 for a where-is whose answer I KNOW, and the floor when I don't (2 ms)
+    √ scores 0.8 for a SORT where-is I know a PROVIDER for (1 ms)
+    √ scores 0.8 for an ask-fact I hold the belief for (2 ms)
+    √ scores 0.8 for a what-doing asked about ME, and the floor about somebody else (2 ms)
+    √ defers directions to the knowsPlace hook, and floors the question without one (3 ms)
+  defaultRelevance — rung 3: small talk, rung 4: the floor
+    √ scores 0.5 for small talk, for anyone present (5 ms)
+    √ floors board machinery and acts aimed at nobody in particular (3 ms)
+    √ never rates anything below the floor (4 ms)
+  defaultRelevance — best-effort and TOTAL
+    √ floors an unknown member instead of throwing (3 ms)
+    √ floors an act naming an item nobody has ever heard of (2 ms)
+    √ survives a malformed act, a missing query and a missing world (2 ms)
+  urge + arbitration end to end
+    √ a floor request lands on whoever it actually concerns (6 ms)
+    √ a keen room picks a floor remark up instead of letting it drop (5 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/dollhouse-conversation-camera.test.ts
+  conversation frame — a pair into a span
+    √ centres on the MIDPOINT of the two conversants (8 ms)
+    √ spans their separation plus margin, so neither is on the frame edge (3 ms)
+    √ floors at CONV_MIN_SPAN — a close pair is never a face close-up (7 ms)
+    √ is NEVER wider than the base frame — a dolly in, never a retreat (5 ms)
+    √ a house smaller than the minimum span keeps its own frame (3 ms)
+    √ one visible body (a formless spirit's partner) frames that one person (9 ms)
+    √ always dollies IN or holds — the span never grows past the house (5 ms)
+  face-camera — the game-angle → yaw NEGATION
+    √ turns toward the camera by the full bound when square-on in profile (1 ms)
+    √ the offset IS rigYawTo of the turned game angle (the negation, end to end) (2 ms)
+    √ the turn genuinely reduces the angle to the camera (3 ms)
+    √ is BOUNDED by CONV_FACE_MAX_TURN from every angle (three-quarter, not full-front) (8 ms)
+    √ a squared-up pair leans APART (exact negatives) — both toward the lens (2 ms)
+    √ still reads as facing each other: neither turns more than the bound (3 ms)
+    √ does nothing when the body already faces the camera (3 ms)
+    √ does not FLIP when a body has its back squarely to the camera (3 ms)
+    √ is continuous everywhere — no step a camera could strobe on (53 ms)
+  the ease
+    √ approaches without overshooting, and stops at the target (287 ms)
+    √ is frame-rate independent (60 small steps == one big step) (1 ms)
+    √ does nothing on a zero dt or a zero rate (1 ms)
+    √ the dolly is SLOW — far below the 4/s the user rejected as 'too fast' (1 ms)
+    √ pulling back out is gentler still, and no rate is a snap (3 ms)
+    √ tracking a drifting pair is no faster than the dolly itself (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-village.test.ts
+  seed → reproducible world
+    √ records the seed on meta (also when it was drawn randomly) (6 ms)
+    √ the same seed rebuilds the identical game, layout, and buildings (31 ms)
+    √ different seeds produce different villages (7 ms)
+    √ the simulation certifier still proves seeded worlds playable (18 ms)
+  village layout (plaza + houses)
+    √ lays every quest zone out as a house touching the central plaza (3 ms)
+    √ keeps deep trees (pockets) on the icicle fallback (3 ms)
+  village buildings
+    √ raises one colored house per zone, creatures inside their own house (7 ms)
+    √ locks each guarded passage's engine door; the expanded spec validates (9 ms)
+  houses as location clues
+    √ answers where-is for a LOOSE item with the building it lies in (4 ms)
+    √ follows a held-item clue with the holder's house (2 ms)
+    √ shows just the house at level a (single-glyph readers) (1 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/object-def.test.ts
+  parseObjectDef — the recursive grammar
+    √ rejects unknown kinds, unknown fields, and illegal children (45 ms)
+    √ validates params against the kind's descriptor (23 ms)
+    √ allows at most one focus across the tree (5 ms)
+    √ relaxes required BOUNDARY fields for a contained node (the vacuum law) (10 ms)
+    √ a body is one kind — it takes orbital, stellar AND surface params (8 ms)
+  lowerObjectDef — tree → aivota-world document
+    √ lowers a body root to the planet scope, stripping orbital/stellar params (10 ms)
+    √ lowers the town → structure → creature/item dollhouse to focus + entities (17 ms)
+    √ defaults a household to mode 'some' when the creature group is not exhaustive (6 ms)
+  OBJECT_KINDS registry — sub-entity-first, unified body
+    √ carries the ladder kinds plus creature/item (6 ms)
+    √ solar_system params drop the star (it is a body child now) (14 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/furniture-naming.test.ts
+  `furn.` is storage bookkeeping, not a word
+    √ folds the head to the piece — and keeps the facets (18 ms)
+    √ reads a facetted piece as furniture at all (the kind is the first mod) (6 ms)
+    √ speaks the VOCABULARY's word where the sim's kind isn't one (5 ms)
+    √ never head-matches one piece against another in a stack count (8 ms)
+    √ takes the piece it asked for — a bill for a bed never eats the chairs (11 ms)
+  nothing a creature SAYS about a piece says «furn»
+    √ the errand a body is running (where-are-you-going / what-are-you-doing) (4 ms)
+    √ a haul announcement and the live activity it becomes (17 ms)
+    √ a craft announcement (9 ms)
+    √ the sentence layer folds a leaked stack glyph anyway (the last defence) (17 ms)
+  a piece's word is rendered in the player's language
+    √ names every craftable piece in every shipped ruleset (57 ms)
+    √ labels a stored piece as a localized bare noun phrase — no article, no full stop (120 ms)
+    √ keeps a facet in the label, in the ruleset's own adjective order (11 ms)
+    √ lets the LEXICON outrank the host's English label on builder buttons (44 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/rock-bodies.test.ts
+  wild feature model resolution (the chest bug)
+    √ a rock's own identity resolves to a model, so the spawner must not force a chest (57 ms)
+    √ the rock source declares NO fixture — the model comes from the icon (48 ms)
+    √ an identity with no model still falls back to the chest (118 ms)
+    √ every non-embodied source in the registry resolves to a model or to the chest (403 ms)
+  the boulder
+    √ builds a real multi-lump model, never the chest (79 ms)
+    √ is MATTE — no bright moving specular anywhere (seizure risk) (76 ms)
+    √ is seeded by the object id — two rocks differ, one rock never changes (226 ms)
+    √ follows feature.radiusM, and sits ON the ground it comes out of (80 ms)
+    √ every seeded boulder keeps the base-at--radius contract (1231 ms)
+  the quarry, end to end
+    √ yields stone, shrinks the outcrop, and terminates (18 ms)
+    √ a pick halves the acts (the registry-declared multiplier, applied) (5 ms)
+    √ an outcrop worth ONE stone stands as a pebble from the start (13 ms)
+    √ a scattered rock is a BOX feature (never an embodied body) so it can be resized (20 ms)
+  object solidity is stated, not inferred from the model
+    √ a modelled boulder blocks a body WITHOUT borrowing a furniture archetype (14 ms)
+    √ absent `solid` keeps the historical fixture rule — both ways (12 ms)
+    √ an explicit `solid: false` overrides the archetype (9 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/toys.test.ts
+  the `toy` form facet
+    √ is a registered variation dimension, sorted FIRST so it sits next to the head (19 ms)
+    √ miniaturises: the SAME recipe renders small when it wears the facet (11 ms)
+    √ is a VARIATION, never a state — a doll is what a thing IS, not a condition (34 ms)
+    √ composes with a material, and the material reads back off the glyph (14 ms)
+  dolls — the same head word, wearing the descriptor
+    √ a doll heads to what it DEPICTS, which is the whole point (10 ms)
+    √ distinguishes a doll from an authored toy — a ball depicts nothing (11 ms)
+    √ there is no toy of a toy (10 ms)
+    √ depictable heads are the world's creatures and vehicles, from the pools (9 ms)
+  what a toy is MADE of
+    √ wood and cloth only — both have real natural sources (13 ms)
+    √ every authored toy names materials drawn from that set (10 ms)
+    √ a doll can be either material — a rag doll or a carved figure (19 ms)
+    √ a recipe consumes the named material and produces the finished glyph (40 ms)
+    √ refuses a material the toy can't be made from, rather than guessing (49 ms)
+    √ the bench SPEEDS every toy and gates none (the craft law) (33 ms)
+  the makeable join — what `make <word>` produces
+    √ an authored toy, in its default material (10 ms)
+    √ every default material is one a town can actually supply (22 ms)
+    √ make + ANIMAL is a toy of that animal (the plan's rule) (10 ms)
+    √ make + VEHICLE is a toy of that vehicle (9 ms)
+    √ furniture stays furniture — an unplaced stack, not a doll of a chair (9 ms)
+    √ nothing makeable for words that name neither (9 ms)
+    √ speaks a made glyph as its bare word — never the bookkeeping prefix (20 ms)
+    √ a stored piece speaks the VOCABULARY's word for its kind, like a standing one (14 ms)
+    √ draws a furniture stack as its own word, and everything else as ITSELF (46 ms)
+    √ every craftable piece draws a glyph the registry has artwork for (28 ms)
+  craftRecipeOf — one pipeline job shape for furniture and toys alike
+    √ resolves a doll to real inputs at the bench (15 ms)
+    √ resolves furniture through its own row (13 ms)
+    √ PRODUCES the ordered glyph, so a named colour survives the craft (12 ms)
+    √ returns null for anything uncraftable — the host's honest 'I can't make that' (13 ms)
+    √ round-trips: what `make <word>` yields is a recipe the pipeline can run (21 ms)
+  a doll reads as a TOY everywhere, never as its head
+    √ carries the `toy` object property — which is what the fun need selects on (18 ms)
+    √ is NOT a living thing, however alive its head word is (9 ms)
+    √ the authored toys carry it too (10 ms)
+  the speakable side and the craftable side stay in sync
+    √ every authored toy is a pool member, and every toy pool member is authored (11 ms)
+    √ dolls are NOT pool members — that would mean re-listing the species registry (41 ms)
+  the board can DRAW a doll
+    √ `toy` is a registered MODIFIER, or a composed doll renders as a plain head (19 ms)
+    √ every authored toy and the doll word are speakable board vocabulary (14 ms)
+  material facet naming
+    √ matches the MATERIAL_DIMENSION value convention, so a toy renders its material (13 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/planet-history.test.ts
+  state adjacency — the tier-0 political graph
+    √ per-state neighbor lists from the derived adjacency pairs (7 ms)
+  deep history — nations rise and fall (P5 gate)
+    √ is deterministic — same inputs, same events (110 ms)
+    √ events are ordered, well-formed, and both fusion AND fission occur (118 ms)
+    √ empires assemble: some year holds a crown of at least 4 states (3 ms)
+    √ consolidation is real: the living-crown count dips well below founding (3 ms)
+    √ ownership is replay: ownerAt reflects exactly the events up to the year (5 ms)
+  the violence taboo writes a BLOODLESS history (nations §6)
+    √ no war events; fusion still happens through prestige and union (43 ms)
+  scrubbing — cede-only relabels onto the live ledger
+    √ applyTo moves the ledger to any year and back, unions ledger untouched (56 ms)
+  the live binding — disputes decide relabels (the P1 hook retired)
+    √ political and physical falls cede the loser's state to the winner's crown (2 ms)
+    √ a union resolution merges whole crowns; awards write nothing (4 ms)
+    √ rows are append-only: fromIndex is the high-water mark, unknown sites skip (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/indoor-corner-cut.test.ts
+  no corner-cutting indoors — the walked line stays inside the routed corridor
+    √ a dogleg round the table: the body never passes closer to the table than the route does (74 ms)
+    √ a dogleg round the table: the body holds the planned line (56 ms)
+    √ a dogleg round the table: and still ARRIVES (47 ms)
+    √ a diagonal past its corner: the body never passes closer to the table than the route does (41 ms)
+    √ a diagonal past its corner: the body holds the planned line (44 ms)
+    √ a diagonal past its corner: and still ARRIVES (41 ms)
+    √ a leg grazing the corner: the body never passes closer to the table than the route does (12 ms)
+    √ a leg grazing the corner: the body holds the planned line (8 ms)
+    √ a leg grazing the corner: and still ARRIVES (6 ms)
+  the tight flag is what the host reads
+    √ a routed indoor point is tight; a plain outdoor waypoint is not (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-zero-growth.test.ts
+  a founded site's town starts at ZERO buildings
+    √ lays no houses, no works, no fields — bare ground and streets (4 ms)
+    √ still stands as a live session (stage, goods, quests all tolerate empty) (5 ms)
+    √ carries the site's gathered materials as the town stock (2 ms)
+  building-by-building growth through founded deltas
+    √ founding a house then a farm grows the town 0 → 1 → 2 buildings, deterministically (62 ms)
+  visible construction on the stage (board words change the world)
+    √ an ordered building stands as a marked SITE (no walls), then completes into doored rooms + furniture on the clock (11 ms)
+    √ a build committed MID-SESSION registers live (the deltas version bump) (10 ms)
+  established towns are untouched by the zero floor
+    √ a populated town keeps its 6-house floor and its hall (101 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/creature-reference.test.ts
+  creatureReferenceGlyph — name / pronoun / species
+    √ 1. a named member of the speaker's group → the NAME (3 ms)
+    √ 2. the SAME SPECIES as the speaker → a gendered pronoun (he / she) (3 ms)
+    √ 3. a DIFFERENT species → the species word (2 ms)
+    √ a name only wins when it's the speaker's OWN group (else species word) (4 ms)
+    √ never yields the deictic 'there' — a creature is always speakable (3 ms)
+  the talk-to line renders each reference properly (no 'the there')
+    √ NAME: 'I talk to Mara.' (7 ms)
+    √ PRONOUN: 'I talk to him/her.' in every ruleset (6 ms)
+    √ SPECIES: 'I talk to the {species}.' — including newly-worded species (3 ms)
+    √ the pronoun/species reference also carries other verbs (help / follow) (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-demolition.test.ts
+  pending demolitions (designation rows on the deltas)
+    √ posts with monotone ordinals, banks labor, and is done only when worked off (4 ms)
+    √ rides the toJSON round-trip mid-work; ordinals stay monotone across reload (4 ms)
+    √ removeDemolitionSite drops the row and bumps the version (5 ms)
+  the structure board and the commit, around a pending demolition
+    √ a room a pending demolition targets leaves the demolish list (no dead re-press) (206 ms)
+    √ the commit is the SAME kernel demolish the instant order ran — placed pieces stow (98 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/address-economics.test.ts
+  the address row — a duty, derived from the live conversation
+    √ always fires and always presses exactly once: a duty has no deficit to measure (6 ms)
+    √ law ④ — A CONVERSATION OF TWO NEEDS NO ADDRESSING, so a dyad grows no row at all (2 ms)
+    √ AN ADDRESS IS DURABLE, so the row retires the moment the beat lands (3 ms)
+    √ nobody has spoken yet ⇒ nobody to face ⇒ no row (never a row aimed at nobody) (6 ms)
+    √ rides the unified pursuit as a TURN, never as the walk `converse` is (2 ms)
+  🚨 the price of facing somebody is the length of the thing you are buying
+    √ IS the circle's turn gap — derived, not invented (1 ms)
+    √ the compiled plan is ONE step, priced at the dwell with NO journey (3 ms)
+    √ …and the ROW's own price says the same thing, so the two seats cannot disagree (1 ms)
+    √ a body that is not there cannot be faced — the plan blocks rather than turning at nothing (1 ms)
+  the measured ladder — what turning to somebody is worth against the drives
+    √ the address row's own worth: one social rung, and two with a fresh question (2 ms)
+    √ BEATS the idle wants: play, the wash, the laundry scrub, a ritual seat (4 ms)
+    √ TIES the loneliness row it takes its rung from — the same want, honestly (3 ms)
+    √ 🚨 NEVER OUTBIDS A FIRING SURVIVAL WANT — a creature does not stop starving to be polite (2 ms)
+  the between-rows argmax — 'keep working or turn and talk', decided once
+    √ BEATS a chore: the toy on the floor waits, the person talking to you does not (2 ms)
+    √ LOSES to a firing hunger — and the meal is a step away, so it is not the walk deciding (3 ms)
+    √ …and wins again the moment the hunger is fed — no cooldown, no memory of having lost (2 ms)
+    √ THE JUST-ASKED BONUS FLIPS A MARGINAL CASE — and decays back out of it (3 ms)
+    √ the bonus is worth ONE RUNG and no more — it cannot buy a nap that is close by (2 ms)
+  🚨 an outbid row must NOT park
+    √ `parkNeed` refuses an address key, and takes any other row it is given (2 ms)
+    √ losing the argmax leaves NOTHING behind: the next tick prices it in full again (3 ms)
+  🚨 an order is not negotiable — a commanded body never buys the pause
+    √ a `source: "command"` pursuit is handed straight to the pursuit loop (3 ms)
+    √ so it works, and talks to the room: only a SELF-DIRECTED body gets the choice (2 ms)
+    √ STRUCTURAL: `address` is not in the vocabulary a command is written in (3 ms)
+  leaving is a decision, not an eviction
+    √ the counter crosses the deadline AT THE SWEEP CADENCE, and marks `leaving` (never departs) (2 ms)
+    √ WINNING WIPES THE CLOCK — the integral is the unbroken run of losing (2 ms)
+    √ NO ROW, NO CLOCK — a member with nothing to buy is never on its way out (2 ms)
+    √ and a member ALREADY facing whoever is talking is not losing anything either (1 ms)
+  the child is somebody a creature decides to turn to
+    √ a creature's address row names the PLAYER when the player is who last spoke (1 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-room.test.ts
+  hybrid room — lowering + certification
+    √ the bare predefined shell already certifies (45 ms)
+    √ the default playroom certifies under the deterministic first binding (9 ms)
+    √ PROPERTY: the default playroom certifies under many random bindings (62 ms)
+    √ materializes a receptive-npc pool as an NPC and others as objects (8 ms)
+    √ derives world interactions from the pool affordance (7 ms)
+    √ a push object always gets push tuning (so it certifies) (5 ms)
+  hybrid room — pre-check stage catches authoring errors
+    √ flags an out-of-bounds slot (10 ms)
+    √ flags a slot id that collides with a shell id (9 ms)
+    √ flags an unknown pool (9 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/conversation-addressee.test.ts
+  soleOther — law ④ in one predicate
+    √ a pair answers with the OTHER one, from either side (10 ms)
+    √ the player's dyad answers with the creature — every ⑦ conversation (7 ms)
+    √ 🚨 THREE is not a dyad — there is something to disambiguate (9 ms)
+    √ a roster of ONE (or none) exempts nobody — there is no other person (14 ms)
+    √ a NON-MEMBER speaking into a pair gets the deterministic senior member (4 ms)
+    √ never answers with the speaker itself (6 ms)
+    √ reads only the roster — it charges nothing and writes nothing (4 ms)
+  ConvoMember.addressing — durable, and never dangling
+    √ SURVIVES A REJOIN — joining is idempotent, and a rejoin is not an amnesia (5 ms)
+    √ 🚨 DIES WHEN ITS TARGET LEAVES — every other member's pointer, cleared (8 ms)
+    √ …and only the pointers AT the leaver — an address at somebody else stands (7 ms)
+    √ the LEAVER's own address goes with its row, and a rejoin starts clean (9 ms)
+    √ leaving still touches nothing else (law 1) — history, context, revealed (4 ms)
+  addressingOf — a LIVE read, so no caller can resurrect a departed member
+    √ answers the member's own pointer while the target is still here (15 ms)
+    √ 🚨 NEVER answers a departed member, even with the raw pointer still set (6 ms)
+    √ answers nothing for a member with no address, or for a non-member (4 ms)
+  ⑫③ memberAddressee — the channel order
+    √ ① THE DYAD WINS OVER EVERYTHING — free, and asked first (9 ms)
+    √ ② A HELD HEADING YIELDS NULL — even with `addressing` set (9 ms)
+    √ ② …but a PLAYER is exempt: a child's channel is the gaze, which never stops (6 ms)
+    √ ③ `addressing` BEATS THE ECHO — the roster is the truth, the cache is a guess (5 ms)
+    √ ③ a durable address whose target LEFT falls through to the next channel (9 ms)
+    √ ④ THE ECHO IS LOCAL — never consulted for a peer, nor for another board (7 ms)
+    √ ④ an echo pointing at somebody who LEFT addresses nobody, and is dropped (8 ms)
+    √ ⑤ 🚨 NULL WHEN NOTHING ANSWERS — and the board still aims at somebody (5 ms)
+    √ reads the ROSTER, not the board — re-aiming the board addresses nobody new (15 ms)
+    √ a roster that shrinks to TWO becomes a dyad again, mid-conversation (6 ms)
+  ⑫③ the split in runCreatureAct — said TO vs about WHOM
+    √ a floor line still has a board, a projection and a body to animate from (6 ms)
+    √ a VOCATIVE preempts everything and redirects the WHOLE turn (7 ms)
+    √ a dyad resolves both to the same creature — ⑦ byte-identical (26 ms)
+    √ the addressee answers `nodeId` whenever there IS one — no second resolution (12 ms)
+  ⑫④ the dwell `address` cell now goes through the gate
+    √ 🚨 IT PRODUCES A PlayerAction — the one cell of the four that never did (6 ms)
+    √ the LOCAL ECHO lands first, so the child's board never waits a round trip (7 ms)
+    √ the OWNER's answer wins over a stale echo — the roster is the truth (5 ms)
+    √ a RELAYED look writes the SENDER's row, never this device's (8 ms)
+  ⑫④ setMemberAddress — the ONE writer, and what it refuses
+    √ writes the durable fact and syncs it out (9 ms)
+    √ IDEMPOTENT — re-asserting the same address writes nothing and sends nothing (13 ms)
+    √ refuses a NON-MEMBER target — an address is two people in one conversation (7 ms)
+    √ refuses a speaker in no conversation, and refuses addressing yourself (4 ms)
+    √ a creature may address another creature — this is not a player-only fact (6 ms)
+  ⑫④ lifetime — until you look elsewhere, or until you move
+    √ LOOKING ELSEWHERE replaces it; there is no timeout anywhere (4 ms)
+    √ MOVING clears it — the legs, and only the legs (5 ms)
+    √ 🚨 AN ACTION HOLD DOES NOT CLEAR IT — the address BEAT is an action hold (6 ms)
+    √ 🚨 A PINNED BODY DOES NOT COUNT AS WALKING — the beat's own residual velocity (4 ms)
+    √ A PLAYER'S ADDRESS SURVIVES WALKING (chapter §6) — the gaze never stops (4 ms)
+    √ expiry touches only the members who moved (4 ms)
+    √ …and it is idempotent: a member already talking to nobody is left alone (3 ms)
+  ⑫④ the address rides the wire
+    √ the owner's write reaches the follower's own roster row (12 ms)
+    √ 🚨 AN ABSENT FIELD CLEARS IT — the next sync IS the clearing (11 ms)
+    √ an address at a member who has LEFT is never sent in the first place (7 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/propriety-penalty.test.ts
+  ① the makeshift branches — added, and added LAST
+    √ hunger / thirst / provision reach the expanded enumeration (28 ms)
+    √ 🚨 ORDER IS THE UNPRICED PATH'S WHOLE VOICE: the larder and the stall come first (13 ms)
+    √ …and the rows deliberately LEFT ALONE keep their shape (17 ms)
+  ② the exchange rate — one rung, ≈64 m
+    √ is exactly ONE PRIORITY POINT — the direction's 'constant reduction in priority' (12 ms)
+    √ …which is ~64 m of walking at the villager gait (10 ms)
+  ③ proper / improper, decided per ROW
+    √ PROPER: the row's own larder, its own place at the table, and its own box (8 ms)
+    √ IMPROPER: the floor basket, the bin, the cupboard, a box a housemate co-owns (7 ms)
+    √ 🚨 THE HOUSEHOLD'S OWN SHARED BASKET IS IMPROPER — it is a TOOL, not a larder (11 ms)
+    √ 🚨 THE PET'S BOWL FALLS OUT OF THE RULE — no clause anywhere says 'bowl' (19 ms)
+    √ ⚠️ PERMISSION IS ASKED FIRST AND SEPARATELY — a housemate's private box never gets priced (10 ms)
+  ④ priced: the makeshift store is seen, and mildly avoided
+    √ EMPTY PANTRY: the hungry body eats out of the floor basket (21 ms)
+    √ EMPTY PANTRY: …and out of a box a housemate co-owns, on the same rule (10 ms)
+    √ STOCKED PANTRY: the proper source wins even though the basket is nearer (12 ms)
+    √ 🚨 …UP TO THE EXCHANGE RATE, and no further: past ~64 m the basket wins (9 ms)
+    √ 🚨 A PREFERENCE, NEVER A WALL: the only offer in the world is still taken (7 ms)
+    √ PUBLIC SOURCES ARE NEVER IMPROPER — the stall and the well are what they are for (13 ms)
+    √ ONE DISH, TWO ROWS: the pet draws from its bowl, the resident walks to the chest (11 ms)
+    √ UNPRICED ⇒ UNCHARGED: a ctx with no price board scores propriety at zero (10 ms)
+  ⑤ flag OFF: pantry, then stall, then the makeshift store
+    √ the larder first, however far it is (8 ms)
+    √ the stall when the larder is bare (6 ms)
+    √ 🚨 the makeshift store ONLY when both are empty (4 ms)
+    √ …and the floor last of all (8 ms)
+  ⑥ provision drains the floor basket into the pantry
+    √ 🚨 THE DRAIN: with no stall to beat it, the whole basket goes home (8 ms)
+    √ …and the very next decide banks it in the pantry — ONE WAY, never back (5 ms)
+    √ A BARE-HANDED body drains the basket unless the stall is within ~39 m (5 ms)
+    √ …but a RESTOCK-SIZED trip still goes to the stall: more units outbid one rung (8 ms)
+  ⑦ one apple, one place — the whole meal audited
+    √ 🚨 nothing is minted and nothing evaporates from basket to belly (7 ms)
+    √ …and the BASKET itself never moved — the draw took a unit, not the box (6 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  override existing env vars with { override: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/creature-crowding.test.ts
+  milling creatures avoid standing on each other
+    √ a milling body never picks a waypoint within combined radii of another body (112 ms)
+    √ crowding avoidance cuts the time two bodies spend overlapping (703 ms)
+  separateBodies unmerges overlapping stationary/lockstep bodies
+    √ two bodies stacked on the SAME point part to at least their combined radii (9 ms)
+    √ nearly-merged bodies (lockstep walkers) reach a clean gap (8 ms)
+    √ is GENTLE — no single frame teleports a body more than the rate allows (5 ms)
+    √ does NOT oscillate — once apart, positions are STABLE frame to frame (8 ms)
+    √ leaves well-separated bodies untouched (8 ms)
+    √ ignores bodies on different storeys (an upstairs body is not in the way) (12 ms)
+    √ never MOVES an immovable (spark-driven) body — the neighbour parts around it (13 ms)
+    √ is WALKABILITY-GATED — a push into a wall is dropped, not forced through (15 ms)
+    √ relaxes a whole PILE — three stacked bodies all end mutually clear (14 ms)
+  working creatures at one fixture stand shoulder-off, not fused
+    √ standPointFor gives the second body a spot clear of the first (25 ms)
+    √ nearestClearSpot nudges a body off a spot a neighbour already holds (8 ms)
+    √ falls back to a structural spot when the room is too crowded to separate (termination over fidelity) (17 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/ceilings.test.ts
+  supplyZone — the land disc, stretched along the river
+    √ dry land: the zone is the plain travel disc (Manhattan on a 4-lattice) (218 ms)
+    √ a river stretches the zone ASYMMETRICALLY: upstream country reaches farthest (174 ms)
+    √ is deterministic — same terrain, same zone, same order (148 ms)
+    √ honours the size budget and says so (119 ms)
+  constraintReachCells — the reach is the good's own freight
+    √ fuel's wood disc is smaller than food's — the fuel crisis is geometry (14 ms)
+  constraintCeiling — the minimum of the constraints binds
+    √ rich fields, sparse woods: fuel binds, and the sentence says so (144 ms)
+    √ a river town eats from a bigger hinterland than its dry twin (247 ms)
+    √ the §② veto becomes a real cap: dry site = waystation, whatever the land (155 ms)
+    √ refuses a ceiling of nothing (240 ms)
+  parasiteReading — the diagnostic, never an ambush
+    √ above the ceiling: a parasite, legal only while a partner covers (17 ms)
+  the planet founding wears its cap (foundCitiesFromSites)
+    √ with ceilings: the cap rides the city and clamps the founding crowd (96 ms)
+    √ without ceilings: the shipped clamp, bit for bit — and no cap field (97 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/lexicon-registry-sync.test.ts
+  LEXICON ↔ glyph-registry conformance
+    √ every parseable symbol has registry artwork or an explicit exemption (3 ms)
+    √ the exemption list carries no stale entries (art shipped → remove) (2 ms)
+  ConceptDef bridge — the joined noun library
+    √ covers every pool member, one concept per symbol, deterministically (10 ms)
+    √ derives affordance verbs from pool/category/species data (10 ms)
+    √ TOYS afford `play` — the selector the fun need binds to (4 ms)
+    √ host extensions join without overriding the static core (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-scope.test.ts
+  the id grammar — every endpoint id already in the wild
+    √ ROUND-TRIPS, which is what makes the parse safe on persisted agreements (9 ms)
+    √ parses each prefix to the kind it names (2 ms)
+    √ is TOTAL — an unknown id is a container, which is what it always was (6 ms)
+    √ 🚨 keeps `town:yard` APART from a partner town, which share a prefix (2 ms)
+    √ does not mistake a house delta key for a container (2 ms)
+  containment — the ladder ownership.ts already declared, given to inventory
+    √ a body belongs to its household, and a stray to the town (2 ms)
+    √ a container belongs to the building it stands in (1 ms)
+    √ buildings and districts hang off the town; the town hangs off nothing yet (2 ms)
+    √ A PARTNER TOWN IS OUTSIDE OUR TREE — which is why shipments are scheduled (2 ms)
+    √ an order's pile belongs to the building it grows — and a FOUNDING has none (2 ms)
+    √ speaks the same ladder as mayUse, in the same strings (2 ms)
+    √ survives a session with no town at all (a founded site) (3 ms)
+  the tree walk
+    √ visits PARENTS BEFORE CHILDREN — the order condense/expand will fold in (6 ms)
+    √ reports every id exactly once, and is deterministic (2 ms)
+    √ a scope with no live stack is still a NODE — it just has no endpoint (2 ms)
+    √ SUMS THE WHOLE TREE — the question nothing could ask before (2 ms)
+    √ does not hang on a cycle (2 ms)
+  a scope's inventory IS the sum of its containers
+    √ counts a piece LYING ON THE FLOOR as owned — the whole bug in one line (2 ms)
+    √ counts what the people in it are holding (2 ms)
+    √ sums its containers, INCLUDING a basket standing on its floor (3 ms)
+    √ does NOT count the neighbours — containment, not proximity (2 ms)
+    √ rolls all the way up: the town holds everything in it (3 ms)
+    √ 🚨 counts a unit ONCE — the basket's apple is the basket's, not also the floor's (2 ms)
+    √ head-matches, so a facet is still the thing it is (4 ms)
+    √ the index answers every scope in ONE pass — parents included (3 ms)
+    √ descendantScopeIds is the containment closure, and excludes the root (3 ms)
+    √ without a census it is the STORED reading — which the reconciler needs (2 ms)
+    √ terminates on a cyclic context rather than hanging (1 ms)
+  the bridge to the item ledger
+    √ names the ItemLocation each scope is, so a walker can move items there (2 ms)
+    √ every ScopeRef variant prints and re-parses (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-creatures.test.ts
+  creature rules — invariants
+    √ fulfilling a need binds the item and creates the debt (retention) (13 ms)
+    √ a creature politely declines items it neither likes nor needs (3 ms)
+    √ give/take round-trips are debt-neutral (conservation) (5 ms)
+    √ provenance: taking a put-down wanted item counts as a gift from the placer (3 ms)
+  creature rules — the §8 archetypes emerge
+    √ rental vendor: borrow one; the second demands the first back; return unlocks it (3 ms)
+    √ exchange vendor: request states the price (its need); paying unlocks the grant (3 ms)
+  dialogue projection
+    √ vendor menu offers requests for exactly the known/visible stock (the menu bug, fixed) (9 ms)
+    √ giver line: states its want, switches to 'give me' when you hold the item (5 ms)
+    √ announce-after trader greets neutrally; the request elicits and pins the price (8 ms)
+    √ does NOT give unprompted without a recorded want (no asking, no giving) (8 ms)
+    √ bound possessions stay ASKABLE — the creature refuses with 'mine' (4 ms)
+    √ state 1 shape: not holding the need → agree/cant/refuse/where-is, no offer (4 ms)
+    √ unwanted offers get a gentle decline, never a fail state (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-programs.test.ts
+  roomKindOf — furniture defines function (backward)
+    √ derives each kind from its signature piece (8 ms)
+    √ an empty (or unmarked) room is a plain hall (4 ms)
+    √ precedence order is semantics — the specific outranks the generic (10 ms)
+  roomProgramMet — programs name goals (forward)
+    √ met when ALL required pieces stand in the one room (5 ms)
+    √ both directions read the SAME table — a satisfied program derives its own kind (11 ms)
+  buildingKindOf — rooms define the building
+    √ a shell with living+bedroom+kitchen+bath IS a house (4 ms)
+    √ an empty box is just a building (null) (5 ms)
+    √ single-room characters derive too (2 ms)
+  culture overrides — defaults ⊕ authored, kernel-validated
+    √ an authored def REPLACES its default in place (precedence kept) (3 ms)
+    √ a NEW kind appends after the defaults and derives last (2 ms)
+    √ unknown station kinds are NO-OPS; a def left empty is dropped whole (8 ms)
+    √ structure programs override the same way (3 ms)
+    √ icon marks ride through the resolve unvalidated (2 ms)
+  roomDisplayGlyph — the icon marks
+    √ nests each default kind's symbol in the room shell (3 ms)
+    √ every default kind's symbol is a symbol the lexicon can DRAW (2 ms)
+    √ the frame carries the private/communal split over one unchanged program (2 ms)
+    √ frame `none` drops the shell (the well pattern) (2 ms)
+    √ an unmarked kind falls back to its own word, and an unknown kind to itself (1 ms)
+  the place-making stations make places
+    √ a standing anvil derives a forge, which derives a smithy (2 ms)
+    √ a standing altar derives a shrine, which derives a temple (3 ms)
+    √ a standing loom derives a weaving, which derives a weaver (3 ms)
+    √ a standing shelf derives a study, which derives a library (4 ms)
+    √ anvil claims its floor even in a FURNISHED hall (4 ms)
+    √ altar claims its floor even in a FURNISHED hall (3 ms)
+    √ loom claims its floor even in a FURNISHED hall (4 ms)
+    √ shelf claims its floor even in a FURNISHED hall (3 ms)
+    √ forge's program is MET by its own station (forward) (2 ms)
+    √ shrine's program is MET by its own station (forward) (1 ms)
+    √ weaving's program is MET by its own station (forward) (2 ms)
+    √ study's program is MET by its own station (forward) (4 ms)
+    √ smithy's catalog row raises the anvil that defines it (5 ms)
+    √ temple's catalog row raises the altar that defines it (3 ms)
+    √ weaver's catalog row raises the loom that defines it (6 ms)
+    √ library's catalog row raises the shelf that defines it (5 ms)
+    √ the new kinds never steal a household room (4 ms)
+    √ a shelf is a CONTAINER that never opens, an altar holds nothing (9 ms)
+    √ every place-making cluster declares a floor a body can work in (8 ms)
+  structureDisplayGlyph — name vs picture
+    √ frames the declared symbol, not the spoken word (6 ms)
+    √ falls back to the word when the word is the picture (4 ms)
+    √ every default catalog row frames a DRAWABLE symbol (5 ms)
+  every display glyph the repositories emit is renderable
+    √ parses to a single slot carrying its payload (5 ms)
+    √ resolves for every room program (8 ms)
+    √ resolves for every catalog structure (9 ms)
+  persistent wants — nextAnnexWant reads programs first
+    √ an unmet programmed room outranks the default differentiation (2 ms)
+    √ a satisfied program falls through to the default order (2 ms)
+    √ a non-annexable programmed kind is skipped (waits for ⑤) (1 ms)
+    √ program rows ride the deltas round-trip and count as non-empty (5 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/spark-attention.test.ts
+  objectMotive — affordance-bound object → motive
+    √ reads a toy's PLAY affordance as fun (over any fixture role it sits on) (4 ms)
+    √ maps food to hunger and water to thirst (3 ms)
+    √ maps rest/relief fixtures by their station role (4 ms)
+    √ returns null for objects serving no meter-driven motive (a chest, a wall) (4 ms)
+  ramp / decay
+    √ ramps to full within ~rampS and clamps at 1 (2 ms)
+    √ decays to zero over the given window and never goes negative (1 ms)
+  attentiveness — engagement is the sole gate
+    √ an UNENGAGED creature is not attentive at all (nobody is pulled in) (4 ms)
+    √ the ENGAGED creature is attentive at its engagement strength (3 ms)
+  attentionBonus — strong for the engaged creature, zero otherwise
+    √ gives the ENGAGED creature a strong bonus (≥ the fire threshold of 1) (3 ms)
+    √ does NOTHING to an unengaged creature, however near (3 ms)
+    √ is zero for a non-matching motive, or a spent / area draw (2 ms)
+    √ scales with draw strength and engagement strength (2 ms)
+  attentivenessOf / attentivenessAny — one row per author
+    √ answers from THAT author's row and nobody else's (2 ms)
+    √ author A's engagement NEVER answers for author B (2 ms)
+    √ is zero for an author with no row at all, and for an empty/absent map (2 ms)
+    √ ANY takes the STRONGEST hold — a body two children look at is engaged (3 ms)
+  attentionBonusOf / attentionBonusAny — the PAIRING LAW
+    √ pairs an author's draw with that SAME author's engagement (3 ms)
+    √ NEVER crosses two authors — Ann engages Mara, Ben looks at the bread, nothing happens (3 ms)
+    √ ANY gives the strongest author's bonus, and is order-independent (4 ms)
+    √ keeps every gate of the singleton: motive match, live draw, engagement (2 ms)
+    √ agrees with the singleton it replaces (the host's flip must be a no-op) (3 ms)
+  engagementToward — ROSTER first, spark second, zero otherwise
+    √ reads a fellow member's OWN engagement, not the gaze resting on them (4 ms)
+    √ the ROSTER WINS over a contradicting spark row (3 ms)
+    √ needs BOTH in the circle — an outsider's hold on a member falls to the spark (3 ms)
+    √ falls to the spark when the TARGET is outside the circle (3 ms)
+    √ falls to the spark with no roster at all, and stays PER-AUTHOR there (4 ms)
+    √ THE NO-AMBIENT-RESPONSE LAW: an unengaged non-member is ZERO (3 ms)
+    √ clamps a wild roster value to 0..1 (3 ms)
+  attentionActions — item type × state → the default act
+    √ meter-gated defaults: food→eat, water→drink, toy→play, bed→sleep, toilet→use, bath→wash (6 ms)
+    √ a DIRTY item wants washing before anything — even a dirty shirt or toy (6 ms)
+    √ clean clothing wears at ANY time (no meter gate) (5 ms)
+    √ anytime fallthrough: unclaimed loose → get, owned loose → tidy, low stock → getMore (6 ms)
+    √ an unwilling meter act FALLS THROUGH to the anytime acts (a not-hungry body still GETS the free apple) (4 ms)
+    √ a wall asks nothing (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/hinterland-jobs.test.ts
+  hinterlandJobs — the sources the arc already shipped
+    √ terrain jobs: the exchange taxa qualify; surplus is a fat village, not a city (7 ms)
+    √ the hub: enough living spokes make a store of last resort (7 ms)
+    √ the refinery: a LICENSED refinery is a job; an unlicensed one is nothing (4 ms)
+    √ cityLicense: the village cap, and the printed why (4 ms)
+  industryAfterSurplus — the tier gate reads the fill, not the size
+    √ writes the surplus condition onto industry rules only (8 ms)
+    √ a declared floor scales the demand side; absent = byte-stable rules (6 ms)
+    √ refuses a diet that isn't declared, or that doesn't ship (52 ms)
+    √ a big HUNGRY village stops spawning smithies — and a fed one resumes (14 ms)
+  the planet founding wears its license (foundCitiesFromSites)
+    √ fertile but jobless: the crowd founds at the village line (27 ms)
+    √ the same land at a river mouth is licensed — geography hands out the job (26 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-group-activity.test.ts
+  jointness — a child means it with whichever word they have
+    √ the explicit marker: 'eat + together' (4 ms)
+    √ a COMPANIONS subject: 'we + eat' (2 ms)
+    √ a with-marked ANIMATE companion: 'eat + with + mara' (2 ms)
+    √ deixis counts as animate: 'you + eat + with + i_me' (1 ms)
+    √ a PLACE or a THING is not company — 'trade + wood + with + city' (3 ms)
+    √ a plain activity says nothing about company (2 ms)
+  company rides the goal, it never replaces it
+    √ 'you + eat + with + i_me' stays an EAT, marked with the speaker (3 ms)
+    √ 'eat + with + mara' names Mara (7 ms)
+    √ 'we + eat + together' is the SPEAKER'S GROUP — the world resolves who (2 ms)
+    √ a bare 'eat + together' is the group too — no name, still shared (2 ms)
+    √ a NAMED companion beats the group — the one name the child said survives (2 ms)
+    √ company NEVER leaks onto a non-activity goal (3 ms)
+    √ an ordinary solo order is untouched — no marker, no behavior change (2 ms)
+  an invitation is one move, however it is said
+    √ 'i_me + want + play + with + you' — the wish shape (4 ms)
+    √ 'i_me + eat + with + you' — the announcement shape (2 ms)
+    √ 'i_me + want + eat + together' — the bare-together shape (2 ms)
+    √ a with naming a THIRD PARTY stays a disclosure — it tells you, it doesn't ask you (3 ms)
+    √ an activity this world does NOT gather for keeps its old reading (2 ms)
+    √ a solo want is not an invitation — no company was named (5 ms)
+  willingnessToJoin — will you do it WITH me?
+    √ a NEUTRAL creature comes along — a family that only dines with adorers is wrong (3 ms)
+    √ a COLD creature declines a stranger (2 ms)
+    √ …but comes if it WANTS the activity — you don't refuse dinner over the cook (1 ms)
+    √ a cold creature comes for someone it LIKES — affinity, not just warmth (2 ms)
+    √ a WARM creature says yes to anyone — warmth outweighs even active dislike (3 ms)
+    √ a MIDDLING creature does refuse someone it dislikes — the bar is real (2 ms)
+  the no-gathering line
+    √ names the ACTIVITY and the TOGETHERNESS, and refuses neither activity (3 ms)
+    √ teaches back the word the child tapped — level a is `together` (2 ms)
+    √ speaks the CULTURAL 'we', like the taboo refusal — not one creature's no (3 ms)
+    √ renders as true sentences in every shipped ruleset (8 ms)
+    √ NEVER drops the marker — a silent drop would make the sentence FALSE (6 ms)
+  voice policy — the audience knob
+    √ ships SPEAKING an inert company marker (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/rest-echo-walk.test.ts
+  a generic station speaks the WALK, not a transitive rest
+    √ the chair: same glyph shape the toilet fork uses (6 ms)
+    √ renders as a sentence in EVERY shipped ruleset (the whole point of L13) (9 ms)
+    √ the ANNOUNCEMENT (.will) survives the marker in every ruleset (9 ms)
+    √ NO ruleset speaks a raw glyph token back — the L13 regression guard (729 ms)
+    √ a NAMED BODY is a station too — 'sit next to Mara' walks to Mara (17 ms)
+  the twins agree — the announcement and the activity are one goal
+    √ every station word rides BOTH channels, and neither names a second thing (38 ms)
+    √ …and the ACTIVITY answer renders through the same going frame (21 ms)
+  the special forks are UNTOUCHED — L13 added a cell, it replaced none
+    √ a bed sleeps, a bath washes, a toilet is the bathroom trip (10 ms)
+    √ their activity readings are the same three rows, off the one table (11 ms)
+  a dwell at a bare POINT has no walk in it
+    √ stays the plain rest, and drops the object so the twins name the same slots (11 ms)
+    √ …and now SPEAKS in every ruleset — the L15 lexemes landed (19 ms)
+    √ …and the ANNOUNCEMENT (.will) takes each ruleset's own future (27 ms)
+    √ `sit` landed with it — the posture pair the point cell's verb belongs to (17 ms)
+    √ NO ruleset leaks a raw `rest`/`sit` token any more — the L15 sweep (48 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-stations.test.ts
+  station registry integrity
+    √ every station's cluster exists in the cluster registry (32 ms)
+    √ anchored stations name an anchor defined EARLIER (order is semantics) (14 ms)
+    √ footprints and keys are sane (38 ms)
+    √ clusters that can own a dedicated cell carry their geometry floors (15 ms)
+    √ rooms.ts reads its cell floors FROM the cluster registry (28 ms)
+  the occupant program (need-derived demand, §9 slice 2)
+    √ a household's sleepers pair up per sleep cell (14 ms)
+    √ the program SCALES with occupancy — an inn is the sleep cluster multiplied (11 ms)
+    √ no generated plan realizes MORE sleep cells than the occupants demand (357 ms)
+  kernel stations ↔ behavior-layer need templates stay consistent
+    √ every station kind a resident's needs name is one the registry can place (17 ms)
+  the driver realizes the registry
+    √ a roomy house places every singleton station the registry declares (181 ms)
+    √ pieces carry the registry's footprints and affordances (186 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-stand-points.test.ts
+  standPointFor — the same-room gate (the behind-the-house bug)
+    √ REGRESSION: never hands back a stand point on the far side of the wall (39 ms)
+    √ an uncrowded wall chest still gets a clear interior stand point (17 ms)
+    √ nearestClearSpot never nudges a room anchor through a wall (12 ms)
+    item on a table — the stand point must clear the table box
+      √ standPointFor(item containedIn table) resolves off the table's edge (33 ms)
+      √ fixtureCovering reports the table for a point at its centre, null in the open (35 ms)
+      √ nearestClearSpot nudges an item-on-a-BIG-table off the table box (girth-aware) (30 ms)
+      playRingSpot — players gather AROUND a floor station
+        √ stands OFF the toy, not on it — and within arm's reach of it (18 ms)
+        √ joins from the side you came in on (29 ms)
+        √ a second player takes a DIFFERENT side — the crowding rule spreads them (17 ms)
+        √ a ring with every side blocked still yields a spot (termination over fidelity) (30 ms)
+    a seat tucked under a table — the stand point is on the SEAT's side
+      √ the seat centre really is blocked by the table (the premise) (18 ms)
+      √ lands beside the seat from EVERY approach, not on the walker's side (45 ms)
+      √ a housemate CROWDING the mount spot never flips the stand point to another face (18 ms)
+      √ an OPEN chair (no table over it) still stands right on the seat (21 ms)
+  door-aware routes over REAL generated houses
+    √ routes between every room pair thread doors — no leg crosses a wall (253 ms)
+    √ interior legs stay INSIDE the house — never out the front door and back (117 ms)
+    √ IDLE PADS: every furnished living room yields a clear rect, fully standable (378 ms)
+    √ a body outside walks in through the street door to a back room (16 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/acquisition-beneficiary.test.ts
+  a `for`-marked PERSON turns the fetch into a delivery
+    √ 'get + apple + for + mara' hands Mara the apple (42 ms)
+    √ …and the parse always carried it — this is a COMPILE gain, not a parse one (13 ms)
+    √ the WHOLE family reads it — one primitive, four words (19 ms)
+    √ descriptors ride into the item match, like every other item slot (28 ms)
+    √ 'get + apple + for + i_me' is the same law `give + apple` states (19 ms)
+    √ under a classifier-less binder every bare noun reads as a body (13 ms)
+  the decision table — where two markers meet
+    √ a `for`-bound PLACE stays a PLAIN FETCH ('get + wood + for + house') (13 ms)
+    √ an explicit `to` OUTRANKS `for` ('take + ball + to + mara + for + pip') (14 ms)
+    √ a named BODY outranks a named SOURCE ('get + apple + from + box + for + mara') (12 ms)
+    √ an ANIMACY-DENYING binder keeps the fetch, exactly as company does (15 ms)
+  what did NOT change
+    √ the bare fetch and the from-fetch are byte-identical to pre-L9 (20 ms)
+    √ the OBJECTLESS take-from keeps its wildcard fetch even with a beneficiary (11 ms)
+    √ the delivery `to` reading is untouched (15 ms)
+    √ 🚨 TRADE'S `for` IS A DIFFERENT ARM — the take-good, never a beneficiary (32 ms)
+    √ a bare `for` binds nobody — an unbindable marker is dropped, never guessed (10 ms)
+  the creature SAYS the delivery back
+    √ the echo names BOTH the thing and the person — a fetch echo could not (26 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/band-gate-a.test.ts
+  keeping — the storage axis is separate from the road
+    √ keepDays defaults by transit class; catalogue rows override per good (33 ms)
+    √ spoilage is exponential in the half-life, and the durable pile never rots (17 ms)
+    √ rot rides the metabolism dial — one factor per process class, microbes included (18 ms)
+    √ the granary ratio: grain crosses any winter, milk crosses none (16 ms)
+  the band's day — draw, eat, bank, spoil
+    √ a surplus day banks yield − need; a deficit day draws the store (35 ms)
+    √ the pile rots before it feeds — spoilage applies first (19 ms)
+    √ a fragile staple PLATEAUS below carry — pastoralists never settle by store (55 ms)
+  Gate A — store > carry AND nowhere to walk to
+    √ carryCapacity is the backs available × the pack × the staple's worth (24 ms)
+    √ pressure: a lone oasis is cornered (→1); a uniform frontier is free (0) (89 ms)
+    √ claims corner a band the raw land would have freed (27 ms)
+    √ the gate needs BOTH halves (27 ms)
+    √ gather → live → settle: the whole arc conserves people (24 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-converse.test.ts
+  intentToAct — a sentence → a dialogue act (speaker me, listener bear)
+    √ i_me want cookie → request the LISTENER's cookie (47 ms)
+    √ i_me give sock → offer the SPEAKER's own sock (8 ms)
+    √ i_me give.not sock → REFUSE, never the offer the frame looks like (6 ms)
+    √ i_me have.not cookie → CANT (denying possession, not willingness) (5 ms)
+    √ i_me help.not you → refuse (4 ms)
+    √ sock for cookie → propose the TRADE, both items real (5 ms)
+    √ a swap naming something nobody holds is not a trade (8 ms)
+    √ where cookie → a where-is query about it (4 ms)
+    √ a bare statement is an ASSERT → tell (never a dead end) (4 ms)
+    √ social acts map to their dialogue moves (5 ms)
+    √ a command is NOT a dialogue move (handled by the party layer) (4 ms)
+  tell — an ASSERT shares a fact into the listener's knowledge
+    √ me tells bear where the cookie is; bear LEARNS it (8 ms)
+  chooseSpeakerMove + speakInConversation — NPCs use the SAME engine as the player
+    √ a needy speaker asks the ONLY other member for the item they hold (10 ms)
+    √ one exchange: fox asks, bear (owing fox) hands it over (9 ms)
+  how-are-you surfaces the creature's PROBLEM (are-you-ok → report it)
+    √ a conditioned creature reports its condition ('I am hungry'), not a bare 'ok' (5 ms)
+    √ a wanting creature states its want instead of 'ok' (4 ms)
+    √ a content creature reports the simple positive state (never a generic 'ok') (3 ms)
+  chooseSpeakerAct — an NPC picks from the SAME board, by personality + random
+    √ a needy, assertive speaker leads with the request (5 ms)
+    √ never utters a menu-OPENER — and never asks directions in ANY shape (15 ms)
+    √ …while the PLAYER's board still projects the directions menu (4 ms)
+    √ with no motive and the RNG at the tail, it still picks SOME act (never null/dead) (3 ms)
+    √ a mood-chosen move still completes an exchange through the façade (6 ms)
+  §9 E2 — the NPC's need-ask fires only on a genuine knowledge gap
+    √ DROPS the targeted ask when the listener would simply open its own fridge (10 ms)
+    √ DROPS it when the listener knows the place to go (4 ms)
+    √ KEEPS it when the listener's own resolution is BLOCKED — the pet at the fridge (9 ms)
+    √ KEEPS it when nobody can place it at all (no hook, no answer) (11 ms)
+    √ asks the probe about the LISTENER — the need's owner under the role swap (3 ms)
+    √ THE PLAYER'S BOARD IS UNGATED — projectDialogue still offers the button (4 ms)
+  where-is on a resource WANT points to the source (bug #2)
+    √ with a known source, where-is redirects to the market directions subject (4 ms)
+    √ projectDialogue attaches that source subject to the shopper's own where-is button (3 ms)
+    √ without a known source it still honestly says 'I don't know' (6 ms)
+  where-going — ask a moving creature its destination (bug #4)
+    √ 'you go where' maps to a where-going act (not an item where-is) (4 ms)
+    √ answers 'going to get food' from a fetch errand (5 ms)
+    √ answers 'going home' from a to_home errand (4 ms)
+    √ a stationary creature (no destination) answers 'I'm here' (4 ms)
+    √ the where-going button appears ONLY while the creature is en route (6 ms)
+  asking WHERE through the façade — the answer comes back, the knowledge does not
+    √ bear, who holds the cookie, answers fox's where-is — but fox does NOT learn it (5 ms)
+    √ asking someone who doesn't know earns the honest don't-know, and teaches nothing (6 ms)
+  fact questions — where/how/what-want about a THIRD party
+    √ where + mara → ask-fact presence; unknown answers the honest don't-know (6 ms)
+    √ a TOLD presence answers, and the answer teaches the ASKER (5 ms)
+    √ the ROSTER oracle (presenceOf) answers ahead of any stored belief (4 ms)
+    √ where + you → the listener is right here (5 ms)
+    √ how + mara (asked of bob) → condition fact; how + you stays small talk (4 ms)
+    √ what + want + mara (asked of bob) → a want fact (2 ms)
+    √ polar attribute ask → yes / no / don't-know (4 ms)
+    √ you + ok#question stays the how-are-you greeting (2 ms)
+  fact statements — attribute / presence assertions spread knowledge
+    √ mara + hungry (told to bob) writes the condition fact; bob thanks (3 ms)
+    √ apple + hot (told to bob) writes the item-state fact (2 ms)
+    √ mara + in + kitchen then where + mara — the told fact answers (4 ms)
+    √ a claim about the LISTENER ITSELF is confirmed or corrected, never absorbed (2 ms)
+  question fallbacks — no question is a dead end
+    √ an unrecognized question answers 'I don't understand', never small talk (3 ms)
+    √ 'what is the ball eating?' corrects the premise — a thing isn't doing anything (2 ms)
+    √ why + verb checks the PREMISE: not doing it → 'I don't build' (2 ms)
+    √ why + verb it IS doing → the motive answer; unverifiable → don't-understand (2 ms)
+    √ where + <nothing anyone has> answers 'I don't know', never silence (2 ms)
+    √ who + have + ball → the holder clue (2 ms)
+    √ what + hot → a state SEARCH over knowledge ('apple + hot') (6 ms)
+    √ who + hungry → a condition SEARCH ('mara + hungry'; own truth answers too) (3 ms)
+  activity questions — 'what is X doing / eating?' (semantic-tests §Questions)
+    √ answers with the live activity and its object: 'the dog is eating the apple' (2 ms)
+    √ corrects a wrong presumed activity: 'the dog is not eating' (2 ms)
+    √ a symbol naming NOTHING answers 'there is no {X}' (2 ms)
+    √ broad 'what + you + do' answers the listener's own activity in first person (3 ms)
+    √ verifiably idle: broad ask → 'I'm not doing'; specific ask → the denial (2 ms)
+    √ no activity hook at all → the honest don't-know, never a fabricated answer (1 ms)
+    √ falls back to doingOf (verb only) when activityOf is absent (1 ms)
+  the source ask — 'where do we get an apple?'
+    √ where + get + {X} routes to the provider/source chain, not an instance clue (2 ms)
+  modal desires spoken at a creature
+    √ 'i_me want play' is a disclosure that gets acknowledged, never silence (2 ms)
+    √ 'i_me want go home' is acknowledged — the home is part of the ACT, not requested (7 ms)
+    √ 'i_me want eat cookie' still asks for the cookie — the thing IS the wish (4 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/item-prop-spec.test.ts
+  itemObjectSpec — the one appearance of a thing that is not installed
+    √ a piece of furniture is its OWN MODEL, on its side, at its real size (8 ms)
+    √ THE CARRIED CHEST AND THE STANDING CHEST ARE THE SAME CHEST — one recipe (3 ms)
+    √ EVERY station kind resolves to a model, never a question mark (14 ms)
+    √ a piece you cannot MAKE is still a piece you can carry and place (7 ms)
+    √ the craftable catalogue is still exactly the craftable ones (4 ms)
+    √ an apple keeps its icon, at ONE radius wherever it is (4 ms)
+    √ the only thing a MIRROR prop differs by is that hands can't take it (3 ms)
+    √ a faceted item keeps its facets (a red shirt stays red) (3 ms)
+  objectModelKey — the renderer's identity
+    √ DESCRIPTORS ARE NOT AN IDENTITY: a hot apple is the same recipe as a cold one (4 ms)
+    √ BECOMING FURNITURE IS an identity change (3 ms)
+    √ agrees with hasObjectModel about what has a recipe (3 ms)
+    √ a fixture always wins — a chest is a chest whatever icon rides along (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/conversation-engagement.test.ts
+  engagementOf — a free body is wholly here
+    √ a body with nothing else claiming its heading reads exactly 1 (4 ms)
+    √ a busy body falls, and it is the ONLY thing that makes it fall (2 ms)
+  engagementOf is monotone in every input it has
+    √ PATIENCE raises it: the temperament that lets a pause sit stays in the room (5 ms)
+    √ ASSERTIVENESS lowers it: the temperament that would rather get on with the job (5 ms)
+    √ RECENCY of being addressed raises it, and decays back out (4 ms)
+    √ NEVER ADDRESSED is not a debt — it is simply no lift, exactly as in `courtesy` (3 ms)
+    √ is TOTAL — a future `lastAddressedTick` reads as 'just now', never as a blow-up (1 ms)
+  🚨 the floor: a working member is still IN the conversation
+    √ never returns 0, at any dials, at any distance from being addressed (6 ms)
+    √ 🚨 NEVER SINKS BELOW `ENGAGE_MIN` — or a working member silently leaves the spark's directable set (6 ms)
+  the composed effect: a lean, not a wall
+    √ costs a neutral busy member ~13% of its willingness to answer — MEASURED, not asserted (2 ms)
+    √ …and at most ~18%, for the most assertive body there is (2 ms)
+    √ the urge to answer falls by the same proportion, and never to silence (2 ms)
+    √ being asked something buys the whole lean back, on the spot (2 ms)
+  the one writer — what a frame of the circle leaves on the roster
+    √ writes every creature member and leaves the PLAYER alone (3 ms)
+    √ is IDEMPOTENT — the same frame twice leaves the same number (it is state, not an integrator) (3 ms)
+    √ RECOVERS: a member that puts its load down is wholly back in the conversation (2 ms)
+    √ reads `lastAddressedTick` off the roster, which `recordUtterance` is the one writer of (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-placement-will.test.ts
+  willingnessToPlace — the comply / can't / won't matrix
+    √ no candidates ⇒ cannot, with the kernel's failure reason (5 ms)
+    √ a natural spot places for anyone — no relation needed (3 ms)
+    √ a sub-floor spot: a stranger's ask is refused, the family's is obliged (4 ms)
+    √ even high compliance has a floor — a truly awful spot still refuses (4 ms)
+    √ is deterministic — same input, same verdict (3 ms)
+  the spoken verdicts — every grade has a line, rendered per locale
+    √ cannot (geometric): 'I can't put X there because the place is small' (17 ms)
+    √ cannot (not-mine): the mine frame — 'no, my house' (3 ms)
+    √ cannot (have-not): the vendor's noStock shape (4 ms)
+    √ wont: 'I don't want to put — because the place is not good' (4 ms)
+    √ ok + done lines exist (silence must be explicit) (2 ms)
+    √ the dispatcher maps verdicts to lines (null = accepted) (7 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/build-ghosts.test.ts
+  the ghosts ARE the bill
+    √ a shell's pieces add up to exactly what the shell costs (6 ms)
+    √ one piece per bay of each surface (6 ms)
+    √ ids are unique — a ghost is keyed by identity, and the fill re-keys on state (8 ms)
+    √ floor, then walls, then roof — the order a builder works in (4 ms)
+  the pieces stand where the building will
+    √ floor bays tile the footprint and stay inside it (9 ms)
+    √ wall bays sit ON the perimeter lines, running along their own edge (49 ms)
+  a room's ghosts match the room's own bill
+    √ an annex skips the wall it shares — and the count follows the bill (7 ms)
+    √ sharedEdgeWith finds the abutting side from ANY direction (6 ms)
+    √ an interior cut draws ONE partition — no floor, no roof, no outer wall (28 ms)
+    √ freeEdgesOf tolerates the float noise two independent rect computations leave (11 ms)
+  paintGhosts — the fill is the pile
+    √ an empty pile with a chain running is all pending (4 ms)
+    √ an empty pile with NOTHING reachable is blocked — the state that wants you (4 ms)
+    √ a covered bill is entirely claimed (3 ms)
+    √ fills in build order — a prefix is claimed, the rest is not (8 ms)
+    √ a HALF-paid bay is not claimed — a half-paid wall is not a wall (6 ms)
+    √ an explicitly blocked piece stays blocked however full the pile is (3 ms)
+    √ never mutates or reorders the pieces it paints (7 ms)
+    √ a nonsense negative pile is treated as empty, not as credit (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/text-summarize.test.ts
+  summarize — promotion precedence (law ⑤)
+    √ names in the law's order, not in distance order (4 ms)
+    √ the addressee is promoted on the same tier as a conversation member (2 ms)
+    √ "previously met" promotes a body with no name of its own (4 ms)
+    √ groups everyone left by (word, verb, band), nearest member's cardinal (7 ms)
+    √ splits buckets that differ in band or in activity (2 ms)
+  summarize — visibly distinct means DRAWN differently (§6)
+    √ promotes the one body dressed unlike its peers and groups the identical rest (5 ms)
+    √ a signature shared by two labels the GROUP instead — neither is distinct (3 ms)
+    √ the signature is scoped to the WORD — a lone chair among people is not 'distinct people' (3 ms)
+  summarize — the cap
+    √ names at most 6 and buckets the overflow (3 ms)
+    √ honours an explicit cap (4 ms)
+    √ a creature outranks an object at the same tier — a person is news, a chair is furniture (2 ms)
+  summarize — places (law ⑤ applies to the skyline too)
+    √ prints a handful of lines for a town of 82 houses, not 82 (3 ms)
+    √ keeps the direction while the band buckets fit — a skyline is still oriented (6 ms)
+    √ collapses to ONE line per kind once notable places + buckets overflow the cap (3 ms)
+    √ groups by (kind, band) while the buckets stay few (1 ms)
+    √ keeps a colour only while the group is small enough for it to pick a house out (2 ms)
+  summarize — a place earns its own line only when NOTABLE
+    √ promotes a revealed interior, an open door, an adjacent place, and one named before (3 ms)
+    √ gives the notable ones lines and buckets the rest of the town (2 ms)
+    √ a place the driver NAMED keeps its line afterwards, even in a crowd of houses (4 ms)
+    √ caps NOTABLE places too — a hall of open doors is still a flood (2 ms)
+  summarize — crowd buckets are capped as well
+    √ folds a long tail of buckets into one line per word (2 ms)
+  summarize — the rank constants are the law's order
+    √ orders conversation < watched < known < distinct < occupied < adjacent < crowd (2 ms)
+  summarize — the full precedence, a→f (step ⑦)
+    √ names one body per rung, in the law's order, against distance (4 ms)
+    √ rung (e) keys on (verb, OBJECT) — the one eating cake, not the one eating (2 ms)
+    √ rung (c): a body previously MET is named though the world never gave it a name (2 ms)
+  summarize — the appearance signature is what the RENDERER dresses from
+    √ reads the outfit index through the one bijection behind it (2 ms)
+    √ a signature shared by ≥2 LABELS the group (§6: 'two women in red') (2 ms)
+    √ the label survives only while EVERY member of the bucket wears it (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-transfer-persistence.test.ts
+  the ledger + partner shelves ride SerializedTownDeltas
+    √ round-trips agreements (haul mid-carry, standing, barter) and partner stock (10 ms)
+    √ deep-copies on load — mutating the revived store never touches the JSON (6 ms)
+  reload resumes the routes (town-play restore normalization)
+    √ mid-haul rows lose the dead executor but KEEP the load; standing legs come due now (45 ms)
+    √ the standing leg actually RUNS on the new clock's first sweep (14 ms)
+    √ restore is stable — rebuilding from the restored session's own JSON changes nothing (19 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-approach.test.ts
+  routeApproachBearing — the route's TRUE bearing at the town radius
+    √ reads the final approach, not the straight line to the far endpoint (5 ms)
+    √ reads the same approach from endpoint 'a' of the reversed route (2 ms)
+    √ reads the PORT bearing at inset 0 on a port-terminated route (2 ms)
+    √ round-trips the chart: toTownLocal inverts toPlanetDir (2 ms)
+  approachBearings — quantized, deduped, most important first
+    √ quantizes to the street compass and keeps the caller's order (3 ms)
+    √ PORTS ARE PLURAL: one bearing per road, twins deduped (2 ms)
+    √ is deterministic: the same inputs yield byte-equal bearings (2 ms)
+  townBias — host approach bearings beat the straight line
+    √ uses the host's bearings, quantized (3 ms)
+    √ trusts an EMPTY answer (a verified roadless town — no fallback) (5 ms)
+    √ falls back to straight-line neighbor bearings when the host knows nothing (2 ms)
+  arterial tips and the splice connector
+    √ collects every gen-0 outer end, the BASELINE'S TWO included; lanes excluded (2 ms)
+    √ THE GATE IS THE PORT: declared ports replace the tip hunt entirely (3 ms)
+    √ picks the bearing-nearest gen-0 street (3 ms)
+    √ refuses a gate more than a right angle away (no cross-town chord) (2 ms)
+    √ bridges clip point to tip exactly (endpoints pinned through smoothing) (2 ms)
+  spliceRouteAtTown — the render-only PORT → GATE refinement
+    √ bends the port-terminated road's last stretch onto the nearest gate (3 ms)
+    √ maps the town-at-'a' span with arc 0 at the TIP (parent arc grows a→b) (3 ms)
+    √ refuses a route with no port (an UNCLIPPED endpoint at the centre) (2 ms)
+    √ refuses an overlapped stub (no port at all) and a town with no tips (5 ms)
+    √ a SHORT road still reaches its gate — it lends the arc it can afford (3 ms)
+    √ refuses when no gate faces the road (the cross-town chord guard) (2 ms)
+    √ THE GATE IS THE PORT: a town whose street reaches the port gets NO connector (2 ms)
+    √ is deterministic: double-call byte-equal (3 ms)
+  prefix-stable regrow with stored bearings
+    √ echoes its input bearings and regrows byte-identically from the echo (18 ms)
+    √ grows prefix-stably under the same bearings (deltas never re-lay) (15 ms)
+    √ changed bearings re-lay the town — which is WHY stored bearings must be reused (8 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-held-container.test.ts
+  the commanded basket — picked up, shopped with, and PUT DOWN
+    √ a commanded pickup makes the basket the body's ACTIVE BAG (49 ms)
+    √ 🚨 the withdraw a full hand used to refuse now draws INTO the bag (20 ms)
+    √ 🚨 the market's loose fruit goes INTO the basket, not into a refusal (23 ms)
+    √ a SECOND container is still hands-only — a scope may not become a unit (14 ms)
+    √ the shopping trip FILLS it — and the row stands down while it is loaded (22 ms)
+    √ PUTS IT DOWN once it is idle — on the floor, never into a box (15 ms)
+    √ NEVER A STATUE: without the row, nothing in the engine could release it (19 ms)
+    √ 🚨 no pick-up/put-down loop: the tidy chore leaves a floor basket alone (13 ms)
+    √ an ORDINARY held thing still goes to its designated container (21 ms)
+  a basket with ONE leftover unit and a FULL chest
+    √ 🚨 the FULL chest makes the basket IDLE — the leftover no longer pins it (87 ms)
+    √ …and it goes down WHOLE, with the apple still inside — audit conserves (72 ms)
+    √ ROOM IN THE CHEST and the bag is in use again — the goods row owns it (19 ms)
+    √ A ROW THAT WILL USE IT UP holds the bag too — the apple is lunch (20 ms)
+    √ 🚨 THE WAY BACK: the floor basket is a real container scope again (16 ms)
+  the barrel is debited once per drink
+    √ a body bare-handed drinks N times and the barrel loses exactly N (19 ms)
+    √ a body holding its own basket drinks N times and the barrel loses exactly N (20 ms)
+    √ 🚨 THE REPORTED BUG, run: the old guard drew nothing while it reached (17 ms)
+    √ the provision:water row fires as the barrel drops past its floor (17 ms)
+    √ 🚨 NO UNIT, NO MEAL: a consume that finds nothing does not satisfy (12 ms)
+  relieve prices at the bottom of the ladder
+    √ sits BELOW fun — the floor of the real motives (17 ms)
+    √ the exchange rate: one put-down is worth priority × NEED_PRESSURE_S (15 ms)
+    √ LOSES to every real need that is firing (21 ms)
+    √ stands down while a live `use` row wants the held item (13 ms)
+    √ stands down while the held thing is a PROVISIONED good (9 ms)
+    √ respects the command's grace before undoing it (10 ms)
+    √ has NO acquire branch — it can never spin against the row that lifted (10 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-intent-compile.test.ts
+  rule compilation — when/if/until → Rule
+    √ when night go home → an agent rule the child authored (39 ms)
+    √ farmers eat when hungry → a GROUP rule with a creatureState trigger (24 ms)
+    √ if window.open shut → an EDGE rule toggling the device shut (state rides the head via `.`) (31 ms)
+    √ build house until town → an UNTIL rule with a capped build (25 ms)
+  command compilation — imperative → GoalSpec
+    √ you go home → a goHome goal for the listener (15 ms)
+    √ bare 'build' → a build order with the default settlement target (the FOUNDING seam) (23 ms)
+    √ go to market → goTo a named place (15 ms)
+    √ bare 'return' → goHome (26 ms)
+    √ return to market → an ordinary goTo (15 ms)
+    √ give ball to bear → a give goal with a match item + recipient (22 ms)
+    √ descriptors ride into the item match (get ball.big) (15 ms)
+    √ you follow i_me → a follow goal targeting the player (party recruit) (11 ms)
+    √ you go there → goTo the gaze point when the world supplies it (24 ms)
+  conversational kinds pass through as dialogue (not goals)
+    √ a request is a dialogue move, not an action (14 ms)
+    √ a greeting and a question pass through too (12 ms)
+  sequence + binding fallbacks
+    √ a sequence compiles each clause (10 ms)
+    √ a rule that can't bind its action reports unbound (no world for a gaze item) (10 ms)
+    √ a gaze item resolves when the world supplies the fixation (12 ms)
+  round-2 verbs — drink/wash/tidy/sit/wake_up, throw-away, hug, help, carry
+    √ bare self-care verbs compile to satisfy goals (18 ms)
+    √ eat/drink WITH a named item CONSUME that item, never the abstract need (16 ms)
+    √ color + item + colour → a color goal; the colour is the TARGET, not an item filter (15 ms)
+    √ wash WITH an object stays a transform (the verb's other life) (9 ms)
+    √ `clean` is a DESCRIPTOR, not an order (7 ms)
+    √ throw with no destination → put it in the BIN (throwing away) (14 ms)
+    √ carry is a fetch synonym (7 ms)
+    √ hug compiles to a socialAct aimed at the named creature (6 ms)
+    √ help compiles to an adoption order on the target (6 ms)
+  placement compilation (construction v1) — the relation is preserved
+    √ put chair near table → a place goal carrying the relation + anchor (10 ms)
+    √ put apple in box stays the classic containment putIn (regression) (7 ms)
+    √ put ball near tree → even a non-furniture item PLACES beside a spatial anchor (6 ms)
+    √ put chair here → a point anchor reads as relation 'at' (the gaze spot) (8 ms)
+    √ without the isFurniture hook, put keeps its legacy containment shape (9 ms)
+    √ you put chair next_to table → a place goal with relation BESIDE (13 ms)
+    √ you put chair near table → the same place goal with relation NEAR (18 ms)
+    √ next_to places even a non-furniture item, like every spatial relation (16 ms)
+    √ put chair in_front_of table → a place goal with relation FRONT (7 ms)
+    √ put chair behind table → a place goal with relation BEHIND (14 ms)
+  household chores — verb × category → satisfy
+    √ wash + clothing → the LAUNDRY chore (not an item transform) (13 ms)
+    √ wash and tidy are SEPARATE orders over the same room (16 ms)
+    √ cook/make + food → the COOKING chore (never 'build a food structure') (18 ms)
+    √ bare self-care verbs keep their old readings (12 ms)
+  make vs build — interchangeable verbs, opposite priorities
+    √ make + ANIMAL makes a TOY of that animal, never a building called 'rabbit' (16 ms)
+    √ BUILD reaches the same toy — nothing named `rabbit` is a structure (9 ms)
+    √ make + a structure word still BUILDS — the priority never blocks the other reading (11 ms)
+    √ an authored toy and a furniture piece both compile to a craft, either verb (9 ms)
+    √ the priority only decides a word that is BOTH — build wins it, make loses it (15 ms)
+    √ bare 'make' stays unbound — only bare 'build' has a default (the founding seam) (11 ms)
+    √ a category chore still wins over both readings (12 ms)
+  phase + modal composition through the compiler
+    √ stop + eat compiles to the halt, never a goal for the inner verb (7 ms)
+    √ want + play stays a conversational move (a desire, not an order) (12 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/text-visibility.test.ts
+  text visibility — clause 2, same space or revealed
+    √ a body in the SAME room is in view (29 ms)
+    √ a body inside a SEALED building is hidden, though it is well within range (23 ms)
+    √ standing in the yard with both doors open reveals both rooms' occupants (20 ms)
+    √ an OUTDOOR body is not seen from inside a room (spaces differ) (16 ms)
+    √ spaceOf reports the containing building, or null outdoors (17 ms)
+  text visibility — clause 3, the range cutoff IS directions.ts' visibleR
+    √ admits a body at exactly visibleR and drops the one just past it (17 ms)
+    √ bands come from directions.ts' vocabulary — here inside hereR, there beyond it (20 ms)
+  text visibility — clause 4, same storey
+    √ a body one floor up is hidden even standing right over you (31 ms)
+    √ a FRACTIONAL floor rounds — mid-stair still reads as the storey it is nearest (15 ms)
+  text visibility — clause 1, embodiment (law ①)
+    √ narrates only bodies that exist in state — nothing is materialized to be seen (14 ms)
+  text visibility — objects, holding, and places
+    √ a carried object reports through its holder rather than as loose scenery (15 ms)
+    √ names an object by its glyph head, in the locale's word (13 ms)
+    √ places report as LANDMARKS out to closeR, with whether you can see inside (14 ms)
+    √ reports a place's DOOR state — one of the four things that earn it a line (11 ms)
+    √ a LOCKED door is not an open one, however far it has swung (8 ms)
+  text visibility — YOU are never a bystander
+    √ excludes the spark's own body (10 ms)
+    √ excludes the body the spark DRIVES — a claimed creature is you, not a stranger (6 ms)
+    √ carries the lexicon HEAD beside the word, so a bucket can ask for the plural (19 ms)
+  text ids latch (§4)
+    √ keeps a body's ordinal for the session, and gives a known name the bare id (16 ms)
+    √ asks rather than guesses when a bare stem matches several bodies (14 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/carry-hold.test.ts
+  carryHoldFor — a held thing rides the pose, not one fixed offset
+    √ a standing carrier keeps the old arm's-reach hold (25 ms)
+    √ every crouched/lying pose brings the hold in AND down (34 ms)
+    √ a seated diner's hold point clears the table it is pulled up to (10 ms)
+    √ the SIM keeps one logical hold — the pose is a display rule only (31 ms)
+  containerRoom — ask before the hands let go
+    √ counts the free slots of a relation the container offers (14 ms)
+    √ is zero for a full top, and agrees with what placeInContainer refuses (12 ms)
+    √ is zero for a relation the container does not offer at all (11 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-structures.test.ts
+  the default catalog (TOWN_PLAY_STRUCTURES)
+    √ ships house / farm / market / workshop with unique type keys (29 ms)
+    √ every row is complete: program, footprint, costs in SITE materials, buildDays (27 ms)
+    √ the farm row references its economic half by key (never duplicated) (4 ms)
+  resolveStructure — named resolution, no silent fallback
+    √ resolves by type, case-insensitively (4 ms)
+    √ resolves by glyph and label too (3 ms)
+    √ an UNKNOWN name returns null (the caller phrases the named refusal) (2 ms)
+  cost arithmetic — the refusal NAMES what is missing
+    √ missingCosts names each short glyph with its shortfall (5 ms)
+    √ facted stack variants pay toward their material head (wood.wet is wood) (3 ms)
+    √ spendCosts draws the stock down (plain stacks first), refuses without spending (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/variations.test.ts
+  headOf — the one head extractor
+    √ returns the kind head regardless of variation/state facets (9 ms)
+  facetsOf — variations vs states
+    √ splits a multi-facet glyph into head / variations / states (4 ms)
+    √ an unknown mod is a DESCRIPTOR/variation, never a state (matches legacy glyphFacets) (4 ms)
+    √ classifiers agree with the sets (2 ms)
+  composeGlyph / withVariation
+    √ composes in canonical order (variations by dimension, then states) (2 ms)
+    √ round-trips through facetsOf (2 ms)
+    √ withVariation replaces within a dimension, keeps other facets (the dye op) (2 ms)
+  appearanceOf — composed variation look
+    √ colour sets hex; size multiplies scale; material sets PBR (2 ms)
+    √ composes across facets; the dirty STATE does not affect appearance (5 ms)
+    √ no glyph / bare head → identity appearance (7 ms)
+  variantKindsOf — the generic stack-kind expansion
+    √ a head with no dimension is just itself (fruit, water) (3 ms)
+    √ one dimension × active values (clothing colour) (3 ms)
+    √ no active values → the whole dimension (3 ms)
+    √ cartesian across multiple dimensions in canonical order (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-engine-objects.test.ts
+  object primitive — state
+    √ builds objects free (not carried / not contained) (5 ms)
+  carry
+    √ picks up a carry object; refuses a non-carry one or a double pickup (3 ms)
+    √ a carried object follows the carrier; drop frees it at a point (4 ms)
+  containment (on / in / under)
+    √ places into an offered slot; respects capacity, relation, and self (3 ms)
+    √ a contained object snaps to its container on tick (4 ms)
+  push behavior is preserved
+    √ a moving avatar takes possession of a free ball, as before (7 ms)
+  schema
+    √ accepts a push ball, a carry crate, and a container table (5 ms)
+    √ rejects a push object with no push tuning (2 ms)
+    √ rejects an object that is neither interactive nor a container (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-city-hud.test.ts
+  the unlock condition
+    √ locked under the cap with no pools — the village sees nothing (5 ms)
+    √ unlocks when pooled souls exist (4 ms)
+    √ unlocks when the street population crosses the cap (2 ms)
+  the chips
+    √ groups by district — default first, then charter ords; category glyphs label them (4 ms)
+    √ population splits tracked vs pooled and sums (9 ms)
+    √ wellbeing is member-weighted across both tiers (4 ms)
+    √ stocks ride worst-shortage-first with the pool's units (heads fold, floored) (2 ms)
+    √ the city row folds every pool plus the yard (1 ms)
+    √ districts with nobody in them get no chip (3 ms)
+  the wellbeing face ladder
+    √ is coarse and monotone (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-engine-visibility.test.ts
+  visibleBuildings — avatar-mode interior visibility
+    √ reveals the room you stand in and every room an OPEN unlocked door joins to it (5 ms)
+    √ a SHUT interior door hides the room beyond (only your room shows) (3 ms)
+    √ a LOCKED interior door hides the room beyond even while swung (3 ms)
+    √ from outdoors, an open exterior door NEAR the viewer reveals the interior (and rooms beyond) (3 ms)
+    √ an open exterior door too FAR from the viewer reveals nothing (the 'nearby' clause) (2 ms)
+  visibleBuildings — no reveal spills to a neighbour
+    √ standing INSIDE a house does not see through its open front door into a neighbour (3 ms)
+    √ standing IN the yard between them reveals both (outdoors is the shared space) (3 ms)
+  accessibleBuildings — spirit-mode (dollhouse) visibility
+    √ reveals every room reachable through UNLOCKED doors, ignoring door swing + distance (6 ms)
+    √ a puzzle-LOCKED interior door walls off the room beyond (it keeps its roof) (2 ms)
+    √ a LOCKED entrance hides the whole house (nothing reachable from outside) (3 ms)
+    √ unlocking the gate later re-admits the room (the roof lifts) (3 ms)
+    √ SEEDS from the spirit's room, not open ground — a sealed house reveals nothing without a viewer (3 ms)
+    √ a locked door still walls off a room when seeded from inside a sealed house (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-request-gate.test.ts
+  the request path runs the generosity gate (§4b wired)
+    √ a covering DEBT still accepts (the requestItem foundation is untouched) (7 ms)
+    √ a WARM owner gifts a LIKED asker outright (affinity give, no debt) (3 ms)
+    √ a NEUTRAL STRANGER is refused honestly — give.not, never a false have.not (3 ms)
+    √ a BOUND keepsake still answers 'my X' (regression) (2 ms)
+    √ an owner that NEEDS the asked thing states its want (the price counter), never grants (2 ms)
+    √ COMMERCE beats charity: a vendor with an open need TRADES its spare, not gifts it (5 ms)
+    √ with NOTHING to ask in return, a SPARE is simply given (surplus) (2 ms)
+    √ an unwilling owner that KNOWS a provider REDIRECTS instead of a bare no (3 ms)
+  requests by resource TYPE (§2b transfer(type) under WANT)
+    √ 'i_me want food' maps to a TYPE request when the listener holds no 'food' kind (8 ms)
+    √ the type resolves against the owner's OWN items — a spare instance is granted (2 ms)
+    √ owner has NONE but knows a provider → redirect ('buy it at the market') (3 ms)
+    √ owner has NONE and knows no provider → the honest have-not (2 ms)
+  where-is unification (§2b query(type): instance → provider → don't-know)
+    √ 'where food' maps to a TYPE where-is when no instance of the kind exists (1 ms)
+    √ a KNOWN matching instance answers with its location clue (3 ms)
+    √ no instance but a PROVIDES fact → directions to the source (3 ms)
+    √ neither → the honest not-knowing (2 ms)
+    √ a TYPE where-is answers with the SOURCE through the façade (gossip stays a gap) (3 ms)
+  provides — one monotone fact channel
+    √ learning the same provider twice is a no-op; a NEW place is news (4 ms)
+    √ provider lookup prefers the want's KIND key over its CATEGORY key (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/going-destination.test.ts
+  goalDestination — the REASON names the walk
+    √ reads a haul's destination off the goal, exactly as its announcement does (11 ms)
+    √ names the RECIPIENT when a transfer ends in somebody's hands (4 ms)
+    √ reads acquisition as the THING SOUGHT, wherever its source stands (3 ms)
+    √ walks to the ANCHOR of a placement, not the relation (3 ms)
+    √ goes HOME for the home goal, and nowhere for staying put (4 ms)
+    √ NEVER launders a deictic into an answer — the caller keeps looking (2 ms)
+    √ has no destination for an act performed where the body already is (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/wall-glide.test.ts
+  wall-glide — steer parallel to a pressed face instead of into it
+    √ walks the face to the aim's foot — the grind never gets there (14 ms)
+    √ stops feeding the collider while gliding (the probe-storm goes quiet) (7 ms)
+    √ a dead head-on aim settles at its foot — no orbiting, no dither (5 ms)
+    √ a glide past the face's END releases toward the aim (the retry clears) (12 ms)
+    √ flag off: no contact is ever recorded (the default path stays untouched) (6 ms)
+    √ FAILSAFE preserved: a body already inside geometry still walks out (5 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-construction-auto.test.ts
+  constructionStep — prosperity accrual and the one-build day
+    √ accrues capped prosperity, DESIGNATES only past the threshold, one per day (12 ms)
+    √ never re-orders a house whose last designation is still being built (3 ms)
+    √ is deterministic — two runs produce byte-identical overlays (4 ms)
+    √ the annex answers the house's next WANT (unmet program first) (4 ms)
+    √ growth is monotone — annex ordinals only append across days (18 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-engine-net.test.ts
+  world-engine net sync (two peers)
+    √ propagates possession + position and hands a ball off cleanly (41 ms)
+    √ resolves a contested grab deterministically (lower id wins) (4 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  override existing env vars with { override: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/goal-tree-demo.test.ts
+  goal-tree-player demo content
+    √ passes the full certification gauntlet (19 ms)
+    √ every entity referenced by the demo has a displayable icon (5 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/corner-orbit.test.ts
+  corner orbit — direction
+    √ lower-left and upper-right circle the SAME way (counter-clockwise) (5 ms)
+    √ upper-left and lower-right circle the OTHER way (clockwise) (2 ms)
+    √ cares about the vertical half — the old x-only law is gone (4 ms)
+  corner orbit — the dead zones
+    √ the middle of the screen never orbits (it is for aiming) (5 ms)
+    √ the crossover row eases through zero — a resting gaze there can't chatter (4 ms)
+    √ ramps with how far past the side edge the spark reaches (3 ms)
+    √ survives a garbage projection (a point behind the camera) (3 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-engine-causal-glyph.test.ts
+  splitCausalGlyph — split + size-driven orientation
+    √ splits the v1 WHY line and STACKS it (5 symbols > 3) (8 ms)
+    √ lays a SHORT causal line side by side (2 symbols ≤ 3) (7 ms)
+    √ stacks at exactly 4 symbols, rows at exactly 3 (14 ms)
+    √ handles every connective, and 'in_order_to' as one token (16 ms)
+    √ returns null when it isn't a two-clause causal line (21 ms)
+    √ joins ('in'/'to') don't count toward the size threshold (7 ms)
+  buildCausalSvg — composes one parent SVG per orientation
+    √ stack: portrait parent taller than either clause, both embedded + label (10 ms)
+    √ row: landscape parent wider than the sum, label expands 'in order to' (8 ms)
+    √ row RTL swaps clause order (cause first) (6 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/planet-polities.test.ts
+  founding — a planet of city-states
+    √ one polity per state, named for its capital, deterministic colors (20 ms)
+    √ claimReader maps cells through the derived states (-1 for sea) (12 ms)
+    √ every state border is a polity border at founding (18 ms)
+  merge — a relabel, never new geometry
+    √ moves the loser's whole holding, records the union, erases the internal border (17 ms)
+    √ refuses self-merges, unknown ids, and landless losers (12 ms)
+  cession — the single-state relabel
+    √ moves one state and leaves the rest (11 ms)
+  serialization — the mutation-layer transport
+    √ round-trips relabels + unions exactly, deep-copied (22 ms)
+    √ a save trailing the city list founds the missing city-states prefix-stably (17 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-container-seeds.test.ts
+  what the world starts with
+    √ THE PLAYER'S BAG IS WORN — the hands must stay free (13 ms)
+    √ every seed names a REAL portable container (11 ms)
+    √ ONE basket per house, and it belongs to the HOUSE (9 ms)
+    √ the household basket stands INSIDE the living room, not through a wall (24 ms)
+    √ the market offers baskets AND satchels, unowned — stock, not property (7 ms)
+    √ the builder's yard gets ONE basket, communal at the TOWN tier (12 ms)
+    √ no two seeds are minted on the same spot (9 ms)
+  the player starts wearing a satchel
+    √ one worn bag, registered, with a live stack and the player's own name on it (10 ms)
+    √ the hands stay FREE — the whole reason it is a satchel (9 ms)
+    √ 🚨 SEEDING TWICE MINTS ONE BAG — a resumed session gains nothing (11 ms)
+    √ 🚨 A HANDOFF RESTORES ONE SATCHEL, NOT TWO — bag and contents both (8 ms)
+    √ contributes NO units of its own to the audit — a bag is a place (15 ms)
+    √ hangs off the PLAYER's body in the tree, and the body carries no stack (9 ms)
+  each house holds ONE basket
+    √ a materialized house has exactly one basket prop, registered, house-owned (7 ms)
+    √ it hangs off the HOUSE it stands in, beside the goods chest (15 ms)
+    √ 🚨 THE AUDIT COUNTS THE SEEDS ONCE — an empty basket adds nothing (13 ms)
+    √ furnishing runs ONCE per house — a second pass would be a second basket (31 ms)
+  the market and the yard stock bags
+    √ every seeded bag is a registered container standing in the town (14 ms)
+    √ the whole tree audits to nothing — seeding bags creates no goods (17 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-interior.test.ts
+  subdividing an empty shell (⑤b)
+    √ the open root offers guillotine cuts — far band first, street door kept (53 ms)
+    √ a committed cut materializes: root shrinks, the new room doors into it (28 ms)
+    √ the shrunk root subdivides AGAIN; every room stays reachable (26 ms)
+    √ interior rooms ride the serialization round-trip byte-identically (12 ms)
+    √ interior demolition is ORDER-GUARDED: only the newest cut of a host may go (21 ms)
+    √ a host a pending cut targets is excluded; caps and floors refuse honestly (11 ms)
+  re-creation in place (⑤b — demolished rooms rise where they stood)
+    √ the demolished bath's exact rect leads the candidates and re-materializes (31 ms)
+  pending interior designations (the ⑤ staging shape, inward)
+    √ posts, gathers into its pile, and commits via requestInterior (22 ms)
+    √ workDeltaKey: founded rows key by immortal ordinal, base rows by index (10 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/scope-shape.test.ts
+  the active bag — one writable stack at a time
+    √ a carried basket wins over a worn satchel (18 ms)
+    √ a worn satchel alone is the bag; nothing at all is null (13 ms)
+    √ 🚨 THE ALIAS LAW — the bag's stock IS the map handed in, never a copy (15 ms)
+    √ a plain object in hand is NOT a bag (12 ms)
+  hands and room
+    √ empty hands are free; anything in them is not (13 ms)
+    √ no bag → one unit through the one door, and only with free hands (28 ms)
+    √ with a bag, room is the bag's remaining capacity (7 ms)
+    √ an over-full bag reports zero, never negative (13 ms)
+    √ the worn satchel leaves the hands free — that is the whole point of it (12 ms)
+  the fold — inventory is the sum of the containers
+    √ merges stacks and drops empty tallies (11 ms)
+    √ the merged view is a copy — mutating it touches no container (12 ms)
+    √ bodyCarryView shows the hands instance as one unit and the bags' goods (14 ms)
+    √ a held BAG is the shelf, not the goods — its contents show, it does not (18 ms)
+    √ empty-handed is an empty view (13 ms)
+  the cost shape
+    √ totals its four terms — the seat step ④ fills (6 ms)
+  townHandPool — the town's hands, counted off the roster's own rows
+    √ total is employable minus the schedules that already own bodies (8 ms)
+    √ free subtracts the bodies a claim or a live need has taken over (11 ms)
+    √ never goes negative — an over-committed town reads zero, not a debt (7 ms)
+  allocateHands — one pool, N sites, conserved exactly
+    √ hands to spare ⇒ every claim gets its full cap (the byte-identity arm) (18 ms)
+    √ a pool smaller than the demand is SHARED, never minted per site (11 ms)
+    √ caps below the even share release their slack down the order (15 ms)
+    √ conserves exactly and stays deterministic (20 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-engine-routing.test.ts
+  routeThroughDoors
+    √ returns just the destination when start and end share a room (40 ms)
+    √ inserts a near/far transit pair lined up with the doorway when crossing rooms (6 ms)
+    √ targets the REAL (off-centre) door, not the wall midpoint (6 ms)
+    √ falls back to a straight line when the only door is locked (no route) (20 ms)
+    √ tags BOTH transit points with the doorway they cross (5 ms)
+    √ leaves the leg's own endpoint untagged — arriving is not crossing (5 ms)
+    √ names each door separately across a chain of rooms (7 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/interact.test.ts
+  interact — pickEntity
+    √ picks a toy when the gaze rests on it, nothing when far (9 ms)
+    √ picks a peer avatar, never the local player (7 ms)
+  interact — approachAim
+    √ aims AT a toy (walk in to dribble) (4 ms)
+    √ stops a person's stop-distance short and on the approach line (8 ms)
+    √ holds position (a hair toward them) when already in conversation range (6 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/world-engine-facing.test.ts
+  avatar facing stability near a stop
+    √ braking to rest never flips facing sign (gaze off screen) (11 ms)
+    √ an aim jittering to OPPOSITE sides of the avatar never flips facing 180° (3 ms)
+    √ a carried item does not jump sides while the carrier brakes to a stop (5 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/gaze-sit-dwell.test.ts
+  sitting → standing requires a dwell
+    √ a brief far glance while seated does NOT stand up; a sustained dwell does (10 ms)
+    √ committedWorld stays available while seated (so the camera can track the gaze) (6 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/symbol-game-talk-target.test.ts
+  pickTalkTarget — the gaze picks the partner
+    √ the looked-at body wins over a nearer one (5 ms)
+    √ looking at a NEW person while beside the old one picks the new one (3 ms)
+    √ two people looked at together → the nearer of them (2 ms)
+  pickTalkTarget — proximity is the approach case only
+    √ with the gaze on nobody, the nearest body is the one being walked up to (2 ms)
+    √ at an equal distance the quest-giver leads the passer-by (2 ms)
+    √ a nearer townsperson still beats a further quest-giver (4 ms)
+    √ nobody in play → nobody (2 ms)
+  pickTalkTarget — as a SPIRIT only the gaze can choose
+    √ an unlooked-at body is never a partner (there is no walking up to it) (2 ms)
+    √ …and the looked-at one wins at any distance (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/town-crafting.test.ts
+  the workbench bootstrap
+    √ the workbench is CRAFTABLE — by hand, like everything else (3 ms)
+    √ every recipe consumes only glyphs the building CHAIN can supply (4 ms)
+  craftLaborDays — the station speeds, never gates
+    √ hand labor runs the full rate; the bench cuts it to the factor (6 ms)
+    √ a recipe naming no station is hand-rate regardless of where you stand (2 ms)
+    √ reads from the STATION alone, so a toy recipe gets the same rule (2 ms)
+  nextCraftKind — bench-first automation
+    √ with no standing bench and none stored, the WORKBENCH comes first (3 ms)
+    √ a standing bench (or one stored, awaiting placement) yields the rotation (3 ms)
+    √ the rotation caps at 2 stored per kind (null = nothing to make today) (2 ms)
+    √ is deterministic in (day, salt) (4 ms)
+  the ENABLER rule — which pieces the drawing owes a place
+    √ a station is a piece other things are MADE AT — never a chair (3 ms)
+    √ every recipe's station IS one, by construction (3 ms)
+    √ names the room a station belongs in, from the placement rows (2 ms)
+
+  console.log
+    [dotenv@17.2.3] injecting env (49) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+PASS server/tests/world-engine/conversation-context.test.ts
+  recordUtterance — sequencing
+    √ assigns seq from the conversation, not the caller (4 ms)
+    √ appends most-recent-LAST and returns the stored row (3 ms)
+    √ bumps lastActivityTick to the utterance tick (2 ms)
+  recordUtterance — who spoke and who was spoken to
+    √ stamps the speaker's lastSpokeTick (3 ms)
+    √ stamps every addressee's lastAddressedTick, and only theirs (3 ms)
+    √ a floor utterance addresses nobody (3 ms)
+    √ an EMPTY addressee list is normalized to the floor (2 ms)
+    √ copies the addressee list — a caller's array is not aliased into history (2 ms)
+    √ records a non-member speaker without enrolling them (2 ms)
+    √ later utterances overwrite the earlier stamps (2 ms)
+  context — what we are talking about
+    √ starts empty (2 ms)
+    √ a request names the ITEM (2 ms)
+    √ an offer names the ITEM (1 ms)
+    √ a where-is names the ITEM (2 ms)
+    √ the most recent mention wins (3 ms)
+    √ an act naming nothing leaves the slots alone (4 ms)
+    √ ask-directions names the PLACE subject (1 ms)
+    √ directions-pick names the PLACE subject (2 ms)
+    √ a source where-is names the item AND the place (2 ms)
+    √ what-doing names the resolved CREATURE (2 ms)
+    √ an unresolved about mentions no creature (2 ms)
+    √ ask-fact about a creature's condition names the CREATURE (2 ms)
+    √ ask-fact about an item's whereabouts names the ITEM (4 ms)
+    √ a value SEARCH query names no subject (2 ms)
+    √ tell-fact of a presence names the CREATURE and the PLACE (2 ms)
+    √ tell-fact of a want names both the CREATURE and the ITEM (3 ms)
+    √ tell-fact of an item state names the ITEM (2 ms)
+    √ survives history eviction — context is not a view over the ring (3 ms)
+  markRevealed — spoken aloud, everyone present heard
+    √ is off until said (1 ms)
+    √ marks the creature for the whole conversation, not the asker (1 ms)
+    √ is idempotent and independent per creature (2 ms)
+    √ asking how-are-you does not reveal anything on its own (2 ms)
+
+Summary of all failing tests
+FAIL server/tests/world-engine/growth-motive.test.ts (6.885 s)
+  ● prosperitySignals — the spare pattern at the household rung › �� AN UNMET DEMAND BANKS NOTHING — a short town pays nobody
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+    [0m [90m 262 |[39m     [90m// demand, a full pantry is a buffer draining, not savings.[39m
+     [90m 263 |[39m     [36mconst[39m rich [33m=[39m { [32m"box:1"[39m[33m:[39m { wood[33m:[39m [35m9[39m[33m,[39m stone[33m:[39m [35m9[39m[33m,[39m apple[33m:[39m [35m9[39m[33m,[39m cloth[33m:[39m [35m9[39m[33m,[39m block[33m:[39m [35m9[39m[33m,[39m rope[33m:[39m [35m9[39m } }[33m;[39m
+    [31m[1m>[22m[39m[90m 264 |[39m     expect(signalHarness({ boxes[33m:[39m rich })[33m.[39mtotal())[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                                                    [31m[1m^[22m[39m
+     [90m 265 |[39m     expect(signalHarness({ boxes[33m:[39m rich[33m,[39m shortage[33m:[39m [35m0.4[39m })[33m.[39mtotal())[33m.[39mtoBe([35m0[39m)[33m;[39m
+     [90m 266 |[39m     expect(signalHarness({ boxes[33m:[39m rich[33m,[39m shortage[33m:[39m [35m0.4[39m })[33m.[39mdirector[33m.[39mprosperitySignals(
+     [90m 267 |[39m       signalHarness({ boxes[33m:[39m rich[33m,[39m shortage[33m:[39m [35m0.4[39m })[33m.[39msession[33m,[39m[0m
+
+      at Object.<anonymous> (server/tests/world-engine/growth-motive.test.ts:264:52)
+
+  ● prosperitySignals — the spare pattern at the household rung › SPARE stacks are wealth — and the keep-one floor says one unit is not
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+    [0m [90m 275 |[39m     [90m// G1/G2: a creature keeps at least one of anything and gives its surplus.[39m
+     [90m 276 |[39m     expect(signalHarness({ boxes[33m:[39m one })[33m.[39mtotal())[33m.[39mtoBe([35m0[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 277 |[39m     expect(signalHarness({ boxes[33m:[39m many })[33m.[39mtotal())[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                                                    [31m[1m^[22m[39m
+     [90m 278 |[39m   })[33m;[39m
+     [90m 279 |[39m
+     [90m 280 |[39m   it([32m"�� RESERVED STOCK IS THE BILL, NOT BREADTH"[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (server/tests/world-engine/growth-motive.test.ts:277:52)
+
+  ● prosperitySignals — the spare pattern at the household rung › �� RESERVED STOCK IS THE BILL, NOT BREADTH
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+    [0m [90m 284 |[39m     [36mconst[39m boxes [33m=[39m { [32m"box:1"[39m[33m:[39m { wood[33m:[39m [35m6[39m[33m,[39m stone[33m:[39m [35m6[39m } }[33m;[39m
+     [90m 285 |[39m     [36mconst[39m open [33m=[39m signalHarness({ boxes })[33m;[39m
+    [31m[1m>[22m[39m[90m 286 |[39m     expect(open[33m.[39mtotal())[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 287 |[39m
+     [90m 288 |[39m     [36mconst[39m claimed [33m=[39m signalHarness({ boxes[33m:[39m { [32m"box:1"[39m[33m:[39m { wood[33m:[39m [35m6[39m[33m,[39m stone[33m:[39m [35m6[39m } } })[33m;[39m
+     [90m 289 |[39m     claimed[33m.[39msession[33m.[39mreservations[33m.[39mreserve([32m"annex:h0"[39m[33m,[39m [32m"box:1"[39m[33m,[39m [32m"wood"[39m[33m,[39m [35m6[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (server/tests/world-engine/growth-motive.test.ts:286:26)
+
+
+Test Suites: 1 failed, 95 passed, 96 total
+Tests:       3 failed, 1834 passed, 1837 total
+Snapshots:   0 total
+Time:        971.632 s
+Ran all test suites.

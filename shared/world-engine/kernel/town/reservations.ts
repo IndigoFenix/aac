@@ -238,6 +238,33 @@ export function unreservedStock(
   return out;
 }
 
+/**
+ * ⚖️ A COPY of the stack with the COMMONS RESERVE taken out of every head that
+ * has one — `unreservedStock`'s move, one floor further down (surplus control,
+ * user addendum 2026-08-12).
+ *
+ * Two different subtractions, deliberately separate: `unreservedStock` removes
+ * what SOMEBODY ELSE has spoken for (a fact about other orders), this removes
+ * what the settlement KEEPS BACK from its own automated appetite (a policy
+ * about this one). Compose them — spare ⊆ free ⊆ real — and a bill covered
+ * from spare leaves both the reservations and the floor standing.
+ *
+ * `floorOf` answers per material HEAD; 0 (the usual answer) leaves the head
+ * untouched, so a map with no reserved heads round-trips as a plain copy. The
+ * live stack is never mutated.
+ */
+export function spareStock(
+  stack: Readonly<Record<string, number>>,
+  floorOf: (head: string) => number,
+): Record<string, number> {
+  const out: Record<string, number> = { ...stack };
+  for (const head of new Set(Object.keys(stack).map(stackHead))) {
+    const floor = floorOf(head);
+    if (floor > 0) takeStock(out, head, floor);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Material resolution — the "which stacks pay for this" step
 // ---------------------------------------------------------------------------

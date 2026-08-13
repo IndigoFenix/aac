@@ -1,0 +1,212 @@
+# world-text v1   proto=1
+# world=frontier-wild.spec  seed=11  locale=en  grid=8  dt=0.0167  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T16:36:46.271Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  orrin (person), here north.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SAY    mara: "I'm happy."  [i_me + happy]
+TICK   quiet after 1.4s.
+> board
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+TICK   quiet after 0.8s.
+> say build farm
+OK     said: build + farm
+TICK   quiet after 0.8s.
+> wait 20
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 20.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here east.
+  orrin (person), there north.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here east.
+  orrin (person), here east.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm lonely."  [i_me + lonely]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 40.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  orrin (person), here north.
+  mara (person), there east.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: [water]
+SAY    orrin: [water]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   orrin left view here east.
+TICK   waited 40.0s.
+> scene
+SCENE  house-1 — 8 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  2 chairs, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-20 (house), close west, green, door open, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  7 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+TICK   waited 40.0s.
+> scene
+SCENE  house-1 — 8 thing(s) in view, 27 place(s) around you.
+  mara (person), here east.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  2 chairs, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  8 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> wait 40
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    mara: "Are you okay?"  [you + ok#question]
+ENTER  orrin came into view here south.
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    mara: [sit]
+SAY    orrin: "I'm bored."  [i_me + bored]
+TICK   waited 40.0s.
+> scene
+SCENE  house-1 — 13 thing(s) in view, 27 place(s) around you.
+  mara (person), here north, go house.
+  orrin (person), here north, get food.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  a refrigerator, there west.
+  a barrel, there west.
+  an oven, there west.
+  a cupboard, there west.
+  house-1 (house), here north, orange, door open, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-5 (house), there west, orange, door open, you can see inside.
+  14 houses, there west, all shut.
+  9 houses, close west, all shut.
+SAY    mara: [sit]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   quiet after 1.5s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+EXIT   orrin left view there west.
+TICK   quiet after 1.4s.
+> /wild
+CHEAT  /wild
+> /wild cycle
+CHEAT  /wild cycle
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=20  presses=0  screens=2  sim=239.6s
+# events: SAY 47  TICK 17  SCENE 7  CHEAT 3  BOARD 2  EXIT 2  NOTE 1  OK 1  ENTER 1  SELF 1

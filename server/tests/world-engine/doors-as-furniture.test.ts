@@ -50,6 +50,7 @@ import { houseFurniture } from "@shared/world-engine/kernel/town/furniture.js";
 import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play.js";
 import { createConstructionDirector, type ConstructionDirectorCtx } from "@shared/world-engine/interaction/quest/construction-director.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
+import type { ContainerRecord } from "@shared/world-engine/kernel/town/containers.js";
 import { REAL_SCALE } from "@shared/world-engine/scale.js";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -370,12 +371,11 @@ function harness() {
     town: play,
     townClock: 0,
     scale: REAL_SCALE,
-    containerStock: new Map<string, Record<string, number>>(),
     // A container is a REGISTRATION plus a stock, and breaking a piece clears
     // both — a box that is no longer standing is no longer a place to put
     // things. A stub with the stock and not the registration is half a session.
-    containers: new Map<string, "in" | "on">(),
-    containerOwner: new Map<string, string | null>(),
+    containerRecords: new Map<string, ContainerRecord>(),
+    wornBagIndex: new Map<string, string>(),
     marketStore: new Map<string, unknown>(),
     produceBox: new Map<string, unknown>(),
     houseShown: new Set<number>(),

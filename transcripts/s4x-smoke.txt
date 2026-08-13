@@ -1,0 +1,15 @@
+# world-text v1   proto=1
+# world=frontier-wild.spec  seed=11  locale=en  grid=8  dt=0.0167  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T16:29:02.197Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> /wild
+CHEAT  /wild
+# ─────────────────────────────────────────
+# commands=2  presses=0  screens=1  sim=5.0s
+# events: BOARD 1  NOTE 1  TICK 1  CHEAT 1

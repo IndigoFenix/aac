@@ -2565,6 +2565,10 @@ export const zh = {
     allowNotesDesc: "禁用时，AI 无法读取或写入会话笔记（消息日志外不存储记忆）",
     shareMonitorNotesWithInstitute: "与我的机构共享 AAC 笔记",
     shareMonitorNotesWithInstituteDesc: "启用时，本机构的临床医生可以查看 AAC 会话期间记录的笔记（兴趣、偏好、观察）。禁用以要求显式的共享授权。",
+    aiLearning: "AI 学习设置",
+    aiLearningDesc: "AI 在会话期间可以自行记录的内容。",
+    autoAddContacts: "学习新联系人",
+    autoAddContactsDesc: "允许 AI 将会话中遇到的人添加到联系人列表。新联系人会标记为待审核，直到你确认为止。关闭时，只能在联系人页面添加联系人。",
     // Symbol generation
     symbolGeneration: "符号生成",
     symbolGenerationDesc: "使用 AI 为 AAC 按钮自动生成图标图片",
@@ -3742,6 +3746,8 @@ export const zh = {
     updated: "联系人已更新",
     deleted: "联系人已删除",
     confirmDelete: "移除此联系人？",
+    confirm: "确认",
+    confirmed: "联系人已确认",
     name: "姓名",
     namePlaceholder: "例如，妈妈",
     nameRequired: "姓名必填",
@@ -3775,6 +3781,11 @@ export const zh = {
     callable: "允许视频通话",
     callableHint: "当此人在线时，学生（和 AI）可以与其进行视频通话。",
     photoAfterCreate: "保存联系人后，照片上传将可用。",
+    tabAll: "联系人",
+    tabAutoAdded: "自动添加",
+    autoAddedBadge: "自动添加",
+    autoAddedHint: "AAC 助手根据会话期间观察到的情况添加了这些人。请确认确实属于这里的人，删除其余的。",
+    autoAddedEmpty: "没有待审核的内容。",
   },
 
   // Biometric (photo upload)

@@ -10,10 +10,14 @@
 //   npm run world:text                          interactive REPL, dollhouse
 //   npm run world:text -- --seed 41 --json      seeded run + event sidecar
 //   npm run world:text -- --script run.txt      replay a transcript
+//   npm run world:text -- --dt 0.5 --script r   ⏩ wide tick: ~5–6× the sim per
+//                                               wall-second, coarser decisions
 //
 // Determinism law (§5): a transcript is a pure function of (build, seed,
-// command list). Everything above the `# ────` fence is run metadata and
-// excluded from diffs; below it, same build + seed + commands ⇒ byte-identical.
+// command list, DT). Everything above the `# ────` fence is run metadata and
+// excluded from diffs; below it, same build + seed + commands + dt ⇒
+// byte-identical. Two runs at DIFFERENT dt are not expected to match below the
+// fence — see `parseDt` and the wide-tick ledger.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -35,14 +39,27 @@ interface CliArgs {
   cheats: boolean;
 }
 
-/** `--dt` accepts `1/60`-style fractions or decimals. The world-host clamps a
- *  step at 0.05 s, so 1/20 is the largest lossless value — roughly 3× the sim
- *  per wall-second of a 1/60 run (the sim, not this layer, is the frame cost). */
+/** `--dt` accepts `1/60`-style fractions or decimals, up to 0.5 s.
+ *
+ *  1/20 (0.05) is the largest LOSSLESS value: at or below it every subsystem
+ *  sees the same steps a 1/60 run does, only fewer of them — roughly 3× the sim
+ *  per wall-second (the sim, not this layer, is the frame cost).
+ *
+ *  ⏩ ABOVE 0.05 IS A WIDE TICK (planning-docs/games/world-engine/
+ *  wide-tick-round.md). Bodies still integrate at ≤ 0.05 s — the world host
+ *  substeps the motion arms — but every DECISION pass (needs, pursuit,
+ *  rituals, the whole quest layer) runs once per frame instead, so choices are
+ *  made on a coarser grid: a state change lands up to one full dt late, meters
+ *  cross their thresholds further past them, and short eases collapse to
+ *  snaps. A wide run is therefore NOT byte-identical to a 1/20 one and its
+ *  transcript will not diff clean against one. It is for BUYING SIM TIME
+ *  (~5–6× at 0.5); acceptance at a wide dt is a beat comparison —
+ *  `npx tsx scripts/wide-tick-ab.ts`. */
 function parseDt(raw: string): number {
   const m = /^(\d+)\s*\/\s*(\d+)$/.exec(raw);
   const v = m ? Number(m[1]) / Number(m[2]) : Number(raw);
-  if (!Number.isFinite(v) || v <= 0 || v > 0.05) {
-    console.error(`--dt must be in (0, 0.05] (got ${raw})`);
+  if (!Number.isFinite(v) || v <= 0 || v > 0.5) {
+    console.error(`--dt must be in (0, 0.5] (got ${raw})`);
     process.exit(2);
   }
   return v;

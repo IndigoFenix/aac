@@ -38,7 +38,10 @@ import {
 } from "@shared/world-engine/kernel/town/programs.js";
 import { registerPlaceArt } from "@shared/glyph-place-art.js";
 import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
-import { clothingFillDays, REAL_SCALE, serviceRadiusM, type WorldScale } from "@shared/world-engine/scale.js";
+import {
+  clothingFillDays, farmAcresPerPerson, producerSurplusFrac, REAL_HOUSE_BUILD_DAYS,
+  REAL_SCALE, REAL_SURPLUS_FRAC, serviceRadiusM, type WorldScale,
+} from "@shared/world-engine/scale.js";
 
 export interface TownPlayConfig {
   seed: number;
@@ -202,6 +205,86 @@ export function isTownPlayPayload(v: unknown): v is TownPlayPayload {
 const FOOD_PER_PERSON_DAILY = 0.001;
 
 /**
+ * ⚖️ S2 — THE AREA SEAM'S TIER (economy-arc-opening.md, SUPPLY & DEMAND
+ * ROUND; scale.ts `REAL_FARM_ACRES_PER_PERSON`). Town-play has no
+ * mechanization anywhere in it — hand-farmed grain into a granary, ox-and-
+ * plough content, no tractors — so the pre-industrial anchor ("ancient",
+ * 12 acres/person) is the honest reading of this world's tech framing, not
+ * "modern" (0.5), which would understate a hand-farmed village 24×.
+ */
+const FARM_TECH_TIER = "ancient" as const;
+
+/**
+ * The yield one acre of field must return DAILY for the identity to close:
+ * `fieldAcres × farmYieldPerAcreDaily === pop × FOOD_PER_PERSON_DAILY`
+ * when `fieldAcres === pop × farmAcresPerPerson(tier, dial)` (which
+ * `kernel/town/plan.ts`'s field geometry is itself derived to sum to — the
+ * map and the books read the same acreage AND the same dial). INVERTED, not
+ * chosen: the anchor is acres-per-person, and rations-per-acre-day is its
+ * reciprocal scaled by the caloric anchor, the same F4 shape as
+ * `clothingFillDays` inverting into clothing's `capDays`.
+ *
+ * ⚖️ S&D S3 — NOT a module constant any more (it was, at S2, when the dial
+ * had no field to read): `scale.resourceCompression` is not in reach at
+ * module load, exactly the reason `wearDays`/`townPlayEconomy(scale)` exist
+ * one function down. Computed from `scale` inside that function now.
+ */
+function farmYieldPerAcreDaily(scale: WorldScale): number {
+  return FOOD_PER_PERSON_DAILY / farmAcresPerPerson(FARM_TECH_TIER, scale.resourceCompression);
+}
+
+/**
+ * ⚖️ σ — THE FARM'S DECLARED SURPLUS (scale.ts `REAL_SURPLUS_FRAC.staple`,
+ * S&D σ close). The STAPLE class value, verbatim: this row IS the staple
+ * grower, and 20% above the table is the honest pre-industrial margin (seed
+ * corn + storage loss + tithe + the lean year, and the 10–20% of a real
+ * agrarian population that farmed nothing).
+ *
+ * It rides TWO seats that must never disagree, both derived from this one
+ * constant: the `field_acres` demand row below (how much land the town works)
+ * and the `farm` building's own `surplusFrac` (the spec-side seat a
+ * government will one day adjust — `kernel/town/plan.ts`'s field GEOMETRY
+ * reads it off the compiled row, so the map is sized from the same number the
+ * books are). The farm process's `efficiency` is deliberately NOT scaled: σ
+ * buys MORE LAND at the same yield per acre, which is what a farmer actually
+ * does, and it keeps the S2 anchor identity (`acresPerPerson × efficiency ===
+ * FOOD_PER_PERSON_DAILY`) exact.
+ */
+const FARM_SURPLUS_FRAC = REAL_SURPLUS_FRAC.staple;
+
+/**
+ * ⚖️ σ — WHAT RAISING A WORK COSTS THE GRANARY, DERIVED (S&D σ close).
+ *
+ * WHAT THIS REPLACES, and why it had to go: three hand-typed literals (farm
+ * 20, weaver 25, tailor 20 book units) calibrated against the PHANTOM supply
+ * curve S2 removed. Pre-S2 the farm's output read an abstract charter scalar
+ * and came out at 5–33.6 book units a day REGARDLESS OF POPULATION — roughly
+ * 40× a 120-soul village's whole appetite — so the granary banked ~5/day and
+ * those prices were four days of it. They are a CITY's prices (they read
+ * honestly at ~30,000 souls, the population the phantom curve implicitly
+ * fed); against an honest 20% margin on a village they are two orders of
+ * magnitude out, and no village could ever raise a weaver again.
+ *
+ * THE HONEST PRICE, from anchors that already exist: **a work is funded by
+ * the staple that feeds the crew raising it.** `WORK_CREW` hands (the
+ * catalogue's own `jobs` for every economic work) eating one ration a day for
+ * as long as the raising takes — `relativeBuildDays × REAL_HOUSE_BUILD_DAYS`,
+ * the same relative-effort scale `TOWN_PLAY_STRUCTURES` already declares
+ * (house = 1, farm = 2, weaver = 1.5).
+ *
+ * ⚖️ DELIBERATELY SCALE-FREE — it does NOT divide by `scale.construction`.
+ * That dial compresses the VISIBLE build clock (a house in one street-day);
+ * it is not a claim that raising a farm really costs less bread. Dividing
+ * here would make a fast-building world's whole industrial ladder free, which
+ * is exactly the compounding-dials error S3's review correction caught
+ * (bills are dial-free: construction ambition, not conversion).
+ */
+const WORK_CREW = 2;
+function workFundingUnits(relativeBuildDays: number): number {
+  return WORK_CREW * relativeBuildDays * REAL_HOUSE_BUILD_DAYS * FOOD_PER_PERSON_DAILY;
+}
+
+/**
  * Garments a household WARDROBE holds — the one absolute in clothing's box, and
  * the reason `capDays` below is derived rather than typed.
  *
@@ -234,6 +317,14 @@ const CLOTHING_BOX_UNITS = 2;
  */
 export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
   const wearDays = clothingFillDays(scale);
+  const yieldPerAcreDaily = farmYieldPerAcreDaily(scale);
+  // σ — the ladder's honest prices (`workFundingUnits`), read off the SAME
+  // relative build effort `TOWN_PLAY_STRUCTURES` declares for each of these
+  // three works. The tailor has no structure row of its own; it is the
+  // weaver's twin (a shop with a bench), so it carries the weaver's effort.
+  const farmFunding = workFundingUnits(2);
+  const weaverFunding = workFundingUnits(1.5);
+  const tailorFunding = workFundingUnits(1.5);
   return {
     stockpiles: [
       { key: "granary", max: 400, construction: true },
@@ -255,6 +346,32 @@ export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
           capDays: 3, shopSec: 18, cartRations: 25, unit: "rations", producers: ["farm"], market: true,
           stockColor: "#e0b25c", boxLabel: "Pantry", errandName: "shopping",
         },
+      },
+      {
+        // ⚖️ S2 — THE AREA SEAM'S READER. A PURE DEMAND TRACKER, not a
+        // street good (no `transport`, no `street`): `perPersonDaily` +
+        // `popScalar` is the SAME generic per-capita mechanism `food_need`
+        // already rides (economy.ts's demandInputs/traitDemands coupling),
+        // re-parameterized rather than forked — town-world.ts's day-start
+        // loop writes `field_acres := pop × farmAcresPerPerson(tier)` every
+        // day with no kernel change at all, tracking the town's CURRENT
+        // population exactly the way `food_need` itself does. The farm
+        // process below reads it as its Leontief input, replacing the old
+        // abstract `{input:"farmland", efficiency:0.08}` pair — "farmland"
+        // (the charter scalar) is untouched and still feeds the weaver and
+        // the farm build-cap gate, both out of S2's scope.
+        //
+        // ⚖️ σ — AND IT IS SIZED FOR SURPLUS, NOT FOR THE TABLE (S&D σ close).
+        // S2 wrote `pop × acres` exactly, which closed the books at
+        // `food_got ≡ food_need` to the last bit and left the town no slack
+        // to bank, fund or trade with. The honest acreage is `pop × acres ×
+        // (1 + σ)` — the farm's own declared margin, the SAME number its
+        // `surplusFrac` seat carries below and `plan.ts`'s field geometry
+        // reads off that seat. The farm's `efficiency` stays the bare
+        // reciprocal, so the surplus is MORE LAND at the same yield.
+        key: "field_acres", scalarMax: 2_000_000, popScalar: "field_acres",
+        perPersonDaily:
+          farmAcresPerPerson(FARM_TECH_TIER, scale.resourceCompression) * (1 + FARM_SURPLUS_FRAC),
       },
       {
         // PURE INTERMEDIATE: cloth is the TAILOR's raw material (the weaver's
@@ -323,11 +440,35 @@ export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
       {
         key: "farm", countScalar: "farms", cap: { by: "farmland", rate: 1 / 60 },
         processes: [
-          { id: "farm", input: "farmland", output: "grain_out", efficiency: 0.08, capacityRate: 5 },
+          // ⚖️ S2 — THE AREA SEAM. Was `{input:"farmland", efficiency:0.08}`
+          // — the abstract charter scalar, disconnected from the fields
+          // actually drawn on the map (the survey's finding: 0.0202
+          // acres/person against a 12/0.5 anchor, 25×/594× short). Now the
+          // SAME Leontief shape (economy.ts §3a′: output := min(input ×
+          // efficiency, capacityBy × capacityRate)), re-parameterized: the
+          // input is the honest field acreage and the efficiency is its
+          // exact reciprocal, so a town whose fields sum to what its
+          // population needs closes its books at fill ≈ 1 (never
+          // oversupplies, unlike the old 33.6-vs-~0.1 abstract slack).
+          // `capacityRate`/`capacityBy` UNCHANGED — a town still needs a
+          // built, staffed farm before its fields feed anyone.
+          //
+          // ⚖️ σ — and the fields it reads are the SURPLUS acreage
+          // (`field_acres` above carries the (1 + σ) term), so the honest
+          // output is `need × (1 + σ)`: the books still cap `food_got` at
+          // `food_need` (the flow net's `satisfied = dem × min(1, supply/dem)`)
+          // and the excess lands where it always did — the positive residual
+          // drifts into the GRANARY, which is what funds the ladder below.
+          { id: "farm", input: "field_acres", output: "grain_out", efficiency: yieldPerAcreDaily, capacityRate: 5 },
           { id: "mill", input: "grain_out", output: "food_out", efficiency: 1 },
         ],
         vars: [{ name: "grain_out", max: 200 }],
-        construction: { tier: "base", costs: [{ stockpile: "granary", amount: 20 }] },
+        construction: { tier: "base", costs: [{ stockpile: "granary", amount: farmFunding }] },
+        // σ, THE SPEC-SIDE SEAT (user law): this producer IS the staple
+        // grower, so it declares the staple anchor rather than inheriting the
+        // craft default. `plan.ts` reads it off the compiled row so the
+        // FIELDS ON THE MAP and the acreage in the BOOKS can never disagree.
+        surplusFrac: FARM_SURPLUS_FRAC,
         sells: ["food"], leansToward: "fertility", mapCap: 8, district: "farm",
         style: { color: "#7d9c53", w: 18, h: 12 }, vignette: { w: 5, h: 4 },
         glyph: "🌾", title: "🌾 Farmstead", info: ["{farms} farms."],
@@ -335,7 +476,14 @@ export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
       {
         key: "weaver", countScalar: "weavers", cap: { by: "population", rate: 0.002 },
         processes: [{ id: "weave", input: "farmland", output: "cloth_out", efficiency: 0.001, capacityRate: 2 }],
-        construction: { tier: "industry", costs: [{ stockpile: "granary", amount: 25 }] },
+        construction: { tier: "industry", costs: [{ stockpile: "granary", amount: weaverFunding }] },
+        // NO `surplusFrac`: the weaver INHERITS the craft class anchor
+        // (`producerSurplusFrac(undefined)` ⇒ 0.10). The seat is deliberately
+        // left un-declared so the default path stays exercised, and it is
+        // INERT here today — the weaver's scale is a charter input
+        // (`farmland`) and a population cap, not a per-capita demand, so
+        // there is no acreage for σ to multiply. It becomes live the day
+        // cloth's supply is derived from the town's own want.
         sells: ["cloth"], shelved: true, leansToward: null, mapCap: 2, district: "craft",
         style: { color: "#8a7fae", w: 14, h: 10 }, vignette: { w: 4, h: 4 },
         glyph: "🧵", title: "🧵 Weaver", info: ["{weavers} weavers."],
@@ -346,7 +494,9 @@ export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
         // more cloth ⇒ more clothing; a starving weaver starves the tailor.
         key: "tailor", countScalar: "tailors", cap: { by: "population", rate: 0.0015 },
         processes: [{ id: "sew", input: "cloth_out", output: "clothing_out", efficiency: 0.5, capacityRate: 1 }],
-        construction: { tier: "industry", costs: [{ stockpile: "granary", amount: 20 }] },
+        // Same as the weaver: the craft class anchor, inherited and inert
+        // until the sew chain is sized off a per-capita want.
+        construction: { tier: "industry", costs: [{ stockpile: "granary", amount: tailorFunding }] },
         sells: ["clothing"], shelved: true, leansToward: null, mapCap: 2, district: "craft",
         style: { color: "#a06a8a", w: 12, h: 10 }, vignette: { w: 4, h: 3 },
         glyph: "👕", title: "👕 Tailor", info: ["{tailors} tailors."],

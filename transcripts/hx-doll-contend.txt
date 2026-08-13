@@ -1,0 +1,178 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T07:18:54.046Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> say build workshop
+OK     said: build + workshop
+TOAST  🪧 build + workshop — anyone nearby may take it (feedback)
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    mara: "I will build the workshop."  [build.will + workshop]
+ENTER  biscuit came into view here south.
+TICK   quiet after 1.9s.
+> say make workbench
+OK     said: make + workbench
+SAY    pip: "I will carry the block to the workshop."  [carry.will + block + to + workshop]
+TOAST  🔨 making a workbench — by hand, no workbench (feedback)
+TICK   quiet after 0.8s.
+> wait 60
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here south.
+EXIT   biscuit left view here south.
+TICK   waited 60.0s.
+> wait 60
+TICK   waited 60.0s.
+> wait 60
+TICK   waited 60.0s.
+> wait 60
+TOAST  🏗️ the people stake out a market (feedback)
+SITE   2 thing(s) being built.
+  site-1: a workshop — marked ground, 0% worked, close west, 58 m
+  site-2: a market — marked ground, 0% worked, close north, 83 m
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TICK   waited 60.0s.
+> wait 60
+CLOSE  the board closed.
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 5 block (feedback)
+TOAST  🪚 milling 2 block for the chest (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 milling 201 block for the site (feedback)
+TOAST  🪚 materials in — milling 201 block (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 milling 1 block for the chest (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  📦 bring 1 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 milling 1 block for the bed (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TICK   waited 60.0s.
+> wait 60
+TOAST  🪚 4 block milled and stored (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 5 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 60.0s.
+> wait 60
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 1 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 milling 3 block for the bed (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 1 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  📦 bring 5 block — delivered (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   2 thing(s) being built.
+  site-1: a workshop — marked ground, 0% worked, close west, 58 m
+  site-2: a market — marked ground, 0% worked, close north, 83 m
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+# ─────────────────────────────────────────
+# commands=13  presses=0  screens=11  sim=434.3s
+# events: TOAST 70  NOTE 12  TICK 12  BOARD 11  CLOSE 10  SAY 5  EXIT 4  OK 2  ENTER 2  SITE 2  SCENE 1  SELF 1  CHEAT 1

@@ -38,6 +38,22 @@ export interface UnknownFaceDescriptor {
   /** Frontality/size/detection score (0..1). Used server-side to gate which
    *  frames are worth enrolling into a person's multi-angle gallery. */
   quality?: number;
+  /**
+   * Coarse OBSERVED attributes from face-api's ageGenderNet, sent alongside the
+   * 128-d descriptor so the server can veto biologically impossible matches
+   * (the embedding is age-blind in practice — a child routinely lands inside
+   * 0.6 of her grandmother's stored anchor, while "child vs senior" is a call
+   * the attribute net gets right). All three are OPTIONAL and absent whenever
+   * the net didn't load or the frame produced no estimate; the server treats
+   * missing data as "no opinion" and never vetoes on it.
+   */
+  /** Estimated age in years (continuous, not a band). */
+  observedAge?: number;
+  /** Estimated sex, only when the net reported a usable label. */
+  observedSex?: "male" | "female";
+  /** 0..1 probability behind `observedSex`. The server ignores low-confidence
+   *  sex readings entirely — face-api's gender head is noisy on children. */
+  observedSexConfidence?: number;
 }
 
 export interface IdentifySourceOptions {
@@ -79,6 +95,47 @@ let faceApiLoaded = false;
 let faceApiPromise: Promise<void> | null = null;
 let faceApiError: Error | null = null;
 
+// CDN base for the model weights — the same origin/version as the face-api
+// bundle itself, so the nets always match the runtime that consumes them.
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+
+// ---- Age/gender net (OPTIONAL, best-effort) --------------------------------
+// This net feeds the server's attribute veto. It is deliberately NOT part of
+// the required model set: identification must keep working byte-for-byte as
+// before when it is missing, so its load is fire-and-forget and its failure is
+// never latched the way `faceApiError` is — `ageGenderPromise` is cleared on
+// settle, so a later init pass retries a transient CDN failure instead of
+// permanently disabling the attributes.
+let ageGenderLoaded = false;
+let ageGenderPromise: Promise<void> | null = null;
+
+function loadAgeGenderNet(): Promise<void> {
+  if (ageGenderLoaded) return Promise.resolve();
+  if (ageGenderPromise) return ageGenderPromise;
+
+  ageGenderPromise = (async () => {
+    try {
+      const net = (window as any).faceapi?.nets?.ageGenderNet;
+      if (!net) {
+        console.warn("[PersonID] ageGenderNet not present in this face-api build — observed age/sex disabled");
+        return;
+      }
+      await net.loadFromUri(MODEL_URL);
+      ageGenderLoaded = true;
+      console.log("[PersonID] ageGenderNet loaded — descriptors will carry observed age/sex");
+    } catch (err) {
+      // Non-fatal by design. Never rethrow: the recognition pipeline must not
+      // fail because an optional attribute net didn't download.
+      console.warn("[PersonID] ageGenderNet failed to load — continuing without observed age/sex:", err);
+    }
+  })();
+  // Clear the in-flight handle either way so a failed attempt can be retried.
+  ageGenderPromise = ageGenderPromise.finally(() => {
+    ageGenderPromise = null;
+  });
+  return ageGenderPromise;
+}
+
 async function loadFaceApi(): Promise<void> {
   if (faceApiLoaded) return;
   if (faceApiError) throw faceApiError;
@@ -106,11 +163,13 @@ async function loadFaceApi(): Promise<void> {
         }
 
         // Load lightweight models for speed
-        const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL), // Faster than SSD
           faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL), // Faster landmarks
           faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+          // Optional 4th net — attribute veto input. loadAgeGenderNet() never
+          // rejects, so a CDN miss here cannot fail the required three.
+          loadAgeGenderNet(),
         ]);
 
         faceApiLoaded = true;
@@ -467,13 +526,28 @@ export function usePersonIdentification(
         if (!faceapi) return null;
 
         // Use tiny detector for speed
-        const detection = await faceapi
-          .detectSingleFace(element, new faceapi.TinyFaceDetectorOptions({
-            inputSize: 224, // Smaller = faster
-            scoreThreshold: 0.5,
-          }))
-          .withFaceLandmarks(true) // Use tiny landmarks
-          .withFaceDescriptor();
+        const detectorOptions = () => new faceapi.TinyFaceDetectorOptions({
+          inputSize: 224, // Smaller = faster
+          scoreThreshold: 0.5,
+        });
+        const baseTask = () => faceapi
+          .detectSingleFace(element, detectorOptions())
+          .withFaceLandmarks(true); // Use tiny landmarks
+
+        // Age/sex ride along ONLY when the optional net loaded. Everything past
+        // this point must behave identically either way — the extra pass adds
+        // fields, it never gates the descriptor.
+        let detection: any = null;
+        if (ageGenderLoaded) {
+          try {
+            detection = await baseTask().withAgeAndGender().withFaceDescriptor();
+          } catch (agErr) {
+            console.warn("[PersonID] age/gender pass failed — retrying descriptor only:", agErr);
+            detection = await baseTask().withFaceDescriptor();
+          }
+        } else {
+          detection = await baseTask().withFaceDescriptor();
+        }
 
         if (!detection) {
           // Clear stale descriptor for this source so empty cameras don't keep
@@ -499,12 +573,32 @@ export function usePersonIdentification(
         // for client-side face-image caching; the server is the source of
         // truth for the AI.
         const box = detection.detection.box;
+
+        // Coarse observed attributes (present only when ageGenderNet ran and
+        // produced usable numbers). Each is spread in individually so a partial
+        // read — say an age with no gender label — still contributes what it
+        // has, and a total miss leaves the payload byte-identical to before.
+        const rawAge = detection.age;
+        const observedAge =
+          typeof rawAge === "number" && Number.isFinite(rawAge) && rawAge > 0 ? rawAge : undefined;
+        const rawSex = detection.gender;
+        const observedSex: "male" | "female" | undefined =
+          rawSex === "male" || rawSex === "female" ? rawSex : undefined;
+        const rawSexConf = detection.genderProbability;
+        const observedSexConfidence =
+          observedSex && typeof rawSexConf === "number" && Number.isFinite(rawSexConf)
+            ? rawSexConf
+            : undefined;
+
         unmatchedDescriptorsRef.current.set(sourceKey, {
           descriptor: Array.from(detection.descriptor),
           boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
           cameraRole,
           cameraLabel,
           quality,
+          ...(observedAge !== undefined ? { observedAge } : {}),
+          ...(observedSex !== undefined ? { observedSex } : {}),
+          ...(observedSexConfidence !== undefined ? { observedSexConfidence } : {}),
         });
 
         if (updateCurrent && result.identified) {

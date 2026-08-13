@@ -27,6 +27,7 @@
 
 import type { ScopeId } from "./scope.js";
 import { totalStackUnits } from "./goods-kinds.js";
+import { allocate } from "./allocate.js";
 
 // ── The organs (§3) ───────────────────────────────────────────────────────
 
@@ -94,25 +95,13 @@ export function townHandPool(c: TownHandCensus): ScopeHands {
  * town with one site and hands to spare allocates exactly what the old
  * per-site constant did — the whole point being that ten sites can no longer
  * each mint a full crew out of twelve residents.
+ *
+ * A thin call into allocate.ts's shared conserving allocator (the
+ * "even-floor" policy) — see that file for the shape this shares with
+ * city-districts.ts `allocateDistrictFill` and trade.ts `allotmentSplit`.
  */
 export function allocateHands(caps: readonly number[], free: number): number[] {
-  const n = caps.length;
-  if (n === 0) return [];
-  const want = caps.map((c) => Math.max(0, c));
-  const supply = Math.max(0, free);
-  const demand = want.reduce((a, b) => a + b, 0);
-  if (supply >= demand) return want;
-  const even = supply / n;
-  const out = want.map((c) => Math.min(c, even));
-  let remaining = supply - out.reduce((a, b) => a + b, 0);
-  for (let i = 0; i < n && remaining > 1e-12; i++) {
-    const take = Math.min(want[i]! - out[i]!, remaining);
-    if (take > 0) {
-      out[i]! += take;
-      remaining -= take;
-    }
-  }
-  return out;
+  return allocate({ mode: "even-floor", caps, supply: free });
 }
 
 /** §3.3 — present ⇒ the scope can move. A caravan is a house with legs; a
@@ -182,8 +171,9 @@ export const costTotalS = (c: VerbCost): number => c.journeyS + c.handsS + c.spo
 export interface BagRef {
   objId: string;
   glyph: string;
-  /** The container's LIVE stock map — the alias law: the same object
-   *  `session.containerStock` holds, never a copy. */
+  /** The container's LIVE stock map — the alias law: the same object its
+   *  `ContainerRecord` (kernel/town/containers.ts, worklist ⑤) holds, never
+   *  a copy. */
   stock: Record<string, number>;
   /** Unit capacity (containers.ts `ContainerDef.capacity`). */
   capacity: number;

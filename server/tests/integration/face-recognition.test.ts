@@ -33,6 +33,9 @@ import {
   growFaceGalleryForEntity,
   penalizeFaceMatch,
   updateBiometricData,
+  attributeVeto,
+  parseEstimatedAge,
+  parseEstimatedSex,
   type FaceGalleryEntry,
 } from '../../services/biometric/recognition-service.js';
 import { studentContacts, biometricData } from '@shared/schema';
@@ -139,6 +142,324 @@ describe('Face recognition pipeline', () => {
     const match = await findMatchingFace(noisyMom, studentId);
     expect(match!.matched).toBe(true);
     expect(match!.entityId).toBe(mom.id);
+    // Unrelated seeds are far apart, so this is a clear-cut win — no tie flag.
+    expect(match!.ambiguousWith).toBeUndefined();
+  });
+
+  // --------------------------------------------------------------------------
+  // Doppelgänger margin
+  // --------------------------------------------------------------------------
+  // A threshold says "close enough to be this person"; it never says "closer to
+  // this person than to that one". Family faces routinely sit inside the
+  // threshold of EACH OTHER (measured for one student: sister 0.4527, brother
+  // 0.5508, mother 0.5613, grandmother 0.6045), so the winner-takes-all matcher
+  // named one of them with full confidence off a coin-flip's worth of evidence.
+
+  describe('doppelgänger margin', () => {
+    it('flags the runner-up when two lookalike relatives are nearly equidistant', async () => {
+      // Sister and brother 0.30 apart — genuinely different faces, but close.
+      const sisterFace = zeroVec();
+      const brotherFace = atDistance(sisterFace, 0.3, /*offsetDim*/ 0);
+
+      const sister = await createContact({
+        studentId, name: 'Sister', relationship: 'sibling',
+      } as any);
+      const brother = await createContact({
+        studentId, name: 'Brother', relationship: 'sibling',
+      } as any);
+      await enrollContactFace(sister.id, sisterFace);
+      await enrollContactFace(brother.id, brotherFace);
+
+      // A probe ON the line between them: 0.14 from the sister, 0.16 from the
+      // brother. Both clear the 0.6 threshold; the 0.02 separation does not
+      // clear the 0.08 margin.
+      const probe = atDistance(sisterFace, 0.14, 0);
+
+      const match = await findMatchingFace(probe, studentId);
+      expect(match).not.toBeNull();
+      expect(match!.matched).toBe(true);
+      // The winner is still reported exactly as before...
+      expect(match!.entityId).toBe(sister.id);
+      expect(match!.distance).toBeCloseTo(0.14, 4);
+      expect(match!.confidence).toBeCloseTo(1 - 0.14 / 0.6, 4);
+      expect(match!.sampleCount).toBe(1);
+      // ...but carries the person it could not be told apart from.
+      expect(match!.ambiguousWith).toBeDefined();
+      expect(match!.ambiguousWith!.entityType).toBe('contact');
+      expect(match!.ambiguousWith!.entityId).toBe(brother.id);
+      expect(match!.ambiguousWith!.name).toBe('Brother');
+      expect(match!.ambiguousWith!.relationship).toBe('sibling');
+      expect(match!.ambiguousWith!.distance).toBeCloseTo(0.16, 4);
+      expect(match!.runnerUpDistance).toBeCloseTo(0.16, 4);
+    });
+
+    it('flags the tie even when the runner-up is OUTSIDE the match threshold', async () => {
+      // Separation is what matters, not whether the runner-up also matched.
+      // Someone 0.02 past the line is every bit as likely to be the subject as
+      // the winner who scraped inside it.
+      const sisterFace = zeroVec();
+      const probe = atDistance(sisterFace, 0.58, /*offsetDim*/ 0); // 0.58 → matches
+      // Orthogonal dims, so the grandmother sits exactly 0.62 from the probe.
+      const grandmaFace = atDistance(probe, 0.62, /*offsetDim*/ 32);
+
+      const sister = await createContact({
+        studentId, name: 'Sister', relationship: 'sibling',
+      } as any);
+      const grandma = await createContact({
+        studentId, name: 'Grandma', relationship: 'grandparent',
+      } as any);
+      await enrollContactFace(sister.id, sisterFace);
+      await enrollContactFace(grandma.id, grandmaFace);
+
+      const match = await findMatchingFace(probe, studentId);
+      expect(match).not.toBeNull();
+      expect(match!.entityId).toBe(sister.id);
+      expect(match!.distance).toBeCloseTo(0.58, 4);
+      expect(match!.ambiguousWith).toBeDefined();
+      expect(match!.ambiguousWith!.entityId).toBe(grandma.id);
+      // The runner-up never would have matched on her own — 0.62 > 0.6 — yet the
+      // 0.04 separation still makes this an unsafe identification.
+      expect(match!.ambiguousWith!.distance).toBeGreaterThan(0.6);
+      expect(match!.runnerUpDistance).toBeCloseTo(0.62, 4);
+    });
+
+    it('leaves the flag off when the winner is clearly separated', async () => {
+      const momFace = zeroVec();
+      const uncleFace = atDistance(momFace, 0.9, /*offsetDim*/ 0);
+
+      const mom = await createContact({
+        studentId, name: 'Mom', relationship: 'mother',
+      } as any);
+      const uncle = await createContact({
+        studentId, name: 'Uncle', relationship: 'other',
+      } as any);
+      await enrollContactFace(mom.id, momFace);
+      await enrollContactFace(uncle.id, uncleFace);
+
+      // 0.1 from Mom, ~0.905 from the uncle (orthogonal dims) — separation well
+      // past the 0.08 margin.
+      const probe = atDistance(momFace, 0.1, /*offsetDim*/ 32);
+
+      const match = await findMatchingFace(probe, studentId);
+      expect(match).not.toBeNull();
+      expect(match!.entityId).toBe(mom.id);
+      expect(match!.distance).toBeCloseTo(0.1, 4);
+      expect(match!.ambiguousWith).toBeUndefined();
+      expect(match!.runnerUpDistance).toBeUndefined();
+    });
+
+    it('never flags a tie when the student has only one enrolled person', async () => {
+      const mom = await createContact({
+        studentId, name: 'Mom', relationship: 'mother',
+      } as any);
+      await enrollContactFace(mom.id, makeEmbedding(7));
+
+      const match = await findMatchingFace(makeEmbedding(7), studentId);
+      expect(match!.entityId).toBe(mom.id);
+      expect(match!.ambiguousWith).toBeUndefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Attribute veto
+  // --------------------------------------------------------------------------
+  // The 128-d embedding is age-blind: a child's probe lands inside 0.6 of her
+  // grandmother's stored anchor and no margin tuning separates them, because in
+  // that space they really are nearest neighbours. Coarse attributes are the
+  // one thing that CAN separate them — a child is never a senior. They are used
+  // as a NEGATIVE filter only: a vetoed person is excluded from the probe
+  // entirely, so they can be neither the winner nor the ambiguous runner-up.
+
+  describe('attribute veto', () => {
+    /** Stamp coarse attributes onto a contact's biometric record. */
+    async function setAttributes(
+      contactId: string,
+      attrs: { estimatedAge?: string; estimatedSex?: string },
+    ): Promise<void> {
+      await updateBiometricData(await bdIdForContact(contactId), attrs as any);
+    }
+
+    it('excludes a senior-attributed person from a child-aged probe, even at a matching distance', async () => {
+      const grandmaFace = zeroVec();
+      const grandma = await createContact({
+        studentId, name: 'Grandma', relationship: 'grandparent',
+      } as any);
+      await enrollContactFace(grandma.id, grandmaFace);
+      await setAttributes(grandma.id, { estimatedAge: 'senior', estimatedSex: 'female' });
+
+      // 0.3 — comfortably INSIDE the 0.6 threshold. This is the exact failure
+      // the veto exists for: the distance says "yes", biology says "no".
+      const probe = atDistance(grandmaFace, 0.3, /*offsetDim*/ 0);
+
+      // Without observed attributes, nothing changes — she matches as before.
+      const unfiltered = await findMatchingFace(probe, studentId);
+      expect(unfiltered).not.toBeNull();
+      expect(unfiltered!.entityId).toBe(grandma.id);
+      expect(unfiltered!.distance).toBeCloseTo(0.3, 4);
+
+      // With a child-aged observation, she is removed from the pool outright —
+      // and she was the only candidate, so there is no match at all.
+      const vetoed = await findMatchingFace(probe, studentId, { age: 7 });
+      expect(vetoed).toBeNull();
+    });
+
+    it('does NOT veto one band of difference — that is ordinary model error', async () => {
+      const momFace = zeroVec();
+      const mom = await createContact({
+        studentId, name: 'Mom', relationship: 'mother',
+      } as any);
+      await enrollContactFace(mom.id, momFace);
+      await setAttributes(mom.id, { estimatedAge: '30' }); // adult band
+
+      const probe = atDistance(momFace, 0.2, /*offsetDim*/ 0);
+
+      // Observed 12 = child, stored 30 = adult: ONE band apart. ageGenderNet
+      // reads a 16-year-old as 12 all the time; vetoing here would erase real
+      // people from their own recognition.
+      const match = await findMatchingFace(probe, studentId, { age: 12 });
+      expect(match).not.toBeNull();
+      expect(match!.entityId).toBe(mom.id);
+
+      // Same in the other direction: adult observed, senior on file.
+      await setAttributes(mom.id, { estimatedAge: '60' });
+      const other = await findMatchingFace(probe, studentId, { age: 50 });
+      expect(other).not.toBeNull();
+      expect(other!.entityId).toBe(mom.id);
+    });
+
+    it('does NOT veto when either side has no attributes on file', async () => {
+      const auntFace = zeroVec();
+      const aunt = await createContact({
+        studentId, name: 'Aunt', relationship: 'other',
+      } as any);
+      await enrollContactFace(aunt.id, auntFace); // no estimated_age / estimated_sex
+      const probe = atDistance(auntFace, 0.2, /*offsetDim*/ 0);
+
+      // Observation present, nothing stored → no opinion, no veto.
+      const noStored = await findMatchingFace(probe, studentId, { age: 6, sex: 'male', sexConfidence: 0.99 });
+      expect(noStored).not.toBeNull();
+      expect(noStored!.entityId).toBe(aunt.id);
+
+      // Stored present, nothing observed → likewise.
+      await setAttributes(aunt.id, { estimatedAge: 'senior', estimatedSex: 'female' });
+      const noObserved = await findMatchingFace(probe, studentId, {});
+      expect(noObserved).not.toBeNull();
+      expect(noObserved!.entityId).toBe(aunt.id);
+
+      // An unreadable stored value is the same as nothing at all.
+      await setAttributes(aunt.id, { estimatedAge: 'לא ידוע', estimatedSex: 'none' });
+      const unreadable = await findMatchingFace(probe, studentId, { age: 6, sex: 'male', sexConfidence: 0.99 });
+      expect(unreadable).not.toBeNull();
+      expect(unreadable!.entityId).toBe(aunt.id);
+    });
+
+    it('keeps a vetoed person out of the ambiguous runner-up slot too', async () => {
+      // The doppelgänger case, but the runner-up is a senior and the probe is a
+      // child: excluding her only from the WINNER slot would still hand the
+      // caller "one of Sister / Grandma" and block the identification.
+      const sisterFace = zeroVec();
+      const grandmaFace = atDistance(sisterFace, 0.3, /*offsetDim*/ 0);
+
+      const sister = await createContact({
+        studentId, name: 'Sister', relationship: 'sibling',
+      } as any);
+      const grandma = await createContact({
+        studentId, name: 'Grandma', relationship: 'grandparent',
+      } as any);
+      await enrollContactFace(sister.id, sisterFace);
+      await enrollContactFace(grandma.id, grandmaFace);
+      await setAttributes(sister.id, { estimatedAge: '9' });
+      await setAttributes(grandma.id, { estimatedAge: 'senior' });
+
+      // 0.14 from the sister, 0.16 from the grandmother — a 0.02 separation,
+      // well inside the 0.08 ambiguity margin.
+      const probe = atDistance(sisterFace, 0.14, 0);
+
+      // Baseline: without attributes this IS a declared tie.
+      const tied = await findMatchingFace(probe, studentId);
+      expect(tied!.entityId).toBe(sister.id);
+      expect(tied!.ambiguousWith).toBeDefined();
+      expect(tied!.ambiguousWith!.entityId).toBe(grandma.id);
+
+      // With a child-aged observation the grandmother leaves the pool entirely,
+      // so the sister is named outright — no runner-up, no tie flag.
+      const match = await findMatchingFace(probe, studentId, { age: 8 });
+      expect(match).not.toBeNull();
+      expect(match!.entityId).toBe(sister.id);
+      expect(match!.distance).toBeCloseTo(0.14, 4);
+      expect(match!.ambiguousWith).toBeUndefined();
+      expect(match!.runnerUpDistance).toBeUndefined();
+    });
+
+    // ---- pure-function rules (no DB) ---------------------------------------
+
+    it('parses free-text stored attributes into bands', () => {
+      // Numbers, with or without trailing units.
+      expect(parseEstimatedAge('8')).toBe(8);
+      expect(parseEstimatedAge('8 years')).toBe(8);
+      expect(parseEstimatedAge('~42')).toBe(42);
+      // Words map to a representative age inside their band.
+      expect(parseEstimatedAge('senior')).toBe(70);
+      expect(parseEstimatedAge('elderly')).toBe(70);
+      expect(parseEstimatedAge('child')).toBe(8);
+      expect(parseEstimatedAge('adult')).toBe(35);
+      // Unreadable → null (never a veto).
+      expect(parseEstimatedAge('')).toBeNull();
+      expect(parseEstimatedAge(null)).toBeNull();
+      expect(parseEstimatedAge('unknown')).toBeNull();
+      expect(parseEstimatedAge('מבוגר')).toBeNull();
+      expect(parseEstimatedAge('999')).toBeNull(); // implausible, not clamped
+
+      // Sex: only unambiguous tokens count, and "female" is never read as "male".
+      expect(parseEstimatedSex('Female')).toBe('female');
+      expect(parseEstimatedSex('woman')).toBe('female');
+      expect(parseEstimatedSex('M')).toBe('male');
+      expect(parseEstimatedSex('boy')).toBe('male');
+      expect(parseEstimatedSex('none')).toBeNull();
+      expect(parseEstimatedSex('נקבה')).toBeNull();
+      expect(parseEstimatedSex(null)).toBeNull();
+    });
+
+    it('applies the age rule only at two bands of separation', () => {
+      // "senior" parses to 70 (senior band); an 8-year-old probe is two bands
+      // away → veto.
+      expect(attributeVeto({ age: 8 }, { estimatedAge: 70 }).veto).toBe(true);
+      expect(attributeVeto({ age: 8 }, { estimatedAge: 70 }).reason).toMatch(/child/);
+      expect(attributeVeto({ age: 8 }, { estimatedAge: 70 }).reason).toMatch(/senior/);
+      // "8" is the child band; a senior probe against it vetoes symmetrically.
+      expect(attributeVeto({ age: 72 }, { estimatedAge: parseEstimatedAge('8') }).veto).toBe(true);
+      // One band apart, both directions → never.
+      expect(attributeVeto({ age: 12 }, { estimatedAge: 35 }).veto).toBe(false);
+      expect(attributeVeto({ age: 35 }, { estimatedAge: 70 }).veto).toBe(false);
+      // Band edges: 13 is a child, 14 is an adult, 55 is an adult, 56 a senior.
+      expect(attributeVeto({ age: 13 }, { estimatedAge: 56 }).veto).toBe(true);
+      expect(attributeVeto({ age: 14 }, { estimatedAge: 56 }).veto).toBe(false);
+      expect(attributeVeto({ age: 13 }, { estimatedAge: 55 }).veto).toBe(false);
+      // Missing on either side → no opinion.
+      expect(attributeVeto({}, { estimatedAge: 70 }).veto).toBe(false);
+      expect(attributeVeto({ age: 8 }, { estimatedAge: null }).veto).toBe(false);
+      // Raw stored text is re-parsed defensively.
+      expect(attributeVeto({ age: 8 }, { estimatedAge: 'senior' as any }).veto).toBe(true);
+    });
+
+    it('applies the sex rule only when confident AND the face is adult-aged', () => {
+      const conflicting = { estimatedSex: 'female' };
+      // All guards satisfied → veto.
+      expect(attributeVeto({ age: 30, sex: 'male', sexConfidence: 0.95 }, conflicting).veto).toBe(true);
+      expect(attributeVeto({ age: 30, sex: 'male', sexConfidence: 0.95 }, conflicting).reason).toMatch(/sex/);
+      // Not confident enough → never.
+      expect(attributeVeto({ age: 30, sex: 'male', sexConfidence: 0.7 }, conflicting).veto).toBe(false);
+      expect(attributeVeto({ age: 30, sex: 'male' }, conflicting).veto).toBe(false);
+      // A child's face → never, however confident. The gender head is unreliable
+      // on children, and this is exactly the population we serve.
+      expect(attributeVeto({ age: 9, sex: 'male', sexConfidence: 0.99 }, conflicting).veto).toBe(false);
+      // Age unknown → also never (an unknown age might BE a child).
+      expect(attributeVeto({ sex: 'male', sexConfidence: 0.99 }, conflicting).veto).toBe(false);
+      // Agreement, or an unreadable stored value → never.
+      expect(attributeVeto({ age: 30, sex: 'female', sexConfidence: 0.99 }, conflicting).veto).toBe(false);
+      expect(attributeVeto({ age: 30, sex: 'male', sexConfidence: 0.99 }, { estimatedSex: 'none' }).veto).toBe(false);
+      expect(attributeVeto({ age: 30, sex: 'male', sexConfidence: 0.99 }, { estimatedSex: null }).veto).toBe(false);
+    });
   });
 
   it('exposes contacts via getKnownPeopleForStudent so the client can preview the pool', async () => {

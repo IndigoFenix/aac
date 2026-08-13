@@ -2565,6 +2565,10 @@ export const yue = {
     allowNotesDesc: "停用嗰陣，AI 讀唔到或寫唔到工作階段筆記（訊息記錄以外唔會儲存記憶）",
     shareMonitorNotesWithInstitute: "同我嘅機構分享 AAC 筆記",
     shareMonitorNotesWithInstituteDesc: "啟用嗰陣，本機構嘅臨床人員可以睇到 AAC 工作階段期間記低嘅筆記（興趣、偏好、觀察）。停用就要明確嘅分享授權先得。",
+    aiLearning: "AI 學習設定",
+    aiLearningDesc: "AI 喺工作階段期間可以自己記低嘅嘢。",
+    autoAddContacts: "學習新聯絡人",
+    autoAddContactsDesc: "容許 AI 將工作階段期間見到嘅人加入聯絡人清單。新聯絡人會標記為待審核，直到你確認為止。關咗嘅時候，只可以喺聯絡人頁面加聯絡人。",
     // Symbol generation
     symbolGeneration: "符號生成",
     symbolGenerationDesc: "用 AI 為 AAC 按鈕自動生成圖示圖片",
@@ -3742,6 +3746,8 @@ export const yue = {
     updated: "聯絡人已更新",
     deleted: "聯絡人已刪除",
     confirmDelete: "移除呢個聯絡人？",
+    confirm: "確認",
+    confirmed: "聯絡人已確認",
     name: "姓名",
     namePlaceholder: "例如，阿媽",
     nameRequired: "姓名必填",
@@ -3775,6 +3781,11 @@ export const yue = {
     callable: "允許視像通話",
     callableHint: "當呢個人喺線時，學生（同 AI）可以同佢視像通話。",
     photoAfterCreate: "儲存聯絡人後，相片上載會變為可用。",
+    tabAll: "聯絡人",
+    tabAutoAdded: "自動加入",
+    autoAddedBadge: "自動加入",
+    autoAddedHint: "AAC 助手根據工作階段期間留意到嘅嘢加咗呢啲人。確認真係應該喺度嘅人，其餘就刪咗佢。",
+    autoAddedEmpty: "冇嘢等緊審核。",
   },
 
   // Biometric (photo upload)

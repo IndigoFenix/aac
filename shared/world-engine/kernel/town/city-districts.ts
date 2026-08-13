@@ -28,6 +28,7 @@
 import type { FoodSource } from "./goods";
 import { roadDistance, type TownStreets } from "./streets";
 import type { TownHouse, TownPlan, TownWork } from "./plan";
+import { allocate } from "./allocate";
 
 export type DistrictKind = "core" | "farm" | "mining" | "craft" | "residential";
 
@@ -75,41 +76,20 @@ const FILL_FLOOR_FRAC = 0.5;
  * producer first, conserving exactly. Pure — the testable heart.
  * `needs[i]` and `supplyDist[i]` describe district i; `fair` is the
  * site-level fill (got/need, ≤ 1). Returns per-district fill in [0,1].
+ *
+ * A thin call into allocate.ts's shared conserving allocator (the
+ * "fair-floor" policy) — see that file for the shape this shares with
+ * scope-shape.ts `allocateHands` and trade.ts `allotmentSplit`.
  */
 export function allocateDistrictFill(needs: number[], supplyDist: number[], fair: number): number[] {
-  const n = needs.length;
-  if (n === 0) return [];
-  const totalNeed = needs.reduce((a, b) => a + b, 0);
-  if (!(totalNeed > 0)) return needs.map(() => fair);
-  const got = fair * totalNeed;
-
-  const floor = fair * FILL_FLOOR_FRAC;
-  const cap = Math.min(1, fair + FILL_SPREAD);
-  const fill = needs.map(() => floor);
-  let remaining = got - floor * totalNeed;
-
-  const order = needs.map((_, i) => i).sort((a, b) => supplyDist[a] - supplyDist[b] || a - b);
-  for (const i of order) {
-    if (remaining <= 1e-12) break;
-    const room = needs[i] * (cap - fill[i]);
-    const take = Math.min(room, remaining);
-    if (take > 0) {
-      fill[i] += take / needs[i];
-      remaining -= take;
-    }
-  }
-  // Cap headroom left rations undealt (only when fair ≈ 1): deal them
-  // round-robin up to 1 so the allocator stays exact.
-  for (const i of order) {
-    if (remaining <= 1e-12) break;
-    const room = needs[i] * (1 - fill[i]);
-    const take = Math.min(room, remaining);
-    if (take > 0) {
-      fill[i] += take / needs[i];
-      remaining -= take;
-    }
-  }
-  return fill;
+  return allocate({
+    mode: "fair-floor",
+    needs,
+    supplyDist,
+    fair,
+    floorFrac: FILL_FLOOR_FRAC,
+    spread: FILL_SPREAD,
+  });
 }
 
 /** The dominant character of a district, read off its assigned works. */

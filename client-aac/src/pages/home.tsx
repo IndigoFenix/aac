@@ -37,7 +37,7 @@ import { STT_ENGINE, CLIENT_CAPABILITIES } from "@/hooks/dual-agent-types";
 import type { SceneSnapshot } from "@shared/aac/scene-state";
 import { useFaceImageCache } from "@/hooks/useFaceImageCache";
 import { usePeopleDirectory } from "@/hooks/usePeopleDirectory";
-import { setFaceImageResolver } from "@/lib/glyph-images";
+import { clearWordImages, registerWordImages, setFaceImageResolver } from "@/lib/glyph-images";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
 import { SentenceButton } from "@/components/SentenceButton";
 import BinaryChoiceOverlay from "@/components/BinaryChoiceOverlay";
@@ -947,6 +947,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     if (msg.type === "world_data") callWorldSendersRef.current?.sendWorldData(msg.msgs);
     else if (msg.type === "world_cmd") callWorldSendersRef.current?.sendWorldCmd(msg.cmd, msg.toId);
     else if (msg.type === "world_hud") setWorldHud(msg.sections.length ? msg.sections : null);
+    // Pictures the game drew for its own words (a creature's baked face). Into
+    // the glyph resolver, which bumps its store so every glyph already on screen
+    // repaints — the "❓" buttons become faces where they stand.
+    else if (msg.type === "word_images") registerWordImages(msg.images);
   }, []);
   // The game's ambient HUD (family present, pocket, …) — shown above the
   // button sidebar while the game runs; its in-iframe panel is hidden.
@@ -974,12 +978,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       stopCallGameFnRef.current?.();
     }
   }, [activeApp]);
-  // Drop any lock when the app/game closes.
+  // Drop any lock when the app/game closes. The game's word pictures go with it:
+  // they name that world's inhabitants, and nothing outside it means "mara".
   useEffect(() => {
     if (!activeApp) {
       gameLockedBoardRef.current = null;
       setGameLockedBoard(null);
       setWorldHud(null);
+      clearWordImages();
     }
   }, [activeApp]);
   // When a game ends, close the "Play with friends" launcher app if it was open,

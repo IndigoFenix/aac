@@ -25,6 +25,7 @@ import {
   nextAnnexWant,
   orderDone,
   orderStage,
+  foundedBuildingDone,
   removeProgram,
   requestAnnex,
   type PendingDemolition,
@@ -32,11 +33,12 @@ import {
   type SerializedTownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
 import { houseRoomPlan, type HouseRoom } from "@shared/world-engine/kernel/town/rooms.js";
+import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import { buildTownPlay, TOWN_PLAY_STRUCTURES } from "@shared/world-engine/interaction/town/town-play.js";
 import { houseFurniture } from "@shared/world-engine/kernel/town/furniture.js";
 import { ROOM_GLYPH } from "@shared/world-engine/interaction/town/structure-board.js";
 import { DEFAULT_ROOM_PROGRAMS } from "@shared/world-engine/kernel/town/programs.js";
-import { resolveStructure } from "@shared/world-engine/kernel/town/structures.js";
+import { resolveStructure, structureCosts } from "@shared/world-engine/kernel/town/structures.js";
 import { FURNITURE_ITEMS, type StationKind } from "@shared/world-engine/kernel/town/stations.js";
 import { fixtureKindForWord } from "@shared/world-engine/types.js";
 import { parseSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
@@ -51,6 +53,7 @@ import {
   type ConstructionDirectorCtx,
 } from "@shared/world-engine/interaction/quest/construction-director.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
+import type { ContainerRecord } from "@shared/world-engine/kernel/town/containers.js";
 import { REAL_SCALE } from "@shared/world-engine/scale.js";
 
 const CONFIG = { seed: 5, days: 30, questCount: 0, key: "smalltown", startPop: 20 };
@@ -453,6 +456,31 @@ describe("craftQueue persistence (phase 4 step 5)", () => {
     expect(back.craftJobs.get(2)?.produces).toBe("furn.bed");
     expect(back.craftQueue.get(2)?.[0]?.produces).toBe("furn.chair");
   });
+
+  it("a COMMISSION rides the row (CraftJob.for) — the maker remembers who asked", () => {
+    // 🚨 GL fix round F2. A shell designates a craft at a neighbouring household
+    // and used to forget it had asked: the piece landed in that household's
+    // cupboard (unwatched) or on its floor (watched), and NEITHER is reachable
+    // by the shell's haul — `siteMaterialSources` sees container stacks only and
+    // `mayUse` refuses another household's boxes outright. The shell's re-ask
+    // then answered `"held"` (`buildingUnits(…,"anywhere")` sees the piece
+    // perfectly well) and waited for a delivery nobody had scheduled, forever.
+    const d = createTownDeltas();
+    d.craftJobs.set(4, {
+      produces: "furn.door", consumes: { block: 1 }, at: "workbench",
+      label: "door", spotId: "furn_4_cupboard", agreements: [], laborS: 0,
+      for: "bfurn:w_7",
+    });
+    const back = createTownDeltas(d.toJSON());
+    expect(back.craftJobs.get(4)?.for).toBe("bfurn:w_7");
+    // Absent stays absent — every pre-commission save, and every piece a house
+    // makes for itself, is nobody's delivery.
+    d.craftJobs.set(5, {
+      produces: "furn.bed", consumes: {}, label: "bed",
+      spotId: "furn_5_cupboard", agreements: [], laborS: 0,
+    });
+    expect(createTownDeltas(d.toJSON()).craftJobs.get(5)).not.toHaveProperty("for");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -573,7 +601,7 @@ describe("binder.isStructure — the phase-4 binding that makes `build` mean bui
 // order handlers are meant to be reachable without a world.
 // ─────────────────────────────────────────────────────────────────────────
 
-function harness() {
+function harness(over: Partial<ConstructionDirectorCtx> = {}) {
   const play = established();
   const toasts: string[] = [];
   /** Which house a spoken order lands on (the host's `familyOf` answer). */
@@ -582,9 +610,8 @@ function harness() {
     town: play,
     townClock: 0,
     scale: REAL_SCALE, // the session default (quest-host 2185)
-    containerStock: new Map<string, Record<string, number>>(),
-    containers: new Map<string, "in" | "on">(),
-    containerOwner: new Map<string, string | null>(),
+    containerRecords: new Map<string, ContainerRecord>(),
+    wornBagIndex: new Map<string, string>(),
     marketStore: new Map<string, unknown>(),
     produceBox: new Map<string, unknown>(),
     houseShown: new Set<number>(),
@@ -620,6 +647,10 @@ function harness() {
     // the shared-pool split allocates every site its full crew, as before).
     handIsFree: (s: QuestSession, id: string) => !s.npcTasks?.get(id)?.length,
     townHandPool: () => ({ total: play.plan.houses.length, free: play.plan.houses.length }),
+    // The seams a test needs to be REAL for its own question (the commission
+    // delivery below wants an endpoint and an anchor) come in through here —
+    // the stubs above stay the default so every existing case is untouched.
+    ...over,
   } as unknown as ConstructionDirectorCtx;
   return { play, session, toasts, at, director: createConstructionDirector(ctx) };
 }
@@ -882,5 +913,395 @@ describe("orderBreakPiece — the piece comes apart where it stands (phase 4 ste
     // sweeps never re-order the bench forever (the never-self-healing law).
     expect(director.orderBreakPiece(session, key, `furn_${hi}_p1`)).toBe(true);
     expect(play.deltas.get(key)?.programs).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 🚨 GL FIX ROUND (2026-08-11) — THE TWO WAYS A FINISHED PIECE GOT STRANDED
+//
+// Both are the same shape: something MADE the piece and nothing MOVED it.
+//   F2  a piece made ON COMMISSION for a work shell stayed in the maker's
+//       kitchen, invisible to the shell's haul and visible to its "have we got
+//       one" test — so the shell waited on a delivery nobody had scheduled.
+//   F4  a piece a house made FOR ITSELF landed on its own floor, where the
+//       work list calls it a `move` — and the install sweep only ever acted on
+//       `install`, leaving the 12 s hand-gated re-flow as its one route.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** A headless world with ONE body loaded — enough for the craft sweeps, which
+ *  gate on "is the crafter/placer there" and nothing else. */
+function worldWith(bodies: Record<string, { x: number; y: number }>, objects: Record<string, unknown> = {}) {
+  return {
+    state: { avatars: { ...bodies }, objects: { ...objects }, spec: { objects: [] } },
+    npcRadiusOf: () => 0.3,
+    npcErrandActive: () => false,
+    removeObject: () => {},
+    setDragZones: () => {},
+  } as never;
+}
+
+describe("a COMMISSIONED craft DELIVERS — it never becomes the maker's floor clutter (F2)", () => {
+  it("posts the haul to the commissioner instead of dropping the piece where it was made", () => {
+    const posted: Array<{ goods: unknown }> = [];
+    const anchor = { x: 5, y: 5 };
+    let harnessSession: QuestSession;
+    const { play, session, director } = harness({
+      avatarIdOf: (cid: string) => cid,
+      buildingUnits: () => 0,
+      containerAnchor: () => anchor,
+      // The commissioner's delivery pile resolves; the maker's own spot does
+      // too (the haul needs both ends to exist).
+      stockEndpointOf: (_s: QuestSession, id: string) =>
+        ({ id, kind: "site", at: anchor, stack: {}, owner: null }) as never,
+      itemLocOf: () => (loc: { kind: string; id?: string }) =>
+        loc.kind === "container" && loc.id
+          ? { id: loc.id, kind: "container", at: anchor, stack: harnessSession.containerRecords.get(loc.id)?.stock ?? {}, owner: null }
+          : null,
+      postPooledTask: (_s: QuestSession, goal: { goods?: unknown }) => { posted.push({ goods: goal.goods }); },
+      dropFromStack: () => { throw new Error("a commissioned piece must NOT be dropped on the maker's floor"); },
+    });
+    harnessSession = session;
+    Object.assign(session as object, {
+      npcTasks: new Map<string, unknown[]>(),
+      needPoseShow: new Map<string, unknown>(),
+      townParks: new Map<string, unknown>(),
+    });
+    const hi = play.plan.houses[0]!.index;
+    director.setWorld(worldWith({ [`resident_${hi}_0`]: { x: 5, y: 5 } }));
+
+    const spotId = `furn_${hi}_cupboard`;
+    session.containerRecords.set(spotId, { mount: "standing", stock: { block: 2 } });
+    play.deltas.craftJobs.set(hi, {
+      produces: "furn.door", consumes: { block: 2 }, at: "workbench", label: "door",
+      spotId, agreements: [], laborS: 1, laborStart: 0, for: "bfurn:w_3",
+    });
+    session.townClock = 10; // the labour clock has run out
+
+    director.stepConstructionHousekeeping(session, () => false);
+
+    // THE PIECE WAS MADE…
+    expect(play.deltas.craftJobs.get(hi)).toBeUndefined();
+    // …AND SENT. One haul, spot → the commissioner's pile, with a pooled task
+    // so ANY neighbour may carry it (the shell's own `inbound` test then reads
+    // this agreement and never designates a second).
+    const out = session.transfers.active().filter((a) => a.to === "bfurn:w_3");
+    expect(out).toHaveLength(1);
+    expect(out[0]!.from).toBe(spotId);
+    expect(out[0]!.goods).toEqual({ "furn.door": 1 });
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.goods).toEqual({ "furn.door": 1 });
+  });
+
+  it("an UNCOMMISSIONED craft is untouched — it arrives as a thing where it was made", () => {
+    // The item law (2026-07-28) is not weakened by the delivery leg: a house
+    // that made something for itself still gets a prop on its floor.
+    const drops: string[] = [];
+    const anchor = { x: 5, y: 5 };
+    let harnessSession: QuestSession;
+    const { play, session, director } = harness({
+      avatarIdOf: (cid: string) => cid,
+      buildingUnits: () => 0,
+      containerAnchor: () => anchor,
+      stockEndpointOf: (_s: QuestSession, id: string) =>
+        ({ id, kind: "container", at: anchor, stack: {}, owner: null }) as never,
+      itemLocOf: () => (loc: { kind: string; id?: string }) =>
+        loc.kind === "container" && loc.id
+          ? { id: loc.id, kind: "container", at: anchor, stack: harnessSession.containerRecords.get(loc.id)?.stock ?? {}, owner: null }
+          : null,
+      dropFromStack: (_s: QuestSession, _stack: Record<string, number>, glyph: string) => {
+        drops.push(glyph);
+        return "small:x";
+      },
+    });
+    harnessSession = session;
+    Object.assign(session as object, {
+      npcTasks: new Map<string, unknown[]>(),
+      needPoseShow: new Map<string, unknown>(),
+      townParks: new Map<string, unknown>(),
+    });
+    const hi = play.plan.houses[0]!.index;
+    director.setWorld(worldWith({ [`resident_${hi}_0`]: { x: 5, y: 5 } }));
+    const spotId = `furn_${hi}_cupboard`;
+    session.containerRecords.set(spotId, { mount: "standing", stock: { block: 2 } });
+    play.deltas.craftJobs.set(hi, {
+      produces: "furn.door", consumes: { block: 2 }, at: "workbench", label: "door",
+      spotId, agreements: [], laborS: 1, laborStart: 0,
+    });
+    session.townClock = 10;
+    session.houseShown.add(hi);
+
+    director.stepConstructionHousekeeping(session, (h) => h === hi);
+
+    expect(drops).toEqual(["furn.door"]);
+    expect(session.transfers.active().filter((a) => a.to.startsWith("bfurn:"))).toHaveLength(0);
+  });
+});
+
+describe("a PLAYER-ORDERED build carries the RESOLVER's bill (F1)", () => {
+  it("executeBuildOrder founds with structureCosts(spec), and the plot WAITS on it", () => {
+    // 🚨 The seam the pure staging suite could not reach: `executeBuildOrder`
+    // handed `foundBuilding` the row's EXTRAS map, which is `{}` for every
+    // catalog structure since the phase-6 split. `stagingMissing` then answered
+    // {} on the very next line, the plot staged the same tick, no haul was ever
+    // posted and the walls rose out of nothing — the frontier farm finished
+    // with the yard's 14 wood and 6 stone untouched (dx-frontier-farm).
+    const { play, session, director } = harness({ buildingUnits: () => 0 });
+    const spec = resolveStructure(TOWN_PLAY_STRUCTURES, "house")!;
+    expect(spec.costs[BLOCK_GLYPH]).toBeUndefined(); // the trap is real
+    const ctx = director.buildContext(session)!;
+    const candidate = director.buildCandidates(ctx, spec)[0]!;
+    const b = director.executeBuildOrder(session, spec, candidate, null)!;
+    expect(b).not.toBeNull();
+    expect(b.costs).toEqual(structureCosts(spec));
+    expect(b.costs![BLOCK_GLYPH]).toBeGreaterThan(0);
+    expect(b.costs).not.toEqual(spec.costs);
+    // …and the designation is honest: nothing staged, nothing paid, no walls.
+    expect(b.laborStartDay).toBeUndefined();
+    expect(foundedBuildingDone(b, 1_000_000)).toBe(false);
+  });
+});
+
+describe("the craft gather obeys the OBSERVATION LAW (F3)", () => {
+  /** A house with a craft job mid-GATHER and one reachable stack of blocks —
+   *  the only knob is whether the house is on screen. */
+  function gathering(shown: boolean) {
+    const moved: string[] = [];
+    const anchor = { x: 0, y: 0 };
+    const { play, session, director } = harness({
+      avatarIdOf: (cid: string) => cid,
+      buildingUnits: () => 0,
+      containerAnchor: () => anchor,
+      stockEndpointOf: (_s: QuestSession, id: string) =>
+        ({ id, kind: "container", at: anchor, stack: {}, owner: null }) as never,
+      bumpStockEpoch: () => { moved.push("epoch"); },
+      fellIfConsumed: () => {},
+      parkTown: () => {},
+      townParked: () => false,
+    });
+    Object.assign(session as object, {
+      npcTasks: new Map<string, unknown[]>(),
+      needPoseShow: new Map<string, unknown>(),
+      townParks: new Map<string, unknown>(),
+    });
+    const hi = play.plan.houses[0]!.index;
+    // THE FAMILY ARE OUT — nobody is loaded to carry anything. Shown or not,
+    // the bill is identical; only the arm differs.
+    director.setWorld(worldWith({}));
+    session.containerRecords.set("town:yard", { mount: "standing", stock: { block: 9 }, owner: null });
+    const spotId = `furn_${hi}_cupboard`;
+    session.containerRecords.set(spotId, { mount: "standing", stock: {} });
+    play.deltas.craftJobs.set(hi, {
+      produces: "furn.door", consumes: { block: 2 }, at: "workbench", label: "door",
+      spotId, agreements: [], laborS: 0,
+    });
+    if (shown) session.houseShown.add(hi);
+    director.stepConstructionHousekeeping(session, () => shown);
+    return { yard: session.containerRecords.get("town:yard")!.stock!, spot: session.containerRecords.get(spotId)!.stock! };
+  }
+
+  it("a WATCHED house never teleports its materials into the cupboard", () => {
+    // 🚨 The gather posted ONE visible haul and ran the INSTANT TWIN for every
+    // other draw — `spot[g] += c` straight into the cupboard — whether or not
+    // the house was on screen. The site piles have said `obs ? postSiteHauls :
+    // twinStagePile` since phase 2; the bench never got the same law, so the
+    // player watched wood appear inside a cupboard nobody had walked to.
+    const { yard, spot } = gathering(true);
+    expect(yard).toEqual({ block: 9 }); // untouched
+    expect(spot).toEqual({}); // nothing landed
+  });
+
+  it("an UNWATCHED house still draws instantly — the abstract twin is unchanged", () => {
+    const { yard, spot } = gathering(false);
+    expect(yard.block).toBe(7);
+    expect(spot).toEqual({ block: 2 });
+  });
+});
+
+describe("a piece LYING ON THE FLOOR of its own house is installable (F4)", () => {
+  it("the furnish sweep stands it on its blueprint slot — it does not wait for the re-flow", () => {
+    // 🚨 The work list calls a loose prop inside the building a `move`
+    // (`reconcileFurnishing` cannot tell a prop from a standing chest), and the
+    // install sweep only ever picked `install` — which needs a unit STORED, and
+    // the arrival of a watched craft is a prop BY DEFINITION. So the only route
+    // left was `stepBlueprintReflow`: one carry per building per 12 s, gated on
+    // a free pair of hands, competing with every other re-flow in the house.
+    // A workbench a family had just made lay on its own kitchen floor for the
+    // whole run, the house stayed benchless, and the bootstrap made another
+    // (dx-doll-bench, 2026-08-11). `handlePlaceOrder` has taken a loose prop as
+    // its source since the watched-craft fix; only this filter kept it out.
+    const placed: Array<{ kind: unknown; spot: unknown }> = [];
+    const PROP = "small:bench_1";
+    const { play, session, director } = harness({
+      avatarIdOf: (cid: string) => cid,
+      buildingUnits: () => 0,
+      containerAnchor: () => ({ x: 0, y: 0 }),
+      handlePlaceOrder: (
+        _s: QuestSession,
+        _cid: string,
+        goal: { item: { match: { kind: string } } },
+        opts: { spot?: unknown },
+      ) => {
+        placed.push({ kind: goal.item.match.kind, spot: opts?.spot });
+        return "placed";
+      },
+    });
+    // A BARE ROOM ORDERED TO BE A WORKSHOP — the drawing then has a place for a
+    // bench, and a floor with room to stand one on (an untouched living room is
+    // full, and a want with nowhere legal to go is `blocked`, not a `move`).
+    const { house, key, room } = reuseCase(play);
+    const hi = house.index;
+    expect(
+      emptyRoom(
+        play.deltas, key,
+        houseRoomPlan(play.stage.center, house, play.deltas.get(key)),
+        room.id, generatedIn(play, house, room),
+      ).ok,
+    ).toBe(true);
+    play.deltas.mutate(key, (d) => { d.programs = [{ ord: 0, room: "workshop", roomId: room.id }]; });
+    // …and the bench the household made is LYING ON THAT FLOOR.
+    const propAt = { x: room.rect.x + room.rect.w / 2, y: room.rect.y + room.rect.h / 2 };
+    Object.assign(session as object, {
+      npcTasks: new Map<string, unknown[]>(),
+      needPoseShow: new Map<string, unknown>(),
+      townParks: new Map<string, unknown>(),
+    });
+    session.containerRecords.set(PROP, { mount: "loose", entityId: "e_bench", glyph: "furn.workbench" });
+    director.setWorld(
+      worldWith({ [`resident_${hi}_0`]: { ...propAt } }, { [PROP]: { ...propAt } }),
+    );
+
+    director.stepConstructionHousekeeping(session, () => false);
+
+    // THE BENCH IS STOOD UP — by a resident's own errand, onto the mark the
+    // drawing has been holding for it. (Before the fix the work list said
+    // `move`, the sweep asked only for `install`, and nothing happened.)
+    expect(placed).toHaveLength(1);
+    expect(placed[0]!.kind).toBe("workbench");
+    expect(placed[0]!.spot).toBeTruthy(); // the blueprint's slot, not a fresh search
+  });
+});
+
+describe("the re-flow's pace is a HAND COUNT, not a clock (scope-unification ⑥)", () => {
+  /**
+   * `REFLOW_GAP_S = 12` is gone. What paced the furniture-carry sweep was a
+   * per-building timer — one carry per twelve seconds, whoever was free and
+   * however many of them; the chapter's first draft called it "a timer
+   * standing in for a hand count". The sweep now asks the SAME census the
+   * build sites read (`townHandPool` → `allocateHands`), so these three are
+   * the whole of the new law:
+   *
+   *   · the town's free pool is the gate (no hands ⇒ no carry, ever),
+   *   · a piece already being carried is CLAIMED (a second free hand is never
+   *     sent after the same chest — the timer's other job, done honestly),
+   *   · and nothing waits on a clock: the moment the carrier stops walking,
+   *     the next sweep may send the next one.
+   */
+  const PROP = "small:bench_1";
+
+  /** A house with a bare workshop-programmed room and a bench lying on its
+   *  floor — the F4 fixture, with the install sweep REFUSING so the carry is
+   *  the re-flow's to make. `members` bodies stand in the room; the first
+   *  `free` of them have empty errand queues, the rest are already busy. */
+  function adriftBench(opts: { free: number; members: number; pool?: number }) {
+    const errands: Array<{ npcId: string; points: Array<{ x: number; y: number }> }> = [];
+    const { play, session, director } = harness({
+      avatarIdOf: (cid: string) => cid,
+      buildingUnits: () => 0,
+      containerAnchor: () => ({ x: 0, y: 0 }),
+      // The install sweep declines, so the piece stays adrift and the re-flow
+      // owns it. (Its own claim is pinned by the F4 case above.)
+      handlePlaceOrder: () => "no",
+      townParked: () => false,
+      parkTown: () => {},
+      ...(opts.pool === undefined
+        ? {}
+        : { townHandPool: () => ({ total: opts.pool, free: opts.pool }) }),
+      enqueueNpcErrand: (
+        s: QuestSession,
+        npcId: string,
+        errand: { points: Array<{ x: number; y: number }> },
+      ) => {
+        errands.push({ npcId, points: errand.points });
+        // The host's own two lines — the queue is what `handIsFree` reads.
+        const q = s.npcTasks.get(npcId) ?? [];
+        q.push(errand as never);
+        s.npcTasks.set(npcId, q);
+      },
+    });
+    const { house, key, room } = reuseCase(play);
+    const hi = house.index;
+    expect(
+      emptyRoom(
+        play.deltas, key,
+        houseRoomPlan(play.stage.center, house, play.deltas.get(key)),
+        room.id, generatedIn(play, house, room),
+      ).ok,
+    ).toBe(true);
+    play.deltas.mutate(key, (d) => { d.programs = [{ ord: 0, room: "workshop", roomId: room.id }]; });
+    const propAt = { x: room.rect.x + room.rect.w / 2, y: room.rect.y + room.rect.h / 2 };
+    const npcTasks = new Map<string, unknown[]>();
+    const bodies: Record<string, { x: number; y: number }> = {};
+    for (let m = 0; m < opts.members; m++) {
+      const id = `resident_${hi}_${m}`;
+      bodies[id] = { ...propAt };
+      if (m >= opts.free) npcTasks.set(id, [{}]); // already holding an errand
+    }
+    Object.assign(session as object, {
+      npcTasks,
+      needStep: new Map<string, unknown>(),
+      lastDrive: new Map<string, unknown>(),
+      needPoseShow: new Map<string, unknown>(),
+      townParks: new Map<string, unknown>(),
+    });
+    session.containerRecords.set(PROP, { mount: "loose", entityId: "e_bench", glyph: "furn.workbench" });
+    director.setWorld(worldWith(bodies, { [PROP]: { ...propAt } }));
+    /** One sweep, one tick of the town clock (the ask list closes per tick). */
+    const sweep = (n = 1) => {
+      for (let i = 0; i < n; i++) {
+        (session as unknown as { townClock: number }).townClock += 0.05;
+        director.stepConstructionHousekeeping(session, () => false);
+      }
+    };
+    return { play, session, hi, errands, npcTasks, sweep };
+  }
+
+  it("ONE piece, TWO free hands, many sweeps — exactly ONE carry (no stampede)", () => {
+    const { errands, sweep } = adriftBench({ free: 2, members: 2 });
+    sweep(40); // two seconds of ticks — the old gate's whole window and more
+    // The second free member is NEVER sent after the bench the first one is
+    // already walking to: the CLAIM is per piece, so the only bound the timer
+    // was really providing survives it.
+    expect(errands).toHaveLength(1);
+    // …and the OTHER member was never sent anywhere.
+    expect(errands.map((e) => e.npcId)).toEqual([errands[0]!.npcId]);
+  });
+
+  it("NO free hands ⇒ NO carry, however long the sweep runs", () => {
+    const { errands, sweep } = adriftBench({ free: 0, members: 2 });
+    sweep(40);
+    expect(errands).toHaveLength(0);
+  });
+
+  it("the TOWN's pool is the gate — a free body in the house carries nothing when the town has no hand to spare", () => {
+    // The census, not the household: `allocateHands([cap], 0)` is [0]. This is
+    // the line the timer could never draw — a 12 s metronome sent a carry out
+    // whether or not the town had anyone to spare.
+    const { errands, sweep } = adriftBench({ free: 2, members: 2, pool: 0 });
+    sweep(40);
+    expect(errands).toHaveLength(0);
+  });
+
+  it("nothing waits on a clock — the carrier stops walking and the next sweep sends the next carry", () => {
+    const { errands, npcTasks, sweep, hi, session } = adriftBench({ free: 1, members: 1 });
+    sweep(4);
+    expect(errands).toHaveLength(1);
+    const firstAt = (session as unknown as { townClock: number }).townClock;
+    // The errand died (re-tasked, evicted — `recoverDroppedCarries`'s case) and
+    // the bench is adrift again. Under the timer this house could not have
+    // tried again for twelve seconds.
+    npcTasks.set(`resident_${hi}_0`, []);
+    sweep(2);
+    expect(errands).toHaveLength(2);
+    expect((session as unknown as { townClock: number }).townClock - firstAt).toBeLessThan(12);
   });
 });

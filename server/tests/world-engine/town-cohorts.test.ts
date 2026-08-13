@@ -236,6 +236,81 @@ describe("cohortRatesStep — idle-safe integration on the day clock", () => {
   });
 });
 
+// ⚖️ ENDOGENOUS POPULATION v1 (S&D S1) — growth-motive law ②: growth is
+// "triggered by either population growth or the personality and values of the
+// leader". This is the population half, finally alive at the live rung: the
+// civ tier's own closed form (pops × birthRate × fill) writing `row.pop`.
+describe("cohortRatesStep — vitals (the pool finally breathes)", () => {
+  const VITALS = { birthRate: 0.02, deathRate: 0.01, starvation: 0.05, diet: "food" };
+
+  it("🚨 NO VITALS ⇒ NOT ONE SOUL MOVES — the shipped step, byte for byte", () => {
+    const row = emptyCohortRow(0);
+    row.pop = 20;
+    row.stack.food = 500;
+    const before = JSON.parse(JSON.stringify(row)) as CohortRow;
+    cohortRatesStep(row, 7, { production: { food: 30 }, perCapita: { food: 1 } });
+    expect(row.pop).toBe(before.pop);
+  });
+
+  it("a FED pool grows (births gated on fill, deaths symmetric)", () => {
+    const row = emptyCohortRow(0);
+    row.pop = 20;
+    row.stack.food = 1000;
+    cohortRatesStep(row, 1, { production: { food: 100 }, perCapita: { food: 1 }, vitals: VITALS });
+    expect(row.needs.food).toBe(1);
+    // fill 1 ⇒ r = 0.02 − 0.01 = +0.01/day.
+    expect(row.pop).toBeCloseTo(20 * 1.01, 9);
+  });
+
+  it("🚨 A STARVED POOL SHRINKS — fill gates the births AND drives the deaths", () => {
+    const row = emptyCohortRow(0);
+    row.pop = 50; // eats 50/day against 10/day, empty shelf
+    cohortRatesStep(row, 1, { production: { food: 10 }, perCapita: { food: 1 }, vitals: VITALS });
+    expect(row.needs.food!).toBeLessThan(0.5);
+    expect(row.pop).toBeLessThan(50);
+  });
+
+  it("the growth is COMPOUNDED over the window, not multiplied by it", () => {
+    const row = emptyCohortRow(0);
+    row.pop = 100;
+    row.stack.food = 100000;
+    cohortRatesStep(row, 10, {
+      production: { food: 1000 },
+      perCapita: { food: 1 },
+      vitals: VITALS,
+    });
+    expect(row.pop).toBeCloseTo(100 * Math.pow(1.01, 10), 6);
+  });
+
+  it("🚨 A PROMOTE CAN NEVER MINT SOULS — deaths stop at the housed base", () => {
+    const row = emptyCohortRow(0);
+    row.houses = [
+      { index: 1, members: 5 },
+      { index: 2, members: 5 },
+    ];
+    row.pop = 10;
+    // A total famine for a long window: the raw law would take the pool well
+    // under 10, and the next two promotions would then hand back 10 souls the
+    // pool no longer holds.
+    cohortRatesStep(row, 60, { production: {}, perCapita: { food: 1 }, vitals: VITALS });
+    expect(row.pop).toBe(10);
+    const a = promoteHousehold([row], 1);
+    expect(a?.house.members).toBe(5);
+    expect(row.pop).toBe(5);
+  });
+
+  it("births are deterministic — same row, same rates, same souls", () => {
+    const run = () => {
+      const row = emptyCohortRow(0);
+      row.pop = 33;
+      row.stack.food = 500;
+      cohortRatesStep(row, 9, { production: { food: 40 }, perCapita: { food: 1 }, vitals: VITALS });
+      return row.pop;
+    };
+    expect(run()).toBe(run());
+  });
+});
+
 describe("the pool as a ② StockEndpoint", () => {
   it("endpoint id round-trips, including the default district", () => {
     expect(parseCohortEndpointId(cohortEndpointId(3))).toBe(3);

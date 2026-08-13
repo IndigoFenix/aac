@@ -620,7 +620,11 @@ export function PublicSymbolsAdmin() {
           ({totalLoaded}{query.hasNextPage ? '+' : ''})
         </span>
       </h2>
-      {symbols.length === 0 ? (
+      {query.isLoading ? (
+        <div className="flex items-center py-6">
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : symbols.length === 0 ? (
         <p className={cn("text-sm py-6", isDark ? "text-slate-400" : "text-gray-500")}>
           {searchQuery ? t('symbols.noResults') : emptyMessage}
         </p>

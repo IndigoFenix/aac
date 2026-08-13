@@ -153,8 +153,8 @@ const GROW_PER_KIND = 4;
  * Everything the focused BUILDING can DO right now. Pure: reads the
  * deltas, never writes them (demolish feasibility runs the check, not the
  * act). `furnStock` reads the building's own container stacks (the host
- * closes over session.containerStock — the ONE container abstraction
- * stays its). Houses pass their `h_<i>` key with `keepRoot` (the
+ * closes over session.containerRecords — the ONE container abstraction,
+ * worklist ⑤ — stays its). Houses pass their `h_<i>` key with `keepRoot` (the
  * living-room invariant); a founded shell passes its work delta key with
  * an open root and no outward growth.
  */

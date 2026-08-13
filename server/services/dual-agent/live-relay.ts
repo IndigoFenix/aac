@@ -701,7 +701,8 @@ export type ClientMessage =
   | { type: "conversation_focus"; personId: string | null }  // student tapped/dwelt on a peer's face in the group chat (or cleared it) — focuses that peer (by personId) as the addressee + tells the BoardManager to build phrases for them
   | { type: "mic_state"; active: boolean; reason?: string }  // mic activated/deactivated — logged to chat history for diagnostics, never injected into any live agent
   | { type: "speech_method"; method: "silero" | "webSpeechApi" | "energy" | "none" }  // which speech-boundary detector is driving the client (Silero neural VAD vs fallbacks) — diagnostics only, like mic_state
-  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string; quality?: number }> }
+  /** observedAge/observedSex/observedSexConfidence: coarse attributes from the client's ageGenderNet, feeding the server-side ATTRIBUTE VETO — the 128-d embedding cannot separate a child from her grandmother, but "child vs senior" is a call the attribute net gets right. All optional; absent = no opinion, never a veto. */
+  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string; quality?: number; observedAge?: number; observedSex?: "male" | "female"; observedSexConfidence?: number }> }
   | { type: "voice_descriptors"; data: Array<{ embedding: number[]; quality?: number }>; clipId?: string }  // speaker embeddings computed from heard speech, for server-side voice matching. `clipId` ties this to a speech_audio clip so the server syncs voice + STT before attributing.
   | { type: "speech_text"; text: string; confidence?: number; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number } }  // cost-saving (Phase 1, Whisper path — plumbing kept): on-device transcript of a VAD speech segment. Server injects as [HEARD SPEECH].
   | { type: "speech_audio"; data: string; mimeType?: string; language?: string; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number }; lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>; acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null } }  // cost-saving (Phase 1, ACTIVE path): base64 WAV of a VAD speech segment — server transcribes via Google STT and injects as [HEARD SPEECH]. `lipActivity` = per-face mouth activity over the utterance for audio-visual speaker attribution. `acoustic` = cheap pitch + formant-dispersion fingerprint (fast-tier voice read + age/gender hint, sent before the slow embedding). Replaces raw audio when sttActive.
@@ -959,6 +960,12 @@ export interface IdentifiedFaceWire {
    *  Calibrates certainty: a weak score off few samples is expected, off many
    *  is meaningful. */
   sampleCount?: number;
+  /** Present when the match was AMBIGUOUS — a second known person sat within
+   *  the doppelgänger margin of the winner (lookalike family members). Format:
+   *  "name (relationship)". The name above must NOT be treated as a confident
+   *  identification: no sighting bump fires, and the AI is told to verify
+   *  before using either name. */
+  ambiguousWith?: string;
 }
 
 /** Public wire format for an identified voice (server → client). Mirrors

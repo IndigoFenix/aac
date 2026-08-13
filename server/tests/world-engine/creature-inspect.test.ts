@@ -76,7 +76,8 @@ const houseAt = (index: number, dx: number, dy: number) => ({ ...HOUSE, index, d
 interface StubOpts {
   /** The town's houses, IN PLAN ORDER — indexes need not be contiguous. */
   houses?: Array<typeof HOUSE>;
-  /** Registered loose props, by object id (`session.smallProps`). */
+  /** Registered loose props, by object id (`session.containerRecords`,
+   *  `mount: "loose"` rows). */
   smallProps?: Map<string, { entityId: string; glyph: string }>;
   needStep?: QuestSession["needStep"] extends Map<string, infer V> ? Map<string, V> : never;
   pursuits?: Map<string, unknown>;
@@ -135,8 +136,13 @@ function stubSession(o: StubOpts = {}): QuestSession {
     escorting: new Set(),
     bondedCreatures: new Set(),
     addressedFamily: null,
-    wornBags: new Map(),
-    smallProps: o.smallProps ?? new Map(),
+    wornBagIndex: new Map(),
+    containerRecords: new Map(
+      [...(o.smallProps ?? new Map())].map(([id, rec]) => [
+        id,
+        { mount: "loose" as const, entityId: rec.entityId, glyph: rec.glyph },
+      ]),
+    ),
   };
   return session as unknown as QuestSession;
 }

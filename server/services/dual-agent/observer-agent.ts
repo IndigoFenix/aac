@@ -109,7 +109,7 @@ function asString(v: unknown): string | undefined {
 /** Valid `update_context` subtypes (the event union). */
 const CONTEXT_UPDATE_TYPES = new Set<string>([
   "new_person", "new_voice", "set_person_as_user", "person_identified",
-  "voice_identified", "person_leaves", "new_location", "new_object",
+  "voice_identified", "misidentified", "person_leaves", "new_location", "new_object",
   "object_leaves", "person_gesture", "person_indicates_object",
   "ambient_audio_started", "ambient_audio_stopped", "sound_detected", "other",
 ]);

@@ -49,6 +49,7 @@ import { getVocabularyItem } from "@shared/glyph-registry.js";
 import { resolveEmoji } from "@shared/emoji-registry.js";
 import {
   createConstructionDirector,
+  STOREHOUSE_RAW_PAR,
   type ConstructionDirectorCtx,
 } from "@shared/world-engine/interaction/quest/construction-director.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
@@ -218,9 +219,13 @@ function harness(works: TownWork[], boxes: Record<string, { at: { x: number; y: 
     town: play,
     townClock: 0,
     scale: REAL_SCALE,
-    containerStock: new Map(Object.entries(boxes).map(([id, b]) => [id, b.stack])),
-    containers: new Map<string, "in" | "on">(Object.keys(boxes).map((id) => [id, "in"])),
-    containerOwner: new Map<string, string | null>(),
+    containerRecords: new Map(
+      Object.entries(boxes).map(([id, b]) => [
+        id,
+        { mount: "standing" as const, relation: "in" as const, stock: b.stack, owner: null },
+      ]),
+    ),
+    wornBagIndex: new Map<string, string>(),
     marketStore: new Map<string, unknown>(),
     produceBox: new Map<string, unknown>(),
     houseShown: new Set<number>(),
@@ -329,10 +334,28 @@ describe("ensureRefineOrders — which raw gets cut first", () => {
     // Free units is the FIRST key, so it only decides when the two differ.
     // With an empty town both are zero and the standing bench decides — the
     // order posts and starves naming stone, which is the honest failure.
+    //
+    // 🔁 RE-PINNED 2026-08-12 (S&D closing sweep) — the assertion moved, the
+    // law did not. The surplus-control patch (absorbed at S0) added one arm to
+    // `ensureRefineOrders`: an AUTOMATED bill is capped by the SPARE, and "a
+    // spare of zero posts NOTHING and stays quiet" — the shortfall stays
+    // counted in `milling`, so the bench still says "milling N" instead of
+    // claiming there is nothing to fetch. An empty town has no spare, so the
+    // tie-break is no longer OBSERVABLE through a posted row here; it is
+    // observable through a SPOKEN bill, which may draw the reserve, and that
+    // is what this case now measures. (The catalogue tie-break itself is
+    // pinned independently by "with BOTH trades standing" below.)
     const masonry = workRow("masonry", 60, 60);
     const { play, session, director } = harness([masonry]);
-    director.ensureRefineOrders(session, { block: 2 });
-    expect(posted(play)!.produces).toBe(refinedGlyphOf("stone"));
+    const auto = director.ensureRefineOrders(session, { block: 2 });
+    expect(posted(play)).toBeUndefined(); // the quiet arm — nothing to feed it
+    expect(auto.milling).toBe(2); // …but the bill IS known
+    expect(auto.rest).toEqual({});
+    // The SPOKEN twin: the player's own order may reach past the reserve, so
+    // the row posts and the standing bench still breaks the tie.
+    const spoken = harness([masonry]);
+    spoken.director.ensureRefineOrders(spoken.session, { block: 2 }, undefined, undefined, true);
+    expect(posted(spoken.play)!.produces).toBe(refinedGlyphOf("stone"));
   });
 
   it("NO GATE, the other way: reachable stock still outranks a standing bench", () => {
@@ -351,9 +374,18 @@ describe("ensureRefineOrders — which raw gets cut first", () => {
   it("NO GATE: a masonry-less town with stone still cuts it", () => {
     // The plan's own acceptance line. No masonry anywhere; the stone refines
     // at the yard exactly as it did before the split existed.
+    //
+    // 🔁 RE-MEASURED 2026-08-12 (S&D closing sweep) — the FIXTURE moved, the
+    // pin did not. The yard is the COMMONS, and S&D S3 declared the coupling
+    // `par ≡ reserve` (`storehouseRawParAt` ≡ `commonsReserveOf`'s floor): the
+    // town's first `STOREHOUSE_RAW_PAR` units of a raw are its buffer, and an
+    // AUTOMATED bill spends only the SPARE above it. Ten stone is entirely
+    // reserve, so the old fixture measured the reserve floor rather than the
+    // no-gate law it was written for. Stocked ABOVE the floor, the law reads
+    // exactly as before: no masonry, and the stone still cuts, at the yard.
     const yardAt = { x: 12, y: -7 };
     const { play, session, director } = harness([], {
-      [TOWN_YARD_EP]: { at: yardAt, stack: { stone: 10 } },
+      [TOWN_YARD_EP]: { at: yardAt, stack: { stone: STOREHOUSE_RAW_PAR + 10 } },
     });
     const { rest } = director.ensureRefineOrders(session, { block: 4 });
     expect(rest).toEqual({});

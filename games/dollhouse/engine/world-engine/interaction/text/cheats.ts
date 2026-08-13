@@ -30,7 +30,7 @@ import { carryRowText } from "../quest/creature-inspect.js";
 import type { TextCheatHost } from "./types.js";
 
 /** The commands, without their `/`. `help` must never print this list. */
-export const CHEAT_COMMANDS: readonly string[] = ["convos", "scope", "stock", "carry", "probe", "truth", "why"];
+export const CHEAT_COMMANDS: readonly string[] = ["convos", "scope", "stock", "carry", "probe", "truth", "why", "wild"];
 
 /** What the ordinary path says when the channel is off. The flag is named so a
  *  driver can turn it on deliberately, never by accident. */
@@ -96,6 +96,20 @@ export function runCheat(name: string, arg: string | undefined, ctx: CheatCtx): 
     case "probe":
       if (!host?.debugProbe) return missing("debugProbe");
       return { ok: true, marker, lines: dump(host.debugProbe()) };
+    case "wild": {
+      // ⚖️ S&D S4 — the wild stand in whichever form it is in, and (with a
+      // verb) the LOD fold itself. 🚨 `/wild fold|load|cycle` MOVES the world
+      // — the only cheat that does, because the driver that would move it
+      // lives in the GL boot and a conservation law that can only be
+      // exercised in a browser is a law nobody checks. The transcript's CHEAT
+      // marker carries the verb, so a reviewer sees exactly what was done.
+      if (!host?.wildProbe) return missing("wildProbe");
+      const verb = (arg ?? "").trim().toLowerCase();
+      if (verb && !["state", "fold", "load", "cycle"].includes(verb)) {
+        return { ok: false, marker, lines: [], error: `/wild takes state|fold|load|cycle (got "${verb}").` };
+      }
+      return { ok: true, marker, lines: dump(host.wildProbe(verb)) };
+    }
     case "carry": {
       if (!arg) return { ok: false, marker, lines: [], error: "/carry needs a creature id." };
       if (!host?.carryOf) return missing("carryOf");

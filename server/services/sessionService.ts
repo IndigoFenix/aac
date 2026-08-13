@@ -200,6 +200,7 @@ import {
 import {
   STUDENT_CONTACTS_FIELD,
   STUDENT_LINKABLE_ENTITIES_FIELD,
+  buildStudentContactsField,
 } from "./memory-schema/contacts-memory-schema";
 
 
@@ -418,6 +419,32 @@ export const MASTER_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
  * - Reason: Sensitive behavioral/psychological information
  * - Alternative: Use functionalReports with proper access control
  */
+
+/**
+ * The Student_* memory surface an AAC (student-facing) session gets, gated by
+ * that student's AAC settings.
+ *
+ * The AAC path builds its field list TWICE — once for the schema the AI is
+ * shown, once for the processor that executes its ops — so both call this to
+ * stay in step. A gate applied to only one of the two either advertises a
+ * capability that then fails, or hides one the AI can still reach.
+ *
+ * - allowNotes=false     → Student_Notes disappears entirely.
+ * - autoAddContacts=false → Student_Contacts stays readable/updatable but
+ *   refuses `add`. When adding IS allowed, rows the AI creates are flagged
+ *   `autoAdded` so a clinician can confirm or delete them.
+ */
+function aacStudentMemoryFields(aacSettings: any): AgentMemoryFieldWithDB[] {
+  let fields = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
+  if (aacSettings?.allowNotes === false) {
+    fields = fields.filter(f => f.id !== 'Student_Notes');
+  }
+  const contactsField = buildStudentContactsField({
+    allowAdd: aacSettings?.autoAddContacts !== false,
+    markAutoAdded: true,
+  });
+  return fields.map(f => (f.id === 'Student_Contacts' ? contactsField : f));
+}
 
 /**
  * Sensitive field patterns that should NEVER be added to AI memory
@@ -1406,11 +1433,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // Privacy options from AAC settings
     const aacPrivacy = (context.student as any)?.aacSettings;
 
-    // Filter to only Student_* fields (not User_* or Relationship_*)
-    let studentFields = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
-    if (aacPrivacy?.allowNotes === false) {
-      studentFields = studentFields.filter(f => f.id !== 'Student_Notes');
-    }
+    // Only Student_* fields (not User_* or Relationship_*), gated by this
+    // student's AAC settings — see aacStudentMemoryFields.
+    const studentFields = aacStudentMemoryFields(aacPrivacy);
     contextMemoryFields.push(...studentFields);
 
     // Add library field (Context_Library)
@@ -1790,10 +1815,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // Note: BOARD_MEMORY_FIELD is disabled for AAC - board updates use formSchema/setValues instead
     // for faster single-pass responses
     const aacPrivacy2 = (context.student as any)?.aacSettings;
-    let studentFieldsProc = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
-    if (aacPrivacy2?.allowNotes === false) {
-      studentFieldsProc = studentFieldsProc.filter(f => f.id !== 'Student_Notes');
-    }
+    const studentFieldsProc = aacStudentMemoryFields(aacPrivacy2);
     fieldsForProcessor = [
       ...studentFieldsProc,
       LIBRARY_TOPICS_FIELD as AgentMemoryFieldWithDB,

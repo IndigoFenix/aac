@@ -11,6 +11,7 @@ import type { ImageResolver } from "@shared/glyph-compositor";
 import { getVocabularyItemByEmoji } from "@shared/glyph-registry";
 import { isEmoji } from "@shared/emoji-registry";
 import { flagEmojiToIso } from "@shared/flag-emoji";
+import { portraitFor } from "./portraits";
 
 // Vite glob: repo-root attached_assets/aac-icons/** → hashed asset URLs.
 const iconUrlMap = import.meta.glob(
@@ -33,6 +34,11 @@ export const gameImageResolver: ImageResolver = ({ item, key }) => {
     const url = resolveIconPath(item.imagePath);
     if (url) return url;
   }
+  // A CREATURE'S OWN FACE (portraits.ts): below designed artwork, above every
+  // generic lookup — a name is nobody's registry key, so a baked portrait is the
+  // only picture "mara" will ever have.
+  const portrait = portraitFor(key);
+  if (portrait) return portrait;
   const iso = flagEmojiToIso(key);
   if (iso) {
     const url = resolveIconPath(`flags/${iso}`);

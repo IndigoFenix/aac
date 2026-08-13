@@ -246,7 +246,9 @@ const MOVEMENT_GOAL_VERBS = new Set(["go", "come", "walk", "follow", "run", "cha
  *  is redundant beside another action ("go + wash + clothes" = wash them, the
  *  going is implied); "stop" is a PHASE operator on the other action
  *  ("stop + eat" = cease eating — never a command to eat). */
-const MODAL_VERBS = new Set(["want", "need", "like"]);
+// Exported for the surfacer: after a BARE desire verb the board must offer
+// DOING as readily as having (the modal action path) — one set, two readers.
+export const MODAL_VERBS = new Set(["want", "need", "like"]);
 const MOTION_AUX = new Set(["go", "come"]);
 
 /** ADDRESSING social acts: the moves that open and close a conversation, and

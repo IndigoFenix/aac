@@ -24,6 +24,7 @@ import {
   provideTownRoadBearings, provideTownRoadSeeds,
 } from "@shared/world-engine/kernel/town/host";
 import type { GrowSeed } from "@shared/world-engine/kernel/town/streets";
+import type { WorldScale } from "@shared/world-engine/scale";
 import type { FlightCity } from "./space-fly";
 
 /** Founding population cap for a VISIT: Malthus regrows the town to its
@@ -82,6 +83,12 @@ export interface CityTownLoaderOpts {
    *  incident route unclipped, so there is no port-to-port span) falls back
    *  to the bearings exactly as before the seam existed. */
   roadSeeds?: (fc: FlightCity) => readonly GrowSeed[] | null;
+  /** THE DOCUMENT'S DECLARED SCALE (`game.scale`, resolved) — read per
+   *  founding, because the document can be reloaded under a live loader.
+   *  Rides into `TownPlayConfig.scale` so `plan.ts` lays the town out to the
+   *  SAME `townExtentM` the roads were ported at and the seam splices at.
+   *  Absent / undefined = realism. */
+  scale?: () => WorldScale | undefined;
 }
 
 /** The settlement key a city's town builds under (street-plan identity). */
@@ -89,7 +96,9 @@ export function cityTownKey(fc: FlightCity): string {
   return fc.city.name.toLowerCase().replace(/\s+/g, "-");
 }
 
-export function cityTownConfig(fc: FlightCity, nowMs = Date.now(), questCount = 0): TownPlayConfig {
+export function cityTownConfig(
+  fc: FlightCity, nowMs = Date.now(), questCount = 0, scale?: WorldScale,
+): TownPlayConfig {
   // The visit cap flattens founding size, so AGE carries the difference the
   // crowd would have: a thin camp is a young hamlet, a dense site has grown
   // for two extra seasons. (Malthus makes fast-forward days ≈ town size.)
@@ -105,6 +114,13 @@ export function cityTownConfig(fc: FlightCity, nowMs = Date.now(), questCount = 
     days: grownDays(100 + Math.round(120 * crowd01), nowMs),
     buildUp: grownBuildUp(fc.city.density, nowMs),
     questCount,
+    // THE TOWN GROWS TO THE EXTENT THE ROADS WERE CLIPPED AT. `plan.ts`
+    // derives its own `townExtentM(scale)`, so a config that carried no
+    // scale grew a REAL-scale 450 m town inside a compressed world whose
+    // routes ported at 195 m — the buildings then stood outside their own
+    // port and the interstates crossed them. Absent = realism, which is
+    // exactly what an undeclared world means everywhere else.
+    ...(scale ? { scale } : {}),
   };
 }
 
@@ -127,7 +143,8 @@ export function createCityTownLoader(opts: CityTownLoaderOpts = {}): CityTownLoa
 
   async function found(fc: FlightCity, entry: CityTownEntry): Promise<void> {
     try {
-      const config = foundedCfg.get(fc.city.cell) ?? cityTownConfig(fc, Date.now(), opts.questCount ?? 0);
+      const config = foundedCfg.get(fc.city.cell)
+        ?? cityTownConfig(fc, Date.now(), opts.questCount ?? 0, opts.scale?.());
       const play = await buildTownPlayStaged(config, async note => {
         entry.note = note;
         await breathe();

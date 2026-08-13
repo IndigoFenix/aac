@@ -72,6 +72,7 @@ import { parseScopeId } from "@shared/world-engine/kernel/town/scope.js";
 import { ERRAND_WALK, streetServiceWarnings, type TownGoods } from "@shared/world-engine/kernel/town/goods.js";
 import type { TownHouse } from "@shared/world-engine/kernel/town/plan.js";
 import { serviceRadiusM } from "@shared/world-engine/scale.js";
+import { looseEntries } from "@shared/world-engine/kernel/town/containers.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // ① THE RULE — pure, and stubbable without a town
@@ -379,7 +380,7 @@ describe("the live needs ctx, on the real dollhouse (seed 12)", () => {
   });
 
   it("⑤ the market's BAG SUPPLY lies at every stall, not only the reference one", () => {
-    const props = [...run.session.smallProps.entries()].filter(([, r]) =>
+    const props = [...looseEntries(run.session)].filter(([, r]) =>
       r.glyph === "basket" || r.glyph === "satchel",
     );
     const nearAStall = (objId: string): number => {

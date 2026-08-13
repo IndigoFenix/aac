@@ -1,0 +1,97 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T06:50:57.440Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> say build workshop
+OK     said: build + workshop
+TOAST  🪧 build + workshop — anyone nearby may take it (feedback)
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    mara: "I will build the workshop."  [build.will + workshop]
+ENTER  biscuit came into view here south.
+TICK   quiet after 1.9s.
+> say make workbench
+OK     said: make + workbench
+SAY    pip: "I will carry the block to the workshop."  [carry.will + block + to + workshop]
+TOAST  🔨 making a workbench — by hand, no workbench (feedback)
+TICK   quiet after 0.8s.
+> wait 60
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here south.
+EXIT   biscuit left view here south.
+TICK   waited 60.0s.
+> wait 60
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-27 (house), there west, red, door open, shut to you.
+  house-67 (house), close west, yellow, door open, shut to you.
+  43 houses, there east, all shut.
+  37 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a workshop — marked ground, 0% worked, close west, 58 m
+TICK   quiet after 0.8s.
+> wait 60
+TICK   waited 60.0s.
+> wait 60
+TOAST  🏗️ the people stake out a market (feedback)
+SITE   2 thing(s) being built.
+  site-1: a workshop — marked ground, 0% worked, close west, 58 m
+  site-2: a market — marked ground, 0% worked, close north, 83 m
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   2 thing(s) being built.
+  site-1: a workshop — marked ground, 0% worked, close west, 58 m
+  site-2: a market — marked ground, 0% worked, close north, 83 m
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> /scope
+CHEAT  /scope
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=12  presses=0  screens=2  sim=255.0s
+# events: TOAST 15  TICK 10  SAY 5  NOTE 4  EXIT 4  SITE 3  BOARD 2  OK 2  ENTER 2  SCENE 2  CHEAT 2  CLOSE 1  SELF 1

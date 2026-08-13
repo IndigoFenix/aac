@@ -74,6 +74,11 @@ const GOING_VERBS = new Set(["go", "come", "run", "walk", "chase"]);
 /** Verbs of POSSESSION. Negated, they answer "I don't have one" (`cant`)
  *  rather than "I won't" (`refuse`) — a different thing to be told. */
 const HAVE_VERBS = new Set(["have", "hold", "carry"]);
+/** Inner verbs of a MODAL desire whose object IS the thing wanted: "i_me +
+ *  want + eat + apple" asks for the apple exactly as "want + apple" does.
+ *  Any other action desire keeps its object as part of the ACT ("want + go
+ *  + home", "want + build + house") — the home is not being requested. */
+const WANT_THING_VERBS = new Set(["eat", "drink", "play", "get", "have", "wear"]);
 
 /** Verbs a "what + {creature} + {verb}" question must NOT read as an activity
  *  ask: they query possession/desire ("what do you want/have?"), not doing. */
@@ -265,10 +270,19 @@ export function intentToAct(
 
   switch (frame.kind) {
     case "request": {
-      // A MODAL desire with no thing to hand over ("i_me + want + play" — a
-      // wish to DO something): a disclosure, acknowledged — the bare request
-      // evaluator would answer it with silence.
-      if (frame.modal && frame.verb && !objectSymbol) return { kind: "tell", glyph };
+      // A MODAL desire is a wish to DO something ("i_me + want + play"): a
+      // disclosure, acknowledged — the bare request evaluator would answer it
+      // with silence. An OBJECT rides along only when the inner verb is
+      // itself about having the thing (WANT_THING_VERBS — "want eat apple"
+      // still asks for the apple); for any other action the object is part
+      // of the act ("want go home"), and running the item evaluator on it
+      // answered the wish to go home with somebody's spare "home", or a flat
+      // no. What GRANTING an action desire should look like in-game (a
+      // bodiless spirit can want nothing for its own body) is deliberately
+      // deferred — the honest floor is to hear it.
+      if (frame.modal && frame.verb && !(objectSymbol !== undefined && WANT_THING_VERBS.has(canonicalVerb(frame.verb)))) {
+        return { kind: "tell", glyph };
+      }
       // An instance the listener holds, else the word as a resource TYPE ("i_me
       // want food") — the request evaluator picks the owner's spare (§2b).
       const target = listenerItem ? undefined : typeTarget();

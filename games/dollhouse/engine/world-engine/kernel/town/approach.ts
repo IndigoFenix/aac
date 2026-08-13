@@ -451,6 +451,31 @@ export interface RouteTownSplice {
  *  connector would be shorter than the joint it smooths. */
 const MIN_CONNECTOR_M = 60;
 
+/** Most of its own length a road may LEND the connector. The connector
+ *  replaces the road's last stretch, so the parent has to give up the arc it
+ *  covers — and a road that gave up all of itself would have no un-bent
+ *  remainder to arrive along. Two thirds leaves a third standing.
+ *
+ *  This is a CLAMP, and it used to be a REFUSAL (`lengthM < connM × 1.5 ⇒
+ *  null`) — the same threshold, read the other way round. The refusal was the
+ *  second half of the orphan bug: `townRoadSeeds` deduped two ports a
+ *  compass bucket apart onto one gate (0.5 rad, which at a 450 m extent is
+ *  211 m of ground), so the loser's road had no street of its own to arrive
+ *  at, and then the short road it happened to be was refused a connector to
+ *  the shared gate too. It stopped in a field 211 m from the nearest
+ *  pavement (MEASURED: Zelemont cell 775, road 775-822, 82 m long against a
+ *  211 m gap; 3 of 65 ends on that planet).
+ *
+ *  The refusal was over-broad because the length guard protects the ARC
+ *  BUDGET, not the connector's shape: a connector may already run a right
+ *  angle around the extent (`MAX_GATE_SEP`), far further than the arc it
+ *  borrows, and the caravan mapping is a FRACTION of the parent span
+ *  (trade-roads.ts), so a connector longer than its arc has always been
+ *  ordinary. Clamping lends what the road can afford and draws the road that
+ *  reaches town; refusing drew a road that reached nothing. Long roads are
+ *  untouched — the clamp binds exactly where the refusal used to fire. */
+const CONNECTOR_ARC_SHARE = 2 / 3;
+
 /**
  * PORT → GATE: refine the route's port into the mounted town's gate.
  *
@@ -500,9 +525,16 @@ export function spliceRouteAtTown(
   if (Math.hypot(tip.tip.x - port.x, tip.tip.y - port.y) < PORT_MEET_M) return null;
   // The connector spans the port→gate gap, and the parent lends it exactly
   // that much arc — so the drawn ribbon and the cart projection are both
-  // continuous where the span begins.
-  const connM = Math.max(MIN_CONNECTOR_M, Math.hypot(tip.tip.x - port.x, tip.tip.y - port.y));
-  if (route.lengthM < connM * 1.5) return null;
+  // continuous where the span begins. A road too short to lend that much
+  // lends what it can (CONNECTOR_ARC_SHARE) rather than refusing to arrive.
+  const gapM = Math.hypot(tip.tip.x - port.x, tip.tip.y - port.y);
+  const connM = Math.min(
+    Math.max(MIN_CONNECTOR_M, gapM),
+    route.lengthM * CONNECTOR_ARC_SHARE,
+  );
+  // Nothing left to lend: the whole road is shorter than the joint it would
+  // have to smooth, so the plain ribbon really is the honest answer.
+  if (connM < 1) return null;
   const sEdge = end === "a" ? connM : route.lengthM - connM;
   const clip = toTownLocal(frame, planetRadius, routePointAt(route, sEdge));
   if (!clip) return null;

@@ -1,0 +1,3568 @@
+{
+ "en": {
+  "altar": {
+   "w": "altar"
+  },
+  "animal": {
+   "w": "animal"
+  },
+  "anvil": {
+   "w": "anvil"
+  },
+  "apple": {
+   "w": "apple"
+  },
+  "area": {
+   "w": "area"
+  },
+  "ask": {
+   "w": "ask",
+   "inf": "ask"
+  },
+  "ball": {
+   "w": "ball"
+  },
+  "banana": {
+   "w": "banana"
+  },
+  "barrel": {
+   "w": "barrel"
+  },
+  "basket": {
+   "w": "basket"
+  },
+  "bath": {
+   "w": "bath"
+  },
+  "bathroom": {
+   "w": "bathroom"
+  },
+  "bear": {
+   "w": "bear"
+  },
+  "because": {
+   "w": "because"
+  },
+  "bed": {
+   "w": "bed"
+  },
+  "bedroom": {
+   "w": "bedroom"
+  },
+  "behind": {
+   "w": "behind"
+  },
+  "big": {
+   "w": "big"
+  },
+  "bin": {
+   "w": "bin"
+  },
+  "block": {
+   "w": "block"
+  },
+  "blocks": {
+   "w": "blocks",
+   "pl": true
+  },
+  "boat": {
+   "w": "boat"
+  },
+  "book": {
+   "w": "book"
+  },
+  "bored": {
+   "w": "bored"
+  },
+  "bowl": {
+   "w": "bowl"
+  },
+  "box": {
+   "w": "box"
+  },
+  "break": {
+   "w": "break"
+  },
+  "bring": {
+   "w": "bring",
+   "inf": "bring"
+  },
+  "broccoli": {
+   "w": "broccoli",
+   "mass": true
+  },
+  "bubbles": {
+   "w": "bubbles",
+   "pl": true
+  },
+  "build": {
+   "w": "build",
+   "inf": "build"
+  },
+  "building": {
+   "w": "building"
+  },
+  "cabinet": {
+   "w": "cabinet"
+  },
+  "car": {
+   "w": "car"
+  },
+  "carry": {
+   "w": "carry",
+   "v3": "carries",
+   "inf": "carry"
+  },
+  "chair": {
+   "w": "chair"
+  },
+  "chase": {
+   "w": "chase"
+  },
+  "clean": {
+   "w": "clean"
+  },
+  "closed": {
+   "w": "closed"
+  },
+  "clothing": {
+   "w": "clothes",
+   "pl": true
+  },
+  "cold": {
+   "w": "cold"
+  },
+  "color": {
+   "w": "color"
+  },
+  "color_black": {
+   "w": "black"
+  },
+  "color_blue": {
+   "w": "blue"
+  },
+  "color_brown": {
+   "w": "brown"
+  },
+  "color_green": {
+   "w": "green"
+  },
+  "color_orange": {
+   "w": "orange"
+  },
+  "color_pink": {
+   "w": "pink"
+  },
+  "color_purple": {
+   "w": "purple"
+  },
+  "color_red": {
+   "w": "red"
+  },
+  "color_white": {
+   "w": "white"
+  },
+  "color_yellow": {
+   "w": "yellow"
+  },
+  "confused": {
+   "w": "confused"
+  },
+  "cook": {
+   "w": "cook",
+   "inf": "cook"
+  },
+  "cookie": {
+   "w": "cookie"
+  },
+  "cow": {
+   "w": "cow"
+  },
+  "creature": {
+   "w": "creature"
+  },
+  "cut": {
+   "w": "cut",
+   "inf": "cut"
+  },
+  "deer": {
+   "w": "deer",
+   "plw": "deer"
+  },
+  "dirty": {
+   "w": "dirty"
+  },
+  "do": {
+   "w": "do",
+   "inf": "do"
+  },
+  "dog": {
+   "w": "dog"
+  },
+  "doll": {
+   "w": "doll"
+  },
+  "door": {
+   "w": "door"
+  },
+  "dress": {
+   "w": "dress"
+  },
+  "drink": {
+   "w": "drink",
+   "inf": "drink"
+  },
+  "dry": {
+   "w": "dry"
+  },
+  "east": {
+   "w": "east"
+  },
+  "easy": {
+   "w": "easy"
+  },
+  "eat": {
+   "w": "eat",
+   "inf": "eat"
+  },
+  "empty": {
+   "w": "empty"
+  },
+  "farm": {
+   "w": "farm"
+  },
+  "fight": {
+   "w": "fight",
+   "v3": "fights"
+  },
+  "finished": {
+   "w": "finished"
+  },
+  "fire": {
+   "w": "fire",
+   "mass": true
+  },
+  "follow": {
+   "w": "follow"
+  },
+  "food": {
+   "w": "food",
+   "mass": true
+  },
+  "for": {
+   "w": "for"
+  },
+  "forge": {
+   "w": "forge"
+  },
+  "frog": {
+   "w": "frog"
+  },
+  "generator": {
+   "w": "generator"
+  },
+  "get": {
+   "w": "get"
+  },
+  "give": {
+   "w": "give"
+  },
+  "go": {
+   "w": "go",
+   "v3": "goes"
+  },
+  "good": {
+   "w": "good"
+  },
+  "goodbye": {
+   "w": "bye-bye"
+  },
+  "grape": {
+   "w": "grape"
+  },
+  "happy": {
+   "w": "happy"
+  },
+  "hard": {
+   "w": "hard"
+  },
+  "hat": {
+   "w": "hat"
+  },
+  "have": {
+   "w": "have",
+   "v3": "has"
+  },
+  "he": {
+   "w": "he"
+  },
+  "heat": {
+   "w": "heat",
+   "inf": "heat"
+  },
+  "heater": {
+   "w": "heater"
+  },
+  "help": {
+   "w": "help"
+  },
+  "here": {
+   "w": "here"
+  },
+  "hi": {
+   "w": "hi"
+  },
+  "home": {
+   "w": "house"
+  },
+  "hot": {
+   "w": "hot"
+  },
+  "house": {
+   "w": "house",
+   "plw": "houses"
+  },
+  "hungry": {
+   "w": "hungry"
+  },
+  "i_me": {
+   "w": "I"
+  },
+  "in": {
+   "w": "in"
+  },
+  "in_front_of": {
+   "w": "in front of"
+  },
+  "in_order_to": {
+   "w": "so that"
+  },
+  "kitchen": {
+   "w": "kitchen"
+  },
+  "know": {
+   "w": "know"
+  },
+  "lamp": {
+   "w": "lamp"
+  },
+  "less": {
+   "w": "less"
+  },
+  "library": {
+   "w": "library",
+   "plw": "libraries"
+  },
+  "like": {
+   "w": "like"
+  },
+  "living": {
+   "w": "living room",
+   "plw": "living rooms"
+  },
+  "lonely": {
+   "w": "lonely"
+  },
+  "loom": {
+   "w": "loom"
+  },
+  "make": {
+   "w": "make",
+   "inf": "make"
+  },
+  "make_cold": {
+   "w": "cool",
+   "inf": "cool"
+  },
+  "market": {
+   "w": "market"
+  },
+  "masonry": {
+   "w": "masonry",
+   "plw": "masonries"
+  },
+  "more": {
+   "w": "more"
+  },
+  "near": {
+   "w": "near"
+  },
+  "need": {
+   "w": "need"
+  },
+  "next_to": {
+   "w": "next to"
+  },
+  "no": {
+   "w": "no"
+  },
+  "north": {
+   "w": "north"
+  },
+  "off": {
+   "w": "off"
+  },
+  "ok": {
+   "w": "okay"
+  },
+  "on": {
+   "w": "on"
+  },
+  "open": {
+   "w": "open"
+  },
+  "oven": {
+   "w": "oven"
+  },
+  "over": {
+   "w": "over"
+  },
+  "person": {
+   "w": "person",
+   "plw": "people"
+  },
+  "place": {
+   "w": "place"
+  },
+  "play": {
+   "w": "play"
+  },
+  "put": {
+   "w": "put",
+   "inf": "put"
+  },
+  "puzzle": {
+   "w": "puzzle"
+  },
+  "rabbit": {
+   "w": "rabbit"
+  },
+  "ram": {
+   "w": "ram"
+  },
+  "rare": {
+   "w": "rare"
+  },
+  "read": {
+   "w": "read"
+  },
+  "refrigerator": {
+   "w": "refrigerator"
+  },
+  "rest": {
+   "w": "rest",
+   "inf": "rest"
+  },
+  "return": {
+   "w": "return",
+   "v3": "returns"
+  },
+  "rock": {
+   "w": "rock"
+  },
+  "room": {
+   "w": "room"
+  },
+  "run": {
+   "w": "run"
+  },
+  "sad": {
+   "w": "sad"
+  },
+  "satchel": {
+   "w": "satchel"
+  },
+  "scarf": {
+   "w": "scarf"
+  },
+  "scruffy": {
+   "w": "scruffy"
+  },
+  "she": {
+   "w": "she"
+  },
+  "sheep": {
+   "w": "sheep",
+   "plw": "sheep"
+  },
+  "shelf": {
+   "w": "shelf"
+  },
+  "shirt": {
+   "w": "shirt"
+  },
+  "shop": {
+   "w": "shop"
+  },
+  "show": {
+   "w": "show"
+  },
+  "shrine": {
+   "w": "shrine"
+  },
+  "sit": {
+   "w": "sit",
+   "inf": "sit"
+  },
+  "sleep": {
+   "w": "sleep",
+   "inf": "sleep"
+  },
+  "small": {
+   "w": "small"
+  },
+  "smelly": {
+   "w": "smelly"
+  },
+  "smithy": {
+   "w": "smithy",
+   "plw": "smithies"
+  },
+  "sock": {
+   "w": "sock"
+  },
+  "something": {
+   "w": "something"
+  },
+  "south": {
+   "w": "south"
+  },
+  "sparks": {
+   "w": "sparks",
+   "pl": true
+  },
+  "stay": {
+   "w": "stay"
+  },
+  "stone": {
+   "w": "stone",
+   "mass": true
+  },
+  "stonecutter": {
+   "w": "stonecutter"
+  },
+  "stop": {
+   "w": "stop"
+  },
+  "store": {
+   "w": "store"
+  },
+  "storehouse": {
+   "w": "storehouse"
+  },
+  "storeroom": {
+   "w": "storeroom"
+  },
+  "study": {
+   "w": "study",
+   "plw": "studies"
+  },
+  "switch": {
+   "w": "switch"
+  },
+  "table": {
+   "w": "table"
+  },
+  "take": {
+   "w": "take"
+  },
+  "talk": {
+   "w": "talk",
+   "inf": "talk"
+  },
+  "temple": {
+   "w": "temple"
+  },
+  "thank_you": {
+   "w": "thank you"
+  },
+  "there": {
+   "w": "there"
+  },
+  "therefore": {
+   "w": "so"
+  },
+  "they": {
+   "w": "they",
+   "pl": true
+  },
+  "thing": {
+   "w": "thing"
+  },
+  "think": {
+   "w": "think"
+  },
+  "thirsty": {
+   "w": "thirsty"
+  },
+  "this": {
+   "w": "this"
+  },
+  "throw": {
+   "w": "throw"
+  },
+  "tidy": {
+   "w": "tidy",
+   "inf": "tidy"
+  },
+  "tired": {
+   "w": "tired"
+  },
+  "to": {
+   "w": "to"
+  },
+  "together": {
+   "w": "together"
+  },
+  "toilet": {
+   "w": "toilet"
+  },
+  "town": {
+   "w": "town"
+  },
+  "toy": {
+   "w": "toy"
+  },
+  "trade": {
+   "w": "trade"
+  },
+  "train": {
+   "w": "train"
+  },
+  "tree": {
+   "w": "tree"
+  },
+  "under": {
+   "w": "under"
+  },
+  "understand": {
+   "w": "understand"
+  },
+  "until": {
+   "w": "until"
+  },
+  "walk": {
+   "w": "walk"
+  },
+  "want": {
+   "w": "want"
+  },
+  "wash": {
+   "w": "wash",
+   "inf": "wash"
+  },
+  "water": {
+   "w": "water",
+   "mass": true
+  },
+  "we": {
+   "w": "we",
+   "pl": true
+  },
+  "wear": {
+   "w": "wear",
+   "inf": "get dressed"
+  },
+  "weaver": {
+   "w": "weaver"
+  },
+  "weaving": {
+   "w": "weaving room",
+   "plw": "weaving rooms"
+  },
+  "well": {
+   "w": "well"
+  },
+  "west": {
+   "w": "west"
+  },
+  "wet": {
+   "w": "wet"
+  },
+  "when": {
+   "w": "when"
+  },
+  "why": {
+   "w": "why"
+  },
+  "will": {
+   "w": "will"
+  },
+  "window": {
+   "w": "window"
+  },
+  "with": {
+   "w": "with"
+  },
+  "wood": {
+   "w": "wood",
+   "mass": true
+  },
+  "work": {
+   "w": "work"
+  },
+  "workbench": {
+   "w": "workbench"
+  },
+  "workshop": {
+   "w": "workshop"
+  },
+  "yard": {
+   "w": "yard"
+  },
+  "yes": {
+   "w": "yes"
+  },
+  "you": {
+   "w": "you"
+  }
+ },
+ "he": {
+  "altar": {
+   "w": "מזבח",
+   "g": "m"
+  },
+  "animal": {
+   "w": "חיה",
+   "g": "f",
+   "plw": "חיות"
+  },
+  "anvil": {
+   "w": "סדן",
+   "g": "m"
+  },
+  "apple": {
+   "w": "תפוח",
+   "g": "m"
+  },
+  "area": {
+   "w": "אזור",
+   "g": "m"
+  },
+  "ask": {
+   "w": "מבקש",
+   "f": "מבקשת",
+   "vmpl": "מבקשים",
+   "vfpl": "מבקשות",
+   "inf": "לבקש"
+  },
+  "ball": {
+   "w": "כדור",
+   "g": "m"
+  },
+  "banana": {
+   "w": "בננה",
+   "g": "f"
+  },
+  "barrel": {
+   "w": "חבית",
+   "g": "f"
+  },
+  "basket": {
+   "w": "סל",
+   "g": "m"
+  },
+  "bath": {
+   "w": "אמבטיה",
+   "g": "f"
+  },
+  "bathroom": {
+   "w": "שירותים",
+   "g": "m",
+   "pl": true
+  },
+  "bear": {
+   "w": "דוב",
+   "g": "m"
+  },
+  "because": {
+   "w": "כי"
+  },
+  "bed": {
+   "w": "מיטה",
+   "g": "f"
+  },
+  "bedroom": {
+   "w": "חדר שינה",
+   "g": "m",
+   "defw": "חדר השינה"
+  },
+  "behind": {
+   "w": "מאחורי"
+  },
+  "big": {
+   "w": "גדול"
+  },
+  "bin": {
+   "w": "פח",
+   "g": "m"
+  },
+  "block": {
+   "w": "לבנה",
+   "g": "f",
+   "plw": "לבנים"
+  },
+  "blocks": {
+   "w": "קוביות",
+   "g": "f",
+   "pl": true
+  },
+  "boat": {
+   "w": "סירה",
+   "g": "f"
+  },
+  "book": {
+   "w": "ספר",
+   "g": "m"
+  },
+  "bored": {
+   "w": "משועמם",
+   "f": "משועממת"
+  },
+  "bowl": {
+   "w": "קערה",
+   "g": "f"
+  },
+  "box": {
+   "w": "קופסה",
+   "g": "f"
+  },
+  "break": {
+   "w": "שובר",
+   "f": "שוברת",
+   "vmpl": "שוברים",
+   "vfpl": "שוברות",
+   "inf": "לשבור"
+  },
+  "bring": {
+   "w": "מביא",
+   "f": "מביאה",
+   "vmpl": "מביאים",
+   "vfpl": "מביאות",
+   "inf": "להביא"
+  },
+  "broccoli": {
+   "w": "ברוקולי",
+   "g": "m",
+   "mass": true
+  },
+  "bubbles": {
+   "w": "בועות",
+   "g": "f",
+   "pl": true
+  },
+  "build": {
+   "w": "בונה",
+   "f": "בונה",
+   "vmpl": "בונים",
+   "vfpl": "בונות",
+   "inf": "לבנות"
+  },
+  "building": {
+   "w": "מבנה",
+   "g": "m",
+   "plw": "מבנים"
+  },
+  "cabinet": {
+   "w": "ארון",
+   "g": "m"
+  },
+  "car": {
+   "w": "מכונית",
+   "g": "f"
+  },
+  "carry": {
+   "w": "נושא",
+   "f": "נושאת",
+   "vmpl": "נושאים",
+   "vfpl": "נושאות",
+   "inf": "לשאת"
+  },
+  "chair": {
+   "w": "כיסא",
+   "g": "m"
+  },
+  "chase": {
+   "w": "רודף",
+   "f": "רודפת",
+   "vmpl": "רודפים",
+   "vfpl": "רודפות",
+   "inf": "לרדוף"
+  },
+  "clean": {
+   "w": "נקי",
+   "f": "נקייה",
+   "mpl": "נקיים",
+   "fpl": "נקיות"
+  },
+  "close": {
+   "w": "קרוב"
+  },
+  "closed": {
+   "w": "סגור",
+   "f": "סגורה"
+  },
+  "clothing": {
+   "w": "בגדים",
+   "g": "m",
+   "pl": true
+  },
+  "cold": {
+   "w": "קר"
+  },
+  "color": {
+   "w": "צובע",
+   "f": "צובעת",
+   "vmpl": "צובעים",
+   "vfpl": "צובעות",
+   "inf": "לצבוע"
+  },
+  "color_black": {
+   "w": "שחור"
+  },
+  "color_blue": {
+   "w": "כחול"
+  },
+  "color_brown": {
+   "w": "חום"
+  },
+  "color_green": {
+   "w": "ירוק"
+  },
+  "color_orange": {
+   "w": "כתום"
+  },
+  "color_pink": {
+   "w": "ורוד"
+  },
+  "color_purple": {
+   "w": "סגול"
+  },
+  "color_red": {
+   "w": "אדום"
+  },
+  "color_white": {
+   "w": "לבן"
+  },
+  "color_yellow": {
+   "w": "צהוב"
+  },
+  "confused": {
+   "w": "מבולבל",
+   "f": "מבולבלת"
+  },
+  "cook": {
+   "w": "מבשל",
+   "f": "מבשלת",
+   "vmpl": "מבשלים",
+   "vfpl": "מבשלות",
+   "inf": "לבשל"
+  },
+  "cookie": {
+   "w": "עוגייה",
+   "g": "f"
+  },
+  "cow": {
+   "w": "פרה",
+   "g": "f"
+  },
+  "creature": {
+   "w": "יצור",
+   "g": "m"
+  },
+  "cut": {
+   "w": "כורת",
+   "f": "כורתת",
+   "vmpl": "כורתים",
+   "vfpl": "כורתות",
+   "inf": "לכרות"
+  },
+  "deer": {
+   "w": "צבי",
+   "g": "m"
+  },
+  "dirty": {
+   "w": "מלוכלך",
+   "f": "מלוכלכת"
+  },
+  "do": {
+   "w": "עושה",
+   "f": "עושה",
+   "vmpl": "עושים",
+   "vfpl": "עושות",
+   "inf": "לעשות"
+  },
+  "dog": {
+   "w": "כלב",
+   "g": "m"
+  },
+  "doll": {
+   "w": "בובה",
+   "g": "f"
+  },
+  "door": {
+   "w": "דלת",
+   "g": "f"
+  },
+  "dress": {
+   "w": "שמלה",
+   "g": "f"
+  },
+  "drink": {
+   "w": "שותה",
+   "f": "שותה",
+   "vmpl": "שותים",
+   "vfpl": "שותות",
+   "inf": "לשתות"
+  },
+  "dry": {
+   "w": "יבש"
+  },
+  "east": {
+   "w": "מזרח"
+  },
+  "easy": {
+   "w": "קל"
+  },
+  "eat": {
+   "w": "אוכל",
+   "f": "אוכלת",
+   "vmpl": "אוכלים",
+   "vfpl": "אוכלות",
+   "inf": "לאכול"
+  },
+  "empty": {
+   "w": "מרוקן",
+   "f": "מרוקנת",
+   "vmpl": "מרוקנים",
+   "vfpl": "מרוקנות",
+   "inf": "לרוקן"
+  },
+  "far": {
+   "w": "רחוק"
+  },
+  "farm": {
+   "w": "חווה",
+   "g": "f",
+   "plw": "חוות"
+  },
+  "fight": {
+   "w": "נלחם",
+   "f": "נלחמת",
+   "vmpl": "נלחמים",
+   "vfpl": "נלחמות",
+   "inf": "להילחם"
+  },
+  "finished": {
+   "w": "מוכן",
+   "f": "מוכנה",
+   "mpl": "מוכנים",
+   "fpl": "מוכנות"
+  },
+  "fire": {
+   "w": "אש",
+   "g": "f",
+   "mass": true
+  },
+  "follow": {
+   "w": "עוקב",
+   "f": "עוקבת",
+   "vmpl": "עוקבים",
+   "vfpl": "עוקבות",
+   "inf": "לעקוב"
+  },
+  "food": {
+   "w": "אוכל",
+   "g": "m",
+   "mass": true
+  },
+  "for": {
+   "w": "תמורת"
+  },
+  "forge": {
+   "w": "מפוחה",
+   "g": "f"
+  },
+  "frog": {
+   "w": "צפרדע",
+   "g": "f"
+  },
+  "generator": {
+   "w": "גנרטור",
+   "g": "m"
+  },
+  "get": {
+   "w": "משיג",
+   "f": "משיגה",
+   "vmpl": "משיגים",
+   "vfpl": "משיגות",
+   "inf": "להשיג"
+  },
+  "give": {
+   "w": "נותן",
+   "f": "נותנת",
+   "vmpl": "נותנים",
+   "vfpl": "נותנות"
+  },
+  "go": {
+   "w": "הולך",
+   "f": "הולכת",
+   "vmpl": "הולכים",
+   "vfpl": "הולכות",
+   "inf": "ללכת"
+  },
+  "good": {
+   "w": "טוב",
+   "f": "טובה"
+  },
+  "goodbye": {
+   "w": "להתראות"
+  },
+  "grape": {
+   "w": "ענב",
+   "g": "m"
+  },
+  "happy": {
+   "w": "שמח"
+  },
+  "hard": {
+   "w": "קשה"
+  },
+  "hat": {
+   "w": "כובע",
+   "g": "m"
+  },
+  "have": {
+   "w": "יש",
+   "vmpl": "יש",
+   "vfpl": "יש"
+  },
+  "heat": {
+   "w": "מחמם",
+   "f": "מחממת",
+   "vmpl": "מחממים",
+   "vfpl": "מחממות",
+   "inf": "לחמם"
+  },
+  "heater": {
+   "w": "מחמם",
+   "g": "m"
+  },
+  "help": {
+   "w": "עוזר",
+   "f": "עוזרת",
+   "objPrep": "to"
+  },
+  "here": {
+   "w": "כאן"
+  },
+  "hi": {
+   "w": "שלום"
+  },
+  "home": {
+   "w": "בית",
+   "g": "m"
+  },
+  "hot": {
+   "w": "חם"
+  },
+  "house": {
+   "w": "בית",
+   "g": "m",
+   "plw": "בתים"
+  },
+  "hungry": {
+   "w": "רעב",
+   "f": "רעבה"
+  },
+  "i_me": {
+   "w": "אני"
+  },
+  "in": {
+   "w": "ב"
+  },
+  "in_front_of": {
+   "w": "לפני"
+  },
+  "in_order_to": {
+   "w": "כדי ש"
+  },
+  "kitchen": {
+   "w": "מטבח",
+   "g": "m"
+  },
+  "know": {
+   "w": "יודע",
+   "f": "יודעת"
+  },
+  "lamp": {
+   "w": "מנורה",
+   "g": "f"
+  },
+  "less": {
+   "w": "פחות"
+  },
+  "library": {
+   "w": "ספריה",
+   "g": "f"
+  },
+  "like": {
+   "w": "אוהב",
+   "f": "אוהבת"
+  },
+  "living": {
+   "w": "סלון",
+   "g": "m"
+  },
+  "lonely": {
+   "w": "בודד",
+   "f": "בודדה"
+  },
+  "loom": {
+   "w": "נול",
+   "g": "m"
+  },
+  "make": {
+   "w": "מכין",
+   "f": "מכינה",
+   "vmpl": "מכינים",
+   "vfpl": "מכינות",
+   "inf": "להכין"
+  },
+  "make_cold": {
+   "w": "מקרר",
+   "f": "מקררת",
+   "vmpl": "מקררים",
+   "vfpl": "מקררות",
+   "inf": "לקרר"
+  },
+  "many": {
+   "w": "הרבה"
+  },
+  "market": {
+   "w": "שוק"
+  },
+  "masonry": {
+   "w": "חדר סיתות",
+   "g": "m"
+  },
+  "more": {
+   "w": "עוד"
+  },
+  "near": {
+   "w": "קרוב ל"
+  },
+  "need": {
+   "w": "צריך",
+   "f": "צריכה"
+  },
+  "next_to": {
+   "w": "ליד"
+  },
+  "no": {
+   "w": "לא"
+  },
+  "north": {
+   "w": "צפון"
+  },
+  "off": {
+   "w": "כבוי",
+   "f": "כבויה"
+  },
+  "ok": {
+   "w": "בסדר",
+   "f": "בסדר"
+  },
+  "on": {
+   "w": "דלוק",
+   "f": "דלוקה"
+  },
+  "open": {
+   "w": "פתוח",
+   "f": "פתוחה"
+  },
+  "oven": {
+   "w": "תנור",
+   "g": "m"
+  },
+  "over": {
+   "w": "מעל"
+  },
+  "person": {
+   "w": "אדם",
+   "g": "m",
+   "plw": "אנשים"
+  },
+  "place": {
+   "w": "מקום"
+  },
+  "play": {
+   "w": "משחק",
+   "f": "משחקת",
+   "inf": "לשחק"
+  },
+  "put": {
+   "w": "שם",
+   "f": "שמה",
+   "inf": "לשים"
+  },
+  "puzzle": {
+   "w": "פאזל",
+   "g": "m"
+  },
+  "rabbit": {
+   "w": "ארנב",
+   "g": "m"
+  },
+  "ram": {
+   "w": "איל",
+   "g": "m"
+  },
+  "rare": {
+   "w": "נדיר"
+  },
+  "read": {
+   "w": "קורא",
+   "f": "קוראת",
+   "inf": "לקרוא"
+  },
+  "refrigerator": {
+   "w": "מקרר",
+   "g": "m"
+  },
+  "rest": {
+   "w": "נח",
+   "f": "נחה",
+   "vmpl": "נחים",
+   "vfpl": "נחות",
+   "inf": "לנוח"
+  },
+  "return": {
+   "w": "חוזר",
+   "f": "חוזרת",
+   "vmpl": "חוזרים",
+   "vfpl": "חוזרות",
+   "inf": "לחזור"
+  },
+  "rock": {
+   "w": "סלע",
+   "g": "m"
+  },
+  "room": {
+   "w": "חדר",
+   "g": "m"
+  },
+  "run": {
+   "w": "רץ",
+   "f": "רצה",
+   "vmpl": "רצים",
+   "vfpl": "רצות",
+   "inf": "לרוץ"
+  },
+  "sad": {
+   "w": "עצוב"
+  },
+  "satchel": {
+   "w": "ילקוט",
+   "g": "m"
+  },
+  "scarf": {
+   "w": "צעיף",
+   "g": "m"
+  },
+  "scruffy": {
+   "w": "מרושל",
+   "f": "מרושלת"
+  },
+  "sheep": {
+   "w": "כבשה",
+   "g": "f"
+  },
+  "shelf": {
+   "w": "מדף",
+   "g": "m"
+  },
+  "shirt": {
+   "w": "חולצה",
+   "g": "f"
+  },
+  "shop": {
+   "w": "חנות",
+   "g": "f"
+  },
+  "show": {
+   "w": "מראה",
+   "f": "מראה",
+   "vmpl": "מראים",
+   "vfpl": "מראות",
+   "inf": "להראות"
+  },
+  "shrine": {
+   "w": "מקדש קטן",
+   "g": "m"
+  },
+  "sit": {
+   "w": "יושב",
+   "f": "יושבת",
+   "vmpl": "יושבים",
+   "vfpl": "יושבות",
+   "inf": "לשבת"
+  },
+  "sleep": {
+   "w": "ישן",
+   "f": "ישנה",
+   "vmpl": "ישנים",
+   "vfpl": "ישנות",
+   "inf": "לישון"
+  },
+  "small": {
+   "w": "קטן"
+  },
+  "smelly": {
+   "w": "מסריח",
+   "f": "מסריחה"
+  },
+  "smithy": {
+   "w": "נפחייה",
+   "g": "f"
+  },
+  "sock": {
+   "w": "גרב",
+   "g": "m"
+  },
+  "something": {
+   "w": "משהו"
+  },
+  "south": {
+   "w": "דרום"
+  },
+  "sparks": {
+   "w": "ניצוצות",
+   "g": "m",
+   "pl": true
+  },
+  "stay": {
+   "w": "נשאר",
+   "f": "נשארת",
+   "inf": "להישאר"
+  },
+  "stone": {
+   "w": "אבן",
+   "g": "f",
+   "plw": "אבנים",
+   "mass": true
+  },
+  "stonecutter": {
+   "w": "שולחן סיתות",
+   "g": "m"
+  },
+  "stop": {
+   "w": "עוצר",
+   "f": "עוצרת",
+   "vmpl": "עוצרים",
+   "vfpl": "עוצרות",
+   "inf": "לעצור"
+  },
+  "store": {
+   "w": "חנות",
+   "g": "f"
+  },
+  "storehouse": {
+   "w": "מחסן",
+   "g": "m"
+  },
+  "storeroom": {
+   "w": "מחסן",
+   "g": "m"
+  },
+  "study": {
+   "w": "חדר עבודה",
+   "g": "m"
+  },
+  "switch": {
+   "w": "מתג",
+   "g": "m"
+  },
+  "table": {
+   "w": "שולחן",
+   "g": "m"
+  },
+  "take": {
+   "w": "לוקח",
+   "f": "לוקחת",
+   "vmpl": "לוקחים",
+   "vfpl": "לוקחות"
+  },
+  "talk": {
+   "w": "מדבר",
+   "f": "מדברת",
+   "vmpl": "מדברים",
+   "vfpl": "מדברות",
+   "inf": "לדבר"
+  },
+  "temple": {
+   "w": "מקדש",
+   "g": "m"
+  },
+  "thank_you": {
+   "w": "תודה"
+  },
+  "there": {
+   "w": "שם"
+  },
+  "therefore": {
+   "w": "לכן"
+  },
+  "they": {
+   "w": "הם"
+  },
+  "thing": {
+   "w": "דבר"
+  },
+  "think": {
+   "w": "חושב",
+   "f": "חושבת"
+  },
+  "thirsty": {
+   "w": "צמא",
+   "f": "צמאה"
+  },
+  "throw": {
+   "w": "זורק",
+   "f": "זורקת"
+  },
+  "tidy": {
+   "w": "מסדר",
+   "f": "מסדרת",
+   "vmpl": "מסדרים",
+   "vfpl": "מסדרות",
+   "inf": "לסדר"
+  },
+  "tired": {
+   "w": "עייף",
+   "f": "עייפה"
+  },
+  "to": {
+   "w": "ל"
+  },
+  "together": {
+   "w": "ביחד"
+  },
+  "toilet": {
+   "w": "אסלה",
+   "g": "f"
+  },
+  "town": {
+   "w": "עיירה",
+   "g": "f"
+  },
+  "toy": {
+   "w": "צעצוע",
+   "g": "m",
+   "f": "צעצוע",
+   "mpl": "צעצוע",
+   "fpl": "צעצוע"
+  },
+  "trade": {
+   "w": "מחליף",
+   "f": "מחליפה",
+   "vmpl": "מחליפים",
+   "vfpl": "מחליפות"
+  },
+  "train": {
+   "w": "רכבת",
+   "g": "f"
+  },
+  "tree": {
+   "w": "עץ",
+   "g": "m",
+   "plw": "עצים"
+  },
+  "under": {
+   "w": "מתחת ל"
+  },
+  "understand": {
+   "w": "מבין",
+   "f": "מבינה"
+  },
+  "until": {
+   "w": "עד ש"
+  },
+  "walk": {
+   "w": "הולך",
+   "f": "הולכת",
+   "vmpl": "הולכים",
+   "vfpl": "הולכות",
+   "inf": "ללכת"
+  },
+  "want": {
+   "w": "רוצה",
+   "f": "רוצה",
+   "vmpl": "רוצים",
+   "vfpl": "רוצות"
+  },
+  "wash": {
+   "w": "רוחץ",
+   "f": "רוחצת",
+   "vmpl": "רוחצים",
+   "vfpl": "רוחצות",
+   "inf": "לרחוץ"
+  },
+  "water": {
+   "w": "מים",
+   "g": "m",
+   "pl": true,
+   "mass": true
+  },
+  "we": {
+   "w": "אנחנו"
+  },
+  "wear": {
+   "w": "מתלבש",
+   "f": "מתלבשת",
+   "inf": "להתלבש"
+  },
+  "weaver": {
+   "w": "אריגה",
+   "g": "f"
+  },
+  "weaving": {
+   "w": "חדר אריגה",
+   "g": "m"
+  },
+  "well": {
+   "w": "באר",
+   "g": "f"
+  },
+  "west": {
+   "w": "מערב"
+  },
+  "wet": {
+   "w": "רטוב"
+  },
+  "when": {
+   "w": "כש"
+  },
+  "why": {
+   "w": "למה"
+  },
+  "window": {
+   "w": "חלון",
+   "g": "m"
+  },
+  "with": {
+   "w": "עם"
+  },
+  "wood": {
+   "w": "עץ",
+   "g": "m",
+   "mass": true
+  },
+  "work": {
+   "w": "עבודה",
+   "g": "f"
+  },
+  "workbench": {
+   "w": "שולחן עבודה",
+   "g": "m"
+  },
+  "workshop": {
+   "w": "סדנה",
+   "g": "f",
+   "plw": "סדנאות"
+  },
+  "yard": {
+   "w": "חצר",
+   "g": "f",
+   "plw": "חצרות"
+  },
+  "yes": {
+   "w": "כן"
+  },
+  "you": {
+   "w": "אתה",
+   "f": "את"
+  }
+ },
+ "es": {
+  "altar": {
+   "w": "altar",
+   "g": "m",
+   "plw": "altares"
+  },
+  "animal": {
+   "w": "animal",
+   "g": "m",
+   "plw": "animales"
+  },
+  "anvil": {
+   "w": "yunque",
+   "g": "m",
+   "plw": "yunques"
+  },
+  "apple": {
+   "w": "manzana",
+   "g": "f"
+  },
+  "area": {
+   "w": "zona",
+   "g": "f"
+  },
+  "ask": {
+   "w": "pido",
+   "v2": "pides",
+   "v3": "pide",
+   "v3p": "piden",
+   "v1p": "pedimos",
+   "inf": "pedir"
+  },
+  "ball": {
+   "w": "pelota",
+   "g": "f"
+  },
+  "banana": {
+   "w": "plátano",
+   "g": "m"
+  },
+  "barrel": {
+   "w": "barril",
+   "g": "m",
+   "plw": "barriles"
+  },
+  "basket": {
+   "w": "cesta",
+   "g": "f"
+  },
+  "bath": {
+   "w": "bañera",
+   "g": "f"
+  },
+  "bathroom": {
+   "w": "baño",
+   "g": "m"
+  },
+  "bear": {
+   "w": "oso",
+   "g": "m"
+  },
+  "bed": {
+   "w": "cama",
+   "g": "f"
+  },
+  "bedroom": {
+   "w": "dormitorio",
+   "g": "m"
+  },
+  "behind": {
+   "w": "detrás de"
+  },
+  "big": {
+   "w": "grande",
+   "f": "grande"
+  },
+  "bin": {
+   "w": "papelera",
+   "g": "f"
+  },
+  "block": {
+   "w": "bloque",
+   "g": "m"
+  },
+  "blocks": {
+   "w": "bloques",
+   "g": "m",
+   "pl": true
+  },
+  "boat": {
+   "w": "barco",
+   "g": "m"
+  },
+  "book": {
+   "w": "libro",
+   "g": "m"
+  },
+  "bored": {
+   "w": "aburrido"
+  },
+  "bowl": {
+   "w": "cuenco",
+   "g": "m"
+  },
+  "box": {
+   "w": "caja",
+   "g": "f"
+  },
+  "break": {
+   "w": "rompo",
+   "v2": "rompes",
+   "v3": "rompe",
+   "v3p": "rompen",
+   "inf": "romper"
+  },
+  "bring": {
+   "w": "traigo",
+   "v2": "traes",
+   "v3": "trae",
+   "v3p": "traen",
+   "v1p": "traemos",
+   "inf": "traer"
+  },
+  "broccoli": {
+   "w": "brócoli",
+   "g": "m",
+   "mass": true
+  },
+  "bubbles": {
+   "w": "burbujas",
+   "g": "f",
+   "pl": true
+  },
+  "build": {
+   "w": "construyo",
+   "v2": "construyes",
+   "v3": "construye",
+   "v3p": "construyen",
+   "v1p": "construimos",
+   "inf": "construir"
+  },
+  "building": {
+   "w": "edificio",
+   "g": "m"
+  },
+  "cabinet": {
+   "w": "armario",
+   "g": "m"
+  },
+  "car": {
+   "w": "coche",
+   "g": "m"
+  },
+  "carry": {
+   "w": "llevo",
+   "v2": "llevas",
+   "v3": "lleva",
+   "v3p": "llevan",
+   "v1p": "llevamos",
+   "inf": "llevar"
+  },
+  "chair": {
+   "w": "silla",
+   "g": "f"
+  },
+  "chase": {
+   "w": "persigo",
+   "v2": "persigues",
+   "v3": "persigue",
+   "v3p": "persiguen",
+   "inf": "perseguir"
+  },
+  "clean": {
+   "w": "limpio"
+  },
+  "closed": {
+   "w": "cerrado",
+   "f": "cerrada"
+  },
+  "clothing": {
+   "w": "ropa",
+   "g": "f",
+   "mass": true
+  },
+  "cold": {
+   "w": "frío",
+   "f": "fría"
+  },
+  "color": {
+   "w": "coloreo",
+   "v2": "coloreas",
+   "v3": "colorea",
+   "v3p": "colorean",
+   "v1p": "coloreamos",
+   "inf": "colorear"
+  },
+  "color_black": {
+   "w": "negro"
+  },
+  "color_blue": {
+   "w": "azul",
+   "f": "azul"
+  },
+  "color_brown": {
+   "w": "marrón",
+   "f": "marrón",
+   "mpl": "marrones",
+   "fpl": "marrones"
+  },
+  "color_green": {
+   "w": "verde",
+   "f": "verde"
+  },
+  "color_orange": {
+   "w": "naranja",
+   "f": "naranja"
+  },
+  "color_pink": {
+   "w": "rosa",
+   "f": "rosa"
+  },
+  "color_purple": {
+   "w": "morado"
+  },
+  "color_red": {
+   "w": "rojo"
+  },
+  "color_white": {
+   "w": "blanco"
+  },
+  "color_yellow": {
+   "w": "amarillo"
+  },
+  "confused": {
+   "w": "confundido"
+  },
+  "cook": {
+   "w": "cocino",
+   "v2": "cocinas",
+   "v3": "cocina",
+   "v3p": "cocinan",
+   "inf": "cocinar"
+  },
+  "cookie": {
+   "w": "galleta",
+   "g": "f"
+  },
+  "cow": {
+   "w": "vaca",
+   "g": "f"
+  },
+  "creature": {
+   "w": "criatura",
+   "g": "f"
+  },
+  "cut": {
+   "w": "corto",
+   "v2": "cortas",
+   "v3": "corta",
+   "v3p": "cortan",
+   "v1p": "cortamos",
+   "inf": "cortar"
+  },
+  "deer": {
+   "w": "ciervo",
+   "g": "m"
+  },
+  "dirty": {
+   "w": "sucio"
+  },
+  "do": {
+   "w": "hago",
+   "v2": "haces",
+   "v3": "hace",
+   "v3p": "hacen",
+   "v1p": "hacemos",
+   "inf": "hacer"
+  },
+  "dog": {
+   "w": "perro",
+   "g": "m"
+  },
+  "doll": {
+   "w": "muñeca",
+   "g": "f"
+  },
+  "door": {
+   "w": "puerta",
+   "g": "f"
+  },
+  "dress": {
+   "w": "vestido",
+   "g": "m"
+  },
+  "drink": {
+   "w": "bebo",
+   "v2": "bebes",
+   "v3": "bebe",
+   "v3p": "beben",
+   "v1p": "bebemos",
+   "inf": "beber"
+  },
+  "dry": {
+   "w": "seco"
+  },
+  "east": {
+   "w": "este"
+  },
+  "easy": {
+   "w": "fácil"
+  },
+  "eat": {
+   "w": "como",
+   "v2": "comes",
+   "v3": "come",
+   "v3p": "comen",
+   "v1p": "comemos",
+   "inf": "comer"
+  },
+  "empty": {
+   "w": "vacío",
+   "v2": "vacías",
+   "v3": "vacía",
+   "v3p": "vacían",
+   "inf": "vaciar"
+  },
+  "farm": {
+   "w": "granja",
+   "g": "f"
+  },
+  "fight": {
+   "w": "lucho",
+   "v2": "luchas",
+   "v3": "lucha",
+   "v3p": "luchan",
+   "v1p": "luchamos",
+   "inf": "luchar"
+  },
+  "finished": {
+   "w": "terminado",
+   "f": "terminada"
+  },
+  "follow": {
+   "w": "sigo",
+   "v2": "sigues",
+   "v3": "sigue",
+   "v3p": "siguen",
+   "inf": "seguir"
+  },
+  "food": {
+   "w": "comida",
+   "g": "f",
+   "mass": true
+  },
+  "forge": {
+   "w": "forja",
+   "g": "f",
+   "plw": "forjas"
+  },
+  "frog": {
+   "w": "rana",
+   "g": "f"
+  },
+  "generator": {
+   "w": "generador",
+   "g": "m"
+  },
+  "get": {
+   "w": "consigo",
+   "v2": "consigues",
+   "v3": "consigue",
+   "v3p": "consiguen",
+   "v1p": "conseguimos",
+   "inf": "conseguir"
+  },
+  "give": {
+   "w": "doy",
+   "v2": "das",
+   "v3": "da",
+   "v3p": "dan",
+   "v1p": "damos"
+  },
+  "go": {
+   "w": "voy",
+   "v2": "vas",
+   "v3": "va",
+   "v3p": "van",
+   "v1p": "vamos",
+   "inf": "ir"
+  },
+  "good": {
+   "w": "bueno",
+   "f": "buena"
+  },
+  "goodbye": {
+   "w": "adiós"
+  },
+  "grape": {
+   "w": "uva",
+   "g": "f"
+  },
+  "happy": {
+   "w": "feliz",
+   "f": "feliz",
+   "mpl": "felices",
+   "fpl": "felices"
+  },
+  "hard": {
+   "w": "difícil"
+  },
+  "hat": {
+   "w": "sombrero",
+   "g": "m"
+  },
+  "have": {
+   "w": "tengo",
+   "v2": "tienes",
+   "v3": "tiene",
+   "v3p": "tienen",
+   "v1p": "tenemos"
+  },
+  "heat": {
+   "w": "caliento",
+   "v2": "calientas",
+   "v3": "calienta",
+   "v3p": "calientan",
+   "inf": "calentar"
+  },
+  "heater": {
+   "w": "calefactor",
+   "g": "m"
+  },
+  "help": {
+   "w": "ayudo",
+   "v2": "ayudas",
+   "v3": "ayuda",
+   "v3p": "ayudan"
+  },
+  "here": {
+   "w": "aquí"
+  },
+  "hi": {
+   "w": "hola"
+  },
+  "home": {
+   "w": "casa",
+   "g": "f"
+  },
+  "hot": {
+   "w": "caliente",
+   "f": "caliente"
+  },
+  "house": {
+   "w": "casa",
+   "g": "f"
+  },
+  "hungry": {
+   "w": "hambriento"
+  },
+  "i_me": {
+   "w": "yo"
+  },
+  "in_front_of": {
+   "w": "delante de"
+  },
+  "kitchen": {
+   "w": "cocina",
+   "g": "f"
+  },
+  "know": {
+   "w": "sé",
+   "v2": "sabes",
+   "v3": "sabe",
+   "v3p": "saben"
+  },
+  "lamp": {
+   "w": "lámpara",
+   "g": "f"
+  },
+  "less": {
+   "w": "menos"
+  },
+  "library": {
+   "w": "biblioteca",
+   "g": "f",
+   "plw": "bibliotecas"
+  },
+  "living": {
+   "w": "sala",
+   "g": "f",
+   "plw": "salas"
+  },
+  "lonely": {
+   "w": "solo"
+  },
+  "loom": {
+   "w": "telar",
+   "g": "m",
+   "plw": "telares"
+  },
+  "make": {
+   "w": "hago",
+   "v2": "haces",
+   "v3": "hace",
+   "v3p": "hacen",
+   "v1p": "hacemos",
+   "inf": "hacer"
+  },
+  "make_cold": {
+   "w": "enfrío",
+   "v2": "enfrías",
+   "v3": "enfría",
+   "v3p": "enfrían",
+   "inf": "enfriar"
+  },
+  "market": {
+   "w": "mercado"
+  },
+  "masonry": {
+   "w": "cantería",
+   "g": "f",
+   "plw": "canterías"
+  },
+  "more": {
+   "w": "más"
+  },
+  "near": {
+   "w": "cerca de"
+  },
+  "need": {
+   "w": "necesito",
+   "v2": "necesitas",
+   "v3": "necesita",
+   "v3p": "necesitan"
+  },
+  "next_to": {
+   "w": "al lado de"
+  },
+  "no": {
+   "w": "no"
+  },
+  "north": {
+   "w": "norte"
+  },
+  "off": {
+   "w": "apagado",
+   "f": "apagada"
+  },
+  "ok": {
+   "w": "bien",
+   "f": "bien"
+  },
+  "on": {
+   "w": "encendido",
+   "f": "encendida"
+  },
+  "open": {
+   "w": "abierto",
+   "f": "abierta"
+  },
+  "oven": {
+   "w": "horno",
+   "g": "m",
+   "plw": "hornos"
+  },
+  "over": {
+   "w": "encima de"
+  },
+  "person": {
+   "w": "persona",
+   "g": "f",
+   "plw": "personas"
+  },
+  "place": {
+   "w": "dónde"
+  },
+  "play": {
+   "w": "juego",
+   "v1p": "jugamos",
+   "inf": "jugar"
+  },
+  "put": {
+   "w": "pongo",
+   "v2": "pones",
+   "v3": "pone",
+   "v3p": "ponen",
+   "inf": "poner"
+  },
+  "puzzle": {
+   "w": "rompecabezas",
+   "g": "m",
+   "plw": "rompecabezas"
+  },
+  "rabbit": {
+   "w": "conejo",
+   "g": "m"
+  },
+  "ram": {
+   "w": "carnero",
+   "g": "m"
+  },
+  "rare": {
+   "w": "raro"
+  },
+  "read": {
+   "w": "leo",
+   "inf": "leer"
+  },
+  "refrigerator": {
+   "w": "nevera",
+   "g": "f"
+  },
+  "rest": {
+   "w": "descanso",
+   "v2": "descansas",
+   "v3": "descansa",
+   "v3p": "descansan",
+   "v1p": "descansamos",
+   "inf": "descansar"
+  },
+  "return": {
+   "w": "vuelvo",
+   "v2": "vuelves",
+   "v3": "vuelve",
+   "v3p": "vuelven",
+   "inf": "volver"
+  },
+  "rock": {
+   "w": "roca",
+   "g": "f"
+  },
+  "room": {
+   "w": "habitación",
+   "g": "f",
+   "plw": "habitaciones"
+  },
+  "run": {
+   "w": "corro",
+   "v2": "corres",
+   "v3": "corre",
+   "v3p": "corren",
+   "inf": "correr"
+  },
+  "sad": {
+   "w": "triste",
+   "f": "triste"
+  },
+  "satchel": {
+   "w": "bolso",
+   "g": "m"
+  },
+  "scarf": {
+   "w": "bufanda",
+   "g": "f"
+  },
+  "scruffy": {
+   "w": "desaliñado"
+  },
+  "sheep": {
+   "w": "oveja",
+   "g": "f"
+  },
+  "shelf": {
+   "w": "estante",
+   "g": "m",
+   "plw": "estantes"
+  },
+  "shirt": {
+   "w": "camiseta",
+   "g": "f"
+  },
+  "shop": {
+   "w": "tienda",
+   "g": "f",
+   "plw": "tiendas"
+  },
+  "show": {
+   "w": "muestro",
+   "v2": "muestras",
+   "v3": "muestra",
+   "v3p": "muestran",
+   "inf": "mostrar"
+  },
+  "shrine": {
+   "w": "santuario",
+   "g": "m",
+   "plw": "santuarios"
+  },
+  "sit": {
+   "w": "me siento",
+   "v2": "te sientas",
+   "v3": "se sienta",
+   "v3p": "se sientan",
+   "v1p": "nos sentamos",
+   "inf": "sentarme"
+  },
+  "sleep": {
+   "w": "duermo",
+   "v2": "duermes",
+   "v3": "duerme",
+   "v3p": "duermen",
+   "v1p": "dormimos",
+   "inf": "dormir"
+  },
+  "small": {
+   "w": "pequeño"
+  },
+  "smelly": {
+   "w": "apestoso"
+  },
+  "smithy": {
+   "w": "herrería",
+   "g": "f",
+   "plw": "herrerías"
+  },
+  "sock": {
+   "w": "calcetín",
+   "g": "m",
+   "plw": "calcetines"
+  },
+  "south": {
+   "w": "sur"
+  },
+  "sparks": {
+   "w": "chispas",
+   "g": "f",
+   "pl": true
+  },
+  "stone": {
+   "w": "piedra",
+   "g": "f",
+   "mass": true
+  },
+  "stonecutter": {
+   "w": "banco de cantero",
+   "g": "m",
+   "plw": "bancos de cantero"
+  },
+  "stop": {
+   "w": "paro",
+   "v2": "paras",
+   "v3": "para",
+   "v3p": "paran",
+   "inf": "parar"
+  },
+  "store": {
+   "w": "tienda",
+   "g": "f",
+   "plw": "tiendas"
+  },
+  "storehouse": {
+   "w": "almacén",
+   "g": "m",
+   "plw": "almacenes"
+  },
+  "storeroom": {
+   "w": "almacén",
+   "g": "m",
+   "plw": "almacenes"
+  },
+  "study": {
+   "w": "estudio",
+   "g": "m",
+   "plw": "estudios"
+  },
+  "switch": {
+   "w": "interruptor",
+   "g": "m"
+  },
+  "table": {
+   "w": "mesa",
+   "g": "f"
+  },
+  "take": {
+   "w": "tomo",
+   "v2": "tomas",
+   "v3": "toma",
+   "v3p": "toman",
+   "v1p": "tomamos"
+  },
+  "talk": {
+   "w": "hablo",
+   "v2": "hablas",
+   "v3": "habla",
+   "v3p": "hablan",
+   "v1p": "hablamos",
+   "inf": "hablar"
+  },
+  "temple": {
+   "w": "templo",
+   "g": "m",
+   "plw": "templos"
+  },
+  "thank_you": {
+   "w": "gracias"
+  },
+  "there": {
+   "w": "ahí"
+  },
+  "they": {
+   "w": "ellos",
+   "pl": true
+  },
+  "thing": {
+   "w": "qué"
+  },
+  "think": {
+   "w": "pienso",
+   "v2": "piensas",
+   "v3": "piensa",
+   "v3p": "piensan"
+  },
+  "thirsty": {
+   "w": "sediento"
+  },
+  "throw": {
+   "w": "tiro",
+   "v2": "tiras",
+   "v3": "tira",
+   "v3p": "tiran"
+  },
+  "tidy": {
+   "w": "ordeno",
+   "v2": "ordenas",
+   "v3": "ordena",
+   "v3p": "ordenan",
+   "inf": "ordenar"
+  },
+  "tired": {
+   "w": "cansado"
+  },
+  "together": {
+   "w": "juntos"
+  },
+  "toilet": {
+   "w": "inodoro",
+   "g": "m"
+  },
+  "town": {
+   "w": "pueblo",
+   "g": "m"
+  },
+  "toy": {
+   "w": "juguete",
+   "g": "m"
+  },
+  "trade": {
+   "w": "cambio",
+   "v2": "cambias",
+   "v3": "cambia",
+   "v3p": "cambian",
+   "v1p": "cambiamos"
+  },
+  "train": {
+   "w": "tren",
+   "g": "m",
+   "plw": "trenes"
+  },
+  "tree": {
+   "w": "árbol",
+   "g": "m",
+   "plw": "árboles"
+  },
+  "under": {
+   "w": "debajo de"
+  },
+  "understand": {
+   "w": "entiendo",
+   "v2": "entiendes",
+   "v3": "entiende",
+   "v3p": "entienden",
+   "inf": "entender"
+  },
+  "walk": {
+   "w": "camino",
+   "v2": "caminas",
+   "v3": "camina",
+   "v3p": "caminan",
+   "inf": "caminar"
+  },
+  "want": {
+   "w": "quiero",
+   "v2": "quieres",
+   "v3": "quiere",
+   "v3p": "quieren",
+   "v1p": "queremos"
+  },
+  "wash": {
+   "w": "lavo",
+   "v2": "lavas",
+   "v3": "lava",
+   "v3p": "lavan",
+   "v1p": "lavamos",
+   "inf": "lavar"
+  },
+  "we": {
+   "w": "nosotros",
+   "pl": true
+  },
+  "wear": {
+   "w": "me visto",
+   "inf": "vestirme"
+  },
+  "weaver": {
+   "w": "tejeduría",
+   "g": "f",
+   "plw": "tejedurías"
+  },
+  "weaving": {
+   "w": "sala de tejido",
+   "g": "f",
+   "plw": "salas de tejido"
+  },
+  "well": {
+   "w": "pozo",
+   "g": "m"
+  },
+  "west": {
+   "w": "oeste"
+  },
+  "wet": {
+   "w": "mojado"
+  },
+  "window": {
+   "w": "ventana",
+   "g": "f"
+  },
+  "wood": {
+   "w": "madera",
+   "g": "f",
+   "mass": true
+  },
+  "work": {
+   "w": "trabajo",
+   "g": "m"
+  },
+  "workbench": {
+   "w": "banco de trabajo",
+   "g": "m",
+   "plw": "bancos de trabajo"
+  },
+  "workshop": {
+   "w": "taller",
+   "g": "m"
+  },
+  "yard": {
+   "w": "patio",
+   "g": "m"
+  },
+  "yes": {
+   "w": "sí"
+  },
+  "you": {
+   "w": "tú"
+  }
+ },
+ "pt": {
+  "altar": {
+   "w": "altar",
+   "g": "m"
+  },
+  "animal": {
+   "w": "animal",
+   "g": "m",
+   "plw": "animais"
+  },
+  "anvil": {
+   "w": "bigorna",
+   "g": "f"
+  },
+  "apple": {
+   "w": "maçã",
+   "g": "f"
+  },
+  "area": {
+   "w": "área",
+   "g": "f"
+  },
+  "ask": {
+   "w": "peço",
+   "v2": "pedes",
+   "v3": "pede",
+   "v3p": "pedem",
+   "v1p": "pedimos",
+   "inf": "pedir"
+  },
+  "ball": {
+   "w": "bola",
+   "g": "f"
+  },
+  "banana": {
+   "w": "banana",
+   "g": "f"
+  },
+  "barrel": {
+   "w": "barril",
+   "g": "m",
+   "plw": "barris"
+  },
+  "basket": {
+   "w": "cesta",
+   "g": "f"
+  },
+  "bath": {
+   "w": "banheira",
+   "g": "f"
+  },
+  "bathroom": {
+   "w": "banheiro",
+   "g": "m"
+  },
+  "bear": {
+   "w": "urso",
+   "g": "m"
+  },
+  "bed": {
+   "w": "cama",
+   "g": "f"
+  },
+  "bedroom": {
+   "w": "quarto",
+   "g": "m"
+  },
+  "behind": {
+   "w": "atrás de"
+  },
+  "big": {
+   "w": "grande",
+   "f": "grande"
+  },
+  "bin": {
+   "w": "lixeira",
+   "g": "f"
+  },
+  "block": {
+   "w": "bloco",
+   "g": "m"
+  },
+  "blocks": {
+   "w": "blocos",
+   "g": "m",
+   "pl": true
+  },
+  "boat": {
+   "w": "barco",
+   "g": "m"
+  },
+  "book": {
+   "w": "livro",
+   "g": "m"
+  },
+  "bored": {
+   "w": "entediado"
+  },
+  "bowl": {
+   "w": "tigela",
+   "g": "f"
+  },
+  "box": {
+   "w": "caixa",
+   "g": "f"
+  },
+  "break": {
+   "w": "quebro",
+   "v2": "quebras",
+   "v3": "quebra",
+   "v3p": "quebram",
+   "inf": "quebrar"
+  },
+  "bring": {
+   "w": "trago",
+   "v2": "trazes",
+   "v3": "traz",
+   "v3p": "trazem",
+   "v1p": "trazemos",
+   "inf": "trazer"
+  },
+  "broccoli": {
+   "w": "brócolis",
+   "g": "m",
+   "mass": true
+  },
+  "bubbles": {
+   "w": "bolhas",
+   "g": "f",
+   "pl": true
+  },
+  "build": {
+   "w": "construo",
+   "v2": "constróis",
+   "v3": "constrói",
+   "v3p": "constroem",
+   "v1p": "construímos",
+   "inf": "construir"
+  },
+  "building": {
+   "w": "prédio",
+   "g": "m"
+  },
+  "cabinet": {
+   "w": "armário",
+   "g": "m"
+  },
+  "car": {
+   "w": "carro",
+   "g": "m"
+  },
+  "carry": {
+   "w": "levo",
+   "v2": "levas",
+   "v3": "leva",
+   "v3p": "levam",
+   "v1p": "levamos",
+   "inf": "levar"
+  },
+  "chair": {
+   "w": "cadeira",
+   "g": "f"
+  },
+  "chase": {
+   "w": "persigo",
+   "v3": "persegue",
+   "v3p": "perseguem",
+   "inf": "perseguir"
+  },
+  "clean": {
+   "w": "limpo"
+  },
+  "closed": {
+   "w": "fechado",
+   "f": "fechada"
+  },
+  "clothing": {
+   "w": "roupa",
+   "g": "f",
+   "mass": true
+  },
+  "cold": {
+   "w": "frio",
+   "f": "fria"
+  },
+  "color": {
+   "w": "coloro",
+   "v3": "colore",
+   "v3p": "colorem",
+   "v1p": "colorimos",
+   "inf": "colorir"
+  },
+  "color_black": {
+   "w": "preto"
+  },
+  "color_blue": {
+   "w": "azul",
+   "f": "azul",
+   "mpl": "azuis",
+   "fpl": "azuis"
+  },
+  "color_brown": {
+   "w": "marrom",
+   "f": "marrom",
+   "mpl": "marrons",
+   "fpl": "marrons"
+  },
+  "color_green": {
+   "w": "verde",
+   "f": "verde"
+  },
+  "color_orange": {
+   "w": "laranja",
+   "f": "laranja"
+  },
+  "color_pink": {
+   "w": "rosa",
+   "f": "rosa"
+  },
+  "color_purple": {
+   "w": "roxo"
+  },
+  "color_red": {
+   "w": "vermelho"
+  },
+  "color_white": {
+   "w": "branco"
+  },
+  "color_yellow": {
+   "w": "amarelo"
+  },
+  "confused": {
+   "w": "confuso"
+  },
+  "cook": {
+   "w": "cozinho",
+   "v2": "cozinhas",
+   "v3": "cozinha",
+   "v3p": "cozinham",
+   "inf": "cozinhar"
+  },
+  "cookie": {
+   "w": "biscoito",
+   "g": "m"
+  },
+  "cow": {
+   "w": "vaca",
+   "g": "f"
+  },
+  "creature": {
+   "w": "criatura",
+   "g": "f"
+  },
+  "cut": {
+   "w": "corto",
+   "v2": "cortas",
+   "v3": "corta",
+   "v3p": "cortam",
+   "v1p": "cortamos",
+   "inf": "cortar"
+  },
+  "deer": {
+   "w": "cervo",
+   "g": "m"
+  },
+  "dirty": {
+   "w": "sujo"
+  },
+  "do": {
+   "w": "faço",
+   "v2": "fazes",
+   "v3": "faz",
+   "v3p": "fazem",
+   "v1p": "fazemos",
+   "inf": "fazer"
+  },
+  "dog": {
+   "w": "cachorro",
+   "g": "m"
+  },
+  "doll": {
+   "w": "boneca",
+   "g": "f"
+  },
+  "door": {
+   "w": "porta",
+   "g": "f"
+  },
+  "dress": {
+   "w": "vestido",
+   "g": "m"
+  },
+  "drink": {
+   "w": "bebo",
+   "v2": "bebes",
+   "v3": "bebe",
+   "v3p": "bebem",
+   "v1p": "bebemos",
+   "inf": "beber"
+  },
+  "dry": {
+   "w": "seco"
+  },
+  "east": {
+   "w": "leste"
+  },
+  "easy": {
+   "w": "fácil"
+  },
+  "eat": {
+   "w": "como",
+   "v2": "comes",
+   "v3": "come",
+   "v3p": "comem",
+   "v1p": "comemos",
+   "inf": "comer"
+  },
+  "empty": {
+   "w": "esvazio",
+   "v2": "esvazias",
+   "v3": "esvazia",
+   "v3p": "esvaziam",
+   "inf": "esvaziar"
+  },
+  "farm": {
+   "w": "fazenda",
+   "g": "f"
+  },
+  "fight": {
+   "w": "luto",
+   "v3": "luta",
+   "v3p": "lutam",
+   "v1p": "lutamos",
+   "inf": "lutar"
+  },
+  "finished": {
+   "w": "pronto",
+   "f": "pronta"
+  },
+  "follow": {
+   "w": "sigo",
+   "v3": "segue",
+   "v3p": "seguem",
+   "inf": "seguir"
+  },
+  "food": {
+   "w": "comida",
+   "g": "f",
+   "mass": true
+  },
+  "forge": {
+   "w": "forja",
+   "g": "f"
+  },
+  "frog": {
+   "w": "sapo",
+   "g": "m"
+  },
+  "generator": {
+   "w": "gerador",
+   "g": "m"
+  },
+  "get": {
+   "w": "consigo",
+   "v2": "consegues",
+   "v3": "consegue",
+   "v3p": "conseguem",
+   "v1p": "conseguimos",
+   "inf": "conseguir"
+  },
+  "give": {
+   "w": "dou",
+   "v3": "dá",
+   "v3p": "dão",
+   "v1p": "damos"
+  },
+  "go": {
+   "w": "vou",
+   "v3": "vai",
+   "v3p": "vão",
+   "v1p": "vamos",
+   "inf": "ir"
+  },
+  "good": {
+   "w": "bom",
+   "f": "boa"
+  },
+  "goodbye": {
+   "w": "tchau"
+  },
+  "grape": {
+   "w": "uva",
+   "g": "f"
+  },
+  "happy": {
+   "w": "feliz",
+   "f": "feliz",
+   "mpl": "felizes",
+   "fpl": "felizes"
+  },
+  "hard": {
+   "w": "difícil"
+  },
+  "hat": {
+   "w": "chapéu",
+   "g": "m"
+  },
+  "have": {
+   "w": "tenho",
+   "v3": "tem",
+   "v3p": "têm",
+   "v1p": "temos"
+  },
+  "heat": {
+   "w": "aqueço",
+   "v2": "aqueces",
+   "v3": "aquece",
+   "v3p": "aquecem",
+   "inf": "aquecer"
+  },
+  "heater": {
+   "w": "aquecedor",
+   "g": "m"
+  },
+  "help": {
+   "w": "ajudo",
+   "v3": "ajuda",
+   "v3p": "ajudam"
+  },
+  "here": {
+   "w": "aqui"
+  },
+  "hi": {
+   "w": "oi"
+  },
+  "home": {
+   "w": "casa",
+   "g": "f"
+  },
+  "hot": {
+   "w": "quente",
+   "f": "quente"
+  },
+  "house": {
+   "w": "casa",
+   "g": "f"
+  },
+  "hungry": {
+   "w": "faminto"
+  },
+  "i_me": {
+   "w": "eu"
+  },
+  "in_front_of": {
+   "w": "em frente de"
+  },
+  "kitchen": {
+   "w": "cozinha",
+   "g": "f"
+  },
+  "know": {
+   "w": "sei",
+   "v3": "sabe",
+   "v3p": "sabem"
+  },
+  "lamp": {
+   "w": "lâmpada",
+   "g": "f"
+  },
+  "less": {
+   "w": "menos"
+  },
+  "library": {
+   "w": "biblioteca",
+   "g": "f"
+  },
+  "living": {
+   "w": "sala",
+   "g": "f"
+  },
+  "lonely": {
+   "w": "sozinho"
+  },
+  "loom": {
+   "w": "tear",
+   "g": "m"
+  },
+  "make": {
+   "w": "faço",
+   "v2": "fazes",
+   "v3": "faz",
+   "v3p": "fazem",
+   "v1p": "fazemos",
+   "inf": "fazer"
+  },
+  "make_cold": {
+   "w": "esfrio",
+   "v2": "esfrias",
+   "v3": "esfria",
+   "v3p": "esfriam",
+   "inf": "esfriar"
+  },
+  "market": {
+   "w": "mercado"
+  },
+  "masonry": {
+   "w": "cantaria",
+   "g": "f"
+  },
+  "more": {
+   "w": "mais"
+  },
+  "near": {
+   "w": "perto de"
+  },
+  "need": {
+   "w": "preciso",
+   "v2": "precisas",
+   "v3": "precisa",
+   "v3p": "precisam",
+   "objPrep": "of"
+  },
+  "next_to": {
+   "w": "ao lado de"
+  },
+  "no": {
+   "w": "não"
+  },
+  "north": {
+   "w": "norte"
+  },
+  "off": {
+   "w": "apagado",
+   "f": "apagada"
+  },
+  "ok": {
+   "w": "bem",
+   "f": "bem"
+  },
+  "on": {
+   "w": "aceso",
+   "f": "acesa"
+  },
+  "open": {
+   "w": "aberto",
+   "f": "aberta"
+  },
+  "oven": {
+   "w": "forno",
+   "g": "m"
+  },
+  "over": {
+   "w": "em cima de"
+  },
+  "person": {
+   "w": "pessoa",
+   "g": "f",
+   "plw": "pessoas"
+  },
+  "place": {
+   "w": "onde"
+  },
+  "play": {
+   "w": "brinco",
+   "v1p": "brincamos",
+   "inf": "brincar"
+  },
+  "put": {
+   "w": "ponho",
+   "v2": "pões",
+   "v3": "põe",
+   "v3p": "põem",
+   "inf": "pôr"
+  },
+  "puzzle": {
+   "w": "quebra-cabeça",
+   "g": "m",
+   "plw": "quebra-cabeças"
+  },
+  "rabbit": {
+   "w": "coelho",
+   "g": "m"
+  },
+  "ram": {
+   "w": "carneiro",
+   "g": "m"
+  },
+  "rare": {
+   "w": "raro"
+  },
+  "read": {
+   "w": "leio",
+   "inf": "ler"
+  },
+  "refrigerator": {
+   "w": "geladeira",
+   "g": "f"
+  },
+  "rest": {
+   "w": "descanso",
+   "v2": "descansas",
+   "v3": "descansa",
+   "v3p": "descansam",
+   "v1p": "descansamos",
+   "inf": "descansar"
+  },
+  "return": {
+   "w": "volto",
+   "v3": "volta",
+   "v3p": "voltam",
+   "inf": "voltar"
+  },
+  "rock": {
+   "w": "rocha",
+   "g": "f"
+  },
+  "room": {
+   "w": "cômodo",
+   "g": "m"
+  },
+  "run": {
+   "w": "corro",
+   "v3": "corre",
+   "v3p": "correm",
+   "inf": "correr"
+  },
+  "sad": {
+   "w": "triste",
+   "f": "triste"
+  },
+  "satchel": {
+   "w": "bolsa",
+   "g": "f"
+  },
+  "scarf": {
+   "w": "cachecol",
+   "g": "m"
+  },
+  "scruffy": {
+   "w": "desalinhado"
+  },
+  "sheep": {
+   "w": "ovelha",
+   "g": "f"
+  },
+  "shelf": {
+   "w": "estante",
+   "g": "f"
+  },
+  "shirt": {
+   "w": "camiseta",
+   "g": "f"
+  },
+  "shop": {
+   "w": "loja",
+   "g": "f"
+  },
+  "show": {
+   "w": "mostro",
+   "v2": "mostras",
+   "v3": "mostra",
+   "v3p": "mostram",
+   "inf": "mostrar"
+  },
+  "shrine": {
+   "w": "santuário",
+   "g": "m"
+  },
+  "sit": {
+   "w": "sento",
+   "v2": "sentas",
+   "v3": "senta",
+   "v3p": "sentam",
+   "v1p": "sentamos",
+   "inf": "sentar"
+  },
+  "sleep": {
+   "w": "durmo",
+   "v2": "dormes",
+   "v3": "dorme",
+   "v3p": "dormem",
+   "v1p": "dormimos",
+   "inf": "dormir"
+  },
+  "small": {
+   "w": "pequeno"
+  },
+  "smelly": {
+   "w": "fedido"
+  },
+  "smithy": {
+   "w": "ferraria",
+   "g": "f"
+  },
+  "sock": {
+   "w": "meia",
+   "g": "f"
+  },
+  "south": {
+   "w": "sul"
+  },
+  "sparks": {
+   "w": "faíscas",
+   "g": "f",
+   "pl": true
+  },
+  "stone": {
+   "w": "pedra",
+   "g": "f",
+   "mass": true
+  },
+  "stonecutter": {
+   "w": "bancada de cantaria",
+   "g": "f",
+   "plw": "bancadas de cantaria"
+  },
+  "stop": {
+   "w": "paro",
+   "v3": "para",
+   "v3p": "param",
+   "inf": "parar"
+  },
+  "store": {
+   "w": "loja",
+   "g": "f"
+  },
+  "storehouse": {
+   "w": "armazém",
+   "g": "m",
+   "plw": "armazéns"
+  },
+  "storeroom": {
+   "w": "despensa",
+   "g": "f"
+  },
+  "study": {
+   "w": "escritório",
+   "g": "m"
+  },
+  "switch": {
+   "w": "interruptor",
+   "g": "m"
+  },
+  "table": {
+   "w": "mesa",
+   "g": "f"
+  },
+  "take": {
+   "w": "pego",
+   "v3": "pega",
+   "v3p": "pegam",
+   "v1p": "pegamos"
+  },
+  "talk": {
+   "w": "falo",
+   "v2": "falas",
+   "v3": "fala",
+   "v3p": "falam",
+   "v1p": "falamos",
+   "inf": "falar"
+  },
+  "temple": {
+   "w": "templo",
+   "g": "m"
+  },
+  "thank_you": {
+   "w": "obrigado"
+  },
+  "there": {
+   "w": "ali"
+  },
+  "they": {
+   "w": "eles",
+   "pl": true
+  },
+  "thing": {
+   "w": "quê"
+  },
+  "think": {
+   "w": "penso",
+   "v3": "pensa",
+   "v3p": "pensam"
+  },
+  "thirsty": {
+   "w": "sedento"
+  },
+  "throw": {
+   "w": "jogo",
+   "v3": "joga",
+   "v3p": "jogam"
+  },
+  "tidy": {
+   "w": "arrumo",
+   "v2": "arrumas",
+   "v3": "arruma",
+   "v3p": "arrumam",
+   "inf": "arrumar"
+  },
+  "tired": {
+   "w": "cansado"
+  },
+  "together": {
+   "w": "juntos"
+  },
+  "toilet": {
+   "w": "vaso sanitário",
+   "g": "m",
+   "plw": "vasos sanitários"
+  },
+  "town": {
+   "w": "vila",
+   "g": "f"
+  },
+  "toy": {
+   "w": "brinquedo",
+   "g": "m"
+  },
+  "trade": {
+   "w": "troco",
+   "v3": "troca",
+   "v3p": "trocam",
+   "v1p": "trocamos"
+  },
+  "train": {
+   "w": "trem",
+   "g": "m",
+   "plw": "trens"
+  },
+  "tree": {
+   "w": "árvore",
+   "g": "f"
+  },
+  "under": {
+   "w": "debaixo de"
+  },
+  "understand": {
+   "w": "entendo",
+   "v3": "entende",
+   "v3p": "entendem",
+   "inf": "entender"
+  },
+  "walk": {
+   "w": "caminho",
+   "v3": "caminha",
+   "v3p": "caminham",
+   "inf": "caminhar"
+  },
+  "want": {
+   "w": "quero",
+   "v3": "quer",
+   "v3p": "querem",
+   "v1p": "queremos"
+  },
+  "wash": {
+   "w": "lavo",
+   "v2": "lavas",
+   "v3": "lava",
+   "v3p": "lavam",
+   "v1p": "lavamos",
+   "inf": "lavar"
+  },
+  "water": {
+   "w": "água",
+   "g": "f",
+   "mass": true
+  },
+  "we": {
+   "w": "nós",
+   "pl": true
+  },
+  "wear": {
+   "w": "me visto",
+   "inf": "me vestir"
+  },
+  "weaver": {
+   "w": "tecelagem",
+   "g": "f"
+  },
+  "weaving": {
+   "w": "sala de tecelagem",
+   "g": "f"
+  },
+  "well": {
+   "w": "poço",
+   "g": "m"
+  },
+  "west": {
+   "w": "oeste"
+  },
+  "wet": {
+   "w": "molhado"
+  },
+  "window": {
+   "w": "janela",
+   "g": "f"
+  },
+  "wood": {
+   "w": "madeira",
+   "g": "f",
+   "mass": true
+  },
+  "work": {
+   "w": "trabalho",
+   "g": "m"
+  },
+  "workbench": {
+   "w": "bancada",
+   "g": "f"
+  },
+  "workshop": {
+   "w": "oficina",
+   "g": "f"
+  },
+  "yard": {
+   "w": "quintal",
+   "g": "m",
+   "plw": "quintais"
+  },
+  "yes": {
+   "w": "sim"
+  },
+  "you": {
+   "w": "você"
+  }
+ }
+}

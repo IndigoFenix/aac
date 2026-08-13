@@ -853,4 +853,24 @@ describe("modal desires spoken at a creature", () => {
     expect(act.kind).toBe("tell");
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("thank_you");
   });
+
+  it("'i_me want go home' is acknowledged — the home is part of the ACT, not requested", () => {
+    // Before the WANT_THING_VERBS gate, the object of ANY modal wish fell
+    // into the item evaluator, which answered the wish to go home with
+    // somebody's spare "home" — or a flat no.
+    const w = createCreatureWorld([{ id: "me" }, { id: "bob" }], []);
+    const o: ProjectionOpts = { symbolOf: (id) => id };
+    const act = intentToAct(parseSentence("i_me + want + go + home"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
+    expect(act.kind).toBe("tell");
+  });
+
+  it("'i_me want eat cookie' still asks for the cookie — the thing IS the wish", () => {
+    const w = createCreatureWorld(
+      [{ id: "me" }, { id: "bob" }],
+      [{ id: "cookie1", ownerId: "bob", kind: "cookie" }],
+    );
+    const o = opts(w);
+    const act = intentToAct(parseSentence("i_me + want + eat + cookie"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
+    expect(act).toMatchObject({ kind: "request", itemId: "cookie1" });
+  });
 });

@@ -36,6 +36,7 @@ import {
   X,
   Check,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 
 import type { CalendarEvent, CalendarEventAttendee, Location } from '@shared/schema';
@@ -751,7 +752,11 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
             </div>
             <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
               <div className="p-3 space-y-2">
-                {selectedDateEvents.length === 0 ? (
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : selectedDateEvents.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">
                     {t('calendar.noEvents')}
                   </p>

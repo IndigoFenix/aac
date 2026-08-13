@@ -195,6 +195,9 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
       languageLine,
       "Do not invent facts. Refer to people exactly as the transcript presents them",
       "— never infer species, age, or relationships that are not stated.",
+      "A [RETRACTION] line voids earlier reports of that person: never state they were present.",
+      "Do not claim a person was present from the user's own greeting presses alone —",
+      "greetings are often practice directed at nobody in the room.",
     ];
     const userContent = `Summarize the following session transcript.\n\nChat mode: ${session.chatMode}${subjectLine}\nTranscript:\n${transcript}`;
 

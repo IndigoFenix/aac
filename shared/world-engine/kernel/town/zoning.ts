@@ -33,13 +33,19 @@
  * through `import type` alone — no runtime cycle.
  */
 
-import { costsMet, resolveStructure, spendCostsChain, type StructureSpec } from "./structures.js";
+import {
+  costsMet,
+  resolveStructure,
+  spendCostsChain,
+  structureCosts,
+  type StructureSpec,
+} from "./structures.js";
 import { withRefinableCredit } from "../../products.js";
 // Runtime import — the sanctioned direction (construction.ts sees zoning
 // through `import type` alone; the yard endpoint id rides down the stack).
 import { TOWN_YARD_EP } from "./construction.js";
 import type { FoundedBuilding, FoundingCandidate, TownDeltas } from "./construction.js";
-import { unreservedStock } from "./reservations.js";
+import { spareStock, unreservedStock } from "./reservations.js";
 
 /** One zone charter — a serializable row (TownDeltas pattern, no RNG). */
 export interface ZoneCharter {
@@ -312,6 +318,20 @@ export interface FoundingGrowthInput {
    * how a farm used to finish itself with the site deserted.
    */
   pipeline?: boolean;
+  /**
+   * ⚖️ THE COMMONS RESERVE, per material head (surplus control, user addendum
+   * 2026-08-12: "the town's own demands are exceeding its capacity … patchable
+   * with a simple surplus control"). Units of a head the town keeps back from
+   * its OWN ambient appetite — growth may only start what the SPARE above this
+   * floor covers, so the shelf is never bare for the household that speaks.
+   *
+   * A caller-supplied function rather than a constant here because the floor
+   * is DERIVED from the town's par-stock loop (`commonsReserveOf`, which is
+   * `STOREHOUSE_RAW_PAR` for exactly the raws that loop restocks), and the par
+   * loop is an interaction-layer thing. Absent ⇒ NO reserve, which is every
+   * worldgen/twin caller and every fixture — byte-for-byte the shipped gate.
+   */
+  reserve?: (head: string) => number;
 }
 
 export interface FoundingGrowthOrder {
@@ -420,6 +440,12 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
   // FREE yard stock (pipeline ②): growth never spends units a pending
   // haul/designation has spoken for — the reservation ledger's one law.
   const freeStock = unreservedStock(d.stock, d.reservations, TOWN_YARD_EP);
+  // ⚖️ …AND THE COMMONS RESERVE ON TOP OF IT (surplus control). Free stock is
+  // what nobody has spoken for; SPARE stock is what the town may spend on
+  // itself — free minus the floor the par loop keeps for the orders a player
+  // speaks. Same object when no reserve is supplied, so the twin's arithmetic
+  // below is untouched to the byte.
+  const growthStock = input.reserve ? spareStock(freeStock, input.reserve) : freeStock;
   for (const r of ranked) {
     // Without a banked threshold, only URGENT need founds (survival now;
     // surplus growth waits for the bank).
@@ -435,7 +461,7 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     // mill below) fill a block bill out of wood. The spend still draws the
     // REAL stock: free ⊆ real, so covering costs from free leaves reserved
     // units untouched.
-    if (!costsMet(r.spec, withRefinableCredit(freeStock))) continue;
+    if (!costsMet(r.spec, withRefinableCredit(growthStock))) continue;
     // Geometric capacity — feasibility inside the enumeration.
     const candidate = input.candidatesFor(r.spec, r.zone)[0];
     if (!candidate) continue;
@@ -443,7 +469,7 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     // yard pays now and the clock raises it (worldgen / unwatched towns) —
     // milling implicitly at the refinement ratio (the twin is unobserved
     // by definition; ledger arithmetic is its whole mode).
-    if (!input.pipeline && (!spendCostsChain(r.spec, freeStock) || !spendCostsChain(r.spec, d.stock))) continue;
+    if (!input.pipeline && (!spendCostsChain(r.spec, growthStock) || !spendCostsChain(r.spec, d.stock))) continue;
     const building = d.foundBuilding(
       candidate,
       input.day,
@@ -451,7 +477,12 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
       // (house = 1) against scale-day clocks completed ×180 too fast at
       // REAL_SCALE. Absent = identity (the worldgen twin's historical rate).
       (input.buildDaysOf ?? ((n) => n))(r.spec.buildDays),
-      input.pipeline ? r.spec.costs : undefined,
+      // 🚨 THE ONE RESOLVER, not the row's extras map (phase 6). `costsMet`
+      // above already prices this founding through `structureCosts`; handing
+      // `r.spec.costs` to the row made the DESIGNATION disagree with the
+      // AFFORDABILITY CHECK that admitted it — the pipeline's staked plot
+      // carried an empty bill, staged on the spot and raised itself for free.
+      input.pipeline ? structureCosts(r.spec) : undefined,
     );
     // The bank pays only when it can — an urgent build before the
     // threshold is materials-paid, never a negative balance.

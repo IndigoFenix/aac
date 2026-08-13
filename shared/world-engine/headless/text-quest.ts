@@ -43,9 +43,17 @@ import {
   type QuestSession,
   type QuestViewSeam,
 } from "../interaction/quest/quest-host.js";
+import type { LedgerWarpResult } from "../interaction/quest/clock-warp.js";
+import { homesteadWildMix } from "../interaction/quest/wilderness.js";
 import { buildTownScope } from "../interaction/town/town-play-game.js";
+import { FOUNDING_AGE_DAYS } from "../kernel/town/plan.js";
 import { DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale } from "../scale.js";
 import { PLAYER_ID } from "../solver/space3d.js";
+import {
+  WIDE_TICK_INNER_STEP_S,
+  WIDE_TICK_MAX_FRAME_S,
+  type WideTickConfig,
+} from "../world-host.js";
 import { createTextWorldView, type TextFocusFrame, type TextWorldView } from "./text-world-view.js";
 
 /**
@@ -75,8 +83,21 @@ export interface TextQuestOpts {
   /** Seed for the injected NPC RNG. Default: the town document's own
    *  `config.seed`, so a run is reproducible from the document alone. */
   seed?: number;
-  /** Fixed frame step, seconds. Default 1/60 (text-mode.md D4). */
+  /** Fixed frame step, seconds. Default 1/60 (text-mode.md D4).
+   *
+   *  ⏩ UP TO 0.5 — THE WIDE TICK (wide-tick-round.md W-②). Above 0.05 the boot
+   *  turns on the world host's substep seam: the motion arms integrate at
+   *  ≤ `innerStepS` each while the quest layer decides ONCE per frame, so a
+   *  wide dt buys sim seconds per wall second instead of quietly shortening
+   *  them (before the seam, the host clamped its own dt at 0.05 and a caller's
+   *  wider step was a no-op that undercounted elapsed sim time). A wide run is
+   *  NOT byte-identical to 1/20 — decisions are coarser; beats are the
+   *  acceptance test (`scripts/wide-tick-ab.ts`). */
   dt?: number;
+  /** ⏩ Seconds of MOTION per inner substep under a wide `dt`. Default 0.05 —
+   *  today's frame budget. The seam's tuning parameter, not a user dial: raise
+   *  it only with the A/B comparator's beats in hand. Ignored at dt ≤ 0.05. */
+  innerStepS?: number;
   /** Default `{ kind: "dollhouse" }` — the shipped game's opening camera. */
   camera?: TextCamera;
   /** Clock origin in ms. Default 0. */
@@ -112,6 +133,13 @@ export interface TextQuestRun {
   stepFrame(): void;
   advance(frames: number): void;
   advanceS(seconds: number): void;
+  /** ⏩ ADVANCE THE BOOKS `days` ECONOMY DAYS WITHOUT RUNNING THE FRAMES —
+   *  `QuestHost3D.advanceLedgerDays`, forwarded (clock-warp.ts). The one way a
+   *  headless consumer buys a week of ledgers without paying 33 600 frames for
+   *  it. Refuses honestly (`ok:false`) while a live-need body is mid-errand;
+   *  a caller that needs the span regardless must settle the town first, not
+   *  poke the clock. */
+  warpDays(days: number): LedgerWarpResult;
   /** Register a listener on the presenter FAN-OUT. Every host push reaches
    *  every tap; the boot's own record is unaffected. Returns a remove fn. */
   addPresenterTap(p: Partial<QuestPresenter>): () => void;
@@ -169,6 +197,22 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
 
   const camera: TextCamera = opts.camera ?? { kind: "dollhouse" };
   const frameDt = opts.dt ?? 1 / 60;
+  if (!(frameDt > 0) || frameDt > WIDE_TICK_MAX_FRAME_S) {
+    throw new Error(`bootTextQuest: dt must be in (0, ${WIDE_TICK_MAX_FRAME_S}] (got ${frameDt})`);
+  }
+  // ⏩ THE OPT-IN (W-①/W-③). A frame inside the inner cap is today's boot with
+  // no seam at all; a WIDE frame gets one, sized to exactly the step this pump
+  // hands over — so the host's clamp admits the dt instead of swallowing it,
+  // and the motion arms substep under it. `maxFrameS` is frameDt, not the
+  // ceiling: this pump is fixed-step, so there is no hitch to catch up from.
+  // The GATE is the DEFAULT cap, never the caller's — so `innerStepS` tunes the
+  // substep size without deciding whether the seam exists (and an innerStepS
+  // above the frame is a legitimate ask: it lifts the clamp and substeps not at
+  // all, which is precisely the pre-seam frame at a wide dt — W0's before
+  // picture is taken that way, with no throwaway edit to the engine).
+  const innerStepS = opts.innerStepS ?? WIDE_TICK_INNER_STEP_S;
+  const wideTick: WideTickConfig | null =
+    frameDt > WIDE_TICK_INNER_STEP_S ? { innerStepS, maxFrameS: frameDt } : null;
   const seed = opts.seed ?? play.config.seed;
 
   // ── THE PRESENTER FAN-OUT ─────────────────────────────────────────────────
@@ -253,12 +297,39 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
     // Determinism (text-mode.md D4): the world-host's default is `Math.random`,
     // so a headless boot MUST inject. Same fold every other subsystem uses.
     npcRng: mulberry32(hashSeed(seed, "npc")),
+    ...(wideTick ? { wideTick } : {}),
   });
 
   // ⑤ START. Exactly the argument list bootLivingTown passes.
+  //
+  // 🌲 …INCLUDING `wilderness`, WHICH IT DID NOT UNTIL 2026-08-12. The header
+  // above claims parity and this line was the one place it did not hold: every
+  // browser boot computes `config.wilderness ?? (days ?? 220) ≤
+  // FOUNDING_AGE_DAYS` and passes `{ seed, mix: homesteadWildMix(biome, seed) }`
+  // when it holds; the harness passed nothing. So a founding-age world driven
+  // headless had no standing tree, no rock and no `wild:` container of any
+  // kind, and EVERY play-level measurement of the block economy — the whole GL
+  // fix round's, this one's baselines included — was taken in a world with no
+  // timber supply whatsoever (closing sweep, handoff item 2). The starve line
+  // was honest; it was not the starve a stocked world shows.
+  //
+  // The `??` is the same one the browser gate uses, so this ALSO honours an
+  // explicit `world.wilderness` declaration on an ESTABLISHED town — an aged
+  // world that asks for open country gets it, and one that says `false` at
+  // founding age gets none. Nothing in this expression is a content choice:
+  // the shipped dollhouse (days 220, no declaration) is unchanged.
+  const wildOn = play.config.wilderness ?? (play.config.days ?? 220) <= FOUNDING_AGE_DAYS;
   host.start(play.bundle.game, play, {
     spirit,
     ...(dollhouse !== undefined ? { dollhouse } : {}),
+    ...(wildOn
+      ? {
+          wilderness: {
+            seed: play.config.seed,
+            mix: homesteadWildMix(play.plan.biome, play.config.seed),
+          },
+        }
+      : {}),
     scale,
     ...(culture ? { culture } : {}),
   });
@@ -361,6 +432,9 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
     advanceS(seconds: number): void {
       const n = Math.max(0, Math.round(seconds / frameDt));
       for (let i = 0; i < n; i++) stepFrame();
+    },
+    warpDays(days: number): LedgerWarpResult {
+      return host.advanceLedgerDays(days);
     },
     addPresenterTap(p: Partial<QuestPresenter>): () => void {
       taps.push(p);

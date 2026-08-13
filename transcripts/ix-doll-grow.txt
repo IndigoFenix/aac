@@ -1,0 +1,752 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T11:44:32.998Z
+# ─────────────────────────────────────────
+> wait 1200
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+ENTER  orrin came into view there south.
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view here south.
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   orrin left view there south.
+EXIT   mara left view there west.
+EXIT   biscuit left view here south.
+EXIT   pip left view here north.
+ENTER  pip came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+EXIT   mara left view there west.
+EXIT   orrin left view there south.
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here south.
+ENTER  pip came into view here west.
+ENTER  mara came into view there south.
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   biscuit left view here south.
+EXIT   orrin left view here south.
+EXIT   mara left view there south.
+EXIT   pip left view here north.
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here west.
+ENTER  mara came into view here south.
+ENTER  pip came into view here north.
+SAY    mara: "play with I"  [play + with + i_me]
+SAY    biscuit: "okay"  [ok]
+EXIT   orrin left view here north.
+EXIT   mara left view here north.
+EXIT   pip left view there north.
+ENTER  mara came into view here north.
+ENTER  orrin came into view here north.
+ENTER  pip came into view here north.
+SAY    biscuit: "okay"  [ok]
+SAY    biscuit: "bye-bye"  [goodbye]
+EXIT   biscuit left view here north.
+EXIT   mara left view here north.
+EXIT   orrin left view here north.
+ENTER  biscuit came into view here north.
+ENTER  orrin came into view here north.
+ENTER  mara came into view here north.
+SAY    mara: [play]
+EXIT   pip left view here west.
+ENTER  pip came into view here south.
+EXIT   biscuit left view here north.
+TOAST  🏗️ the people stake out a market (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+EXIT   pip left view there east.
+EXIT   orrin left view here south.
+EXIT   mara left view here west.
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 milling 71 block for the site (feedback)
+TOAST  🪚 materials in — milling 71 block (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 5 block (feedback)
+TOAST  🪚 milling 2 block for the chest (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 milling 71 block for the site (feedback)
+ENTER  mara came into view here south.
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 milling 1 block for the chest (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 materials in — milling 2 block (feedback)
+SAY    mara: "🚽"
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+CLOSE  the board closed.
+EXIT   mara left view here west.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 2 block for the bed (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 2 block for the chest (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 1 block milled and stored (feedback)
+CLOSE  the board closed.
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🪚 5 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 milling 2 block for the bed (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  📦 bring 6 block — delivered (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 2 block for the chest (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 6 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here south.
+TOAST  🪚 3 block milled and stored (feedback)
+SAY    orrin: "🚽"
+EXIT   orrin left view there west.
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+ENTER  orrin came into view there west.
+TOAST  📦 bring 4 block — delivered (feedback)
+SAY    orrin: "😴"
+EXIT   orrin left view here north.
+ENTER  orrin came into view here north.
+ENTER  pip came into view here south.
+EXIT   orrin left view here west.
+SAY    pip: "🚽"
+EXIT   pip left view there west.
+ENTER  pip came into view there west.
+ENTER  biscuit came into view here north.
+ENTER  orrin came into view here south.
+SAY    pip: "bye-bye"  [goodbye]
+SAY    pip: "😴"
+SAY    biscuit: "💗"
+SAY    orrin: "💗"
+SAY    orrin: "🫧"  [shirt.color_blue]
+EXIT   pip left view here south.
+EXIT   orrin left view here west.
+TOAST  🪚 milling 2 block for the bed (feedback)
+ENTER  orrin came into view here south.
+ENTER  pip came into view here south.
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+SAY    orrin: "I will carry the wood to the block."  [carry.will + wood + to + block]
+SAY    pip: "bye-bye"  [goodbye]
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+EXIT   orrin left view here west.
+EXIT   pip left view here south.
+ENTER  orrin came into view here south.
+ENTER  pip came into view here south.
+EXIT   orrin went out of the blue house.
+SAY    pip: "🫧"  [shirt.color_red]
+TOAST  📦 bring 4 block — delivered (feedback)
+ENTER  mara came into view there west.
+SAY    mara: "😴"
+EXIT   pip left view here west.
+TOAST  📦 bring 2 block — delivered (feedback)
+SAY    biscuit: "bye-bye"  [goodbye]
+EXIT   mara left view here north.
+ENTER  mara came into view here north.
+ENTER  pip came into view here south.
+EXIT   mara left view here west.
+EXIT   pip left view here south.
+TOAST  🪚 milling 1 block for the table (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+SAY    pip: "bye-bye"  [goodbye]
+TOAST  📦 bring 6 block — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  🪚 milling 3 block for the workbench (feedback)
+EXIT   pip left view there east.
+SAY    mara: "🫧"  [dress.color_pink]
+TOAST  🪚 4 block milled and stored (feedback)
+ENTER  pip came into view here south.
+TOAST  📦 bring 9 block — delivered (feedback)
+EXIT   mara left view here west.
+TOAST  📦 bring 3 block — delivered (feedback)
+EXIT   biscuit left view here north.
+EXIT   pip left view here north.
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+ENTER  biscuit came into view here north.
+ENTER  pip came into view here north.
+ENTER  mara came into view there east.
+EXIT   mara left view there east.
+TOAST  📦 bring 4 wood — delivered (feedback)
+EXIT   pip left view there west.
+ENTER  pip came into view there west.
+EXIT   biscuit left view here west.
+EXIT   pip left view here west.
+TOAST  🪚 milling 2 block for the bed (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  🪚 milling 3 block for the workbench (feedback)
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 2 block for the bed (feedback)
+ENTER  pip came into view here south.
+SAY    pip: "🫧"
+TOAST  🪚 4 block milled and stored (feedback)
+EXIT   pip left view there west.
+ENTER  pip came into view there west.
+EXIT   pip left view here west.
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 3 block for the door (feedback)
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+ENTER  pip came into view here south.
+ENTER  biscuit came into view there south.
+EXIT   biscuit left view here south.
+SAY    pip: "🚽"
+EXIT   pip left view there west.
+ENTER  pip came into view there west.
+ENTER  biscuit came into view here south.
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  📦 bring 4 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 milling 2 block for the workbench (feedback)
+TOAST  🪚 milling 3 block for the door (feedback)
+ENTER  pip came into view here west.
+ENTER  biscuit came into view here south.
+EXIT   biscuit left view here south.
+TOAST  📦 bring 141 block — delivered (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+EXIT   pip left view here north.
+TOAST  📦 bring 1 wood — delivered (feedback)
+ENTER  pip came into view here north.
+ENTER  biscuit came into view here south.
+SAY    pip: "bye-bye"  [goodbye]
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+TOAST  📦 bring 3 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  📦 bring 4 wood — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  📦 bring 6 wood — delivered (feedback)
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here west.
+EXIT   biscuit left view here south.
+SAY    orrin: "🫧"
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+ENTER  biscuit came into view here south.
+EXIT   orrin left view here west.
+EXIT   biscuit left view here south.
+TOAST  🪚 2 block milled and stored (feedback)
+ENTER  mara came into view here south.
+ENTER  orrin came into view here south.
+ENTER  biscuit came into view here south.
+EXIT   biscuit left view here south.
+SAY    orrin: "🚽"
+SAY    mara: "🚽"
+EXIT   mara left view there west.
+EXIT   orrin left view there north.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+SAY    mara: "🫧"
+ENTER  biscuit came into view here south.
+EXIT   mara left view there west.
+EXIT   orrin left view here west.
+EXIT   biscuit left view here south.
+ENTER  mara came into view there west.
+ENTER  orrin came into view here south.
+ENTER  biscuit came into view there south.
+EXIT   orrin went out of the blue house.
+EXIT   mara left view here west.
+EXIT   biscuit left view there south.
+ENTER  mara came into view here south.
+ENTER  biscuit came into view here south.
+EXIT   biscuit left view here south.
+ENTER  biscuit came into view here south.
+SAY    biscuit: "🥺"  [apple]
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TOAST  📦 bring 9 block — delivered (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🪚 milling 2 block for the chest (feedback)
+TICK   waited 1200.0s.
+> wait 1200
+SITE   2 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, close north, 83 m
+  site-2: a market — marked ground, 0% worked, close west, 58 m
+CLOSE  the board closed.
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪚 milling 2 block for the bin (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  📦 bring 105 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 5 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 2 block milled and stored (feedback)
+CLOSE  the board closed.
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 2 block for the chest (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+CLOSE  the board closed.
+TOAST  🪚 71 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+CLOSE  the board closed.
+TOAST  📦 bring 1 wood — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  📦 bring 3 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  💬 no one can do that: "bring 4 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 7 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 9 block — delivered (feedback)
+TOAST  📦 bring 11 block — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  📦 bring 97 block — delivered (feedback)
+TOAST  📦 bring 6 wood — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+ENTER  mara came into view here south.
+ENTER  biscuit came into view here south.
+EXIT   biscuit left view there south.
+SAY    mara: "🚽"
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: "😴"
+EXIT   mara left view here north.
+ENTER  mara came into view here north.
+ENTER  biscuit came into view there south.
+EXIT   mara left view here west.
+EXIT   biscuit left view there south.
+TOAST  📦 bring 1 block — delivered (feedback)
+ENTER  mara came into view here south.
+ENTER  biscuit came into view here south.
+SAY    biscuit: [play]
+EXIT   biscuit left view here south.
+SAY    mara: "🫧"  [shirt.color_red]
+ENTER  biscuit came into view here south.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+ENTER  orrin came into view here south.
+ENTER  biscuit came into view there south.
+ENTER  mara came into view there south.
+EXIT   mara went out of the blue house.
+TOAST  📦 bring 9 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+EXIT   biscuit left view there south.
+SAY    orrin: "😴"
+EXIT   orrin left view here north.
+ENTER  orrin came into view here north.
+ENTER  biscuit came into view here south.
+EXIT   orrin left view here west.
+EXIT   biscuit left view here south.
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view here south.
+ENTER  pip came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+EXIT   biscuit left view here south.
+EXIT   orrin left view here south.
+SAY    pip: "🚽"
+EXIT   pip left view there west.
+ENTER  pip came into view there west.
+ENTER  biscuit came into view here west.
+ENTER  orrin came into view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view here west.
+EXIT   orrin left view there south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view here south.
+EXIT   biscuit left view here south.
+TOAST  📦 bring 3 wood — delivered (feedback)
+SAY    pip: "🫧"  [shirt.color_green]
+ENTER  biscuit came into view here south.
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+ENTER  biscuit came into view here south.
+ENTER  pip came into view here south.
+SAY    pip: "Where is the food?"  [place#question + food]
+EXIT   biscuit left view here south.
+TOAST  📦 bring 63 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+EXIT   pip left view here north.
+TOAST  📦 bring 67 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+ENTER  pip came into view here north.
+ENTER  biscuit came into view here west.
+SAY    pip: "I will carry the block to the market."  [carry.will + block + to + market]
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 5 block — delivered (feedback)
+TOAST  📦 bring 11 block — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+SITE   3 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, close north, 83 m
+  site-2: a market — marked ground, 0% worked, close west, 58 m
+  site-3: a market — marked ground, 0% worked, far north, 220 m
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the door (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 2 block milled and stored (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 1 block for the chest (feedback)
+TOAST  🪚 milling 98 block for the site (feedback)
+TOAST  🪚 materials in — milling 70 block (feedback)
+TOAST  💬 no one can do that: "bring 102 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 5 block" (feedback)
+TOAST  💬 no one can do that: "bring 2 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 3 block" (feedback)
+TOAST  💬 no one can do that: "bring 3 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪚 milling 90 block for the site (feedback)
+TOAST  🪚 materials in — milling 20 block (feedback)
+TOAST  📦 bring 9 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 milling 90 block for the site (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 53 block for the site (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  🪚 milling 3 block for the box (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 1 block for the site (feedback)
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  🪚 milling 1 block for the site (feedback)
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  🪚 milling 1 block for the site (feedback)
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  🪚 milling 8 block for the site (feedback)
+TOAST  🪚 milling 1 block for the site (feedback)
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  🪚 milling 8 block for the site (feedback)
+TOAST  🪚 milling 5 block for the site (feedback)
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  🪚 milling 3 block for the box (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 24 block for the site (feedback)
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 milling 1 block for the site (feedback)
+TOAST  🪚 milling 24 block for the site (feedback)
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  📦 bring 19 block — delivered (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  🪚 milling 49 block for the site (feedback)
+TOAST  🪚 20 block milled and stored (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  mara came into view here south.
+ENTER  biscuit came into view there south.
+CLOSE  the board closed.
+EXIT   biscuit left view here south.
+SAY    mara: "🚽"
+EXIT   mara left view there west.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  mara came into view there west.
+ENTER  biscuit came into view there south.
+EXIT   mara left view here west.
+EXIT   biscuit left view there south.
+CLOSE  the board closed.
+ENTER  mara came into view here south.
+ENTER  biscuit came into view there south.
+EXIT   biscuit left view here south.
+SAY    mara: "😴"
+EXIT   mara left view here north.
+ENTER  mara came into view here north.
+TOAST  🪚 milling 36 block for the site (feedback)
+ENTER  orrin came into view here south.
+ENTER  biscuit came into view there south.
+SAY    orrin: [water]
+EXIT   mara left view here west.
+EXIT   orrin left view here south.
+EXIT   biscuit left view there south.
+ENTER  orrin came into view here south.
+ENTER  biscuit came into view there south.
+ENTER  mara came into view there east.
+SAY    mara: [shirt.color_red]
+EXIT   biscuit left view there south.
+EXIT   mara left view there east.
+SAY    orrin: "🚽"
+EXIT   orrin left view there west.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view there west.
+ENTER  biscuit came into view there south.
+ENTER  mara came into view there east.
+CLOSE  the board closed.
+TOAST  📦 bring 6 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+EXIT   orrin left view here west.
+EXIT   biscuit left view there south.
+EXIT   mara left view here south.
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+ENTER  orrin came into view here south.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view here south.
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   orrin left view here south.
+EXIT   biscuit left view here south.
+TICK   waited 1200.0s.
+> scene
+SCENE  house-1 — 3 thing(s) in view, 86 place(s) around you.
+  mara (person), there west, wash, in red, holding satchel-1.
+  toilet-1 (toilet), there north.
+  bath-1 (bath), there west.
+  house-1 (house), here north, blue, door open, you can see inside.
+  house-2 (house), here south, blue, door open, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-7 (house), there west, blue, door open, you can see inside.
+  43 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   3 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, close north, 83 m
+  site-2: a market — marked ground, 0% worked, close west, 58 m
+  site-3: a market — marked ground, 0% worked, far north, 220 m
+TOAST  🪚 milling 2 block for the bin (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=3  presses=0  screens=30  sim=2400.8s
+# events: TOAST 308  EXIT 119  ENTER 118  SAY 50  NOTE 31  BOARD 30  CLOSE 30  TICK 3  SITE 3  SCENE 1

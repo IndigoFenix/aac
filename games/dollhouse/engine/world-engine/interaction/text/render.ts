@@ -10,7 +10,9 @@
 //   col 7  payload  one fact, one line
 //   col 0  "  "     continuation lines begin with two spaces
 //   col 0  ">"      an echoed command (renderEcho)
-//   col 0  "#"      a header/footer comment (renderComment)
+//   col 0  "#"      a header/footer comment (renderComment) — AND the ⏩ WARP
+//                   event, the one thing in the stream that is the HARNESS
+//                   speaking rather than the world (text-mode.md §5b)
 // Blank lines are NEVER emitted.
 
 import { TAG_WIDTH, type SceneEntry, type TextBoardOption, type TextEvent } from "./types.js";
@@ -278,6 +280,12 @@ export function renderEvent(ev: TextEvent): string[] {
       return [head("NOTE", ev.text)];
     case "CHEAT":
       return [head("CHEAT", ev.text)];
+    // ⏩ THE ONE EVENT THAT IS NOT A TAGGED LINE (⑬). A warp is the harness
+    //    speaking about itself, so it lands in the `#` comment channel the
+    //    fence already uses — greppable, diffable, and impossible to read as
+    //    something the town did. Never a `TICK`: no time was played.
+    case "WARP":
+      return [`# ${ev.text}`];
   }
 }
 

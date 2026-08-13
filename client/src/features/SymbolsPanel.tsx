@@ -160,19 +160,19 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   };
 
   // Queries
-  const { data: mySymbols = [] } = useQuery<SymbolData[]>({
+  const { data: mySymbols = [], isLoading: myLoading } = useQuery<SymbolData[]>({
     queryKey: ['custom-symbols', 'my'],
     queryFn: () => apiRequest('GET', '/api/custom-symbols/my').then(r => r.json()),
     enabled: isOpen,
   });
 
-  const { data: studentSymbols = [] } = useQuery<SymbolData[]>({
+  const { data: studentSymbols = [], isLoading: studentLoading } = useQuery<SymbolData[]>({
     queryKey: ['custom-symbols', 'student', student?.id],
     queryFn: () => apiRequest('GET', `/api/custom-symbols/student/${student!.id}`).then(r => r.json()),
     enabled: isOpen && !!student,
   });
 
-  const { data: instituteSymbols = [] } = useQuery<SymbolData[]>({
+  const { data: instituteSymbols = [], isLoading: instituteLoading } = useQuery<SymbolData[]>({
     queryKey: ['custom-symbols', 'institute', currentInstitute?.id],
     queryFn: () => apiRequest('GET', `/api/custom-symbols/institute/${currentInstitute!.id}`).then(r => r.json()),
     enabled: isOpen && !!currentInstitute,
@@ -247,12 +247,17 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     isAlreadyOnInstitute?: (s: SymbolData) => boolean;
     addInstitutePendingId?: string;
     emptyMessage: string;
+    isLoading?: boolean;
     total: number;
     page: number;
     onLoadMore: () => void;
   }) => (
     <>
-      {symbols.length === 0 ? (
+      {opts.isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : symbols.length === 0 ? (
         <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{opts.emptyMessage}</p>
       ) : (
         <div className="grid grid-cols-3 gap-3">
@@ -332,6 +337,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               isAlreadyOnInstitute: currentInstitute ? (s) => instituteSymbolIds.has(s.id) : undefined,
               addInstitutePendingId: addToInstituteMutation.isPending ? (addToInstituteMutation.variables?.symbol.id) : undefined,
               emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noSymbols'),
+              isLoading: myLoading,
               total: filteredMy.length,
               page: myPage,
               onLoadMore: () => setMyPage(p => p + 1),
@@ -343,6 +349,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               onEdit: (s) => s.assocId && setEditAssoc({ assocId: s.assocId, type: 'student', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' }),
               onDelete: (s) => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'student' }),
               emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noStudentSymbols').replace('{name}', student?.name || ''),
+              isLoading: studentLoading,
               total: filteredStudent.length,
               page: studentPage,
               onLoadMore: () => setStudentPage(p => p + 1),
@@ -354,6 +361,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               onEdit: (s) => s.assocId && setEditAssoc({ assocId: s.assocId, type: 'institute', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' }),
               onDelete: (s) => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'institute' }),
               emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noInstituteSymbols').replace('{name}', currentInstitute?.name || ''),
+              isLoading: instituteLoading,
               total: filteredInstitute.length,
               page: institutePage,
               onLoadMore: () => setInstitutePage(p => p + 1),

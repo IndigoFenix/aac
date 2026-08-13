@@ -1,0 +1,67 @@
+# world-text v1   proto=1
+# world=nowild4.spec  seed=11  locale=en  grid=8  dt=0.0167  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-12T17:03:01.924Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> say build farm
+OK     said: build + farm
+TOAST  🪧 build + farm — anyone nearby may take it (feedback)
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    orrin: "I will build the farm."  [build.will + farm]
+TICK   quiet after 1.8s.
+> wait 20
+SAY    mara: "I will carry the block to the farm."  [carry.will + block + to + farm]
+EXIT   orrin went out of the orange house.
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   mara went out of the orange house.
+TOAST  🪚 milling 40 block for the site (feedback)
+TICK   waited 20.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a farm — marked ground, 0% worked, close south, 71 m
+TICK   quiet after 0.8s.
+> wait 40
+TOAST  📦 bring 80 wood — delivered (feedback)
+TOAST  🪚 milling 40 block for the site (feedback)
+TOAST  📦 bring 72 wood — delivered (feedback)
+TOAST  🪚 milling 40 block for the site (feedback)
+TICK   waited 40.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a farm — marked ground, 0% worked, close south, 71 m
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=6  presses=0  screens=1  sim=73.3s
+# events: TICK 6  TOAST 6  SAY 5  EXIT 2  SCENE 2  SITE 2  BOARD 1  NOTE 1  OK 1

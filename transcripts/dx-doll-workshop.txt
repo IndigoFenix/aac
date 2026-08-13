@@ -1,0 +1,105 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9
+# started=2026-08-11T18:29:44.903Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   quiet after 1.4s.
+> say build workshop
+OK     said: build + workshop
+TOAST  🪧 build + workshop — anyone nearby may take it (feedback)
+ENTER  biscuit came into view here south.
+SAY    mara: "I will build the workshop."  [build.will + workshop]
+TICK   quiet after 1.3s.
+> wait 60
+SAY    orrin: "I will build."  [i_me + build.will]
+SAY    pip: "I will build."  [i_me + build.will]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here south.
+EXIT   mara left view here south.
+EXIT   biscuit left view there south.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-78 (house), close west, green, door open, shut to you.
+  44 houses, there east, all shut.
+  37 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a workshop — floor laid, 13% worked, close west, 58 m
+TICK   quiet after 0.8s.
+> wait 60
+TICK   waited 60.0s.
+> wait 60
+SITE   1 thing(s) being built.
+  site-1: a workshop — pillars up, 51% worked, close west, 58 m
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-78 (house), close west, green, door open, shut to you.
+  44 houses, there east, all shut.
+  37 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a workshop — pillars up, 51% worked, close west, 58 m
+TICK   quiet after 0.8s.
+> wait 60
+TOAST  🏛️ the carpentry is finished (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TICK   waited 60.0s.
+> wait 60
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 88 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, door open, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-8 (house), there west, orange, door open, shut to you.
+  house-34 (house), there east, purple, door open, shut to you.
+  house-87 (house), close west, purple, door open, shut to you.
+  81 more houses, ring the town, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-2: a market — floor laid, 13% worked, close north, 83 m
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> /stock
+CHEAT  /stock
+> /scope
+CHEAT  /scope
+> /probe
+CHEAT  /probe
+# ─────────────────────────────────────────
+# commands=15  presses=0  screens=1  sim=315.8s
+# events: TICK 12  SAY 6  NOTE 5  SCENE 4  EXIT 4  SITE 4  TOAST 3  CHEAT 3  ENTER 2  BOARD 1  OK 1  SELF 1

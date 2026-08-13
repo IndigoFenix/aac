@@ -22,6 +22,8 @@ import {
 } from "@shared/world-engine/scale";
 import { buildTownScope } from "@shared/world-engine/interaction/town/town-play-game";
 import type { TownPlay } from "@shared/world-engine/interaction/town/town-play";
+import { homesteadWildMix } from "@shared/world-engine/interaction/quest/wilderness";
+import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan";
 import * as THREE from "three";
 import {
   createQuestHost3D,
@@ -350,9 +352,23 @@ function bootQuestGame(
       // wandered.
     },
   });
+  // 🌲 WILDERNESS SURROUNDINGS, ON THE SAME GATE EVERY OTHER BOOT USES
+  // (2026-08-12). The header above lists "wilderness scatter" among what this
+  // trimmed boot dropped — and dropping the SCATTER was right, but dropping the
+  // GATE meant this game could not honour a world document that ASKS for open
+  // country, at any age. `world.wilderness` is a validated field
+  // (`TOWN_WORLD_FIELDS`), so a doc could declare it and the shipped game would
+  // silently ignore it. Wiring only: the expression is byte-for-byte world-lab's
+  // (`quest-boot.ts` bootLivingTown), and the shipped dollhouse spec — days 220,
+  // no declaration — evaluates it to `false` exactly as before.
+  const cfg = opts.town.config;
+  const wildOn = cfg.wilderness ?? (cfg.days ?? 220) <= FOUNDING_AGE_DAYS;
   host.start(game, opts.town, {
     spirit: opts.spirit,
     ...(opts.dollhouse !== undefined ? { dollhouse: opts.dollhouse } : {}),
+    ...(wildOn
+      ? { wilderness: { seed: cfg.seed, mix: homesteadWildMix(opts.town.plan.biome, cfg.seed) } }
+      : {}),
     ...(opts.scale ? { scale: opts.scale } : {}),
     ...(opts.culture ? { culture: opts.culture } : {}),
   });

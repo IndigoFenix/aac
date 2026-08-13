@@ -90,8 +90,45 @@ export function registerSymbolPath(key: string, symbolPath: string): void {
   notifySymbolListeners();
 }
 
+/**
+ * PICTURES AN EMBEDDED GAME DREW for words no vocabulary holds — an in-world
+ * creature's own face for the button that names it (`word_images` bridge
+ * message; the world engine bakes them from the creature's 3D body). Data URLs,
+ * so they render without touching the game's origin.
+ *
+ * Session-scoped to the game that sent them: the words are that world's
+ * inhabitants, and "mara" means nothing once the world is gone — the shell
+ * clears them when the game closes.
+ */
+const WORD_IMAGE_BY_KEY = new Map<string, string>();
+
+/** Merge in a batch of game-supplied word pictures (later batches ADD to what is
+ *  held; a repeat of the same picture is a no-op). */
+export function registerWordImages(images: ReadonlyArray<{ key: string; image: string }>): void {
+  let changed = false;
+  for (const { key, image } of images) {
+    if (!key || !image) continue;
+    const k = key.toLowerCase();
+    if (WORD_IMAGE_BY_KEY.get(k) === image) continue;
+    WORD_IMAGE_BY_KEY.set(k, image);
+    FAILED_SYMBOL_URLS.delete(image);
+    changed = true;
+  }
+  if (changed) notifySymbolListeners();
+}
+
+/** Drop every game-supplied word picture (the game closed). */
+export function clearWordImages(): void {
+  if (!WORD_IMAGE_BY_KEY.size) return;
+  WORD_IMAGE_BY_KEY.clear();
+  notifySymbolListeners();
+}
+
 /** Has a generated symbol been registered for this key? Server-safe shape. */
 export function hasResolvedSymbol(key: string): boolean {
+  // A game-drawn word renders — that is the whole point of the picture arriving.
+  const word = WORD_IMAGE_BY_KEY.get(key.toLowerCase());
+  if (word && !FAILED_SYMBOL_URLS.has(word)) return true;
   const url = SYMBOL_PATH_BY_KEY.get(key);
   if (!url) return false;
   // A URL we already know is broken (404 from S3, expired upload, etc.)
@@ -178,10 +215,11 @@ export function useDisplayGlyph(glyph?: string, fallback?: string): string | und
 /**
  * The default image resolver passed to <GlyphCompositor>. Resolution order:
  *   1. Registry item with imagePath → bundled icon URL
- *   2. `symbol:<id>` slot → /api/custom-symbols/<id>/image (qualified)
- *   3. `face:<id>` slot → cached face data URL (or null → 👤 fallback)
- *   4. Server-resolved symbolPath (AI-generated imageKeys, cached by key)
- *   5. null → compositor falls back to emoji/text
+ *   2. A game-supplied word picture (`word_images` — a creature's baked face)
+ *   3. `symbol:<id>` slot → /api/custom-symbols/<id>/image (qualified)
+ *   4. `face:<id>` slot → cached face data URL (or null → 👤 fallback)
+ *   5. Server-resolved symbolPath (AI-generated imageKeys, cached by key)
+ *   6. null → compositor falls back to emoji/text
  *
  * URLs that have hit `<image onError>` are skipped so a broken S3 object
  * (e.g. a long-orphaned generated symbol) doesn't keep showing the
@@ -193,6 +231,11 @@ export const defaultImageResolver: ImageResolver = ({ item, key }) => {
     const url = resolveIconPath(item.imagePath);
     if (url && !FAILED_SYMBOL_URLS.has(url)) return url;
   }
+  // A picture the running game drew for one of its own words. Below designed
+  // artwork (a registry symbol is the vocabulary's own answer) and above every
+  // generic lookup — nothing else will ever resolve a creature's name.
+  const drawn = WORD_IMAGE_BY_KEY.get(key.toLowerCase());
+  if (drawn && !FAILED_SYMBOL_URLS.has(drawn)) return drawn;
   // Country-flag emoji → bundled flag SVG (Windows/Chrome have no flag glyphs).
   const iso = flagEmojiToIso(key);
   if (iso) {

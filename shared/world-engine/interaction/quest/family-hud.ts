@@ -29,6 +29,15 @@ export interface FamilyHudEntry {
    *  the streaming range (working, shopping, walking) — presenters dim the
    *  chip so absence is visible instead of the member silently vanishing. */
   present: boolean;
+  /** WHAT BODY this member wears — the same two dials the avatar factory
+   *  dresses it with (`speciesFor` / `outfitFor`): a registered species id, and
+   *  the wardrobe preset index it spawned in (absent = bare, as pets and fauna
+   *  run). The host resolves them because the host OWNS that resolution; a
+   *  presenter that draws a member's own body (the sentence builder's creature
+   *  portraits — creatures/portrait.ts) must never re-derive it. Spawn dress,
+   *  not the live worn garment: an identity picture holds still. */
+  species?: string;
+  outfit?: number;
 }
 
 export type FamilyStateKey =

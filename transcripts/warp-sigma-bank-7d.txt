@@ -1,0 +1,52 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=dee2fdb9+dirty
+# started=2026-08-13T05:29:25.453Z
+# ─────────────────────────────────────────
+> warp 7d
+# warp 7d — 7 day edges, books only (no physics).
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the bin (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 milling 3 block for the door (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 3 block for the box (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 milling 3 block for the door (feedback)
+TOAST  🪚 milling 2 block for the bin (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 3 block for the box (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 2 block for the bin (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=1  presses=0  screens=1  sim=0.9s
+# events: TOAST 37  WARP 1  BOARD 1  NOTE 1  CLOSE 1  TICK 1

@@ -634,7 +634,7 @@ function registerFoundedPlanetSite(site: {
     cell, bodyId: body.id, dir, surfaceR: r,
     ...(live && live.key === site.key ? { record: live } : {}),
   });
-  if (live && live.key === site.key) cityTowns.registerFounded(cell, siteTownConfig(live));
+  if (live && live.key === site.key) cityTowns.registerFounded(cell, siteTownConfig(live, { scale: docSessionScale() }));
   traceWalk(`founded site registered on planet: ${site.key} (cell ${cell})`);
   // THE FOUNDING CADENCE (growth phase C §3.3): a new homestead is the only
   // thing that can complete a cluster, so the check rides the founding.
@@ -714,7 +714,7 @@ function maybeFoundTownOverCluster(bodyId: string): void {
       ...m.rec.record!,
       at: siteOffsetM(head.rec.dir, m.rec.dir, radius),
     } as FoundedSite)));
-    cityTowns.registerFounded(head.rec.cell, siteTownConfig(merged));
+    cityTowns.registerFounded(head.rec.cell, siteTownConfig(merged, { scale: docSessionScale() }));
     // The absorbed sites UNREGISTER into the town (snapshotLive's precedent:
     // a ground-owned thing acquires a new parent identity and its
     // construction record travels — it is already inside `merged`).
@@ -746,7 +746,7 @@ function snapshotLiveFoundedSite(): void {
   if (!live) return;
   const rec = foundedPlanetSites.get(live.key);
   if (!rec) return;
-  cityTowns?.registerFounded(rec.cell, siteTownConfig(live));
+  cityTowns?.registerFounded(rec.cell, siteTownConfig(live, { scale: docSessionScale() }));
   // The record travels with the config — the site's own overlay is what a
   // later cluster merges (§3.3), and this is the moment it stops being live.
   foundedPlanetSites.set(live.key, { ...rec, record: live });
@@ -1820,7 +1820,7 @@ function syncFloraTwins(playerWorld: THREE.Vector3): void {
     if (nearKeys.has(instKey)) continue;
     // Out of range: release back to scenery — unless MUTATED (part-taken
     // stock or an armed regrow clock); that state stays standing.
-    const live = sess.containerStock.get(wildFeatureContainerId(f));
+    const live = sess.containerRecords.get(wildFeatureContainerId(f))?.stock;
     const untouched =
       !f.regrowAt && !!live &&
       Object.keys({ ...live, ...f.stock }).every(k => (live[k] ?? 0) === (f.stock[k] ?? 0));
@@ -1925,7 +1925,11 @@ function ensureRoadNet(b: CelestialBody): TradeRoads | null {
   if (have !== undefined) return have;
   if (!b.walkable || !b.geography) return null;
   try {
-    const net = createTradeRoads(b);
+    // ONE EXTENT FOR THE WHOLE CHAIN: the net ports its routes at the
+    // document's own `townExtentM`, the same figure townSpliceSpecOf and
+    // cityRoadSeeds read below and the same one cityTownConfig grows the
+    // town to.
+    const net = createTradeRoads(b, { scale: docSessionScale() ?? REAL_SCALE });
     roadNets.set(b.id, net);
     if (net) {
       // A body approached while the layer is lit joins it already showing.
@@ -2722,6 +2726,7 @@ function bootSolarFlight(game: GameSettings): void {
     questCount: w.questCount ?? 0,
     roadBearings: cityRoadBearings, // the fallback where no route ports
     roadSeeds: cityRoadSeeds,        // the baseline IS the through road
+    scale: docSessionScale,          // grow the town to the extent it ports at
   });
   spaceHud = createSpaceHud(viewEl);
   scene.add(flight.group);
@@ -3399,6 +3404,7 @@ function bootSpiritWorld(game: GameSettings): void {
     questCount: ws.questCount ?? 0,
     roadBearings: cityRoadBearings, // the fallback where no route ports
     roadSeeds: cityRoadSeeds,        // the baseline IS the through road
+    scale: docSessionScale,          // grow the town to the extent it ports at
   });
   spaceHud = createSpaceHud(viewEl);
   scene.add(flight.group);

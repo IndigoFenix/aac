@@ -2565,6 +2565,10 @@ export const es = {
     allowNotesDesc: "Cuando está deshabilitado, la IA no puede leer ni escribir notas de sesión (sin memoria almacenada fuera de los registros de mensajes)",
     shareMonitorNotesWithInstitute: "Compartir notas AAC con mi institución",
     shareMonitorNotesWithInstituteDesc: "Cuando está activado, los clínicos de esta institución ven las notas registradas durante las sesiones AAC (intereses, preferencias, observaciones). Desactivar para requerir un permiso de compartido explícito.",
+    aiLearning: "Ajustes de aprendizaje de la IA",
+    aiLearningDesc: "Qué puede registrar la IA por su cuenta durante las sesiones.",
+    autoAddContacts: "Aprender contactos nuevos",
+    autoAddContactsDesc: "Permite que la IA añada a la lista de contactos a las personas que conoce durante las sesiones. Los contactos nuevos quedan marcados para revisión hasta que los confirmes. Si está desactivado, solo se pueden añadir contactos desde la página de Contactos.",
     // Symbol generation
     symbolGeneration: "Generación de símbolos",
     symbolGenerationDesc: "Generar automáticamente imágenes de iconos para botones AAC usando IA",
@@ -3742,6 +3746,8 @@ export const es = {
     updated: "Contacto actualizado",
     deleted: "Contacto eliminado",
     confirmDelete: "¿Eliminar este contacto?",
+    confirm: "Confirmar",
+    confirmed: "Contacto confirmado",
     name: "Nombre",
     namePlaceholder: "p. ej., Mamá",
     nameRequired: "El nombre es obligatorio",
@@ -3775,6 +3781,11 @@ export const es = {
     callable: "Permitir videollamadas",
     callableHint: "El estudiante (y la IA) pueden hacer una videollamada a esta persona cuando esté en línea.",
     photoAfterCreate: "La subida de foto estará disponible después de guardar el contacto.",
+    tabAll: "Contactos",
+    tabAutoAdded: "Añadidos automáticamente",
+    autoAddedBadge: "añadido automáticamente",
+    autoAddedHint: "El asistente CAA añadió a estas personas a partir de lo que observó durante las sesiones. Confirma las que realmente correspondan y elimina el resto.",
+    autoAddedEmpty: "No hay nada pendiente de revisión.",
   },
 
   // Biometric (photo upload)

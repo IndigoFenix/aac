@@ -14,11 +14,18 @@
 // registry (products.ts killStockOf + harvestStockOf) — the same definition
 // the abstract economy reads, never a name-keyed table here. Harvest stock
 // REGROWS on the standing source (dueHarvestRegrowth, a pure calculator the
-// host applies); kill stock never does — emptying it fells the source. Pure data — the quest host
+// host applies); emptying the kill stock fells the source — UNLESS the
+// species declares a `growth` clock (S&D S3 H2), in which case felling
+// RE-SEEDS it as a sapling instead of removing it (dueGrowthAdvance, the
+// same pure-calculator/host-applies shape). Pure data — the quest host
 // embodies it (seedWilderness); headless-tested in
 // server/tests/symbol-game-wilderness.test.ts.
 
-import { harvestProductsOf, harvestStockOf, killStockOf, naturalSourceOf } from "../../products.js";
+import {
+  growthClassYield, harvestProductsOf, harvestStockOf, killStockOf, naturalSourceOf, orchardPlants,
+  type GrowthSizeClass,
+} from "../../products.js";
+import { bioYearsGameDays, type WorldScale } from "../../scale.js";
 
 export interface WildernessFeature {
   id: string;
@@ -40,6 +47,18 @@ export interface WildernessFeature {
    *  armed by a live take, advanced and retired by regrowth. Session
    *  state, like the live stock the host keeps. */
   regrowAt?: Record<string, number>;
+  /** ⚖️ S&D S3 H2 — GROWTH-CLASS index into the species' `growth.classes`
+   *  (products.ts). Absent = the SCATTER default: a freshly-laid feature
+   *  stands MATURE (the catalogue's own last class) — byte-identical to
+   *  every feature built before this field existed, since nothing reads it
+   *  as anything but "mature" when unset (`wildFeatureSizeRank`,
+   *  `dueGrowthAdvance`). Only a RE-SEED after felling ever sets it. */
+  sizeClass?: number;
+  /** GROWTH CLOCK (absolute taskClock seconds when this feature next climbs
+   *  a size class). Present only while re-growing toward maturity — mirrors
+   *  `regrowAt`'s "an entry exists only while below the ceiling" law. A
+   *  mature (or growth-less) feature never carries this. */
+  growAt?: number;
 }
 
 export interface WildernessCreature {
@@ -130,6 +149,11 @@ export function wildFeatureRadius(
 export interface WildernessContent {
   /** The square manifold side, metres. */
   side: number;
+  /** The scatter seed this content came from — kept WITH the content because
+   *  an offloaded area re-lays its own stand from it (S&D S4,
+   *  `wild-area.ts`), and "same seed ⇒ identical content" is only a usable
+   *  law if the content can still say which seed that was. */
+  seed: number;
   /** Where the spirit's parked walker starts (the centre clearing). */
   spawn: { x: number; y: number };
   features: WildernessFeature[];
@@ -140,6 +164,56 @@ export interface WildernessContent {
 export interface WildMixEntry {
   species: string;
   count: number;
+}
+
+/**
+ * A FOUNDING-AGE town's gatherable surroundings, from its charter biome
+ * (plan.ts TownPlan.biome — the site's ground character): farmland country
+ * carries an orchard sprinkle and wild livestock to tame; mining country is
+ * timber over heavy stone. The fruit is picked from the products registry by
+ * the landing seed, so neighbouring sites bear different fruit and a
+ * live-harvest (regrowing) source stands in every founding.
+ *
+ * 📦 LIVES HERE, NOT IN A GAME (moved from `games/world-lab/src/wilderness-boot.ts`,
+ * 2026-08-12 — ONE definition). Three boots need the same mix and one of them is
+ * the HEADLESS harness (`shared/world-engine/headless/text-quest.ts`), which
+ * cannot import from `games/`; that import barrier is exactly why text mode
+ * shipped with no wilderness at all and every play-level measurement of the
+ * block economy was taken in a world with no timber (the GL closing sweep's
+ * handoff item 2). `wilderness-boot.ts` re-exports this symbol, so the two
+ * browser boots are unchanged.
+ *
+ * 🚫 THE COUNTS ARE NOT TUNED HERE. They are one half of a supply curve whose
+ * other half is the structure bill (`products.ts:134` — "MOVE THIS WITH THE
+ * BILL, never alone"); the world-size design round owns both.
+ *
+ * ⚖️ S&D S3 H1 — multiplier ⑤ of five: a SUPPLY quantity (how many features
+ * stand). ⚖️ DIAL-FREE (corrected in review): wild counts and yields are
+ * natural ABUNDANCE, not natural→usable conversion — the
+ * `resource_compression` dial applies at exactly one boundary
+ * (`effectiveInPerOut` / `storehouseRawParAt` / `farmAcresPerPerson`);
+ * scaling abundance here compounded the dial (~dial⁴ end to end in the
+ * reviewed draft). Standing-stock realism is the world-size design round's
+ * business (region reach + offload), never a hidden multiplier.
+ */
+export function homesteadWildMix(
+  biome: "farmland" | "mining",
+  seed: number,
+): WildMixEntry[] {
+  const scaled = (count: number): number => count;
+  const orchard = orchardPlants();
+  const fruit: WildMixEntry[] = orchard.length
+    ? [{ species: orchard[(seed >>> 3) % orchard.length]!.species, count: scaled(2) }]
+    : [];
+  return biome === "mining"
+    ? [{ species: "oak", count: scaled(8) }, ...fruit, { species: "rock", count: scaled(10) }]
+    : [
+        { species: "oak", count: scaled(8) },
+        ...fruit,
+        { species: "rock", count: scaled(4) },
+        { species: "sheep", count: scaled(2) },
+        { species: "cow", count: scaled(1) },
+      ];
 }
 
 export interface WildernessParams {
@@ -165,6 +239,11 @@ export interface WildernessParams {
    *  its plaza/site, not through it). Default: the centre spawn clearing. */
   clearAt?: { x: number; y: number };
   clearR?: number;
+  /** ⚖️ INERT (S3 review): abundance is DIAL-FREE — never pass the session's
+   *  `resourceCompression` here; the conversion dial applies only at
+   *  effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson. The seat
+   *  stays for tests that pin the invariance. */
+  conversionDial?: number;
 }
 
 /** Deterministic scatter RNG (mulberry32 — the landing-cell convention). */
@@ -190,11 +269,21 @@ const CREATURE_ICONS = ["🐰", "🐻", "🐸", "🐶"] as const;
  *  so legacy oak/rock scatters stay byte-identical). Exported for LIVE
  *  additions (flora twins: a host materializes a feature at a streamed
  *  tree's exact spot, rolling its stock off a per-placement seed). */
-export function makeFeature(id: string, species: string, p: { x: number; y: number }, rng: () => number): WildernessFeature {
-  const kill = killStockOf(species, rng);
-  const cap = harvestStockOf(species, rng);
+export function makeFeature(
+  id: string,
+  species: string,
+  p: { x: number; y: number },
+  rng: () => number,
+  conversionDial = 1,
+): WildernessFeature {
+  const kill = killStockOf(species, rng, conversionDial);
+  const cap = harvestStockOf(species, rng, conversionDial);
   const f: WildernessFeature = { id, species, x: p.x, y: p.y, stock: { ...kill, ...cap } };
   if (Object.keys(cap).length) f.harvestCap = cap;
+  // GROWTH-BEARING species stand MATURE at scatter (the last class, the
+  // catalogue's own yield.min/max above — `sizeClass`/`growAt` stay UNSET,
+  // never explicitly "last index", so a freshly-laid forest is byte-
+  // identical to every feature built before growth classes existed).
   return f;
 }
 
@@ -263,6 +352,102 @@ export function armHarvestRegrow(
   (source.regrowAt ??= {})[glyph] = now + Math.max(1e-3, (p.regrowDays ?? 1) * dayS);
 }
 
+// ── ⚖️ S&D S3 H2 — THE TIMBER GROWTH CLOCK ─────────────────────────────────
+// The sibling of the harvest-regrow pair above, same shape: a PURE
+// calculator here, the host applies it (quest-host `growWildFeature`). A
+// felled wood-bearing feature RE-SEEDS (sizeClass 0) instead of vanishing,
+// then climbs `growth.classes` on a clock anchored in REAL YEARS
+// (`bioYearsGameDays` — the generation/growth family precedent, scale.ts).
+// A species with no `growth` declared (rock, sheep, cow, banana, grape) —
+// or a feature that was never felled — never carries `growAt`, so none of
+// this fires; that is how stone stays finite without a special case.
+
+/** Real-years-per-class → GAME SECONDS, evenly dividing the maturity span
+ *  across the size classes (N classes ⇒ N−1 steps from sapling to mature).
+ *  `scale.dayLengthS` converts `bioYearsGameDays`'s game-DAYS into the same
+ *  taskClock seconds `regrowAt`/`growAt` are quoted in. */
+export function growthClassPeriodS(
+  scale: WorldScale,
+  growth: { maturityYears: number; classes: readonly GrowthSizeClass[] },
+): number {
+  const steps = Math.max(1, growth.classes.length - 1);
+  return (bioYearsGameDays(scale, growth.maturityYears) * scale.dayLengthS) / steps;
+}
+
+/** RANK KEY for "larger cut first" (USER LAW, verbatim: *"larger trees will
+ *  typically be cut first"*): the CURRENT size class, negated so a bigger
+ *  class sorts FIRST under an ascending comparator (`rankPricedSources`'
+ *  `rankKey`, transfer.ts). Unset `sizeClass` = mature (the scatter default,
+ *  `makeFeature`) = the LAST class = the most negative key = picked first,
+ *  same as every feature that has never been felled. A species with no
+ *  `growth` (rock) answers 0 for every feature — no size preference, purely
+ *  the walk's ordinary distance order, which is "stone stays finite" read
+ *  the other way: there is no size story to prefer. */
+export function wildFeatureSizeRank(f: WildernessFeature): number {
+  const g = naturalSourceOf(f.species)?.growth;
+  if (!g) return 0;
+  const cls = f.sizeClass ?? g.classes.length - 1;
+  return -cls;
+}
+
+/** GROWTH ADVANCE due by `now` — PURE, mirrors `dueHarvestRegrowth`'s
+ *  catch-up loop exactly (a long absence climbs whole classes, stopping at
+ *  mature, where the clock retires): `null` = nothing pending (no clock
+ *  armed, species has no `growth`, or already mature). The returned
+ *  `stock` REPLACES the feature's kill-glyph stock (a felled tree's wood is
+ *  a function of its CURRENT class, not an accumulation — the same "size
+ *  means units left, not a fraction" law `wildFeatureRadius` already
+ *  states for depletion, read forward for growth). */
+export interface GrowthAdvance {
+  sizeClass: number;
+  stock: Record<string, number>;
+  growAt?: number;
+}
+export function dueGrowthAdvance(
+  f: Pick<WildernessFeature, "species" | "sizeClass" | "growAt">,
+  now: number,
+  classPeriodS: number,
+  conversionDial = 1,
+): GrowthAdvance | null {
+  const src = naturalSourceOf(f.species);
+  const g = src?.growth;
+  if (!g || f.growAt === undefined) return null;
+  let cls = f.sizeClass ?? 0;
+  let at = f.growAt;
+  let changed = false;
+  while (at <= now && cls < g.classes.length - 1) {
+    cls++;
+    at += Math.max(1e-3, classPeriodS);
+    changed = true;
+  }
+  if (!changed) return null;
+  const stock: Record<string, number> = {};
+  for (const p of src!.products) {
+    if (p.method !== "kill") continue;
+    stock[p.glyph] = growthClassYield(p, g.classes[cls]!.yieldMul, conversionDial);
+  }
+  return { sizeClass: cls, stock, growAt: cls < g.classes.length - 1 ? at : undefined };
+}
+
+/** RE-SEED STATE (S3 H2's felling replacement): a freshly-felled
+ *  growth-bearing feature's sapling stock (class 0) — PURE, the host arms
+ *  `growAt` and writes the live containerStock (quest-host `fellIfConsumed`).
+ *  Kill glyphs only; a source's harvest glyphs (fruit) are the regrow
+ *  ledger's own business and untouched here. */
+export function reseedGrowthStock(
+  species: string,
+  growth: { classes: readonly GrowthSizeClass[] },
+  conversionDial = 1,
+): Record<string, number> {
+  const src = naturalSourceOf(species);
+  const stock: Record<string, number> = {};
+  for (const p of src?.products ?? []) {
+    if (p.method !== "kill") continue;
+    stock[p.glyph] = growthClassYield(p, growth.classes[0]!.yieldMul, conversionDial);
+  }
+  return stock;
+}
+
 /** Build the wilderness scatter for a seed. Same seed ⇒ identical content. */
 export function buildWilderness(params: WildernessParams): WildernessContent {
   const side = Math.max(60, params.side ?? 240);
@@ -270,6 +455,10 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
   const spawn = { x: side / 2, y: side / 2 };
   const clearAt = params.clearAt ?? spawn;
   const clearR = Math.max(0, params.clearR ?? 6); // keep the clearing open
+  // ⚖️ S3 review: abundance is DIAL-FREE — params.conversionDial is an
+  // inert seat (see ScatterOpts); the one-application law lives at
+  // effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson.
+  const dial = 1;
 
   const place = (): { x: number; y: number } => {
     for (let tries = 0; tries < 12; tries++) {
@@ -297,12 +486,12 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
     const isAnimal = naturalSourceOf(m.species)?.kind === "animal";
     for (let i = 0; i < Math.max(0, m.count); i++) {
       if (!isAnimal) {
-        features.push(makeFeature(`wild:${m.species}_${i}`, m.species, place(), rng));
+        features.push(makeFeature(`wild:${m.species}_${i}`, m.species, place(), rng, dial));
         continue;
       }
       const p = place();
-      const kill = killStockOf(m.species, rng);
-      const cap = harvestStockOf(m.species, rng);
+      const kill = killStockOf(m.species, rng, dial);
+      const cap = harvestStockOf(m.species, rng, dial);
       creatures.push({
         id: `wild_${m.species}_${i}`,
         icon: "", // the body comes from the species, never an emoji face
@@ -326,5 +515,5 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
     });
   }
 
-  return { side, spawn, features, creatures };
+  return { side, seed: params.seed, spawn, features, creatures };
 }

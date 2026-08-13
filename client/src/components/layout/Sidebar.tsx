@@ -25,6 +25,7 @@ import {
   ClipboardList,
   GraduationCap,
   ChevronRight,
+  ChevronDown,
   Building2,
   MessageSquare,
   Image,
@@ -67,6 +68,30 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   // On mobile, always show expanded sidebar
   const isCollapsed = isMobile ? false : isCollapsedProp;
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  // Each nav section (Workspace / AAC Boards / Student Management) can be
+  // collapsed independently. Persisted so the layout survives a reload; only
+  // meaningful when the sidebar itself isn't in icon-only mode.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('sidebar-open-sections');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+  const isSectionOpen = (section: string) => openSections[section] !== false;
+  const toggleSection = (section: string) => {
+    setOpenSections((prev) => {
+      const next = { ...prev, [section]: !isSectionOpen(section) };
+      try {
+        localStorage.setItem('sidebar-open-sections', JSON.stringify(next));
+      } catch {
+        // Storage may be unavailable (e.g. private browsing) — collapse state just won't persist.
+      }
+      return next;
+    });
+  };
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
@@ -321,6 +346,56 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
     );
   };
 
+  const renderSectionHeader = (section: string, label: string) => {
+    const isOpen = isSectionOpen(section);
+    return (
+      <button
+        type="button"
+        className="w-full flex items-center justify-between gap-2 mb-3 min-h-8 rounded-md -mx-2 px-2 hover-elevate active-elevate-2"
+        onClick={() => toggleSection(section)}
+        aria-expanded={isOpen}
+        data-testid={`button-toggle-section-${section}`}
+      >
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          {label}
+        </p>
+        <ChevronDown
+          className={cn(
+            "w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform duration-200",
+            isOpen && "rotate-180"
+          )}
+        />
+      </button>
+    );
+  };
+
+  // Animates the item list open/closed by tweening its grid row from 0fr to 1fr
+  // (rather than mounting/unmounting), so collapsing a section reads as a slide
+  // rather than an instant jump. Icon-only mode ignores section state — there's
+  // no header to toggle it, so every item stays visible.
+  const renderSectionBody = (section: string, items: (typeof workspaceItems)[number][]) => {
+    const open = isCollapsed || isSectionOpen(section);
+    return (
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-out",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        <div className="overflow-hidden">
+          <div
+            className={cn(
+              "space-y-1 transition-opacity duration-200",
+              open ? "opacity-100" : "opacity-0"
+            )}
+          >
+            {items.map(renderNavItem)}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div
       dir={isRTL ? 'rtl' : 'ltr'}
@@ -435,14 +510,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       {showWorkspace && (
         <>
           <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
-            {!isCollapsed && (
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                {t('nav.workspace')}
-              </p>
-            )}
-            <div className="space-y-1">
-              {workspaceItems.map(renderNavItem)}
-            </div>
+            {!isCollapsed && renderSectionHeader('workspace', t('nav.workspace'))}
+            {renderSectionBody('workspace', workspaceItems)}
           </div>
           <Separator className="" />
         </>
@@ -452,14 +521,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       {showAacSection && (
         <>
           <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
-            {!isCollapsed && (
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                {t('nav.aacBoards')}
-              </p>
-            )}
-            <div className="space-y-1">
-              {aacBoardItems.map(renderNavItem)}
-            </div>
+            {!isCollapsed && renderSectionHeader('aacBoards', t('nav.aacBoards'))}
+            {renderSectionBody('aacBoards', aacBoardItems)}
           </div>
           <Separator className="" />
         </>
@@ -469,14 +532,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       {showStudentMgmt && (
         <>
           <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
-            {!isCollapsed && (
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                {ts('nav.studentManagement')}
-              </p>
-            )}
-            <div className="space-y-1">
-              {studentMgmtItems.map(renderNavItem)}
-            </div>
+            {!isCollapsed && renderSectionHeader('studentMgmt', ts('nav.studentManagement'))}
+            {renderSectionBody('studentMgmt', studentMgmtItems)}
           </div>
           <Separator className="" />
         </>

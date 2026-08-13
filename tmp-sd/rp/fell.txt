@@ -1,0 +1,14 @@
+> wait 10
+> /wild
+> say build house
+> wait 60
+> wait 60
+> say build house
+> wait 60
+> wait 60
+> /wild
+> say build house
+> wait 60
+> wait 60
+> /wild
+> /stock

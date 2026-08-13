@@ -31,6 +31,15 @@ import {
   type DialogueAct,
   type ProjectionOpts,
 } from "@shared/world-engine/interaction/dialogue/creature-dialogue.js";
+import {
+  setLooseProp,
+  clearLooseProp,
+  loosePropOf,
+  looseCount,
+  stockedIds,
+  stockedEntries,
+  setContainerStock,
+} from "@shared/world-engine/kernel/town/containers.js";
 
 const specPath = join(process.cwd(), "games", "dollhouse", "src", "game.spec.json");
 const doc = JSON.parse(readFileSync(specPath, "utf8"));
@@ -89,7 +98,7 @@ describe("Fix B — the probe IS the body's own acquire resolution, and it is re
     const fridgeId = `furn_${run.session.dollhouse}_chest_food`;
     // The house's food chest is stocked at boot (the reported run had it at
     // 9/15 units while everyone walked to market).
-    const stock = run.session.containerStock.get(fridgeId) ?? {};
+    const stock = run.session.containerRecords.get(fridgeId)?.stock ?? {};
     expect(Object.values(stock).reduce((s, n) => s + n, 0)).toBeGreaterThan(0);
 
     expect(run.host.sourceProbe(cid, { category: "food" })).toEqual({
@@ -174,7 +183,7 @@ describe("Fix D — the locate ladder searches the answerer's own ken", () => {
       .sort()[0]!;
   const fridgeId = () => `furn_${hi()}_chest_food`;
   const probe = (target: { kind?: string; category?: string }) => run.host.sourceProbe(memberCid(), target);
-  const stockOf = (objId: string) => run.session.containerStock.get(objId) ?? {};
+  const stockOf = (objId: string) => run.session.containerRecords.get(objId)?.stock ?? {};
   /** The dollhouse's own footprint, from the town plan the host reads. */
   const houseSpot = (): { x: number; y: number } => {
     const town = run.session.town!;
@@ -196,17 +205,17 @@ describe("Fix D — the locate ladder searches the answerer's own ken", () => {
       carriedBy: over.carriedBy ?? null,
       containedIn: null,
     };
-    run.session.smallProps.set(objId, { entityId: objId, glyph });
+    setLooseProp(run.session, objId, { entityId: objId, glyph });
     return () => {
       delete run.state.objects[objId];
-      run.session.smallProps.delete(objId);
+      clearLooseProp(run.session, objId);
     };
   }
   /** Put units of a glyph in a box, restoring the previous stack afterwards. */
   function planted(objId: string, stack: Record<string, number>) {
     const before = { ...stockOf(objId) };
-    run.session.containerStock.set(objId, stack);
-    return () => run.session.containerStock.set(objId, before);
+    setContainerStock(run.session, objId, stack);
+    return () => setContainerStock(run.session, objId, before);
   }
 
   it("rung 2 — the fridge answers an APPLE ask only because it holds apples", () => {
@@ -233,7 +242,7 @@ describe("Fix D — the locate ladder searches the answerer's own ken", () => {
   });
 
   it("rung 2 — a ball banked in a household box answers with that box", () => {
-    const box = [...run.session.containerStock.keys()].filter((id) => id.startsWith(`furn_${hi()}_`)).sort()[0]!;
+    const box = [...stockedIds(run.session)].filter((id) => id.startsWith(`furn_${hi()}_`)).sort()[0]!;
     const restore = planted(box, { ball: 1 });
     try {
       expect(probe({ kind: "ball" })).toEqual({
@@ -275,7 +284,7 @@ describe("Fix D — the locate ladder searches the answerer's own ken", () => {
     const ans = probe({ kind: "ball" });
     expect(ans?.kind).toBe("place");
     const objId = (ans as { subjectId: string }).subjectId.replace(/^at:/, "");
-    const prop = run.session.smallProps.get(objId);
+    const prop = loosePropOf(run.session, objId);
     expect(prop).toBeDefined(); // a LOOSE prop, not a fixture
     expect(run.state.objects[objId]?.carriedBy ?? null).toBeNull();
   });
@@ -314,8 +323,8 @@ describe("Fix D — the locate ladder searches the answerer's own ken", () => {
       step: JSON.stringify([...run.session.needStep.entries()]),
       parks: JSON.stringify([...run.session.needParks.entries()]),
       meters: JSON.stringify([...run.session.needMeters.entries()]),
-      props: run.session.smallProps.size,
-      stock: JSON.stringify([...run.session.containerStock.entries()]),
+      props: looseCount(run.session),
+      stock: JSON.stringify([...stockedEntries(run.session)].map(([id, rec]) => [id, rec.stock])),
       clock: run.session.taskClock,
     });
     const remove = plantProp("ball");

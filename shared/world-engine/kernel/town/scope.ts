@@ -30,6 +30,7 @@
 import { houseScope, TOWN_SCOPE, type OwnerScope } from "../../interaction/behavior/ownership.js";
 import { auditStacks, type ItemLocation } from "./item-move.js";
 import type { StockEndpoint } from "./transfer.js";
+import { countUnits } from "./goods-kinds.js";
 
 /** A scope's id — the endpoint id string, unchanged from the wire/save format. */
 export type ScopeId = string;
@@ -58,6 +59,25 @@ export const SITE_STOCK_ID = "site:stock";
 /** A loose prop's object id. Since 2026-08-02 a deconstructed barrel keeps its
  *  water, so a `small:` prop is an ordinary container scope. */
 export const LOOSE_PROP_PREFIX = "small:";
+/** ⚖️ S&D S4 — A NATURAL SOURCE, in its three spellings. `wild:<species>_<tag>`
+ *  is a standing feature's own id (the scatter's box form); an EMBODIED plant
+ *  and a product ANIMAL key their stock under their BODY id instead
+ *  (`flora:<species>:<tag>` / `fauna:<species>:<tag>`), which is why all three
+ *  prefixes parse to the same node kind: they are three RENDERERS of one
+ *  endpoint, not three kinds of place. */
+export const WILD_PREFIX = "wild:";
+export const FLORA_BODY_PREFIX = "flora:";
+export const FAUNA_BODY_PREFIX = "fauna:";
+/** An OFFLOADED wild area — the closed-form record whose features are its
+ *  renderer when loaded (`wild-area.ts`). A sub-prefix rather than a fourth
+ *  top-level word, so "everything natural is spelled `wild:`" survives the
+ *  loaded/unloaded split; no natural source is named `area`. */
+export const WILD_AREA_PREFIX = "wild:area:";
+
+/** The scope id of an offloaded wild area. */
+export function wildAreaId(key: string): ScopeId {
+  return `${WILD_AREA_PREFIX}${key}`;
+}
 
 /**
  * WHAT A SCOPE ID NAMES. A closed union — an id that parses to nothing is not a
@@ -89,6 +109,26 @@ export type ScopeRef =
    *  It holds no stack of its own; its inventory is the sum of the containers
    *  standing in it, which is the law in one node. */
   | { kind: "building"; buildingKey: string }
+  /**
+   * ⚖️ A NATURAL SOURCE — a stand of trees, an outcrop, a grazing animal, or
+   * the whole offloaded AREA they render (S&D S4).
+   *
+   * USER LAW (2026-08-12, verbatim): *"don't create a separate
+   * wilderness-surrounding-city rule … treat wilderness areas as a type of
+   * RENDERER for a resource's source, treated the same as a storeroom, shop
+   * or city."* This variant is that law in the grammar: a forest is one more
+   * expression of a resource-source endpoint, with a `form` naming which
+   * renderer is standing (`box` — the scatter's placeholder; `flora`/`fauna` —
+   * a grown body; `area` — none, the closed-form record itself).
+   *
+   * 🚨 IT NEEDED A NAME BECAUSE IT HAD NONE. `wild:oak_3` used to fall through
+   * to the `container` fallback, so every reader that had to tell standing
+   * timber from shelving did it by scanning `session.wilderness.features` —
+   * four such scans in construction-director alone. The distinction they
+   * actually wanted is `scopeReceivesGoods`, below: a shelf receives, a source
+   * only yields.
+   */
+  | { kind: "wild"; form: "box" | "flora" | "fauna" | "area"; species: string; tag: string }
   /** Any registered container object — the fallback. */
   | { kind: "container"; objectId: string };
 
@@ -110,8 +150,40 @@ const afterPrefix = (id: string, prefix: string): string => id.slice(prefix.leng
  *  the same building. */
 const BUILDING_KEY = /^[hw]_\d+$/;
 
+/** `<species><sep><tag>`, split at the first/last separator. The two natural-
+ *  source spellings split DIFFERENTLY and both are forced:
+ *   • `wild:<species>_<tag>` splits at the LAST underscore, because species
+ *     keys carry underscores (`apple_tree`, `banana_plant`) and tags do not
+ *     (a scatter index, or a flora twin's `face:tx:ty:i` instance key);
+ *   • `flora:<species>:<tag>` splits at the FIRST colon, because the tag is a
+ *     whole feature id (`flora:oak:wild:oak_3`) and carries colons of its own.
+ *  Either way the print is `species + sep + tag`, so the round trip is exact
+ *  even where the division itself is a guess. */
+const splitAt = (s: string, sep: string, last: boolean): [string, string] => {
+  const i = last ? s.lastIndexOf(sep) : s.indexOf(sep);
+  return i < 0 ? [s, ""] : [s.slice(0, i), s.slice(i + sep.length)];
+};
+
 export function parseScopeId(id: ScopeId): ScopeRef {
   if (id === SITE_STOCK_ID) return { kind: "siteStock" };
+  // ⚖️ NATURAL SOURCES, before every other prefix: `wild:` would otherwise be
+  // read as a bare container and `flora:`/`fauna:` bodies as anonymous objects.
+  if (id.startsWith(WILD_AREA_PREFIX)) {
+    return { kind: "wild", form: "area", species: "", tag: afterPrefix(id, WILD_AREA_PREFIX) };
+  }
+  if (id.startsWith(WILD_PREFIX)) {
+    const [species, tag] = splitAt(afterPrefix(id, WILD_PREFIX), "_", true);
+    return { kind: "wild", form: "box", species, tag };
+  }
+  if (id.startsWith(FLORA_BODY_PREFIX) || id.startsWith(FAUNA_BODY_PREFIX)) {
+    const flora = id.startsWith(FLORA_BODY_PREFIX);
+    const [species, tag] = splitAt(
+      afterPrefix(id, flora ? FLORA_BODY_PREFIX : FAUNA_BODY_PREFIX),
+      ":",
+      false,
+    );
+    return { kind: "wild", form: flora ? "flora" : "fauna", species, tag };
+  }
   // THE LOCAL TOWN, spelled as ownership.ts already spells it (`TOWN_SCOPE`),
   // so the inventory ladder and the permission ladder name the root the same.
   if (id === TOWN_SCOPE) return { kind: "town", key: "" };
@@ -162,6 +234,18 @@ export function scopeIdOf(ref: ScopeRef): ScopeId {
     case "district": return `${COHORT_PREFIX}${ref.district}`;
     case "town": return ref.key === "" ? TOWN_SCOPE : `${TOWN_PREFIX}${ref.key}`;
     case "building": return ref.buildingKey;
+    case "wild":
+      switch (ref.form) {
+        case "area": return `${WILD_AREA_PREFIX}${ref.tag}`;
+        case "flora": return `${FLORA_BODY_PREFIX}${ref.species}:${ref.tag}`;
+        case "fauna": return `${FAUNA_BODY_PREFIX}${ref.species}:${ref.tag}`;
+        // A tagless source (`wild:oak`) round-trips without the separator the
+        // split never found.
+        case "box": return ref.tag === ""
+          ? `${WILD_PREFIX}${ref.species}`
+          : `${WILD_PREFIX}${ref.species}_${ref.tag}`;
+      }
+    // eslint-disable-next-line no-fallthrough -- every `form` returns above
     case "depot": return `${DEPOT_PREFIX}${ref.townKey}`;
     case "produce": return `${PRODUCE_PREFIX}${ref.goodKey}:${ref.workIdx}`;
     case "shelf": return `${SHELF_PREFIX}${ref.goodKey}:${ref.srcIdx}`;
@@ -177,6 +261,30 @@ export function scopeIdOf(ref: ScopeRef): ScopeId {
 /** Is this the town's OWN yard rather than a trade partner's stack? */
 export function isTownYard(ref: ScopeRef): boolean {
   return ref.kind === "town" && ref.key === "yard";
+}
+
+/**
+ * ⚖️ DOES THIS SCOPE RECEIVE GOODS, or does it only YIELD them? (S&D S4.)
+ *
+ * A shelf, a yard, a crate, a pile, a body, a town — every one of them is
+ * somewhere you may PUT something. A natural source is not: you take wood out
+ * of a tree, and you cannot stock one. That single fact is what four separate
+ * wilderness scans in `construction-director` were really testing —
+ * *"a tree is not shelving"* — and stating it here means the readers ask a
+ * question about the ENDPOINT rather than about the world's scenery.
+ *
+ * It is deliberately not "is it wild": a future source rendered as a mine
+ * shaft, a fishery or an offloaded region shed answers the same way, and an
+ * OWNED source (a tamed cow, an orchard the town planted) still only yields.
+ * Who may draw from it is `mayUse`'s question, not this one.
+ */
+export function scopeReceivesGoods(ref: ScopeRef): boolean {
+  return ref.kind !== "wild";
+}
+
+/** The same question of a raw id — the one-liner every call site wants. */
+export function scopeIdReceivesGoods(id: ScopeId): boolean {
+  return scopeReceivesGoods(parseScopeId(id));
 }
 
 // ── Containment ───────────────────────────────────────────────────────────
@@ -226,6 +334,17 @@ export function scopeParentOf(ref: ScopeRef, ctx: ScopeContext = {}): ScopeId | 
       if (b) return b;
       const m = /^furn_(\d+)_/.exec(ref.objectId);
       return m ? `h_${m[1]}` : localTown(ctx);
+    }
+    case "wild": {
+      // ⚖️ A STANDING SOURCE HANGS WHERE IT STANDS, exactly as it did while it
+      // was parsed as a plain container (`buildingOfContainer` → the ground
+      // scope under it) — this variant renamed the node, it did not move it.
+      // An offloaded AREA hangs off NOTHING we model: its parent is the region,
+      // the same honest null a trade partner's town answers. (Whether standing
+      // timber should count in the town's roll-up at all is the world-size
+      // round's question — recorded in the S4 landing notes, not decided here.)
+      if (ref.form === "area") return null;
+      return ctx.buildingOfContainer?.(scopeIdOf(ref)) ?? localTown(ctx);
     }
     case "district":
     case "building":
@@ -510,13 +629,12 @@ export function scopeUnits(root: ScopeId, glyph: string, input: ScopeStockInput)
 /** `scopeUnits`' matching rule over one stack — exported because a caller that
  *  already holds a rolled-up stack (the host's per-tick index) must count it the
  *  same way, and two spellings of "have we got one" is how this class of bug
- *  started. */
+ *  started. The PREFIX selector of goods-kinds.ts's `countUnits` core — see
+ *  the 🚨 note above `scopeUnits` for why this is deliberately not a head
+ *  match, and `UnitSelector`'s own docstring for the same warning carried
+ *  into the shared vocabulary. */
 export function unitsOf(stack: Readonly<Record<string, number>>, glyph: string): number {
-  let n = 0;
-  for (const [g, c] of Object.entries(stack)) {
-    if (g === glyph || g.startsWith(`${glyph}.`)) n += Math.max(0, c);
-  }
-  return n;
+  return countUnits(stack, { prefix: glyph });
 }
 
 /**

@@ -34,7 +34,7 @@ import type { PhraseSpec } from "../dialogue/dialogue-gen.js";
 import { roomAt, type GoingRoom } from "../dialogue/going.js";
 import { ROOM_GLYPH } from "../town/structure-board.js";
 import { houseRoomPlan } from "../../kernel/town/rooms.js";
-import { containerDefOfGlyph } from "../../kernel/town/containers.js";
+import { containerDefOfGlyph, looseEntries, wornBagOf } from "../../kernel/town/containers.js";
 import { FOOD_DAY_SEC, houseDoorstep, workDoorstep } from "../../kernel/town/goods.js";
 import {
   assignTownJobs,
@@ -358,11 +358,12 @@ export function handsObjectOf(
   const objects = state?.objects;
   if (!bodyId || !objects) return undefined;
   let first: HandsObject | undefined;
-  for (const [objId, rec] of session.smallProps) {
+  for (const [objId, rec] of looseEntries(session)) {
     if (objects[objId]?.carriedBy !== bodyId) continue;
-    const bag = !!containerDefOfGlyph(rec.glyph)?.hold;
-    if (bag) return { objId, glyph: rec.glyph, bag };
-    first ??= { objId, glyph: rec.glyph, bag };
+    const glyph = rec.glyph!;
+    const bag = !!containerDefOfGlyph(glyph)?.hold;
+    if (bag) return { objId, glyph, bag };
+    first ??= { objId, glyph, bag };
   }
   return first;
 }
@@ -557,7 +558,7 @@ export function inspectCreature(
       session.bondedCreatures.has(cid) ? "bonded" : "",
       session.addressedFamily === cid ? "addressed" : "",
       session.liveNeedBodies.has(cid) ? "liveNeedBody" : "",
-      session.wornBags.has(cid) ? `wearing ${session.wornBags.get(cid)!.glyph}` : "",
+      session.wornBagIndex.has(cid) ? `wearing ${wornBagOf(session, cid)!.glyph}` : "",
     ]
       .filter(Boolean)
       .join(", "),

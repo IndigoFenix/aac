@@ -708,6 +708,60 @@ export function refineHighways(
   const dirAt = (cell: number): [number, number, number] =>
     regionDir(frame, R, cell % cols, Math.floor(cell / cols));
 
+  // ── THE PORT LAW ALSO BINDS AGAINST THIS REGION'S OWN VILLAGES ───────────
+  //
+  // A refined span is priced with the committed village roads' discount, so
+  // it MERGES with the local net near a town — which is the point, and which
+  // is also how it ends up aimed straight at a village centre. The parent it
+  // re-draws ported at CITY extents and knows nothing about villages, so
+  // nothing else in the chain will stop it: phase C §3.4 made these spans
+  // PAINT, and a span whose end sits 14 m from a village centre paints the
+  // ground through that village's houses (MEASURED before this: region 3191,
+  // a 143 m span passing 4.5 m from a village centre inside an 84.9 m
+  // extent — 5 of the first 6 offenders were an END inside a village).
+  //
+  // So each span ports at the VILLAGE extent the same way `planetRoutes`
+  // ports at the city one — the extent `refineRegion` already derived and
+  // handed us (`refined.townExtentM`), the same circle this region's own
+  // lanes stop at, so highway and lane meet on one boundary.
+  //
+  // `s0`/`s1` DELIBERATELY DO NOT MOVE. They name the PARENT arc this span
+  // stands for; shrinking them would un-suppress the parent over the village
+  // and paint the unrefined line straight through it — the very thing being
+  // fixed. Leaving them is what makes the clipped stretch a PORT: the parent
+  // is suppressed, the span stops at the boundary, and the village's own
+  // streets own the ground inside. Carts keep projecting across the arc
+  // fraction (trade-roads.ts), as they already do for a refined span whose
+  // length never matched its parent's.
+  //
+  // ENDS ONLY, and honestly so: a span that merely GRAZES a village
+  // mid-course (measured: one at 81 m against a 91 m extent) would have to be
+  // SPLIT to be cut, and a split span cannot be one parent override.
+  const villageExtentM = refined.townExtentM;
+  const villages = refined.villages;
+  const villageTerminal = (
+    id: number, at: readonly [number, number, number],
+  ): RouteTerminal | null => {
+    let best: (typeof villages)[number] | null = null;
+    let bestD = Infinity;
+    for (const v of villages) {
+      const d = Math.acos(Math.max(-1, Math.min(1,
+        at[0] * v.dir[0] + at[1] * v.dir[1] + at[2] * v.dir[2]))) * R;
+      if (d < bestD) { bestD = d; best = v; }
+    }
+    return best && bestD < villageExtentM
+      ? { id, dir: best.dir, extentM: villageExtentM }
+      : null;
+  };
+  const villagePorted = (route: PlanetRoute): PlanetRoute =>
+    villages.length
+      ? portTerminateRoute(
+          route, R,
+          villageTerminal(route.a, route.dirs[0]!),
+          villageTerminal(route.b, route.dirs[route.dirs.length - 1]!),
+        )
+      : route;
+
   // Vertex prefilter: a route with no vertex within the chart's padded
   // angular reach cannot cross it (vertices are ≲ the chart apart).
   const cosReach = Math.cos((frame.widthM * 1.2) / R);
@@ -767,7 +821,7 @@ export function refineHighways(
         pin0, ...cells.map(dirAt), pin1,
       ];
       const route = routeFromDirs(chaikinSphere(chaikinSphere(raw)), R, parent.a, parent.b);
-      if (route) out.push({ a: parent.a, b: parent.b, s0, s1, route });
+      if (route) out.push({ a: parent.a, b: parent.b, s0, s1, route: villagePorted(route) });
     };
     const nSteps = Math.ceil(parent.lengthM / stepM);
     for (let i = 0; i <= nSteps; i++) {

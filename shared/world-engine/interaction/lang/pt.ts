@@ -4,8 +4,9 @@
 
 import { makeRomance } from "./romance.js";
 import type { Lexeme } from "./core.js";
+import { specWords } from "../content/words.js";
 
-const L: Record<string, Lexeme> = {
+const CENTRAL: Record<string, Lexeme> = {
   i_me: { w: "eu" },
   you: { w: "você" },
   // The collective voice (nations P6) — plural, so agreement machinery
@@ -50,7 +51,6 @@ const L: Record<string, Lexeme> = {
   fight: { w: "luto", v3: "luta", v3p: "lutam", v1p: "lutamos", inf: "lutar" },
   town: { w: "vila", g: "f" },
   area: { w: "área", g: "f" },
-  market: { w: "mercado" },
   trade: { w: "troco", v3: "troca", v3p: "trocam", v1p: "trocamos" },
   more: { w: "mais" },
   less: { w: "menos" },
@@ -93,42 +93,12 @@ const L: Record<string, Lexeme> = {
   home: { w: "casa", g: "f" },
   work: { w: "trabalho", g: "m" },
   thing: { w: "quê" },
-  cookie: { w: "biscoito", g: "m" },
-  apple: { w: "maçã", g: "f" },
-  banana: { w: "banana", g: "f" },
-  grape: { w: "uva", g: "f" },
-  ball: { w: "bola", g: "f" },
-  blocks: { w: "blocos", g: "m", pl: true },
-  puzzle: { w: "quebra-cabeça", g: "m", plw: "quebra-cabeças" },
   doll: { w: "boneca", g: "f" },
-  car: { w: "carro", g: "m" },
-  train: { w: "trem", g: "m", plw: "trens" },
-  rabbit: { w: "coelho", g: "m" },
-  bear: { w: "urso", g: "m" },
-  frog: { w: "sapo", g: "m" },
-  dog: { w: "cachorro", g: "m" },
   // Creature SPECIES words (reference resolution: "falo com o/a {espécie}").
   person: { w: "pessoa", g: "f", plw: "pessoas" },
   animal: { w: "animal", g: "m", plw: "animais" },
   creature: { w: "criatura", g: "f" },
-  cow: { w: "vaca", g: "f" },
-  deer: { w: "cervo", g: "m" },
-  ram: { w: "carneiro", g: "m" },
-  sheep: { w: "ovelha", g: "f" },
-  box: { w: "caixa", g: "f" },
-  basket: { w: "cesta", g: "f" },
-  satchel: { w: "bolsa", g: "f" },
-  bubbles: { w: "bolhas", g: "f", pl: true },
-  sparks: { w: "faíscas", g: "f", pl: true },
-  boat: { w: "barco", g: "m" },
-  broccoli: { w: "brócolis", g: "m", mass: true },
-  sock: { w: "meia", g: "f" },
   // Devices (§5) + their toggle states (agree with the device's gender).
-  lamp: { w: "lâmpada", g: "f" },
-  window: { w: "janela", g: "f" },
-  heater: { w: "aquecedor", g: "m" },
-  generator: { w: "gerador", g: "m" },
-  switch: { w: "interruptor", g: "m" },
   on: { w: "aceso", f: "acesa" },
   off: { w: "apagado", f: "apagada" },
   open: { w: "aberto", f: "aberta" },
@@ -154,52 +124,10 @@ const L: Record<string, Lexeme> = {
   put: { w: "ponho", v2: "pões", v3: "põe", v3p: "põem", inf: "pôr" },
   good: { w: "bom", f: "boa" },
   bathroom: { w: "banheiro", g: "m" },
-  kitchen: { w: "cozinha", g: "f" },
-  bath: { w: "banheira", g: "f" },
-  toilet: { w: "vaso sanitário", g: "m", plw: "vasos sanitários" },
-  barrel: { w: "barril", g: "m", plw: "barris" },
-  chair: { w: "cadeira", g: "f" },
-  table: { w: "mesa", g: "f" },
-  bed: { w: "cama", g: "f" },
-  // The food chest IS a refrigerator — the box a where-is answer names.
-  refrigerator: { w: "geladeira", g: "f" },
-  cabinet: { w: "armário", g: "m" },
-  workbench: { w: "bancada", g: "f" },
-  bin: { w: "lixeira", g: "f" },
-  bowl: { w: "tigela", g: "f" },
-  oven: { w: "forno", g: "m" },
-  anvil: { w: "bigorna", g: "f" },
-  loom: { w: "tear", g: "m" },
-  shelf: { w: "estante", g: "f" },
-  altar: { w: "altar", g: "m" },
-  // The masonry bench, formed off `workbench` ("bancada"). The head noun is
-  // what pluralizes, so `plw` carries it like `toilet` does.
-  stonecutter: { w: "bancada de cantaria", g: "f", plw: "bancadas de cantaria" },
-  well: { w: "poço", g: "m" },
-  smithy: { w: "ferraria", g: "f" },
-  weaver: { w: "tecelagem", g: "f" },
-  library: { w: "biblioteca", g: "f" },
-  temple: { w: "templo", g: "m" },
-  living: { w: "sala", g: "f" },
-  shop: { w: "loja", g: "f" },
-  forge: { w: "forja", g: "f" },
-  shrine: { w: "santuário", g: "m" },
-  weaving: { w: "sala de tecelagem", g: "f" },
-  study: { w: "escritório", g: "m" },
-  // The stonecutter's room/building — "cantaria" is the stone-cutting trade
-  // and its workshop both, the way "forja" is the forge.
-  masonry: { w: "cantaria", g: "f" },
-  // The wild outcrop, not the material: you quarry `stone` out of a `rock`.
-  rock: { w: "rocha", g: "f" },
   water: { w: "água", g: "f", mass: true },
   food: { w: "comida", g: "f", mass: true },
   toy: { w: "brinquedo", g: "m" },
-  book: { w: "livro", g: "m" },
   clothing: { w: "roupa", g: "f", mass: true },
-  hat: { w: "chapéu", g: "m" },
-  shirt: { w: "camiseta", g: "f" },
-  dress: { w: "vestido", g: "m" },
-  scarf: { w: "cachecol", g: "m" },
   // Attention/self-care verbs (attention-spark actions) — 1sg + infinitive
   // (the intent construction "vou comer" needs the infinitive).
   eat: { w: "como", v2: "comes", v3: "come", v3p: "comem", v1p: "comemos", inf: "comer" },
@@ -233,27 +161,17 @@ const L: Record<string, Lexeme> = {
   // Construction ④ — the room-EMPTYING verb (break's stow-only twin).
   empty: { w: "esvazio", v2: "esvazias", v3: "esvazia", v3p: "esvaziam", inf: "esvaziar" },
   room: { w: "cômodo", g: "m" },
-  door: { w: "porta", g: "f" },
-  bedroom: { w: "quarto", g: "m" },
-  store: { w: "loja", g: "f" },
-  storeroom: { w: "despensa", g: "f" },
-  workshop: { w: "oficina", g: "f" },
   // ── CONSTRUCTION VOCABULARY ───────────────────────────────────────────
   // The building trade shipped as live glyphs with no lexemes here, so a
   // builder said "Eu build o house" — the raw English keys inside a Portuguese
   // sentence, exactly the gap the furniture kinds had.
+  // The materials and named structures now live on their spec rows
+  // (content/words.ts) — what stays is the core pair and the trade's verbs.
   //
-  // MATERIALS: `wood`/`stone` are mass (the material), `block`/`tree` count.
-  block: { w: "bloco", g: "m" },
-  wood: { w: "madeira", g: "f", mass: true },
-  stone: { w: "pedra", g: "f", mass: true },
-  tree: { w: "árvore", g: "f" },
   // STRUCTURES — `house` is the dwelling as an ORDER; `home` stays the place
   // a creature goes back to.
   house: { w: "casa", g: "f" },
-  farm: { w: "fazenda", g: "f" },
   building: { w: "prédio", g: "m" },
-  storehouse: { w: "armazém", g: "m", plw: "armazéns" },
   yard: { w: "quintal", g: "m", plw: "quintais" },
   // TRADE VERBS — 1sg in `w`, plus the infinitive the intent periphrasis
   // ("vou construir") reads.
@@ -265,6 +183,16 @@ const L: Record<string, Lexeme> = {
   // The completion state ("a casa está pronta").
   finished: { w: "pronto", f: "pronta" },
 };
+
+/** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec
+ *  ITEMS live on their spec rows (content/words.ts joiner) and must not appear
+ *  here too; the no-overlap conformance pin reads this export. */
+export const CENTRAL_WORDS = CENTRAL;
+
+/** The LIVE word table — central words ⊕ the spec items' own words. Built
+ *  BEFORE the makeRomance call, which closes over it: an item's row is
+ *  authoritative for its word, in gloss fallback and frame grammar alike. */
+const L: Record<string, Lexeme> = { ...CENTRAL, ...specWords("pt") };
 
 const PT_CONN: Record<string, string> = {
   because: "porque",

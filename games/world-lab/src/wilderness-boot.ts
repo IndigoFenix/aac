@@ -78,26 +78,12 @@ export function wildMixForBiome(biome: number, seed: number): WildMixEntry[] {
   }
 }
 
-/** A FOUNDING-AGE town's gatherable surroundings, from its charter biome
- *  (plan.ts TownPlan.biome — the site's ground character): farmland
- *  country carries an orchard sprinkle and wild livestock to tame; mining
- *  country is timber over heavy stone. Same registry-derived fruit pick
- *  as the open-country mix. */
-export function homesteadWildMix(biome: "farmland" | "mining", seed: number): WildMixEntry[] {
-  const orchard = orchardPlants();
-  const fruit: WildMixEntry[] = orchard.length
-    ? [{ species: orchard[(seed >>> 3) % orchard.length]!.species, count: 2 }]
-    : [];
-  return biome === "mining"
-    ? [{ species: "oak", count: 8 }, ...fruit, { species: "rock", count: 10 }]
-    : [
-        { species: "oak", count: 8 },
-        ...fruit,
-        { species: "rock", count: 4 },
-        { species: "sheep", count: 2 },
-        { species: "cow", count: 1 },
-      ];
-}
+/** A FOUNDING-AGE town's gatherable surroundings, from its charter biome —
+ *  MOVED TO THE ENGINE (2026-08-12, one definition:
+ *  `@shared/world-engine/interaction/quest/wilderness`). Three boots need it
+ *  and one of them is the headless text harness, which cannot import from
+ *  `games/`. Re-exported here so this module's own consumers are unchanged. */
+export { homesteadWildMix } from "@shared/world-engine/interaction/quest/wilderness";
 
 /** The mounted wilderness chunk — structurally the same surface main.ts's
  *  walk↔fly coordinator drives for a town (step / pointer / camera handoff /

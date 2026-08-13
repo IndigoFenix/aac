@@ -31,6 +31,9 @@ const PAGE_SIZE = 50;
 
 interface PersonChatContextValue {
   rooms: PersonChatRoomListEntry[];
+  /** True until the first room-list fetch settles, so callers can avoid
+   *  flashing a "no conversations" empty state while the list loads. */
+  roomsLoading: boolean;
   totalUnread: number;
   selfPersonId: string | null;
   activeRoomId: string | null;
@@ -56,6 +59,7 @@ export function PersonChatProvider({ children }: { children: ReactNode }) {
   const selfPersonIdRef = useRef<string | null>(null);
   selfPersonIdRef.current = selfPersonId;
   const [rooms, setRooms] = useState<PersonChatRoomListEntry[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [messagesByRoom, setMessagesByRoom] = useState<Record<string, ClientPersonChatMessage[]>>({});
   const [hasMoreByRoom, setHasMoreByRoom] = useState<Record<string, boolean>>({});
@@ -70,11 +74,14 @@ export function PersonChatProvider({ children }: { children: ReactNode }) {
       if (self) setSelfPersonId(self);
     } catch (err) {
       console.error("[personChat] refreshRooms error:", err);
+    } finally {
+      setRoomsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (isAuthenticated) refreshRooms();
+    else setRoomsLoading(false);
   }, [isAuthenticated, refreshRooms]);
 
   const openRoom = useCallback(async (roomId: string) => {
@@ -237,6 +244,7 @@ export function PersonChatProvider({ children }: { children: ReactNode }) {
 
   const value: PersonChatContextValue = {
     rooms,
+    roomsLoading,
     totalUnread,
     selfPersonId,
     activeRoomId,

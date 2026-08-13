@@ -3,7 +3,7 @@
 // Boots the SAME headless text quest the CLI boots (bootTextQuest), then every
 // sim-second records, for each family resident:
 //   • ground truth hands   — world objects with carriedBy === <body>
-//   • the held bag's stock — session.containerStock[bagObjId]
+//   • the held bag's stock — session.containerRecords[bagObjId].stock
 //   • the PANEL projection — inspectCreature(...).rows "carrying" (== carryText(host.carryOf))
 //   • trip clock           — session.liveTripAt
 //   • home boxes           — furn_<house>_* container stocks
@@ -78,7 +78,7 @@ const bodyIdOf = (cid: string): string | null => {
 };
 
 const glyphOfObj = (objId: string): string =>
-  session.smallProps.get(objId)?.glyph ??
+  session.containerRecords.get(objId)?.glyph ??
   state()?.spec.objects.find((s: any) => s.id === objId)?.glyph ??
   "?";
 
@@ -92,7 +92,7 @@ const handsTruth = (cid: string): { objId: string; glyph: string; stock: Record<
   for (const [id, o] of Object.entries<any>(st.objects)) {
     if (o?.carriedBy !== bid) continue;
     const g = glyphOfObj(id);
-    const stock = session.containerStock.get(id) ?? null;
+    const stock = session.containerRecords.get(id)?.stock ?? null;
     out.push({ objId: id, glyph: g, stock: stock ? { ...stock } : null });
   }
   return out;
@@ -100,9 +100,9 @@ const handsTruth = (cid: string): { objId: string; glyph: string; stock: Record<
 
 const homeBoxes = (): Record<string, Record<string, number>> => {
   const out: Record<string, Record<string, number>> = {};
-  for (const [id, stock] of session.containerStock as Map<string, Record<string, number>>) {
-    if (!id.startsWith(`furn_${houseIdx}_`)) continue;
-    const nonzero = Object.fromEntries(Object.entries(stock).filter(([, n]) => (n as number) > 0));
+  for (const [id, rec] of session.containerRecords as Map<string, { stock?: Record<string, number> }>) {
+    if (!id.startsWith(`furn_${houseIdx}_`) || !rec.stock) continue;
+    const nonzero = Object.fromEntries(Object.entries(rec.stock).filter(([, n]) => (n as number) > 0));
     if (Object.keys(nonzero).length) out[id] = nonzero as Record<string, number>;
   }
   return out;
@@ -219,7 +219,7 @@ for (let f = 0; f < FRAMES; f++) {
       pos: a ? [Number(a.x.toFixed(1)), Number(a.y.toFixed(1))] : null,
       hands,
       carryOf: host.carryOf(cid),
-      worn: session.wornBags.get(cid)?.glyph ?? null,
+      worn: session.containerRecords.get(session.wornBagIndex.get(cid))?.glyph ?? null,
       live: session.liveNeedBodies.has(cid),
       tripAt: session.liveTripAt.get(cid) ?? null,
       step: step ? `${step.kind}:${step.tplKey}×${step.units} @ ${step.objId ?? "-"}` : null,

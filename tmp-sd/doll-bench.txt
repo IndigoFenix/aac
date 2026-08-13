@@ -1,0 +1,17 @@
+wait 10
+scene
+say make workbench
+wait 30
+scene
+wait 30
+scene
+wait 40
+scene
+wait 40
+scene
+wait 40
+scene
+wait 40
+scene
+self
+/scope

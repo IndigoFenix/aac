@@ -1,0 +1,293 @@
+/**
+ * ⚖️ S&D S4 — THE WILDERNESS ENDPOINT: the `wild:` grammar and the offload
+ * record (`interaction/quest/wild-area.ts`).
+ *
+ * The pins that matter here are CONSERVATION pins. A fold that loses a unit
+ * per cycle is a forest that evaporates while the player walks away, which is
+ * the item-conservation law's own worst case; every other property (the
+ * gradient, the size classes, the clocks) is checked around them.
+ */
+import { describe, expect, it } from "@jest/globals";
+import {
+  parseScopeId,
+  scopeIdOf,
+  scopeParentOf,
+  scopeReceivesGoods,
+  wildAreaId,
+} from "@shared/world-engine/kernel/town/scope.js";
+import {
+  advanceWildArea,
+  condenseWildArea,
+  dealUnits,
+  expandWildArea,
+  wildAreaCounts,
+  wildAreaPopulation,
+  wildAreaStock,
+  wildDrawSectorOf,
+  type WildAreaRecord,
+} from "@shared/world-engine/interaction/quest/wild-area.js";
+import {
+  buildWilderness,
+  wildFeatureContainerId,
+  type WildernessFeature,
+} from "@shared/world-engine/interaction/quest/wilderness.js";
+
+const AREA = { x: 0, y: 0, w: 240, h: 240 };
+
+const sumStocks = (features: readonly WildernessFeature[]): Record<string, number> => {
+  const out: Record<string, number> = {};
+  for (const f of features) {
+    for (const [g, n] of Object.entries(f.stock)) if (n > 0) out[g] = (out[g] ?? 0) + n;
+  }
+  return out;
+};
+
+const fold = (features: readonly WildernessFeature[], now = 0, prev?: WildAreaRecord) =>
+  condenseWildArea({ features, now, area: AREA, seed: 11, key: "home", prev });
+
+describe("S4 — `wild:` in the scope grammar", () => {
+  it("round-trips every spelling a natural source has", () => {
+    for (const id of [
+      "wild:oak_3",
+      "wild:rock_10",
+      "wild:apple_tree_0", // a species key with an underscore of its own
+      "wild:oak_face:3:5:2", // a flora twin's instance-key tag
+      "flora:oak:wild:oak_3", // an embodied plant's BODY id
+      "fauna:sheep:wild_sheep_0", // a product animal's BODY id
+      "wild:area:home", // the offloaded area itself
+    ]) {
+      expect(scopeIdOf(parseScopeId(id))).toBe(id);
+      expect(parseScopeId(id).kind).toBe("wild");
+    }
+  });
+
+  it("names the species and the form", () => {
+    expect(parseScopeId("wild:oak_3")).toEqual({
+      kind: "wild", form: "box", species: "oak", tag: "3",
+    });
+    expect(parseScopeId("wild:apple_tree_0")).toEqual({
+      kind: "wild", form: "box", species: "apple_tree", tag: "0",
+    });
+    expect(parseScopeId("flora:oak:wild:oak_3")).toEqual({
+      kind: "wild", form: "flora", species: "oak", tag: "wild:oak_3",
+    });
+    expect(parseScopeId("fauna:cow:wild_cow_0")).toEqual({
+      kind: "wild", form: "fauna", species: "cow", tag: "wild_cow_0",
+    });
+    expect(parseScopeId(wildAreaId("home"))).toEqual({
+      kind: "wild", form: "area", species: "", tag: "home",
+    });
+  });
+
+  it("🚨 moves no other id — every shipped prefix parses as before", () => {
+    expect(parseScopeId("town:yard")).toEqual({ kind: "town", key: "yard" });
+    expect(parseScopeId("store:food:0")).toEqual({ kind: "shelf", goodKey: "food", srcIdx: 0 });
+    expect(parseScopeId("produce:food:2")).toEqual({ kind: "produce", goodKey: "food", workIdx: 2 });
+    expect(parseScopeId("furn_3_chest_food")).toEqual({
+      kind: "container", objectId: "furn_3_chest_food",
+    });
+    expect(parseScopeId("small:mat_2")).toEqual({ kind: "container", objectId: "small:mat_2" });
+    expect(parseScopeId("h_3")).toEqual({ kind: "building", buildingKey: "h_3" });
+  });
+
+  it("⚖️ a source YIELDS, a shelf RECEIVES — the test that replaced four wilderness scans", () => {
+    for (const id of ["wild:oak_3", "flora:oak:wild:oak_3", "fauna:cow:wild_cow_0", "wild:area:home"]) {
+      expect(scopeReceivesGoods(parseScopeId(id))).toBe(false);
+    }
+    for (const id of ["town:yard", "site:stock", "furn_3_chest_food", "h_3", "orderpile:2"]) {
+      expect(scopeReceivesGoods(parseScopeId(id))).toBe(true);
+    }
+  });
+
+  it("hangs a standing source where it stands, and an offloaded area nowhere", () => {
+    const ctx = { townId: () => "town", buildingOfContainer: () => null };
+    expect(scopeParentOf(parseScopeId("wild:oak_3"), ctx)).toBe("town");
+    // The renamed node did not MOVE: the old container reading answered the
+    // same parent for the same id.
+    expect(scopeParentOf({ kind: "container", objectId: "wild:oak_3" }, ctx)).toBe("town");
+    expect(scopeParentOf(parseScopeId(wildAreaId("home")), ctx)).toBeNull();
+  });
+});
+
+describe("S4 — dealUnits (the exactness the fold rests on)", () => {
+  it("splits by weight and loses nothing", () => {
+    expect(dealUnits(10, [1, 1, 1])).toEqual([4, 3, 3]);
+    expect(dealUnits(7, [0, 1, 3])).toEqual([0, 2, 5]);
+    expect(dealUnits(5, [0, 0, 0])).toEqual([2, 2, 1]); // no weight ⇒ even
+    expect(dealUnits(0, [1, 2])).toEqual([0, 0]);
+    for (const total of [1, 3, 16, 97, 1000]) {
+      const parts = dealUnits(total, [0, 0.25, 1, 1, 0.25]);
+      expect(parts.reduce((a, b) => a + b, 0)).toBe(total);
+    }
+  });
+});
+
+describe("S4 — the offload record conserves", () => {
+  const content = buildWilderness({
+    seed: 11,
+    side: 240,
+    mix: [
+      { species: "oak", count: 8 },
+      { species: "rock", count: 4 },
+      { species: "apple_tree", count: 2 },
+    ],
+  });
+
+  it("🚨 FOLD conserves every unit", () => {
+    const rec = fold(content.features);
+    expect(wildAreaStock(rec)).toEqual(sumStocks(content.features));
+    expect(wildAreaPopulation(rec)).toBe(content.features.length);
+  });
+
+  it("🚨 EXPAND conserves every unit", () => {
+    const rec = fold(content.features);
+    const back = expandWildArea({ rec });
+    expect(sumStocks(back)).toEqual(wildAreaStock(rec));
+    expect(back.length).toBe(content.features.length);
+  });
+
+  it("🚨 a whole CYCLE conserves, and settles (fold ∘ expand is idempotent)", () => {
+    const rec = fold(content.features);
+    const once = expandWildArea({ rec });
+    const rec2 = fold(once);
+    const twice = expandWildArea({ rec: rec2 });
+    expect(sumStocks(twice)).toEqual(sumStocks(content.features));
+    expect(wildAreaCounts(rec2)).toEqual(wildAreaCounts(rec));
+    // The SECOND cycle changes nothing at all — positions and clocks included.
+    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+  });
+
+  it("conserves a HARVESTED stand — the live stack, not the initial roll", () => {
+    // Somebody felled two oaks and half-quarried a rock.
+    const live = new Map<string, Record<string, number>>();
+    for (const f of content.features) live.set(wildFeatureContainerId(f), { ...f.stock });
+    const oaks = content.features.filter((f) => f.species === "oak");
+    live.set(wildFeatureContainerId(oaks[0]!), { wood: 0 });
+    live.set(wildFeatureContainerId(oaks[1]!), { wood: 3 });
+    const rocks = content.features.filter((f) => f.species === "rock");
+    live.set(wildFeatureContainerId(rocks[0]!), { stone: 1 });
+    const before: Record<string, number> = {};
+    for (const s of live.values()) {
+      for (const [g, n] of Object.entries(s)) if (n > 0) before[g] = (before[g] ?? 0) + n;
+    }
+    const rec = condenseWildArea({
+      features: content.features,
+      liveStock: (id) => live.get(id),
+      now: 100,
+      area: AREA,
+      seed: 11,
+      key: "home",
+    });
+    expect(wildAreaStock(rec)).toEqual(before);
+    expect(sumStocks(expandWildArea({ rec }))).toEqual(before);
+  });
+
+  it("is DETERMINISTIC — the same record deals the same stand twice", () => {
+    const rec = fold(content.features);
+    expect(JSON.stringify(expandWildArea({ rec }))).toBe(JSON.stringify(expandWildArea({ rec })));
+  });
+
+  it("keeps the size classes and the clocks", () => {
+    const felled: WildernessFeature[] = content.features.map((f, i) =>
+      f.species === "oak" && i % 3 === 0
+        ? { ...f, stock: { wood: 0 }, sizeClass: 0, growAt: 500 + i }
+        : f,
+    );
+    const rec = fold(felled, 100);
+    const oak = rec.stands.find((s) => s.species === "oak")!;
+    const saplings = felled.filter((f) => f.species === "oak" && f.sizeClass === 0).length;
+    expect(oak.byClass[0]).toBe(saplings);
+    expect(oak.climbAt.length).toBe(saplings);
+    const back = expandWildArea({ rec });
+    expect(back.filter((f) => f.sizeClass === 0).length).toBe(saplings);
+    expect(back.filter((f) => f.growAt !== undefined).length).toBe(saplings);
+    // A sapling holds no wood (yieldMul 0) — the stand's whole timber went to
+    // the trees that still stand, and the total is untouched.
+    for (const f of back.filter((g) => g.sizeClass === 0)) expect(f.stock.wood ?? 0).toBe(0);
+    expect(sumStocks(back)).toEqual(wildAreaStock(rec));
+  });
+
+  it("keeps a bearing source's harvest cap and regrow ledger", () => {
+    const bearing = content.features.filter((f) => f.harvestCap);
+    expect(bearing.length).toBeGreaterThan(0);
+    const picked = bearing.map((f, i) =>
+      i === 0 ? { ...f, stock: { ...f.stock, apple: 0 }, regrowAt: { apple: 900 } } : f,
+    );
+    const rec = fold(picked, 100);
+    const back = expandWildArea({ rec });
+    expect(sumStocks(back)).toEqual(wildAreaStock(rec));
+    const caps = back.filter((f) => f.harvestCap);
+    expect(caps.length).toBe(bearing.length);
+    expect(back.some((f) => f.regrowAt?.apple === 900)).toBe(true);
+  });
+});
+
+describe("S4 — the harvest-direction gradient", () => {
+  const content = buildWilderness({ seed: 7, side: 240, mix: [{ species: "oak", count: 24 }] });
+
+  /** Trees standing on the +x half (the sector the harvest came from). */
+  const eastCount = (features: readonly WildernessFeature[]): number =>
+    features.filter((f) => f.x > AREA.x + AREA.w / 2).length;
+
+  it("⚖️ reloads THINNER toward the harvesters", () => {
+    // Everything east of centre was logged; the west stands untouched.
+    const live = new Map<string, Record<string, number>>();
+    for (const f of content.features) {
+      live.set(wildFeatureContainerId(f), f.x > 120 ? { wood: 0 } : { ...f.stock });
+    }
+    const rec = condenseWildArea({
+      features: content.features,
+      liveStock: (id) => live.get(id),
+      now: 10,
+      area: AREA,
+      seed: 11,
+      key: "home",
+    });
+    expect(rec.draw.reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+    const back = expandWildArea({ rec });
+    const flat = expandWildArea({ rec: { ...rec, draw: rec.draw.map(() => 0) } });
+    // The same trees, the same wood — laid out with fewer of them on the
+    // harvested side than a gradient-free deal-out puts there.
+    expect(back.length).toBe(flat.length);
+    expect(sumStocks(back)).toEqual(sumStocks(flat));
+    expect(eastCount(back)).toBeLessThan(eastCount(flat));
+  });
+
+  it("carries a previous record's direction forward", () => {
+    const prev = fold(content.features);
+    prev.draw[0] = 40;
+    const rec = fold(content.features, 50, prev);
+    expect(rec.draw[0]).toBeGreaterThanOrEqual(40);
+  });
+
+  it("sectors a direction the way the compass does", () => {
+    expect(wildDrawSectorOf(1, 0)).toBe(0);
+    expect(wildDrawSectorOf(0, 1)).toBe(2);
+    expect(wildDrawSectorOf(-1, 0)).toBe(4);
+    expect(wildDrawSectorOf(0, -1)).toBe(6);
+  });
+});
+
+describe("S4 — an unloaded stand still grows", () => {
+  it("climbs its classes on the clock and re-derives the timber", () => {
+    const content = buildWilderness({ seed: 3, side: 120, mix: [{ species: "oak", count: 4 }] });
+    const saplings = content.features.map((f) => ({
+      ...f, stock: { wood: 0 }, sizeClass: 0, growAt: 100,
+    }));
+    const rec = fold(saplings, 0);
+    expect(wildAreaStock(rec).wood ?? 0).toBe(0);
+    const grown = advanceWildArea(rec, 250, () => 100);
+    // Two periods: sapling → young → mature, and the stand is worth timber.
+    expect(grown.stands[0]!.byClass).toEqual([0, 0, 4]);
+    expect(grown.stands[0]!.climbAt).toEqual([]);
+    expect(wildAreaStock(grown).wood).toBeGreaterThan(0);
+    // Growth is production; the FOLD/EXPAND pair around it still conserves.
+    expect(sumStocks(expandWildArea({ rec: grown }))).toEqual(wildAreaStock(grown));
+  });
+
+  it("does nothing before the clock, and nothing at all to a growth-less stand", () => {
+    const rocks = buildWilderness({ seed: 3, side: 120, mix: [{ species: "rock", count: 3 }] });
+    const rec = fold(rocks.features, 0);
+    expect(advanceWildArea(rec, 1e9, () => 10)).toBe(rec); // same object: untouched
+  });
+});

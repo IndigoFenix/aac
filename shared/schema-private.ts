@@ -714,6 +714,13 @@ export const aacSettings = pgTable("aac_settings", {
   allowReadProgress: boolean("allow_read_progress").default(true).notNull(),
   allowReadReports: boolean("allow_read_reports").default(true).notNull(),
   allowNotes: boolean("allow_notes").default(true).notNull(),
+  // AI LEARNING — whether the Monitor may create studentContacts rows for people
+  // it observes during a session (it reaches the table through the
+  // Student_Contacts memory field). When false the field stays readable and
+  // updatable, but `add` is refused, so new people are only ever recorded from
+  // the Contacts panel. Rows the AI does create are flagged
+  // studentContacts.autoAdded until a clinician confirms them.
+  autoAddContacts: boolean("auto_add_contacts").default(true).notNull(),
   // Whether the student's owning institute auto-passes the monitor_note gate
   // and sees AAC-recorded chatMemory (Student_Notes / People / Interests /
   // CommunicationStyle / Preferences) without an explicit standing share.
@@ -885,6 +892,14 @@ export const studentContacts = pgTable("student_contacts", {
   isLegalGuardian: boolean("is_legal_guardian").default(false).notNull(),
   coGuardianAcknowledged: boolean("co_guardian_acknowledged").default(false).notNull(),
   legalGuardianDeclaredAt: timestamp("legal_guardian_declared_at"),
+
+  // TRUE when the AAC's Monitor created this row from what it observed in a
+  // session, rather than a person adding it from the Contacts panel. Such a
+  // contact is real enough to use (the AI can recognize and talk about them)
+  // but unreviewed: the clinician client lists these separately so a human can
+  // confirm (clears the flag) or delete them. Never set by the AI itself —
+  // written by the AAC-scoped Student_Contacts add op, cleared by a PATCH.
+  autoAdded: boolean("auto_added").default(false).notNull(),
 
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

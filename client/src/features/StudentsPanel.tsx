@@ -405,7 +405,13 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
             </Card>
           ))}
 
-          {filteredStudents.length === 0 && (
+          {isLoading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {!isLoading && filteredStudents.length === 0 && (
             <div className={cn(
               'text-center py-12',
               isDark ? 'text-slate-400' : 'text-slate-600'

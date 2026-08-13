@@ -106,7 +106,7 @@ export function SocialGameReporter({ onChange }: { onChange: (game: CallGame | n
  *  is the student's latest spoken statement (text + the pressed button's glyph),
  *  shown as a bubble over their avatar and broadcast to peers. */
 export function SocialWorldOverlay({ host, selfSpeech }: { host: HTMLElement | null; selfSpeech?: { text: string; glyph?: string; at: number } | null }) {
-  const { activeGame, selfPersonId, sendWorld, worldHub, sendNpc, npcHub, publishPresence, presenceChannel, localStream, endGame, inviteIntoCall, contacts, refreshContacts } = useCall();
+  const { activeGame, selfPersonId, sendWorld, worldHub, sendNpc, npcHub, publishPresence, presenceChannel, localStream, endGame, inviteIntoCall, contacts, contactsLoading, refreshContacts } = useCall();
   const { t } = useLanguage();
   const dual = useDualAgentContextOptional();
   const [showInvite, setShowInvite] = useState(false);
@@ -169,7 +169,11 @@ export function SocialWorldOverlay({ host, selfSpeech }: { host: HTMLElement | n
               {t("common.close")}
             </button>
           </div>
-          {contacts.length === 0 ? (
+          {contactsLoading ? (
+            <div className="flex flex-1 items-center justify-center text-xl text-white/60">
+              {t("common.loading")}
+            </div>
+          ) : contacts.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-xl text-white/60">
               {t("call.noCallableContacts")}
             </div>

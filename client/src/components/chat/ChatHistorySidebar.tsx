@@ -16,6 +16,8 @@ import {
   Check,
   X,
   Loader2,
+  PanelLeftClose,
+  PanelRightClose,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
@@ -36,6 +38,8 @@ interface ChatHistorySidebarProps {
   onDeletedActive: () => void;
   /** When provided (swap mode), shows a back button that returns to the chat. */
   onBack?: () => void;
+  /** When provided (pinned mode), shows a button that collapses the column. */
+  onCollapse?: () => void;
   /** Extra classes for the root (e.g. a divider border in pinned mode). */
   className?: string;
 }
@@ -64,9 +68,13 @@ export function ChatHistorySidebar({
   onNewChat,
   onDeletedActive,
   onBack,
+  onCollapse,
   className,
 }: ChatHistorySidebarProps) {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
+  // The pinned column sits on the layout's END side, so the icon that best
+  // represents "collapse toward that edge" mirrors with direction.
+  const CollapseIcon = isRTL ? PanelLeftClose : PanelRightClose;
   const { data, isLoading } = useChatSessions(studentId);
   const renameMutation = useRenameChatSession(studentId);
   const deleteMutation = useDeleteChatSession(studentId);
@@ -126,6 +134,19 @@ export function ChatHistorySidebar({
           <Plus className="w-4 h-4" />
           {t("chat.history.newChat")}
         </Button>
+        {onCollapse && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9 flex-shrink-0"
+            onClick={onCollapse}
+            aria-label={t("chat.history.hide")}
+            title={t("chat.history.hide")}
+            data-testid="button-history-collapse"
+          >
+            <CollapseIcon className="w-4 h-4" />
+          </Button>
+        )}
       </div>
 
       {/* List */}

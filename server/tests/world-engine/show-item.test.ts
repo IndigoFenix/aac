@@ -418,7 +418,7 @@ describe("live on the dollhouse — the shown basket never changes hands", () =>
       // A real registered prop, in a real hand, owned by the household.
       const objId = run.host.giveBag(shower, "basket");
       expect(objId).not.toBeNull();
-      const entityId = s.smallProps.get(objId!)!.entityId;
+      const entityId = s.containerRecords.get(objId!)!.entityId!;
       const ownerBefore = s.creatures!.world.items[entityId]?.ownerId ?? null;
 
       // Addressed at the shower (the relayed-target rung of the addressee

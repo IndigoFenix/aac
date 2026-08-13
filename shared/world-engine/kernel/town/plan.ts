@@ -23,7 +23,9 @@ import {
   growStreets, networkJunctions, roadDistance, stubSeedsOf,
   type GrowSeed, type TownStreets, type Vec2,
 } from "./streets";
-import { REAL_SCALE, serviceRadiusM, townExtentM, type WorldScale } from "../../scale";
+import {
+  farmAreaPerPersonM2, producerSurplusFrac, REAL_SCALE, serviceRadiusM, townExtentM, type WorldScale,
+} from "../../scale";
 
 /** Meters per substrate tile — a tile is a square kilometer. */
 export const WORLD_TILE = 1000;
@@ -900,26 +902,68 @@ export function* townPlanSteps(
 
   // Fields: cultivated patches past the farm gates (farmland towns) —
   // the countryside starts where the lanes end.
+  //
+  // ⚖️ S2 — THE AREA SEAM (economy-arc-opening.md, SUPPLY & DEMAND ROUND).
+  // Patches used to count `dual.settlementScalar(siteKey, "farms")` — the
+  // BUILT farm count, an economy scalar with no relation to how much land a
+  // population of this size honestly needs to eat. Now they SUM to that
+  // need directly: `pop × farmAreaPerPersonM2(tier) ÷ dial`, `pop` the same
+  // read `houseCount` above already uses (so the picture never disagrees
+  // with itself: houses and fields both track the town's one population).
+  //
+  // THE SHIPPED TIER is "ancient" (12 acres/person): town-play has no
+  // mechanization anywhere in it — hand-farmed grain, an ox-and-plough
+  // granary economy, no tractors — so the pre-industrial anchor is the
+  // honest one; "modern" (0.5 acres/person) would understate a hand-farmed
+  // village by 24×. THE DIAL, NOW WIRED (S3): `scale.resourceCompression`,
+  // absent `scale` ⇒ 1 — the SAME default S2 shipped, so a caller that
+  // still passes no scale (worldgen, far-LOD twins, this file's own
+  // fixtures) is byte-identical.
   const fields: TownField[] = [];
   if (biome === "farmland" && count > 0) {
     const anchors = farmSpots.length
       ? farmSpots
       : tips.slice(0, 2).map(t => ({ x: t.p.x, y: t.p.y }));
     if (anchors.length === 0) anchors.push({ x: plaza.x + radius, y: plaza.y });
-    const patches = Math.min(14, 2 + Math.round(dual.settlementScalar(siteKey, "farms")) * 2);
+    // ⚖️ σ — AND THE FIELDS ARE SIZED FOR SURPLUS (S&D σ close). The farm's
+    // own declared margin, read OFF THE COMPILED PRODUCER ROW (never a
+    // literal here): the map and the books must be sized from ONE number, and
+    // that number lives spec-side on the producer (`BuildingDef.surplusFrac`,
+    // scale.ts `producerSurplusFrac`). A document whose farm declares
+    // nothing inherits the STAPLE anchor — this is the staple's own field
+    // block, so `"staple"` is the class it falls back to, not the generic
+    // craft default.
+    const farmRow = eco.works.find((w) => w.key === "farm");
+    const surplusFrac = producerSurplusFrac(farmRow?.surplusFrac, "staple");
+    const totalFieldAreaM2 =
+      pop * farmAreaPerPersonM2("ancient", scale?.resourceCompression ?? 1) * (1 + surplusFrac);
+    // Patch COUNT is a rendering-resolution knob (TOWN_DIMS.fieldPatchCap,
+    // explicitly-declared content) — patch SIZE carries the honest total
+    // past it, which is what makes a big town's fields visibly DOMINATE it
+    // (the von Thünen picture, the user's law) instead of multiplying into
+    // thousands of unrenderable smallholdings.
+    const refPatchAreaM2 =
+      (TOWN_DIMS.fieldWMin + TOWN_DIMS.fieldWJit / 2) * (TOWN_DIMS.fieldHMin + TOWN_DIMS.fieldHJit / 2);
+    const patches = Math.max(
+      2,
+      Math.min(TOWN_DIMS.fieldPatchCap, Math.round(totalFieldAreaM2 / refPatchAreaM2)),
+    );
+    const areaScale = Math.sqrt(totalFieldAreaM2 / (patches * refPatchAreaM2));
     for (let k = 0; k < patches; k++) {
       const rng = mulberry32(hashSeed(seed, `${siteKey}:field:${k}`));
       const at = anchors[k % anchors.length];
       // Fields fan OUTWARD from the town's own centre (the plaza), which
       // is where "past the farm gate" points once the origin stops being
-      // the middle of anything.
+      // the middle of anything. `out`/`side` scale with the patch too — a
+      // field big enough to dwarf the town needs to stand back from it, not
+      // just grow from a point still pinned at the old smallholding's edge.
       const rr = Math.hypot(at.x - plaza.x, at.y - plaza.y) || 1;
       const ux = (at.x - plaza.x) / rr;
       const uy = (at.y - plaza.y) / rr;
-      const out = TOWN_DIMS.fieldOutMin + rng() * TOWN_DIMS.fieldOutJit;
-      const side = (rng() - 0.5) * TOWN_DIMS.fieldSideSpread;
-      const w = TOWN_DIMS.fieldWMin + rng() * TOWN_DIMS.fieldWJit;
-      const h = TOWN_DIMS.fieldHMin + rng() * TOWN_DIMS.fieldHJit;
+      const out = (TOWN_DIMS.fieldOutMin + rng() * TOWN_DIMS.fieldOutJit) * areaScale;
+      const side = (rng() - 0.5) * TOWN_DIMS.fieldSideSpread * areaScale;
+      const w = (TOWN_DIMS.fieldWMin + rng() * TOWN_DIMS.fieldWJit) * areaScale;
+      const h = (TOWN_DIMS.fieldHMin + rng() * TOWN_DIMS.fieldHJit) * areaScale;
       fields.push({
         dx: at.x + ux * out - uy * side - w / 2,
         dy: at.y + uy * out + ux * side - h / 2,

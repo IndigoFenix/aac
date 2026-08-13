@@ -31,6 +31,7 @@
  */
 
 import type { ObjectProperty } from "../../object-properties.js";
+import type { ItemWords } from "../../interaction/lang/core.js";
 // The one VALUE import (phase 6): furniture is priced by the same bill module
 // the walls are, so a bed and the room it stands in cannot disagree about what
 // a block is. Pure arithmetic — the layering note above still holds.
@@ -464,6 +465,10 @@ export interface FurnitureItemDef {
    *  bench is hand-made); working at the named station cuts the labor to
    *  CRAFT_STATION_FACTOR. Absent craft = buy/import only. */
   craft?: { at?: StationKind; consumes: Record<string, number> };
+  /** The piece's own words, per locale (content/words.ts joiner), keyed under
+   *  the SPOKEN word (`fixtureWord`): the chest row folds to "box", so the
+   *  words for "box" ride the box row and the chest row carries none. */
+  words?: ItemWords;
 }
 
 /** Street-days of labor one furniture piece takes BY HAND. */
@@ -536,17 +541,97 @@ export function furnitureKindOfGlyph(glyph: string): StationKind | null {
 // same reason: a new station kind gets an honest bill the moment it declares a
 // radius, with nobody guessing a number for it.
 const FURNITURE_ROWS: ReadonlyArray<Omit<FurnitureItemDef, "craft">> = [
-  { kind: "chair", radius: 0.22, openable: false },
-  { kind: "table", radius: 0.8, openable: false },
-  { kind: "bed", radius: 0.65, openable: false },
+  {
+    kind: "chair",
+    radius: 0.22,
+    openable: false,
+    words: {
+      en: { w: "chair" },
+      he: { w: "כיסא", g: "m" },
+      es: { w: "silla", g: "f" },
+      pt: { w: "cadeira", g: "f" },
+    },
+  },
+  {
+    kind: "table",
+    radius: 0.8,
+    openable: false,
+    words: {
+      en: { w: "table" },
+      he: { w: "שולחן", g: "m" },
+      es: { w: "mesa", g: "f" },
+      pt: { w: "mesa", g: "f" },
+    },
+  },
+  {
+    kind: "bed",
+    radius: 0.65,
+    openable: false,
+    words: {
+      en: { w: "bed" },
+      he: { w: "מיטה", g: "f" },
+      es: { w: "cama", g: "f" },
+      pt: { w: "cama", g: "f" },
+    },
+  },
   { kind: "chest", radius: 0.55, openable: true },
-  { kind: "cupboard", radius: 0.6, openable: true },
-  { kind: "box", radius: 0.45, openable: false },
-  { kind: "bin", radius: 0.35, openable: true },
-  { kind: "barrel", radius: 0.4, openable: true },
+  {
+    kind: "cupboard",
+    radius: 0.6,
+    openable: true,
+    words: {
+      en: { w: "cabinet" },
+      he: { w: "ארון", g: "m" },
+      es: { w: "armario", g: "m" },
+      pt: { w: "armário", g: "m" },
+    },
+  },
+  {
+    kind: "box",
+    radius: 0.45,
+    openable: false,
+    words: {
+      en: { w: "box" },
+      he: { w: "קופסה", g: "f" },
+      es: { w: "caja", g: "f" },
+      pt: { w: "caixa", g: "f" },
+    },
+  },
+  {
+    kind: "bin",
+    radius: 0.35,
+    openable: true,
+    words: {
+      en: { w: "bin" },
+      he: { w: "פח", g: "m" },
+      es: { w: "papelera", g: "f" },
+      pt: { w: "lixeira", g: "f" },
+    },
+  },
+  {
+    kind: "barrel",
+    radius: 0.4,
+    openable: true,
+    words: {
+      en: { w: "barrel" },
+      he: { w: "חבית", g: "f" },
+      es: { w: "barril", g: "m", plw: "barriles" },
+      pt: { w: "barril", g: "m", plw: "barris" },
+    },
+  },
   /** The bootstrap tool: the FIRST bench is hand-made (slow); an existing
    *  bench speeds making the next, like everything else. */
-  { kind: "workbench", radius: 0.7, openable: false },
+  {
+    kind: "workbench",
+    radius: 0.7,
+    openable: false,
+    words: {
+      en: { w: "workbench" },
+      he: { w: "שולחן עבודה", g: "m" },
+      es: { w: "banco de trabajo", g: "m", plw: "bancos de trabajo" },
+      pt: { w: "bancada", g: "f" },
+    },
+  },
   /** The DOOR LEAF (construction phase 5) — the law's furniture piece. Cut at
    *  a bench, stacked as `furn.door`, carried to a doorway and HUNG there
    *  rather than set on a floor spot. The radius is the leaf's own half-width,
@@ -555,7 +640,17 @@ const FURNITURE_ROWS: ReadonlyArray<Omit<FurnitureItemDef, "craft">> = [
    *  OF, so it prices the leaf like every other row. `openable: false` because
    *  what a door does is the doorway's mechanic, never the chest lid's
    *  (STATION_PROPERTIES says why). */
-  { kind: "door", radius: 0.5, openable: false },
+  {
+    kind: "door",
+    radius: 0.5,
+    openable: false,
+    words: {
+      en: { w: "door" },
+      he: { w: "דלת", g: "f" },
+      es: { w: "puerta", g: "f" },
+      pt: { w: "porta", g: "f" },
+    },
+  },
 ] as const;
 
 /**
@@ -584,17 +679,117 @@ const FURNITURE_ROWS: ReadonlyArray<Omit<FurnitureItemDef, "craft">> = [
  * workExtraStationDefs' default for the place-making five.
  */
 const FIXTURE_ROWS: ReadonlyArray<Omit<FurnitureItemDef, "craft">> = [
-  { kind: "refrigerator", radius: 0.55, openable: true },
-  { kind: "oven", radius: 0.6, openable: false },
-  { kind: "bath", radius: 0.75, openable: false },
-  { kind: "toilet", radius: 0.5, openable: false },
-  { kind: "bowl", radius: 0.25, openable: false },
+  {
+    kind: "refrigerator",
+    radius: 0.55,
+    openable: true,
+    words: {
+      en: { w: "refrigerator" },
+      he: { w: "מקרר", g: "m" },
+      es: { w: "nevera", g: "f" },
+      pt: { w: "geladeira", g: "f" },
+    },
+  },
+  {
+    kind: "oven",
+    radius: 0.6,
+    openable: false,
+    words: {
+      en: { w: "oven" },
+      he: { w: "תנור", g: "m" },
+      es: { w: "horno", g: "m", plw: "hornos" },
+      pt: { w: "forno", g: "m" },
+    },
+  },
+  {
+    kind: "bath",
+    radius: 0.75,
+    openable: false,
+    words: {
+      en: { w: "bath" },
+      he: { w: "אמבטיה", g: "f" },
+      es: { w: "bañera", g: "f" },
+      pt: { w: "banheira", g: "f" },
+    },
+  },
+  {
+    kind: "toilet",
+    radius: 0.5,
+    openable: false,
+    words: {
+      en: { w: "toilet" },
+      he: { w: "אסלה", g: "f" },
+      es: { w: "inodoro", g: "m" },
+      pt: { w: "vaso sanitário", g: "m", plw: "vasos sanitários" },
+    },
+  },
+  {
+    kind: "bowl",
+    radius: 0.25,
+    openable: false,
+    words: {
+      en: { w: "bowl" },
+      he: { w: "קערה", g: "f" },
+      es: { w: "cuenco", g: "m" },
+      pt: { w: "tigela", g: "f" },
+    },
+  },
   // The place-making five (workExtraStationDefs' proto default).
-  { kind: "anvil", radius: 0.6, openable: false },
-  { kind: "altar", radius: 0.6, openable: false },
-  { kind: "loom", radius: 0.6, openable: false },
-  { kind: "shelf", radius: 0.6, openable: false },
-  { kind: "stonecutter", radius: 0.6, openable: false },
+  {
+    kind: "anvil",
+    radius: 0.6,
+    openable: false,
+    words: {
+      en: { w: "anvil" },
+      he: { w: "סדן", g: "m" },
+      es: { w: "yunque", g: "m", plw: "yunques" },
+      pt: { w: "bigorna", g: "f" },
+    },
+  },
+  {
+    kind: "altar",
+    radius: 0.6,
+    openable: false,
+    words: {
+      en: { w: "altar" },
+      he: { w: "מזבח", g: "m" },
+      es: { w: "altar", g: "m", plw: "altares" },
+      pt: { w: "altar", g: "m" },
+    },
+  },
+  {
+    kind: "loom",
+    radius: 0.6,
+    openable: false,
+    words: {
+      en: { w: "loom" },
+      he: { w: "נול", g: "m" },
+      es: { w: "telar", g: "m", plw: "telares" },
+      pt: { w: "tear", g: "m" },
+    },
+  },
+  {
+    kind: "shelf",
+    radius: 0.6,
+    openable: false,
+    words: {
+      en: { w: "shelf" },
+      he: { w: "מדף", g: "m" },
+      es: { w: "estante", g: "m", plw: "estantes" },
+      pt: { w: "estante", g: "f" },
+    },
+  },
+  {
+    kind: "stonecutter",
+    radius: 0.6,
+    openable: false,
+    words: {
+      en: { w: "stonecutter" },
+      he: { w: "שולחן סיתות", g: "m" },
+      es: { w: "banco de cantero", g: "m", plw: "bancos de cantero" },
+      pt: { w: "bancada de cantaria", g: "f", plw: "bancadas de cantaria" },
+    },
+  },
 ] as const;
 
 /**

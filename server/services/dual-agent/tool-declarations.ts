@@ -199,11 +199,12 @@ function buildContextTool(_config: ToolDeclarationConfig): FunctionDeclaration {
     description: `Record a specific environmental observation. Log new people, audio, objects, locations, and events when you first notice them (including at the beginning of a new session). Do NOT narrate your own actions.
 
 Types:
-- new_person: Someone appears who you haven't seen this session.
+- new_person: Someone appears who you haven't seen this session. Key is their NAME only when identity is verified; otherwise a generic key ("a woman", "visitor").
 - new_voice: A new voice is heard that you haven't heard this session.
 - set_person_as_user: Identify which visible person is the primary user of this device.
 - person_identified: Confirm whose face this is (an unknown person you've placed, or a guessed match you've verified against the on-file description). The system stores no new face data until you confirm, so confirm only when sure.
 - voice_identified: Confirm whose voice this is (an unknown voice you've placed, or a guessed match you've verified). The system learns the voice only after you confirm, so confirm only when sure.
+- misidentified: Retract a wrong identification — a known person was named/reported present and you now see they aren't. Key: the wrongly-named person; description: what is actually true. Penalizes the bad match and voids earlier reports of their presence.
 - person_leaves: A previously-present person has left the frame.
 - new_location: The device appears to be in a new physical location/room.
 - new_object: A notable object appears in view.
@@ -222,7 +223,7 @@ Types:
           type: "string",
           enum: [
             "new_person", "new_voice", "set_person_as_user", "person_identified",
-            "voice_identified", "person_leaves", "new_location", "new_object",
+            "voice_identified", "misidentified", "person_leaves", "new_location", "new_object",
             "object_leaves", "person_gesture", "person_indicates_object",
             "ambient_audio_started", "ambient_audio_stopped", "sound_detected", "other",
           ],

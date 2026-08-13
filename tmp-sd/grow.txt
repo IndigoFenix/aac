@@ -1,0 +1,6 @@
+wait 2400
+wait 2400
+wait 2400
+wait 2400
+wait 2400
+scene
